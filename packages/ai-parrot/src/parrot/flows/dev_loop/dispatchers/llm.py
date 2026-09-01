@@ -217,7 +217,7 @@ class LLMCodeDispatcher:
             client = self._create_client(profile, run_id=run_id)
             await self._ensure_client_ready(client)
             model = self._resolve_model(profile, client)
-            messages = self._initial_messages(profile, brief, output_model)
+            messages = self._initial_messages(profile, brief, output_model, cwd=cwd)
             tools = self._tool_schemas(output_model)
             args = self._completion_args(profile, tools)
 
@@ -719,6 +719,8 @@ class LLMCodeDispatcher:
         profile: LLMCodeDispatchProfile,
         brief: BaseModel,
         output_model: Type[BaseModel],
+        *,
+        cwd: str = "",
     ) -> List[Dict[str, Any]]:
         body = load_subagent_definition(profile.subagent)
         return [
@@ -743,8 +745,16 @@ class LLMCodeDispatcher:
                     "- `run_command` execs a bare argv: there is NO shell, so "
                     "no pipes, no `>` redirection, no `&&`, no `cd`. Write "
                     "files with `write_file`, not `cat >` or `python -c`.\n"
-                    "- Every path is relative to the worktree you are in. "
-                    "Absolute paths into another checkout are rejected.\n"
+                    + (
+                        f"- You are working in {cwd} — every tool path "
+                        "resolves there. The brief may also name a "
+                        "`repo_path`: that is a DIFFERENT checkout your "
+                        "tools cannot see. Use worktree-relative paths.\n"
+                        if cwd
+                        else "- Every path is relative to the worktree you "
+                        "are in; absolute paths into another checkout are "
+                        "not visible to your tools.\n"
+                    ) +
                     f"- `run_command` only runs: "
                     f"{', '.join(profile.allowed_commands)}.\n\n"
                     f"Subagent instructions:\n{body}"
@@ -1382,18 +1392,95 @@ class LLMCodeDispatcher:
                 self._resolve_repo_path(cwd, path)
 
     def _resolve_repo_path(self, cwd: str, path: str) -> str:
+        """Resolve a tool path against ``cwd``, confined to it.
+
+        An ABSOLUTE path pointing at the same file in a different checkout
+        is re-anchored onto ``cwd`` when the equivalent path exists there.
+        The brief handed to the model carries both ``repo_path`` (the main
+        clone) and ``worktree_path``, and the seat works in the worktree —
+        so a model that reasonably composes
+        ``<repo_path>/sdd/tasks/active/TASK-2681-....md`` used to lose a
+        whole turn to "escapes cwd" and, worse, sometimes never read its
+        own task file. Re-anchoring is not a hole in the sandbox: the
+        result is still under ``cwd``, and the tool result echoes the
+        relative path actually used, so the model sees what it got.
+
+        Relative traversal (``../outside``) stays a hard error — that is a
+        genuine escape attempt, not a checkout mix-up.
+
+        Args:
+            cwd: The worktree root every tool is confined to.
+            path: Path as the model wrote it.
+
+        Returns:
+            An absolute path inside ``cwd``.
+
+        Raises:
+            ValueError: If the path escapes ``cwd`` and cannot be
+                re-anchored.
+        """
+        base = os.path.abspath(cwd)
         if os.path.isabs(path):
             target = os.path.abspath(path)
         else:
-            target = os.path.abspath(os.path.join(cwd, path))
-        base = os.path.abspath(cwd)
+            target = os.path.abspath(os.path.join(base, path))
+        if self._is_within(base, target):
+            return target
+
+        if os.path.isabs(path):
+            remapped = self._reanchor_into_cwd(base, target)
+            if remapped is not None:
+                self.logger.warning(
+                    "re-anchored %r onto the worktree as %r — the brief's "
+                    "repo_path is NOT what the tools see",
+                    path,
+                    os.path.relpath(remapped, base),
+                )
+                return remapped
+
+        raise ValueError(
+            f"path {path!r} escapes cwd={base!r}. Your tools only see that "
+            "worktree; the brief's repo_path is a different checkout. Retry "
+            "with a path relative to the worktree."
+        )
+
+    @staticmethod
+    def _is_within(base: str, target: str) -> bool:
+        """Whether ``target`` is ``base`` or lives under it."""
         try:
-            common = os.path.commonpath([base, target])
-        except ValueError:
-            common = ""
-        if common != base:
-            raise ValueError(f"path {path!r} escapes cwd={base!r}")
-        return target
+            return os.path.commonpath([base, target]) == base
+        except ValueError:  # different drives / unrelated roots
+            return False
+
+    @staticmethod
+    def _reanchor_into_cwd(base: str, target: str) -> Optional[str]:
+        """Find the longest tail of ``target`` that resolves inside ``base``.
+
+        Longest-first so a deep path keeps its structure: it stops at the
+        first tail whose parent directory exists under ``base``, which
+        prevents ``/a/b/c/deep/file.py`` from collapsing onto
+        ``<base>/file.py``.
+
+        Args:
+            base: Absolute worktree root.
+            target: Absolute path from another checkout.
+
+        Returns:
+            The re-anchored absolute path, or ``None`` when no tail fits.
+        """
+        parts = [part for part in target.split(os.sep) if part]
+        for start in range(1, len(parts)):
+            tail = parts[start:]
+            candidate = os.path.join(base, *tail)
+            if os.path.exists(candidate):
+                return candidate
+            # A directory match only counts for a multi-segment tail: a
+            # bare filename always "matches" (its parent is `base`), which
+            # would turn /etc/passwd into <base>/passwd and let write_file
+            # scatter stray files at the worktree root.
+            if len(tail) >= 2 and os.path.isdir(os.path.dirname(candidate)):
+                return candidate
+        return None
 
     def _validate_final_tool(
         self,

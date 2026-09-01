@@ -659,3 +659,65 @@ async def test_one_turn_may_carry_several_tool_calls(monkeypatch, brief, tmp_pat
     assert [m["tool_call_id"] for m in tool_messages] == ["c1", "c2"]
     assert "alpha" in tool_messages[0]["content"]
     assert "beta" in tool_messages[1]["content"]
+
+
+def test_absolute_path_from_the_main_clone_is_reanchored(monkeypatch, tmp_path):
+    """The brief names repo_path; the seat works in the worktree."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    worktree = tmp_path / "repo" / ".claude" / "worktrees" / "feat-488"
+    (worktree / "sdd" / "tasks" / "active").mkdir(parents=True)
+    task = worktree / "sdd" / "tasks" / "active" / "TASK-2681-x.md"
+    task.write_text("body\n", encoding="utf-8")
+
+    resolved = dispatcher._resolve_repo_path(
+        str(worktree),
+        str(tmp_path / "repo" / "sdd" / "tasks" / "active" / "TASK-2681-x.md"),
+    )
+
+    assert resolved == str(task)
+
+
+def test_reanchoring_keeps_the_directory_structure(monkeypatch, tmp_path):
+    """A file that does not exist yet still lands in the right directory."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt" / "sdd" / "specs").mkdir(parents=True)
+
+    resolved = dispatcher._resolve_repo_path(
+        str(tmp_path / "wt"),
+        "/elsewhere/checkout/sdd/specs/missing.spec.md",
+    )
+
+    assert resolved == str(tmp_path / "wt" / "sdd" / "specs" / "missing.spec.md")
+
+
+def test_unrelated_absolute_path_is_still_rejected(monkeypatch, tmp_path):
+    """A bare filename must not be re-anchored to the worktree root."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    with pytest.raises(ValueError, match="escapes cwd"):
+        dispatcher._resolve_repo_path(str(tmp_path), "/etc/passwd")
+
+
+def test_relative_traversal_is_never_reanchored(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt").mkdir()
+    (tmp_path / "outside.txt").write_text("secret\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="escapes cwd"):
+        dispatcher._resolve_repo_path(str(tmp_path / "wt"), "../outside.txt")
+
+
+def test_system_prompt_names_the_working_directory(monkeypatch, brief, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    messages = dispatcher._initial_messages(
+        LLMCodeDispatchProfile(),
+        brief,
+        DevelopmentOutput,
+        cwd=str(tmp_path),
+    )
+
+    system = messages[0]["content"]
+    assert f"You are working in {tmp_path}" in system
+    assert "repo_path" in system
+    assert "no pipes, no `>` redirection" in system
