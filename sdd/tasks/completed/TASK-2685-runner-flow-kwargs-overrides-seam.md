@@ -144,10 +144,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Added `flow_kwargs_overrides: Optional[Dict[str, Any]] = None` to
+`DevLoopRunner.run()` and threaded it into `_dev_loop_flow_factory(overrides=None)`,
+which now merges `dict(self._dev_loop_flow_kwargs) | overrides` into a local
+`kwargs` dict per call — never assigned to `self`. `_execution_policy_for_fingerprint()`
+left untouched, as required. Added 4 unit tests to
+`test_recovery_lifecycle.py` covering byte-identical behaviour without
+overrides, an override reaching `build_dev_loop_flow`, no per-run state
+leaking onto the instance, and two back-to-back factory builds with
+different overrides not leaking into each other. Tests patch the exact
+`__globals__` dict of `_dev_loop_flow_factory` (not a dotted monkeypatch
+string) — the same pitfall this test file's own `patch_handoff` fixture
+already documents (test_lazy_import.py can leave the class bound to a
+module object `sys.modules` no longer resolves to). Full
+`pytest packages/ai-parrot/tests/flows/dev_loop -q` run: 1296 passed, 3
+pre-existing unrelated failures (test_qa_codereview, test_secondopinion_brief,
+test_subagent_parity — verified failing identically on `dev` before this
+change, unrelated to FEAT-490). `ruff check` on the modified file shows the
+same pre-existing `Optional[Dict[...]]`-style baseline debt already present
+throughout the file (87 baseline errors); my two new signatures follow the
+exact same established style as the surrounding, unmodified code in this
+file (e.g. `dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None`) rather
+than a drive-by modernization.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
