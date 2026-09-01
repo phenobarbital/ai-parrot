@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -159,8 +159,45 @@ class TestDevFlowModelPlan:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- Created `dev_flow/model_plan.py` with `ResearchPartnerPlan`,
+  `ReviewPairPlan`, `DevFlowModelPlan` exactly per the spec §2 sketch
+  (defaults: research primary `claude-opus-5`; partner disabled/`gpt`/
+  `gpt-5.6-sol`; empty `dev_pool`; review `claude-code`/`claude-opus-5`
+  + counter `gpt-5.6-sol`).
+- `resolve_model_plan(plan, *, config_getter)` implements the
+  *explicit > env > built-in* precedence per field, using Pydantic v2
+  `model_fields_set` (top level AND nested, so setting one partner field
+  does not freeze its siblings). It mirrors
+  `dev_loop.catalog.resolve_adversarial_backend`'s injectable
+  `config_getter` shape, which means **no `conf.py` edit was needed** —
+  keys are read at resolution time via `conf.config.get`. This also keeps
+  file fidelity (conf.py is not in this task's file list) and avoids a
+  merge conflict with FEAT-482, which will add
+  `DEV_FLOW_IDEATION_MODEL` as a module constant.
+- Env keys settled (spec §8 open question): `DEV_FLOW_IDEATION_MODEL`
+  (shared with FEAT-482), `DEV_FLOW_RESEARCH_PARTNER_ENABLED` /
+  `_BACKEND` / `_MODEL`, `DEV_FLOW_DEV_POOL` (JSON array),
+  `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL`,
+  `DEV_FLOW_REVIEW_COUNTER_MODEL`.
+- Fail-fast validation is a `mode="before"` field validator on
+  `dev_pool`, so the `ValueError` names the offending backend AND the
+  supported set (wording mirrors `server.py:1051-1054`) instead of
+  Pydantic's raw `Literal` message. Supported set is read off
+  `get_args(DevAgentBackend)` — a new dev_loop backend is picked up
+  automatically. Model ids are never validated (catalog free-text policy).
+- `to_pool_config()` returns `DevAgentPoolConfig(agents=..., isolation_mode="shared")`
+  for TASK-2652, or `None` for an empty pool (leaving DevelopmentNode's
+  existing cascade untouched). It copies the spec list.
+- 36 unit tests pass; `ruff check` clean (one justified
+  `# noqa: TRY004` — a bad `DEV_FLOW_DEV_POOL` JSON *shape* is a config
+  value error, and the resolver's documented contract raises `ValueError`).
 
-**Deviations from spec**: none
+**Deviations from spec**: none. Two judgement calls recorded:
+`ResearchPartnerPlan.backend` is typed `str` (not a `Literal`) exactly as
+the spec §2 sketch specifies — validation is deliberately delegated to
+FEAT-482's `resolve_research_partner_backend()`; and no
+`isolation_mode` knob was added to the plan, since per-agent worktrees
+are an explicit spec non-goal.
