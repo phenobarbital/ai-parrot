@@ -191,10 +191,63 @@ def test_refresh_tool_args_win_over_surface_state(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Added `dashboard_descriptor()`, `_transform_sections()`,
+`_narrative_spec()`, `recipe_params()`, `build_refresh_tool()`, plus
+module-level `RefreshDashboardArgs`/`RefreshDashboardTool` to
+`agents/flex_dashboard.py`. 14 new descriptor/refresh-tool tests pass (58
+total across the feature's test files); `ruff check` is clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Two things discovered while implementing, both documented in-line as code
+comments:
 
-**Deviations from spec**: none
+1. **Narrative section name is `flex_narrative_facts`**, not
+   `narrative_facts` (TASK-2694's deviation) — the section's `name` MUST
+   equal the transformer registry key `publish_recipe` resolves against,
+   so this task's `_transform_sections()`/`NarrativeSpec(facts_key=...)`
+   use `flex_narrative_facts` throughout, not the generic name this task's
+   Scope text used.
+2. **`resolve_params()` (`parrot.outputs.a2ui.recipes.params`) raises when
+   a declared `RecipeParam` has no default AND no run-time override** —
+   there is no built-in "optional filter" concept at the recipe-params
+   layer. To keep the per-section filters (`month`, `flex_type`, `pay_code`,
+   `cost_center`, `category`) truly optional (unfiltered default replay),
+   `recipe_params()` declares `default=""` for each, and
+   `agents/flex_dashboard/transformers.py`'s `_apply_filters` helper
+   (TASK-2694) was changed from an `is not None` check to a truthy check
+   (`if value:`) so `""` is ALSO treated as "no filter" — a one-line,
+   additive, backward-compatible change (all TASK-2694 tests still pass
+   unchanged; no filter value used anywhere is legitimately falsy other
+   than the new empty-string sentinel).
+
+**Deviations from spec**: `flex_narrative_facts` section/facts_key name
+(see #1 above, same root cause as TASK-2694's already-recorded deviation);
+`agents/flex_dashboard/transformers.py::_apply_filters` truthy-check change
+(see #2 above) — required for the recipe to be replayable with no filter
+overrides at all, which the spec's own "narrative step stays optional so
+replay works with no narrator" principle implies should also hold for the
+per-section filters.
+
+**ADDENDUM (during TASK-2699, same worktree/session)**: the
+"Proximity Staffing" section's `"text": {"path": "/narrative"}` binding +
+the layout's `metadata.extensions.parrot_optional` entry were REMOVED.
+Root cause: `RecipeRunner._assemble_envelope_or_raise`'s Infographic path
+(`build_infographic` → `build_surface`, `parrot/outputs/a2ui/builders.py`)
+never threads `layout.metadata` onto the built wire `Component` — so ANY
+layout-level binding to an absent key raises `BakeError` unconditionally
+at render time, regardless of what `parrot_optional` declares. This is a
+pre-existing, cross-cutting CORE bug (confirmed reproducible on `dev`,
+completely unrelated to FEAT-491): FinanceReporter's own e2e tests
+`test_dashboard_profile_replay` AND `test_report_profile_replay_no_narrator`
+are BOTH independently broken by it too (verified by running them
+directly against dev's current `packages/ai-parrot/tests/integration/
+test_finance_reporter_narrative_e2e.py`). Fixing it is out of this
+feature's scope (spec §1 Non-Goals: "No changes to core packages").
+`narrative=cls._narrative_spec()` is kept — a configured narrator still
+runs and populates `/narrative` in the data model, it is just never bound
+in the layout. `test_flex_dashboard_descriptors.py::
+test_narrative_binds_are_optional` was renamed to
+`test_no_narrative_layout_binding` and now asserts the ABSENCE of any
+`/narrative` layout binding, with the full reasoning in its docstring.
+See TASK-2699's Completion Note for the full reproduction.

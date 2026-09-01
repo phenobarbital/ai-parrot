@@ -184,10 +184,29 @@ def test_payroll_pct_denominator(flex_frames):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Implemented all 10 registered transformers in
+`agents/flex_dashboard/transformers.py`: `payroll_hero`,
+`worked_hours_by_month`, `payroll_by_month`, `revenue_by_month`,
+`payroll_pct_by_month`, `pay_code_hours`, `pay_code_allocation`,
+`rep_utilization_by_region`, `proximity_staffing`, and the narrative step
+(see deviation below). Haversine implemented with numpy (no new
+dependency). 18 unit tests pass (29 total with TASK-2693's suite);
+`ruff check agents/flex_dashboard/` is clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The narrative-step transformer is registered as
+**`flex_narrative_facts`**, not the generic `narrative_facts` name spec §3
+Module 2 names. Discovered empirically: `parrot.outputs.a2ui.recipes`'s
+`__init__.py` unconditionally imports `library.py` as an import side
+effect the moment anything imports `infographic_transformer` (which
+`transformers.py` must do), and `library.py` already registers its OWN,
+finance-specific `narrative_facts` function on the same process-wide
+`transformer_registry`. `TransformerRegistry.register` raises when a
+different function claims an already-used name — confirmed via a failing
+test run, not assumed. This is unrelated to the FinanceReporter
+`SectionSpec.name="narrative_facts"` *pattern* (last section, consumes
+prior-step outputs), which is preserved exactly; only the registry KEY had
+to change to avoid a real, unavoidable cross-domain name collision.
+TASK-2697's recipe descriptor must use `flex_narrative_facts` as its
+narrative section's name.

@@ -164,10 +164,42 @@ def test_triggers():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Created the three composite skills under
+`agents/flex_dashboard/skills/` plus a `kpi-table.md` asset for `/widget`
+(KPI → transformer → dataset → recipe path → output mode → supported
+filters, mirroring `datasets.md`'s reference style). 16 unit tests pass in
+isolation (`pytest packages/ai-parrot/tests/unit/bots/
+test_flex_dashboard_skills.py -q` — verified repeatedly); `ruff check` is
+clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**IMPORTANT finding, out of TASK-2698's scope, flagged for the reviewer /
+TASK-2699**: while investigating an unrelated, machine-load-induced test
+timeout (this dev box has multiple concurrent `sdd-worker` sessions and a
+background `pylint` run competing for CPU — `navconfig`'s Vault-backed
+settings bootstrap alone took 5-50s+ under that contention, unrelated to
+any test logic), I discovered a SEPARATE, deterministic (not flaky) bug:
+running `pytest packages/ai-parrot/tests/unit/bots/ -k flex_dashboard`
+(i.e. ALL of this feature's test files together — the invocation pattern
+spec §4/§5 ultimately requires) makes
+`test_flex_dashboard_agent.py::TestAgentConstruction::
+test_working_memory_and_infographic_toolkits_attached` fail 100% of the
+time, even though it passes 100% of the time standalone or paired with
+just `test_flex_dashboard_descriptors.py`/`test_flex_dashboard_skills.py`.
+Root-caused (with a throwaway debug script, since reverted) to two
+DIFFERENT `id()`s for `parrot.tools.infographic_toolkit.InfographicToolkit`
+depending on which combination of test files ran first in the session —
+`WorkingMemoryToolkit` and `DatasetManager` do NOT show the same split, so
+it is specific to `InfographicToolkit`'s import path, not a generic
+worktree-vs-sys.path issue. I did not chase this further: it is a
+pre-existing property of TASK-2696's already-committed test file
+(reproducible with combinations that include ZERO of TASK-2698's files,
+e.g. `test_flex_dashboard_agent.py` + `test_flex_dashboard_normalize.py`
+alone), so fixing it is out of this task's file scope
+(`agents/flex_dashboard/skills/**`, `test_flex_dashboard_skills.py`).
+Recommend investigating during TASK-2699 (which will need the full
+`test_flex_dashboard*.py` glob to pass per the spec's own Acceptance
+Criteria) or as its own follow-up fix.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

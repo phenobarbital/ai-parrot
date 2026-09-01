@@ -161,10 +161,45 @@ async def test_delivery_receives_artifact_with_envelope_key(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
 **Notes**:
+Added the keyword-only `include_envelope: bool = False` flag to
+`RecipeRunner.run()`. When `True`, attaches
+`envelope.model_dump(by_alias=True, mode="json")` at
+`artifact.metadata["source_envelope"]` right after `_render_or_raise`
+returns and before `_deliver_best_effort` — so delivered artifacts carry
+the key too. Pipeline call order is otherwise untouched. Docstring updated
+(`Args`/`Returns`) to document the flag and the reserved metadata key.
 
-**Deviations from spec**:
+4 new unit tests in
+`packages/ai-parrot/tests/tools/test_recipe_runner_envelope.py` (attach +
+default-absent + `CreateSurface.model_validate` rehydration + delivery sees
+the key), using a minimal self-contained fake store/dataset-manager/renderer
+harness (same shape as `test_runner.py`'s, not imported from it since this
+task's scope is limited to the new flag). All 4 pass; the existing
+`packages/ai-parrot/tests/tools/infographic_recipes/` + this new file run
+green together (76 passed). Confirmed via `git stash` that the 3
+pre-existing failures in `tests/integration/infographic_recipes/test_e2e.py`
+(narrative-skill `/narrative` pointer resolution) are unrelated to this
+change — identical failures with the diff reverted.
+
+`ruff check runner.py` reports 7 pre-existing style violations (UP045
+`Optional[X]`→`X | None`, unused `noqa: BLE001`) that exist verbatim before
+this change too (confirmed by diffing `ruff check` output with/without the
+diff via `git stash` — same 7 findings, none touch lines this task added).
+Left untouched per the no-scope-creep rule; none are on lines this task
+introduced.
+
+Required env note (worktree-local, not a task deviation): running
+`packages/ai-parrot`'s test suite here needs
+`PYTHONPATH=/tmp/pytest_shim:$PYTHONPATH` (a local, non-repo stub for a
+`mock_fspath_guard` module referenced by `packages/ai-parrot/conftest.py`
+that was never committed to the repo — pre-existing `dev` breakage,
+unrelated to this feature) plus the compiled `parrot.utils.types` /
+`parrot.utils.parsers.toml` `.so` artifacts copied from the main checkout
+into the worktree (per project memory
+`worktree-test-setup-and-jira-shim-gotcha`).
+
+**Deviations from spec**: none — signature, behavior, and non-breaking
+default match the spec's Module 2 / New Public Interfaces block exactly.

@@ -189,10 +189,76 @@ async def test_tool_overwrite_false_conflict_raises(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
 **Notes**:
 
+**Injection seam (spec §8 open question) — resolved**: `publish_surface()`
+resolves the store as `surface_store=` (explicit) > `self._surface_store`
+(bound attribute) > lazy `PgUISurfaceStore()`. But the seam had to cover
+MORE than just the store: `UISurfaceRecord`/`UISurfaceKind` — the row DATA
+MODEL, not just the CRUD class — also live in the server package
+(`parrot.handlers.models.ui_surfaces`), so constructing a record at all
+needs the same lazy import regardless of where the store came from. Both
+are imported together via one `_lazy_import_ui_surfaces_models()` helper,
+guarded by `try/except ImportError` → actionable `RuntimeError` (never a
+bare `ModuleNotFoundError`). `PublishSurfaceTool` mirrors the identical
+seam in its own `_publish_directly()` fallback lane.
+
+`agent_id`/`user_id` attribution: `agent_id` comes from `self.name` (the
+hosting bot's own identity, always available on `AbstractBot`); `user_id`
+falls back through `self.user_id` (when the hosting bot happens to carry
+one) and finally to the resolved `agent_id` itself (self-authored surface —
+deterministic, never fabricated from nothing). Confirmed via
+`test_publish_surface_with_injected_store`.
+
+24 new tests across 3 files (9 mixin + 7 tool + 8 pre-existing regression),
+all passing: mixin tests need `packages/ai-parrot-server/src` ALSO on
+`PYTHONPATH` (the lazy import genuinely resolves `parrot.handlers.models
+.ui_surfaces` — this workspace's packages are NOT cross-importable via
+plain site-packages in this dev venv; each package's own `conftest.py`
+only adds its OWN `src/` to `sys.path`, so ai-parrot's test run can't see
+ai-parrot-server's modules without this addition. This is a worktree/dev-
+environment characteristic, not a code issue — verified `python -c "import
+parrot.bots.mixins.infographic_authoring"` succeeds standalone with ZERO
+extra PYTHONPATH, satisfying the actual acceptance criterion literally, via
+both a live subprocess test in the mixin suite AND manual confirmation).
+ai-parrot/ai-parrot-tools test trees needed separate `pytest` invocations
+(their `tests/__init__.py` module names collide when collected together —
+known project characteristic, see
+`worktree-test-setup-and-jira-shim-gotcha` memory note).
+
+`ruff check` on `infographic_authoring.py`: 31 errors both before and after
+this diff (confirmed via `git show <prev-sha>` + byte-diff) — this task
+introduces zero new violations. `ui_surfaces.py` (parrot_tools, brand new
+file) and both new test files: fully clean (`ruff check --fix` applied,
+safe since these are new files with no pre-existing debt to accidentally
+touch).
+
 **Deviations from spec**:
+- `publish_surface()`'s literal signature in the task's Scope
+  (`kind, title, envelope, recipe_name, recipe_owner, recipe_params,
+  overwrite, surface_store`) gained two additive keyword-only params,
+  `user_id: Optional[str] = None` and `session_id: Optional[str] = None`.
+  The task's own Key Constraints text says attribution comes "from the
+  hosting bot's context ... **or explicit kwargs**" — but no such kwargs
+  existed in the literal signature, and `UISurfaceRecord.user_id` is a
+  REQUIRED field (TASK-2700), so some resolution path is mandatory. Purely
+  additive (keyword-only, default `None`, falls back to the
+  self.name-derived identity described above) — does not change behavior
+  for any caller that omits them.
+- `PublishSurfaceTool.__init__` also accepts `agent_id`/`user_id`/
+  `session_id` beyond the spec's terse `PublishSurfaceTool(AbstractTool)`
+  sketch — needed ONLY by the standalone fallback lane (no bound bot);
+  the args_schema exposed to the LLM is unchanged from the task's literal
+  list (kind/title/envelope/recipe_name/recipe_owner/recipe_params/
+  overwrite) — these are constructor-injected framework context, never
+  LLM-supplied arguments, matching `AbstractToolArgsSchema`'s documented
+  `_context_fields` philosophy (injected by the framework, not asked of
+  the model) even though this tool passes them via `__init__` rather than
+  that specific mechanism.
+- `PublishSurfaceTool._execute`'s bot-delegation check is
+  `hasattr(self._bot, "publish_surface")` rather than an `isinstance`
+  check against `InfographicAuthoringMixin` — duck-typed on purpose so any
+  object exposing a compatible `publish_surface()` coroutine works, not
+  just mixin-composed bots specifically.

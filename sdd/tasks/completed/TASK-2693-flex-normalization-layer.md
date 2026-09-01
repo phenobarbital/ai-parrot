@@ -166,10 +166,31 @@ def test_column_canonicalization(flex_frames):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Implemented `parse_currency`, `normalize_currency_columns`,
+`month_period`, `canonicalize_columns` as pure functions in
+`agents/flex_dashboard/normalize.py`. Added the shared `flex_frames`
+fixture in `packages/ai-parrot/tests/unit/bots/conftest.py` with a couple
+of extra rows per alias (beyond the single sample row per dataset in
+`sdd/state/FEAT-517/source.md`) so month-series/filter tests in TASK-2694
+have something to group over — same dirty shapes (currency strings, three
+date conventions, `catagory` typo) as the sample data. 11 unit tests pass;
+`ruff check agents/flex_dashboard/` is clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Pre-existing, unrelated repo breakage discovered while validating: `dev`
+commit `f1a029a70` ("config settings") added an import of a
+`mock_fspath_guard` module in `packages/ai-parrot/conftest.py` that was
+never committed anywhere in git history — this currently breaks `pytest`
+collection for the ENTIRE `packages/ai-parrot` test suite (verified this
+also fails on `dev`/main checkout, not just this worktree). Worked around
+locally with an external, non-repo stub (`PYTHONPATH=/tmp/pytest_shim`,
+never committed) purely to validate this task's and later tasks'
+acceptance criteria — this feature does NOT fix that bug (out of scope);
+flagging it here so it's visible to the human reviewer. Also had to copy
+the compiled `parrot.utils.types` Cython extension
+(`types.cpython-312-x86_64-linux-gnu.so`) from the main checkout into this
+worktree to get past an unrelated missing-`.so` import error (documented
+worktree gotcha, not part of this feature).
 
 **Deviations from spec**: none
