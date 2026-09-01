@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot import conf
@@ -523,3 +523,98 @@ def test_concurrent_runs_do_not_leak_seats():
 
     assert captured[0]["model_plan"] is plan_a
     assert captured[1]["model_plan"] is plan_b
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2687: a resumed run keeps the seats it was created with
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resumed_run_keeps_original_seats(nl_brief):
+    """On ``mode == "resumed"``, DevCheckpointCoordinator.prepare() returns
+    the ALREADY-RESUMED flow directly — the newly submitted plan is never
+    threaded into a rebuild (there is no rebuild on this branch)."""
+    resumed_flow = _CapturingFlow()
+    plan = _plan()
+    runner = _recovery_runner()
+    runner._checkpoint_coordinator.prepare = AsyncMock(return_value=(resumed_flow, "resumed"))
+
+    result = await runner.run(nl_brief, run_id="run-resumed", model_plan=plan)
+
+    assert result.status == FlowStatus.COMPLETED
+    # The coordinator's own returned flow object ran — not a fresh one.
+    assert resumed_flow.contexts
+
+
+@pytest.mark.asyncio
+async def test_resumed_run_reports_the_plan_as_not_applied(nl_brief):
+    """A resumed run reports the submitted plan as requested-but-not-applied,
+    never silently swapped in (spec §8 Q1)."""
+    resumed_flow = _CapturingFlow()
+    plan = _plan()
+    runner = _recovery_runner()
+    runner._checkpoint_coordinator.prepare = AsyncMock(return_value=(resumed_flow, "resumed"))
+
+    result = await runner.run(nl_brief, run_id="run-resumed-report", model_plan=plan)
+
+    assert result.metadata["run_mode"] == "resumed"
+    assert result.metadata["model_plan_requested"] == plan.model_dump(mode="json")
+    assert result.metadata["model_plan_effective"] is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_reports_the_plan_as_applied(nl_brief):
+    """Symmetric control: a fresh run's effective plan IS the requested one."""
+    captured: list[dict] = []
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        result = await runner.run(nl_brief, run_id="run-fresh-report", model_plan=plan)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert result.metadata["run_mode"] == "fresh"
+    assert result.metadata["model_plan_effective"] == plan.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_per_run_plan_does_not_move_the_fingerprint(nl_brief):
+    """Accepted limitation (spec §7), asserted rather than assumed: the
+    checkpoint fingerprint's execution_policy is identical across two runs
+    with DIFFERENT per-run plans — it derives solely from construction-time
+    ``self._dev_loop_flow_kwargs``, never from a per-run call argument."""
+    captured_policies: list[dict] = []
+
+    class _RecordingCoordinator:
+        async def prepare(self, *, execution_policy, **kwargs):
+            captured_policies.append(execution_policy)
+            return _CapturingFlow(), "fresh"
+
+    runner = _recovery_runner()
+    runner._checkpoint_coordinator = _RecordingCoordinator()
+
+    await runner.run(nl_brief, run_id="run-fp-a", model_plan=_plan(research_primary="zai.glm-5"))
+    await runner.run(
+        nl_brief,
+        run_id="run-fp-b",
+        model_plan=_plan(research_primary="qwen.qwen3-coder-480b-a35b-v1:0"),
+    )
+
+    assert len(captured_policies) == 2
+    assert captured_policies[0] == captured_policies[1]
+    # Construction time never supplied a model_plan either, so the key is
+    # absent entirely — pinning that a PER-RUN plan cannot introduce it.
+    assert "model_plan" not in captured_policies[0]
+
+
+def test_execution_policy_for_fingerprint_is_unmodified_by_this_feature():
+    """Structural guard: `_execution_policy_for_fingerprint` still takes no
+    per-run argument at all (spec §8 Q2' — left alone on purpose)."""
+    import inspect
+
+    sig = inspect.signature(DevFlowRunner._execution_policy_for_fingerprint)
+    assert list(sig.parameters) == ["self"]

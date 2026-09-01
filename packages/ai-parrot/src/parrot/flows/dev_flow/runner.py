@@ -175,6 +175,11 @@ class DevFlowRunner(DevLoopRunner):
         # other (spec §2 Overview step 2, §7 "Concurrency leak" risk).
         flow_kwargs_overrides = {"model_plan": model_plan} if model_plan is not None else None
 
+        # spec §8 Q1 / §3 Module 3: a run that never enters the checkpoint
+        # coordinator at all (recovery disabled) is inherently a plain fresh
+        # run — "fresh" is the correct default here, not "unknown", so the
+        # metadata recorded below is accurate even off the recovery path.
+        mode: Literal["fresh", "resumed"] = "fresh"
         flow = self.flow
         if recovery_enabled:
             flow, mode = await self._checkpoint_coordinator.prepare(
@@ -193,6 +198,16 @@ class DevFlowRunner(DevLoopRunner):
                 rid,
                 mode,
             )
+
+        # spec §8 Q1 (resolved: "keep the original"): on the resume branch,
+        # DevCheckpointCoordinator.prepare() never calls flow_factory at all
+        # (dev_loop/checkpoint.py:553-558 — flow_factory only fires on a
+        # cache miss) — so `flow_kwargs_overrides` above was already never
+        # applied to a resumed run's seats BY CONSTRUCTION. This is the
+        # explicit, documented statement of that fact for reporting: a
+        # resumed run's effective plan is the one it was created with, never
+        # whatever was newly submitted.
+        model_plan_applied = model_plan is not None and mode != "resumed"
 
         # Same manual acquire/park-aware structure as the base class's run()
         # (FEAT-377 TASK-1917 / G6), and mandatory here: an ideation
@@ -242,12 +257,16 @@ class DevFlowRunner(DevLoopRunner):
             self._pending_gate_count.pop(rid, None)
 
         self.logger.info("Dev-flow run %s finished status=%s", rid, result.status)
-        # FEAT-490: record what was requested so a caller (or an embedder
-        # reusing a stable run_id) can tell what actually ran, without
-        # guessing from the flow's build kwargs. Recorded on the fresh path
-        # only here — TASK-2687 refines this for a resumed run, where the
-        # newly submitted plan does NOT take effect.
+        # FEAT-490 spec §8 Q1/Q4: record what was requested AND what was
+        # actually effective, so a caller (or an embedder reusing a stable
+        # run_id) can tell what ran without guessing from the flow's build
+        # kwargs. On a resumed run the newly submitted plan is reported as
+        # NOT applied — the run kept the seats it was created with.
         result.metadata["model_plan_requested"] = model_plan.model_dump(mode="json") if model_plan is not None else None
+        result.metadata["model_plan_effective"] = (
+            model_plan.model_dump(mode="json") if model_plan_applied else None
+        )
+        result.metadata["run_mode"] = mode
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
