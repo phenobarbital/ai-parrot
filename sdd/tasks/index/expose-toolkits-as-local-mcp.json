@@ -92,7 +92,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,9 @@
       "parallelism_notes": "No file overlap with TASK-2649 (claude_code/ vs codex/) — the two installer tasks could run concurrently after TASK-2647, but per-spec sequential isolation was chosen in the spec's Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-08-31T23:51:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2648-claude-installer-reconciliation.md"
+      "completed_at": "2026-09-01T00:01:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2648-claude-installer-reconciliation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2649",
