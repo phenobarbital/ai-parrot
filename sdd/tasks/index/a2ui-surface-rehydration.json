@@ -32,7 +32,7 @@
       "feature_id": "FEAT-492",
       "feature": "a2ui-surface-rehydration",
       "spec": "sdd/specs/a2ui-surface-rehydration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Core-package change to runner.py only; shares no files with TASK-2700 (server store). Safe to run alongside it.",
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2701-recipe-runner-envelope.md"
+      "completed_at": "2026-09-01T18:06:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2701-recipe-runner-envelope.md"
     },
     {
       "id": "TASK-2702",
