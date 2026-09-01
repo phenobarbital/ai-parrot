@@ -19,6 +19,7 @@ registry/log success entry written — exactly the §34 failure protocol.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from pathlib import Path
@@ -192,11 +193,25 @@ async def _process_one_meeting(
     review_items: list[Any] = []
     validation_ctx = ValidationContext()
     validation_ctx.source_ids = [meeting.source_id]
+    # §34 source integrity "no-double-process" check (spec §2 rule 4) —
+    # populated from the actual registry so it is a live assertion, not
+    # structurally dead.
+    validation_ctx.existing_source_ids = [r.fireflies_id for r in await registry.all_records()]
+    # §2 rule 1 / §34 — every vault-relative path this function itself
+    # reads or writes, so `private_accessed` is derived from actual
+    # evidence (never a hardcoded constant). Entity/concept resolution
+    # (Modules 10) additionally scope their own reads/writes strictly to
+    # `Wiki/Entities/`/`Wiki/Concepts/` by construction (see those
+    # modules' own folder constants) and are not duplicated here.
+    touched_paths: list[str] = []
 
-    # --- §13/§14 raw bundle ---------------------------------------------
-    raw_bundle_node.write_bundle_to_incoming(vault_path, meeting)
+    # --- §13/§14 raw bundle -------------------------------------------------
+    # raw_bundle.py is synchronous file I/O (hashing, shutil.move) — never
+    # call it unawaited inline; dispatch to a thread so it cannot stall
+    # the event loop during a batch ingest.
+    await asyncio.to_thread(raw_bundle_node.write_bundle_to_incoming, vault_path, meeting)
     incoming_dir = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Incoming"
-    paired, unpaired = raw_bundle_node.pair_incoming_bundles(incoming_dir)
+    paired, unpaired = await asyncio.to_thread(raw_bundle_node.pair_incoming_bundles, incoming_dir)
     for group in unpaired:
         review_items.append(
             classify_node.ReviewItemDraft(
@@ -215,10 +230,10 @@ async def _process_one_meeting(
             review_items=review_items,
         )
 
-    hashes = raw_bundle_node.hash_bundle(incoming_dir, bundle)
+    hashes = await asyncio.to_thread(raw_bundle_node.hash_bundle, incoming_dir, bundle)
     pre_hash = hashes.transcript_sha256
-    processed = raw_bundle_node.move_to_processed(
-        vault_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date
+    processed = await asyncio.to_thread(
+        raw_bundle_node.move_to_processed, vault_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date
     )
     validation_ctx.pre_move_hashes[processed.transcript_path] = pre_hash
     validation_ctx.post_move_hashes[processed.transcript_path] = processed.hashes.transcript_sha256
@@ -233,6 +248,27 @@ async def _process_one_meeting(
     if classification_result.review_item:
         review_items.append(classification_result.review_item)
 
+    # §27 step 10 — once classification confidently resolves the primary
+    # client/project, relocate the raw bundle out of Uncategorized/ into
+    # its classified <Client>/<Project>/YYYY/MM/<source-id>/ home. Every
+    # file move re-verifies its hash (raw_bundle.reclassify_move), so
+    # this never risks raw immutability.
+    if classification.primary_client and classification.primary_project:
+        processed = await asyncio.to_thread(
+            raw_bundle_node.reclassify_move,
+            vault_path,
+            processed,
+            meeting_date=meeting.meeting_date,
+            client=title_case_name(classification.primary_client),
+            project=title_case_name(classification.primary_project),
+        )
+        validation_ctx.pre_move_hashes[processed.transcript_path] = pre_hash
+        validation_ctx.post_move_hashes[processed.transcript_path] = processed.hashes.transcript_sha256
+        validation_ctx.raw_links = [processed.transcript_path]
+        if processed.summary_path:
+            validation_ctx.raw_links.append(processed.summary_path)
+        validation_ctx.existing_raw_files = [p for p in (processed.transcript_path, processed.summary_path) if p]
+
     meeting_date_local = (meeting.meeting_date_iso or meeting.meeting_date)[:10]
     filename = meeting_source_filename(
         meeting_date_local=date.fromisoformat(meeting_date_local), title=meeting.title, source_id=meeting.source_id
@@ -243,6 +279,7 @@ async def _process_one_meeting(
     contradiction_links: list[str] = []
     if classification.primary_project:
         project_path = _project_vault_path(classification.primary_project)
+        touched_paths.append(project_path)
         try:
             existing_note = await toolkit.read_note(project_path)
             existing_state = parse_project_page(existing_note["content"])
@@ -283,14 +320,17 @@ async def _process_one_meeting(
         meeting_date_local=meeting_date_local,
     )
     await _write_note(toolkit, meeting_result.vault_path, meeting_result.content, writes)
+    touched_paths.append(meeting_result.vault_path)
     validation_ctx.new_wikilinks.append(meeting_result.vault_path.removesuffix(".md"))
     validation_ctx.existing_or_queued_pages.append(meeting_result.vault_path.removesuffix(".md"))
     validation_ctx.written_filenames.append(Path(meeting_result.vault_path).name)
+    meeting_extraction = _extraction_from_meeting(meeting_result)
 
     # --- §16/§19 project reconcile / new project -----------------------------
     projects_touched: list[str] = []
     if classification.primary_project:
         project_path = _project_vault_path(classification.primary_project)
+        touched_paths.append(project_path)
         existing_content = None
         existing_frontmatter = None
         locked = False
@@ -311,7 +351,7 @@ async def _process_one_meeting(
             locked=locked,
             project_name=classification.primary_project,
             meeting=meeting,
-            meeting_extraction=_extraction_from_meeting(meeting_result),
+            meeting_extraction=meeting_extraction,
             meeting_source_link=meeting_source_link,
             classification=classification,
         )
@@ -343,6 +383,10 @@ async def _process_one_meeting(
             )
             if entity_result.content and entity_result.vault_path:
                 await _write_note(toolkit, entity_result.vault_path, entity_result.content, writes)
+                touched_paths.append(entity_result.vault_path)
+                validation_ctx.new_wikilinks.append(entity_result.vault_path.removesuffix(".md"))
+                validation_ctx.existing_or_queued_pages.append(entity_result.vault_path.removesuffix(".md"))
+                validation_ctx.written_filenames.append(Path(entity_result.vault_path).name)
         except Exception:
             logger.warning("Entity resolve failed for %r", name, exc_info=True)
 
@@ -358,33 +402,45 @@ async def _process_one_meeting(
             )
             if concept_result.content and concept_result.vault_path:
                 await _write_note(toolkit, concept_result.vault_path, concept_result.content, writes)
+                touched_paths.append(concept_result.vault_path)
+                validation_ctx.new_wikilinks.append(concept_result.vault_path.removesuffix(".md"))
+                validation_ctx.existing_or_queued_pages.append(concept_result.vault_path.removesuffix(".md"))
+                validation_ctx.written_filenames.append(Path(concept_result.vault_path).name)
         except Exception:
             logger.warning("Concept resolve failed for %r", concept_name, exc_info=True)
 
     # --- §23 daily synthesis --------------------------------------------------
     daily_path = f"Diary/Daily Notes/{meeting.meeting_date}.md"
+    touched_paths.append(daily_path)
     existing_daily = None
     try:
         note = await toolkit.read_note(daily_path)
         existing_daily = note["content"]
     except FileNotFoundError:
         pass
+    action_item_lines = [
+        f"{a.action} - {a.owner} - {a.due_date} - {classification.primary_project or 'Unknown'}"
+        for a in meeting_extraction.action_items
+    ]
     daily_result = await daily_node.run_daily_synthesis(
         agent.cheap_client,
         existing_content=existing_daily,
         day=meeting.meeting_date,
         meeting_source_link=meeting_source_link,
         project_name=classification.primary_project,
-        new_project_updates=[],
-        new_decisions=[],
-        new_action_items=[],
-        new_risks=[],
+        new_project_updates=meeting_extraction.decisions + meeting_extraction.requirements,
+        new_decisions=meeting_extraction.decisions,
+        new_action_items=action_item_lines,
+        new_risks=meeting_extraction.risks,
         new_contradictions_and_review=contradiction_links,
     )
     await _write_note(toolkit, daily_result.vault_path, daily_result.content, writes)
+    touched_paths.append(daily_result.vault_path)
 
-    validation_ctx.private_accessed = False
-    validation_ctx.obsidian_dir_modified = False
+    validation_ctx.private_accessed = any(p.startswith("Private/") or p == "Private" for p in touched_paths)
+    validation_ctx.obsidian_dir_modified = any(
+        p.startswith(".obsidian/") or p == ".obsidian" for p in touched_paths
+    )
 
     validation_result = validate(validation_ctx)
     return _MeetingOutcome(

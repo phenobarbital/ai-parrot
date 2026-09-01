@@ -272,7 +272,7 @@ async def test_section_9_locked_page_and_human_notes_preserved(tmp_path: Path, m
     content = locked_page.read_text()
     assert "This project is intentionally frozen by the operator." in content
     assert not any(p.endswith("Legacy Project.md") for p in report.updated)
-    assert any("locked" in item.lower() or "Legacy" in item for item in report.review_items) or True
+    assert any("locked" in item.lower() and "Legacy Project" in item for item in report.review_items)
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +460,16 @@ async def test_section_28_query_verifies_against_obsidian(tmp_path: Path, monkey
 
     assert result.candidates[0].content is not None
     assert "Ship v2 by Q4." in result.answer.supported_facts
+
+    # The GraphIndex/PageIndex hit is never quoted as authority: the LLM
+    # call is grounded ONLY in the re-read, verified Obsidian page content
+    # (§28 step 3/D3) — not in the raw retrieval hit dict (node_id/score).
+    strong_client.invoke.assert_awaited_once()
+    call_kwargs = strong_client.invoke.await_args.kwargs
+    prompt_arg = strong_client.invoke.await_args.args[0]
+    assert result.candidates[0].content in prompt_arg
+    assert "n1" not in prompt_arg
+    assert "NEVER quoted as authority" in call_kwargs["system_prompt"]
 
 
 # ---------------------------------------------------------------------------

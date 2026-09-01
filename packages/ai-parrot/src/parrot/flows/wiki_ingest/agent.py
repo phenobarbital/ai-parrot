@@ -172,12 +172,14 @@ class FirefliesWikiKBAgent(Agent):
         """Run the §29 fast operational health check.
 
         Returns:
-            A ``HealthReport`` (spec Module 14) once
-            ``nodes/health.py`` is implemented.
+            The :class:`~.nodes.health.HealthReport`.
         """
+        from . import vault
         from .nodes.health import run_health
 
-        return await run_health(self)
+        toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
+        registry = vault.build_meeting_registry(conf.WIKI_KB_VAULT_PATH)
+        return await run_health(toolkit, registry, vault_path=conf.WIKI_KB_VAULT_PATH)
 
     async def lint(self, *, fix: bool = False) -> Any:
         """Run the §30 integrity lint (optionally applying safe auto-fixes).
@@ -186,23 +188,26 @@ class FirefliesWikiKBAgent(Agent):
             fix: When ``True``, apply safe auto-repairs.
 
         Returns:
-            A ``LintReport`` (spec Module 14) once
-            ``nodes/lint.py`` is implemented.
+            The :class:`~.nodes.lint.LintReport`.
         """
+        from . import vault
         from .nodes.lint import run_lint
 
-        return await run_lint(self, fix=fix)
+        toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
+        return await run_lint(toolkit, fix=fix)
 
     async def archive(self) -> Any:
         """Run the §31 archive workflow (rolling active window, D7).
 
         Returns:
-            An ``ArchiveReport`` (spec Module 14) once
-            ``nodes/archive.py`` is implemented.
+            The :class:`~.nodes.archive.ArchiveReport`.
         """
+        from . import vault
         from .nodes.archive import run_archive
 
-        return await run_archive(self)
+        toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
+        registry = vault.build_meeting_registry(conf.WIKI_KB_VAULT_PATH)
+        return await run_archive(toolkit, registry)
 
     async def build_graph_report(self, target: str) -> Any:
         """Run the §32 derived graph report workflow.
@@ -211,9 +216,10 @@ class FirefliesWikiKBAgent(Agent):
             target: The graph report target (contract-defined scope).
 
         Returns:
-            A ``GraphReport`` (spec Module 14) once
-            ``nodes/graph_report.py`` is implemented.
+            The :class:`~.nodes.graph_report.GraphReportResult`.
         """
+        from . import vault
         from .nodes.graph_report import run_graph_report
 
-        return await run_graph_report(self, target)
+        toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
+        return await run_graph_report(toolkit, target)
