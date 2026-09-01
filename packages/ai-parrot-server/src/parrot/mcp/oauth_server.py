@@ -27,6 +27,50 @@ from parrot.mcp.oauth import (
     VaultTokenStore,
 )
 
+#: RFC 9728 well-known path for protected-resource metadata (FEAT-477,
+#: TASK-2608). Vendored locally: the real constant
+#: (``navigator_auth.backends.oauth2.metadata.WELL_KNOWN_PRM_PATH``) lives
+#: only on an unmerged navigator-auth branch
+#: (``feat-FEAT-095-oauth2-for-mcp-agents``) and will not import in CI
+#: today. Switch ``_build_protected_resource_metadata`` below to the real
+#: import once that branch merges and releases — the fallback shape below
+#: matches the builder's documented output exactly, so doing so is a
+#: no-op for clients.
+WELL_KNOWN_PRM_PATH = "/.well-known/oauth-protected-resource"
+
+
+def _build_protected_resource_metadata(
+    resource: str, auth_servers: "list[str]", scopes: "list[str]"
+) -> Dict[str, Any]:
+    """Build an RFC 9728 protected-resource metadata document.
+
+    Prefers navigator-auth's real ``build_protected_resource_metadata``
+    when importable; falls back to a hand-rolled document with the
+    identical shape otherwise (see ``WELL_KNOWN_PRM_PATH``).
+
+    Args:
+        resource: This resource server's RFC 8707 audience URL.
+        auth_servers: Authorization server issuer URLs.
+        scopes: Supported scopes; the ``scopes_supported`` key is omitted
+            from the document entirely when this is empty.
+
+    Returns:
+        The RFC 9728 protected-resource metadata document.
+    """
+    try:
+        from navigator_auth.backends.oauth2.metadata import (
+            build_protected_resource_metadata,
+        )
+    except ImportError:
+        return {
+            "resource": resource.rstrip("/"),
+            "authorization_servers": [s.rstrip("/") for s in auth_servers],
+            "bearer_methods_supported": ["header"],
+            **({"scopes_supported": list(scopes)} if scopes else {}),
+        }
+    return build_protected_resource_metadata(resource, auth_servers, scopes)
+
+
 @dataclass
 class APIKeyRecord:
     """Record for an issued API key."""
@@ -578,6 +622,9 @@ class OAuthRoutesMixin:
         base = base if base else ""
         return {
             "discovery": f"{base}/.well-known/oauth-authorization-server",
+            # FEAT-477 TASK-2608: RFC 9728 protected-resource metadata,
+            # registered beside the RFC 8414 discovery route above.
+            "protected_resource": f"{base}{WELL_KNOWN_PRM_PATH}",
             "register": f"{base}/oauth/register",
             "authorize": f"{base}/oauth/authorize",
             "token": f"{base}/oauth/token",
@@ -586,6 +633,9 @@ class OAuthRoutesMixin:
     def _add_oauth_routes(self, router: web.UrlDispatcher):
         paths = self._oauth_paths()
         router.add_get(paths["discovery"], self._handle_discovery)
+        router.add_get(
+            paths["protected_resource"], self._handle_protected_resource_metadata
+        )
         router.add_post(paths["register"], self._handle_registration)
         router.add_get(paths["authorize"], self._handle_authorize)
         router.add_post(paths["token"], self._handle_token)
@@ -605,6 +655,24 @@ class OAuthRoutesMixin:
             "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
         }
         return web.json_response(metadata)
+
+    async def _handle_protected_resource_metadata(self, request: web.Request) -> web.Response:
+        """RFC 9728: Protected Resource Metadata (FEAT-477 TASK-2608, G3/G4).
+
+        Claude's connector discovery expects this document; nothing served
+        one before this task. Built via `_build_protected_resource_metadata`
+        — navigator-auth ships the real builder once FEAT-095 releases, this
+        server serves the document.
+        """
+        base_url = f"{request.scheme}://{request.host}"
+        resource = self.config.oauth2_resource_server_url or (
+            f"{base_url}{self.base_path}"
+        )
+        issuer = self.config.oauth2_issuer_url or base_url
+        scopes = getattr(self.config, "oauth_scope", None) or []
+        return web.json_response(
+            _build_protected_resource_metadata(resource, [issuer], scopes)
+        )
 
     async def _handle_registration(self, request: web.Request) -> web.Response:
         """RFC 7591: Dynamic Client Registration."""

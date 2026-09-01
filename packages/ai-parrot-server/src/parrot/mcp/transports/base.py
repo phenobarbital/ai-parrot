@@ -5,6 +5,7 @@ from typing import Any
 from aiohttp import web
 from parrot.mcp.config import AuthMethod, MCPServerConfig
 from parrot.mcp.oauth_server import (
+    WELL_KNOWN_PRM_PATH,
     APIKeyStore,
     ExternalOAuthValidator,
     OAuthAuthorizationServer,
@@ -218,12 +219,15 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
         if not api_key:
             return self._unauthorized_response(
                 "API key required",
-                'X-API-Key realm="mcp"'
+                'X-API-Key realm="mcp"',
+                request=request,
             )
 
         record = self.api_key_store.validate_key(api_key)
         if not record:
-            return self._unauthorized_response("Invalid or expired API key")
+            return self._unauthorized_response(
+                "Invalid or expired API key", request=request
+            )
 
         # Log session start
         self.api_key_store.log_session_start(api_key, record.user_id, time.time())
@@ -242,7 +246,9 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
             request.headers.get("Authorization")
         )
         if not self.oauth_server.is_token_valid(token):
-            return self._unauthorized_response("Valid Bearer token is required")
+            return self._unauthorized_response(
+                "Valid Bearer token is required", request=request
+            )
 
         return None
 
@@ -253,11 +259,13 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         token = self._extract_bearer_token(request.headers.get("Authorization"))
         if not token:
-            return self._unauthorized_response("Bearer token required")
+            return self._unauthorized_response("Bearer token required", request=request)
 
         token_info = await self.external_oauth.validate_token(token)
         if not token_info:
-            return self._unauthorized_response("Invalid or expired token")
+            return self._unauthorized_response(
+                "Invalid or expired token", request=request
+            )
 
         # Store token info in request
         request["mcp_user"] = {
@@ -278,11 +286,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
         try:
             userdata = await auth.get_session(request)
             if not userdata:
-                return web.json_response(
-                    {"error": "unauthorized", "error_description": "Session required"},
-                    status=401,
-                    headers={"WWW-Authenticate": 'Bearer realm="mcp"'}
-                )
+                return self._unauthorized_response("Session required", request=request)
 
             # Store user info in request
             request["mcp_user"] = userdata
@@ -290,11 +294,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         except Exception as e:  # noqa: BLE001
             self.logger.error("navigator-auth error: %s", e)
-            return web.json_response(
-                {"error": "unauthorized", "error_description": "Authentication failed"},
-                status=401,
-                headers={"WWW-Authenticate": 'Bearer realm="mcp"'}
-            )
+            return self._unauthorized_response("Authentication failed", request=request)
 
     def _extract_bearer_token(self, auth_header: str | None) -> str | None:
         """Extract bearer token from Authorization header."""
@@ -304,16 +304,60 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
             return None
         return auth_header.split(" ", 1)[1].strip()
 
+    def _resource_metadata_url(self, request: web.Request) -> str:
+        """Build the absolute RFC 9728 protected-resource metadata URL.
+
+        FEAT-477 TASK-2608 (G4): lets a 401'd client re-discover the
+        authorization server via the `resource_metadata` challenge
+        parameter.
+
+        Args:
+            request: The inbound request (used for scheme/host).
+
+        Returns:
+            The mixin's own `_oauth_paths()["protected_resource"]`
+            (base_path-prefixed) when `OAuthRoutesMixin` is present on
+            this instance — true for every HTTP-like transport — else the
+            bare well-known path (Unix/QUIC transports register no OAuth
+            routes to prefix).
+        """
+        base_url = f"{request.scheme}://{request.host}"
+        oauth_paths = getattr(self, "_oauth_paths", None)
+        path = oauth_paths()["protected_resource"] if oauth_paths else WELL_KNOWN_PRM_PATH
+        return f"{base_url}{path}"
+
     def _unauthorized_response(
         self,
         message: str,
-        www_authenticate: str = 'Bearer realm="mcp"'
+        www_authenticate: str = 'Bearer realm="mcp"',
+        *,
+        request: "web.Request | None" = None,
     ) -> web.Response:
-        """Create a 401 unauthorized response."""
+        """Create a 401 unauthorized response.
+
+        Args:
+            message: Human-readable, non-sensitive error description.
+            www_authenticate: Base challenge value.
+            request: The inbound request. When given, `resource_metadata=
+                "<PRM URL>"` (RFC 9728) is appended to the challenge so the
+                client can re-discover the AS (FEAT-477 TASK-2608, G4).
+                `None` (default) omits it — callers with no request
+                context at hand (none exist today; kept optional for
+                forward compatibility) fall back to the bare challenge.
+
+        Returns:
+            A 401 `web.Response`.
+        """
+        challenge = www_authenticate
+        if request is not None:
+            challenge = (
+                f'{www_authenticate}, resource_metadata='
+                f'"{self._resource_metadata_url(request)}"'
+            )
         return web.json_response(
             {"error": "unauthorized", "error_description": message},
             status=401,
-            headers={"WWW-Authenticate": www_authenticate}
+            headers={"WWW-Authenticate": challenge}
         )
 
 
