@@ -52,3 +52,50 @@ async def test_contract_conformance_full_ingest(): ...
 def test_no_revision_artifacts_exist(): ...
 def test_existing_agent_suites_unaffected(): ...
 ```
+
+### Completion Note
+
+`fixtures/wiki_kb_vault/`: a minimal committed contract-structured
+vault — `Private/secret.md` (the §2 rule 1 canary) and a pre-seeded
+`locked: true` `Projects/Legacy Project/Legacy Project.md` with a
+distinctive `## Human Notes` sentence (the §9/§19 rule 8/9 canary).
+Copied fresh into a `tmp_path` per test (never mutated in place).
+
+`test_wiki_kb_contract.py`: 15 tests, each named by the contract §
+it enforces, running the real `run_ingest()` pipeline against the
+fixture vault with deterministic stubbed strong/cheap clients + a fake
+Fireflies MCP tool_manager (no live API calls) — self-contained (does
+not import test helpers from `test_wiki_kb_ingest.py`, keeping this
+oracle independent of any other task's test internals):
+- §14/R3: re-ingesting a known id is a no-op skip; no `Revisions/`
+  folder, no `source-revision`/`revision-detected` strings anywhere.
+- §10/§17/D1/D2: raw provenance is plain paths; `primary_project ∈
+  projects`.
+- §14.2: raw summary bytes hash-match the frontmatter's `summary_sha256`.
+- §2 rule 1: the `Private/` canary file is untouched after ingest.
+- §9: the locked `Legacy Project` page's Human Notes survive byte-for-
+  byte; it is never in `report.updated`.
+- §34: a forced validation failure leaves no `ingest |` log entry.
+- §17/§19: meeting + project page headings present verbatim.
+- §8.2: meeting filename has no unsafe punctuation and uses the
+  meeting's dateString-derived date.
+- §8.1: `run_lint()` reports zero `broken_wikilink` findings post-ingest.
+- Rule #12: the renderer emits "None identified" rather than fabricating
+  content the mocked extraction never supplied.
+- §16: `run_project_reconcile()` returns `not_created` for an unjustified
+  new-project candidate.
+- G9: `FIREFLIES_WIKI_EMAIL_ENABLED` defaults to `False`.
+- §31: `run_archive()` moves a note older than a 7-day window.
+- §28/D3: `run_query()` resolves a GraphIndex-ranked candidate against
+  the real Obsidian page before answering.
+- G11: `test_existing_agent_suites_unaffected` shells out to `pytest` in
+  two separate subprocess groups (the repo-root `tests/` package and
+  `packages/ai-parrot/tests/` package both import as the dotted name
+  `tests.conftest` — a pre-existing, unrelated repo-layout ambiguity
+  that trips `ImportPathMismatchError` if mixed in one pytest process)
+  and asserts both groups exit 0.
+
+Verified: `pytest packages/ai-parrot/tests/integration/test_wiki_kb_contract.py`
+(15 passed, including the G11 regression subprocess check); `ruff
+check` clean; `mypy` clean; full wiki-kb suite across all 16 tasks (112
+tests) stays green.
