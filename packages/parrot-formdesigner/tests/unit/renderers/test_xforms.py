@@ -22,7 +22,6 @@ from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.base import AbstractFormRenderer
 from parrot_formdesigner.renderers.xforms import XFormsRenderer
 
-
 XF = "{http://www.w3.org/2002/xforms}"
 
 
@@ -94,11 +93,7 @@ async def test_required_field_has_bind(simple_form):
 async def test_constraint_min_max(simple_form):
     out = await XFormsRenderer().render(simple_form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("age")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("age"))
     constraint = bind.get("constraint", "")
     assert ">= 0" in constraint
     assert "<= 120" in constraint
@@ -125,11 +120,7 @@ async def test_max_length_constraint():
     )
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("comment")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("comment"))
     assert "string-length(.) <= 10" in bind.get("constraint", "")
 
 
@@ -247,11 +238,7 @@ async def test_relevant_xpath_for_simple_dependency():
     )
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("child")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("child"))
     rel = bind.get("relevant", "")
     assert "parent" in rel
     assert "show" in rel
@@ -303,11 +290,7 @@ async def test_xforms_bind_has_x_content_type():
     form = _make_single_field_form(field)
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("notes")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("notes"))
     assert bind.get("x-content-type") == "text/markdown"
 
 
@@ -321,11 +304,7 @@ async def test_xforms_bind_no_x_content_type_when_none():
     form = _make_single_field_form(field)
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("notes")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("notes"))
     assert bind.get("x-content-type") is None
 
 
@@ -340,11 +319,7 @@ async def test_xforms_bind_x_accept_content_types_comma_joined():
     form = _make_single_field_form(field)
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("answer")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("answer"))
     assert bind.get("x-accept-content-types") == "text/plain,application/json"
 
 
@@ -358,11 +333,7 @@ async def test_xforms_bind_no_x_accept_content_types_when_none():
     form = _make_single_field_form(field)
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("answer")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("answer"))
     assert bind.get("x-accept-content-types") is None
 
 
@@ -378,11 +349,7 @@ async def test_xforms_bind_both_content_type_attrs():
     form = _make_single_field_form(field)
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("doc")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("doc"))
     assert bind.get("x-content-type") == "text/html"
     assert bind.get("x-accept-content-types") == "text/html,text/markdown,text/plain"
 
