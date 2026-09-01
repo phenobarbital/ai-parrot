@@ -158,7 +158,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -170,8 +170,8 @@
       "parallelism_notes": "Own node/renderer files; parallel with entities/concepts/daily once meeting page exists.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2667-project-reconciler-and-new-project.md"
+      "completed_at": "2026-09-01T03:13:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2667-project-reconciler-and-new-project.md"
     },
     {
       "id": "TASK-2668",
