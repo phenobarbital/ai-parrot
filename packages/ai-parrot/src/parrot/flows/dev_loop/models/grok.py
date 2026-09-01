@@ -30,6 +30,10 @@ class GrokCodeDispatchProfile(BaseModel):
         default=True,
         description="Let the model request several tools in ONE turn.",
     )
+    restrict_command_paths: bool = Field(
+        default=True,
+        description="Reject run_command path arguments outside the worktree.",
+    )
     allowed_commands: List[str] = Field(
         default_factory=lambda: [
             "git",

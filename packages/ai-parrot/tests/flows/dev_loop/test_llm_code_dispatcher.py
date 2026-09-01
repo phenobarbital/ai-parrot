@@ -939,3 +939,248 @@ def test_missing_file_with_no_neighbours_suggests_nothing(monkeypatch, tmp_path)
 
     assert result["ok"] is False
     assert result["did_you_mean"] == []
+
+
+# ---------------------------------------------------------------------------
+# run_command was the one tool with no path checking: every other tool goes
+# through _resolve_repo_path. A guard-rail, not a jail — see
+# _validate_command_paths.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_command_rejects_an_absolute_path_in_another_checkout(
+    monkeypatch,
+    tmp_path,
+):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    result = await dispatcher._tool_run_command(
+        str(worktree),
+        {"argv": ["pytest", str(tmp_path / "main-clone" / "tests")]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "points outside the worktree" in result["stderr"]
+    assert "`cwd`" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_run_command_rejects_a_write_hidden_in_inline_python(
+    monkeypatch,
+    tmp_path,
+):
+    """`python -c` was the route around every other path guard."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    outside = tmp_path / "main-clone" / "stray.py"
+
+    result = await dispatcher._tool_run_command(
+        str(worktree),
+        {"argv": ["python", "-c", f"open({str(outside)!r}, 'w').write('x')"]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert str(outside) in result["stderr"]
+    assert not outside.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_command_rejects_relative_traversal(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt").mkdir()
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path / "wt"),
+        {"argv": ["sed", "-i", "s/a/b/", "../../etc/passwd"]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "points outside the worktree" in result["stderr"]
+
+
+def test_path_guard_allows_the_shapes_a_real_command_uses(monkeypatch, tmp_path):
+    """A pytest node id, a -k expression and relative paths must all pass."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    profile = LLMCodeDispatchProfile()
+
+    allowed = [
+        ["pytest", f"{worktree}/tests/test_x.py::TestCase::test_y"],
+        ["pytest", "-k", "content_type or audio", "packages/x/tests"],
+        ["python", "-c", "import sys; sys.path.insert(0,'packages/x/src')"],
+        ["ruff", "check", "packages/formdesigner"],
+        [str(tmp_path / "venv" / "bin" / "ruff"), "check", "."],
+    ]
+    for argv in allowed:
+        assert dispatcher._validate_command_paths(str(worktree), argv, profile) is None, argv
+
+
+def test_path_guard_catches_git_C_into_the_main_clone(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt").mkdir()
+
+    error = dispatcher._validate_command_paths(
+        str(tmp_path / "wt"),
+        ["git", "-C", str(tmp_path), "status"],
+        LLMCodeDispatchProfile(),
+    )
+
+    assert error is not None
+    assert "points outside the worktree" in error
+
+
+@pytest.mark.asyncio
+async def test_path_guard_can_be_turned_off(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt").mkdir()
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path / "wt"),
+        {"argv": ["ls", str(tmp_path)]},
+        LLMCodeDispatchProfile(restrict_command_paths=False),
+    )
+
+    assert result["ok"] is True
+
+
+class _RawFunction:
+    """A tool call whose `arguments` string is NOT valid JSON.
+
+    Models the real failure: the provider truncates the arguments at
+    `max_tokens` mid-string, so what arrives is a prefix of the intended
+    JSON.
+    """
+
+    def __init__(self, name: str, raw_arguments: str) -> None:
+        self.name = name
+        self.arguments = raw_arguments
+
+
+class _RawToolCall:
+    def __init__(self, call_id: str, name: str, raw_arguments: str) -> None:
+        self.id = call_id
+        self.function = _RawFunction(name, raw_arguments)
+
+
+def test_parse_tool_arguments_reports_size_not_payload():
+    truncated = '{"path": "t.py", "content": "' + "x" * 5000
+    parsed, error = LLMCodeDispatcher._parse_tool_arguments(
+        _RawToolCall("call_1", "write_file", truncated)
+    )
+
+    assert parsed is None
+    assert "not valid JSON" in error
+    assert str(len(truncated)) in error
+    # The whole truncated file must never be echoed into the log line.
+    assert "xxxx" not in error
+
+
+@pytest.mark.asyncio
+async def test_truncated_tool_call_is_fed_back_instead_of_killing_the_dispatch(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """A write_file cut off at max_tokens costs one turn, not the task."""
+    client = _FakeClient(
+        [
+            _Message(
+                tool_calls=[
+                    _RawToolCall(
+                        "call_1",
+                        "write_file",
+                        '{"path": "big.py", "content": "line\nline',
+                    )
+                ]
+            ),
+            _Message(
+                tool_calls=[
+                    _ToolCall(
+                        "call_2",
+                        "final_output",
+                        {
+                            "files_changed": ["big.py"],
+                            "commit_shas": ["abc1234"],
+                            "summary": "recovered after the truncated call",
+                        },
+                    )
+                ]
+            ),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    result = await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=4),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w2",
+        cwd=str(_patch_worktree_base),
+    )
+
+    assert result.summary == "recovered after the truncated call"
+    # Nothing was written from the discarded call.
+    assert not (_patch_worktree_base / "big.py").exists()
+
+    # The second round carried the feedback, naming the way out. (The
+    # fake client stores the SAME mutable list the loop appends to, so
+    # select by tool_call_id rather than by position.)
+    second_round = client.calls[1]["messages"]
+    tool_msg = next(m for m in second_round if m.get("tool_call_id") == "call_1")
+    payload = json.loads(tool_msg["content"])
+    assert payload["ok"] is False
+    assert payload["error_class"] == "TruncatedToolCall"
+    assert "DISCARDED" in payload["error"]
+    assert 'mode="append"' in payload["error"]
+
+    # The assistant echo carries a short marker, not the truncated blob.
+    assistant_msg = next(
+        m
+        for m in second_round
+        if m.get("role") == "assistant"
+        and m.get("tool_calls")
+        and m["tool_calls"][0]["id"] == "call_1"
+    )
+    echoed = json.loads(assistant_msg["tool_calls"][0]["function"]["arguments"])
+    assert "_discarded" in echoed
+
+
+def test_write_file_append_mode_extends_the_file(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    profile = LLMCodeDispatchProfile()
+
+    first = dispatcher._tool_write_file(
+        str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile
+    )
+    second = dispatcher._tool_write_file(
+        str(tmp_path),
+        {"path": "big.py", "content": "b = 2\n", "mode": "append"},
+        profile,
+    )
+
+    assert first["mode"] == "overwrite"
+    assert second["mode"] == "append"
+    assert second["created"] is False
+    assert second["bytes_written"] == 6
+    assert second["file_bytes"] == 12
+    assert (tmp_path / "big.py").read_text() == "a = 1\nb = 2\n"
+
+
+def test_write_file_rejects_unknown_mode(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    with pytest.raises(ValueError, match="overwrite"):
+        dispatcher._tool_write_file(
+            str(tmp_path),
+            {"path": "big.py", "content": "x", "mode": "prepend"},
+            LLMCodeDispatchProfile(),
+        )

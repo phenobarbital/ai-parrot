@@ -36,6 +36,19 @@ class LLMCodeDispatchProfile(BaseModel):
             "turns."
         ),
     )
+    restrict_command_paths: bool = Field(
+        default=True,
+        description=(
+            "Reject a run_command argv whose path arguments point outside "
+            "the worktree. A guard-rail, NOT a jail: the command still runs "
+            "as this process's user and a script can compute a path at "
+            "runtime. It closes the accidental route (a seat running "
+            "pytest/sed/git against the main clone by absolute path, or an "
+            "inline `python -c` that writes there), which is the one that "
+            "actually happens. Real isolation needs a container or "
+            "bubblewrap."
+        ),
+    )
     allowed_commands: List[str] = Field(
         default_factory=lambda: [
             "git",

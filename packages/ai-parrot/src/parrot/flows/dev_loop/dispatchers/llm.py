@@ -16,6 +16,7 @@ import difflib
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import time
@@ -284,6 +285,19 @@ class LLMCodeDispatcher:
                     message = self._response_message(response)
                     content = self._message_content(message)
                     tool_calls = self._message_tool_calls(message)
+                    finish_reason = self._finish_reason(response)
+                    if finish_reason == "length":
+                        # The round was cut off at `max_tokens`. Whatever
+                        # comes out of it is partial by construction — say
+                        # so once, here, so the operator does not have to
+                        # infer it from a downstream JSON parse error.
+                        self.logger.warning(
+                            "%s turn %d: response hit the output-token limit "
+                            "(max_tokens=%d) and was truncated",
+                            log_id,
+                            turn_index + 1,
+                            profile.max_tokens,
+                        )
                     usage, raw_usage = self._extract_usage(response)
                     if usage is not None:
                         accumulated = usage if accumulated is None else accumulated + usage
@@ -333,18 +347,71 @@ class LLMCodeDispatcher:
                         )
                         return result
 
+                    # Parse BEFORE echoing the assistant turn: the echo
+                    # itself used to re-parse (and therefore re-raise) —
+                    # so an unreadable payload killed the dispatch before
+                    # any feedback could be produced.
+                    parsed_calls = [(call, *self._parse_tool_arguments(call)) for call in tool_calls]
+
                     messages.append(
                         {
                             "role": "assistant",
                             "content": content,
-                            "tool_calls": [self._tool_call_to_openai_dict(call) for call in tool_calls],
+                            "tool_calls": [
+                                self._tool_call_to_openai_dict(
+                                    call,
+                                    parsed if parsed is not None else {"_discarded": arg_error},
+                                )
+                                for call, parsed, arg_error in parsed_calls
+                            ],
                         }
                     )
 
-                    for call in tool_calls:
+                    for call, parsed_args, arg_error in parsed_calls:
                         tool_call_id = self._tool_call_id(call)
                         tool_name = self._tool_call_name(call)
-                        tool_args = self._tool_call_arguments(call)
+                        if parsed_args is None:
+                            # Recoverable: hand the model the reason and
+                            # the way out, spend the turn, keep the seat.
+                            feedback = self._truncated_call_feedback(
+                                tool_name=tool_name,
+                                reason=arg_error,
+                                finish_reason=finish_reason,
+                                max_tokens=profile.max_tokens,
+                            )
+                            self.logger.warning(
+                                "%s turn %d: %s call discarded - %s",
+                                log_id,
+                                turn_index + 1,
+                                tool_name or "<unnamed>",
+                                arg_error,
+                            )
+                            truncated_result = {
+                                "ok": False,
+                                "error_class": "TruncatedToolCall",
+                                "error": feedback,
+                            }
+                            await self._publish_event(
+                                stream_key,
+                                kind="dispatch.tool_result",
+                                run_id=run_id,
+                                node_id=node_id,
+                                payload={
+                                    "tool_call_id": tool_call_id,
+                                    "tool_name": tool_name,
+                                    "result": truncated_result,
+                                },
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call_id,
+                                    "name": tool_name,
+                                    "content": json.dumps(truncated_result, ensure_ascii=False),
+                                }
+                            )
+                            continue
+                        tool_args = parsed_args
                         await self._publish_event(
                             stream_key,
                             kind="dispatch.tool_use",
@@ -388,7 +455,7 @@ class LLMCodeDispatcher:
                         if tool_result.get("ok") is False:
                             self.logger.warning(
                                 "%s turn %d: %s failed: %s",
-                                node_id,
+                                log_id,
                                 turn_index + 1,
                                 tool_name,
                                 str(
@@ -645,8 +712,16 @@ class LLMCodeDispatcher:
         for call in tool_calls:
             if self._tool_call_name(call) != "final_output":
                 continue
+            salvage_args_obj, arg_error = self._parse_tool_arguments(call)
+            if salvage_args_obj is None:
+                # A truncated salvage payload is the same failure the loop
+                # now survives mid-run; here there is no next turn to
+                # recover in, so it just becomes the reported reason
+                # instead of an uncaught DispatchExecutionError.
+                error = f"final_output arguments were unreadable: {arg_error}"
+                break
             try:
-                result = self._validate_final_tool(self._tool_call_arguments(call), output_model)
+                result = self._validate_final_tool(salvage_args_obj, output_model)
             except DispatchOutputValidationError as exc:
                 error = f"final_output failed validation: {exc}"
             except (TypeError, ValueError) as exc:
@@ -1022,12 +1097,26 @@ class LLMCodeDispatcher:
                 "repository, creating parent directories as needed. Prefer "
                 "this over `apply_patch` for a brand-new file or a rewrite: "
                 "`run_command` runs a bare argv with NO shell, so `cat > f`, "
-                "redirection and pipes do not work there.",
+                "redirection and pipes do not work there. A file bigger than "
+                "roughly 150 lines MUST be written in several calls — one "
+                'overwrite followed by `mode="append"` calls — because a '
+                "single call carrying the whole file runs past the "
+                "output-token limit and is discarded unread.",
                 {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
                         "content": {"type": "string"},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["overwrite", "append"],
+                            "default": "overwrite",
+                            "description": (
+                                "'overwrite' replaces the file (default); "
+                                "'append' adds to the end, for writing a "
+                                "large file across several calls."
+                            ),
+                        },
                     },
                     "required": ["path", "content"],
                     "additionalProperties": False,
@@ -1446,35 +1535,48 @@ class LLMCodeDispatcher:
         literal — each attempt costing a turn, and the `python -c` ones
         also spending the output-token budget twice on the same content.
 
+        ``mode="append"`` exists because one call cannot carry an
+        arbitrarily large file: past ``max_tokens`` the provider truncates
+        the tool call and the whole payload is unparseable and lost. A
+        file written in several appends costs a few extra turns and always
+        lands.
+
         Args:
             cwd: Worktree root; ``path`` may not escape it.
-            args: ``{"path": str, "content": str}``.
+            args: ``{"path": str, "content": str, "mode": "overwrite"|"append"}``.
             profile: Dispatch profile, read for its sandbox mode.
 
         Returns:
-            A tool-result dict with the relative path and bytes written.
+            A tool-result dict with the relative path, the mode used, the
+            bytes written by THIS call and the file's resulting size.
 
         Raises:
             ValueError: If the sandbox is read-only, ``content`` is not a
-                string, or ``path`` escapes ``cwd``.
+                string, ``mode`` is unknown, or ``path`` escapes ``cwd``.
         """
         if profile.sandbox != "workspace-write":
             raise ValueError("write_file requires workspace-write sandbox")
         content = args.get("content")
         if not isinstance(content, str):
             raise ValueError("content must be a string")
+        mode = str(args.get("mode") or "overwrite")
+        if mode not in ("overwrite", "append"):
+            raise ValueError("mode must be 'overwrite' or 'append'")
         path = self._resolve_repo_path(cwd, str(args["path"]))
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         existed = os.path.exists(path)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "a" if mode == "append" else "w", encoding="utf-8") as fh:
             fh.write(content)
+        written = len(content.encode("utf-8"))
         return {
             "ok": True,
             "path": os.path.relpath(path, cwd),
+            "mode": mode,
             "created": not existed,
-            "bytes_written": len(content.encode("utf-8")),
+            "bytes_written": written,
+            "file_bytes": os.path.getsize(path),
         }
 
     async def _tool_apply_patch(
@@ -1549,6 +1651,19 @@ class LLMCodeDispatcher:
                 # re-trying `cd x && pytest` forever.
                 "hint": self._rejected_command_hint(command, profile),
             }
+        path_error = self._validate_command_paths(cwd, argv, profile)
+        if path_error is not None:
+            return {
+                "ok": False,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": path_error,
+                "hint": (
+                    "Your tools and commands only reach this worktree. Use "
+                    "worktree-relative paths, or run_command's `cwd` "
+                    "argument to work in a subdirectory."
+                ),
+            }
         run_cwd = cwd
         if args.get("cwd"):
             run_cwd = self._resolve_repo_path(cwd, str(args["cwd"]))
@@ -1565,6 +1680,99 @@ class LLMCodeDispatcher:
         )
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
         return {**result, "ok": result["exit_code"] == 0}
+
+    #: A token is treated as a path when it starts one of these ways.
+    #: Anything else (a `-k` expression, a module name, a git ref) is left
+    #: alone — the guard must not reject legitimate non-path arguments.
+    _PATH_TOKEN_PREFIXES: Tuple[str, ...] = ("/", "./", "../", "~/")
+
+    #: Absolute paths embedded in an inline script (`python -c "..."`).
+    #: Deliberately conservative: a bare `/`-rooted, path-shaped run of
+    #: characters, not every string containing a slash.
+    _ABS_PATH_IN_TEXT = re.compile(r"(?<![\w/])(/(?:[\w.@+-]+/)*[\w.@+-]+)")
+
+    #: Flags whose VALUE is an inline program rather than a path.
+    _INLINE_CODE_FLAGS: frozenset = frozenset({"-c", "--command"})
+
+    def _validate_command_paths(
+        self,
+        cwd: str,
+        argv: Sequence[str],
+        profile: LLMCodeDispatchProfile,
+    ) -> Optional[str]:
+        """Reject an argv that reaches outside the worktree.
+
+        ``run_command`` was the one tool with no path checking at all: every
+        other tool resolves through :meth:`_resolve_repo_path`, but a seat
+        could run ``pytest /home/user/repo/...`` against the MAIN clone, or
+        ``python -c "open('/home/user/repo/x.py','w')..."`` and write there
+        — which is how stray files appear outside a worktree.
+
+        This is a guard-rail, not a jail. The command still runs as this
+        process's user, and a script can build a path at runtime that no
+        static check can see. It closes the accidental route, which is the
+        one observed in practice; real isolation needs a container.
+
+        Args:
+            cwd: The worktree every command is confined to.
+            argv: The command as the model wrote it.
+            profile: Dispatch profile; ``restrict_command_paths`` disables
+                this check.
+
+        Returns:
+            An error message naming the offending argument, or ``None``
+            when every path argument stays inside ``cwd``.
+        """
+        if not getattr(profile, "restrict_command_paths", True):
+            return None
+        base = os.path.abspath(cwd)
+        previous = ""
+        for index, token in enumerate(argv):
+            # argv[0] is the executable: already checked by basename against
+            # the allow-list, and legitimately lives in /usr/bin or .venv.
+            if index == 0:
+                previous = token
+                continue
+            for candidate in self._path_candidates(token, previous):
+                resolved = os.path.abspath(
+                    os.path.expanduser(candidate)
+                    if candidate.startswith("~")
+                    else os.path.join(base, candidate)
+                )
+                if not self._is_within(base, resolved):
+                    return (
+                        f"argument {candidate!r} points outside the worktree "
+                        f"({base}); commands may only touch it"
+                    )
+            previous = token
+        return None
+
+    @classmethod
+    def _path_candidates(cls, token: str, previous: str) -> List[str]:
+        """Extract the path-shaped parts of one argv token.
+
+        Args:
+            token: The argument to inspect.
+            previous: The argument before it, so ``-c``'s value is read as
+                inline code rather than as a path.
+
+        Returns:
+            Path-shaped strings found in ``token``; possibly empty.
+        """
+        if previous in cls._INLINE_CODE_FLAGS:
+            return cls._ABS_PATH_IN_TEXT.findall(token)
+
+        value = token
+        # `--rootdir=/x`, `-C/x`: the path is the value half.
+        if value.startswith("-") and "=" in value:
+            value = value.split("=", 1)[1]
+        elif value.startswith("-"):
+            return []
+        # `pytest path/test_x.py::TestCase::test_y` — strip the node id.
+        value = value.split("::", 1)[0]
+        if not value or not value.startswith(cls._PATH_TOKEN_PREFIXES):
+            return []
+        return [value]
 
     @staticmethod
     def _rejected_command_hint(
@@ -1829,8 +2037,27 @@ class LLMCodeDispatcher:
             return str(function.get("name") or "")
         return str(getattr(function, "name", "") or "")
 
-    @staticmethod
-    def _tool_call_arguments(call: Any) -> Dict[str, Any]:
+    @classmethod
+    def _parse_tool_arguments(cls, call: Any) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Parse one tool call's arguments WITHOUT raising.
+
+        A model that runs past ``max_tokens`` mid-tool-call returns a
+        syntactically truncated ``arguments`` string (observed while
+        writing a whole ~1000-line test file through ``write_file``). That
+        is a recoverable model mistake, not a broken dispatch: the caller
+        feeds the failure back as a tool result — exactly like an
+        ``apply_patch`` that did not apply — instead of throwing away a
+        seat that has already spent 30 turns of real work.
+
+        Args:
+            call: The provider's tool-call object (or dict).
+
+        Returns:
+            ``(arguments, "")`` on success, or ``(None, reason)`` when the
+            arguments are unusable. ``reason`` is operator/model-readable
+            and never contains the (possibly enormous) payload itself —
+            only its size.
+        """
         function = getattr(call, "function", None)
         if isinstance(call, dict):
             function = call.get("function")
@@ -1840,29 +2067,135 @@ class LLMCodeDispatcher:
         else:
             raw_args = getattr(function, "arguments", "{}")
         if isinstance(raw_args, dict):
-            return raw_args
+            return raw_args, ""
         if not isinstance(raw_args, str):
-            raise DispatchExecutionError(f"Tool arguments must be JSON object, got {type(raw_args).__name__}")
+            return None, f"tool arguments must be a JSON object, got {type(raw_args).__name__}"
         try:
             parsed = json.loads(raw_args)
         except ValueError as exc:
-            raise DispatchExecutionError(f"Could not parse tool arguments as JSON: {raw_args[:200]}") from exc
+            return None, (
+                f"arguments are not valid JSON ({exc}); "
+                f"{len(raw_args)} characters were received"
+            )
         if not isinstance(parsed, dict):
-            raise DispatchExecutionError("Tool arguments JSON must be an object")
+            return None, "tool arguments JSON must be an object"
+        return parsed, ""
+
+    @classmethod
+    def _tool_call_arguments(cls, call: Any) -> Dict[str, Any]:
+        """Raising wrapper around :meth:`_parse_tool_arguments`.
+
+        Kept for the call sites where a bad payload genuinely is fatal.
+
+        Args:
+            call: The provider's tool-call object (or dict).
+
+        Returns:
+            The parsed arguments object.
+
+        Raises:
+            DispatchExecutionError: If the arguments are missing, not
+                JSON, or not a JSON object.
+        """
+        parsed, error = cls._parse_tool_arguments(call)
+        if parsed is None:
+            raise DispatchExecutionError(f"Could not parse tool arguments: {error}")
         return parsed
 
-    def _tool_call_to_openai_dict(self, call: Any) -> Dict[str, Any]:
+    def _tool_call_to_openai_dict(
+        self,
+        call: Any,
+        arguments: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Render a tool call for the assistant turn appended to ``messages``.
+
+        Args:
+            call: The provider's tool-call object (or dict).
+            arguments: Pre-parsed arguments, when the caller already
+                parsed them. ``None`` means "parse here"; a call whose
+                arguments cannot be parsed is echoed back as a short
+                marker object rather than re-injecting a truncated
+                multi-kilobyte string into the context for the rest of
+                the loop.
+
+        Returns:
+            An OpenAI-shaped ``tool_calls`` entry.
+        """
+        if arguments is None:
+            arguments, error = self._parse_tool_arguments(call)
+            if arguments is None:
+                arguments = {"_discarded": error}
         return {
             "id": self._tool_call_id(call),
             "type": "function",
             "function": {
                 "name": self._tool_call_name(call),
-                "arguments": json.dumps(
-                    self._tool_call_arguments(call),
-                    ensure_ascii=False,
-                ),
+                "arguments": json.dumps(arguments, ensure_ascii=False),
             },
         }
+
+    @staticmethod
+    def _finish_reason(response: Any) -> str:
+        """Best-effort ``finish_reason`` of the first choice.
+
+        Args:
+            response: The raw chat-completion response.
+
+        Returns:
+            e.g. ``"stop"``, ``"tool_calls"``, ``"length"``; ``""`` when
+            the backend does not report one.
+        """
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return ""
+        return str(getattr(choices[0], "finish_reason", "") or "")
+
+    def _truncated_call_feedback(
+        self,
+        *,
+        tool_name: str,
+        reason: str,
+        finish_reason: str,
+        max_tokens: int,
+    ) -> str:
+        """Build the tool-result text handed back for an unusable call.
+
+        Says what happened, why (the output-token ceiling), and the ONE
+        concrete way out — chunked ``write_file`` appends — so the model
+        does not simply resend the same oversized call and burn the rest
+        of its budget.
+
+        Args:
+            tool_name: The tool whose arguments could not be read.
+            reason: From :meth:`_parse_tool_arguments`.
+            finish_reason: The round's finish reason, when reported.
+            max_tokens: The profile's per-response output ceiling.
+
+        Returns:
+            The tool-result ``error`` string.
+        """
+        cut_off = finish_reason == "length"
+        parts = [
+            f"{tool_name}: {reason}.",
+            (
+                f"Your reply hit the output-token limit (max_tokens={max_tokens}) "
+                "and was cut off mid-call."
+                if cut_off
+                else f"The call arrived incomplete (max_tokens={max_tokens})."
+            ),
+            "The call was DISCARDED - nothing was written. Do not resend it unchanged.",
+        ]
+        if tool_name in ("write_file", "apply_patch"):
+            parts.append(
+                "Write the file in pieces instead: call write_file with the "
+                'first ~150 lines, then call write_file again with mode="append" '
+                "for each following piece. To change an existing file, use "
+                "edit_file on the one region that changes rather than "
+                "rewriting the whole file."
+            )
+        else:
+            parts.append("Retry with a smaller payload.")
+        return " ".join(parts)
 
     @staticmethod
     def _output_field_blocks(output_model: Type[BaseModel]) -> Tuple[str, str]:
