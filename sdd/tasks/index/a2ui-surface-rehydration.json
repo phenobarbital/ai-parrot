@@ -91,7 +91,7 @@
       "feature_id": "FEAT-492",
       "feature": "a2ui-surface-rehydration",
       "spec": "sdd/specs/a2ui-surface-rehydration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Touches core mixin + parrot_tools only; no files shared with TASK-2702/2703 (server handlers). Can run alongside them once TASK-2700 is done.",
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2704-publish-surface-writers.md"
+      "completed_at": "2026-09-01T18:38:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2704-publish-surface-writers.md"
     },
     {
       "id": "TASK-2705",
