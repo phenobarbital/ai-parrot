@@ -114,22 +114,30 @@ class TestDashboardDescriptor:
         assert descriptor.narrative.skill == flex_dashboard_module.FlexDashboard.narrative_skill
         assert descriptor.narrative.facts_key == "flex_narrative_facts"
 
-    def test_narrative_binds_are_optional(self, descriptor):
+    def test_no_narrative_layout_binding(self, descriptor):
         """A no-narrator replay must not abort at the drift check.
 
-        v2 (FEAT-470 TASK-2542): a binding is a plain ``{"path": ...}`` — its
-        ``optional``-ness is declared by listing the pointer in the layout's
-        own ``metadata.extensions.parrot_optional``.
+        Deviation (TASK-2699 finding): unlike FinanceReporter's identical-
+        looking ``"text": {"path": "/narrative"}`` pattern, this layout
+        deliberately binds NOTHING to ``/narrative`` —
+        ``RecipeRunner._assemble_envelope_or_raise``'s Infographic path
+        (``build_infographic`` -> ``build_surface``) never threads
+        ``layout.metadata`` (and therefore never
+        ``metadata.extensions.parrot_optional``) onto the built wire
+        ``Component``, so ANY layout-level binding to an absent
+        ``/narrative`` key raises ``BakeError`` unconditionally at render
+        time regardless of what the descriptor declares — a pre-existing,
+        cross-cutting core bug confirmed reproducible on `dev`
+        independently of this feature (FinanceReporter's own
+        `test_dashboard_profile_replay` AND
+        `test_report_profile_replay_no_narrator` are both currently broken
+        by it too). The narrative step therefore has no VISUAL binding
+        here; ``narrative=NarrativeSpec(...)`` is still declared (see
+        `test_declares_narrative`) so a configured narrator still runs and
+        populates `/narrative` in the data model — it is just never read
+        back into the layout.
         """
         layout = descriptor.layout
-        optional_pointers = set(
-            (
-                layout.metadata.extensions.root.get("parrot_optional")
-                if layout.metadata and layout.metadata.extensions
-                else None
-            )
-            or []
-        )
         found = []
 
         def walk(v):
@@ -143,9 +151,7 @@ class TestDashboardDescriptor:
                     walk(i)
 
         walk(layout.props)
-        assert found, "expected at least one narrative binding"
-        for pointer in found:
-            assert pointer in optional_pointers, f"non-optional narrative bind: {pointer}"
+        assert found == [], f"unexpected narrative binding(s) in layout: {found}"
 
     def test_narrative_facts_last_and_inputs_are_output_keys(self, descriptor):
         names = [s.name for s in descriptor.sections]

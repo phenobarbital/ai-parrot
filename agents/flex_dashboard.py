@@ -520,7 +520,33 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
                     },
                     {
                         "heading": "Proximity Staffing",
-                        "text": {"path": "/narrative"},
+                        # NOTE (TASK-2699 finding): NOT binding a "text":
+                        # {"path": "/narrative"} field here, unlike
+                        # FinanceReporter's identical-looking pattern
+                        # (finance_reporter.py's "Top Movers" section) —
+                        # `RecipeRunner._assemble_envelope_or_raise`'s
+                        # Infographic path (`build_infographic` ->
+                        # `build_surface`) never threads `layout.metadata`
+                        # (and therefore never `metadata.extensions.
+                        # parrot_optional`) onto the built wire `Component`,
+                        # so ANY layout-level binding to an absent
+                        # `/narrative` key raises `BakeError` unconditionally
+                        # at render time — regardless of the optional-paths
+                        # declared on `LayoutSpec.metadata`. This is a
+                        # pre-existing, cross-cutting core bug (confirmed
+                        # reproducible on `dev`, unrelated to FEAT-491):
+                        # FinanceReporter's OWN e2e tests for this exact
+                        # behavior — `test_dashboard_profile_replay` AND
+                        # `test_report_profile_replay_no_narrator` — are
+                        # BOTH independently broken by it too. Filing a fix
+                        # in core is out of this feature's scope (spec §1
+                        # Non-Goals: "No changes to core packages"); the
+                        # `narrative=` `NarrativeSpec` below is kept (a
+                        # narrator, if ever configured, still runs and
+                        # populates `/narrative` in the data model — it
+                        # just is not bound anywhere in this layout, so its
+                        # ABSENCE never triggers the runner's broken
+                        # optional-binding check in the first place).
                         "components": [
                             {
                                 "component": "Map",
@@ -570,7 +596,10 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
                         ],
                     },
                 ],
-                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
+                # No `metadata.extensions.parrot_optional` entry: nothing in
+                # this layout binds `/narrative` (see the Proximity Staffing
+                # section's NOTE above) — there is no optional pointer to
+                # declare.
             ),
             narrative=cls._narrative_spec(),
         )
