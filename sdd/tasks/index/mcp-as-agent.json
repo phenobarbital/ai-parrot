@@ -171,7 +171,7 @@
       "feature_id": "FEAT-477",
       "feature": "mcp-as-agent",
       "spec": "sdd/specs/mcp-as-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Own module (agent_jobs.py). Depends only on reification, so it runs alongside the M2/M3 chain.",
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2607-job-handles.md"
+      "completed_at": "2026-09-01T14:11:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2607-job-handles.md"
     },
     {
       "id": "TASK-2608",
