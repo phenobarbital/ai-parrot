@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import stat
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
@@ -255,13 +256,40 @@ def _install_permissions(root: Path) -> list[str]:
     return actions
 
 
+def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
+    """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
+
+    Managed-entry detection rule (FEAT-485): an entry is "ours" iff its
+    ``command`` ends with the resolved ``parrot`` binary name AND its
+    ``args`` match the managed toolkit shape ``["mcp-local", name]``. A
+    ``parrot-<name>`` key whose content does not match this shape is a
+    foreign entry with a colliding name — it must never be overwritten or
+    removed by reconciliation.
+    """
+    if not isinstance(entry, dict):
+        return False
+    command = entry.get("command")
+    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
+    return (
+        isinstance(command, str)
+        and command.endswith(bin_name)
+        and entry.get("args") == ["mcp-local", name]
+    )
+
+
 def _install_mcp_json(root: Path) -> str:
-    """Write/refresh the wikitoolkit entry in the project's .mcp.json.
+    """Write/refresh the wikitoolkit entry plus one managed entry per
+    enabled toolkit section in the project's .mcp.json (FEAT-485).
 
     ``.mcp.json`` lives at the project root (NOT inside ``.claude/``) and
-    may already carry entries for other MCP servers — only the
-    ``wikitoolkit`` key is ever touched here.  The command is resolved to
-    an absolute path so the MCP server starts in worktrees too.
+    may already carry entries for other MCP servers. Reconciliation only
+    ever touches the ``"wikitoolkit"`` key (unchanged, byte-identical
+    behavior) and managed ``"parrot-<name>"`` keys — see
+    :func:`_is_managed_toolkit_entry` for the detection rule. Any other
+    entry, and any ``parrot-<name>`` entry that does not match the managed
+    shape, is left completely untouched; a colliding foreign
+    ``parrot-<name>`` name is reported as a warning and skipped instead of
+    being overwritten.
     """
     path = root / ".mcp.json"
     if path.exists():
@@ -279,25 +307,76 @@ def _install_mcp_json(root: Path) -> str:
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
-    if servers.get("wikitoolkit") == entry:
-        return ".mcp.json — wikitoolkit entry already current"
 
-    action = (
-        ".mcp.json — wikitoolkit entry updated" if "wikitoolkit" in servers else ".mcp.json — wikitoolkit entry added"
-    )
-    servers["wikitoolkit"] = entry
+    changed = False
+    if servers.get("wikitoolkit") == entry:
+        wikitoolkit_status = "wikitoolkit entry already current"
+    else:
+        wikitoolkit_status = "wikitoolkit entry updated" if "wikitoolkit" in servers else "wikitoolkit entry added"
+        servers["wikitoolkit"] = entry
+        changed = True
+
+    # --- toolkit reconciliation (FEAT-485) --------------------------------
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    cfg = load_toolkits_config(root)
+    enabled_names = {name for name, section in cfg.toolkits.items() if section.enabled}
+
+    added: list[str] = []
+    updated: list[str] = []
+    removed: list[str] = []
+
+    for name in sorted(enabled_names):
+        key = f"parrot-{name}"
+        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name])
+        existing = servers.get(key)
+        if existing == toolkit_entry:
+            continue
+        if existing is not None and not _is_managed_toolkit_entry(existing, root, name):
+            print(
+                f"Warning: .mcp.json — '{key}' already exists and was not written by "
+                "`parrot claude install`; leaving it untouched.",
+                file=sys.stderr,
+            )
+            continue
+        servers[key] = toolkit_entry
+        changed = True
+        (updated if existing is not None else added).append(key)
+
+    for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
+        name = key[len("parrot-") :]
+        if name in enabled_names:
+            continue
+        if _is_managed_toolkit_entry(servers[key], root, name):
+            del servers[key]
+            changed = True
+            removed.append(key)
+
+    if not changed:
+        return f".mcp.json — {wikitoolkit_status}"
+
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return action
+
+    parts = [wikitoolkit_status]
+    if added:
+        parts.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
+    if updated:
+        parts.append(f"{len(updated)} toolkit entry(s) updated ({', '.join(updated)})")
+    if removed:
+        parts.append(f"{len(removed)} toolkit entry(s) removed ({', '.join(removed)})")
+    return ".mcp.json — " + "; ".join(parts)
 
 
 def _uninstall_mcp_json(root: Path) -> str | None:
-    """Remove the wikitoolkit entry from .mcp.json.
+    """Remove the wikitoolkit entry and all managed toolkit entries.
 
-    Preserves any other MCP server entries; removes the file entirely
-    only when it becomes empty. Returns ``None`` (nothing to report) when
-    the file is absent or already carries no wikitoolkit entry — mirrors
-    every other uninstall step in this module, which only appends to
-    ``actions`` when something was actually removed.
+    Preserves any other MCP server entries (including foreign
+    ``parrot-<name>`` entries that do not match the managed shape);
+    removes the file entirely only when it becomes empty. Returns
+    ``None`` (nothing to report) when the file is absent or already
+    carries no managed entries — mirrors every other uninstall step in
+    this module, which only appends to ``actions`` when something was
+    actually removed.
     """
     path = root / ".mcp.json"
     if not path.exists():
@@ -310,17 +389,32 @@ def _uninstall_mcp_json(root: Path) -> str | None:
         return None
 
     servers = data.get("mcpServers", {})
-    if not isinstance(servers, dict) or "wikitoolkit" not in servers:
+    if not isinstance(servers, dict):
         return None
 
-    del servers["wikitoolkit"]
+    removed: list[str] = []
+    if "wikitoolkit" in servers:
+        del servers["wikitoolkit"]
+        removed.append("wikitoolkit")
+
+    for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
+        name = key[len("parrot-") :]
+        if _is_managed_toolkit_entry(servers[key], root, name):
+            del servers[key]
+            removed.append(key)
+
+    if not removed:
+        return None
+
     if not servers:
         data.pop("mcpServers", None)
     if not data:
         path.unlink()
         return ".mcp.json — removed (was empty)"
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return ".mcp.json — wikitoolkit entry removed"
+    if removed == ["wikitoolkit"]:
+        return ".mcp.json — wikitoolkit entry removed"
+    return f".mcp.json — managed entries removed ({', '.join(removed)})"
 
 
 def _install_slash_command(root: Path) -> str:
