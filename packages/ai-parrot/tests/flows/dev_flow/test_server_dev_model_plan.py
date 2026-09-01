@@ -9,6 +9,7 @@ because ``examples/`` is not a package) and drives it with
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -571,3 +572,88 @@ class TestUiSurfacesTheOverride:
         assert "restart the console" not in section
         assert "per-run" in section
         assert "resumed run" in section
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2692: end-to-end coverage spanning the whole feature
+# ---------------------------------------------------------------------------
+#
+# Every earlier task's tests exercise their own layer (the runner in
+# isolation, the endpoint's synchronous response shape) — this is the one
+# test that closes the loop the spec's acceptance criteria actually care
+# about: an HTTP request reaches `build_dev_flow` with the submitted plan,
+# through the REAL recovery-enabled runner (not the lightweight `_StubFlow`
+# every other test in this file uses), the same way the production console
+# is wired (`dev_loop_flow_kwargs` always set — `server_dev.py:1061`).
+
+
+async def _wait_for(predicate, timeout: float = 2.0):
+    """Poll `predicate()` until truthy or `timeout` elapses (mirrors
+    test_server_dev.py's `_wait_for_context`, generalised to any check —
+    the background run task here calls a monkeypatched `build_dev_flow`,
+    not something with a `.contexts` list to poll directly)."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition was never met")
+
+
+class TestEndToEndAppliesThePerSeatSelection:
+    """spec §4: `test_run_endpoint_applies_ideation_model` — a console run
+    with a differing `research_primary` builds ITS flow with that model,
+    through the real `DevFlowRunner` recovery path (TASK-2686), reached
+    from the HTTP layer (TASK-2688)."""
+
+    async def test_run_endpoint_applies_ideation_model_end_to_end(self, make_client, monkeypatch):
+        captured: list[dict] = []
+
+        def fake_build_dev_flow(**kwargs):
+            captured.append(kwargs)
+            return _StubFlow()
+
+        target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+        monkeypatch.setitem(target_globals, "build_dev_flow", fake_build_dev_flow)
+
+        client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+
+        resp = await client.post(
+            "/api/flow/run",
+            json=_nl_form(research_primary="claude-sonnet-5"),
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["model_plan"]["research_primary"] == "claude-sonnet-5"
+        assert body["model_plan_ignored"] == []
+
+        await _wait_for(lambda: len(captured) >= 1)
+        assert captured[0]["model_plan"].research_primary == "claude-sonnet-5"
+
+    async def test_run_endpoint_without_a_plan_reaches_build_dev_flow_unchanged(self, make_client, monkeypatch):
+        """Control: no submission -> the server's own construction-time
+        model_plan reaches build_dev_flow, exactly as before this feature."""
+        captured: list[dict] = []
+
+        def fake_build_dev_flow(**kwargs):
+            captured.append(kwargs)
+            return _StubFlow()
+
+        target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+        monkeypatch.setitem(target_globals, "build_dev_flow", fake_build_dev_flow)
+
+        # A real (if minimal) DevFlowModelPlan — not a bare MagicMock:
+        # `_execution_policy_for_fingerprint()` reads real attributes off
+        # `dev_loop_flow_kwargs["model_plan"]` (e.g. `.dev_pool`) before
+        # `run()` ever reaches `flow_factory`, and a mock does not behave
+        # like the real model there.
+        server_default = DevFlowModelPlan(research_primary="claude-opus-5")
+        client = await make_client(
+            dev_loop_flow_kwargs={"skip_qa": False, "model_plan": server_default},
+        )
+
+        resp = await client.post("/api/flow/run", json=_nl_form())
+        assert resp.status == 200
+
+        await _wait_for(lambda: len(captured) >= 1)
+        assert captured[0]["model_plan"] is server_default
