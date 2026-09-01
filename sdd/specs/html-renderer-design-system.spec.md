@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-493
 **Date**: 2026-09-01
 **Author**: Jesus Lara (jlara@trocglobal.com) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
