@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 
 from parrot.tools.toolkit import AbstractToolkit
 
-from .driver_context import DriverRegistry, driver_context, _quit_driver
+from .driver_context import DriverRegistry, _quit_driver, driver_context
 from .drivers.abstract import AbstractDriver
 from .executor import execute_plan_steps
 from .models import ScrapingResult
@@ -45,12 +45,12 @@ class ExtractionScore:
             second LLM pass is likely to improve it.
     """
 
-    __slots__ = ("value", "reasons", "needs_refinement")
+    __slots__ = ("needs_refinement", "reasons", "value")
 
     def __init__(
         self,
         value: float,
-        reasons: List[str],
+        reasons: list[str],
         needs_refinement: bool,
     ) -> None:
         self.value = value
@@ -77,14 +77,14 @@ def _score_extraction(result: Any) -> ExtractionScore:
     - Step errors halve the final score — something failed that
       probably affected the result.
     """
-    reasons: List[str] = []
+    reasons: list[str] = []
     extracted = getattr(result, "extracted_data", None) or {}
 
     if not extracted:
         reasons.append("no extracted_data produced")
         return ExtractionScore(0.0, reasons, needs_refinement=True)
 
-    per_key_scores: List[float] = []
+    per_key_scores: list[float] = []
     for name, value in extracted.items():
         if value is None:
             reasons.append(f"{name!r}: null")
@@ -96,7 +96,7 @@ def _score_extraction(result: Any) -> ExtractionScore:
                 reasons.append(f"{name!r}: 0 rows")
                 per_key_scores.append(0.0)
                 continue
-            row_scores: List[float] = []
+            row_scores: list[float] = []
             for row in value:
                 if isinstance(row, dict):
                     if not row:
@@ -174,7 +174,7 @@ def _format_extraction_summary(result: Any) -> str:
     Meant for the refinement prompt — shows row counts and a peek at
     the first row so the LLM can see the shape of what it produced.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     extracted = getattr(result, "extracted_data", None) or {}
     if not extracted:
         return "(no extracted_data)"
@@ -208,7 +208,7 @@ def _format_step_errors(result: Any) -> str:
     errors = md.get("step_errors") or []
     if not errors:
         return ""
-    lines: List[str] = []
+    lines: list[str] = []
     for e in errors:
         idx = e.get("step_index", "?")
         action = e.get("action", "?")
@@ -225,7 +225,7 @@ def _short(v: Any, limit: int = 60) -> str:
     return s
 
 
-def _has_non_empty_values(extracted: Dict[str, Any]) -> bool:
+def _has_non_empty_values(extracted: dict[str, Any]) -> bool:
     """Return True when at least one key has a truthy value.
 
     A ``selector`` row counts as empty when every field in it is None
@@ -297,6 +297,8 @@ class WebScrapingToolkit(AbstractToolkit):
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
+    llm_dependent_tools: frozenset = frozenset({"plan_create"})
+
     def __init__(
         self,
         driver_type: Literal["selenium", "playwright"] = "selenium",
@@ -306,16 +308,16 @@ class WebScrapingToolkit(AbstractToolkit):
         headless: bool = True,
         session_based: bool = False,
         mobile: bool = False,
-        mobile_device: Optional[str] = None,
+        mobile_device: str | None = None,
         auto_install: bool = True,
         default_timeout: int = 10,
         retry_attempts: int = 3,
         delay_between_actions: float = 1.0,
         overlay_housekeeping: bool = True,
         disable_images: bool = False,
-        custom_user_agent: Optional[str] = None,
-        plans_dir: Optional[Union[str, Path]] = None,
-        llm_client: Optional[Any] = None,
+        custom_user_agent: str | None = None,
+        plans_dir: str | Path | None = None,
+        llm_client: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -335,8 +337,8 @@ class WebScrapingToolkit(AbstractToolkit):
             custom_user_agent=custom_user_agent,
         )
         self._session_based = session_based
-        self._session_driver: Optional[AbstractDriver] = None
-        self._registry: Optional[PlanRegistry] = None
+        self._session_driver: AbstractDriver | None = None
+        self._registry: PlanRegistry | None = None
         self._llm_client = llm_client
         self._plans_dir = Path(plans_dir) if plans_dir else Path("scraping_plans")
         self.logger = logging.getLogger(__name__)
@@ -387,9 +389,9 @@ class WebScrapingToolkit(AbstractToolkit):
     async def _try_resolve_cached_plan(
         self,
         url: str,
-        plan: Optional[Union[ScrapingPlan, Dict[str, Any]]] = None,
-        objective: Optional[str] = None,
-    ) -> Optional[ScrapingPlan]:
+        plan: ScrapingPlan | dict[str, Any] | None = None,
+        objective: str | None = None,
+    ) -> ScrapingPlan | None:
         """Return an explicit or cached plan WITHOUT calling the LLM.
 
         Used by ``scrape()`` so we know upfront whether plan generation
@@ -429,8 +431,8 @@ class WebScrapingToolkit(AbstractToolkit):
     async def _resolve_plan(
         self,
         url: str,
-        plan: Optional[Union[ScrapingPlan, Dict[str, Any]]] = None,
-        objective: Optional[str] = None,
+        plan: ScrapingPlan | dict[str, Any] | None = None,
+        objective: str | None = None,
     ) -> ScrapingPlan:
         """Plan resolution chain: explicit -> cached -> auto-generate -> error.
 
@@ -488,9 +490,9 @@ class WebScrapingToolkit(AbstractToolkit):
         self,
         url: str,
         objective: str,
-        hints: Optional[Dict[str, Any]] = None,
+        hints: dict[str, Any] | None = None,
         force_regenerate: bool = False,
-        snapshot: Optional[PageSnapshot] = None,
+        snapshot: PageSnapshot | None = None,
         auto_snapshot: bool = True,
     ) -> ScrapingPlan:
         """Create a scraping plan for a URL via LLM or cache.
@@ -602,7 +604,7 @@ class WebScrapingToolkit(AbstractToolkit):
                 message=f"Save failed: {exc}",
             )
 
-    async def plan_load(self, url_or_name: str) -> Optional[ScrapingPlan]:
+    async def plan_load(self, url_or_name: str) -> ScrapingPlan | None:
         """Load a plan by URL (registry lookup) or by name.
 
         Args:
@@ -637,9 +639,9 @@ class WebScrapingToolkit(AbstractToolkit):
 
     async def plan_list(
         self,
-        domain_filter: Optional[str] = None,
-        tag_filter: Optional[str] = None,
-    ) -> List[PlanSummary]:
+        domain_filter: str | None = None,
+        tag_filter: str | None = None,
+    ) -> list[PlanSummary]:
         """List registered plans with optional filtering.
 
         Args:
@@ -651,7 +653,7 @@ class WebScrapingToolkit(AbstractToolkit):
         """
         registry = await self._ensure_registry()
         entries = registry.list_all()
-        results: List[PlanSummary] = []
+        results: list[PlanSummary] = []
 
         for entry in entries:
             if domain_filter and entry.domain != domain_filter:
@@ -698,12 +700,12 @@ class WebScrapingToolkit(AbstractToolkit):
     async def scrape(
         self,
         url: str,
-        plan: Optional[Union[ScrapingPlan, Dict[str, Any]]] = None,
-        objective: Optional[str] = None,
-        steps: Optional[List[Dict[str, Any]]] = None,
-        selectors: Optional[List[Dict[str, Any]]] = None,
+        plan: ScrapingPlan | dict[str, Any] | None = None,
+        objective: str | None = None,
+        steps: list[dict[str, Any]] | None = None,
+        selectors: list[dict[str, Any]] | None = None,
         save_plan: bool = False,
-        browser_config_override: Optional[Dict[str, Any]] = None,
+        browser_config_override: dict[str, Any] | None = None,
         max_refinement_attempts: int = 1,
     ) -> ScrapingResult:
         """Scrape a single page using a plan, raw steps, or auto-generation.
@@ -870,11 +872,11 @@ class WebScrapingToolkit(AbstractToolkit):
         self,
         start_url: str,
         depth: int = 1,
-        max_pages: Optional[int] = None,
-        follow_selector: Optional[str] = None,
-        follow_pattern: Optional[str] = None,
-        plan: Optional[Union[ScrapingPlan, Dict[str, Any]]] = None,
-        objective: Optional[str] = None,
+        max_pages: int | None = None,
+        follow_selector: str | None = None,
+        follow_pattern: str | None = None,
+        plan: ScrapingPlan | dict[str, Any] | None = None,
+        objective: str | None = None,
         save_plan: bool = False,
         concurrency: int = 1,
     ) -> Any:
