@@ -31,6 +31,13 @@ from** ``server.py`` rather than copied, so the two consoles cannot drift.
 Deliberately NOT imported: ``_build_log_toolkits`` (CloudWatch) and
 ``_build_brief_from_form`` (bug intake).
 
+FEAT-484/485/486 wiring (see ``README.md`` §"Research-seat MCP access"):
+the ideation (research) seat gets the ``.parrot/mcp-toolkits.yaml`` toolkit
+servers as extra MCP servers (its wikitoolkit server is built in), via the
+sibling ``mcp_wiring.build_research_mcp``; ``DEV_FLOW_USE_REVIEW_PAIR=true``
+swaps the judge panel for the model plan's review pair as the active QA
+reviewer.
+
 Run it with::
 
     PORT=8081 python examples/dev_loop/server_dev.py
@@ -42,6 +49,7 @@ import asyncio
 import functools
 import logging
 import os
+import re
 import sys
 import time
 import uuid
@@ -51,7 +59,15 @@ from typing import Any
 import redis.asyncio as aioredis
 from aiohttp import web
 from parrot import conf
+from parrot.bots.flows.core.checkpoint import FlowLockedError
 from parrot.flows.dev_flow.flow import build_dev_flow
+from parrot.flows.dev_flow.model_plan import (
+    DevFlowModelPlan,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
+    resolve_model_plan,
+    supported_dev_pool_backends,
+)
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_flow.runner import DevFlowRunner
 from parrot.flows.dev_loop import (
@@ -64,16 +80,19 @@ from parrot.flows.dev_loop.agent_builder import (
     parse_pool_env,
     resolve_pool_max,
 )
+from parrot.flows.dev_loop.checkpoint import RecoveredArtifactError
 from parrot.flows.dev_loop.commands import resolve_gate_handler
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import DevAgentSpec, JudgePanelConfig
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
+from pydantic import BaseModel
 
 # Sibling-module imports, resolvable whether this file is launched as a
 # script or imported from elsewhere — the same trick ``server.py`` uses for
 # ``llm_catalog``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llm_catalog
+import mcp_wiring
 import server as ops_server
 
 logger = logging.getLogger("dev_flow.server")
@@ -85,6 +104,33 @@ RUN_ARTIFACT_DIR = ops_server.RUN_ARTIFACT_DIR
 
 # The three user-selected dev-flow intents (spec §8: no LLM classification).
 _DEV_KINDS = ("enhancement", "new_feature", "feature")
+
+#: Accepted shape for an operator-supplied ``run_id`` (FEAT-480 recovery).
+#: The console mints ``run-<hex8>``, but any id minted by another client is
+#: equally valid — this only rejects what would corrupt the checkpoint key
+#: (``flowckpt:{flow_id}:*``, colon-delimited) or a route path.
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+#: Operator-facing explanation per ``inspect_checkpoint()`` reason code.
+_RESUME_REASON_HELP: dict[str, str] = {
+    "recovery_disabled": (
+        "this server was started without checkpoint recovery wiring "
+        "(dev_loop_flow_kwargs), so no run can be resumed"
+    ),
+    "unsupported_brief": "this brief kind cannot be resumed by the dev-flow topology",
+    "no_checkpoint": (
+        "no checkpoint exists for that run_id — it was never run on this "
+        "checkpoint store, or it expired (the Redis tier keeps checkpoints "
+        "for FLOW_CHECKPOINT_REDIS_TTL, 24h by default)"
+    ),
+    "fingerprint_mismatch": (
+        "a checkpoint exists but the run's inputs changed since it was "
+        "written. Resume needs the SAME brief (kind, title/description or "
+        "document_path/document_kind, context, jira_issue_key, dev_agents, "
+        "judge_panel) and the same server-side execution policy the "
+        "original run used"
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +150,118 @@ def _normalise_kind(raw: Any) -> str:
         caller reports the error.
     """
     return (str(raw or "")).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+#: FEAT-486 (spec G2/G7): the console's default development pool —
+#: Bedrock GLM 5 + Bedrock Qwen3 coder, both over bedrock-mantle via the
+#: ``nova`` backend. NVIDIA NIM stays in the picker (catalog role lists)
+#: but is never a default: it currently returns 401 Unauthorized for this
+#: account, so defaulting to it would break every run.
+CONSOLE_DEFAULT_DEV_POOL: list[dict[str, Any]] = [
+    {"agent": "nova", "model": "zai.glm-5", "count": 1},
+    {"agent": "nova", "model": "qwen.qwen3-coder-480b-a35b-v1:0", "count": 1},
+]
+
+
+def _console_default_model_plan() -> DevFlowModelPlan:
+    """Build the dev console's default :class:`DevFlowModelPlan`.
+
+    The console is opinionated where the library is not: the library's
+    default plan has an EMPTY ``dev_pool`` (so ``build_dev_flow`` stays
+    backward compatible), while the console ships the two-seat Bedrock
+    pool spec §3 Module 6 specifies. Everything else takes the library
+    defaults, then :func:`resolve_model_plan` lets ``DEV_FLOW_*`` env keys
+    override any of it — so an operator can repoint a deployment without
+    touching this file.
+
+    Returns:
+        The resolved plan the console builds its flow with.
+    """
+    return resolve_model_plan(DevFlowModelPlan.model_validate({"dev_pool": CONSOLE_DEFAULT_DEV_POOL}))
+
+
+def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
+    """Translate the console's selector groups into a ``DevFlowModelPlan``.
+
+    Field names mirror the ``DevFlowModelPlan`` schema exactly, so parsing
+    stays trivial: ``dev_agents`` (reusing the ops console's own row
+    parser), ``research_primary``, ``research_partner``
+    (``{enabled, backend, model}``) and ``review``
+    (``{primary: {agent, model}, counter_model}``).
+
+    Validation posture matches the ops console (``server.py:1026-1058``):
+    **backends are strict**, model ids are free text — the catalog's model
+    lists are a curated starting point, never a whitelist
+    (``catalog.py:22-24``).
+
+    Args:
+        form: The decoded JSON body posted by the console.
+
+    Returns:
+        The parsed plan, or ``None`` when the payload declared none of the
+        plan fields (meaning "use the server's default plan").
+
+    Raises:
+        ValueError: If a row names a backend the dev-loop cannot build, or
+            the review primary names a non-review backend — both naming
+            the supported set.
+    """
+    keys = ("dev_agents", "research_primary", "research_partner", "review")
+    if not any(key in form for key in keys):
+        return None
+
+    payload: dict[str, Any] = {}
+
+    pool_rows = ops_server._parse_dev_agents(form.get("dev_agents"))
+    if pool_rows is not None:
+        payload["dev_pool"] = pool_rows
+
+    research_primary = (form.get("research_primary") or "").strip()
+    if research_primary:
+        payload["research_primary"] = research_primary
+
+    partner = form.get("research_partner")
+    if isinstance(partner, dict):
+        partner_kwargs: dict[str, Any] = {"enabled": bool(partner.get("enabled"))}
+        backend = (partner.get("backend") or "").strip()
+        if backend:
+            partner_kwargs["backend"] = backend
+        model = (partner.get("model") or "").strip()
+        if model:
+            partner_kwargs["model"] = model
+        payload["research_partner"] = ResearchPartnerPlan(**partner_kwargs)
+
+    review = form.get("review")
+    if isinstance(review, dict):
+        review_kwargs: dict[str, Any] = {}
+        primary = review.get("primary")
+        if isinstance(primary, dict):
+            agent = (primary.get("agent") or "").strip()
+            if agent:
+                if agent not in llm_catalog.PRIMARY_REVIEW_BACKENDS:
+                    raise ValueError(
+                        f"backend {agent!r} cannot serve as the primary "
+                        "reviewer — supported: "
+                        f"{', '.join(llm_catalog.PRIMARY_REVIEW_BACKENDS)}"
+                    )
+                # A blank model means "no opinion" here exactly as it does
+                # for `research_primary`, `counter_model` and the partner
+                # model — passing "" explicitly would make DevAgentSpec
+                # record it as an expressed choice ("use the backend
+                # default"), which then reads as an ignored selection in
+                # `_plan_field_diffs`.
+                primary_kwargs: dict[str, Any] = {"agent": agent}
+                primary_model = (primary.get("model") or "").strip()
+                if primary_model:
+                    primary_kwargs["model"] = primary_model
+                review_kwargs["primary"] = DevAgentSpec(**primary_kwargs)
+        counter_model = (review.get("counter_model") or "").strip()
+        if counter_model:
+            review_kwargs["counter_model"] = counter_model
+        if review_kwargs:
+            payload["review"] = ReviewPairPlan(**review_kwargs)
+
+    return DevFlowModelPlan.model_validate(payload) if payload else None
 
 
 def _build_dev_brief_from_form(form: dict[str, Any]) -> DevRequestBrief | Any:
@@ -192,6 +350,101 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC_DIR / "dev.html")
 
 
+def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = True) -> dict[str, Any]:
+    """Serialise a :class:`DevFlowModelPlan` for ``/api/config``.
+
+    Field names mirror the model exactly, so the console can post the same
+    shape straight back to ``/api/flow/run``. The pool rows use the
+    ``{agent, model, count}`` shape the ops console's existing dev-agent
+    row editor already speaks.
+
+    Args:
+        plan: The already-resolved plan.
+        review_pair_active: Whether the plan's review pair is the reviewer
+            this deployment actually uses. This console passes an explicit
+            ``judge_panel`` dispatcher into ``build_dev_flow``, and an
+            explicit dispatcher wins over the plan by design (TASK-2655
+            precedence) — so the review selectors are reported as INACTIVE
+            here rather than silently pretending. Told to the UI, not
+            hidden from it.
+
+    Returns:
+        A JSON-serialisable dict.
+    """
+    return {
+        "review_pair_active": review_pair_active,
+        "research_primary": plan.research_primary,
+        "research_partner": plan.research_partner.model_dump(mode="json"),
+        "dev_agents": [{"agent": spec.agent, "model": spec.model, "count": spec.count} for spec in plan.dev_pool],
+        "review": {
+            "primary": {
+                "agent": plan.review.primary.agent,
+                "model": plan.review.primary.model,
+            },
+            "counter_model": plan.review.counter_model,
+        },
+        "pool_backends": list(supported_dev_pool_backends()),
+        "review_primary_backends": list(llm_catalog.PRIMARY_REVIEW_BACKENDS),
+        # Derived from the catalog's role lists rather than a hardcoded
+        # literal, so a new partner backend shows up here automatically.
+        "partner_backends": [b.id for b in llm_catalog.backends_for_role("research_partner")],
+    }
+
+
+def _plan_field_diffs(requested: Any, effective: Any, *, prefix: str = "") -> list[str]:
+    """Return one ``path: requested=X effective=Y`` line per differing seat.
+
+    Compares ONLY the fields the operator actually expressed
+    (``model_fields_set``), recursively — a field the console left blank
+    carries no opinion, so it can never manufacture a mismatch. This is
+    what makes the difference *nameable*: plain ``requested != effective``
+    equality covers every field of the model, while the warning it fed
+    printed four of them, so a difference in ``research_partner.*``,
+    ``review.primary.model`` or a seat's ``count`` read as "requested ==
+    effective" in the log (the FEAT-486 false-positive report).
+
+    Args:
+        requested: The operator's parsed plan (or a nested sub-model).
+        effective: The server's build-time plan at the same position.
+        prefix: Dotted path accumulated by the recursion.
+
+    Returns:
+        Human-readable diff lines; empty when every expressed field is
+        already what the server will run.
+    """
+    diffs: list[str] = []
+    if not isinstance(requested, BaseModel) or not isinstance(effective, BaseModel):
+        return diffs
+    for name in sorted(requested.model_fields_set):
+        req = getattr(requested, name, None)
+        eff = getattr(effective, name, None)
+        path = f"{prefix}{name}"
+        if isinstance(req, BaseModel) and isinstance(eff, BaseModel):
+            diffs.extend(_plan_field_diffs(req, eff, prefix=f"{path}."))
+        elif isinstance(req, list) and isinstance(eff, list):
+            if len(req) != len(eff):
+                diffs.append(f"{path}: requested={_fmt_seats(req)} effective={_fmt_seats(eff)}")
+                continue
+            for index, (req_item, eff_item) in enumerate(zip(req, eff)):
+                if isinstance(req_item, BaseModel) and isinstance(eff_item, BaseModel):
+                    diffs.extend(_plan_field_diffs(req_item, eff_item, prefix=f"{path}[{index}]."))
+                elif req_item != eff_item:
+                    diffs.append(f"{path}[{index}]: requested={req_item!r} effective={eff_item!r}")
+        elif req != eff:
+            diffs.append(f"{path}: requested={req!r} effective={eff!r}")
+    return diffs
+
+
+def _fmt_seats(seats: list[Any]) -> str:
+    """Render a seat list as ``agent:model xN`` for a diff line."""
+    rendered = [
+        (f"{spec.agent}:{spec.model or '<default>'}" + (f"x{spec.count}" if spec.count > 1 else ""))
+        for spec in seats
+        if isinstance(spec, DevAgentSpec)
+    ]
+    return ", ".join(rendered) or "<single-agent>"
+
+
 async def handle_config(request: web.Request) -> web.Response:
     """Serve the dev console's configuration catalog.
 
@@ -215,6 +468,8 @@ async def handle_config(request: web.Request) -> web.Response:
             # natural-language intake for these, a document picker otherwise).
             "nl_kinds": ["enhancement", "new_feature"],
             "gate_resolve_url_template": ("/api/flow/{run_id}/gates/{gate_id}/resolve"),
+            # FEAT-480: where the console probes a run_id before resuming it.
+            "checkpoint_probe_url_template": "/api/flow/{run_id}/checkpoint",
             "defaults": {
                 "development_agent": conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
@@ -230,19 +485,93 @@ async def handle_config(request: web.Request) -> web.Response:
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
                 "wiki_search": app.get("wiki_search") is not None,
                 "jira_configured": app.get("jira_toolkit") is not None,
+                # FEAT-480: whether this server can resume a run at all —
+                # false hides the console's resume field instead of letting
+                # an operator paste a run_id that would silently start over.
+                "recovery_enabled": bool(getattr(runner, "recovery_enabled", False)),
+                # FEAT-486 (spec G7): the per-seat LLM plan this server
+                # actually built its flow with — already env-resolved, so
+                # the console shows what will really run rather than what
+                # this file hardcodes (same honesty rule as
+                # `catalog.effective_default_model`).
+                "model_plan": _model_plan_payload(
+                    app.get("model_plan") or _console_default_model_plan(),
+                    review_pair_active=bool(app.get("review_pair_active", False)),
+                ),
             },
             "adversarial_review": {
                 "mandatory": True,
                 "scope": conf.DEV_LOOP_ADVERSARIAL_SCOPE,
                 "base_ref": conf.DEV_LOOP_ADVERSARIAL_BASE_REF,
                 "note": (
-                    "Every dev-flow run carries the read-only Codex "
-                    "sdd-secondopinion seat as a judge in the QA panel. It "
-                    "cannot be switched off."
+                    "Every dev-flow run carries a read-only adversarial "
+                    "second seat. Which MODEL fills it is configurable "
+                    "(defaults.model_plan.review.counter_model, FEAT-486 — "
+                    "gpt-5.6-sol over Bedrock Mantle by default); that the "
+                    "seat EXISTS is not — it cannot be switched off."
                 ),
             },
         }
     )
+
+
+def _parse_resume_run_id(form: dict[str, Any]) -> str | None:
+    """Extract the optional operator-supplied ``run_id`` (FEAT-480 recovery).
+
+    Args:
+        form: The decoded JSON body posted by the console.
+
+    Returns:
+        The run id to resume, or ``None`` when the payload asks for a fresh
+        run (absent or blank field).
+
+    Raises:
+        ValueError: The field is present but not a usable identifier.
+        TypeError: The field is present but not a string.
+    """
+    raw = form.get("run_id")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise TypeError("run_id must be a string")
+    run_id = raw.strip()
+    if not run_id:
+        return None
+    if not _RUN_ID_RE.match(run_id):
+        raise ValueError(
+            "run_id must be 1-64 chars of letters, digits, '.', '_' or '-' " f"and start alphanumeric; got {run_id!r}"
+        )
+    return run_id
+
+
+async def handle_checkpoint(request: web.Request) -> web.Response:
+    """``GET /api/flow/{run_id}/checkpoint`` — is this run still resumable?
+
+    Existence probe only: with no brief to fingerprint, it reports what the
+    checkpoint store holds (status, checkpoint id, which nodes already
+    completed) and leaves ``resumable`` ``null`` — "unknown", not "no". The
+    real verdict is issued by ``POST /api/flow/run`` once the operator's
+    form supplies the brief.
+
+    This is what makes the console's resume field usable after a crash: the
+    operator has a run_id from a dead session and needs to know whether the
+    ideation/planner work behind it survived BEFORE rebuilding the form.
+    """
+    runner: DevFlowRunner = request.app["runner"]
+    run_id = request.match_info["run_id"]
+    if not _RUN_ID_RE.match(run_id):
+        return web.json_response({"error": "invalid run_id"}, status=400)
+    try:
+        report = await runner.inspect_checkpoint(run_id)
+    except Exception as exc:  # noqa: BLE001 - store outage is a 503, not a 500
+        logger.warning("checkpoint probe failed for run_id=%s: %s", run_id, exc)
+        return web.json_response(
+            {"error": f"checkpoint store unavailable: {exc}"},
+            status=503,
+        )
+    report["active"] = run_id in request.app["flow_tasks"]
+    report["help"] = _RESUME_REASON_HELP.get(report.get("reason") or "", "")
+    return web.json_response(report)
 
 
 async def handle_run(request: web.Request) -> web.Response:
@@ -252,6 +581,19 @@ async def handle_run(request: web.Request) -> web.Response:
     brief shape only — every run executes the SAME dev-flow graph, whose
     ``dev_intake`` node routes a natural-language brief through ideation and
     a document brief straight to the planner.
+
+    FEAT-480 resume: an optional ``run_id`` in the payload means "continue
+    THAT run" instead of minting a new identity. The completed nodes behind
+    it (dev_intake, ideation, planner — and their worktree/spec/task-index
+    artifacts) are restored from the checkpoint rather than re-dispatched,
+    so an interrupted run does not pay for research/ideation/planning twice.
+
+    The resume is preflighted synchronously here (:meth:`inspect_checkpoint`)
+    and refused with a 409 when it cannot succeed. That refusal is the point:
+    a checkpoint miss would otherwise start a full FRESH run under the
+    operator's id — hours of agent time spent re-deriving work they explicitly
+    asked to reuse — and a fingerprint mismatch would raise inside the
+    background task, long after this endpoint answered "202-ish, running".
     """
     if not request.can_read_body:
         return web.json_response({"error": "JSON body required"}, status=400)
@@ -269,6 +611,30 @@ async def handle_run(request: web.Request) -> web.Response:
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
 
+    # FEAT-486: validate the run's per-seat selection BEFORE anything is
+    # started, so a typo'd backend is a 400 naming the supported set rather
+    # than a provider error hours into a run.
+    try:
+        requested_plan = _parse_model_plan(form)
+    except (ValueError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - validation surface
+        return web.json_response({"error": str(exc)}, status=400)
+    # FEAT-490: the server's static build-time plan — the baseline for a
+    # FRESH run (narrowed below to the submission itself, since a fresh
+    # run genuinely applies it) and for the resume-diff/log/response below.
+    # KNOWN LIMITATION (code review, accepted — not fixed here): for a
+    # RESUME specifically, this is NOT necessarily the plan the resumed
+    # run's checkpoint was actually created with — only an embedder that
+    # itself submitted a differing per-run plan on the ORIGINAL call and
+    # then reuses that same run_id would see a diff computed against the
+    # wrong baseline here. This console never does that (it mints a fresh
+    # run_id on every request that doesn't explicitly resume), so the
+    # common case is unaffected; a correct fix would need the original
+    # per-run plan persisted on the checkpoint and read back during the
+    # `inspect_checkpoint` preflight — out of scope for this pass.
+    effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
+
     kind = getattr(brief, "kind", "")
     if kind == "feature":
         label = brief.document_path
@@ -277,8 +643,52 @@ async def handle_run(request: web.Request) -> web.Response:
         label = brief.title
         initial_task = f"{kind}: {brief.title[:120]}"
 
-    run_id = f"run-{uuid.uuid4().hex[:8]}"
     runner: DevFlowRunner = request.app["runner"]
+    try:
+        resume_run_id = _parse_resume_run_id(form)
+    except (ValueError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    resume: dict[str, Any] | None = None
+    if resume_run_id is None:
+        run_id = f"run-{uuid.uuid4().hex[:8]}"
+    else:
+        run_id = resume_run_id
+        if run_id in request.app["flow_tasks"]:
+            return web.json_response(
+                {
+                    "error": f"run_id {run_id!r} is still in flight on this server — "
+                    "stop it before resuming it.",
+                    "reason": "already_running",
+                },
+                status=409,
+            )
+        try:
+            resume = await runner.inspect_checkpoint(run_id, brief=brief)
+        except Exception as exc:  # noqa: BLE001 - store outage is a 503
+            logger.warning("resume preflight failed for run_id=%s: %s", run_id, exc)
+            return web.json_response(
+                {"error": f"checkpoint store unavailable: {exc}"},
+                status=503,
+            )
+        if not resume.get("resumable"):
+            reason = resume.get("reason") or "not_resumable"
+            return web.json_response(
+                {
+                    "error": f"run_id {run_id!r} cannot be resumed: " f"{_RESUME_REASON_HELP.get(reason, reason)}.",
+                    "reason": reason,
+                    "resume": resume,
+                },
+                status=409,
+            )
+        logger.info(
+            "dev-flow run_id=%s RESUMING from checkpoint %s (status=%s, " "completed nodes: %s)",
+            run_id,
+            resume.get("checkpoint_id"),
+            resume.get("status"),
+            ", ".join(resume.get("completed_nodes") or []) or "none",
+        )
+
     started_at = time.time()
 
     extra_shared: dict[str, Any] = {}
@@ -291,11 +701,55 @@ async def handle_run(request: web.Request) -> web.Response:
     # the flow's build-time default instead of silently overriding it.
     if "require_plan_approval" in form:
         extra_shared["require_plan_approval"] = bool(form.get("require_plan_approval"))
+    # FEAT-490: the per-seat plan is now a PER-RUN input on the fresh path —
+    # `runner.run(model_plan=...)` below threads it into THIS run's flow
+    # build (dev_flow/runner.py TASK-2686), no server restart required. A
+    # RESUME is the one case that remains build-time-like: TASK-2687's rule
+    # keeps a resumed run on the seats it was created with, since its
+    # completed nodes already ran under them — a newly submitted plan on a
+    # resume is validated and echoed back, but does not take effect. This
+    # narrows `effective_plan` (originally just the server's static
+    # build-time default) to the plan that will REALLY govern this specific
+    # run, so both the diff below and the response's echoed `model_plan`
+    # tell the truth for a fresh run instead of describing a plan the run
+    # is about to leave behind.
+    if requested_plan is not None and resume_run_id is None:
+        effective_plan = requested_plan
+
+    # The diff is field-level and expressed-fields-only (see
+    # `_plan_field_diffs`): whole-model `!=` equality fired on fields the
+    # message never printed — a changed research partner or a blank review
+    # primary model logged "requested == effective" and read as a false
+    # positive. `plan_diffs` both gates the warning and IS the warning. For
+    # a fresh run `effective_plan` was just narrowed to `requested_plan`
+    # above, so this is always empty there (spec §8 Q4) — the diff now
+    # fires only for the resume case, where a submission genuinely will not
+    # apply.
+    # `dev_pool` is deliberately NOT reported: the development pool IS
+    # per-run. `_build_dev_brief_from_form` puts the very same `dev_agents`
+    # rows on the brief, `IdeationNode` forwards them onto the FeatureBrief,
+    # and `DevelopmentNode._resolve_pool_config` reads the brief BEFORE its
+    # injected build-time config.
+    plan_diffs: list[str] = []
+    if requested_plan is not None:
+        plan_diffs = [
+            diff for diff in _plan_field_diffs(requested_plan, effective_plan) if not diff.startswith("dev_pool")
+        ]
+    if plan_diffs:
+        logger.warning(
+            "dev-flow run_id=%s requested a model plan that differs from the "
+            "seats this run keeps — it resumed a checkpoint, and a resumed "
+            "run keeps the seats it was created with (spec §8 Q1). "
+            "Differing seats: %s. Start a fresh run (no run_id) to use them.",
+            run_id,
+            "; ".join(plan_diffs),
+        )
 
     async def _run() -> None:
         try:
             logger.info(
-                "Starting dev-flow run_id=%s kind=%s (%s) extra_shared=%s",
+                "%s dev-flow run_id=%s kind=%s (%s) extra_shared=%s",
+                "Resuming" if resume else "Starting",
                 run_id,
                 kind,
                 label,
@@ -306,12 +760,37 @@ async def handle_run(request: web.Request) -> web.Response:
                 run_id=run_id,
                 initial_task=initial_task,
                 extra_shared=extra_shared or None,
+                # FEAT-490: passed unconditionally — on a fresh run this
+                # reaches build_dev_flow for THIS run (TASK-2686); on a
+                # resume the runner itself never applies it (TASK-2687),
+                # matching the `effective_plan`/`plan_diffs` narrowing above.
+                model_plan=requested_plan,
             )
             logger.info(
                 "dev-flow run_id=%s finished status=%s in %.1fs",
                 run_id,
                 result.status,
                 time.time() - started_at,
+            )
+        except FlowLockedError:
+            # The preflight above cannot see this: another process/session
+            # holds the resume lease. Named explicitly so the log says what
+            # to do rather than dumping a bare traceback.
+            logger.error(
+                "dev-flow run_id=%s: another process is already resuming this "
+                "run (checkpoint lease held). Wait for it to finish or stop it.",
+                run_id,
+            )
+        except RecoveredArtifactError as exc:
+            # Also invisible to the preflight (validated only after the
+            # checkpoint's shared_data is restored): the run's worktree or
+            # its spec/task-index files are gone or moved.
+            logger.error(
+                "dev-flow run_id=%s: checkpoint restored but its artifacts are "
+                "no longer valid — %s. Recreate the worktree, or start a fresh "
+                "run without a run_id.",
+                run_id,
+                exc,
             )
         except Exception:
             logger.exception("dev-flow run_id=%s failed", run_id)
@@ -325,10 +804,27 @@ async def handle_run(request: web.Request) -> web.Response:
             "run_id": run_id,
             "mode": "dev-flow",
             "kind": kind,
+            # FEAT-480: null for a fresh run; the accepted preflight report
+            # (checkpoint id, status, restored node ids) for a resumed one,
+            # so the console can say WHICH work it is not paying for again.
+            "resume": resume,
             "ws_url": f"/api/flow/{run_id}/ws",
             "state_ws_url": f"/api/flow/{run_id}/ws?view=state",
             "bundle_url": f"/api/flow/{run_id}/bundle",
             "gate_resolve_url": f"/api/flow/{run_id}/gates/{{gate_id}}/resolve",
+            # FEAT-486/FEAT-490: what this run's seats will REALLY be —
+            # the submitted selection itself for a fresh run (per-run,
+            # TASK-2686), or the seats a resumed run was created with when
+            # the two differ (see the warning above). `model_plan_ignored`
+            # names each expressed seat the server is NOT honouring —
+            # always `[]` for a fresh console run — so the console renders
+            # the server's own diff instead of re-deriving a partial one in
+            # JavaScript.
+            "model_plan_ignored": plan_diffs,
+            "model_plan": _model_plan_payload(
+                effective_plan,
+                review_pair_active=bool(request.app.get("review_pair_active", False)),
+            ),
         }
     )
 
@@ -428,9 +924,9 @@ async def _on_startup(app: web.Application) -> None:
         )
     else:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
-            f"got {development_agent!r}"
+            f"DEV_LOOP_DEVELOPMENT_AGENT must be one of "
+            f"{', '.join(supported_dev_pool_backends())} "
+            f"(or the legacy alias 'llm'), got {development_agent!r}"
         )
 
     # -- QA review: the judge panel is dev-flow's default review gate ----
@@ -439,7 +935,20 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher=development_dispatcher,
         redis_url=redis_url,
     )
-    judge_panel_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
+    # FEAT-486: opt-in switch to the model plan's review PAIR (primary +
+    # mantle counter-reviewer). Default false keeps the FEAT-378 judge
+    # panel byte-identical. An explicit dispatcher wins over the plan by
+    # design (TASK-2655 precedence), so activating the pair means passing
+    # codereview_dispatcher=None and letting the factories assemble it.
+    use_review_pair = mcp_wiring._config_flag("DEV_FLOW_USE_REVIEW_PAIR", False)
+    qa_review_dispatcher = None
+    if use_review_pair:
+        logger.info(
+            "DEV_FLOW_USE_REVIEW_PAIR=true — QA uses the model plan's "
+            "review pair (primary + counter-model) instead of the judge panel."
+        )
+    else:
+        qa_review_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
 
     repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
     if repos:
@@ -459,25 +968,52 @@ async def _on_startup(app: web.Application) -> None:
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
     if development_pool_config is not None:
-        # Honest reporting: dev-flow sizes the pool the way feature-mode does —
-        # PlannerNode derives it from the first task-dependency wave (capped at
-        # development_pool_max), or the brief's own `dev_agents` overrides it.
-        # `build_dev_flow` deliberately takes no `development_pool_config`
-        # (its signature mirrors build_dev_loop_feature_flow), so this env
-        # value is NOT injected into DevelopmentNode here.
+        # FEAT-486 superseded the old "NOT injected" note here: dev-flow now
+        # HAS a pool path (`build_dev_flow(model_plan=...)`), fed by the
+        # console's model plan below rather than by DEV_LOOP_DEV_AGENTS.
+        # That env var remains the ops console's (dev_loop's) knob; the
+        # dev-flow equivalent is DEV_FLOW_DEV_POOL.
         logger.info(
-            "DEV_LOOP_DEV_AGENTS is set (%s, isolation=%s) but dev-flow does "
-            "NOT inject it: the pool is planner-sized (cap pool_max=%d) or set "
-            "per run via the brief's dev_agents. Use the console's "
-            "'Agents & models' tab to pin a pool for a run.",
+            "DEV_LOOP_DEV_AGENTS is set (%s, isolation=%s) — that is the ops "
+            "console's pool knob. dev-flow's pool comes from its model plan "
+            "(DEV_FLOW_DEV_POOL, or the console default) instead; cap "
+            "pool_max=%d.",
             ", ".join(f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents),
             development_pool_config.isolation_mode,
             development_pool_max,
         )
 
+    # -- per-seat LLM plan (FEAT-486) -------------------------------------
+    model_plan = _console_default_model_plan()
+    app["model_plan"] = model_plan
+    logger.info(
+        "dev-flow model plan: research=%s | dev pool=%s | review=%s/%s + " "%s (read-only) | research partner %s",
+        model_plan.research_primary,
+        ", ".join(f"{spec.agent}:{spec.model or '<default>'}x{spec.count}" for spec in model_plan.dev_pool)
+        or "<single-agent>",
+        model_plan.review.primary.agent,
+        model_plan.review.primary.model or "<default>",
+        model_plan.review.counter_model,
+        "ENABLED" if model_plan.research_partner.enabled else "disabled",
+    )
+
     graph_memory = await DevLoopGraphMemory.from_config()
     wiki_search = DevLoopWikiSearch.from_project()
     app["wiki_search"] = wiki_search
+
+    # FEAT-484/485: extra MCP servers for the ideation (research) seat —
+    # the wikitoolkit graph-search server is BUILT IN to IdeationNode, so
+    # only the `.parrot/mcp-toolkits.yaml` toolkit servers (e.g. the
+    # ReadOnlyRepoToolkit `repo` section) are additive here; a duplicate
+    # wikitoolkit entry from the wiring is overridden by the node's own.
+    research_mcp_servers, research_mcp_tools = mcp_wiring.build_research_mcp(Path(conf.PROJECT_ROOT))
+    extra_mcp_servers = {k: v for k, v in research_mcp_servers.items() if k != "wikitoolkit"}
+    extra_mcp_tools = [t for t in research_mcp_tools if not t.startswith("mcp__wikitoolkit")]
+    if extra_mcp_servers:
+        logger.info(
+            "Ideation-seat extra MCP servers: %s",
+            ", ".join(sorted(extra_mcp_servers)),
+        )
 
     jira_toolkit = _build_optional_jira_toolkit()
     app["jira_toolkit"] = jira_toolkit
@@ -487,21 +1023,40 @@ async def _on_startup(app: web.Application) -> None:
     require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
     skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
-    app["flow"] = build_dev_flow(
-        dispatcher=dispatcher,
-        redis_url=redis_url,
-        jira_toolkit=jira_toolkit,
-        git_toolkit=git_toolkit,
-        wiki_toolkit=wiki_toolkit,
-        codereview_dispatcher=judge_panel_dispatcher,
-        development_dispatcher_builder=development_dispatcher_builder,
-        development_pool_max=development_pool_max,
-        graph_memory=graph_memory,
-        wiki_search=wiki_search,
-        skip_qa=skip_qa,
-        require_plan_approval=require_plan_approval,
-        name="dev-flow-console",
-    )
+    # FEAT-480 (TASK-2628): same pattern as server.py's dev-loop wiring —
+    # captured once as the exact kwargs `build_dev_flow` is called with, then
+    # handed to `DevFlowRunner` as `dev_loop_flow_kwargs` (the attribute name
+    # is generic across both workflows per `DevFlowRunner`'s inherited
+    # `__init__`) so its checkpoint-recovery path builds a genuinely fresh,
+    # checkpoint-enabled `AgentsFlow` per run instead of reusing `app["flow"]`.
+    dev_loop_flow_kwargs: dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "redis_url": redis_url,
+        "jira_toolkit": jira_toolkit,
+        "git_toolkit": git_toolkit,
+        "wiki_toolkit": wiki_toolkit,
+        "codereview_dispatcher": qa_review_dispatcher,
+        "development_dispatcher_builder": development_dispatcher_builder,
+        "development_pool_max": development_pool_max,
+        "graph_memory": graph_memory,
+        "wiki_search": wiki_search,
+        "skip_qa": skip_qa,
+        "require_plan_approval": require_plan_approval,
+        # FEAT-486: selects every LLM seat — the development pool (with
+        # `agent_builder.build_dispatcher` as its worker builder), the
+        # ideation model, and QANode's review pair. The plan's review pair
+        # only activates when `codereview_dispatcher` is None
+        # (DEV_FLOW_USE_REVIEW_PAIR=true); the default judge panel keeps
+        # precedence otherwise.
+        "model_plan": model_plan,
+        # FEAT-485: `.parrot/mcp-toolkits.yaml` servers for the ideation
+        # seat (its wikitoolkit server is built in). None keeps the
+        # dispatch byte-identical.
+        "research_mcp_servers": extra_mcp_servers or None,
+        "research_mcp_tools": extra_mcp_tools or None,
+        "name": "dev-flow-console",
+    }
+    app["flow"] = build_dev_flow(**dev_loop_flow_kwargs)
     runner = DevFlowRunner(
         app["flow"],
         dispatcher=dispatcher,
@@ -509,12 +1064,24 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=git_toolkit,
         wiki_toolkit=wiki_toolkit,
         redis_url=redis_url,
-        codereview_dispatcher=judge_panel_dispatcher,
+        codereview_dispatcher=qa_review_dispatcher,
         graph_memory=graph_memory,
+        # FEAT-480 (TASK-2628): see server.py's identical wiring note — each
+        # `handle_run` request below mints its own stable per-job `run_id`
+        # (never shared across jobs), and `checkpoint_store=None` resolves
+        # through the existing env-fallback precedence.
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
     )
 
     app["runner"] = runner
-    app["codereview_agent_key"] = codereview_agent_key
+    app["codereview_agent_key"] = "review-pair" if use_review_pair else codereview_agent_key
+    # FEAT-486: by default this console keeps the FEAT-378 judge panel as
+    # its QA reviewer (an explicit `codereview_dispatcher` wins over the
+    # plan by design), so the plan's review PAIR is configured but not the
+    # active reviewer. DEV_FLOW_USE_REVIEW_PAIR=true flips it. Reported
+    # honestly to the UI rather than implied.
+    app["review_pair_active"] = use_review_pair
     app["development_pool_max"] = development_pool_max
     app["require_plan_approval"] = require_plan_approval
     app["flow_tasks"] = {}  # run_id -> asyncio.Task
@@ -543,6 +1110,9 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
     app.router.add_post("/api/flow/run", handle_run)
     # Bundle/replay/cancel are app-key driven and mode-agnostic — reused
     # verbatim from the ops console so the artifact contract stays identical.
+    # FEAT-480: read-only resumability probe for a run_id the operator holds
+    # from an interrupted session (see handle_checkpoint).
+    app.router.add_get("/api/flow/{run_id}/checkpoint", handle_checkpoint)
     app.router.add_get("/api/flow/{run_id}/bundle", ops_server.handle_bundle)
     app.router.add_get("/api/flow/{run_id}/replay", ops_server.handle_replay)
     app.router.add_get("/api/flow/{run_id}/ws", flow_stream_ws)

@@ -436,7 +436,8 @@ subagent refuses to touch it and returns the collision as an open question.
 |---|---|---|
 | `/` | GET | Serves `static/dev.html` |
 | `/api/config` | GET | Backends/models catalog, the three intents, `document_kinds`, `nl_kinds`, `gate_resolve_url_template`, and the dev defaults (`ideation_max_rounds`, `gate_ttl_questions`, `require_plan_approval`, `qa_max_retries`, `development_pool_max`, `max_concurrent_runs`, …). Carries **no** `log_group`, `time_window_minutes` or `jira_project`. |
-| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`. |
+| `/api/flow/run` | POST | Start (or **resume**) a run. Body per the intent (below); an optional `run_id` resumes that run. Returns `run_id`, `resume` (null for a fresh run), `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`, the effective `model_plan`, and `model_plan_ignored` — one `field: requested=… effective=…` line per submitted seat the server is not honouring (empty when every expressed seat matches). |
+| `/api/flow/{run_id}/checkpoint` | GET | **Is this run resumable?** Read-only probe: `found`, `status`, `checkpoint_id`, `completed_nodes`, `active`, plus a `reason`/`help` pair. `resumable` is `null` here — with no brief to fingerprint the answer is *unknown*, not *no*. |
 | `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
 | `/api/flow/{run_id}/cancel` | POST | Cancel a run |
 | `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
@@ -477,6 +478,57 @@ curl -X POST http://localhost:8081/api/flow/run \
 
 Optional in both shapes: `jira_issue_key` (link-only), `dev_agents`,
 `judge_panel`, `skip_qa`, `skip_jira`, `require_plan_approval`.
+
+### Resuming an interrupted run (FEAT-480)
+
+A dev-flow run checkpoints after every node. Pass the original `run_id` back
+and the work already done — `dev_intake`, `ideation` (including the answered
+open questions), `planner` and the worktree/spec/task-index it created — is
+**restored instead of re-dispatched**; execution picks up at the first node
+that never completed.
+
+```bash
+# 1. Is the run still recoverable? (24h Redis TTL by default)
+curl -s http://localhost:8081/api/flow/run-3f9a1c02/checkpoint | jq
+# {"found": true, "status": "running", "checkpoint_id": 7,
+#  "completed_nodes": ["dev_intake", "ideation", "planner"], "resumable": null, ...}
+
+# 2. Resume it — SAME brief as the original run, plus its run_id.
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/my-feature.brainstorm.md",
+    "document_kind": "brainstorm",
+    "run_id": "run-3f9a1c02"
+  }'
+```
+
+In the console the same thing is the **"Resume a run — run_id"** field in
+section 01, with a *Check* button that calls the probe above.
+
+Rules worth knowing before you rely on it:
+
+* **The brief must be identical.** Resume is gated by a SHA-256 fingerprint
+  over the normalized brief (kind, title/description or document_path/
+  document_kind, context, jira_issue_key, dev_agents, judge_panel), the
+  topology version and the server's routing policy (`skip_qa`,
+  `require_plan_approval`, `development_pool_max`, `ideation_max_rounds`, the
+  model plan's pool shape/review backend). Change any of it and the server
+  answers **409 `fingerprint_mismatch`** rather than silently starting over.
+  A natural-language run cannot be resumed by pointing at the document its
+  ideation produced — that is a *different* brief; re-post the original
+  `title`/`description`.
+* **An unknown or expired `run_id` is a 409, never a fresh run.** Checkpoints
+  live in the ephemeral Redis tier for `FLOW_CHECKPOINT_REDIS_TTL` (24h);
+  after that the run is gone.
+* **The worktree must still be there.** A restored `planner_output` is
+  validated against the real repo (registered worktree, expected branch, spec
+  and task-index files present). If it moved, the run fails with a
+  `RecoveredArtifactError` naming what is missing.
+* Resume needs a server started with recovery wiring
+  (`defaults.recovery_enabled` in `/api/config`); the console hides the field
+  when it is false.
 
 ### The `open_questions` gate protocol
 
@@ -546,12 +598,82 @@ value **over** its build-time flag, so no flow rebuild is needed. An explicit
 the build-time default alone. The resulting gate opens after the planner and
 before the dev-agent fleet dispatches.
 
+### Per-seat LLM selectors (FEAT-486)
+
+Every LLM-facing seat in the dev-flow is selectable. The console ships
+opinionated defaults and exposes three selector groups plus one toggle:
+
+| Selector group | Tab | Console default |
+|---|---|---|
+| Research primary model | *Ideation & gates* | `claude-opus-5` |
+| Research partner (enable + backend + model) | *Ideation & gates* | **off**; `gpt` / `gpt-5.6-sol` when enabled |
+| Development agent pool | *Agents & models* | `nova:zai.glm-5` + `nova:qwen.qwen3-coder-480b-a35b-v1:0` (both Bedrock, via `bedrock-mantle`) |
+| Adversarial review pair | *Review & judges* | `claude-code`/`claude-opus-5` primary + `gpt-5.6-sol` counter-reviewer |
+
+`GET /api/config` carries the server's **resolved** plan under
+`defaults.model_plan`, so the UI shows what will really run rather than
+what the source hardcodes. `POST /api/flow/run` accepts the same shape
+back (`dev_agents`, `research_primary`, `research_partner`, `review`).
+
+**Backends are validated strictly; models are free text.** An unknown
+backend is a `400` naming every supported backend. A typo'd model surfaces
+as a provider error on that seat — model lists are a curated suggestion,
+never a whitelist.
+
+Two behaviours worth knowing:
+
+* **A single-`TASK-` feature collapses to one sub-agent**, whatever pool
+  you declare. The task count is the signal; there is no flag.
+* **NVIDIA NIM stays selectable but is never a default.** It currently
+  returns `401 Unauthorized` for this account, so defaulting to it would
+  break every run. `kimi-k3` is reachable via the `moonshot` backend, not
+  via NIM.
+
+> **Two things worth knowing, stated plainly.**
+> 1. **`model_plan` is per-run (FEAT-490).** Every seat — ideation model,
+>    review pair, and the development pool — takes effect for a single
+>    submitted run, with no server restart. A submitted plan is fully
+>    validated and echoed back in the run response as the plan that will
+>    REALLY run. **The one case that does not apply a new submission is a
+>    resume**: `POST /api/flow/run` with an explicit `run_id` that
+>    preflights as resumable continues that run on the seats it was
+>    created with (a resumed run's completed nodes already ran under
+>    them — adopting a different plan mid-history would make the run
+>    self-contradictory). A submission that differs from a resumed run's
+>    seats is still fully validated and echoed back, and any difference is
+>    logged as a warning — **field by field**, naming each seat, and only
+>    for fields the console actually expressed (a blank input means
+>    "keep the resumed run's seat", never an ignored choice) — and
+>    returned as `model_plan_ignored` for the UI banner. Start a fresh run
+>    (omit `run_id`) to use a different plan.
+> 2. By default this console wires the FEAT-378 **judge panel** as its QA
+>    reviewer, and an explicit reviewer wins over the plan by design. The
+>    review pair is therefore configured and validated but not the active
+>    reviewer — `defaults.model_plan.review_pair_active` reports this as
+>    `false`, and the UI says so. Set `DEV_FLOW_USE_REVIEW_PAIR=true` to
+>    drop the judge panel and let the plan assemble its review pair
+>    (primary + Mantle counter-reviewer) as the active QA reviewer.
+
+See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
+
 ### New configuration keys
 
 | Key | Default | Meaning |
 |---|---|---|
 | `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Max Open-Questions HITL rounds (gates) per run. Leftover questions are carried into the spec, never re-asked forever. |
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL for an `open_questions` gate. **Fail-closed** — expiry routes the run to `failure_handler`. |
+| `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Research-primary seat model (FEAT-486; shared with FEAT-482). |
+| `DEV_FLOW_DEV_POOL` | *(unset)* | Dev pool as a JSON array of `{agent, model, count}`. Only read when a `model_plan` is supplied. |
+| `DEV_FLOW_RESEARCH_PARTNER` | `""` (disabled) | Complementary research partner (FEAT-482): `""` disables the seat, otherwise the backend — `gpt` or `nova`. Enable **and** backend in one key. |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Partner model, **per backend**. FEAT-486's `_ENABLED`/`_BACKEND`/`_MODEL` keys were retired by FEAT-487 and are inert. |
+| `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Write-enabled primary reviewer. |
+| `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Read-only counter-reviewer, over Bedrock Mantle. |
+| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | The Mantle counter-reviewer's own model key. Distinct from `DEV_LOOP_ADVERSARIAL_MODEL` (the codex seat's). Also used when `DEV_LOOP_ADVERSARIAL_BACKEND=mantle` selects the `mantle-adversarial` reviewer in the ops console. |
+| `DEV_FLOW_USE_REVIEW_PAIR` | `false` | Dev console only: replace the judge panel with the model plan's review pair as the active QA reviewer. |
+| `DEV_LOOP_LLM_MAX_TURNS` | `60` | Turn budget for the **in-process** coding loop (`nvidia`, `nova`, `zai`, `moonshot`, `grok`). One turn is one chat completion, so a real SDD task needs far more than the profile's conservative library default of 24. The agentic CLIs (`claude-code`, `codex`, `gemini`, `google_coding`) run their own loop and ignore this. When the budget runs out, the dispatcher spends one extra round with `tool_choice` forced to `final_output` to recover work already committed; a dispatch that then declares its own task in `incomplete_tasks` is still treated as failed and retried. |
+| `DEV_LOOP_RESEARCH_MCP_ENABLED` | `true` | Kill switch for the research seats' MCP wiring (both consoles) — see the FEAT-484/485 section below. |
+| `DEV_LOOP_RESEARCH_MCP_TOOLKITS` | `auto` | Which `.parrot/mcp-toolkits.yaml` sections to serve to the research seats (`auto` = the sections declared in the file). |
+| `NOVA_CODE_MAX_CONCURRENT_DISPATCHES` | `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | Concurrency cap when `DEV_LOOP_DEVELOPMENT_AGENT=nova`. |
 
 Everything else is reused unchanged from the existing `DEV_LOOP_*` keys
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
@@ -565,6 +687,45 @@ per-run toggle overrides.
 
 Revision mode (`DevLoopRunner.run_revision`) is a library/`e2e_demo` feature
 and is not served by either console.
+
+## Research-seat MCP access (FEAT-484/485)
+
+Both consoles hand the dispatched **research agents** an explicit MCP
+surface (built by the sibling module `mcp_wiring.py` at startup):
+
+* **`wikitoolkit` graph search** (FEAT-403) — the read-only trio
+  `wiki_query` / `wiki_page` / `wiki_related`. In the ops console this
+  reaches `ResearchNode`'s `sdd-research` dispatch; the dev console's
+  `IdeationNode` already ships it built in.
+* **FEAT-485 local toolkit servers** — every section declared in
+  `<repo>/.parrot/mcp-toolkits.yaml` is served as `parrot mcp-local
+  <name>` and exposed to the research seats. Copy
+  `mcp-toolkits.example.yaml` to get a `repo` section exposing the
+  FEAT-484 **`ReadOnlyRepoToolkit`** (confined, strictly read-only
+  repository access: `search_code`, `read_file`, `grep_files`,
+  `git_log`/`git_show`/`git_blame`, opt-in `web_search`).
+
+Because these dispatches run with `strict_mcp_config=True` (the headless
+CLI ignores the filesystem `.mcp.json`), the servers are passed explicitly
+on the dispatch profile, and each server entry carries
+`--config <abs path>` so `parrot mcp-local` finds the YAML even though the
+research dispatch cwd is `WORKTREE_BASE_PATH`, not the repo root. Use an
+**absolute** `repo_root` in the YAML for the same reason.
+
+Everything degrades gracefully: a missing `wikitoolkit` binary, a missing
+or invalid YAML, or an unknown section name logs a warning and serves
+whatever subset resolves. `DEV_LOOP_RESEARCH_MCP_ENABLED=false` turns the
+whole wiring off; `DEV_LOOP_RESEARCH_MCP_TOOLKITS=repo,memory` pins an
+explicit section list (which may include the built-ins
+`scraping`/`browsing`/`memory` — mind their optional extras).
+
+Related (FEAT-482/486): the ops console now also honours
+`DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` for
+`ResearchNode`'s collaborative-research partner — the partner itself uses
+`ReadOnlyRepoToolkit` natively, no MCP required. The env pool
+(`DEV_LOOP_DEV_AGENTS`) now also reaches the ops console's **feature**
+topology, so `PlannerNode` suggests the operator's real backends there
+too.
 
 ## Stream layout (for reference)
 

@@ -504,6 +504,21 @@ class DevelopmentOutput(BaseModel):
             "(FEAT-323). Empty for the single-agent path."
         ),
     )
+    merge_performed: bool = Field(
+        default=False,
+        description=(
+            "True only when a ``SubWorktreeManager`` actually merged at "
+            "least one wave of sub-worktrees back into the integrated "
+            "feature worktree (pool path, ``isolation_mode='isolated'``). "
+            "False for the single-agent path, for ``isolation_mode="
+            "'shared'`` (no sub-worktrees exist, so nothing is ever "
+            "merged), and for any payload an agent emits itself — an "
+            "``sdd-worker`` dispatch has no way to know whether the "
+            "orchestrator will merge anything afterwards. Read by "
+            "``SynthesisNode`` to decide whether post-merge reconciliation "
+            "has anything to reconcile at all."
+        ),
+    )
 
 
 class CriterionResult(BaseModel):

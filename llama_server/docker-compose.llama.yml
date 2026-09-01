@@ -1,0 +1,68 @@
+# llama-server (llama.cpp) — inferencia local con GPU
+#
+# Stack de encendido MANUAL: `restart: "no"` a propósito — la GPU se
+# comparte con desarrollo, así que este contenedor nunca arranca solo
+# (ni con el daemon de Docker, ni tras un reboot).
+#
+# Uso (desde dentro de llama_server/):
+#   cp .env.example .env   # primera vez
+#   docker compose --env-file .env -f docker-compose.llama.yml up -d
+#   docker compose --env-file .env -f docker-compose.llama.yml down
+#
+# IMPORTANTE: el `--env-file` NO es opcional. La directiva `env_file:` de
+# abajo solo inyecta variables DENTRO del contenedor; no alimenta la
+# interpolación `${...}` de este fichero, que Compose resuelve únicamente
+# desde el entorno del shell, desde el `.env` de la raíz del proyecto o
+# desde `--env-file`. Sin él, `.env` se ignora en silencio y el stack
+# arranca siempre con los valores por defecto (modelo 4B, ctx 8192,
+# --parallel 2, sin LLAMA_EXTRA_ARGS). Comprobar antes de arrancar:
+#   docker compose --env-file .env -f docker-compose.llama.yml config
+#
+# Endpoint OpenAI-compatible: http://localhost:${LLAMA_PORT}/v1
+# (LocalLLMClient de ai-parrot funciona apuntando base_url ahí; el
+# response_format json_schema se garantiza vía GBNF en el servidor.)
+
+services:
+  llama-server:
+    build: .
+    image: ai-parrot/llama-server:cuda
+    container_name: parrot-llama-server
+    restart: "no"
+    env_file:
+      - .env
+    ports:
+      - "${LLAMA_PORT:-8089}:8080"
+    volumes:
+      # Cache de modelos descargados con -hf (persiste entre reinicios)
+      - llama-models:/root/.cache/llama.cpp
+      # Modelos GGUF locales propios (opcional): ./models
+      - ./models:/models:ro
+    command: >
+      -hf ${LLAMA_HF_MODEL:-ggml-org/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M}
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size ${LLAMA_CTX:-8192}
+      --n-gpu-layers ${LLAMA_NGL:-99}
+      --parallel ${LLAMA_PARALLEL:-2}
+      ${LLAMA_EXTRA_ARGS:-}
+    environment:
+      - LLAMA_API_KEY=${LLAMA_API_KEY:-}
+    # /health devuelve 503 mientras el modelo carga. El Dockerfile trae un
+    # start-period de 900s (suficiente para un MoE de 22 GB ya cacheado);
+    # súbelo a 30m para la primera descarga con -hf de un modelo grande.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: ${LLAMA_HEALTH_START:-900s}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  llama-models:

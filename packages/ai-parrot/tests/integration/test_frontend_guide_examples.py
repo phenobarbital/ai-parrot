@@ -13,18 +13,13 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SATELLITE_SRC))
-
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure Chart/DataTable/Map registration
 
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _GUIDE_PATH = _REPO_ROOT / "docs" / "frontend" / "structured-artifacts-frontend-guide.md"
 _FENCE_RE = re.compile(r"```json a2ui-envelope\n(.*?)```", re.DOTALL)
 

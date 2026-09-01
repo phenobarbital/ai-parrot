@@ -83,14 +83,22 @@ class _GateFlow:
 def make_client(server_dev, aiohttp_client):
     """Build a test client whose startup is stubbed (no Redis/dispatcher)."""
 
-    async def _make(flow=None):
+    async def _make(flow=None, *, checkpoint_store=None, dev_loop_flow_kwargs=None):
         flow = flow if flow is not None else _StubFlow()
         app = server_dev.build_app(redis_url="redis://x")
         # Drop the real startup/cleanup and wire the app keys by hand.
         app.on_startup.clear()
         app.on_cleanup.clear()
 
-        runner = DevFlowRunner(flow, redis_url="redis://x")
+        # FEAT-480: `dev_loop_flow_kwargs` is what turns the runner's
+        # recovery path on — omitted (the default) the console must behave
+        # exactly as it did before resume existed.
+        runner = DevFlowRunner(
+            flow,
+            redis_url="redis://x",
+            checkpoint_store=checkpoint_store,
+            dev_loop_flow_kwargs=dev_loop_flow_kwargs,
+        )
         app["runner"] = runner
         app["dev_loop_runner"] = runner
         app["flow"] = flow
@@ -712,3 +720,221 @@ async def test_plan_approval_false_reaches_extra_shared_and_suppresses(make_clie
     )
     ctx = await _wait_for_context(client.app_flow)
     assert ctx.shared_data["require_plan_approval"] is False
+
+
+# ---------------------------------------------------------------------------
+# FEAT-480 — resume an interrupted run from its run_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_store():
+    """The in-memory CheckpointStore from the recovery suite (not re-declared)."""
+    from .test_recovery import FakeCheckpointStore
+
+    return FakeCheckpointStore()
+
+
+def _resumable_report(run_id: str) -> dict:
+    return {
+        "run_id": run_id,
+        "workflow": "dev-flow",
+        "flow_id": f"dev-flow/{run_id}",
+        "recovery_enabled": True,
+        "found": True,
+        "resumable": True,
+        "reason": None,
+        "status": "running",
+        "checkpoint_id": 3,
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "completed_nodes": ["dev_intake", "ideation", "planner"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_without_run_id_mints_a_fresh_one(make_client):
+    """Backward compatibility: no run_id in the payload is still a new run."""
+    client = await make_client()
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["resume"] is None
+    assert data["run_id"].startswith("run-")
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_malformed_run_id(make_client):
+    client = await make_client()
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "bad id/../x"},
+    )
+
+    assert resp.status == 400
+    assert "run_id" in (await resp.json())["error"]
+
+
+@pytest.mark.asyncio
+async def test_blank_run_id_is_a_fresh_run(make_client):
+    """An empty resume field must not be read as "resume the run named ''"."""
+    client = await make_client()
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "   "},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["resume"] is None
+    assert data["run_id"].startswith("run-")
+
+
+@pytest.mark.asyncio
+async def test_run_id_with_no_checkpoint_is_409_not_a_silent_fresh_run(make_client, fake_store):
+    """The whole point of the preflight: an unresumable id must NOT quietly
+    start a full fresh run (hours of agent time) under the operator's id."""
+    client = await make_client(
+        checkpoint_store=fake_store,
+        dev_loop_flow_kwargs={"skip_qa": False},
+    )
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "run-ghost"},
+    )
+
+    assert resp.status == 409
+    data = await resp.json()
+    assert data["reason"] == "no_checkpoint"
+    assert "expired" in data["error"]
+    assert client.app_flow.contexts == []
+
+
+@pytest.mark.asyncio
+async def test_run_id_on_a_server_without_recovery_is_409(make_client):
+    """No recovery wiring -> refuse rather than pretend to resume."""
+    client = await make_client()
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "run-x"},
+    )
+
+    assert resp.status == 409
+    assert (await resp.json())["reason"] == "recovery_disabled"
+
+
+@pytest.mark.asyncio
+async def test_resumable_run_id_is_used_as_the_run_identity(make_client, monkeypatch):
+    """A resumable id reaches DevFlowRunner.run(run_id=...) unchanged, and the
+    response names the restored nodes the run is not paying for again."""
+    client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+
+    async def _fake_inspect(run_id, *, brief=None):
+        return _resumable_report(run_id)
+
+    monkeypatch.setattr(client.app_runner, "inspect_checkpoint", _fake_inspect)
+
+    # The coordinator itself is exercised in tests/flows/dev_flow/
+    # test_recovery.py; here it is stubbed so the assertion is about the
+    # HTTP layer handing the operator's run_id through untouched.
+    async def _fake_prepare(**kwargs):
+        assert kwargs["run_id"] == "run-abc123"
+        assert kwargs["workflow"] == "dev-flow"
+        return client.app_flow, "resumed"
+
+    monkeypatch.setattr(client.app_runner._checkpoint_coordinator, "prepare", _fake_prepare)
+
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "run-abc123"},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["run_id"] == "run-abc123"
+    assert data["resume"]["completed_nodes"] == ["dev_intake", "ideation", "planner"]
+
+    ctx = await _wait_for_context(client.app_flow)
+    assert ctx.shared_data["run_id"] == "run-abc123"
+
+
+@pytest.mark.asyncio
+async def test_resuming_an_in_flight_run_is_refused(make_client, monkeypatch):
+    client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+    client.app["flow_tasks"]["run-live"] = MagicMock()
+
+    resp = await client.post(
+        "/api/flow/run",
+        json={"kind": "enhancement", "title": "t", "description": "d", "run_id": "run-live"},
+    )
+
+    assert resp.status == 409
+    assert (await resp.json())["reason"] == "already_running"
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_probe_reports_a_missing_run(make_client, fake_store):
+    client = await make_client(
+        checkpoint_store=fake_store,
+        dev_loop_flow_kwargs={"skip_qa": False},
+    )
+    resp = await client.get("/api/flow/run-ghost/checkpoint")
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["found"] is False
+    assert data["reason"] == "no_checkpoint"
+    assert data["active"] is False
+    assert data["help"]
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_probe_surfaces_a_store_outage_as_503(make_client, monkeypatch):
+    """A store outage reported as "not found" would push the operator into a
+    fresh run they did not need."""
+    client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+
+    async def _boom(run_id, *, brief=None):
+        raise ConnectionError("redis is down")
+
+    monkeypatch.setattr(client.app_runner, "inspect_checkpoint", _boom)
+
+    resp = await client.get("/api/flow/run-x/checkpoint")
+
+    assert resp.status == 503
+    assert "unavailable" in (await resp.json())["error"]
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_probe_rejects_a_malformed_run_id(make_client):
+    client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+    resp = await client.get("/api/flow/..%2Fetc/checkpoint")
+    assert resp.status in (400, 404)
+
+
+@pytest.mark.asyncio
+async def test_config_publishes_the_recovery_surface(make_client):
+    client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+    data = await (await client.get("/api/config")).json()
+
+    assert data["checkpoint_probe_url_template"] == "/api/flow/{run_id}/checkpoint"
+    assert data["defaults"]["recovery_enabled"] is True
+
+    plain = await make_client()
+    plain_data = await (await plain.get("/api/config")).json()
+    assert plain_data["defaults"]["recovery_enabled"] is False
+
+
+def test_checkpoint_route_is_mounted(server_dev):
+    app = server_dev.build_app(redis_url="redis://x")
+    routes = {(r.method, getattr(r.resource, "canonical", "")) for r in app.router.routes()}
+    assert ("GET", "/api/flow/{run_id}/checkpoint") in routes
+
+
+def test_dev_html_has_the_resume_control(dev_html):
+    """The console surface the operator actually uses to resume."""
+    for marker in ('id="f-resume-run-id"', 'id="resume-probe-btn"', "resumeRunId", "payload.run_id"):
+        assert marker in dev_html, marker

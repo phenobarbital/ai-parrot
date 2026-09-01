@@ -25,8 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
@@ -44,6 +45,23 @@ from parrot.flows.dev_loop.models import (
     WorkerSummary,
 )
 from parrot.flows.dev_loop.task_scheduler import TaskRef
+
+#: Marks a ``_dispatch_one`` failure as an error in THIS codebase rather
+#: than a failed dispatch. Retrying one on another worker re-runs the same
+#: bad call for the same result, so ``run_wave`` skips the retry.
+INTERNAL_ERROR_PREFIX = "internal error:"
+
+
+def is_internal_error(error: Optional[str]) -> bool:
+    """Whether a ``_dispatch_one`` error string reports a bug on our side.
+
+    Args:
+        error: The error string from a dispatch attempt, if any.
+
+    Returns:
+        True when the failure was an internal error, not a failed dispatch.
+    """
+    return bool(error) and error.startswith(INTERNAL_ERROR_PREFIX)
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +231,7 @@ class DevAgentPool:
         run_id: str,
         cwd_for: Callable[[str], str],
         escalate: bool = False,
+        session_host: Optional[Any] = None,
     ) -> _DispatchAttempt:
         """Dispatch a single task to a single worker, never raising.
 
@@ -228,6 +247,10 @@ class DevAgentPool:
                 that model instead of ``worker.spec.model`` (same backend).
                 Only the retry call site passes ``True``; first attempts
                 always use the worker's base profile unchanged.
+            session_host: The run's ``SessionHost``, so this dispatch's
+                events fold into session state exactly as the single-agent
+                path's do. Without it a pooled ``development`` node showed
+                0 messages / 0 tool uses in the run bundle.
 
         Returns:
             A ``(task_id, worker_id, output, error)`` tuple. Exactly one of
@@ -250,6 +273,17 @@ class DevAgentPool:
                 task.id,
                 worker.spec.escalation_model,
             )
+        # A dispatch is the longest-running thing in the whole flow (up to
+        # the profile's wall-clock budget). Bracketing it with a start and
+        # an end line is what lets an operator read the interleaved
+        # per-turn dispatcher logs back to the task that produced them.
+        self.logger.info(
+            "%s starting %s%s",
+            worker.worker_id,
+            task.id,
+            f" — {task.title}" if task.title else "",
+        )
+        started = time.perf_counter()
         try:
             output = await worker.dispatcher.dispatch(
                 brief=brief,
@@ -258,6 +292,34 @@ class DevAgentPool:
                 run_id=run_id,
                 node_id=worker.worker_id,
                 cwd=cwd_for(worker.worker_id),
+                session_host=session_host,
+            )
+            # A dispatch that names its OWN task in `incomplete_tasks` is
+            # telling us it did not finish. Introduced with the forced
+            # `final_output` salvage turn (LLMCodeDispatcher): a seat that
+            # runs out of turns can now return the work it committed instead
+            # of nothing, and the salvage prompt asks it to declare partial
+            # work honestly — so an output must not be able to buy a
+            # "completed" by admitting it is unfinished. Retried like any
+            # other failure.
+            declared_incomplete = list(getattr(output, "incomplete_tasks", []) or [])
+            if task.id in declared_incomplete:
+                self.logger.warning(
+                    "Task %s returned by %s but self-declared incomplete; treating as failed",
+                    task.id,
+                    worker.worker_id,
+                )
+                return (
+                    task.id,
+                    worker.worker_id,
+                    None,
+                    f"{task.id} reported itself incomplete by the dispatched agent",
+                )
+            self.logger.info(
+                "%s finished %s in %.1fs",
+                worker.worker_id,
+                task.id,
+                time.perf_counter() - started,
             )
             return task.id, worker.worker_id, output, None
         except (DispatchExecutionError, DispatchOutputValidationError) as exc:
@@ -269,6 +331,33 @@ class DevAgentPool:
                 exc,
             )
             return task.id, worker.worker_id, None, str(exc)
+        except (TypeError, AttributeError, NameError, ImportError) as exc:
+            # OUR bug, not the model's. A dispatcher wraps everything that
+            # goes wrong inside a dispatch in DispatchExecutionError, so an
+            # unwrapped TypeError/AttributeError reaching here is almost
+            # always a bad call on this side of the boundary — a signature
+            # that drifted, a missing attribute, an optional dependency.
+            #
+            # Swallowed as "task failed" it is invisible AND expensive: it
+            # does not fail one task, it fails EVERY task on EVERY worker,
+            # each one burning a retry dispatch, until the wave reports
+            # PARTIAL half an hour later. That is why it is logged at ERROR
+            # with a traceback and marked non-retryable — a stack trace
+            # would have said instantly what the retries never will.
+            self.logger.error(
+                "Task %s hit an internal error on %s (%s): %s",
+                task.id,
+                worker.worker_id,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            return (
+                task.id,
+                worker.worker_id,
+                None,
+                f"{INTERNAL_ERROR_PREFIX} {type(exc).__name__}: {exc}",
+            )
         except Exception as exc:  # noqa: BLE001 - a single dispatch must never kill the wave
             self.logger.warning(
                 "Task %s failed on %s (unexpected %s): %s",
@@ -287,6 +376,7 @@ class DevAgentPool:
         run_id: str,
         cwd_for: Callable[[str], str],
         escalate: bool = False,
+        session_host: Optional[Any] = None,
     ) -> WaveResult:
         """Dispatch one wave of tasks across the pool, round-robin, with retry.
 
@@ -304,6 +394,8 @@ class DevAgentPool:
                 :class:`TaskScopedBrief`).
             run_id: The flow run id.
             cwd_for: ``worker_id -> cwd`` resolver.
+            session_host: The run's ``SessionHost``, forwarded to every
+                dispatch in this wave (see :meth:`_dispatch_one`).
 
         Returns:
             A :class:`WaveResult` with completed/failed tasks and one
@@ -320,12 +412,24 @@ class DevAgentPool:
         assignments: Dict[str, PoolWorker] = {
             t.id: self.workers[i % len(self.workers)] for i, t in enumerate(tasks)
         }
+        self.logger.info(
+            "Wave assignment (%d task(s) over %d worker(s)): %s",
+            len(tasks),
+            len(self.workers),
+            ", ".join(
+                f"{t.id} -> {assignments[t.id].worker_id}"
+                f"({assignments[t.id].spec.agent}:"
+                f"{assignments[t.id].spec.model or '<backend default>'})"
+                for t in tasks
+            ),
+        )
 
         first_attempts = await asyncio.gather(
             *(
                 self._dispatch_one(
                     t, assignments[t.id], research=research, run_id=run_id,
                     cwd_for=cwd_for, escalate=escalate,
+                    session_host=session_host,
                 )
                 for t in tasks
             )
@@ -337,14 +441,18 @@ class DevAgentPool:
         retry_targets: List[Tuple[TaskRef, PoolWorker]] = []
         tasks_by_id = {t.id: t for t in tasks}
 
-        for task_id, worker_id, output, _error in first_attempts:
+        failed: List[str] = []
+        for task_id, worker_id, output, error in first_attempts:
             if output is not None:
                 completed[task_id] = output
                 per_worker_completed[worker_id].append(task_id)
+            elif is_internal_error(error):
+                # A second dispatch would re-run the same bad call.
+                failed.append(task_id)
+                per_worker_failed[worker_id].append(task_id)
             else:
                 retry_targets.append((tasks_by_id[task_id], assignments[task_id]))
 
-        failed: List[str] = []
         if retry_targets:
             retry_workers = [self._next_worker(fw) for _task, fw in retry_targets]
             retry_attempts = await asyncio.gather(
@@ -356,6 +464,7 @@ class DevAgentPool:
                         run_id=run_id,
                         cwd_for=cwd_for,
                         escalate=True,
+                        session_host=session_host,
                     )
                     for (task, _fw), retry_worker in zip(retry_targets, retry_workers)
                 )

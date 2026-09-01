@@ -85,6 +85,21 @@ Repository targeting (FEAT-253):
   Private SSH repos require an SSH key/agent on the host. For ``gh``-based
   auth set ``GITHUB_TOKEN``.
 
+FEAT-482/484/485/486 wiring (see ``README.md`` §"Research-seat MCP access"):
+
+- The ``sdd-research`` dispatch gets explicit MCP servers — wikitoolkit
+  graph search plus every ``.parrot/mcp-toolkits.yaml`` section served as
+  ``parrot mcp-local <name>`` (e.g. a ``repo`` section exposing the
+  read-only ``ReadOnlyRepoToolkit``). Built by the sibling
+  ``mcp_wiring.build_research_mcp``; ``DEV_LOOP_RESEARCH_MCP_ENABLED`` /
+  ``DEV_LOOP_RESEARCH_MCP_TOOLKITS`` control it.
+- ``DEV_FLOW_RESEARCH_PARTNER_ENABLED`` / ``_BACKEND`` / ``_MODEL`` select
+  the collaborative-research partner's secondary LLM for ``ResearchNode``.
+- ``DEV_LOOP_ADVERSARIAL_BACKEND`` accepts ``mantle`` (the
+  ``mantle-adversarial`` reviewer) in addition to ``codex``/``nova``.
+- The env dev-agent pool now also reaches the feature topology
+  (``build_dev_loop_feature_flow(development_pool_config=...)``).
+
 Boot::
 
     docker run --rm -p 6379:6379 redis:7    # if you don't have one
@@ -135,6 +150,12 @@ from parrot.flows.dev_loop import (
     flow_stream_ws,
     parse_repo_specs,
 )
+from parrot.flows.dev_flow.complementary_research import ComplementaryResearchCoordinator
+from parrot.flows.dev_flow.model_plan import (
+    DevFlowModelPlan,
+    resolve_model_plan,
+    supported_dev_pool_backends,
+)
 from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
@@ -155,6 +176,7 @@ from parrot_tools.jiratoolkit import JiraToolkit
 # directory on sys.path) or imported from elsewhere.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llm_catalog  # noqa: E402
+import mcp_wiring  # noqa: E402
 
 logger = logging.getLogger("dev_loop.server")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -170,6 +192,7 @@ _DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV = {
     "zai": "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
     "moonshot": "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
     "google_coding": "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
+    "nova": "NOVA_CODE_MAX_CONCURRENT_DISPATCHES",
 }
 
 
@@ -213,6 +236,11 @@ def _log_development_agent_selection(backend: str, profile: Any) -> None:
         )
     elif backend == "google_coding":
         logger.info("Development node using google_coding CLI (model=%s)", profile.model)
+    elif backend == "nova":
+        logger.info(
+            "Development node using Nova code dispatcher (model=%s)",
+            getattr(profile, "model", ""),
+        )
 
 
 def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> object:
@@ -309,17 +337,57 @@ def _build_nova_adversarial_reviewer() -> object:
     )
 
 
+def _build_mantle_adversarial_reviewer() -> object:
+    """Build the ``mantle-adversarial`` reviewer (FEAT-486).
+
+    Mirrors :func:`_build_nova_adversarial_reviewer`'s scope-misconfiguration
+    guards; ``MantleAdversarialReviewDispatcher`` drives the OpenAI-compatible
+    ``BedrockMantleClient`` directly, so it needs no underlying CLI
+    dispatcher either.
+
+    Returns:
+        The registered ``mantle-adversarial`` reviewer.
+
+    Raises:
+        RuntimeError: Same conditions as
+            :func:`_build_codex_adversarial_reviewer`.
+    """
+    scope = conf.DEV_LOOP_ADVERSARIAL_SCOPE.strip().lower()
+    if scope == "commit":
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='commit' is not supported by this "
+            "server's static reviewer wiring — a commit SHA is inherently "
+            "per-run, not a persistent setting. Use 'uncommitted' (default) "
+            "or 'base' with DEV_LOOP_ADVERSARIAL_BASE_REF set, or drive "
+            "'commit' scope via a programmatic "
+            "MantleAdversarialReviewDispatcher(review_scope='commit', "
+            "review_commit=<sha>) construction outside this bootstrap."
+        )
+    if scope == "base" and not conf.DEV_LOOP_ADVERSARIAL_BASE_REF:
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='base' requires "
+            "DEV_LOOP_ADVERSARIAL_BASE_REF to be set (e.g. 'dev' or "
+            "'origin/main') — otherwise every adversarial review would "
+            "silently degrade to an unreviewed pass."
+        )
+    return CodeReviewDispatcherFactory.create(
+        "mantle-adversarial",
+        model=conf.DEV_LOOP_MANTLE_REVIEW_MODEL,
+        review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE,
+        review_base=conf.DEV_LOOP_ADVERSARIAL_BASE_REF if scope == "base" else "",
+    )
+
+
 def _build_adversarial_reviewer(
     codex_dispatcher: CodexCodeDispatcher,
 ) -> tuple[object, str]:
     """Build the adversarial reviewer for whichever backend is configured.
 
-    FEAT-405 Module 5: ``DEV_LOOP_ADVERSARIAL_BACKEND`` (resolved via
-    :func:`llm_catalog.resolve_adversarial_backend`) selects ``codex``
-    (default — [R3]: unset config is byte-identical to before FEAT-405) or
-    ``nova``. Renamed/generalized from the FEAT-375 codex-only adversarial
-    builder to make the backend selectable, per spec §5 "The adversarial
-    reviewer is selectable over {codex, nova}".
+    FEAT-405 Module 5 / FEAT-486: ``DEV_LOOP_ADVERSARIAL_BACKEND`` (resolved
+    via :func:`llm_catalog.resolve_adversarial_backend`) selects ``codex``
+    (default — [R3]: unset config is byte-identical to before FEAT-405),
+    ``nova``, or ``mantle``. Previously ``mantle`` passed the catalog's
+    validation and then silently built the Codex reviewer here.
 
     Args:
         codex_dispatcher: The (possibly shared) ``CodexCodeDispatcher`` —
@@ -328,11 +396,14 @@ def _build_adversarial_reviewer(
     Returns:
         A ``(reviewer, agent_key)`` pair; ``agent_key`` is the
         ``CodeReviewDispatcherFactory`` registration name of whichever
-        reviewer was actually built (``"codex-adversarial"`` or
-        ``"nova-adversarial"``).
+        reviewer was actually built (``"codex-adversarial"``,
+        ``"nova-adversarial"``, or ``"mantle-adversarial"``).
     """
-    if llm_catalog.resolve_adversarial_backend() == "nova":
+    backend = llm_catalog.resolve_adversarial_backend()
+    if backend == "nova":
         return _build_nova_adversarial_reviewer(), "nova-adversarial"
+    if backend == "mantle":
+        return _build_mantle_adversarial_reviewer(), "mantle-adversarial"
     return _build_codex_adversarial_reviewer(codex_dispatcher), "codex-adversarial"
 
 
@@ -451,8 +522,9 @@ def _build_primary_reviewer(
         )
         return CodeReviewDispatcherFactory.create("google_coding", dispatcher=underlying)
     raise RuntimeError(
-        "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', 'gemini', "
-        f"'google_coding', 'codex-adversarial', or 'parallel', got {agent!r}"
+        f"DEV_LOOP_CODEREVIEW_AGENT must be one of "
+        f"{', '.join(repr(b) for b in llm_catalog.PRIMARY_REVIEW_BACKENDS)}, "
+        f"'codex-adversarial', or 'parallel', got {agent!r}"
     )
 
 
@@ -1052,6 +1124,15 @@ def _parse_dev_agents(raw: Any) -> Optional[list[DevAgentSpec]]:
             raise ValueError(
                 f"unknown dev agent backend {agent!r} — supported: " f"{', '.join(b.id for b in llm_catalog.BACKENDS)}"
             )
+        # The catalog also lists non-development backends (e.g. the
+        # research-partner-only "gpt" entry), which DevAgentSpec's
+        # DevAgentBackend Literal would reject with a raw pydantic error —
+        # pre-validate for a clean 400 instead.
+        if agent not in supported_dev_pool_backends():
+            raise ValueError(
+                f"backend {agent!r} is not a development backend — "
+                f"supported: {', '.join(supported_dev_pool_backends())}"
+            )
         specs.append(
             DevAgentSpec(
                 agent=agent,
@@ -1462,9 +1543,9 @@ async def _on_startup(app: web.Application) -> None:
         _log_development_agent_selection(backend, development_profile)
     else:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
-            f"got {development_agent!r}"
+            f"DEV_LOOP_DEVELOPMENT_AGENT must be one of "
+            f"{', '.join(supported_dev_pool_backends())} "
+            f"(or the legacy alias 'llm'), got {development_agent!r}"
         )
 
     codereview_dispatcher, codereview_agent_key = _resolve_codereview_dispatcher(
@@ -1554,27 +1635,72 @@ async def _on_startup(app: web.Application) -> None:
     require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
     skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
+    # FEAT-484/485: explicit MCP access for the research seat. The
+    # sdd-research dispatch runs with strict_mcp_config=True, so the
+    # wikitoolkit graph-search server and the `.parrot/mcp-toolkits.yaml`
+    # toolkit servers (e.g. the ReadOnlyRepoToolkit `repo` section) must be
+    # declared on the dispatch profile — see mcp_wiring.build_research_mcp.
+    research_mcp_servers, research_mcp_tools = mcp_wiring.build_research_mcp(Path(conf.PROJECT_ROOT))
+    if research_mcp_servers:
+        logger.info(
+            "Research-seat MCP servers: %s",
+            ", ".join(sorted(research_mcp_servers)),
+        )
+    else:
+        logger.info("Research seat runs without MCP servers (none resolved or disabled).")
+
+    # FEAT-482/486: collaborative-research partner for ResearchNode. The
+    # FEAT-486 keys (DEV_FLOW_RESEARCH_PARTNER_ENABLED/_BACKEND/_MODEL)
+    # select the secondary research LLM explicitly; when the seat is not
+    # enabled, None lets the library build its conf-driven default (the
+    # legacy DEV_FLOW_RESEARCH_PARTNER env path keeps working untouched).
+    partner_plan = resolve_model_plan(DevFlowModelPlan()).research_partner
+    research_coordinator: ComplementaryResearchCoordinator | None = None
+    if partner_plan.enabled:
+        research_coordinator = ComplementaryResearchCoordinator(
+            backend=partner_plan.backend or None,
+            model=partner_plan.model or None,
+        )
+        logger.info(
+            "Collaborative research partner enabled (backend=%s, model=%s)",
+            partner_plan.backend,
+            partner_plan.model,
+        )
+
     jira_toolkit = _build_jira_toolkit()
     git_toolkit = _build_git_toolkit()
-    app["flow"] = build_dev_loop_flow(
-        dispatcher=dispatcher,
-        jira_toolkit=jira_toolkit,
-        log_toolkits=_build_log_toolkits(),
-        redis_url=redis_url,
-        development_dispatcher=development_dispatcher,
-        development_profile=development_profile,
-        development_pool_config=development_pool_config,
-        development_dispatcher_builder=development_dispatcher_builder,
-        development_pool_max=development_pool_max,
-        name="dev-loop-demo",
-        git_toolkit=git_toolkit,
-        repos=repos,
-        codereview_dispatcher=codereview_dispatcher,
-        wiki_search=wiki_search,
-        graph_memory=graph_memory,
-        require_plan_approval=require_plan_approval,
-        skip_qa=skip_qa,
-    )
+    # FEAT-480 (TASK-2628): captured once as the exact kwargs `build_dev_loop_flow`
+    # was called with, then handed to `DevLoopRunner` as `dev_loop_flow_kwargs` —
+    # its checkpoint-recovery path (`DevLoopRunner.run(..., run_id=...)`) uses
+    # this SAME dict to build a genuinely fresh, checkpoint-enabled `AgentsFlow`
+    # per run (spec §7: "shared flow instances are concurrent today; per-run
+    # construction is mandatory") instead of reusing `app["flow"]` across jobs.
+    dev_loop_flow_kwargs: dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "jira_toolkit": jira_toolkit,
+        "log_toolkits": _build_log_toolkits(),
+        "redis_url": redis_url,
+        "development_dispatcher": development_dispatcher,
+        "development_profile": development_profile,
+        "development_pool_config": development_pool_config,
+        "development_dispatcher_builder": development_dispatcher_builder,
+        "development_pool_max": development_pool_max,
+        "name": "dev-loop-demo",
+        "git_toolkit": git_toolkit,
+        "repos": repos,
+        "codereview_dispatcher": codereview_dispatcher,
+        "wiki_search": wiki_search,
+        "graph_memory": graph_memory,
+        "require_plan_approval": require_plan_approval,
+        "skip_qa": skip_qa,
+        # FEAT-482/484/485/486: research-seat MCP access + explicit
+        # collaborative-research coordinator. None values keep the
+        # library defaults byte-identical.
+        "research_coordinator": research_coordinator,
+        "research_mcp_servers": research_mcp_servers or None,
+        "research_mcp_tools": research_mcp_tools or None,
+    }
+    app["flow"] = build_dev_loop_flow(**dev_loop_flow_kwargs)
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     # The extra deps let the runner build the revision (FEAT-250) and
     # feature (FEAT-378) topologies on demand. graph_memory is forwarded
@@ -1590,6 +1716,16 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
+        # FEAT-480 (TASK-2628): `checkpoint_store=None` resolves through the
+        # existing env-fallback precedence (`FLOW_CHECKPOINT_STORE`, default
+        # "redis") — no new config surface. Supplying `dev_loop_flow_kwargs`
+        # is what actually turns on the recovery path for every `handle_run`
+        # request below, each of which already mints its own stable
+        # `run_id = f"run-{uuid.uuid4().hex[:8]}"` per job (never shared
+        # across jobs), satisfying "no job depends on a checkpoint identity
+        # shared across jobs" (spec §3 Module 6).
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
     )
 
     # Feature mode (FEAT-378). `DevLoopRunner._run_feature` builds its flow
@@ -1616,6 +1752,11 @@ async def _on_startup(app: web.Application) -> None:
                 max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
                 stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
             ),
+            # FEAT-486 (D3): the env pool now also reaches feature mode, so
+            # PlannerNode's suggested_pool names the operator's real
+            # backends and DevelopmentNode has a default pool when the
+            # brief carries no dev_agents.
+            development_pool_config=development_pool_config,
             development_pool_max=development_pool_max,
             # FEAT-377 TASK-1914/1915/1916: same graph_memory/
             # require_plan_approval already computed above for the

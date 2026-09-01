@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 import os
 
+from .log_levels import resolve_log_level
+
 _FAISS_LOGGER_NAME = "faiss"
 
 
@@ -35,16 +37,5 @@ def quiet_faiss_loader() -> None:
     Safe to call repeatedly and from multiple import sites — the first call
     before ``import faiss`` wins; later calls just re-assert the same level.
     """
-    level = _resolve_level(os.environ.get("FAISS_LOG_LEVEL"), logging.WARNING)
+    level = resolve_log_level(os.environ.get("FAISS_LOG_LEVEL"), logging.WARNING)
     logging.getLogger(_FAISS_LOGGER_NAME).setLevel(level)
-
-
-def _resolve_level(raw: str | None, default: int) -> int:
-    """Resolve a level name (``"DEBUG"``) or numeric string to a logging level int."""
-    if raw is None or raw.strip() == "":
-        return default
-    token = raw.strip().upper()
-    if token.isdigit():
-        return int(token)
-    resolved = logging.getLevelName(token)
-    return resolved if isinstance(resolved, int) else default

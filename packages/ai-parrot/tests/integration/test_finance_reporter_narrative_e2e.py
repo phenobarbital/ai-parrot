@@ -39,25 +39,12 @@ from typing import Any, Optional
 import pandas as pd
 import pytest
 
-# ---------------------------------------------------------------------------
-# Renderer registration (interactive-html) — same boilerplate as FEAT-324's
-# tests/integration/infographic_recipes/test_e2e.py.
-# ---------------------------------------------------------------------------
+import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401
+
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_VISUALIZATIONS_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if str(_VISUALIZATIONS_SRC) not in sys.path:
-    sys.path.insert(0, str(_VISUALIZATIONS_SRC))
 
-import parrot.outputs as _parrot_outputs  # noqa: E402
-
-_vis_outputs_path = str(_VISUALIZATIONS_SRC / "parrot" / "outputs")
-if _vis_outputs_path not in _parrot_outputs.__path__:
-    _parrot_outputs.__path__.insert(0, _vis_outputs_path)
-
-import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401,E402
-
-from parrot.auth.exceptions import SystemAccountNotProvisioned  # noqa: E402
-from parrot.auth.permission import build_principal_context  # noqa: E402
+from parrot.auth.exceptions import SystemAccountNotProvisioned
+from parrot.auth.permission import build_principal_context
 from parrot.auth.system_account import (  # noqa: E402
     SystemAccount,
     resolve_system_account_context,

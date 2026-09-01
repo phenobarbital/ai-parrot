@@ -20,9 +20,20 @@ class GrokCodeDispatchProfile(BaseModel):
     approval_policy: Literal["never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     max_turns: int = Field(default=24, ge=1, le=100)
-    max_tokens: int = Field(default=4096, ge=256, le=32768)
+    max_tokens: int = Field(default=8192, ge=256, le=32768)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     command_timeout_seconds: int = Field(default=300, ge=1, le=3600)
+    # Mirrors LLMCodeDispatchProfile — this profile is a standalone
+    # BaseModel (not a subclass), but GrokCodeDispatcher inherits the base
+    # `_completion_args`/`_run_tool`, so the two field sets must not drift.
+    parallel_tool_calls: bool = Field(
+        default=True,
+        description="Let the model request several tools in ONE turn.",
+    )
+    restrict_command_paths: bool = Field(
+        default=True,
+        description="Reject run_command path arguments outside the worktree.",
+    )
     allowed_commands: List[str] = Field(
         default_factory=lambda: [
             "git",
@@ -31,11 +42,16 @@ class GrokCodeDispatchProfile(BaseModel):
             "python",
             "python3",
             "rg",
+            "grep",
             "ls",
             "pwd",
             "cat",
             "sed",
             "find",
+            "mkdir",
+            "mv",
+            "ruff",
+            "mypy",
         ],
         description="Executable names allowed through the run_command tool.",
     )

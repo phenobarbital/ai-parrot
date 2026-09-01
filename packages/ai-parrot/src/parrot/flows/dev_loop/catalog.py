@@ -54,10 +54,12 @@ JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_cod
 ADVERSARIAL_BACKEND: str = "codex"
 
 # Valid values for the config-resolved adversarial backend selector
-# (FEAT-405 Module 5). Deliberately NOT the full ``DevAgentBackend`` set —
+# (FEAT-405 Module 5; widened by FEAT-486 with "mantle" - purely
+# additive, the "codex" default and "nova" choice are unchanged).
+# Deliberately NOT the full ``DevAgentBackend`` set —
 # only backends with a registered "<backend>-adversarial" review
 # dispatcher qualify.
-_ADVERSARIAL_BACKEND_CHOICES: Tuple[str, ...] = ("codex", "nova")
+_ADVERSARIAL_BACKEND_CHOICES: Tuple[str, ...] = ("codex", "nova", "mantle")
 
 
 def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) -> str:
@@ -73,26 +75,124 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
             ``conf.config.get``.
 
     Returns:
-        ``"codex"`` or ``"nova"``.
+        ``"codex"``, ``"nova"`` or ``"mantle"`` (FEAT-486 — the
+        read-only ``gpt-5.6-sol`` counter-reviewer over bedrock-mantle).
 
     Raises:
-        ValueError: If the configured value is neither ``"codex"`` nor
-            ``"nova"`` — names the valid options.
+        ValueError: If the configured value is not one of those three
+            — names the valid options.
     """
     getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
-    value = str(
-        getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND
-    )
+    value = str(getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND)
     if value not in _ADVERSARIAL_BACKEND_CHOICES:
         raise ValueError(
             f"Invalid DEV_LOOP_ADVERSARIAL_BACKEND={value!r}; must be one "
-            f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova)."
+            f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova, mantle)."
         )
     return value
+
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
 # that can serve as the *primary* reviewer of a bug-mode run.
 PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
+
+# Valid values for the config-resolved research-partner backend selector
+# (FEAT-482 Module 1). Both reach Bedrock on the SAME ``AWS_NOVA_API_KEY``
+# credential — "gpt" via bedrock-mantle (``BedrockMantleClient``), "nova"
+# via Converse (``NovaClient``) — through one shared ``BedrockResearchPartner``
+# implementation.
+_RESEARCH_PARTNER_CHOICES: Tuple[str, ...] = ("gpt", "nova")
+
+# The empty string is the "research-partner seat disabled" sentinel for
+# ``DEV_FLOW_RESEARCH_PARTNER`` — distinct from ``_RESEARCH_PARTNER_CHOICES``,
+# which enumerates only the enabled values.
+_RESEARCH_PARTNER_DISABLED: str = ""
+
+# Anthropic model-id prefixes rejected for the research-partner seat (FEAT-482
+# §8 Q12): they correlate training priors with the primary Claude seat,
+# defeating the seat's decorrelation purpose, AND
+# ``BedrockConverseBase``'s pre-Module-3 ``thinking_budget`` shape returns
+# HTTP 400 against modern Anthropic models on Bedrock (Opus 5, Fable 5,
+# Opus 4.8/4.7, Sonnet 5).
+_ANTHROPIC_PARTNER_MODEL_PREFIXES: Tuple[str, ...] = (
+    "us.anthropic.",
+    "global.anthropic.",
+    "claude-",
+)
+
+
+def validate_research_partner_model(model: str) -> None:
+    """Hard-reject an Anthropic model configured for the research-partner seat.
+
+    Standalone (not private, not folded into any resolver) precisely so it
+    is independently unit-testable and reusable at every site that could
+    end up driving Bedrock with a research-partner model id — currently
+    :func:`resolve_research_partner_backend` (config-driven path) and
+    :class:`~parrot.flows.dev_flow.research_partner.BedrockResearchPartner`
+    (defense-in-depth for direct construction with an explicit ``backend``,
+    which bypasses the resolver entirely). A third backend added later can
+    call this same function without duplicating the policy.
+
+    Args:
+        model: The resolved partner model id (e.g. from
+            ``DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL`` /
+            ``DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL``).
+
+    Raises:
+        ValueError: If ``model`` matches an Anthropic model-id prefix.
+            Names BOTH the decorrelation reason and the Bedrock 400.
+    """
+    if any(model.startswith(prefix) for prefix in _ANTHROPIC_PARTNER_MODEL_PREFIXES):
+        raise ValueError(
+            f"Anthropic model {model!r} may not be configured as the "
+            "research-partner seat: (1) it correlates training priors "
+            "with the primary Claude seat, defeating the seat's "
+            "decorrelation purpose, and (2) BedrockConverseBase's "
+            "thinking shape returns HTTP 400 against modern Anthropic "
+            "models on Bedrock (see the adaptive-thinking support in "
+            "clients/bedrock.py)."
+        )
+
+
+def resolve_research_partner_backend(config_getter: Optional[ConfigGetter] = None) -> str:
+    """Return the deployment's configured research-partner backend.
+
+    Resolves ``DEV_FLOW_RESEARCH_PARTNER`` through config. Unset (empty
+    string) means the seat is disabled — an operator who configures
+    nothing sees byte-identical behaviour to pre-FEAT-482.
+
+    Args:
+        config_getter: ``(key, fallback) -> Any``; defaults to
+            ``conf.config.get``.
+
+    Returns:
+        ``""`` (disabled), ``"gpt"``, or ``"nova"``.
+
+    Raises:
+        ValueError: If the configured value is neither ``"gpt"`` nor
+            ``"nova"`` — names the valid options. Also raised (naming
+            both the decorrelation reason and the Bedrock 400) if the
+            resolved backend's model is an Anthropic model id.
+    """
+    getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
+    value = str(getter("DEV_FLOW_RESEARCH_PARTNER", _RESEARCH_PARTNER_DISABLED) or _RESEARCH_PARTNER_DISABLED)
+    if not value:
+        return _RESEARCH_PARTNER_DISABLED
+    if value not in _RESEARCH_PARTNER_CHOICES:
+        raise ValueError(
+            f"Invalid DEV_FLOW_RESEARCH_PARTNER={value!r}; must be one "
+            f"of {_RESEARCH_PARTNER_CHOICES} (gpt, nova), or unset to "
+            "disable the research-partner seat."
+        )
+    if value == "gpt":
+        model_key = "DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL"
+        default_model = conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL
+    else:
+        model_key = "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL"
+        default_model = conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
+    model = str(getter(model_key, default_model) or default_model)
+    validate_research_partner_model(model)
+    return value
 
 
 @dataclass(frozen=True)
@@ -154,8 +254,7 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         models=("gpt-5.5", "gpt-5.5-codex"),
         requires="`codex` CLI on $PATH (or OPENAI_API_KEY)",
         roles=("development", "judge", "primary_review", "adversarial"),
-        notes="Only backend with a read-only `sdd-secondopinion` profile — "
-              "it holds the mandatory adversarial seat.",
+        notes="Only backend with a read-only `sdd-secondopinion` profile — " "it holds the mandatory adversarial seat.",
     ),
     BackendInfo(
         id="gemini",
@@ -241,24 +340,80 @@ BACKENDS: Tuple[BackendInfo, ...] = (
             "us.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
+            # FEAT-486 additions (append-only — every id above is
+            # unchanged): the console's second default dev-pool seat,
+            # and the counter-reviewer model reachable over bedrock-mantle.
+            "qwen.qwen3-coder-480b-a35b-v1:0",
+            "gpt-5.6-sol",
         ),
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
-        roles=("development", "adversarial"),
-        notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
-              "adversarial seat is a read-only, no-tools Converse call on "
-              "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
-              "us.anthropic.* ids remain selectable but require the "
-              "per-account Anthropic use-case form on Bedrock.",
+        roles=("development", "adversarial", "research_partner"),
+        notes="Dev seat routes MiniMax/Kimi/GLM/Qwen3-coder via "
+        "bedrock-mantle; the adversarial seat is a read-only, "
+        "no-tools call — Converse on Nova 2 Lite via "
+        "DEV_LOOP_ADVERSARIAL_BACKEND='nova', or Chat Completions "
+        "on bedrock-mantle (gpt-5.6-sol, FEAT-486) via "
+        "DEV_LOOP_ADVERSARIAL_BACKEND='mantle'. The research-partner "
+        "seat (FEAT-482) selects this backend via "
+        "DEV_FLOW_RESEARCH_PARTNER=nova. The us.anthropic.* ids remain "
+        "selectable but require the per-account Anthropic use-case "
+        "form on Bedrock.",
     ),
 )
 
 _BY_ID: Dict[str, BackendInfo] = {b.id: b for b in BACKENDS}
 
+# FEAT-482: the complementary research-partner seat's catalog. Deliberately
+# NOT folded into ``BACKENDS`` — that tuple's documented contract is "one
+# entry per ``build_dispatcher`` branch" (coding dev-loop backends only,
+# see the module-level comment above :131), and every existing test asserts
+# every ``BACKENDS`` entry is development-capable
+# (``test_backends_for_role_development_includes_all_backends``). "nova" is
+# already a ``build_dispatcher`` branch, so its existing ``BACKENDS`` entry
+# above just gained the extra ``"research_partner"`` role. "gpt" (bedrock-
+# mantle ``gpt-5.6-sol``) has no coding dev_loop counterpart at all, so it
+# lives here instead.
+RESEARCH_PARTNER_BACKENDS: Tuple[BackendInfo, ...] = (
+    BackendInfo(
+        id="gpt",
+        label="GPT (Bedrock Mantle)",
+        transport="api",
+        model_env="DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL",
+        default_model="gpt-5.6-sol",
+        models=("gpt-5.6-sol",),
+        requires="AWS credentials with a Bedrock API key (bedrock-mantle); "
+        "reuses AWS_NOVA_API_KEY — no separate OPENAI_API_KEY",
+        roles=("research_partner",),
+        notes="FEAT-482: the default complementary research-partner "
+        "backend — OpenAI-compatible bedrock-mantle transport via "
+        "BedrockMantleClient, decorrelated from the primary Claude "
+        "seat. Select via DEV_FLOW_RESEARCH_PARTNER=gpt (default "
+        "once the seat is enabled).",
+    ),
+    _BY_ID["nova"],
+)
+
+# FEAT-482 code-review follow-up: extend the lookup dict with the
+# research-partner-only entries ("gpt"; "nova" is already present and is
+# the SAME object, not a duplicate) so get_backend()/backends_for_role()/
+# catalog_payload() can actually surface the seat, per Module 1's own
+# intent ("Add a BackendInfo entry ... so the catalog surfaces the seat").
+# BACKENDS itself is intentionally left untouched (see the comment above)
+# — this only widens the id->BackendInfo lookup, not the "one entry per
+# build_dispatcher branch" tuple.
+_BY_ID.update({b.id: b for b in RESEARCH_PARTNER_BACKENDS})
+
 ConfigGetter = Callable[..., Any]
 
 
 def get_backend(backend_id: str) -> Optional[BackendInfo]:
-    """Return the :class:`BackendInfo` for ``backend_id``, or ``None``."""
+    """Return the :class:`BackendInfo` for ``backend_id``, or ``None``.
+
+    Looks across both ``BACKENDS`` (coding dev-loop backends) and
+    ``RESEARCH_PARTNER_BACKENDS`` (FEAT-482) — e.g. ``get_backend("gpt")``
+    resolves even though ``"gpt"`` is not itself a ``build_dispatcher``
+    branch.
+    """
     return _BY_ID.get(backend_id)
 
 
@@ -267,12 +422,15 @@ def backends_for_role(role: str) -> List[BackendInfo]:
 
     Args:
         role: One of ``development``, ``judge``, ``primary_review``,
-            ``adversarial``, ``planner``.
+            ``adversarial``, ``planner``, ``research_partner``.
 
     Returns:
-        The matching backends, in catalog order.
+        The matching backends, in catalog order. Searches across both
+        ``BACKENDS`` and ``RESEARCH_PARTNER_BACKENDS`` (FEAT-482) — "nova"
+        appears in both but is the same object, so it is never duplicated
+        in the result.
     """
-    return [b for b in BACKENDS if role in b.roles]
+    return [b for b in _BY_ID.values() if role in b.roles]
 
 
 def effective_default_model(backend: BackendInfo, config_getter: Optional[ConfigGetter] = None) -> str:
@@ -358,16 +516,27 @@ def catalog_payload(config_getter: Optional[ConfigGetter] = None) -> Dict[str, A
         backend mapping, and the resolved review/judge defaults.
     """
     resolved_adversarial_backend = resolve_adversarial_backend(config_getter)
+    # FEAT-482: resolved separately from the "roles" membership list below —
+    # unlike "adversarial" (mandatory, always exactly one active backend),
+    # the research-partner seat is opt-in, so "" (disabled) is a valid,
+    # common resolution here.
+    resolved_research_partner_backend = resolve_research_partner_backend(config_getter)
     return {
-        "backends": [_backend_payload(b, config_getter) for b in BACKENDS],
+        # FEAT-482 code-review follow-up: iterate _BY_ID (BACKENDS +
+        # RESEARCH_PARTNER_BACKENDS, deduplicated) rather than BACKENDS
+        # alone, so "gpt" — which has no build_dispatcher branch — is still
+        # visible to any console/CLI surface rendering a backend picker.
+        "backends": [_backend_payload(b, config_getter) for b in _BY_ID.values()],
         "roles": {
             "development": [b.id for b in backends_for_role("development")],
             "judge": [b.id for b in backends_for_role("judge")],
             "primary_review": [b.id for b in backends_for_role("primary_review")],
             "adversarial": [resolved_adversarial_backend],
+            "research_partner": [b.id for b in backends_for_role("research_partner")],
         },
         "adversarial_backend": resolved_adversarial_backend,
         "adversarial_model": conf.DEV_LOOP_ADVERSARIAL_MODEL,
+        "research_partner_backend": resolved_research_partner_backend,
         "default_judge_panel": default_judge_panel_payload(config_getter),
     }
 
@@ -378,10 +547,13 @@ __all__ = [
     "BackendInfo",
     "JUDGE_BACKENDS",
     "PRIMARY_REVIEW_BACKENDS",
+    "RESEARCH_PARTNER_BACKENDS",
     "backends_for_role",
     "catalog_payload",
     "default_judge_panel_payload",
     "effective_default_model",
     "get_backend",
     "resolve_adversarial_backend",
+    "resolve_research_partner_backend",
+    "validate_research_partner_model",
 ]

@@ -414,7 +414,50 @@ curl -X POST http://localhost:8081/api/flow/run \
 `affected_component`, `log_sources` ni `acceptance_criteria` — eso es del
 intake de bugs.
 
-### 9.6. Gate de aprobación del plan (opcional)
+### 9.6. Recuperar un run interrumpido (FEAT-480)
+
+El dev-flow hace checkpoint después de cada nodo. Si un run se cortó (crash,
+reinicio del servidor, `Ctrl+C`), **no hay que repetir intake, ideation ni
+planner**: se vuelve a lanzar con el mismo `run_id` y esos nodos —con sus
+respuestas a las Open Questions, el spec, el índice de tareas y el worktree
+que creó el planner— se restauran en vez de re-dispararse.
+
+En la consola es el campo **«Resume a run — run_id»** del bloque 01, con un
+botón *Check* que consulta si ese run sigue siendo recuperable.
+
+Por curl:
+
+```bash
+# 1. ¿Sigue vivo el checkpoint? (TTL de 24h en Redis por defecto)
+curl -s http://localhost:8081/api/flow/run-3f9a1c02/checkpoint | jq
+# {"found": true, "completed_nodes": ["dev_intake","ideation","planner"], ...}
+
+# 2. Reanudarlo: MISMO brief que el run original + su run_id.
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/mi-feature.brainstorm.md",
+    "document_kind": "brainstorm",
+    "run_id": "run-3f9a1c02"
+  }'
+```
+
+Condiciones (el servidor las comprueba **antes** de arrancar nada):
+
+* **El brief tiene que ser idéntico.** La reanudación se valida con una huella
+  SHA-256 del brief normalizado (kind, title/description o document_path/
+  document_kind, context, jira_issue_key, dev_agents, judge_panel) más la
+  política de ejecución del servidor. Si cambia algo → **409
+  `fingerprint_mismatch`**. Ojo: un run de lenguaje natural **no** se reanuda
+  apuntando al documento que produjo su ideation — eso es otro brief; hay que
+  reenviar el `title`/`description` originales.
+* **Un `run_id` desconocido o caducado es un 409, nunca un run nuevo.** Así no
+  se gastan horas de agentes rehaciendo lo que pediste reutilizar.
+* **El worktree tiene que seguir existiendo** (registrado, en su rama, con el
+  spec y el índice de tareas). Si no, el run falla diciendo qué falta.
+
+### 9.7. Gate de aprobación del plan (opcional)
 
 En la pestaña **Ideation & gates** hay un check **Require plan approval**. Si
 lo marcas, después del planner y **antes** de que salga la flota de agentes se
@@ -422,16 +465,115 @@ abre un gate `plan_approval` que se contesta en el mismo panel (aprobar/
 rechazar + comentario). Es **por run**: manda sobre el valor con el que se
 construyó el servidor, sin reconstruir el flujo.
 
-### 9.7. Variables nuevas
+### 9.8. Selectores de LLM por asiento (FEAT-486)
+
+Cada asiento LLM del dev-flow es configurable. La consola trae defaults
+opinionados y expone tres grupos de selectores más un toggle:
+
+| Grupo | Pestaña | Default de la consola |
+|---|---|---|
+| Modelo de research primario | *Ideation & gates* | `claude-opus-5` |
+| Research partner (activar + backend + modelo) | *Ideation & gates* | **apagado**; `gpt` / `gpt-5.6-sol` al activarlo |
+| Pool de agentes de desarrollo | *Agents & models* | `nova:zai.glm-5` + `nova:qwen.qwen3-coder-480b-a35b-v1:0` (ambos Bedrock vía `bedrock-mantle`) |
+| Pareja de revisión adversarial | *Review & judges* | primario `claude-code`/`claude-opus-5` + contra-revisor `gpt-5.6-sol` |
+
+`GET /api/config` devuelve el plan **ya resuelto** del servidor en
+`defaults.model_plan`, así que la UI enseña lo que de verdad se va a
+ejecutar, no lo que está escrito en el fuente. `POST /api/flow/run` acepta
+esa misma forma de vuelta (`dev_agents`, `research_primary`,
+`research_partner`, `review`).
+
+**Los backends se validan estrictamente; los modelos son texto libre.** Un
+backend desconocido devuelve `400` nombrando todos los soportados. Un
+modelo mal escrito falla en el proveedor, en ese asiento — las listas de
+modelos son una sugerencia, nunca una whitelist.
+
+Dos comportamientos que conviene saber:
+
+* **Una feature con un solo `TASK-` colapsa a un único sub-agente**, sea
+  cual sea el pool declarado. La señal es el número de tareas; no hay flag.
+* **NVIDIA NIM sigue siendo seleccionable pero nunca es default.** Ahora
+  mismo devuelve `401 Unauthorized` en esta cuenta. `kimi-k3` se alcanza
+  por el backend `moonshot`, no por NIM.
+
+> **Dos limitaciones, dichas claramente.**
+> 1. `model_plan` es un parámetro de **construcción**: los asientos quedan
+>    fijados en los constructores de los nodos, y esta consola construye un
+>    único flujo al arrancar. Un plan enviado en el run se valida entero y
+>    se devuelve en la respuesta, y cualquier diferencia con el plan del
+>    servidor se registra como warning — pero el run usa el plan del
+>    **servidor**. Reinicia la consola con las `DEV_FLOW_*` que quieras.
+> 2. Por defecto esta consola usa el **judge panel** de FEAT-378 como
+>    revisor de QA, y un revisor explícito gana al plan por diseño. La
+>    pareja de revisión queda configurada y validada pero no es el revisor
+>    activo: `defaults.model_plan.review_pair_active` lo reporta como
+>    `false` y la UI lo dice. Con `DEV_FLOW_USE_REVIEW_PAIR=true` la
+>    consola suelta el judge panel y deja que el plan monte su pareja de
+>    revisión (primario + contra-revisor Mantle) como revisor activo.
+
+Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
+
+### 9.9. Variables nuevas
 
 | Variable | Default | Para qué |
 |---|---|---|
 | `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Rondas máximas de Open Questions por run |
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL del gate `open_questions`; al expirar el run **falla** |
+| `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Modelo del asiento de research primario (compartida con FEAT-482) |
+| `DEV_FLOW_DEV_POOL` | *(sin valor)* | Pool como array JSON de `{agent, model, count}`. Solo se lee si hay `model_plan` |
+| `DEV_FLOW_RESEARCH_PARTNER` | `""` (apagado) | Research partner (FEAT-482): `""` apaga el asiento, cualquier otro valor es el backend (`gpt` o `nova`). Activación **y** backend en una sola variable |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Modelo del partner, **por backend**. Las variables `_ENABLED`/`_BACKEND`/`_MODEL` de FEAT-486 quedaron retiradas por FEAT-487 y ya no hacen nada |
+| `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Revisor primario (con permisos de escritura) |
+| `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Contra-revisor de solo lectura, sobre Bedrock Mantle |
+| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | Modelo propio del contra-revisor Mantle. Distinta de `DEV_LOOP_ADVERSARIAL_MODEL` (la del asiento codex). También la usa el revisor `mantle-adversarial` cuando `DEV_LOOP_ADVERSARIAL_BACKEND=mantle` |
+| `DEV_FLOW_USE_REVIEW_PAIR` | `false` | Solo consola dev: sustituye el judge panel por la pareja de revisión del plan como revisor de QA activo |
+| `DEV_LOOP_RESEARCH_MCP_ENABLED` | `true` | Interruptor del wiring MCP de los asientos de research (ambas consolas) — ver §9.9 |
+| `DEV_LOOP_RESEARCH_MCP_TOOLKITS` | `auto` | Secciones de `.parrot/mcp-toolkits.yaml` a servir a los asientos de research (`auto` = las declaradas en el archivo) |
+| `NOVA_CODE_MAX_CONCURRENT_DISPATCHES` | `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | Tope de concurrencia con `DEV_LOOP_DEVELOPMENT_AGENT=nova` |
 
 El resto se reutiliza tal cual de las `DEV_LOOP_*` que ya conoces
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
 `DEV_LOOP_DEV_AGENTS`, `FLOW_MAX_CONCURRENT_RUNS`…).
+
+### 9.10. Acceso MCP para los agentes de research (FEAT-484/485)
+
+Las dos consolas entregan a los **agentes de research** despachados una
+superficie MCP explícita (montada por el módulo hermano `mcp_wiring.py` al
+arrancar):
+
+* **Búsqueda en el grafo `wikitoolkit`** (FEAT-403) — el trío de solo
+  lectura `wiki_query` / `wiki_page` / `wiki_related`. En la consola ops
+  llega al dispatch `sdd-research` del `ResearchNode`; el `IdeationNode`
+  de la consola dev ya lo trae integrado.
+* **Servidores de toolkits locales FEAT-485** — cada sección declarada en
+  `<repo>/.parrot/mcp-toolkits.yaml` se sirve como `parrot mcp-local
+  <nombre>`. Copia `mcp-toolkits.example.yaml` para tener una sección
+  `repo` que expone el **`ReadOnlyRepoToolkit`** de FEAT-484 (acceso al
+  repositorio confinado y estrictamente de solo lectura: `search_code`,
+  `read_file`, `grep_files`, `git_log`/`git_show`/`git_blame`,
+  `web_search` opt-in).
+
+Como estos dispatches corren con `strict_mcp_config=True` (el CLI headless
+ignora el `.mcp.json` del sistema de archivos), los servidores se pasan
+explícitamente en el perfil de dispatch, y cada entrada lleva
+`--config <ruta absoluta>` para que `parrot mcp-local` encuentre el YAML
+aunque el cwd del dispatch sea `WORKTREE_BASE_PATH` y no la raíz del repo.
+Usa un `repo_root` **absoluto** en el YAML por la misma razón.
+
+Todo degrada con gracia: un binario `wikitoolkit` ausente, un YAML
+inválido o una sección desconocida solo generan un warning y se sirve el
+subconjunto que resuelva. `DEV_LOOP_RESEARCH_MCP_ENABLED=false` apaga el
+wiring completo; `DEV_LOOP_RESEARCH_MCP_TOOLKITS=repo,memory` fija una
+lista explícita (puede incluir los builtin `scraping`/`browsing`/`memory`
+— ojo con sus extras opcionales).
+
+Relacionado (FEAT-482/486): la consola ops ahora también honra
+`DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` para el
+research partner colaborativo del `ResearchNode` — el partner usa
+`ReadOnlyRepoToolkit` de forma nativa, sin MCP. Además, el pool de env
+(`DEV_LOOP_DEV_AGENTS`) llega ahora también a la topología **feature** de
+la consola ops, así que el `PlannerNode` sugiere los backends reales del
+operador también ahí.
 
 ---
 

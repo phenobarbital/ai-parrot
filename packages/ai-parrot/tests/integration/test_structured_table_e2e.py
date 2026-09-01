@@ -8,18 +8,10 @@ TASK-1435 — e2e integration suite:
 from __future__ import annotations
 
 import importlib.util
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-
-# ── Satellite path wiring ──────────────────────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parents[5]
-_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SATELLITE_SRC))
 
 satellite_available = pytest.mark.skipif(
     importlib.util.find_spec("parrot.outputs.formats.version") is None,

@@ -718,6 +718,24 @@ def _with_dispatch(
     return state.model_copy(update={"nodes": {**state.nodes, node_id: node}})
 
 
+def _add_optional(previous, incoming):
+    """Sum two optional numbers, keeping "unreported" distinct from zero.
+
+    Args:
+        previous: The value already on the dispatch record, or ``None``.
+        incoming: The value carried by the action, or ``None``.
+
+    Returns:
+        Their sum; the non-``None`` one when only one is reported; and
+        ``None`` when neither is — never a fabricated ``0``.
+    """
+    if incoming is None:
+        return previous
+    if previous is None:
+        return incoming
+    return previous + incoming
+
+
 def _recompute_phase(state: DevLoopSessionState) -> DevLoopSessionState:
     """Derive ``phase`` after gate transitions. Terminal phases are sticky."""
     if state.phase in _TERMINAL_PHASES:
@@ -823,16 +841,35 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
                               status="failed", finished_at=action.ts,
                               last_error=action.error)
     if t == "dispatch/completed":
+        # Accumulate rather than assign. A node can complete several
+        # dispatches: every worker of a dev-agent pool rolls up to the
+        # `development` node, and a QA repair loop redispatches the same
+        # node a second time. Assigning made the node report only the LAST
+        # dispatch's spend — the node-level twin of the seat-level
+        # "Finding 2" the FEAT-479 ledger fixed by appending. Single
+        # dispatch per node (every pre-pool path) folds identically, since
+        # summing onto an absent previous value is that value.
+        node = state.nodes.get(action.node_id)
+        prev = node.dispatch if node else None
         return _with_dispatch(
             state, action.node_id,
             status="completed", finished_at=action.ts,
-            input_tokens=action.input_tokens,
-            output_tokens=action.output_tokens,
-            cache_creation_input_tokens=action.cache_creation_input_tokens,
-            cache_read_input_tokens=action.cache_read_input_tokens,
-            total_cost_usd=action.total_cost_usd,
-            num_turns=action.num_turns,
-            duration_ms=action.duration_ms,
+            input_tokens=_add_optional(
+                getattr(prev, "input_tokens", None), action.input_tokens),
+            output_tokens=_add_optional(
+                getattr(prev, "output_tokens", None), action.output_tokens),
+            cache_creation_input_tokens=_add_optional(
+                getattr(prev, "cache_creation_input_tokens", None),
+                action.cache_creation_input_tokens),
+            cache_read_input_tokens=_add_optional(
+                getattr(prev, "cache_read_input_tokens", None),
+                action.cache_read_input_tokens),
+            total_cost_usd=_add_optional(
+                getattr(prev, "total_cost_usd", None), action.total_cost_usd),
+            num_turns=_add_optional(
+                getattr(prev, "num_turns", None), action.num_turns),
+            duration_ms=_add_optional(
+                getattr(prev, "duration_ms", None), action.duration_ms),
         )
 
     # -- gates (HITL)

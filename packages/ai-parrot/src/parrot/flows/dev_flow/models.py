@@ -14,6 +14,10 @@ This module defines only the three new contracts (spec §2 Data Models):
 * :class:`IdeationOutput` — the ``sdd-ideation`` subagent's final JSON
   contract.
 
+FEAT-486 adds a fourth: the per-seat LLM configuration plan, defined in
+``dev_flow.model_plan`` and re-exported here so callers have one import
+site for every dev-flow contract.
+
 Everything else (dev-agent pool specs, judge panels, planner/QA outputs)
 is imported from ``dev_loop.models`` — dev-flow reuses those wholesale.
 """
@@ -24,6 +28,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from parrot.flows.dev_flow.model_plan import (
+    DevFlowModelPlan,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
+    resolve_model_plan,
+)
 from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
@@ -32,10 +42,14 @@ from parrot.flows.dev_loop.models import (
 
 __all__ = [
     "DevFlowBrief",
+    "DevFlowModelPlan",
     "DevRequestBrief",
     "DevRequestKind",
     "IdeationOutput",
+    "ResearchPartnerPlan",
+    "ReviewPairPlan",
     "parse_dev_brief",
+    "resolve_model_plan",
 ]
 
 
@@ -72,8 +86,7 @@ class DevRequestBrief(BaseModel):
         ...,
         min_length=1,
         description=(
-            "Short human name for the request. Slug source for the "
-            "``sdd/proposals/<slug>.*.md`` document path."
+            "Short human name for the request. Slug source for the " "``sdd/proposals/<slug>.*.md`` document path."
         ),
     )
     description: str = Field(
@@ -104,8 +117,7 @@ class DevRequestBrief(BaseModel):
     judge_panel: JudgePanelConfig | None = Field(
         default=None,
         description=(
-            "Optional QA judge-panel override, passed through to the "
-            "``FeatureBrief`` that ``IdeationNode`` emits."
+            "Optional QA judge-panel override, passed through to the " "``FeatureBrief`` that ``IdeationNode`` emits."
         ),
     )
 
@@ -113,9 +125,7 @@ class DevRequestBrief(BaseModel):
 # Discriminated brief union on ``kind`` — mirrors ``dev_loop.models.Brief``.
 # Three admissible kinds: "enhancement" / "new_feature" (DevRequestBrief)
 # and "feature" (FeatureBrief, the document-based FEAT-378 intake).
-DevFlowBrief = Annotated[
-    DevRequestBrief | FeatureBrief, Field(discriminator="kind")
-]
+DevFlowBrief = Annotated[DevRequestBrief | FeatureBrief, Field(discriminator="kind")]
 
 
 def parse_dev_brief(data: dict[str, Any]) -> DevRequestBrief | FeatureBrief:
@@ -149,8 +159,7 @@ def parse_dev_brief(data: dict[str, Any]) -> DevRequestBrief | FeatureBrief:
     if kind in ("enhancement", "new_feature"):
         return DevRequestBrief(**data)
     raise ValueError(
-        "dev-flow brief requires an explicit kind of 'enhancement', "
-        f"'new_feature' or 'feature'; got {kind!r}"
+        "dev-flow brief requires an explicit kind of 'enhancement', " f"'new_feature' or 'feature'; got {kind!r}"
     )
 
 

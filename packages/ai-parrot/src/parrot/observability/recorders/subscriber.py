@@ -15,8 +15,12 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Optional
 
-from parrot.core.events.lifecycle.events import AfterClientCallEvent
+from parrot.core.events.lifecycle.events import (
+    AfterClientCallEvent,
+    ClientCallFailedEvent,
+)
 from parrot.observability.attributes import resolve_gen_ai_system
+from parrot.observability.context import current_run_id, current_seat
 from parrot.observability.recorders.models import UsageRecord
 
 if TYPE_CHECKING:
@@ -25,6 +29,19 @@ if TYPE_CHECKING:
     from parrot.observability.recorders.base import AbstractLogger
 
 logger = logging.getLogger(__name__)
+
+
+def _node_id_from_seat(seat: "Optional[str]") -> "Optional[str]":
+    """Roll up a pool-worker seat to its owning node id.
+
+    ``"development.w1"`` -> ``"development"``; a bare node seat
+    (``"qa"``) or ``None`` passes through unchanged. FEAT-479: this is how
+    pool-worker telemetry is grouped under its owning node without
+    widening ``NodeId``.
+    """
+    if seat is None:
+        return None
+    return seat.split(".", 1)[0]
 
 
 class UsageRecordingSubscriber:
@@ -68,6 +85,7 @@ class UsageRecordingSubscriber:
                 attach to.
         """
         registry.subscribe(AfterClientCallEvent, self._on_client_after)
+        registry.subscribe(ClientCallFailedEvent, self._on_client_failed)
 
     # ------------------------------------------------------------------
     # Handler
@@ -78,6 +96,7 @@ class UsageRecordingSubscriber:
         provider = resolve_gen_ai_system(event.client_name)
         input_tokens = event.input_tokens or 0
         output_tokens = event.output_tokens or 0
+        usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
         cost_usd: Optional[float] = None
         cumulative: Optional[float] = None
@@ -94,9 +113,9 @@ class UsageRecordingSubscriber:
                     self._has_cost = True
                 cumulative = self._cumulative_cost_usd if self._has_cost else None
 
-        trace_id = (
-            event.trace_context.trace_id if event.trace_context else None
-        )
+        trace_id = event.trace_context.trace_id if event.trace_context else None
+        run_id = current_run_id.get()
+        seat = current_seat.get()
         record = UsageRecord(
             provider=provider,
             client_name=event.client_name,
@@ -109,8 +128,46 @@ class UsageRecordingSubscriber:
             finish_reason=event.finish_reason,
             trace_id=trace_id,
             service_name=self._service_name,
+            run_id=run_id,
+            seat=seat,
+            node_id=_node_id_from_seat(seat),
+            usage_reported=usage_reported,
         )
 
+        await self._fan_out(record)
+
+    async def _on_client_failed(self, event: ClientCallFailedEvent) -> None:
+        """Build a ``UsageRecord`` for a failed call and fan it out.
+
+        No token counts are available on ``ClientCallFailedEvent``, so
+        ``usage_reported`` is always ``False`` here — this preserves the
+        "never fabricate a value" contract on the failure path too. The
+        exception's CLASS NAME is recorded (``error_type``); the message is
+        deliberately NOT carried here, per the module's privacy contract.
+        """
+        provider = resolve_gen_ai_system(event.client_name)
+        trace_id = event.trace_context.trace_id if event.trace_context else None
+        run_id = current_run_id.get()
+        seat = current_seat.get()
+        record = UsageRecord(
+            provider=provider,
+            client_name=event.client_name,
+            model=event.model,
+            duration_ms=event.duration_ms,
+            trace_id=trace_id,
+            service_name=self._service_name,
+            run_id=run_id,
+            seat=seat,
+            node_id=_node_id_from_seat(seat),
+            usage_reported=False,
+            status="failed",
+            error_type=event.error_type or None,
+        )
+
+        await self._fan_out(record)
+
+    async def _fan_out(self, record: UsageRecord) -> None:
+        """Forward *record* to every configured recorder, error-isolated."""
         for recorder in self._recorders:
             try:
                 await recorder.record(record)

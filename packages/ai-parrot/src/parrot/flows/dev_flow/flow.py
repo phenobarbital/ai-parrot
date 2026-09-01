@@ -18,12 +18,16 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import CheckpointStore, register_checkpoint_type
 from parrot.flows.dev_flow.definition import (
     DEV_INTAKE,
     IDEATION,
     build_dev_flow_definition,
 )
 from parrot.flows.dev_flow.factories import build_dev_flow_node_factories
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
+from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
+from parrot.flows.dev_loop.checkpoint import project_shared_data
 from parrot.flows.dev_loop.definition import (
     CLOSE,
     DEVELOPMENT,
@@ -43,6 +47,20 @@ from parrot.flows.dev_loop.flow import (
     _qa_failed,
     _qa_passed,
 )
+
+# ─────────────────────────────────────────────────────────────────────
+# Process-wide checkpoint type registration (FEAT-480 spec §3 Module 5)
+# ─────────────────────────────────────────────────────────────────────
+#
+# WorkBrief/FeatureBrief/ResearchOutput/PlannerOutput/DevelopmentOutput are
+# already registered by importing `dev_loop.flow` above (TASK-2626) — only
+# the two dev-flow-specific result types need registering here. Same
+# rationale as dev_loop/flow.py: NOT in models.py, to avoid importing
+# `parrot.bots.*` (heavy) from a module some future import-purity test may
+# assert stays pydantic/typing-only, mirroring `test_lazy_import.py`'s
+# existing invariant for `dev_loop.models`.
+register_checkpoint_type(DevRequestBrief)
+register_checkpoint_type(IdeationOutput)
 
 
 def _is_nl_request(result: Any) -> bool:
@@ -80,8 +98,17 @@ def build_dev_flow(
     skip_qa: bool = False,
     require_plan_approval: bool = False,
     ideation_max_rounds: int | None = None,
+    model_plan: DevFlowModelPlan | None = None,
+    research_coordinator: Any | None = None,
+    research_mcp_servers: dict[str, Any] | None = None,
+    research_mcp_tools: list[str] | None = None,
     name: str = "dev-flow",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
+    checkpoint: bool = False,
+    checkpoint_required: bool = False,
+    checkpoint_store: str | CheckpointStore | None = None,
+    flow_id: str | None = None,
 ) -> AgentsFlow:
     """Build the executable ``dev-flow`` :class:`AgentsFlow`.
 
@@ -111,9 +138,42 @@ def build_dev_flow(
             gate; a per-run ``extra_shared["require_plan_approval"]``
             overrides it (FEAT-412 / TASK-2123).
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
+        model_plan: FEAT-486 — per-seat LLM configuration
+            (:class:`~parrot.flows.dev_flow.model_plan.DevFlowModelPlan`).
+            ``None`` (default) preserves today's wiring exactly. A plan
+            whose ``dev_pool`` is non-empty deploys that many development
+            sub-agents through ``agent_builder.build_dispatcher``; an
+            explicit ``development_dispatcher_builder`` still wins over
+            the plan-derived one.
+        research_coordinator: Optional
+            ``ComplementaryResearchCoordinator`` (FEAT-482/486) for the
+            ideation seat; an explicit value wins over ``model_plan``'s
+            ``research_partner`` group. ``None`` (default) keeps the
+            factories' precedence untouched.
+        research_mcp_servers: Optional EXTRA MCP server configs for the
+            ideation dispatch (e.g. FEAT-485 ``parrot mcp-local``
+            toolkit servers), merged under the built-in wikitoolkit
+            entry. ``None`` (default) keeps the dispatch byte-identical.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those extra servers; ``None`` derives server-level
+            ``mcp__<name>`` rules.
         name: Flow name (default ``"dev-flow"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
+        lifecycle_events: When True (default), also attach a
+            :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
+            (FEAT-479).
+        checkpoint: FEAT-480 — enable AgentsFlow state checkpointing.
+            ``False`` (default) is byte-identical to pre-FEAT-480 behavior.
+        checkpoint_required: FEAT-480 — when ``True`` (with ``checkpoint``),
+            the scheduler awaits a required checkpoint write after every
+            successful node before routing downstream (TASK-2624).
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback). Ignored when ``checkpoint`` is
+            ``False``.
+        flow_id: FEAT-480 — stable per-run checkpoint identity (typically
+            ``"dev-flow/<run_id>"``, minted by ``DevCheckpointCoordinator``).
+            Ignored when ``checkpoint`` is ``False``.
 
     Returns:
         A wired :class:`AgentsFlow` ready to ``run_flow()``.
@@ -133,6 +193,10 @@ def build_dev_flow(
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,
         ideation_max_rounds=ideation_max_rounds,
+        model_plan=model_plan,
+        research_coordinator=research_coordinator,
+        research_mcp_servers=research_mcp_servers,
+        research_mcp_tools=research_mcp_tools,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -142,13 +206,38 @@ def build_dev_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
+    flow = AgentsFlow(
+        name=name,
+        on_node_event=publisher,
+        flow_id=flow_id,
+        checkpoint=checkpoint,
+        checkpoint_required=checkpoint_required,
+        checkpoint_store=checkpoint_store,
+        # FEAT-480: same rationale as build_dev_loop_flow — the declarative
+        # `definition` used for node materialization is also exactly what
+        # a required checkpoint needs to embed; this is the SEPARATE
+        # `checkpoint_definition` field (TASK-2623), which does not affect
+        # `explicit_mode` scheduler selection (only `self._definition`,
+        # never set here, controls that).
+        checkpoint_definition=definition if checkpoint else None,
+        # FEAT-480: allowlisted shared_data projector (TASK-2625, extended
+        # for dev-flow keys in dev_loop/checkpoint.py's Module 5 update).
+        checkpoint_shared_data=project_shared_data if checkpoint else None,
     )
-    flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in nodes.values():
         flow.add_node(node)
@@ -173,8 +262,14 @@ def build_dev_flow(
     flow.add_edge(FEATURE_HANDOFF, CLOSE)
 
     for source in (
-        DEV_INTAKE, IDEATION, PLANNER, DEVELOPMENT, SYNTHESIS,
-        QA, FEEDBACK_ROUTER, FEATURE_HANDOFF,
+        DEV_INTAKE,
+        IDEATION,
+        PLANNER,
+        DEVELOPMENT,
+        SYNTHESIS,
+        QA,
+        FEEDBACK_ROUTER,
+        FEATURE_HANDOFF,
     ):
         flow.add_edge(source, FAILURE, condition="on_error")
 

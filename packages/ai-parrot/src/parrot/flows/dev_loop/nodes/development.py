@@ -4,12 +4,19 @@ Implements **Module 6** of FEAT-323 (parallel development node), extending
 the original **Module 6** of FEAT-129/FEAT-250 (single ``sdd-worker``
 dispatch).
 
-Config cascade (FEAT-323): ``WorkBrief.dev_agents`` (via
-``shared["work_brief"]`` / legacy ``shared["bug_brief"]``) takes priority
-over a ``pool_config`` injected at construction time (resolved from env by
-the server/factories, TASK-1859); when neither is present the node runs
-the **exact** single-dispatch path from before this feature — same default
-profile, same ``node_id``, same ``cwd``.
+Config cascade (FEAT-323): the brief's ``dev_agents`` takes priority over a
+``pool_config`` injected at construction time (resolved from env by the
+server/factories, TASK-1859, or from FEAT-486's ``model_plan``); when
+neither is present the node runs the **exact** single-dispatch path from
+before this feature — same default profile, same ``node_id``, same ``cwd``.
+
+The brief is read from every key a dev workflow publishes it under:
+``work_brief``/``bug_brief`` (dev-loop bug mode) **and**
+``feature_brief``/``dev_brief`` (dev-flow). Reading only the first pair
+silently disabled the per-run pool for every dev-flow run — the console's
+rows reached this node on the brief and were dropped one line before use,
+so the build-time plan always won and the UI told operators to restart the
+server to change a seat that was in fact meant to be per-run.
 
 The dispatcher's R4 cwd-safety check verifies that any dispatch ``cwd``
 (including sub-worktrees created for 'isolated' mode) lives under
@@ -206,6 +213,8 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research, pool_cfg=pool_cfg)
 
+        pool_cfg = self._collapse_for_single_task(shared, pool_cfg, scheduler, research)
+
         first_wave = scheduler.next_wave()
         if not should_fan_out(first_wave, pool_cfg):
             effective_slots = sum(spec.count for spec in pool_cfg.agents)
@@ -397,6 +406,15 @@ class DevelopmentNode(DevLoopNode):
     # Config cascade
     # ------------------------------------------------------------------
 
+    #: Every shared-state key a dev workflow publishes its brief under, most
+    #: derived first. dev-loop (bug mode) sets ``work_brief``/``bug_brief``;
+    #: dev-flow sets ``feature_brief`` (post-ideation, and pre-seeded by
+    #: ``DevFlowRunner.run`` for a document intake) and ``dev_brief`` (the
+    #: raw intake). ``IdeationNode`` deliberately forwards ``dev_agents``
+    #: onto the ``FeatureBrief`` it publishes, so the per-run pool survives
+    #: ideation and is readable here under either dev-flow key.
+    _BRIEF_KEYS: tuple[str, ...] = ("work_brief", "bug_brief", "feature_brief", "dev_brief")
+
     def _resolve_pool_config(self, shared: Dict[str, Any]) -> Optional[DevAgentPoolConfig]:
         """Resolve the effective pool config: brief > injected > none.
 
@@ -407,12 +425,99 @@ class DevelopmentNode(DevLoopNode):
             A :class:`DevAgentPoolConfig`, or ``None`` when no pool config
             resolves from either source (single-agent path).
         """
-        brief = shared.get("work_brief") or shared.get("bug_brief")
-        dev_agents = getattr(brief, "dev_agents", None) if brief is not None else None
-        if dev_agents:
-            isolation_mode = getattr(brief, "dev_isolation", None) or "shared"
-            return DevAgentPoolConfig(agents=dev_agents, isolation_mode=isolation_mode)
+        # First brief that actually DECLARES a pool wins, rather than the
+        # first brief that merely exists: a dev-flow run carries both
+        # `dev_brief` and `feature_brief`, and keying off presence alone
+        # would make the answer depend on their ordering here.
+        for key in self._BRIEF_KEYS:
+            brief = shared.get(key)
+            if brief is None:
+                continue
+            dev_agents = getattr(brief, "dev_agents", None)
+            if dev_agents:
+                isolation_mode = getattr(brief, "dev_isolation", None) or "shared"
+                return DevAgentPoolConfig(agents=dev_agents, isolation_mode=isolation_mode)
         return self._pool_config
+
+    def _collapse_for_single_task(
+        self,
+        shared: dict[str, Any],
+        pool_cfg: DevAgentPoolConfig,
+        scheduler: TaskScheduler,
+        research: ResearchOutput,
+    ) -> DevAgentPoolConfig:
+        """Shrink a multi-seat pool to one agent for a single-task feature.
+
+        FEAT-486 (spec G3): a feature whose per-spec index holds exactly
+        one ``TASK-`` cannot use a pool — the extra seats would idle while
+        adding provider cost, log noise and (in ``isolated`` mode)
+        sub-worktree churn. The task count IS the signal: no new flag, no
+        new typed field, and no ``_SHARED_DATA_ALLOWLIST`` change
+        (``planner_output`` is already allowlisted).
+
+        The surviving seat is the first spec of
+        ``PlannerOutput.suggested_pool`` — this is the first consumer of
+        that field, computed at ``planner.py:171`` and previously read by
+        nothing — falling back to the first configured spec when the
+        planner suggested nothing usable.
+
+        Collapse only ever SHRINKS: the configured pool stays
+        authoritative as an upper bound, and a config that is already
+        single-slot is returned untouched (no log, nothing to say).
+
+        Args:
+            shared: The flow's shared state dict (source of
+                ``planner_output``).
+            pool_cfg: The pool config resolved by the cascade.
+            scheduler: The already-built scheduler — reused rather than
+                re-reading the index, so this costs no extra I/O.
+            research: The upstream research output (for log context).
+
+        Returns:
+            ``pool_cfg`` unchanged, or a new single-spec
+            :class:`DevAgentPoolConfig` preserving the isolation mode.
+        """
+        total_tasks = len(scheduler._tasks)  # noqa: SLF001 - same-package internal read
+        if total_tasks != 1:
+            return pool_cfg
+        if sum(spec.count for spec in pool_cfg.agents) <= 1:
+            return pool_cfg
+
+        suggested = self._first_suggested_spec(shared)
+        chosen = suggested if suggested is not None else pool_cfg.agents[0]
+        collapsed = chosen.model_copy(update={"count": 1})
+        self.logger.info(
+            "Single-task feature %s (1 task in the per-spec index): collapsing "
+            "the configured %d-slot pool to ONE dev sub-agent %s:%s (source: %s).",
+            research.feat_id,
+            sum(spec.count for spec in pool_cfg.agents),
+            collapsed.agent,
+            collapsed.model or "<backend default>",
+            "planner suggested_pool" if suggested is not None else "configured pool",
+        )
+        return DevAgentPoolConfig(agents=[collapsed], isolation_mode=pool_cfg.isolation_mode)
+
+    @staticmethod
+    def _first_suggested_spec(shared: dict[str, Any]) -> DevAgentSpec | None:
+        """Return the first spec of ``PlannerOutput.suggested_pool``, if any.
+
+        Read defensively via ``getattr`` (rather than assuming a
+        ``PlannerOutput``) because the bug/revision topologies put a
+        ``ResearchOutput`` in shared state and never set this key at all.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            The first suggested :class:`DevAgentSpec`, or ``None`` when no
+            planner output, no ``suggested_pool`` or an empty one.
+        """
+        planner_output = shared.get("planner_output")
+        suggested = getattr(planner_output, "suggested_pool", None)
+        agents = getattr(suggested, "agents", None)
+        if not agents:
+            return None
+        return agents[0]
 
     # ------------------------------------------------------------------
     # Single-agent path (byte-identical to the pre-FEAT-323 behaviour)
@@ -546,6 +651,47 @@ class DevelopmentNode(DevLoopNode):
     # Pool path
     # ------------------------------------------------------------------
 
+    def _propagate_usage_wiring(self, pool: DevAgentPool) -> None:
+        """Give every pool worker this node's per-run EventRegistry resolver.
+
+        ``DevLoopRunner`` wires ``run_id -> EventRegistry`` into the ONE
+        dispatcher it is constructed with (``runner.py``'s
+        ``set_event_registry_resolver`` call). Pool workers are built
+        later and independently by ``dispatcher_builder``
+        (``agent_builder.build_dispatcher``), which knows nothing about
+        the runner — so their clients self-created an isolated registry,
+        their ``AfterClientCallEvent``s never reached the run's
+        ``UsageRecordingSubscriber``, and the whole ``development`` node
+        was missing from the run's Usage table while planner/synthesis
+        (which DO use the wired dispatcher) reported normally.
+
+        Copying the resolver across is safe and idempotent: it is a
+        ``run_id`` lookup, not per-run state, and a dispatcher that does
+        not support the hook (an out-of-process CLI backend) is skipped.
+
+        Args:
+            pool: The freshly built pool whose workers need wiring.
+        """
+        resolver = getattr(self._dispatcher, "event_registry_resolver", None)
+        if resolver is None:
+            return
+        for worker in pool.workers:
+            setter = getattr(worker.dispatcher, "set_event_registry_resolver", None)
+            if callable(setter):
+                setter(resolver)
+
+    @staticmethod
+    def _task_label(task: TaskRef) -> str:
+        """Render one task as ``TASK-NNN (title)`` for a log line.
+
+        Args:
+            task: The scheduler's task ref.
+
+        Returns:
+            The id alone when the index carries no title.
+        """
+        return f"{task.id} ({task.title})" if task.title else task.id
+
     @staticmethod
     def _find_feature_slug(worktree_path: str, feat_id: str) -> Optional[str]:
         """Resolve the per-spec index feature slug by scanning the index dir.
@@ -631,10 +777,48 @@ class DevelopmentNode(DevLoopNode):
             RuntimeError: Every dispatchable task ended up incomplete.
         """
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
+        self._propagate_usage_wiring(pool)
+        # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
+        # build` is where the requested specs become the ACTUAL worker
+        # list (replicas expanded, `pool_max` cap applied), so this is the
+        # only place that can honestly report what is about to run.
+        self.logger.info(
+            "Deploying %d dev sub-agent(s) for %s: %s",
+            len(pool.workers),
+            research.feat_id,
+            ", ".join(
+                f"{worker.worker_id.rsplit('.', 1)[-1]}="
+                f"{worker.spec.agent}:{worker.spec.model or '<backend default>'}"
+                for worker in pool.workers
+            ),
+        )
+        # The pool deployment line above says WHO is about to run; without
+        # this one the operator never learns WHAT it runs — how many tasks
+        # the feature was decomposed into, or which of them are already
+        # done. Both halves of the answer are already in the scheduler.
+        all_tasks = scheduler.all_tasks()
+        done_ids = {t.id for t in scheduler.done()}
+        todo = [t for t in all_tasks if t.id not in done_ids]
+        self.logger.info(
+            "%s task plan: %d task(s) in the per-spec index — %d already done, "
+            "%d to run: %s",
+            research.feat_id,
+            len(all_tasks),
+            len(done_ids),
+            len(todo),
+            ", ".join(self._task_label(t) for t in todo) or "(none)",
+        )
+
         run_id = shared["run_id"]
 
         manager: Optional[SubWorktreeManager] = None
         worker_cwds: Dict[str, str] = {}
+        # Whether a sub-worktree merge actually happened. Stamped onto the
+        # aggregated DevelopmentOutput so SynthesisNode can tell a real merge
+        # point from a run that never had one (shared isolation, or a pool
+        # collapsed to a single seat) instead of reconciling seams that
+        # cannot exist.
+        merged_any = False
         if pool_cfg.isolation_mode == "isolated":
             manager = SubWorktreeManager(
                 base_worktree=research.worktree_path,
@@ -650,7 +834,14 @@ class DevelopmentNode(DevLoopNode):
             return research.worktree_path
 
         async def _resolver(path: str, description: str) -> bool:
-            return await self._resolve_conflict(path, description, pool=pool, research=research, run_id=run_id)
+            return await self._resolve_conflict(
+                path,
+                description,
+                pool=pool,
+                research=research,
+                run_id=run_id,
+                session_host=shared.get("session_host"),
+            )
 
         # FEAT-377 TASK-1912 (G3): on a QA repair-loop redispatch
         # (attempt >= 2 — stamped by `_with_repair_feedback` above), every
@@ -659,11 +850,21 @@ class DevelopmentNode(DevLoopNode):
         escalate = shared.get("qa_attempt", 1) >= 2
 
         wave_results: List[WaveResult] = []
+        wave_number = 0
         try:
             while True:
                 wave = scheduler.next_wave()
                 if not wave:
                     break
+
+                wave_number += 1
+                self.logger.info(
+                    "%s wave %d: dispatching %d task(s): %s",
+                    research.feat_id,
+                    wave_number,
+                    len(wave),
+                    ", ".join(self._task_label(t) for t in wave),
+                )
 
                 result = await pool.run_wave(
                     wave,
@@ -671,6 +872,7 @@ class DevelopmentNode(DevLoopNode):
                     run_id=run_id,
                     cwd_for=_cwd_for,
                     escalate=escalate,
+                    session_host=shared.get("session_host"),
                 )
                 wave_results.append(result)
 
@@ -679,8 +881,22 @@ class DevelopmentNode(DevLoopNode):
                 for task_id in result.failed:
                     scheduler.mark_failed(task_id)
 
+                self.logger.info(
+                    "%s wave %d complete: %d completed (%s), %d failed (%s); "
+                    "%d task(s) still pending, %d skipped",
+                    research.feat_id,
+                    wave_number,
+                    len(result.completed),
+                    ", ".join(sorted(result.completed)) or "-",
+                    len(result.failed),
+                    ", ".join(sorted(result.failed)) or "-",
+                    len(scheduler.pending()),
+                    len(scheduler.skipped()),
+                )
+
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
+                    merged_any = True
                     # Propagate this wave's merged output into every
                     # sub-worktree so the next wave's tasks (which may
                     # depend_on a task another worker just finished) build
@@ -700,6 +916,8 @@ class DevelopmentNode(DevLoopNode):
             )
 
         dev_out = aggregate_outputs(wave_results, incomplete)
+        if merged_any:
+            dev_out = dev_out.model_copy(update={"merge_performed": True})
         shared["development_output"] = dev_out
         return dev_out
 
@@ -711,6 +929,7 @@ class DevelopmentNode(DevLoopNode):
         pool: DevAgentPool,
         research: ResearchOutput,
         run_id: str,
+        session_host: Optional[Any] = None,
     ) -> bool:
         """Merge-conflict resolver policy: first pool worker, claude-code fallback.
 
@@ -736,6 +955,9 @@ class DevelopmentNode(DevLoopNode):
             pool: The active pool (its first worker is the primary resolver).
             research: The shared research output.
             run_id: The flow run id.
+            session_host: The run's ``SessionHost``, forwarded so a
+                resolver dispatch is as visible in session state as any
+                other ``development`` dispatch.
 
         Returns:
             ``True`` if either dispatch succeeded, ``False`` otherwise.
@@ -751,6 +973,7 @@ class DevelopmentNode(DevLoopNode):
                 run_id=run_id,
                 node_id="development.resolver",
                 cwd=path,
+                session_host=session_host,
             )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
@@ -761,6 +984,10 @@ class DevelopmentNode(DevLoopNode):
 
         try:
             fallback_dispatcher, fallback_profile = self._dispatcher_builder(DevAgentSpec(agent="claude-code"))
+            resolver = getattr(self._dispatcher, "event_registry_resolver", None)
+            setter = getattr(fallback_dispatcher, "set_event_registry_resolver", None)
+            if resolver is not None and callable(setter):
+                setter(resolver)
             await fallback_dispatcher.dispatch(
                 brief=brief,
                 profile=fallback_profile,
@@ -768,6 +995,7 @@ class DevelopmentNode(DevLoopNode):
                 run_id=run_id,
                 node_id="development.resolver",
                 cwd=path,
+                session_host=session_host,
             )
             return True
         except Exception as exc:  # noqa: BLE001 - fallback failure -> resolver fully failed

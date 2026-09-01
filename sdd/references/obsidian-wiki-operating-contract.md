@@ -35,7 +35,7 @@ The system must preserve source truth while allowing compiled knowledge to evolv
 
 1. **Never access `Private/`.** Do not read, list, search, index, summarize, move, modify, or traverse it.
 2. **Treat all content in `Raw/` as immutable source evidence.** Claude may read files, create destination directories, and move unchanged files from `Raw/Incoming/` to `Raw/Processed/`, but must never edit source bytes, overwrite source files, or delete source files.
-3. **Do not download from Fireflies.** A separate process places meeting transcripts, summaries, and available metadata in `Raw/Incoming/`.
+3. **The compilation workflow never downloads from Fireflies.** Fetching is performed only by a dedicated, deterministic **fetch stage** (this agent's fetch-gate, or an external process), which places meeting transcripts, summaries, and available metadata into `Raw/Incoming/` and does nothing else. The compilation stages read only from `Raw/`. (If your agent is compile-only, treat downloading as an external process; do not fetch during compilation.)
 4. **Do not process the same meeting twice.** Deduplication is mandatory and happens before semantic processing.
 5. **Read the existing Wiki context before classification.** Always read `Wiki/index.md` and `Wiki/overview.md` before interpreting a new meeting.
 6. **Match existing knowledge before creating new knowledge.** Search existing projects, clients, people, products, entities, concepts, aliases, and source records first.
@@ -47,7 +47,8 @@ The system must preserve source truth while allowing compiled knowledge to evolv
 12. **Do not fabricate missing details.** Use `Unknown`, `Not established`, or `Requires review` when evidence is insufficient.
 13. **Preserve human-authored content.** Never alter a `## Human Notes` section or a page with `locked: true` unless the user explicitly requests it.
 14. **Do not modify `.obsidian/` unless the user explicitly requests an Obsidian configuration change.**
-15. **Do not use external knowledge or web research during normal Wiki operations unless the user explicitly requests it.** Wiki answers must be grounded in repository sources.
+15. **Do not use external knowledge or web research during normal Wiki operations unless the user explicitly requests it.** Wiki answers must be grounded in repository sources. *Exception:* internal semantic indexes built over the repository's own content (the GraphIndex/PageIndex planes) are **not** "external knowledge" — "external" means facts not present in the repository, such as the open web. Querying those internal indexes is always allowed.
+16. **Transcripts are immutable; process meetings in chronological order.** A meeting's transcript reflects a past, unchangeable event — a given `source_id` never legitimately changes, so there is **no revision workflow**: a re-seen id is skipped. When ingesting more than one meeting, process them in ascending `meeting_date` order (oldest → newest) so project state, decisions, and supersessions reflect the correct temporal evolution; a later meeting may supersede an earlier decision, never the reverse.
 
 ---
 
@@ -103,8 +104,7 @@ Knowledge Base/
 |       |                   |-- summary.<ext>
 |       |                   `-- metadata.<ext>
 |       |-- Uncategorized/
-|       |-- Duplicates/
-|       `-- Revisions/
+|       `-- Duplicates/
 |
 |-- Templates/
 |
@@ -153,7 +153,7 @@ Knowledge Base/
 - `Wiki/Sources/Meetings/` contains the canonical normalized meeting page for each meeting.
 - Each project meeting index links to canonical Wiki source pages. Do not copy the same meeting summary into multiple project directories.
 - `Projects/` is the canonical namespace for project entities. Do not create duplicate project entity pages under `Wiki/Entities/`.
-- Obsidian's graph is generated from `[[wikilinks]]`. `Wiki/Graph/` contains only optional derived reports and is never a source of truth.
+- The **GraphIndex/PageIndex plane is the primary graph for querying and relationship traversal**, rebuilt from the vault's content on every ingest. Obsidian's own `[[wikilink]]` graph is the **secondary**, human-navigation view. `Wiki/Graph/` holds only optional derived reports and is never a source of truth. Neither the GraphIndex nor `Wiki/Graph/` is the authority for page *content* — the Obsidian vault pages remain the content source of truth.
 
 ---
 
@@ -342,11 +342,11 @@ processed_at: YYYY-MM-DDTHH:mm:ss+00:00
 processing_mode: summary-only | summary-and-transcript
 classification_confidence: high | medium | low
 review_required: false
-raw_summary: "[[Raw/Processed/.../summary.md]]"
-raw_transcript: "[[Raw/Processed/.../transcript.md]]"
+raw_summary: "Raw/Processed/.../summary.md"        # plain relative path — raw files are not Obsidian pages
+raw_transcript: "Raw/Processed/.../transcript.md"  # plain relative path (never a [[wikilink]])
 summary_sha256: "<hash>"
 transcript_sha256: "<hash>"
-primary_project: "[[Projects/<Project Name>/<Project Name>]]"
+primary_project: "[[Projects/<Project Name>/<Project Name>]]"   # invariant: must also be listed in projects below
 projects: []
 clients: []
 people: []
@@ -491,7 +491,7 @@ At the beginning of a Wiki operation:
 1. Read this `CLAUDE.md`.
 2. Read `Wiki/index.md`.
 3. Read `Wiki/overview.md`.
-4. Read the relevant section of `Wiki/Registry/processed-sources.md` when ingesting.
+4. Consult the `MeetingRegistry` (`wiki.db`) — the processed-source authority — when ingesting (its `Wiki/Registry/processed-sources.md` mirror is for human reading, not the gate).
 5. Check `Wiki/Review Queue.md` for unresolved items relevant to the request.
 6. Inspect version-control status when available so unrelated human changes are not overwritten.
 7. Do not perform a full lint unless requested.
@@ -550,8 +550,8 @@ fireflies:<meeting-id>
 
 Compute SHA-256 hashes for the raw summary and transcript before moving them. Record the hashes in:
 
+- The `MeetingRegistry` (`wiki.db`) — the authority — and its `Wiki/Registry/processed-sources.md` mirror
 - The canonical meeting source page
-- `Wiki/Registry/processed-sources.md`
 
 After moving the bundle, recompute the hashes and verify an exact match.
 
@@ -567,15 +567,14 @@ An exact duplicate has the same `source_id` and the same source hashes.
 - Append a `duplicate-skip` log entry.
 - Report it as skipped.
 
-#### Same ID, changed content
+#### Same ID (any content)
 
-The same `source_id` with different hashes is a revision or source inconsistency.
+A meeting transcript is **immutable** — a given `source_id` reflects a past event and does not legitimately change, so a re-seen id is always a skip, regardless of hashes. There is no revision workflow.
 
-- Do not overwrite the original raw bundle.
-- Move the changed bundle to `Raw/Processed/Revisions/YYYY/MM/<source-id>/<revision-id>/`.
-- Create a `source-revision` item in `Wiki/Review Queue.md`.
-- Do not merge the revised content into compiled knowledge automatically unless the revision is clearly marked as an authoritative correction or the user instructs you to apply it.
-- Append a `revision-detected` log entry.
+- Do not read it semantically; do not update any compiled page.
+- Move the bundle to `Raw/Processed/Duplicates/YYYY/MM/<source-id>/` when this does not overwrite an existing bundle.
+- If the hashes differ (e.g. a re-export or normalization artifact from the source system), log a `duplicate-skip` noting the mismatch for awareness — never fork a revision or overwrite the original bundle.
+- Report it as skipped.
 
 #### Hash match, different ID
 
@@ -758,8 +757,8 @@ Why the meeting occurred and what it intended to accomplish.
 Include only when the transcript was read. Keep quotes short and relevant.
 
 ## Source Provenance
-- Raw summary: [[Raw/Processed/.../summary.md]]
-- Raw transcript: [[Raw/Processed/.../transcript.md]]
+- Raw summary: `Raw/Processed/.../summary.md` (plain relative path — raw files are not Obsidian pages, so never wikilinked)
+- Raw transcript: `Raw/Processed/.../transcript.md`
 - Processing mode: summary-only or summary-and-transcript
 - Classification confidence: high, medium, or low
 ```
@@ -777,7 +776,7 @@ Projects/<Project Name>/Meeting Summaries/index.md
 Projects/<Project Name>/Meeting Summaries/Archive/index.md
 ```
 
-The active index contains links to canonical source pages for meetings within the active 14-day window:
+The active index contains links to canonical source pages for meetings within the active window (configurable; default 14 days):
 
 ```markdown
 # <Project Name> - Meeting Summaries
@@ -893,6 +892,7 @@ Preserve this section verbatim if it already exists.
 7. Update `last_meeting` and `updated`.
 8. Preserve `## Human Notes` exactly.
 9. If `locked: true`, queue the update instead of editing the page.
+10. **Reconciliation assumes chronological processing.** Meetings are applied oldest → newest, so a later meeting supersedes an earlier decision, never the reverse. If an older meeting is ingested *after* newer state already exists, integrate it as historical context and source links only — do not let it overwrite a newer decision or current-state field.
 
 ---
 
@@ -1162,7 +1162,9 @@ Every major statement must link to supporting pages.
 
 ## 25. Processed Source Registry
 
-`Wiki/Registry/processed-sources.md` is the fast duplicate-detection registry. It is append-only except for correcting a malformed entry.
+The `MeetingRegistry` in `wiki.db` (FEAT-472) is the operational authority for processed-source identity; `Wiki/Registry/processed-sources.md` is its derived, human-readable mirror — a lost or stale mirror must never cause a re-download or a wrong skip.
+
+`Wiki/Registry/processed-sources.md` is that mirror: a human-readable, grep-friendly view **regenerated from the `MeetingRegistry` at the end of every successful ingest**, so it never lags the authority. Treat it as append-only in effect — never hand-edit or delete lines except to correct a malformed one; because it is regenerated from the DB it always reconciles.
 
 Each source gets one grep-friendly line:
 
@@ -1172,10 +1174,10 @@ Each source gets one grep-friendly line:
 
 Rules:
 
-- Search this registry before semantic processing.
+- The dedup gate queries the `MeetingRegistry` (`wiki.db`) ∪ a scan of `Raw/` before semantic processing — **not** this mirror.
 - Also verify the canonical source page frontmatter.
 - Never add a second processed entry for an exact duplicate.
-- Record revisions as separate `revision-detected` log entries, not as successful ingests.
+- Regenerate this mirror from the DB at the end of every successful ingest.
 
 ---
 
@@ -1189,7 +1191,6 @@ Allowed review types:
 - `classification`
 - `new-project`
 - `entity-ambiguity`
-- `source-revision`
 - `probable-duplicate`
 - `contradiction`
 - `locked-page-update`
@@ -1219,10 +1220,12 @@ Triggered by a request to ingest one bundle, a folder, or all pending files in `
 
 ### Steps, in order
 
+**When ingesting more than one bundle, sort by `meeting_date` ascending and process oldest → newest.** Project reconciliation (§19), daily notes (§23), and supersession (§22) all assume chronological order; processing meetings out of order corrupts current state.
+
 1. **Read operating context.** Read `CLAUDE.md`, `Wiki/index.md`, `Wiki/overview.md`, the processed-source registry, and relevant review items.
 2. **Discover complete source bundles.** Pair each transcript with its Fireflies summary and metadata when available.
 3. **Derive source identity.** Determine `source_id` and compute raw file hashes.
-4. **Run the duplicate gate.** Stop exact duplicates before semantic reading; route revisions and probable duplicates according to the deduplication rules.
+4. **Run the duplicate gate.** Skip any known `source_id` before semantic reading (transcripts are immutable — no revisions); route probable duplicates per the deduplication rules.
 5. **Identify existing knowledge.** Search existing projects, clients, people, companies, products, concepts, aliases, and recent source pages.
 6. **Read the Fireflies summary.** Use it as the primary classification and extraction input.
 7. **Classify the meeting.** Identify primary and additional projects, clients, entities, products, and concepts; assign confidence.
@@ -1240,7 +1243,7 @@ Triggered by a request to ingest one bundle, a folder, or all pending files in `
 19. **Update `Wiki/overview.md` when warranted.** Do not change it for trivial or redundant information.
 20. **Update the processed-source registry.** Add the unique source entry only after successful validation.
 21. **Append to `Wiki/log.md`.** Record the operation and changed pages.
-22. **Apply the 14-day archive policy.** Archive old daily notes and project meeting references.
+22. **Apply the archive policy** (active window configurable; default 14 days). Archive old daily notes and project meeting references.
 23. **Run post-ingest validation.** Validate provenance, links, hashes, canonical project state, contradictions, indexes, and access boundaries.
 24. **Print a change summary.** List created, updated, moved, skipped, contradicted, and review-required items.
 
@@ -1254,9 +1257,9 @@ Triggered by `query: <question>` or an equivalent natural-language request.
 
 ### Steps
 
-1. Read `Wiki/index.md` and `Wiki/overview.md`.
-2. Identify relevant project, entity, concept, contradiction, synthesis, and source pages.
-3. Read compiled pages first.
+1. Query the **GraphIndex/PageIndex plane** (the primary query graph) to retrieve candidate pages and relationships; read `Wiki/index.md` and `Wiki/overview.md` for orientation.
+2. Identify relevant project, entity, concept, contradiction, synthesis, and source pages from that retrieval.
+3. **Read the compiled Obsidian pages** for those candidates — the vault pages are the content authority; GraphIndex output is retrieval only, never quoted as the answer.
 4. Read canonical meeting source pages for evidence and detail.
 5. Read raw summaries or transcripts only when compiled knowledge is insufficient, disputed, or requires exact verification.
 6. Answer using clear reasoning and inline `[[wikilinks]]` to supporting pages.
@@ -1265,7 +1268,7 @@ Triggered by `query: <question>` or an equivalent natural-language request.
    - Inferences
    - Unknowns
    - Unresolved contradictions
-8. Do not use external knowledge unless explicitly requested.
+8. Do not use external knowledge unless explicitly requested — internal GraphIndex/PageIndex retrieval over repository content is **not** "external" (§2 rule 15).
 9. Do not modify the Wiki for an ordinary query.
 10. Save the answer to `Wiki/Syntheses/` only when the user explicitly asks to save or file it.
 11. When saving, update `Wiki/Syntheses/index.md`, `Wiki/index.md`, and `Wiki/log.md`, then validate links.
@@ -1347,7 +1350,7 @@ Check for:
 - Missing concept pages for repeatedly referenced material concepts
 - Near-duplicate entities or concepts
 - Daily notes that duplicate meeting text instead of synthesizing it
-- Active meeting references older than the 14-day window
+- Active meeting references older than the active window (default 14 days)
 - Daily notes overdue for archive
 - Incomplete source bundles
 - Unsupported source formats
@@ -1372,7 +1375,6 @@ Claude must not automatically fix:
 - Contradictory claims
 - Ambiguous entity merges
 - Project classification
-- Source revisions
 - Locked pages
 - Missing owners, dates, requirements, or decisions
 - Any issue requiring unsupported factual assumptions
@@ -1383,11 +1385,11 @@ Output a lint report. Save it only when requested, normally as `Wiki/lint-report
 
 ## 31. Archive Workflow
 
-Maintain a rolling 14-calendar-day active window.
+Maintain a rolling active window, configurable (default 14 calendar days).
 
 ### Daily notes
 
-- Keep notes whose date is on or after `today - 13 days` in `Diary/Daily Notes/`.
+- Keep notes whose date is on or after `today - (window - 1) days` (default window 14) in `Diary/Daily Notes/`.
 - Move older notes unchanged to `Diary/Archive/YYYY/`.
 - Update any affected links.
 
@@ -1405,7 +1407,7 @@ Append an `archive` entry to `Wiki/log.md` only when something changed.
 
 ## 32. Graph Workflow
 
-Obsidian's built-in graph is generated from wikilinks and is the primary relationship view.
+The GraphIndex/PageIndex plane is the primary graph for querying and relationship traversal, rebuilt from the vault on every ingest. Obsidian's built-in `[[wikilink]]` graph is the secondary, human-navigation view. `Wiki/Graph/` still holds only derived, non-canonical reports.
 
 When asked to build a graph report:
 
@@ -1437,7 +1439,6 @@ Allowed operations:
 - `initialize`
 - `ingest`
 - `duplicate-skip`
-- `revision-detected`
 - `query-save`
 - `health`
 - `lint`

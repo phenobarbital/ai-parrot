@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The request adds durable node-result reuse and restart recovery to existing dev_flow and dev_loop workflows. Research must distinguish current flow persistence from operation caching and locate the exact intake, research, and development contracts.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Map the concrete dev_flow and dev_loop package structures before selecting implementation boundaries.",
+      "type": "tree",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/flows",
+        "max_depth": 3
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Locate existing cache, checkpoint, resume, and persistence abstractions in flow execution code.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "cache|checkpoint|resume|persist|restore",
+        "path": "packages/ai-parrot/src/parrot/bots/flows",
+        "case_sensitive": false,
+        "max_results": 120,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the AgentsFlow executor to identify lifecycle hooks and safe cache interception points.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/flow/flow.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Locate bug intake, research, and development node classes and their result models.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "class (.*Intake.*Node|.*Research.*Node|.*Development.*Node)",
+        "path": "packages/ai-parrot/src/parrot/flows",
+        "case_sensitive": true,
+        "max_results": 80,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Read dev_flow topology and materialization code to establish node reuse and routing contracts.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_flow/flow.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Find Redis-backed session and run-state ownership used by dev_loop and dev_flow runners.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "redis_url|Redis|session.*state|run_id|job_id",
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop",
+        "case_sensitive": false,
+        "max_results": 120,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Read the existing AgentsFlow persistence specification to preserve established recovery semantics.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "sdd/specs/agentsflow-persistency.spec.md",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Locate tests for flow interruption, resume, idempotency, and repeated node execution.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "resume|restart|recover|idempoten|cache|exception",
+        "path": "packages/ai-parrot/tests/flows",
+        "case_sensitive": false,
+        "max_results": 120,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Identify existing cache contracts elsewhere in the repository that can supply storage and keying patterns.",
+      "type": "grep",
+      "priority": 3,
+      "params": {
+        "pattern": "CacheBackend|CacheStore|cache_key|cache_ttl|cached_result",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": false,
+        "max_results": 100,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Inspect recent history for design decisions affecting dev_flow, dev_loop, and AgentsFlow persistence.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/flows",
+        "since": "120.days.ago",
+        "max_results": 30,
+        "with_diff": false
+      }
+    }
+  ],
+  "expected_findings": [
+    "Exact node classes and output contracts for bug intake, research, and development",
+    "Current distinction between AgentsFlow persistence and dev-loop session/event persistence",
+    "Redis ownership and existing serialization conventions",
+    "Lifecycle hook suitable for cache lookup and commit-after-success",
+    "Required cache identity and invalidation inputs",
+    "Existing restart and idempotency test coverage"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "dev_loop",
+        "dev_flow",
+        "AgentsFlow",
+        "Redis",
+        "bug intake",
+        "research",
+        "development",
+        "worktree"
+      ],
+      "verbs": [
+        "add",
+        "cache",
+        "reuse",
+        "recover",
+        "restart"
+      ],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {
+      "files_read": 3,
+      "grep_calls": 6,
+      "git_calls": 1
+    },
+    "wiki_orientation": {
+      "status": "completed",
+      "top_page": "file:sdd/specs/sdd-dev-flow.spec.md",
+      "schema_note": "Wiki query types are required by the prompt but absent from research_plan.schema.json v1.0."
+    }
+  }
+}
+

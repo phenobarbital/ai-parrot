@@ -11,6 +11,7 @@ This package also provides the interactive agent REPL subpackage:
 - ``parrot.cli.loaders`` — StandaloneAgentLoader, ServerAgentProxy
 - ``parrot.cli.commands`` — SlashCommandDispatcher
 """
+
 import importlib
 import click
 
@@ -112,9 +113,11 @@ cli._lazy_commands = {
     "install": "parrot.install.cli",
     "wiki": "parrot.knowledge.wiki.cli",
     "mcp": "parrot.mcp.cli",
+    "mcp-local": "parrot.mcp.local_cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
+    "codex": "parrot.knowledge.wiki.codex.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
     # FEAT-422 — Agent CLI Daemon (agentd), ships in ai-parrot-integrations.

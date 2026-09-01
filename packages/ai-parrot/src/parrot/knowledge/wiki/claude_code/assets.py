@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from parrot.mcp.toolkit_config import ToolkitSection
 
 # --------------------------------------------------------------------------
 # Markers / identifiers
@@ -101,6 +105,49 @@ def mcp_json_entry(root: Path) -> dict:
     }
 
 
+def resolve_parrot_bin(root: Path) -> str:
+    """Return the absolute path to the ``parrot`` binary.
+
+    Mirrors :func:`resolve_wikitoolkit_bin`'s resolution order:
+
+    1. ``<root>/.venv/bin/parrot`` — the project venv (most common with
+       ``uv`` / ``pip install -e .``).
+    2. ``shutil.which("parrot")`` — globally installed or on ``$PATH`` at
+       install time.
+    3. Bare ``"parrot"`` — fallback; works only when the venv is activated
+       at invocation time (e.g. the MCP host activates it before spawning
+       the process).
+    """
+    venv_bin = root / ".venv" / "bin" / "parrot"
+    if venv_bin.exists():
+        return str(venv_bin)
+    found = shutil.which("parrot")
+    if found:
+        return found
+    return "parrot"
+
+
+def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> dict:
+    """Build the ``.mcp.json`` entry for one exposed toolkit (FEAT-485).
+
+    Args:
+        root: Project root — used to resolve the ``parrot`` binary.
+        name: Toolkit name (e.g. ``"scraping"``) as it appears under
+            ``.parrot/mcp-toolkits.yaml``'s ``toolkits:`` mapping.
+        section: The toolkit's resolved config section, for its ``env``
+            mapping.
+
+    Returns:
+        ``{"command": <abs parrot bin>, "args": ["mcp-local", name],
+        "env": dict(section.env)}``.
+    """
+    return {
+        "command": resolve_parrot_bin(root),
+        "args": ["mcp-local", name],
+        "env": dict(section.env),
+    }
+
+
 def git_hook_block(root: Path) -> str:
     """Build the ``post-commit`` hook block with an absolute path."""
     wt_bin = resolve_wikitoolkit_bin(root)
@@ -129,9 +176,8 @@ def permission_rules(root: Path) -> tuple[str, ...]:
     resolved = resolve_wikitoolkit_bin(root)
     if resolved == "wikitoolkit":
         return PERMISSION_RULES
-    return PERMISSION_RULES + (
-        f"Bash({resolved}:*)",
-    )
+    return PERMISSION_RULES + (f"Bash({resolved}:*)",)
+
 
 # --------------------------------------------------------------------------
 # CLAUDE.md managed section
@@ -278,7 +324,7 @@ GIT_HOOK_NEW_FILE = f"""#!/bin/sh
 NUDGE_TEXT = (
     "STOP — this repository has an LLM-wiki knowledge graph and CLAUDE.md "
     "requires querying it BEFORE raw file scans (Grep/Glob/Read or "
-    "grep/rg/find via Bash). Run `wikitoolkit query \"<question>\"` first "
+    'grep/rg/find via Bash). Run `wikitoolkit query "<question>"` first '
     "(ranked, token-budgeted page stubs), then `wikitoolkit page <id>` / "
     "`wikitoolkit related <id>` to drill in. Only fall back to raw search "
     "after a query AND a page/related follow-up came up empty."

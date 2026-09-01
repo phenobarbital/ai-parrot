@@ -23,6 +23,17 @@ Public surface:
   * ``invocation_context(agent_name, user_id, session_id)`` — context-manager
     that binds all three ContextVars atomically. Preferred over setting them
     individually.
+  * ``current_run_id`` — module-level ``ContextVar[Optional[str]]`` with
+    default ``None``. FEAT-479: carries the dev-loop / dev-flow run
+    identifier so usage-accounting events emitted deep inside
+    ``AbstractClient`` can be attributed to the run that triggered them.
+  * ``current_seat`` — module-level ``ContextVar[Optional[str]]`` with
+    default ``None``. FEAT-479: carries the accounting seat — a node id
+    (``"qa"``) or a pool worker id (``"development.w1"``). Deliberately a
+    free string, not ``parrot.flows.dev_loop.session_state.NodeId`` (a
+    closed ``Literal`` that cannot express pool-worker seats).
+  * ``usage_attribution(run_id, seat)`` — context-manager that binds
+    ``current_run_id`` and ``current_seat`` atomically.
 
 Stdlib only — no third-party dependency.
 """
@@ -37,19 +48,16 @@ __all__ = [
     "current_session_id",
     "agent_identity",
     "invocation_context",
+    "current_run_id",
+    "current_seat",
+    "usage_attribution",
 ]
 
-current_agent_name: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_agent_name", default=None
-)
+current_agent_name: ContextVar[Optional[str]] = ContextVar("parrot_current_agent_name", default=None)
 
-current_user_id: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_user_id", default=None
-)
+current_user_id: ContextVar[Optional[str]] = ContextVar("parrot_current_user_id", default=None)
 
-current_session_id: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_session_id", default=None
-)
+current_session_id: ContextVar[Optional[str]] = ContextVar("parrot_current_session_id", default=None)
 
 
 @contextmanager
@@ -113,3 +121,38 @@ def invocation_context(
         current_session_id.reset(tok_session)
         current_user_id.reset(tok_user)
         current_agent_name.reset(tok_agent)
+
+
+current_run_id: ContextVar[Optional[str]] = ContextVar("parrot_current_run_id", default=None)
+
+current_seat: ContextVar[Optional[str]] = ContextVar("parrot_current_seat", default=None)
+
+
+@contextmanager
+def usage_attribution(
+    run_id: Optional[str],
+    seat: Optional[str] = None,
+) -> Iterator[None]:
+    """Bind run/seat attribution for events emitted inside this block.
+
+    Uses token-based ``set()`` / ``reset()`` so nested blocks restore the
+    prior values rather than clearing them.
+
+    Args:
+        run_id: The dev-loop / dev-flow run identifier.
+        seat: The accounting seat — a node id (``"qa"``) or a pool worker id
+            (``"development.w1"``). Deliberately a free string, not a
+            ``NodeId``.
+
+    Example::
+
+        with usage_attribution("run-abc123", "development.w1"):
+            ...  # AfterClientCallEvents emitted here carry this attribution
+    """
+    tok_run = current_run_id.set(run_id)
+    tok_seat = current_seat.set(seat)
+    try:
+        yield
+    finally:
+        current_seat.reset(tok_seat)
+        current_run_id.reset(tok_run)

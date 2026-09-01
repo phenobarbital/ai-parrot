@@ -26,14 +26,26 @@ import asyncio
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set, Union
+from typing import Any, Callable, ClassVar, Dict, Literal, Optional, Set, Union
 
 from navconfig.logging import logging
+from pydantic import BaseModel
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import (
+    CheckpointInputMetadata,
+    CheckpointPersistenceError,
+    CheckpointStore,
+    get_checkpoint_store,
+)
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.result import FlowResult
+from parrot.flows.dev_loop.checkpoint import (
+    TOPOLOGY_VERSION,
+    DevCheckpointCoordinator,
+    compute_input_fingerprint,
+)
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import (
@@ -45,6 +57,7 @@ from parrot.flows.dev_loop.flow import (
     _is_feature,
     _qa_failed,
     _qa_passed,
+    build_dev_loop_flow,
 )
 from parrot.flows.dev_loop.models import (
     FeatureBrief,
@@ -76,6 +89,9 @@ from parrot.flows.dev_loop.session_state import (
     SessionHost,
     reduce_root,
 )
+from parrot.core.events.lifecycle import EventRegistry
+from parrot.observability.recorders.run_ledger import RunLedgerRecorder
+from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 
 # ---------------------------------------------------------------------------
 # Gate TTL policy (FEAT-322 §2, §8) — conf-overridable per kind, seconds.
@@ -119,14 +135,19 @@ _SWEEP_INTERVAL_SECONDS = 30
 # explicitly rather than rely on `FlowResult.status`/`AgentsFlow`'s
 # completed/failed bookkeeping, which only reflects whether a node raised.
 _TERMINAL_NODE_IDS = (
-    "deployment_handoff", "feature_handoff", "revision_handoff", "failure_handler",
+    "deployment_handoff",
+    "feature_handoff",
+    "revision_handoff",
+    "failure_handler",
 )
-_FAILED_TERMINAL_STATUSES = frozenset({
-    "blocked",                    # all three handoff nodes: nothing delivered
-    "escalated",                  # failure_handler: QA failed, run escalated
-    "escalated_without_ticket",   # failure_handler, no Jira / skip_jira
-    "escalation_failed",          # failure_handler, Jira call raised
-})
+_FAILED_TERMINAL_STATUSES = frozenset(
+    {
+        "blocked",  # all three handoff nodes: nothing delivered
+        "escalated",  # failure_handler: QA failed, run escalated
+        "escalated_without_ticket",  # failure_handler, no Jira / skip_jira
+        "escalation_failed",  # failure_handler, Jira call raised
+    }
+)
 
 
 def build_dev_loop_revision_flow(
@@ -139,6 +160,7 @@ def build_dev_loop_revision_flow(
     graph_memory: Optional[Any] = None,
     name: str = "dev-loop-revision",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
 ) -> AgentsFlow:
     """Build the short revision-mode ``AgentsFlow`` (FEAT-250 G6).
 
@@ -171,13 +193,21 @@ def build_dev_loop_revision_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: Dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    )
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
     flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in nodes.values():
         flow.add_node(node)
@@ -201,12 +231,14 @@ def build_dev_loop_feature_flow(
     redis_url: str,
     codereview_dispatcher: Optional[Any] = None,
     development_dispatcher_builder: Optional[Any] = None,
+    development_pool_config: Optional[Any] = None,
     development_pool_max: int = 4,
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
     skip_qa: bool = False,
     name: str = "dev-loop-feature",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
 ) -> AgentsFlow:
     """Build the feature-mode ``AgentsFlow`` (FEAT-378).
 
@@ -240,6 +272,14 @@ def build_dev_loop_feature_flow(
         development_dispatcher_builder: Optional ``(DevAgentSpec) ->
             (dispatcher, profile)`` callable (FEAT-323) for ``DevelopmentNode``
             pool-worker materialization.
+        development_pool_config: Optional :class:`DevAgentPoolConfig`
+            (FEAT-323/486) forwarded via ``build_dev_loop_node_factories``
+            to BOTH ``DevelopmentNode`` (default pool when the brief
+            carries no ``dev_agents``) and ``PlannerNode`` (so
+            ``suggested_pool`` names the operator's real backends instead
+            of the claude-code default). ``None`` (default) preserves the
+            single-agent behaviour exactly — same semantics as
+            ``build_dev_loop_flow``'s kwarg of the same name.
         development_pool_max: Hard cap on total pool workers (FEAT-323),
             also passed to ``PlannerNode`` for its own pool-sizing cap.
         graph_memory: FEAT-377 TASK-1914/1915 (G2) — an optional
@@ -260,6 +300,9 @@ def build_dev_loop_feature_flow(
         name: Flow name (default ``"dev-loop-feature"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
+        lifecycle_events: When True (default), also attach a
+            :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
+            (FEAT-479).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -272,6 +315,7 @@ def build_dev_loop_feature_flow(
         git_toolkit=git_toolkit,
         wiki_toolkit=wiki_toolkit,
         development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_config=development_pool_config,
         development_pool_max=development_pool_max,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
@@ -286,13 +330,21 @@ def build_dev_loop_feature_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: Dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    )
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
     flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in nodes.values():
         flow.add_node(node)
@@ -313,8 +365,13 @@ def build_dev_loop_feature_flow(
     flow.add_edge("feedback_router", "development", predicate=_feedback_retry)
     flow.add_edge("feature_handoff", "close")
     for source in (
-        "intent_classifier", "planner", "development", "synthesis",
-        "qa", "feedback_router", "feature_handoff",
+        "intent_classifier",
+        "planner",
+        "development",
+        "synthesis",
+        "qa",
+        "feedback_router",
+        "feature_handoff",
     ):
         flow.add_edge(source, "failure_handler", condition="on_error")
 
@@ -325,10 +382,37 @@ class DevLoopRunner:
     """Hosts dev-loop flow runs behind a global concurrency cap.
 
     Args:
-        flow: The :class:`AgentsFlow` built by ``build_dev_loop_flow``.
+        flow: The :class:`AgentsFlow` built by ``build_dev_loop_flow``. Used
+            as-is for every run whose caller does NOT supply a stable
+            ``run_id`` (the historical, byte-identical fresh-only path).
         max_concurrent_runs: Cap on simultaneously executing runs.
             Defaults to ``conf.FLOW_MAX_CONCURRENT_RUNS``.
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback) used by the checkpoint-aware
+            recovery path (below). Ignored entirely when no caller ever
+            passes ``run_id=`` to :meth:`run`.
+        dev_loop_flow_kwargs: FEAT-480 — the SAME keyword arguments the
+            caller used to build ``flow`` via ``build_dev_loop_flow(...)``
+            in the first place (``dispatcher``, ``jira_toolkit``,
+            ``log_toolkits``, ``redis_url``, ...). Required for the
+            checkpoint-aware recovery path: :meth:`run` uses it to build a
+            genuinely fresh per-run ``AgentsFlow`` (spec §7 "shared flow
+            instances are concurrent today; per-run construction is
+            mandatory") every time a caller supplies ``run_id=``, instead
+            of reusing ``self.flow``. ``None`` (default) keeps every
+            existing caller working unchanged — :meth:`run` simply never
+            takes the recovery path for them (``run_id=`` still accepted
+            and still used as this run's identity, just without checkpoint
+            recovery, exactly as before FEAT-480).
     """
+
+    #: Checkpoint namespace this runner owns. The stable checkpoint
+    #: identity is ``"<workflow>/<run_id>"`` (FEAT-480 spec §2 step 1), so
+    #: a ``dev-loop`` checkpoint never satisfies a ``dev-flow`` resume of
+    #: the same run_id. Declared here (rather than repeated as a literal
+    #: at every ``prepare()``/``inspect_checkpoint()`` call site) so the
+    #: subclass override is the ONLY place the two can differ.
+    CHECKPOINT_WORKFLOW: ClassVar[Literal["dev-loop", "dev-flow"]] = "dev-loop"
 
     def __init__(
         self,
@@ -342,12 +426,12 @@ class DevLoopRunner:
         redis_url: Optional[str] = None,
         codereview_dispatcher: Optional[Any] = None,
         graph_memory: Optional[Any] = None,
+        checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+        dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
-            max_concurrent_runs
-            if max_concurrent_runs is not None
-            else conf.FLOW_MAX_CONCURRENT_RUNS
+            max_concurrent_runs if max_concurrent_runs is not None else conf.FLOW_MAX_CONCURRENT_RUNS
         )
         self._semaphore = asyncio.Semaphore(self.max_concurrent_runs)
         self._active: Set[str] = set()
@@ -361,10 +445,26 @@ class DevLoopRunner:
         self._parked: Set[str] = set()
         self._pending_gate_count: Dict[str, int] = {}
         self._run_completion: Dict[str, "asyncio.Future[FlowResult]"] = {}
+        # FEAT-479 M5: per-run EventRegistry + usage ledger, keyed by
+        # run_id — NEVER shared, NEVER the global registry (§8 Q2). Declared
+        # before ``self._dispatcher`` below because the resolver wiring
+        # right after it captures ``self._run_registries.get`` as a live
+        # bound method.
+        self._run_registries: Dict[str, EventRegistry] = {}
+        self._run_ledgers: Dict[str, RunLedgerRecorder] = {}
+
         # Deps needed to build the revision-mode flow on demand (FEAT-250 G6).
         # Optional so the legacy ``DevLoopRunner(flow)`` construction keeps
         # working; ``run_revision`` raises a clear error when they are absent.
         self._dispatcher = dispatcher
+        # FEAT-479 M5: wire the per-run registry resolver into the shared
+        # dispatcher (if it supports it — duck-typed, since ``dispatcher``
+        # may be any CLI-backed dispatcher that never touches
+        # EventRegistry at all). ``self._run_registries.get`` is a live
+        # bound method, so later runs added to the dict are resolved too.
+        _resolver_setter = getattr(self._dispatcher, "set_event_registry_resolver", None)
+        if callable(_resolver_setter):
+            _resolver_setter(self._run_registries.get)
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
         self._wiki_toolkit = wiki_toolkit
@@ -373,6 +473,16 @@ class DevLoopRunner:
         # FEAT-377 TASK-1915: optional DevLoopGraphMemory forwarded to the
         # revision flow's QA/close/failure_handler nodes. None is a no-op.
         self._graph_memory = graph_memory
+        # FEAT-480: checkpoint recovery path. `_dev_loop_flow_kwargs=None`
+        # (the default) means `run(run_id=...)` never takes the recovery
+        # path — it still accepts/uses the caller's `run_id` as this run's
+        # identity, just without building a per-run checkpoint-enabled
+        # flow (spec §7: per-run construction is mandatory for the
+        # recovery path specifically; it is not required at all when
+        # recovery is not requested).
+        self._checkpoint_store = checkpoint_store
+        self._dev_loop_flow_kwargs = dev_loop_flow_kwargs
+        self._checkpoint_coordinator = DevCheckpointCoordinator(store=checkpoint_store)
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
         # Lazily-built, reused feature-mode flow (FEAT-378, fixed topology).
@@ -424,9 +534,7 @@ class DevLoopRunner:
     def _run_summary_from_host(self, host: SessionHost) -> RunSummary:
         """Project a host's live state into a display-ready :class:`RunSummary`."""
         state = host.state
-        pending_gates = sum(
-            1 for g in state.gates.values() if g.status == "pending"
-        )
+        pending_gates = sum(1 for g in state.gates.values() if g.status == "pending")
         return RunSummary(
             run_id=state.run_id,
             phase=state.phase,
@@ -458,13 +566,58 @@ class DevLoopRunner:
         run in the root catalogue forever (`RunRemoved` would never fire).
         """
         self._hosts.pop(run_id, None)
-        if (
-            not self._hosts
-            and not self._pending_retention
-            and self._sweep_task is not None
-        ):
+        if not self._hosts and not self._pending_retention and self._sweep_task is not None:
             self._sweep_task.cancel()
             self._sweep_task = None
+
+    # ── Per-run usage ledger (FEAT-479 M5) ──────────────────────────────────
+
+    def _create_run_registry(self, run_id: str) -> None:
+        """Create this run's :class:`EventRegistry` + usage-ledger sink.
+
+        Registers a ``UsageRecordingSubscriber(recorders=[RunLedgerRecorder
+        (run_id)], cost_calculator=None)`` on a fresh, run-owned
+        ``EventRegistry`` — **never** on the global registry (spec §8 Q2).
+        ``cost_calculator=None`` is deliberate: pricing is a spec Non-Goal.
+
+        The registry is constructed with ``forward_to_global=False``,
+        matching ``AbstractClient``'s own per-instance default
+        (``clients/base.py:372``). ``AbstractClient._emit_after_call``/
+        ``_emit_round_event`` already forward explicitly and
+        unconditionally to the global registry regardless of this flag
+        (``clients/base.py:634`` / ``:582``) — auto-forwarding here too
+        (``forward_to_global=True``) would double-schedule that forward
+        for every client-emitted event once this registry is injected as
+        the client's own (see :meth:`LLMCodeDispatcher._create_client`),
+        double-counting on every GLOBAL subscriber (OTel metrics, the
+        global usage recorders). Emitters with no such explicit-forward
+        habit of their own (e.g. a future non-client emitter) must call
+        ``registry.forward_to_global(event)`` themselves, mirroring the
+        client convention, to stay visible to global observers.
+        """
+        ledger = RunLedgerRecorder(run_id=run_id)
+        subscriber = UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)
+        registry = EventRegistry(forward_to_global=False)
+        registry.add_provider(subscriber)
+        self._run_registries[run_id] = registry
+        self._run_ledgers[run_id] = ledger
+
+    def _discard_run_registry(self, run_id: str) -> None:
+        """Release ``run_id``'s per-run registry + ledger (no leak across runs)."""
+        self._run_registries.pop(run_id, None)
+        self._run_ledgers.pop(run_id, None)
+
+    def get_run_ledger(self, run_id: str) -> Optional[RunLedgerRecorder]:
+        """Return the per-run usage ledger for ``run_id``, if tracked.
+
+        ``None`` when no ledger is tracked for this run — e.g. a run that
+        never went through this runner instance, or a cross-process resume
+        that lost its in-memory ledger (spec §8 Q1). Report building
+        (rendering, §8 Q1's ``mark_partial`` labelling) is out of scope for
+        this method; callers detecting a missing ledger decide how to
+        render that.
+        """
+        return self._run_ledgers.get(run_id)
 
     @staticmethod
     def _outcome_from_status(status: Any) -> str:
@@ -513,23 +666,15 @@ class DevLoopRunner:
 
             t = envelope.action.type
             if t == "gate/opened":
-                self._pending_gate_count[run_id] = (
-                    self._pending_gate_count.get(run_id, 0) + 1
-                )
+                self._pending_gate_count[run_id] = self._pending_gate_count.get(run_id, 0) + 1
                 if conf.DEV_LOOP_GATE_PARK and self._pending_gate_count[run_id] == 1:
                     self._park(run_id)
             elif t in ("gate/resolved", "gate/expired"):
                 remaining = max(0, self._pending_gate_count.get(run_id, 0) - 1)
                 self._pending_gate_count[run_id] = remaining
-                if (
-                    conf.DEV_LOOP_GATE_PARK
-                    and remaining == 0
-                    and run_id in self._parked
-                ):
+                if conf.DEV_LOOP_GATE_PARK and remaining == 0 and run_id in self._parked:
                     try:
-                        asyncio.get_running_loop().create_task(
-                            self._auto_resume(run_id)
-                        )
+                        asyncio.get_running_loop().create_task(self._auto_resume(run_id))
                     except RuntimeError:
                         pass
 
@@ -561,13 +706,9 @@ class DevLoopRunner:
         queue.put_nowait(envelope)
         writer = self._actions_writers.get(run_id)
         if writer is None or writer.done():
-            self._actions_writers[run_id] = loop.create_task(
-                self._drain_actions_queue(run_id, queue)
-            )
+            self._actions_writers[run_id] = loop.create_task(self._drain_actions_queue(run_id, queue))
 
-    async def _drain_actions_queue(
-        self, run_id: str, queue: "asyncio.Queue[Any]"
-    ) -> None:
+    async def _drain_actions_queue(self, run_id: str, queue: "asyncio.Queue[Any]") -> None:
         """XADD ``run_id``'s envelopes one at a time, in ``server_seq`` order.
 
         Awaiting each XADD before pulling the next entry is the whole point:
@@ -584,9 +725,7 @@ class DevLoopRunner:
                 return
             await self._xadd_envelope(run_id, envelope)
 
-    async def _flush_actions_queue(
-        self, run_id: str, timeout: float = 5.0
-    ) -> None:
+    async def _flush_actions_queue(self, run_id: str, timeout: float = 5.0) -> None:
         """Publish ``run_id``'s remaining envelopes, then retire its writer.
 
         Called from :meth:`_close_host` so a finished run's stream is
@@ -611,13 +750,15 @@ class DevLoopRunner:
             await asyncio.wait_for(asyncio.shield(writer), timeout=timeout)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             self.logger.debug(
-                "dev-loop actions-stream flush for run %s did not finish in "
-                "%.1fs — remaining envelopes dropped", run_id, timeout,
+                "dev-loop actions-stream flush for run %s did not finish in " "%.1fs — remaining envelopes dropped",
+                run_id,
+                timeout,
             )
         except Exception:  # noqa: BLE001 - actions publish must never break a run
             self.logger.debug(
                 "dev-loop actions-stream flush failed for run %s",
-                run_id, exc_info=True,
+                run_id,
+                exc_info=True,
             )
 
     def _retire_actions_writer(self, run_id: str) -> None:
@@ -647,9 +788,7 @@ class DevLoopRunner:
         if self._actions_redis is None:
             import redis.asyncio as aioredis  # noqa: PLC0415 - lazy
 
-            self._actions_redis = aioredis.from_url(
-                self._redis_url, decode_responses=True
-            )
+            self._actions_redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._actions_redis
 
     async def _xadd_envelope(self, run_id: str, envelope: ActionEnvelope) -> None:
@@ -668,9 +807,7 @@ class DevLoopRunner:
                 approximate=True,
             )
         except Exception:  # noqa: BLE001 - actions publish must never break a run
-            self.logger.debug(
-                "dev-loop actions XADD failed for run %s", run_id, exc_info=True
-            )
+            self.logger.debug("dev-loop actions XADD failed for run %s", run_id, exc_info=True)
 
     # ── Terminal snapshot + retention (FEAT-322) ────────────────────────────
 
@@ -690,16 +827,20 @@ class DevLoopRunner:
             path.write_text(snapshot.model_dump_json(indent=2))
             self.logger.info(
                 "Persisted terminal snapshot for run %s at %s",
-                host.state.run_id, path,
+                host.state.run_id,
+                path,
             )
         except Exception:  # noqa: BLE001 - artifact persistence must not break a run
             self.logger.warning(
                 "Failed to persist terminal snapshot for run %s",
-                host.state.run_id, exc_info=True,
+                host.state.run_id,
+                exc_info=True,
             )
 
     def _persist_run_bundle(
-        self, host: SessionHost, ctx: Optional[FlowContext],
+        self,
+        host: SessionHost,
+        ctx: Optional[FlowContext],
     ) -> None:
         """Persist the run bundle + markdown closing report (FEAT-378 TASK-1929).
 
@@ -739,26 +880,39 @@ class DevLoopRunner:
             # try/except rather than sharing the outer one's early exit).
             usage_markdown = ""
             try:
-                usage_report = build_usage_report(
-                    host.snapshot(), host.state.run_id, shared=shared
-                )
+                # FEAT-479 M7a: source from the run's usage ledger, not the
+                # session-state Snapshot. A missing ledger (e.g. a
+                # cross-process resume that lost the in-memory ledger — §8
+                # Q1) gets a fresh, explicitly-marked-partial one rather
+                # than silently reporting an empty total as complete.
+                ledger = self.get_run_ledger(host.state.run_id)
+                if ledger is None:
+                    ledger = RunLedgerRecorder(run_id=host.state.run_id)
+                    ledger.mark_partial(
+                        "no per-run usage ledger tracked at report-build " "time (e.g. a cross-process resume)"
+                    )
+                usage_report = build_usage_report(ledger, host.state.run_id)
                 usage_path.write_text(usage_report.model_dump_json(indent=2))
                 usage_html_path.write_text(render_usage_html(usage_report))
                 usage_markdown = render_usage_markdown(usage_report)
             except Exception:  # noqa: BLE001 - usage export must not break bundle export
                 self.logger.warning(
                     "Failed to persist usage report for run %s",
-                    host.state.run_id, exc_info=True,
+                    host.state.run_id,
+                    exc_info=True,
                 )
             report_path.write_text(render_markdown(bundle, usage_markdown))
             self.logger.info(
                 "Persisted run bundle for run %s at %s and %s",
-                host.state.run_id, bundle_path, report_path,
+                host.state.run_id,
+                bundle_path,
+                report_path,
             )
         except Exception:  # noqa: BLE001 - artifact persistence must not break a run
             self.logger.warning(
                 "Failed to persist run bundle for run %s",
-                host.state.run_id, exc_info=True,
+                host.state.run_id,
+                exc_info=True,
             )
 
     def _schedule_actions_retention(self, run_id: str) -> None:
@@ -774,7 +928,8 @@ class DevLoopRunner:
         self._pending_retention[run_id] = time.time() + retention_seconds
         self.logger.info(
             "Scheduled flow:%s:actions for deletion in %.0fd",
-            run_id, conf.DEV_LOOP_ACTIONS_RETENTION_DAYS,
+            run_id,
+            conf.DEV_LOOP_ACTIONS_RETENTION_DAYS,
         )
 
     async def _sweep_retention_once(self) -> None:
@@ -801,7 +956,8 @@ class DevLoopRunner:
                 except Exception:  # noqa: BLE001 - retention sweep must not raise
                     self.logger.debug(
                         "actions-stream retention delete failed for run %s",
-                        rid, exc_info=True,
+                        rid,
+                        exc_info=True,
                     )
             self._pending_retention.pop(rid, None)
             self._apply_root_action(RunRemoved(run_id=rid))
@@ -816,9 +972,7 @@ class DevLoopRunner:
         """Start the periodic gate-expiry/retention sweep if not running."""
         if self._sweep_task is None or self._sweep_task.done():
             try:
-                self._sweep_task = asyncio.get_running_loop().create_task(
-                    self._sweep_loop()
-                )
+                self._sweep_task = asyncio.get_running_loop().create_task(self._sweep_loop())
             except RuntimeError:
                 # No running loop (e.g. constructed outside async context) —
                 # the sweep starts lazily on the next call from async code.
@@ -841,7 +995,8 @@ class DevLoopRunner:
             except Exception:  # noqa: BLE001 - sweep must never raise
                 self.logger.debug(
                     "gate-expiry sweep failed for run %s",
-                    host.state.run_id, exc_info=True,
+                    host.state.run_id,
+                    exc_info=True,
                 )
         await self._sweep_retention_once()
 
@@ -885,7 +1040,11 @@ class DevLoopRunner:
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
         return host.resolve_gate(
-            gate_id, resolution, resolved_by, comment, origin=origin,
+            gate_id,
+            resolution,
+            resolved_by,
+            comment,
+            origin=origin,
             answers=answers,
         )
 
@@ -959,7 +1118,9 @@ class DevLoopRunner:
         self._semaphore.release()
         self.logger.info(
             "Dev-loop run %s parked (gate opened); slot released (%d/%d active).",
-            run_id, len(self._active), self.max_concurrent_runs,
+            run_id,
+            len(self._active),
+            self.max_concurrent_runs,
         )
 
     async def _auto_resume(self, run_id: str) -> None:
@@ -973,9 +1134,7 @@ class DevLoopRunner:
         try:
             await self.resume_run(run_id)
         except Exception as exc:  # noqa: BLE001 - never break gate resolution
-            self.logger.warning(
-                "Auto-resume failed for parked run %s: %s", run_id, exc
-            )
+            self.logger.warning("Auto-resume failed for parked run %s: %s", run_id, exc)
 
     async def resume_run(self, run_id: str) -> FlowResult:
         """Re-acquire a slot for a parked run and await its eventual result.
@@ -1019,7 +1178,9 @@ class DevLoopRunner:
                 self._apply_root_action(RunResumed(run_id=run_id))
                 self.logger.info(
                     "Dev-loop run %s resumed; slot re-acquired (%d/%d active).",
-                    run_id, len(self._active), self.max_concurrent_runs,
+                    run_id,
+                    len(self._active),
+                    self.max_concurrent_runs,
                 )
         return await fut
 
@@ -1032,6 +1193,7 @@ class DevLoopRunner:
         run_id: Optional[str] = None,
         initial_task: str = "",
         extra_shared: Optional[Dict[str, Any]] = None,
+        flow_kwargs_overrides: Optional[Dict[str, Any]] = None,
     ) -> FlowResult:
         """Execute one dev-loop run for *brief*, respecting the run cap.
 
@@ -1052,6 +1214,22 @@ class DevLoopRunner:
             initial_task: Optional human-readable task line stored as the
                 context's ``initial_task``.
             extra_shared: Extra entries merged into ``shared_data``.
+            flow_kwargs_overrides: FEAT-490 — optional per-run overrides
+                merged over ``self._dev_loop_flow_kwargs`` when building a
+                fresh flow on the recovery path (cache miss). Passed as a
+                call argument and closed over per call — never stored on
+                ``self``, since this runner executes up to
+                ``max_concurrent_runs`` runs concurrently. ``None`` (the
+                default) leaves every existing caller byte-identical.
+                TASK-2691: an ops embedder threads a per-run
+                ``DevFlowModelPlan`` (Module 7's new
+                ``build_dev_loop_flow(model_plan=...)`` kwarg, TASK-2690)
+                by passing ``flow_kwargs_overrides={"model_plan": plan}``
+                here — this base class stays a dev-flow-agnostic generic
+                mapping by design (spec §8 Q5); it does not, and must not,
+                gain a typed ``model_plan`` parameter of its own. The ops
+                console is not wired to send one (spec §1 Non-Goals) —
+                this is library-level parity only.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -1065,21 +1243,35 @@ class DevLoopRunner:
             )
 
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
+        # FEAT-480 spec §8 OQ1: a caller-supplied stable run_id is the
+        # recovery identity; an auto-generated one is intentionally always
+        # a cache miss (the branch above never even reaches the
+        # coordinator). Recovery also needs `dev_loop_flow_kwargs` (so a
+        # genuinely fresh per-run flow can be built, spec §7 "shared flow
+        # instances are concurrent today") — its absence keeps every
+        # existing caller's `run_id=` byte-identical to before FEAT-480:
+        # still this run's identity, just never checkpoint-recovered.
+        recovery_enabled = run_id is not None and self._dev_loop_flow_kwargs is not None
 
         # AHP-style host: create + register before the flow runs, seed it
         # into shared state so nodes resolve it per-run (never a captured
         # reference — QANode/DeploymentHandoffNode read
         # ``shared["session_host"]``, they never import the runner).
         host = self._register_host(rid)
-        host.apply(RunCreated(
-            run_id=rid, revision=False, work_kind=brief.kind,
-            summary=brief.summary,
-        ))
+        self._create_run_registry(rid)  # FEAT-479 M5
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=False,
+                work_kind=brief.kind,
+                summary=brief.summary,
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         shared: Dict[str, Any] = {
-            "bug_brief": brief,    # legacy key — nodes read this
-            "work_brief": brief,   # forward-compat name
+            "bug_brief": brief,  # legacy key — nodes read this
+            "work_brief": brief,  # forward-compat name
             "run_id": rid,
             "session_host": host,
         }
@@ -1090,6 +1282,27 @@ class DevLoopRunner:
             initial_task=initial_task or brief.summary,
             shared_data=shared,
         )
+
+        flow: AgentsFlow = self.flow
+        if recovery_enabled:
+            flow, mode = await self._checkpoint_coordinator.prepare(
+                workflow=self.CHECKPOINT_WORKFLOW,
+                run_id=rid,
+                brief=brief,
+                live_context=ctx,
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
+                execution_policy=self._execution_policy_for_fingerprint(),
+            )
+            # spec §5: recovered runs must be distinguishable in session
+            # timeline events. `session_state.RunCreated` has no "resumed"
+            # field (adding one is out of scope here) — surfaced via
+            # structured logging instead, mirroring
+            # DevCheckpointCoordinator's own event vocabulary.
+            self.logger.info(
+                "Dev-loop run %s: %s execution (checkpoint recovery enabled)",
+                rid,
+                mode,
+            )
 
         # FEAT-377 TASK-1917 (G6): a manual acquire/release (not `async
         # with self._semaphore`) is required because a park can release
@@ -1104,15 +1317,17 @@ class DevLoopRunner:
         await self._semaphore.acquire()
         self._active.add(rid)
         # Point the flow's event publisher at this run's stream.
-        holder = getattr(self.flow, "_run_id_holder", None)
+        holder = getattr(flow, "_run_id_holder", None)
         if isinstance(holder, dict):
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop run %s (%d/%d active)",
-            rid, len(self._active), self.max_concurrent_runs,
+            rid,
+            len(self._active),
+            self.max_concurrent_runs,
         )
         try:
-            result = await self.flow.run_flow(ctx)
+            result = await flow.run_flow(ctx)
         except BaseException as exc:
             # Propagate to any `resume_run()` awaiter too — a future that
             # never resolves would hang them forever. Popped from the
@@ -1121,6 +1336,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1138,14 +1354,280 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
+
+    @property
+    def recovery_enabled(self) -> bool:
+        """Whether this runner can resume a run from a checkpoint at all.
+
+        ``True`` only when ``dev_loop_flow_kwargs`` was supplied, since the
+        recovery path must build a genuinely fresh per-run flow (spec §7).
+        A server exposes this so an operator is never offered a "resume"
+        control that would silently start a full fresh run instead.
+        """
+        return self._dev_loop_flow_kwargs is not None
+
+    def _recovery_supported(self, brief: Any) -> bool:
+        """Whether :meth:`run` would take the recovery path for *brief*.
+
+        The dev-loop's ``run()`` hands a :class:`FeatureBrief` to
+        ``_run_feature()`` BEFORE its recovery gate, so feature-mode runs
+        of this topology are never checkpoint-recovered.
+        :class:`~parrot.flows.dev_flow.runner.DevFlowRunner` overrides
+        this — its single topology serves both of its brief kinds through
+        the coordinator.
+
+        Args:
+            brief: The brief a caller intends to run.
+
+        Returns:
+            ``True`` when a run of *brief* can be resumed from a
+            checkpoint.
+        """
+        return not isinstance(brief, FeatureBrief)
+
+    def _checkpoint_input_metadata(self, brief: BaseModel) -> CheckpointInputMetadata:
+        """The :class:`CheckpointInputMetadata` a run of *brief* would carry.
+
+        Computed exactly as ``DevCheckpointCoordinator.prepare()`` computes
+        it, from the same execution policy — so a comparison against a
+        stored checkpoint's ``input_metadata`` answers the same question
+        ``AgentsFlow.resume(expected_input=...)`` will later answer, before
+        a run is started rather than after it fails.
+
+        Args:
+            brief: The run's input brief.
+
+        Returns:
+            The metadata whose ``input_fingerprint`` must match a stored
+            checkpoint's for a resume to be accepted.
+        """
+        policy = self._execution_policy_for_fingerprint()
+        return CheckpointInputMetadata(
+            workflow=self.CHECKPOINT_WORKFLOW,
+            topology_version=TOPOLOGY_VERSION,
+            input_fingerprint=compute_input_fingerprint(
+                workflow=self.CHECKPOINT_WORKFLOW,
+                brief=brief,
+                repository=str(policy.get("repository", "")),
+                execution_policy=policy,
+                document_identity=str(policy.get("document_identity", "")),
+            ),
+        )
+
+    async def inspect_checkpoint(
+        self,
+        run_id: str,
+        *,
+        brief: Optional[BaseModel] = None,
+    ) -> Dict[str, Any]:
+        """Report whether ``run_id`` can be resumed — WITHOUT starting a run.
+
+        Read-only preflight for a caller that wants to hand ``run_id=`` to
+        :meth:`run` and continue an interrupted run instead of paying for
+        intake/research/ideation/planning again. Without it the two ways a
+        resume fails (an unknown or TTL-expired id, and an input that no
+        longer fingerprints the same) only surface once :meth:`run` is
+        already in flight, as an exception inside the caller's background
+        task — after the console has already reported "running".
+
+        Args:
+            run_id: The run identity to probe.
+            brief: The brief the caller intends to resume with. Supply it
+                to get a real ``resumable`` verdict; omit it to probe mere
+                existence (``resumable`` is then ``None`` — "unknown", not
+                "no").
+
+        Returns:
+            A JSON-serialisable report::
+
+                {"run_id", "workflow", "flow_id", "recovery_enabled",
+                 "found", "resumable", "reason", "status",
+                 "checkpoint_id", "created_at", "completed_nodes"}
+
+            ``reason`` is ``None`` when resumable, else one of
+            ``"recovery_disabled"`` (this runner was built without
+            ``dev_loop_flow_kwargs``), ``"unsupported_brief"``,
+            ``"no_checkpoint"`` (never written, or expired — the Redis
+            tier's TTL is 24h by default), ``"fingerprint_unchecked"``
+            (no *brief* given) or ``"fingerprint_mismatch"``.
+
+        Raises:
+            CheckpointPersistenceError: The checkpoint store could not be
+                reached (e.g. Redis down) — deliberately NOT folded into a
+                ``found: False`` report, which would read as "this run is
+                gone" and invite a fresh, expensive re-run.
+        """
+        workflow = self.CHECKPOINT_WORKFLOW
+        flow_id = f"{workflow}/{run_id}"
+        report: Dict[str, Any] = {
+            "run_id": run_id,
+            "workflow": workflow,
+            "flow_id": flow_id,
+            "recovery_enabled": self.recovery_enabled,
+            "found": False,
+            "resumable": False,
+            "reason": None,
+            "status": None,
+            "checkpoint_id": None,
+            "created_at": None,
+            "completed_nodes": [],
+        }
+        if not report["recovery_enabled"]:
+            report["reason"] = "recovery_disabled"
+            return report
+        if brief is not None and not self._recovery_supported(brief):
+            report["reason"] = "unsupported_brief"
+            return report
+
+        store = get_checkpoint_store(self._checkpoint_store)
+        try:
+            checkpoint = await store.latest(flow_id)
+        except Exception as exc:
+            raise CheckpointPersistenceError(
+                f"inspect_checkpoint(): checkpoint lookup failed for " f"flow_id={flow_id!r}: {exc}"
+            ) from exc
+
+        if checkpoint is None:
+            report["reason"] = "no_checkpoint"
+            return report
+
+        created_at = getattr(checkpoint, "created_at", None)
+        report.update(
+            found=True,
+            status=checkpoint.status,
+            checkpoint_id=checkpoint.checkpoint_id,
+            created_at=created_at.isoformat() if created_at is not None else None,
+            completed_nodes=list(checkpoint.context.completed_tasks),
+        )
+        if brief is None:
+            report["resumable"] = None
+            report["reason"] = "fingerprint_unchecked"
+            return report
+
+        # Same equality `AgentsFlow.resume()` applies (flow.py:1521) — a
+        # pre-FEAT-480 checkpoint carrying `input_metadata=None` compares
+        # unequal there too, so reporting it as resumable here would be a
+        # lie the resume itself then contradicts.
+        if checkpoint.input_metadata != self._checkpoint_input_metadata(brief):
+            report["reason"] = "fingerprint_mismatch"
+            return report
+
+        report["resumable"] = True
+        return report
+
+    def _dev_loop_flow_factory(
+        self, overrides: Optional[Dict[str, Any]] = None
+    ) -> Callable[[Optional[Any]], AgentsFlow]:
+        """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
+
+        Rebuilds a genuinely fresh ``AgentsFlow`` via ``build_dev_loop_flow``
+        using the SAME kwargs the caller originally built ``self.flow``
+        with (``self._dev_loop_flow_kwargs``), with checkpointing forced
+        on — per-run construction is mandatory for the recovery path
+        (spec §7: shared flow instances are concurrent today).
+
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS SAME closure — ``flow_factory(checkpoint.definition)`` — to
+        rebuild the topology of a run it is resuming, not only
+        ``DevCheckpointCoordinator.prepare()``'s cache-miss branch
+        (``flow_factory(None)``). A prior version of this docstring
+        claimed the ``definition`` argument was "deliberately ignored" and
+        merged ``overrides`` unconditionally before returning the closure —
+        that silently applied a NEWLY submitted per-run override (e.g. a
+        different ``model_plan``) to every not-yet-completed node of a
+        RESUMED run, contradicting the resume rule (spec §8 Q1: a resumed
+        run keeps the seats/config it was created with). The definition's
+        *content* is still ignored (``build_dev_loop_flow`` always derives
+        its own declarative snapshot via ``build_dev_loop_definition()``
+        regardless) — but its *presence* is the only signal available at
+        this call site for "is this call rebuilding a FRESH run or
+        RESUMING one," per ``DevCheckpointCoordinator.prepare()``'s
+        contract (``flow_factory(None)`` on a cache miss,
+        ``flow_factory(checkpoint.definition)`` — never ``None`` — inside
+        ``AgentsFlow.resume()``). ``overrides`` is therefore applied
+        INSIDE the closure, gated on ``_definition is None``.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY when the closure is invoked on the fresh (cache-miss)
+                path. Captured in the closure and re-evaluated per
+                invocation — never assigned to ``self`` — concurrent runs
+                each get their own closure.
+
+        Returns:
+            A ``(definition) -> AgentsFlow`` callable.
+
+        Raises:
+            ValueError: If ``dev_loop_flow_kwargs`` was never supplied to
+                ``__init__`` — the caller of :meth:`run` already checked
+                this via ``recovery_enabled`` before reaching here, so
+                this only fires on a direct/misuse call.
+        """
+        if self._dev_loop_flow_kwargs is None:
+            raise ValueError(
+                "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
+                "to have been passed to DevLoopRunner.__init__()."
+            )
+        base_kwargs = self._dev_loop_flow_kwargs
+
+        def _factory(_definition: Optional[Any]) -> AgentsFlow:
+            # `_definition is None` <=> DevCheckpointCoordinator.prepare()'s
+            # cache-miss branch (flow_factory(None)) — the ONLY case a
+            # per-run override may apply. A non-None `_definition` means
+            # AgentsFlow.resume() is rebuilding a RESUMED run's topology;
+            # the override must NOT reach it, or a resumed run's
+            # not-yet-completed nodes would adopt a newly submitted
+            # per-run config instead of keeping the one the run was
+            # created with.
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
+            return build_dev_loop_flow(
+                **kwargs,
+                checkpoint=True,
+                checkpoint_required=True,
+                checkpoint_store=self._checkpoint_store,
+            )
+
+        return _factory
+
+    def _execution_policy_for_fingerprint(self) -> Dict[str, Any]:
+        """Routing-relevant policy dict for the checkpoint input fingerprint.
+
+        Derived from the SAME kwargs used to build the checkpoint-aware
+        flow (``self._dev_loop_flow_kwargs``) — whatever affects routing
+        for this run IS the execution policy (spec §2: "routing-relevant
+        execution policy, including QA/approval and pool settings").
+        Pydantic values are dumped to JSON-safe dicts first —
+        ``DevCheckpointCoordinator.compute_input_fingerprint`` hashes
+        ``json.dumps(...)`` directly and cannot serialize a live model.
+
+        Returns:
+            The policy dict passed to ``DevCheckpointCoordinator.prepare(
+            execution_policy=...)``.
+        """
+        kwargs = self._dev_loop_flow_kwargs or {}
+        policy: Dict[str, Any] = {
+            "skip_qa": kwargs.get("skip_qa", False),
+            "require_deployment_approval": kwargs.get("require_deployment_approval", False),
+            "require_plan_approval": kwargs.get("require_plan_approval", False),
+            "development_pool_max": kwargs.get("development_pool_max", 4),
+        }
+        pool_config = kwargs.get("development_pool_config")
+        if pool_config is not None:
+            policy["development_pool_config"] = pool_config.model_dump(mode="json")
+        repos = kwargs.get("repos")
+        if repos:
+            policy["repos"] = [r.model_dump(mode="json") for r in repos]
+        return policy
 
     def _feature_codereview_dispatcher(self) -> Any:
         """Resolve the code-review dispatcher for the feature-mode flow.
@@ -1206,22 +1688,26 @@ class DevLoopRunner:
         """
         if not all((self._dispatcher, self._redis_url)):
             raise RuntimeError(
-                "feature-mode run requires the runner to be constructed "
-                "with dispatcher and redis_url."
+                "feature-mode run requires the runner to be constructed " "with dispatcher and redis_url."
             )
 
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
 
         host = self._register_host(rid)
+        self._create_run_registry(rid)  # FEAT-479 M5
         # NOTE: RunCreated.work_kind is a closed Literal["bug","enhancement",
         # "new_feature"] deliberately NOT extended with "feature" (TASK-1918)
         # — FeatureBrief carries its own `kind` field instead. "bug" here is
         # a structural placeholder only (never read on this path — no
         # ResearchNode / Jira-issuetype selection happens in feature-mode).
-        host.apply(RunCreated(
-            run_id=rid, revision=False, work_kind="bug",
-            summary=f"Feature: {brief.document_path}",
-        ))
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=False,
+                work_kind="bug",
+                summary=f"Feature: {brief.document_path}",
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         # Build the feature flow once (fixed topology) and reuse it — fresh
@@ -1278,7 +1764,9 @@ class DevLoopRunner:
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop FEATURE run %s (%d/%d active)",
-            rid, len(self._active), self.max_concurrent_runs,
+            rid,
+            len(self._active),
+            self.max_concurrent_runs,
         )
         try:
             result = await feature_flow.run_flow(ctx)
@@ -1286,6 +1774,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1296,13 +1785,12 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop feature run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop feature run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     async def run_revision(
@@ -1331,9 +1819,7 @@ class DevLoopRunner:
             RuntimeError: If the runner was constructed without the deps needed
                 to build the revision flow.
         """
-        if not all(
-            (self._dispatcher, self._jira_toolkit, self._git_toolkit, self._redis_url)
-        ):
+        if not all((self._dispatcher, self._jira_toolkit, self._git_toolkit, self._redis_url)):
             raise RuntimeError(
                 "run_revision requires the runner to be constructed with "
                 "dispatcher, jira_toolkit, git_toolkit and redis_url."
@@ -1343,11 +1829,15 @@ class DevLoopRunner:
 
         # AHP-style host — same lifecycle as ``run()`` (revision=True).
         host = self._register_host(rid)
-        host.apply(RunCreated(
-            run_id=rid, revision=True,
-            work_kind="bug",
-            summary=f"Revision for {brief.jira_issue_key or brief.branch}",
-        ))
+        self._create_run_registry(rid)  # FEAT-479 M5
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=True,
+                work_kind="bug",
+                summary=f"Revision for {brief.jira_issue_key or brief.branch}",
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         # Build the revision flow once (fixed topology) and reuse it — fresh
@@ -1411,9 +1901,7 @@ class DevLoopRunner:
             "head_sha": brief.head_sha,
             "session_host": host,
         }
-        ctx = FlowContext(
-            initial_task=brief.feedback or "revision", shared_data=shared
-        )
+        ctx = FlowContext(initial_task=brief.feedback or "revision", shared_data=shared)
 
         # FEAT-377 TASK-1917 (G6): same manual acquire/park-aware structure
         # as `run()` — a revision run's QA can open `manual_criterion`
@@ -1428,7 +1916,9 @@ class DevLoopRunner:
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop REVISION run %s (PR #%s, branch %s)",
-            rid, brief.pr_number, brief.branch,
+            rid,
+            brief.pr_number,
+            brief.branch,
         )
         try:
             result = await rev_flow.run_flow(ctx)
@@ -1436,6 +1926,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1446,19 +1937,21 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop revision run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop revision run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────
 
     async def _close_host(
-        self, host: SessionHost, result: FlowResult, ctx: FlowContext,
+        self,
+        host: SessionHost,
+        result: FlowResult,
+        ctx: FlowContext,
     ) -> None:
         """Fold ``run/closed``, persist the terminal snapshot + run bundle,
         and retire the host.
@@ -1490,9 +1983,7 @@ class DevLoopRunner:
         # FEAT-378: feature-mode's handoff node id is "feature_handoff"
         # rather than "deployment_handoff" — check both so this projection
         # generalizes across topologies without a mode flag.
-        handoff_resp = result.responses.get("deployment_handoff") or result.responses.get(
-            "feature_handoff"
-        )
+        handoff_resp = result.responses.get("deployment_handoff") or result.responses.get("feature_handoff")
         pr_url = ""
         if isinstance(handoff_resp, dict):
             pr_url = str(handoff_resp.get("pr_url", "") or "")
@@ -1510,22 +2001,26 @@ class DevLoopRunner:
             _resp = result.responses.get(_nid)
             if isinstance(_resp, dict) and _resp.get("status") in _FAILED_TERMINAL_STATUSES:
                 self.logger.warning(
-                    "Run %s: terminal node %s reported status=%s — recording "
-                    "outcome=failed (FlowResult.status=%s)",
-                    run_id, _nid, _resp.get("status"), result.status,
+                    "Run %s: terminal node %s reported status=%s — recording " "outcome=failed (FlowResult.status=%s)",
+                    run_id,
+                    _nid,
+                    _resp.get("status"),
+                    result.status,
                 )
                 outcome = "failed"
                 break
 
-        host.apply(RunClosed(
-            outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,
-        ))
+        host.apply(
+            RunClosed(
+                outcome=outcome,
+                jira_issue_key=jira_issue_key,
+                pr_url=pr_url,
+            )
+        )
         self._persist_terminal_snapshot(host)
         self._persist_run_bundle(host, ctx)
         self._schedule_actions_retention(run_id)
-        self._apply_root_action(
-            RunSummaryChanged(summary=self._run_summary_from_host(host))
-        )
+        self._apply_root_action(RunSummaryChanged(summary=self._run_summary_from_host(host)))
         # Every `host.apply` for this run has happened, so `run/closed` is the
         # last thing in the queue. Draining here is what lets a console stop
         # tailing on it without truncating a still-in-flight node event.

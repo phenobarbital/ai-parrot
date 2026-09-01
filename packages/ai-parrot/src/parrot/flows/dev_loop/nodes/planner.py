@@ -86,12 +86,18 @@ class PlannerNode(DevLoopNode):
         *,
         dispatcher: ClaudeCodeDispatcher,
         development_pool_max: int = 4,
+        development_pool_config: DevAgentPoolConfig | None = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "planner",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_pool_max", development_pool_max)
+        # FEAT-486: the deployment's configured pool, so `_resolve_pool`
+        # suggests the operator's real backends instead of hardcoding
+        # claude-code. None (default) keeps the pre-FEAT-486 claude-code
+        # fallback exactly.
+        object.__setattr__(self, "_pool_config", development_pool_config)
         # FEAT-377 TASK-1915 (G2 seam 2): opt-in graph-memory context
         # injection, built once by the caller via
         # ``DevLoopGraphMemory.from_config()``. None (default) is a strict
@@ -137,7 +143,12 @@ class PlannerNode(DevLoopNode):
             # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
             # for reading the document, Bash for git worktree plumbing.
             allowed_tools=[
-                "Read", "Grep", "Glob", "Bash", "Write", "SlashCommand",
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash",
+                "Write",
+                "SlashCommand",
             ],
             model="claude-sonnet-4-6",
         )
@@ -161,9 +172,7 @@ class PlannerNode(DevLoopNode):
 
         # Jira passthrough only — this node NEVER creates a Jira issue.
         if not planner_out.jira_issue_key and brief.jira_issue_key:
-            planner_out = planner_out.model_copy(
-                update={"jira_issue_key": brief.jira_issue_key}
-            )
+            planner_out = planner_out.model_copy(update={"jira_issue_key": brief.jira_issue_key})
         if planner_out.jira_issue_key:
             shared["jira_issue_key"] = planner_out.jira_issue_key
 
@@ -243,15 +252,24 @@ class PlannerNode(DevLoopNode):
     # Internal — dev-agent pool sizing (FEAT-323 parity)
     # ------------------------------------------------------------------
 
-    async def _resolve_pool(
-        self, brief: FeatureBrief, planner_out: PlannerOutput
-    ) -> DevAgentPoolConfig:
+    async def _resolve_pool(self, brief: FeatureBrief, planner_out: PlannerOutput) -> DevAgentPoolConfig:
         """Resolve the effective :class:`DevAgentPoolConfig`.
 
         Brief override wins; otherwise size from the width of the first
         :class:`TaskScheduler` wave, capped at ``development_pool_max``. A
         single task (or no ``depends_on`` edges at all) naturally degrades
         to a width-1 wave — i.e. a single agent.
+
+        FEAT-486: the *backends* of the derived pool now come from the
+        deployment's configured pool (``development_pool_config``) rather
+        than always being ``claude-code``. The derived width is spread
+        over the configured specs in declaration order (round-robin, so a
+        width of 3 over two configured backends yields 2 + 1), which makes
+        ``suggested_pool`` — read for the first time by
+        ``DevelopmentNode``'s single-task collapse rule — name a model the
+        operator actually selected. ``claude-code`` remains the fallback
+        whenever nothing is configured, so plain dev_loop runs are
+        unchanged.
 
         Args:
             brief: The input :class:`FeatureBrief`.
@@ -268,35 +286,60 @@ class PlannerNode(DevLoopNode):
         if brief.dev_agents:
             self.logger.info(
                 "Pool sizing for %s: using brief override (%d agent spec(s)).",
-                planner_out.feat_id, len(brief.dev_agents),
+                planner_out.feat_id,
+                len(brief.dev_agents),
             )
             return DevAgentPoolConfig(agents=list(brief.dev_agents))
 
         feature_slug = Path(planner_out.task_index_path).stem
-        scheduler = await asyncio.to_thread(
-            TaskScheduler.from_worktree, planner_out.worktree_path, feature_slug
-        )
+        scheduler = await asyncio.to_thread(TaskScheduler.from_worktree, planner_out.worktree_path, feature_slug)
         if scheduler is None:
             self.logger.info(
-                "No readable per-spec task index at %s for %s; defaulting "
-                "to a single-agent pool.",
-                planner_out.task_index_path, planner_out.feat_id,
+                "No readable per-spec task index at %s for %s; defaulting " "to a single-agent pool.",
+                planner_out.task_index_path,
+                planner_out.feat_id,
             )
-            return DevAgentPoolConfig(
-                agents=[DevAgentSpec(agent="claude-code", count=1)]
-            )
+            return DevAgentPoolConfig(agents=self._derive_specs(1))
 
         wave = scheduler.next_wave()
         width = max(1, len(wave))
         count = min(width, self._pool_max)
         self.logger.info(
-            "Pool sizing for %s: wave-1 width=%d, capped at "
-            "development_pool_max=%d -> count=%d",
-            planner_out.feat_id, width, self._pool_max, count,
+            "Pool sizing for %s: wave-1 width=%d, capped at " "development_pool_max=%d -> count=%d",
+            planner_out.feat_id,
+            width,
+            self._pool_max,
+            count,
         )
-        return DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code", count=count)]
-        )
+        return DevAgentPoolConfig(agents=self._derive_specs(count))
+
+    def _derive_specs(self, count: int) -> list[DevAgentSpec]:
+        """Spread ``count`` worker slots over the configured backends.
+
+        FEAT-486: replaces the two hardcoded
+        ``DevAgentSpec(agent="claude-code", count=...)`` literals. With no
+        configured pool this returns exactly that single claude-code spec,
+        so pre-FEAT-486 behaviour is byte-identical.
+
+        Args:
+            count: Total worker slots to allocate (already capped at
+                ``development_pool_max`` by the caller).
+
+        Returns:
+            One :class:`DevAgentSpec` per distinct configured backend that
+            received at least one slot, in configured order, with
+            ``count`` summing to *count*.
+        """
+        configured = list(self._pool_config.agents) if self._pool_config else []
+        if not configured:
+            return [DevAgentSpec(agent="claude-code", count=count)]
+
+        # Round-robin so the first configured backend absorbs the
+        # remainder — a width of 3 over 2 backends is 2 + 1, never 3 + 0.
+        slots = [0] * len(configured)
+        for i in range(count):
+            slots[i % len(configured)] += 1
+        return [spec.model_copy(update={"count": allocated}) for spec, allocated in zip(configured, slots) if allocated]
 
 
 __all__ = ["PlannerNode"]

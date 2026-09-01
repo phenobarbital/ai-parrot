@@ -34,9 +34,12 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
-from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
+from parrot.flows.dev_loop.mcp_profiles import derive_mcp_tool_names
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -50,6 +53,7 @@ from parrot.flows.dev_loop.nodes.base import (
     register_dev_loop_node,
     transition_issue_with_candidates,
 )
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 
 # FEAT-466 TASK-2504: WorkKind -> base branch, used ONLY as the fallback
 # when the committed spec's frontmatter cannot be read. Deliberately a
@@ -209,6 +213,27 @@ class ResearchNode(DevLoopNode):
             ``"always"`` fetches for every work kind (pre-flag behavior);
             ``"never"`` disables remote log fetching entirely. Local
             ``inline`` / ``attached_file`` sources are never gated.
+        coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482). ``None`` (default) means no complementary research
+            partner ever runs. When provided, its findings (if any) are
+            folded into the dispatch payload as an extra context section
+            — the same mechanism already used for wiki/graph-memory
+            context, not a new field on the shared ``BugBrief``/
+            ``WorkBrief`` model. Never raises — a disabled/degraded/timed-
+            out partner simply contributes no extra section.
+        mcp_servers: Optional explicit MCP server configs (same shape as
+            ``ClaudeCodeDispatchProfile.mcp_servers``) forwarded on the
+            ``sdd-research`` dispatch profile — e.g. the wikitoolkit
+            graph-search server and FEAT-485 ``parrot mcp-local
+            <toolkit>`` servers. Required to reach ANY MCP server: the
+            dispatch keeps ``strict_mcp_config=True``, so the headless CLI
+            ignores the filesystem ``.mcp.json``. ``None`` (default)
+            keeps the dispatch profile byte-identical to pre-seam
+            behavior.
+        mcp_tools: Optional explicit ``mcp__...`` allow rules appended to
+            the profile's ``allowed_tools``. ``None`` (default) derives
+            one server-level ``mcp__<name>`` rule per server. Ignored
+            when ``mcp_servers`` is unset.
         name: Node id, default ``"research"``.
     """
 
@@ -225,11 +250,20 @@ class ResearchNode(DevLoopNode):
         repos: Optional[List[RepoSpec]] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
         wiki_search: Optional[DevLoopWikiSearch] = None,
+        coordinator: Optional[ComplementaryResearchCoordinator] = None,
+        mcp_servers: Optional[Dict[str, Any]] = None,
+        mcp_tools: Optional[List[str]] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-482: optional complementary research partner. None (default)
+        # means no partner ever runs — the dispatch payload is byte-
+        # identical to pre-feature behavior. Mirrors IdeationNode's
+        # symmetrical seam (dev_flow/nodes/ideation.py, TASK-2633) — one
+        # shared mechanism, not a fork (spec §1 D1).
+        object.__setattr__(self, "_coordinator", coordinator)
         # FEAT-250: optional repo provisioning before Development. When
         # ``repos`` is empty the node behaves exactly as before (no clone).
         object.__setattr__(self, "_git_toolkit", git_toolkit)
@@ -249,6 +283,11 @@ class ResearchNode(DevLoopNode):
         # injection. None (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
         object.__setattr__(self, "_wiki_search", wiki_search)
+        # Explicit MCP access for the sdd-research dispatch (wikitoolkit +
+        # FEAT-485 local toolkit servers). None (default) is a strict
+        # no-op: the dispatch profile stays byte-identical.
+        object.__setattr__(self, "_mcp_servers", mcp_servers)
+        object.__setattr__(self, "_mcp_tools", mcp_tools)
 
     # ------------------------------------------------------------------
     # Execute
@@ -370,21 +409,30 @@ class ResearchNode(DevLoopNode):
         )
 
         # 4. Dispatch the sdd-research subagent.
+        # SlashCommand: the subagent runs /sdd-spec and /sdd-task.
+        # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
+        # for triage, Bash for git worktree plumbing.
+        allowed_tools = [
+            "Read",
+            "Grep",
+            "Glob",
+            "Bash",
+            "Write",
+            "SlashCommand",
+        ]
+        if self._mcp_servers:
+            # strict_mcp_config stays True (profile default): reaching an
+            # MCP server needs BOTH the server config on the profile AND
+            # the matching mcp__... allow rules.
+            allowed_tools.extend(
+                self._mcp_tools if self._mcp_tools is not None else derive_mcp_tool_names(self._mcp_servers)
+            )
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-research",
             permission_mode="acceptEdits",
-            # SlashCommand: the subagent runs /sdd-spec and /sdd-task.
-            # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
-            # for triage, Bash for git worktree plumbing.
-            allowed_tools=[
-                "Read",
-                "Grep",
-                "Glob",
-                "Bash",
-                "Write",
-                "SlashCommand",
-            ],
+            allowed_tools=allowed_tools,
             model="claude-sonnet-4-6",
+            mcp_servers=dict(self._mcp_servers) if self._mcp_servers else None,
         )
         os.makedirs(dispatch_cwd, exist_ok=True)
         # Stash the excerpts on the brief so the subagent gets them.
@@ -394,23 +442,55 @@ class ResearchNode(DevLoopNode):
 
         # Prepend knowledge-base context to the dispatch brief so the
         # subagent starts with oriented, ranked codebase pointers instead
-        # of a cold grep sweep.  Two independent seams — wiki (SQLite
-        # retrieval plane) and graph memory (GraphIndex) — each contribute
-        # a section when configured and when something relevant is found.
+        # of a cold grep sweep. Three independent seams — wiki (SQLite
+        # retrieval plane), graph memory (GraphIndex), and the FEAT-482
+        # complementary research partner — each contribute a section when
+        # configured and when something relevant is found. Run concurrently
+        # via asyncio.gather: the partner alone may take up to
+        # DEV_FLOW_RESEARCH_PARTNER_TIMEOUT (default 600s) under its own
+        # deadline, and stacking it after two more sequential awaits would
+        # add that latency to every dispatch on top of the others' cost.
         # The ORIGINAL `brief` (used above for the Jira ticket description)
         # is untouched; only this local dispatch copy carries the context.
-        extra_context_parts: list[str] = []
 
-        if self._wiki_search is not None:
+        async def _wiki_ctx() -> str:
+            if self._wiki_search is None:
+                return ""
             wiki_query = f"{brief.affected_component} {brief.summary}"
-            wiki_context = await self._wiki_search.build_research_context(wiki_query)
-            if wiki_context:
-                extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+            return await self._wiki_search.build_research_context(wiki_query) or ""
 
-        if self._graph_memory is not None:
-            graph_context = await self._graph_memory.build_research_context(brief)
-            if graph_context:
-                extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+        async def _graph_ctx() -> str:
+            if self._graph_memory is None:
+                return ""
+            return await self._graph_memory.build_research_context(brief) or ""
+
+        async def _partner_findings() -> Any:
+            # FEAT-482 Module 5: no defensive try/except here — the
+            # coordinator already owns its own degradation end-to-end and
+            # is contracted to never raise (spec §3 Module 4).
+            if self._coordinator is None:
+                return None
+            return await self._coordinator.research(
+                brief=brief,
+                question=f"{brief.summary}\n\n{brief.description}".strip(),
+                cwd=dispatch_cwd,
+                slug=issue_key.lower(),
+                run_id=shared.get("run_id", ""),
+                node_id=self.name,
+                session_host=shared.get("session_host"),
+            )
+
+        wiki_context, graph_context, partner_findings = await asyncio.gather(
+            _wiki_ctx(), _graph_ctx(), _partner_findings()
+        )
+
+        extra_context_parts: list[str] = []
+        if wiki_context:
+            extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+        if graph_context:
+            extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+        if partner_findings is not None:
+            extra_context_parts.append(f"## Complementary research findings\n{partner_findings.rendered}")
 
         dispatch_brief = brief
         if extra_context_parts:

@@ -25,8 +25,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -342,6 +344,30 @@ def _build_ledger_commit(
     return commit
 
 
+def _last_git_error_line(stderr: str) -> str:
+    """Reduce git's multi-line stderr to the one line worth showing.
+
+    git pads failures with advisory output (``hint:`` lines, blank lines).
+    Embedding all of it inside a warning pushes the sentence that actually
+    matters several lines away from its conclusion, which is how a
+    successful reservation ends up *looking* like a failed one — see
+    :func:`_sync_local_branch`.
+
+    Args:
+        stderr: Raw stderr text captured from a git invocation.
+
+    Returns:
+        The last non-empty, non-``hint:`` line, or ``"not a fast-forward"``
+        when nothing usable remains.
+    """
+    lines = [
+        line.strip()
+        for line in stderr.splitlines()
+        if line.strip() and not line.strip().startswith("hint:")
+    ]
+    return lines[-1] if lines else "not a fast-forward"
+
+
 def _sync_local_branch(root: Path, base_branch: str, commit_sha: str) -> None:
     """Fast-forward the checked-out base branch onto the reserved commit.
 
@@ -361,14 +387,82 @@ def _sync_local_branch(root: Path, base_branch: str, commit_sha: str) -> None:
     if merge.returncode == 0:
         return
 
+    # Message ordering is deliberate and load-bearing. The reservation has
+    # ALREADY succeeded here; only a local bookkeeping fast-forward was
+    # skipped. Earlier wording opened with the success, then embedded git's
+    # multi-line `hint:`/`fatal:` output mid-sentence and closed on "were NOT
+    # pushed" (which referred to the caller's own commits, not the
+    # reservation). Any truncation — `tail`, a CI log summary — kept the
+    # alarming half and dropped the reassuring one, so callers read it as a
+    # failure and re-ran, permanently burning the IDs they had just been
+    # issued. So: state the outcome first, keep git's noise to one line, and
+    # put the anti-retry instruction LAST where truncation cannot remove it.
+    reason = _last_git_error_line(merge.stderr)
     print(
-        f"reserve_ids: WARNING — the reservation is pushed to origin/{base_branch}, "
-        f"but the local {base_branch} could not be fast-forwarded onto it "
-        f"({merge.stderr.strip() or 'not a fast-forward'}).\n"
-        f"reserve_ids: your local commits are intact and were NOT pushed. "
-        f"Reconcile before pushing, e.g. `git pull --no-rebase origin {base_branch}`.",
+        f"reserve_ids: reservation SUCCEEDED — the ledger commit is pushed to "
+        f"origin/{base_branch}.\n"
+        f"reserve_ids: only the local courtesy fast-forward was skipped "
+        f"({reason}); your own commits are untouched.\n"
+        f"reserve_ids: reconcile when convenient: "
+        f"`git pull --no-rebase origin {base_branch}`.\n"
+        f"reserve_ids: the ID(s) this command printed are ALREADY ALLOCATED — "
+        f"do NOT re-run it, or you will burn a second set.",
         file=sys.stderr,
     )
+
+
+#: A real, already-issued feature id. Deliberately does NOT match the
+#: template placeholder ``FEAT-<NNN>`` in ``sdd/templates/spec.md``, so a
+#: scaffolded-but-unnumbered spec never looks like an existing identity.
+_FEATURE_ID_RE = re.compile(r"\bFEAT-(\d{3,})\b")
+
+
+def existing_feature_id(root: Path, label: str) -> tuple[str, str] | None:
+    """Return the feature id a slug already owns, if any.
+
+    A slug has ONE feature id for its lifetime. Re-running ``/sdd-spec``
+    over an existing spec must reuse that id, never reserve a second one:
+    a second reservation forks the feature's identity — the spec and the
+    task index move to the new number while the task files, the branch and
+    the worktree keep the old one, and ``DevelopmentNode._find_feature_slug``
+    (which matches strictly on the index header's ``feature_id`` inside the
+    worktree) then finds no index at all and silently degrades a whole
+    multi-agent pool to a single agent.
+
+    Args:
+        root: Repository root.
+        label: The feature slug (``--label``), i.e. the stem of
+            ``sdd/specs/<slug>.spec.md``.
+
+    Returns:
+        ``(feature_id, source_path)`` when the slug already carries an id,
+        or ``None`` when it does not (no spec, no index, or a spec still
+        holding the template's ``FEAT-<NNN>`` placeholder).
+    """
+    spec = root / "sdd" / "specs" / f"{label}.spec.md"
+    if spec.is_file():
+        try:
+            for line in spec.read_text(encoding="utf-8").splitlines():
+                if line.lstrip().startswith("**Feature ID**"):
+                    match = _FEATURE_ID_RE.search(line)
+                    if match:
+                        return f"FEAT-{match.group(1)}", str(spec)
+                    # Placeholder line — scaffolded, not yet numbered.
+                    break
+        except OSError:
+            pass
+
+    index = root / "sdd" / "tasks" / "index" / f"{label}.json"
+    if index.is_file():
+        try:
+            data = json.loads(index.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict):
+            candidate = str(data.get("feature_id") or "")
+            if _FEATURE_ID_RE.fullmatch(candidate):
+                return candidate, str(index)
+    return None
 
 
 def reserve_ids(
@@ -437,12 +531,37 @@ def reserve_ids(
         ValueError: If ``count < 1``.
         IdReservationError: When every attempt is rejected up to
             ``max_retries``, when a push fails for a non-retryable reason,
-            or when the contract check (clean tree, correct branch) fails.
+            when the contract check (clean tree, correct branch) fails, or
+            — for ``kind="feature"`` — when ``label`` already owns a
+            feature id (see :func:`existing_feature_id`).
     """
     if count < 1:
         raise ValueError(f"count must be >= 1, got {count!r}")
 
     root = repo_root if repo_root is not None else Path.cwd()
+
+    # A slug owns ONE feature id. Checked BEFORE the working-tree/branch
+    # contract so a duplicate /sdd-spec run gets the actionable message
+    # rather than an unrelated "wrong branch" one. Task reservations are
+    # untouched: reserving more TASK ids for an existing feature is the
+    # normal case.
+    if kind == "feature":
+        owned = existing_feature_id(root, label)
+        if owned is not None:
+            feature_id, source = owned
+            raise IdReservationError(
+                f"refusing to reserve a NEW feature id: slug {label!r} already "
+                f"owns {feature_id} (declared in {source}). Reuse it. A second "
+                "reservation forks the feature's identity — spec and task index "
+                "move to the new number while the task files, branch and worktree "
+                "keep the old one, and the dev-loop then finds no task index for "
+                "the run's feat_id and degrades the whole pool to a single agent. "
+                "If this is genuinely a different feature, give it a different "
+                "slug; if it is a deliberate multi-spec split of one initiative, "
+                "set reuse_feature_id in the spec frontmatter and do not call this "
+                "allocator."
+            )
+
     _assert_safe_to_reserve(root, base_branch)
     prefix = "TASK" if kind == "task" else "FEAT"
 

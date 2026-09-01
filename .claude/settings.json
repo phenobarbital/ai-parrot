@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(ruff:*)",
+      "Bash(touch:*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -18,6 +24,16 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/dangerous-actions-blocker.sh\"",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Grep|Glob|Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit claude-hook",
+            "timeout": 10
           }
         ]
       }

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
-from parrot.flows.dev_loop.agent_pool import DevAgentPool, aggregate_outputs
+from parrot.flows.dev_loop.agent_pool import (
+    DevAgentPool,
+    aggregate_outputs,
+    is_internal_error,
+)
 from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
@@ -27,7 +33,7 @@ class FakeDispatcher:
         self.calls = []
         self.fail_ids = set(fail_ids)
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((brief.task_id, node_id, cwd, profile))
         if brief.task_id in self.fail_ids:
             self.fail_ids.discard(brief.task_id)
@@ -45,9 +51,30 @@ class AlwaysFailDispatcher:
     def __init__(self):
         self.calls = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((brief.task_id, node_id, cwd))
         raise RuntimeError("always fails")
+
+
+class SelfDeclaredIncompleteDispatcher:
+    """Returns a well-formed output that admits it did not finish.
+
+    This is what a salvaged dispatch looks like when the model ran out of
+    turns mid-task: the payload validates, so the pool would otherwise bank
+    it as a completed task.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+        self.calls.append((brief.task_id, node_id))
+        return DevelopmentOutput(
+            files_changed=[f"{brief.task_id}.py"],
+            commit_shas=[],
+            summary="ran out of turns halfway",
+            incomplete_tasks=[brief.task_id],
+        )
 
 
 def _research() -> ResearchOutput:
@@ -148,6 +175,48 @@ class TestPool:
         assert result.completed == {}
         assert result.failed == ["TASK-1"]
         assert len(d1.calls) == 2  # original + retry, both on the same worker
+
+    async def test_self_declared_incomplete_output_is_not_a_completion(self):
+        """A salvaged dispatch must not buy 'completed' by admitting failure.
+
+        The forced `final_output` salvage turn asks the model to declare
+        partial work in `incomplete_tasks`; honouring that declaration is
+        what keeps the salvage from turning lost tasks into false successes.
+        """
+        d1 = SelfDeclaredIncompleteDispatcher()
+        pool = _build_pool([d1])  # single worker: retry lands on itself
+        tasks = _tasks("TASK-1")
+
+        result = await pool.run_wave(
+            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert result.completed == {}
+        assert result.failed == ["TASK-1"]
+        assert len(d1.calls) == 2  # it still gets its retry
+
+    async def test_incomplete_tasks_naming_another_task_is_still_a_completion(self):
+        """Only the dispatch's OWN task id disqualifies it."""
+
+        class _OtherTaskIncomplete(SelfDeclaredIncompleteDispatcher):
+            async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+                self.calls.append((brief.task_id, node_id))
+                return DevelopmentOutput(
+                    files_changed=[],
+                    commit_shas=["sha-1"],
+                    summary="done; noted a sibling task is not",
+                    incomplete_tasks=["TASK-99"],
+                )
+
+        d1 = _OtherTaskIncomplete()
+        pool = _build_pool([d1])
+
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert list(result.completed) == ["TASK-1"]
+        assert result.failed == []
 
     async def test_pool_max_truncates(self):
         config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=5)])
@@ -363,3 +432,87 @@ class TestAggregate:
         merged = agg.worker_summaries[0]
         assert merged.tasks_completed == ["TASK-1", "TASK-2"]
         assert "wave1" in merged.summary and "wave2" in merged.summary
+
+
+# ---------------------------------------------------------------------------
+# An internal error is OUR bug, not a failed dispatch. Swallowed as "task
+# failed" it fails every task on every worker, each burning a retry, and the
+# wave reports PARTIAL half an hour later instead of saying what broke.
+# ---------------------------------------------------------------------------
+
+
+class BrokenSignatureDispatcher:
+    """A dispatcher whose call signature drifted from the pool's call.
+
+    Models the real incident: the pool started passing ``session_host=``
+    and this side had not caught up, so every dispatch raised TypeError.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kw):
+        self.calls.append((brief.task_id, node_id))
+        raise TypeError(
+            "dispatch() got an unexpected keyword argument 'session_host'"
+        )
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_not_retried_on_another_worker():
+    d1, d2 = BrokenSignatureDispatcher(), BrokenSignatureDispatcher()
+    pool = _build_pool([d1, d2])
+
+    result = await pool.run_wave(
+        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+    )
+
+    assert result.failed == ["TASK-1"]
+    # ONE attempt in total: a retry would re-run the same bad call.
+    assert len(d1.calls) + len(d2.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_logged_at_error_with_a_traceback(caplog):
+    pool = _build_pool([BrokenSignatureDispatcher()])
+
+    with caplog.at_level(logging.ERROR):
+        await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+    records = [r for r in caplog.records if "internal error" in r.getMessage()]
+    assert records, "the internal error must be logged at ERROR"
+    assert records[0].exc_info is not None, "a traceback is the whole point"
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_marked_in_the_returned_reason():
+    dispatcher = BrokenSignatureDispatcher()
+    pool = _build_pool([dispatcher])
+
+    _task_id, _worker_id, output, error = await pool._dispatch_one(
+        _tasks("TASK-1")[0],
+        pool.workers[0],
+        research=_research(),
+        run_id="run-1",
+        cwd_for=_cwd_for,
+    )
+
+    assert output is None
+    assert is_internal_error(error)
+    assert "TypeError" in error
+
+
+@pytest.mark.asyncio
+async def test_a_failed_dispatch_is_still_retried():
+    """Contrast: a dispatch that merely FAILED keeps its second chance."""
+    d1, d2 = AlwaysFailDispatcher(), AlwaysFailDispatcher()
+    pool = _build_pool([d1, d2])
+
+    result = await pool.run_wave(
+        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+    )
+
+    assert result.failed == ["TASK-1"]
+    assert len(d1.calls) + len(d2.calls) == 2

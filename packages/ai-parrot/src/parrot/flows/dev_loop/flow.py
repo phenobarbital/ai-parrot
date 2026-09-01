@@ -27,20 +27,89 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import CheckpointStore, register_checkpoint_type
+from parrot.flows.dev_loop.checkpoint import project_shared_data
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
-from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
+from parrot.flows.dev_loop.models import (
+    DevelopmentOutput,
+    FeatureBrief,
+    FeedbackDecision,
+    PlannerOutput,
+    QAReport,
+    RepoSpec,
+    ResearchOutput,
+    SynthesisReport,
+    WorkBrief,
+)
 from parrot.flows.dev_loop.session_state import (
     PullRequestLinked,
     action_from_flow_event,
 )
 
+if TYPE_CHECKING:
+    # FEAT-490 Module 7: type-only. `DevFlowModelPlan` is the shared,
+    # PUBLIC vocabulary type the spec says both builders reuse unchanged
+    # (§6 Codebase Contract: "the model, its validators and
+    # resolve_model_plan() precedence are unchanged") — but dev_flow
+    # imports FROM dev_loop at module-load time (dev_flow/model_plan.py
+    # itself imports parrot.flows.dev_loop.catalog/models.base), so a
+    # top-level runtime import here would be circular whenever something
+    # imports dev_flow BEFORE dev_loop finishes initializing (observed via
+    # tests/flows/dev_flow/test_complementary_research.py during
+    # development of this task). `resolve_model_plan` itself is imported
+    # lazily, inside the function body below, for the same reason — never
+    # a dev_flow-private (underscore) symbol either way; the review-pair
+    # wiring duplicates `dev_flow.factories._assemble_review_pair`'s small
+    # body locally instead, matching that module's own "kept local rather
+    # than importing a private symbol across packages" precedent for
+    # `_with_graph`.
+    from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
+
 _logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────
+# Process-wide checkpoint type registration (FEAT-480 spec §3 Module 4)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Every dev-loop/dev-flow node RESULT that travels through a required
+# checkpoint (spec §2/§7) must round-trip through FlowStateSerializer with
+# its real Pydantic type, not degrade to a lossy repr — a resumed run that
+# reads `research_output.worktree_path` off a string would crash instead
+# of skipping the completed node. Registered here — at import time of
+# `flow.py` (which every checkpoint-aware caller already imports for
+# `build_dev_loop_flow`), NOT `models/__init__.py` — because
+# `test_lazy_import.py::test_models_module_is_pure` explicitly asserts
+# `parrot.flows.dev_loop.models` imports nothing beyond pydantic/typing
+# (never `parrot.bots.*`); `register_checkpoint_type` lives in
+# `parrot.bots.flows.core.checkpoint`, so registering it there would have
+# violated that invariant. `register_checkpoint_type()` is idempotent for
+# the same class/tag, so this runs safely regardless of how many times
+# `flow.py` (or a caller) triggers this module's (re-)import.
+register_checkpoint_type(WorkBrief)
+register_checkpoint_type(FeatureBrief)
+register_checkpoint_type(ResearchOutput)
+register_checkpoint_type(PlannerOutput)
+register_checkpoint_type(DevelopmentOutput)
+# FEAT-480 review fix: QAReport/SynthesisReport/FeedbackDecision are node
+# RESULTS that the `qa -> deployment_handoff`/`qa -> failure_handler`
+# on_condition edges (and dev-flow's reused feedback_router/QA edges)
+# route on via `_qa_passed`/`_make_qa_retry`/`_make_qa_exhausted`
+# (below). Left unregistered, a checkpoint taken right after `qa`/
+# `synthesis`/`feedback_router` succeeds degrades that node's result to a
+# lossy repr string; every one of those predicates reads `getattr(result,
+# "<field>", <default>)`, which silently returns its default on a plain
+# string — a crash immediately after `qa` passes can therefore resume and
+# deterministically misroute (e.g. treating a PASSED QA as failed/retry-
+# eligible) instead of raising or restoring correctly.
+register_checkpoint_type(QAReport)
+register_checkpoint_type(SynthesisReport)
+register_checkpoint_type(FeedbackDecision)
 
 # ---------------------------------------------------------------------------
 # Edge predicates
@@ -120,10 +189,7 @@ def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
     — G1) still has attempts left → redispatch development."""
 
     def _qa_retry(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) < max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) < max_retries
 
     return _qa_retry
 
@@ -133,10 +199,7 @@ def _make_qa_exhausted(max_retries: int) -> Callable[[Any], bool]:
     the failure handler."""
 
     def _qa_exhausted(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) >= max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) >= max_retries
 
     return _qa_exhausted
 
@@ -213,25 +276,28 @@ class FlowEventPublisher:
                 session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
             if session_host is not None:
                 action = action_from_flow_event(
-                    event, node_id, ts,
+                    event,
+                    node_id,
+                    ts,
                     error=str(info.get("error", "")),
                     node_result=info.get("node_result"),
                 )
                 if action is not None:
                     session_host.apply(action)
                 node_result = info.get("node_result")
-                if (
-                    event == "node_completed"
-                    and isinstance(node_result, dict)
-                    and node_result.get("pr_url")
-                ):
-                    session_host.apply(PullRequestLinked(
-                        pr_url=str(node_result["pr_url"]),
-                    ))
+                if event == "node_completed" and isinstance(node_result, dict) and node_result.get("pr_url"):
+                    session_host.apply(
+                        PullRequestLinked(
+                            pr_url=str(node_result["pr_url"]),
+                        )
+                    )
         except Exception:  # noqa: BLE001 - session-state fold must never break the run
             _logger.debug(
                 "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
-                event, node_id, run_id, exc_info=True,
+                event,
+                node_id,
+                run_id,
+                exc_info=True,
             )
 
         try:
@@ -278,6 +344,81 @@ class _NullAgentRegistry:
 
 
 # ---------------------------------------------------------------------------
+# FEAT-490 Module 7: model_plan -> ops-topology seat wiring
+# ---------------------------------------------------------------------------
+#
+# Mirrors `dev_flow.factories._build_primary_reviewer`/`_assemble_review_pair`
+# EXACTLY (same seats: development pool + adversarial review pair — this
+# topology has no IdeationNode, so `model_plan.research_primary`/
+# `research_partner` have nothing to map onto here). Kept local rather than
+# importing those dev_flow-private (underscore) symbols across packages —
+# same precedent `dev_flow/factories.py` itself sets for `_with_graph`.
+
+
+def _build_primary_reviewer(spec: Any, shared_dispatcher: Any) -> Any:
+    """Build the write-enabled primary reviewer named by ``spec``.
+
+    ``claude-code`` (the default) reuses the flow's shared dispatcher — no
+    second dispatcher is constructed. Any other backend is materialized
+    through ``agent_builder.build_dispatcher``.
+
+    Args:
+        spec: The plan's ``DevAgentSpec`` for the primary review seat.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A write-enabled ``AbstractCodeReviewDispatcher``.
+
+    Raises:
+        ValueError: If the backend has no registered *primary* review
+            dispatcher — named, with the supported set, before any run.
+    """
+    from parrot.flows.dev_loop.catalog import PRIMARY_REVIEW_BACKENDS
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+
+    if spec.agent not in PRIMARY_REVIEW_BACKENDS:
+        raise ValueError(
+            f"backend {spec.agent!r} cannot serve as the primary reviewer — "
+            f"supported: {', '.join(PRIMARY_REVIEW_BACKENDS)}"
+        )
+    if spec.agent == "claude-code":
+        review_dispatcher = shared_dispatcher
+    else:
+        from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+        review_dispatcher, _profile = build_dispatcher(spec)
+    kwargs: Dict[str, Any] = {"dispatcher": review_dispatcher}
+    if spec.model:
+        kwargs["model"] = spec.model
+    return CodeReviewDispatcherFactory.create(spec.agent, **kwargs)
+
+
+def _assemble_review_pair(plan: DevFlowModelPlan, shared_dispatcher: Any) -> Any:
+    """Assemble the plan's review pair as a parallel-perspective reviewer.
+
+    A write-enabled primary (default claude-code / ``claude-opus-5``) runs
+    concurrently with the read-only, Mantle-hosted counter-reviewer
+    (default ``gpt-5.6-sol``); ``ParallelPerspectiveReviewDispatcher``
+    merges the two verdicts deterministically.
+
+    Args:
+        plan: The already-resolved model plan.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A ``ParallelPerspectiveReviewDispatcher`` over the configured pair.
+    """
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+    from parrot.flows.dev_loop.dispatchers.mantle import (
+        MantleAdversarialReviewDispatcher,
+    )
+
+    primary = _build_primary_reviewer(plan.review.primary, shared_dispatcher)
+    adversary = MantleAdversarialReviewDispatcher(model=plan.review.counter_model)
+    return CodeReviewDispatcherFactory.create("parallel", primary=primary, adversary=adversary)
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -305,6 +446,14 @@ def build_dev_loop_flow(
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
     skip_qa: bool = False,
+    research_coordinator: Optional[Any] = None,
+    research_mcp_servers: Optional[Dict[str, Any]] = None,
+    research_mcp_tools: Optional[list[str]] = None,
+    checkpoint: bool = False,
+    checkpoint_required: bool = False,
+    checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+    flow_id: Optional[str] = None,
+    model_plan: Optional[DevFlowModelPlan] = None,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -380,10 +529,88 @@ def build_dev_loop_flow(
         skip_qa: When ``True``, ``QANode`` returns a synthetic passing
             ``QAReport`` without running deterministic checks or code
             review. ``False`` (default) preserves the full QA gate.
+        research_coordinator: Optional
+            ``ComplementaryResearchCoordinator`` (FEAT-482/486) forwarded
+            to ``ResearchNode`` via ``build_dev_loop_node_factories``.
+            ``None`` (default) lets the factories build a fresh
+            conf-driven one (inert until ``DEV_FLOW_RESEARCH_PARTNER`` is
+            configured). Pass an explicitly configured coordinator
+            (``backend=``/``model=``) to select the collaborative-research
+            partner's LLM programmatically.
+        research_mcp_servers: Optional explicit MCP server configs
+            forwarded to ``ResearchNode``'s dispatch profile (wikitoolkit
+            graph search, FEAT-485 ``parrot mcp-local`` toolkit servers).
+            ``None`` (default) keeps the research dispatch byte-identical.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those servers; ``None`` derives server-level ``mcp__<name>``
+            rules. See :class:`ResearchNode`.
+        checkpoint: FEAT-480 — enable AgentsFlow state checkpointing for
+            the built flow. ``False`` (default) is byte-identical to the
+            pre-FEAT-480 behavior — no checkpoint config is attached at
+            all. This is the "per-run factory" opt-in: a caller building a
+            checkpoint-aware run passes ``checkpoint=True`` (usually
+            alongside ``checkpoint_required=True``) and calls this
+            function fresh for every run (never reusing one shared
+            instance across runs — spec §7 known risk).
+        checkpoint_required: FEAT-480 — when ``True`` (and ``checkpoint``
+            is also ``True``), the scheduler awaits a required checkpoint
+            write after every successful node before routing downstream
+            (TASK-2624). ``False`` (default) keeps generic best-effort
+            checkpointing if ``checkpoint=True`` alone is set.
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback), forwarded to ``AgentsFlow``.
+            Ignored when ``checkpoint`` is ``False``.
+        flow_id: FEAT-480 — stable per-run checkpoint identity (typically
+            ``"dev-loop/<run_id>"``, minted by ``DevCheckpointCoordinator``).
+            Ignored when ``checkpoint`` is ``False``; auto-generated
+            (UUID4) otherwise when omitted — but omitting it defeats the
+            purpose of a per-run checkpoint identity, so recovery-aware
+            callers always supply it explicitly.
+        model_plan: FEAT-490 Module 7 — optional :class:`DevFlowModelPlan`
+            selecting the seats THIS topology actually has: the
+            development pool (mirrors ``development_pool_config``'s
+            shape) and ``QANode``'s adversarial review pair. There is no
+            ``IdeationNode`` here, so the plan's ``research_primary``/
+            ``research_partner`` fields have nothing to map onto — pass an
+            explicit ``research_coordinator`` for that seat instead, same
+            as before this parameter existed. Precedence matches the
+            dev-flow sibling exactly: an explicit
+            ``development_pool_config`` or ``codereview_dispatcher`` always
+            wins over the plan. ``None`` (the default) leaves every
+            existing call byte-identical — this is a pure seam, not a
+            behaviour change; the ops console is not wired to send a plan
+            (spec §1 Non-Goals).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
     """
+    # FEAT-490 Module 7: resolve the plan's seats onto THIS topology's own
+    # kwargs, with the caller's explicit values always winning — mirrors
+    # dev_flow.factories.build_dev_flow_node_factories' precedence exactly,
+    # adapted to the one difference: this builder already exposes
+    # `development_pool_config` directly (FEAT-323 predates this feature),
+    # so the "explicit wins" check applies to it too, not just the builder.
+    resolved_pool_config = development_pool_config
+    resolved_pool_builder = development_dispatcher_builder
+    resolved_review_dispatcher = codereview_dispatcher
+    if model_plan is not None:
+        # Lazy: avoids a module-load-time circular import (see the
+        # TYPE_CHECKING block above) — a plan-less build must not pay for
+        # it either way.
+        from parrot.flows.dev_flow.model_plan import resolve_model_plan
+
+        resolved_plan = resolve_model_plan(model_plan)
+        if resolved_pool_config is None:
+            resolved_pool_config = resolved_plan.to_pool_config()
+            if resolved_pool_config is not None and resolved_pool_builder is None:
+                # Imported lazily: agent_builder pulls in every coding-agent
+                # client module, and a plan-less build must not pay for it.
+                from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+                resolved_pool_builder = build_dispatcher
+        if resolved_review_dispatcher is None:
+            resolved_review_dispatcher = _assemble_review_pair(resolved_plan, dispatcher)
+
     # 1. Materialize the dev-loop nodes from the DECLARATIVE definition via the
     # engine's ``node_factories`` hook (FEAT-250 TASK-001). This validates the
     # definition (referential integrity + acyclic + registered types) and binds
@@ -395,19 +622,22 @@ def build_dev_loop_flow(
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
-        development_pool_config=development_pool_config,
-        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_config=resolved_pool_config,
+        development_dispatcher_builder=resolved_pool_builder,
         development_pool_max=development_pool_max,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         log_fetch_mode=log_fetch_mode,
         repos=repos,
-        codereview_dispatcher=codereview_dispatcher,
+        codereview_dispatcher=resolved_review_dispatcher,
         require_deployment_approval=require_deployment_approval,
         wiki_search=wiki_search,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,
+        research_coordinator=research_coordinator,
+        research_mcp_servers=research_mcp_servers,
+        research_mcp_tools=research_mcp_tools,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -428,12 +658,37 @@ def build_dev_loop_flow(
     # skipped (verified empirically against flow.py's scheduler). The topology
     # below mirrors ``build_dev_loop_definition()`` edge-for-edge, using the
     # Python predicate callables (CEL equivalents live in the definition).
-    flow = AgentsFlow(name=name, on_node_event=publisher)
+    flow = AgentsFlow(
+        name=name,
+        on_node_event=publisher,
+        flow_id=flow_id,
+        checkpoint=checkpoint,
+        checkpoint_required=checkpoint_required,
+        checkpoint_store=checkpoint_store,
+        # FEAT-480: the SAME declarative ``definition`` already used for
+        # node materialization is also exactly what a required checkpoint
+        # needs to embed (spec §7 "the flow definition embedded in each
+        # checkpoint comes from the already-built declarative definition
+        # retained by the dev builders"). This is the SEPARATE
+        # ``checkpoint_definition``/``_checkpoint_definition_arg`` field
+        # (TASK-2623) — unlike the constructor's own ``definition=`` param
+        # (never passed here, see below), it does NOT affect
+        # ``explicit_mode`` scheduler selection at all: that check only
+        # ever reads ``self._definition``. Only meaningful when
+        # ``checkpoint=True``; ``AgentsFlow`` ignores it otherwise.
+        checkpoint_definition=definition if checkpoint else None,
+        # FEAT-480: allowlisted shared_data projector (TASK-2625/spec §3
+        # Module 3) — never persist the full live shared_data mapping
+        # (SessionHost, dispatchers, toolkits). Only meaningful when
+        # ``checkpoint=True``.
+        checkpoint_shared_data=project_shared_data if checkpoint else None,
+    )
     # Exposed for DevLoopRunner / callers to bind the current run_id.
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     # The declarative definition is kept for reference/visualization ONLY. It is
-    # deliberately NOT bound to ``flow._definition`` — doing so would switch the
+    # deliberately NOT bound to ``flow._definition`` (the constructor's own
+    # ``definition=`` param, left unset above) — doing so would switch the
     # scheduler to definition-mode (AND-join) and break the OR-join routing.
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
 

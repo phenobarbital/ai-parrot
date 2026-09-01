@@ -43,6 +43,8 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -52,8 +54,18 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_flow._subagent_defs import load_subagent_definition
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
+from parrot.flows.dev_flow.research_partner import ComplementaryFindings
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.mcp_profiles import (
+    WIKI_MCP_TOOLS,
+    derive_mcp_tool_names,
+    resolve_wikitoolkit_command,
+    wikitoolkit_mcp_entry,
+)
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, FeatureBrief
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
@@ -64,6 +76,26 @@ _MODE_FOR_KIND: dict[str, str] = {
     "new_feature": "brainstorm",
     "enhancement": "proposal",
 }
+
+
+# Backward-compat aliases: these lived here (private) before moving to the
+# shared ``parrot.flows.dev_loop.mcp_profiles`` module so ``ResearchNode``
+# could reuse them. Kept so existing imports/monkeypatches keep working.
+_WIKI_MCP_TOOLS = WIKI_MCP_TOOLS
+_resolve_wikitoolkit_command = resolve_wikitoolkit_command
+
+
+def _slugify(title: str) -> str:
+    """Kebab-case a title, mirroring the ``sdd-ideation`` prompt's own Step 1
+    algorithm ("lowercase, non-alphanumerics -> single hyphens, no leading
+    or trailing hyphen") so the coordinator's provisional
+    ``sdd/proposals/<slug>.research.md`` name matches the document the
+    subagent independently derives from the SAME title, without waiting
+    for the subagent's own dispatch to report it (FEAT-482 Module 5 — the
+    coordinator must run BEFORE the first dispatch, so the real
+    ``IdeationOutput.slug`` is not available yet).
+    """
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
 
 class _IdeationBrief(BaseModel):
@@ -85,6 +117,15 @@ class _IdeationBrief(BaseModel):
     # Set on resume rounds so the subagent extends the same document.
     document_path: str = ""
     round: int = 1
+    # FEAT-482 Module 5: the complementary research partner's findings,
+    # rendered markdown (already truncation-bounded) and its
+    # `.research.md` sidecar path. Populated on round 1 only — resume
+    # rounds pass both empty (the findings are already folded into the
+    # document by then). Both default to "" so a run with no coordinator
+    # injected, or with the research-partner seat disabled/degraded,
+    # carries an inert, empty partner section.
+    partner_findings: str = ""
+    partner_findings_path: str = ""
 
 
 @register_dev_loop_node("dev_flow.ideation")
@@ -99,6 +140,30 @@ class IdeationNode(DevLoopNode):
             search, or a search that finds nothing, simply yields no context.
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
             ``None`` (default) reads the conf key at execute time.
+        model: FEAT-486 — model for this (research-primary) seat, replacing
+            the ``claude-sonnet-4-6`` literal this node used to hardcode in
+            its dispatch profile. ``None`` (default) reads
+            ``conf.DEV_FLOW_IDEATION_MODEL`` at dispatch time, itself
+            defaulting to ``claude-opus-5``. Normally supplied by
+            ``DevFlowModelPlan.research_primary`` through the factory.
+        coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482). ``None`` (default) means no complementary research
+            partner ever runs — the dispatch payload's partner fields stay
+            empty, matching pre-feature behavior exactly. When provided,
+            it is called on round 1 only; it never raises (it owns its own
+            degradation), so a disabled/degraded/timed-out partner simply
+            yields empty partner fields too.
+        extra_mcp_servers: Optional extra MCP server configs (same shape as
+            ``ClaudeCodeDispatchProfile.mcp_servers``) merged UNDER the
+            built-in ``wikitoolkit`` entry — on a key collision the
+            built-in wins (with a warning). Use this to expose the
+            FEAT-485 ``parrot mcp-local <toolkit>`` servers to the
+            research-primary seat. ``None`` (default) keeps the dispatch
+            profile byte-identical to pre-seam behavior.
+        extra_mcp_tools: Optional explicit ``mcp__...`` allow rules for the
+            extra servers, appended to ``allowed_tools``. ``None``
+            (default) derives one server-level ``mcp__<name>`` rule per
+            extra server. Ignored when ``extra_mcp_servers`` is unset.
         name: Node id, default ``"ideation"``.
     """
 
@@ -108,12 +173,25 @@ class IdeationNode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         wiki_search: DevLoopWikiSearch | None = None,
         ideation_max_rounds: int | None = None,
+        model: str | None = None,
+        coordinator: ComplementaryResearchCoordinator | None = None,
+        extra_mcp_servers: dict[str, Any] | None = None,
+        extra_mcp_tools: list[str] | None = None,
         name: str = "ideation",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_wiki_search", wiki_search)
         object.__setattr__(self, "_max_rounds", ideation_max_rounds)
+        # FEAT-486: the research-primary seat's model. `None` (default)
+        # resolves `conf.DEV_FLOW_IDEATION_MODEL` at dispatch time — read
+        # late, not at import, so a test (or a per-deployment env change)
+        # can monkeypatch it, matching how `_max_rounds` treats
+        # DEV_FLOW_IDEATION_MAX_ROUNDS.
+        object.__setattr__(self, "_model", model)
+        object.__setattr__(self, "_coordinator", coordinator)
+        object.__setattr__(self, "_extra_mcp_servers", extra_mcp_servers)
+        object.__setattr__(self, "_extra_mcp_tools", extra_mcp_tools)
 
     # ------------------------------------------------------------------
     # Execute
@@ -152,17 +230,33 @@ class IdeationNode(DevLoopNode):
         brief = self._load_request_brief(shared)
         mode = _MODE_FOR_KIND[brief.kind]
 
-        graph_context = await self._build_wiki_context(brief)
+        # FEAT-482: the complementary research partner (if any) runs
+        # concurrently with the existing best-effort wiki-context build —
+        # both feed the FIRST dispatch only, neither delays the other.
+        graph_context, partner_findings = await asyncio.gather(
+            self._build_wiki_context(brief),
+            self._run_coordinator(brief=brief, shared=shared),
+        )
         max_rounds = self._resolve_max_rounds()
 
         self.logger.info(
             "Ideation starting: kind=%s -> mode=%s, title=%s, max_rounds=%d",
-            brief.kind, mode, brief.title, max_rounds,
+            brief.kind,
+            mode,
+            brief.title,
+            max_rounds,
         )
 
         output = await self._dispatch(
-            shared=shared, brief=brief, mode=mode,
-            graph_context=graph_context, answers={}, document_path="", round_=1,
+            shared=shared,
+            brief=brief,
+            mode=mode,
+            graph_context=graph_context,
+            answers={},
+            document_path="",
+            round_=1,
+            partner_findings=partner_findings.rendered if partner_findings else "",
+            partner_findings_path=partner_findings.document_path if partner_findings else "",
         )
 
         host = shared.get("session_host")
@@ -172,20 +266,31 @@ class IdeationNode(DevLoopNode):
                 "shared state (autonomous construction) — proceeding WITHOUT "
                 "an open_questions gate; the questions stay in %s and are "
                 "carried into the spec by the planner.",
-                len(output.open_questions), output.document_path,
+                len(output.open_questions),
+                output.document_path,
             )
 
         rounds_used = 0
         while output.open_questions and host is not None and rounds_used < max_rounds:
             rounds_used += 1
             answers = await self._run_question_round(
-                host=host, output=output, round_=rounds_used,
+                host=host,
+                output=output,
+                round_=rounds_used,
                 max_rounds=max_rounds,
             )
             output = await self._dispatch(
-                shared=shared, brief=brief, mode=mode,
-                graph_context=graph_context, answers=answers,
-                document_path=output.document_path, round_=rounds_used + 1,
+                shared=shared,
+                brief=brief,
+                mode=mode,
+                graph_context=graph_context,
+                answers=answers,
+                document_path=output.document_path,
+                round_=rounds_used + 1,
+                # Round 1 only (spec §1 Non-Goals, D8): the partner's
+                # findings are already folded into the document by now.
+                partner_findings="",
+                partner_findings_path="",
             )
 
         if output.open_questions:
@@ -193,7 +298,9 @@ class IdeationNode(DevLoopNode):
                 "Ideation finished with %d unresolved question(s) after %d "
                 "round(s) — they remain '[ ]' in %s and flow into the spec's "
                 "§8 via the planner (not a failure).",
-                len(output.open_questions), rounds_used, output.document_path,
+                len(output.open_questions),
+                rounds_used,
+                output.document_path,
             )
 
         # Fail fast: sdd-planner creates its worktree from base_branch HEAD,
@@ -221,7 +328,9 @@ class IdeationNode(DevLoopNode):
         shared["feature_brief"] = feature_brief
         self.logger.info(
             "Ideation complete: %s (kind=%s, resumed_existing=%s, rounds=%d)",
-            document_path, output.document_kind, output.resumed_existing,
+            document_path,
+            output.document_kind,
+            output.resumed_existing,
             rounds_used,
         )
         return feature_brief
@@ -259,6 +368,22 @@ class IdeationNode(DevLoopNode):
             return max(0, int(self._max_rounds))
         return max(0, int(getattr(conf, "DEV_FLOW_IDEATION_MAX_ROUNDS", 2)))
 
+    def _resolve_model(self) -> str:
+        """Resolve this seat's model (constructor override > conf key).
+
+        FEAT-486: same late-binding shape as :meth:`_resolve_max_rounds` —
+        the conf key is read at dispatch time, not import time, so a
+        deployment (or a test) can change it without rebuilding the flow.
+        A blank override falls through to the conf key rather than
+        dispatching with an empty model id.
+
+        Returns:
+            The model id for the ideation dispatch profile.
+        """
+        if self._model:
+            return str(self._model)
+        return str(getattr(conf, "DEV_FLOW_IDEATION_MODEL", "claude-opus-5") or "claude-opus-5")
+
     async def _build_wiki_context(self, brief: DevRequestBrief) -> str:
         """Best-effort ranked repo context for the dispatch.
 
@@ -279,6 +404,37 @@ class IdeationNode(DevLoopNode):
             return ""
         return context or ""
 
+    async def _run_coordinator(self, *, brief: DevRequestBrief, shared: dict[str, Any]) -> ComplementaryFindings | None:
+        """Run the complementary research partner, or skip if not wired.
+
+        FEAT-482: no defensive try/except here — the coordinator already
+        owns degradation end-to-end (spec §3 Module 4) and is contracted
+        to never raise; wrapping it again would only risk masking a
+        genuine bug in that contract.
+
+        Args:
+            brief: The natural-language request driving this ideation run.
+            shared: The flow's shared state (supplies ``run_id`` and the
+                optional ``session_host``).
+
+        Returns:
+            ``ComplementaryFindings`` on success, or ``None`` when no
+            coordinator is wired, the seat is disabled, or it degraded.
+        """
+        if self._coordinator is None:
+            return None
+        slug = _slugify(brief.title)
+        question = f"{brief.title}\n\n{brief.description}".strip()
+        return await self._coordinator.research(
+            brief=brief,
+            question=question,
+            cwd=self._dispatch_cwd(),
+            slug=slug,
+            run_id=shared.get("run_id", ""),
+            node_id=self.name,
+            session_host=shared.get("session_host"),
+        )
+
     # ------------------------------------------------------------------
     # Internal — dispatch
     # ------------------------------------------------------------------
@@ -293,6 +449,8 @@ class IdeationNode(DevLoopNode):
         answers: dict[str, str],
         document_path: str,
         round_: int,
+        partner_findings: str = "",
+        partner_findings_path: str = "",
     ) -> IdeationOutput:
         """Dispatch ``sdd-ideation`` once and validate its final JSON.
 
@@ -305,6 +463,11 @@ class IdeationNode(DevLoopNode):
             answers: Prior-round answers (empty on round 1).
             document_path: The document to resume (empty on round 1).
             round_: 1-based round counter, for the subagent's own logging.
+            partner_findings: FEAT-482 — the complementary research
+                partner's rendered findings. Non-empty only on round 1's
+                call; resume rounds must pass ``""``.
+            partner_findings_path: FEAT-482 — the partner's
+                ``.research.md`` sidecar path, or ``""``.
 
         Returns:
             The validated :class:`IdeationOutput`.
@@ -318,7 +481,26 @@ class IdeationNode(DevLoopNode):
             answers=dict(answers),
             document_path=document_path,
             round=round_,
+            partner_findings=partner_findings,
+            partner_findings_path=partner_findings_path,
         )
+        # Extra caller-supplied servers (e.g. FEAT-485 `parrot mcp-local`
+        # toolkits) merge UNDER the built-in wikitoolkit entry: with no
+        # extras the dict is exactly {"wikitoolkit": ...}, byte-identical
+        # to pre-seam behavior.
+        mcp_servers: dict[str, Any] = dict(self._extra_mcp_servers or {})
+        if "wikitoolkit" in mcp_servers:
+            self.logger.warning(
+                "extra_mcp_servers supplied a 'wikitoolkit' entry; the built-in one takes precedence."
+            )
+        mcp_servers["wikitoolkit"] = wikitoolkit_mcp_entry()
+        allowed_tools = ["Read", "Grep", "Glob", "Bash", "Write", "Edit", *WIKI_MCP_TOOLS]
+        if self._extra_mcp_servers:
+            allowed_tools.extend(
+                self._extra_mcp_tools
+                if self._extra_mcp_tools is not None
+                else derive_mcp_tool_names(self._extra_mcp_servers)
+            )
         profile = ClaudeCodeDispatchProfile(
             # NOT profile.subagent: that path resolves the prompt through
             # dev_loop's loader, which does not know the dev_flow-owned
@@ -329,13 +511,26 @@ class IdeationNode(DevLoopNode):
             permission_mode="acceptEdits",
             # Read/Grep/Glob to verify Code Context claims, Write/Edit for
             # the document itself, Bash for the explicit-path git commit.
-            allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit"],
+            # FEAT-482 Module 6 (§8 Q11): plus the three read-only wiki
+            # graph-search tools — the primary seat does the deepest
+            # research in the pipeline and benefits most from it.
+            allowed_tools=allowed_tools,
             # The dispatch is write-capable AND runs at the base checkout
             # (see _dispatch_cwd), so it needs the dispatcher's narrow
             # PROJECT_ROOT waiver of the WORKTREE_BASE_PATH confinement —
             # ideation predates the feature worktree by construction.
             allow_project_root_cwd=True,
-            model="claude-sonnet-4-6",
+            # FEAT-486 supersedes FEAT-482's direct
+            # `conf.DEV_FLOW_IDEATION_MODEL` read here: _resolve_model()
+            # falls back to that SAME key, but first honours an explicit
+            # constructor argument (i.e. DevFlowModelPlan.research_primary).
+            model=self._resolve_model(),
+            # FEAT-482 Module 6: strict_mcp_config stays at its True
+            # default (NOT overridden here) — the field's own docstring
+            # records that flipping it makes non-interactive runs exit
+            # with an empty error result. Passing the servers explicitly
+            # is the correct way to reach them under that isolation.
+            mcp_servers=mcp_servers,
         )
         return await self._dispatcher.dispatch(
             brief=dispatch_brief,
@@ -408,9 +603,12 @@ class IdeationNode(DevLoopNode):
             on_expiry="fail",
         )
         self.logger.info(
-            "Ideation round %d/%d: opened open_questions gate %s with %d "
-            "question(s) for %s",
-            round_, max_rounds, gate_id, len(questions), output.document_path,
+            "Ideation round %d/%d: opened open_questions gate %s with %d " "question(s) for %s",
+            round_,
+            max_rounds,
+            gate_id,
+            len(questions),
+            output.document_path,
         )
 
         gate = await host.wait_gate(gate_id)
@@ -424,7 +622,10 @@ class IdeationNode(DevLoopNode):
         answers = dict(gate.answers or {})
         self.logger.info(
             "Ideation round %d/%d: %d of %d question(s) answered by %s",
-            round_, max_rounds, len(answers), len(questions),
+            round_,
+            max_rounds,
+            len(answers),
+            len(questions),
             gate.resolved_by or "unknown",
         )
         return answers

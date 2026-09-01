@@ -33,26 +33,34 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
 from parrot.clients.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
+from parrot.core.events.lifecycle import TraceContext
+from parrot.core.events.lifecycle.events.client import (
+    AfterClientCallEvent,
+    ClientCallFailedEvent,
+)
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
-    T,
     _SESSION_HOST_CTX,
-    _apply_to_session_host,
     DispatchExecutionError,
     DispatchOutputValidationError,
+    T,
+    _apply_to_session_host,
 )
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
+
+    from parrot.core.events.lifecycle import EventRegistry
 
 # Edit/Write tools that let a dispatched session mutate the filesystem through
 # the SDK's own tool surface. A dispatch whose profile excludes ALL of these
@@ -119,6 +127,41 @@ class ClaudeCodeDispatcher:
         self._redis: Any = None  # lazy aioredis.Redis
         self._cached_dispatch_env: Optional[Dict[str, str]] = None
         self._client_cache: Dict[str, Any] = {}  # model -> ClaudeAgentClient
+        # FEAT-479 M6: resolves run_id -> the run's per-run EventRegistry, so
+        # this out-of-process dispatcher's harvested usage can be emitted as
+        # an AfterClientCallEvent on the exact registry the ledger listens
+        # on. None (default) when no owner (e.g. DevLoopRunner) has wired
+        # one in — see set_event_registry_resolver. Same shape as
+        # LLMCodeDispatcher's resolver (dispatchers/llm.py) so DevLoopRunner
+        # wires both identically via one hasattr-guarded call.
+        self._event_registry_resolver: Optional[Callable[[str], Optional[EventRegistry]]] = None
+
+    def set_event_registry_resolver(self, resolver: Callable[[str], Optional[EventRegistry]]) -> None:
+        """Wire a ``run_id -> EventRegistry`` lookup (FEAT-479 M6).
+
+        Called once by the owning :class:`DevLoopRunner` so harvested usage
+        can be emitted on the run's per-run registry (§2 Exactness).
+
+        Args:
+            resolver: A callable returning the live :class:`EventRegistry`
+                for a given ``run_id``, or ``None`` if that run has no
+                tracked registry.
+        """
+        self._event_registry_resolver = resolver
+
+    @property
+    def event_registry_resolver(self) -> Optional[Callable[[str], Optional[EventRegistry]]]:
+        """The wired ``run_id -> EventRegistry`` lookup, if any.
+
+        Public so an owner that was handed ONE wired dispatcher can pass
+        the same lookup on to dispatchers it did not build itself — the
+        dev-agent pool's workers, which ``agent_builder.build_dispatcher``
+        constructs with no knowledge of the run.
+
+        Returns:
+            The resolver, or ``None`` when none was wired.
+        """
+        return self._event_registry_resolver
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,7 +220,12 @@ class ClaudeCodeDispatcher:
                 kind="dispatch.queued",
                 run_id=run_id,
                 node_id=node_id,
-                payload={"profile": profile.model_dump(mode="json")},
+                payload={
+                    "profile": profile.model_dump(mode="json"),
+                    # Fills the run bundle's "Dispatcher" column, which
+                    # read this key and found nothing (see llm.py).
+                    "dispatcher": "claude-code",
+                },
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
@@ -238,6 +286,16 @@ class ClaudeCodeDispatcher:
                         node_id,
                         profile.timeout_seconds,
                     )
+                    # FEAT-479 M6: every failure branch, not only the
+                    # success path, must reach the ledger — with the
+                    # error and whatever tokens were burned before it.
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="TimeoutError",
+                    )
                     raise DispatchExecutionError(
                         f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
                     ) from exc
@@ -271,7 +329,48 @@ class ClaudeCodeDispatcher:
                         node_id,
                         self._format_result_error(err_detail) or str(exc),
                     )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type=type(exc).__name__,
+                    )
                     raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
+
+                # A session cut short by its turn cap is a distinct
+                # failure with a distinct fix (raise the cap, or find out
+                # why the dispatch needed that many turns). Check it before
+                # the generic error/validation paths, which would otherwise
+                # report the symptom — an unparseable final payload.
+                if self._max_turns_exhausted(messages):
+                    cap = self._effective_max_turns(profile)
+                    message = f"Dispatch hit its max_turns cap ({cap})"
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "MaxTurnsExhausted",
+                            "error_message": message,
+                            "max_turns": cap,
+                        },
+                    )
+                    self.logger.error(
+                        "Dispatch hit max_turns=%s for run=%s node=%s",
+                        cap,
+                        run_id,
+                        node_id,
+                    )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="MaxTurnsExhausted",
+                    )
+                    raise DispatchExecutionError(message)
 
                 # Even when the SDK does NOT raise (some CLI versions emit
                 # the erroring result and close the stream cleanly), an
@@ -296,6 +395,13 @@ class ClaudeCodeDispatcher:
                         node_id,
                         self._format_result_error(err_detail),
                     )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="ResultError",
+                    )
                     raise DispatchExecutionError(self._format_result_error(err_detail))
 
                 try:
@@ -311,6 +417,13 @@ class ClaudeCodeDispatcher:
                             "error_message": str(exc),
                         },
                     )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type=type(exc).__name__,
+                    )
                     raise
 
                 completed_payload: Dict[str, Any] = {
@@ -325,6 +438,18 @@ class ClaudeCodeDispatcher:
                     run_id=run_id,
                     node_id=node_id,
                     payload=completed_payload,
+                )
+                # FEAT-479 M6: route out-of-process usage through the same
+                # accounting path as in-process AbstractClient calls. seat=
+                # node_id, which is "development.w1" for a pool worker — a
+                # free string, so no NodeId widening is needed (Finding 3).
+                # No harvest -> no event: "—" in the report is honest, a
+                # fabricated 0 is not.
+                await self._emit_usage_event(
+                    usage_detail,
+                    run_id=run_id,
+                    node_id=node_id,
+                    profile=profile,
                 )
                 return result
             finally:
@@ -439,6 +564,7 @@ class ClaudeCodeDispatcher:
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
+            max_turns=self._effective_max_turns(profile),
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
@@ -448,7 +574,57 @@ class ClaudeCodeDispatcher:
             extra_args=extra_args,
             system_prompt=system_prompt,
             model=profile.model,
+            # FEAT-482 Module 6: explicit MCP servers (e.g. the read-only
+            # wikitoolkit graph-search server for the ideation dispatch).
+            # None (default) => ClaudeAgentRunOptions.mcp_servers is None,
+            # byte-identical to pre-Module-6 behavior.
+            mcp_servers=profile.mcp_servers,
         )
+
+    @staticmethod
+    def _effective_max_turns(profile: ClaudeCodeDispatchProfile) -> Optional[int]:
+        """Resolve the turn cap for a dispatch: profile first, then conf.
+
+        ``ClaudeCodeDispatchProfile.max_turns`` is the per-dispatch cap set
+        by the node that knows how bounded its own task is (SynthesisNode).
+        ``conf.DEV_LOOP_CLAUDE_MAX_TURNS`` is the operator's blanket
+        backstop for every dispatch that declares none. Both unset (the
+        default) means no cap, byte-identical to pre-cap behavior.
+
+        Args:
+            profile: The dispatch profile being translated.
+
+        Returns:
+            The cap to forward as ``ClaudeAgentRunOptions.max_turns``, or
+            ``None`` for an uncapped session.
+        """
+        if profile.max_turns is not None:
+            return profile.max_turns
+        return getattr(conf, "DEV_LOOP_CLAUDE_MAX_TURNS", 0) or None
+
+    @staticmethod
+    def _max_turns_exhausted(messages: List[Any]) -> bool:
+        """Whether the session terminated by hitting its turn cap.
+
+        The SDK's terminal ``ResultMessage`` reports this as
+        ``subtype="error_max_turns"``. Without this check the truncated
+        session reaches :meth:`_validate_output`, which reports the
+        *symptom* ("could not locate a JSON object in the assistant
+        output") rather than the cause. Duck-typed on ``subtype`` for the
+        same reason as :meth:`_extract_result_error` — no eager SDK import.
+
+        Args:
+            messages: Every message buffered from the stream, in order.
+
+        Returns:
+            True when the terminal result says the cap was hit.
+        """
+        for msg in reversed(messages):
+            subtype = getattr(msg, "subtype", None)
+            if subtype is None:
+                continue
+            return str(subtype) == "error_max_turns"
+        return False
 
     def _resolve_dispatch_env(self) -> Dict[str, str]:
         """Compute env overrides that steer the subprocess auth method.
@@ -674,12 +850,8 @@ class ClaudeCodeDispatcher:
                 detail: Dict[str, Any] = {
                     "input_tokens": _usage_get("input_tokens"),
                     "output_tokens": _usage_get("output_tokens"),
-                    "cache_creation_input_tokens": _usage_get(
-                        "cache_creation_input_tokens"
-                    ),
-                    "cache_read_input_tokens": _usage_get(
-                        "cache_read_input_tokens"
-                    ),
+                    "cache_creation_input_tokens": _usage_get("cache_creation_input_tokens"),
+                    "cache_read_input_tokens": _usage_get("cache_read_input_tokens"),
                     "total_cost_usd": getattr(msg, "total_cost_usd", None),
                     "num_turns": getattr(msg, "num_turns", None),
                     "duration_ms": getattr(msg, "duration_ms", None),
@@ -689,6 +861,118 @@ class ClaudeCodeDispatcher:
             detail = {k: v for k, v in detail.items() if v is not None}
             return detail or None
         return None
+
+    async def _emit_usage_event(
+        self,
+        usage_detail: Optional[Dict[str, Any]],
+        *,
+        run_id: str,
+        node_id: str,
+        profile: ClaudeCodeDispatchProfile,
+    ) -> None:
+        """Emit an ``AfterClientCallEvent`` from harvested terminal usage.
+
+        FEAT-479 Module 6. This dispatcher runs out of process — there is
+        no ``AbstractClient`` and none of ``clients/base.py``'s lifecycle
+        emission happens. Routes the harvested
+        :meth:`_extract_result_usage` payload through the same accounting
+        path in-process clients use, so pool-worker seats
+        (``node_id="development.w1"``) and this backend's real model reach
+        the per-run ledger instead of being silently dropped (spec
+        Findings 3 and 4's model gap).
+
+        No-ops when there is nothing to report (no harvest, or no
+        registry resolver wired) — never fabricates zeros, and never lets
+        a telemetry failure break the dispatch.
+
+        Forwards to the global registry explicitly after the awaited
+        per-run emit, mirroring ``AbstractClient._emit_after_call``
+        (``clients/base.py:634``) — this run's per-run registry is
+        constructed with ``forward_to_global=False`` (matching a client's
+        own default), so global OTel/usage-recorder visibility for this
+        out-of-process backend depends entirely on this explicit call.
+        """
+        if not usage_detail or self._event_registry_resolver is None:
+            return
+        registry = self._event_registry_resolver(run_id)
+        if registry is None:
+            return
+        try:
+            with usage_attribution(run_id, seat=node_id):
+                event = AfterClientCallEvent(
+                    trace_context=TraceContext.new_root(),
+                    client_name="claude-code",
+                    model=profile.model or "",
+                    duration_ms=float(usage_detail.get("duration_ms") or 0.0),
+                    input_tokens=usage_detail.get("input_tokens"),
+                    output_tokens=usage_detail.get("output_tokens"),
+                    source_type="dispatcher",
+                    source_name="claude-code",
+                )
+                await registry.emit(event)
+                registry.forward_to_global(event)
+        except Exception:  # telemetry must never break dispatch
+            self.logger.warning(
+                "Failed to emit AfterClientCallEvent for run=%s node=%s",
+                run_id,
+                node_id,
+                exc_info=True,
+            )
+
+    async def _emit_failure_event(
+        self,
+        messages: List[Any],
+        *,
+        run_id: str,
+        node_id: str,
+        profile: ClaudeCodeDispatchProfile,
+        error_type: str,
+    ) -> None:
+        """Route a failed dispatch through the same accounting path as a
+        successful one (FEAT-479 M6 extension — every failure branch of
+        this dispatcher's ``dispatch()`` calls this, not only the
+        success path).
+
+        First harvests whatever usage the buffered ``messages`` report
+        (often partial or none for a true timeout — a dispatch that
+        raised before receiving any terminal ``ResultMessage``) via
+        :meth:`_emit_usage_event`, then emits a ``ClientCallFailedEvent``
+        for the failure itself. Two ledger records rather than one:
+        ``ClientCallFailedEvent`` structurally carries no token fields
+        (spec's privacy contract — only ``error_type``, the exception
+        class name, never a message), so "tokens burned before failing"
+        is represented by the harvested cycle, and "what failed" by this
+        one. Never lets a telemetry failure break the dispatch.
+        """
+        usage_detail = self._extract_result_usage(messages)
+        await self._emit_usage_event(
+            usage_detail,
+            run_id=run_id,
+            node_id=node_id,
+            profile=profile,
+        )
+        if self._event_registry_resolver is None:
+            return
+        registry = self._event_registry_resolver(run_id)
+        if registry is None:
+            return
+        try:
+            with usage_attribution(run_id, seat=node_id):
+                event = ClientCallFailedEvent(
+                    trace_context=TraceContext.new_root(),
+                    client_name="claude-code",
+                    model=profile.model or "",
+                    error_type=error_type,
+                )
+                await registry.emit(event)
+                registry.forward_to_global(event)
+        except Exception:  # telemetry must never break dispatch
+            self.logger.warning(
+                "Failed to emit ClientCallFailedEvent for run=%s node=%s",
+                run_id,
+                node_id,
+                exc_info=True,
+            )
 
     @staticmethod
     def _format_result_error(detail: Optional[Dict[str, Any]]) -> str:
@@ -889,4 +1173,3 @@ class ClaudeCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
-

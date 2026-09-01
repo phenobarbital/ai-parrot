@@ -1,8 +1,9 @@
-import sys
-import os
 import base64
+import os
+import sys
 from pathlib import Path
-from navconfig import config, BASE_DIR
+
+from navconfig import BASE_DIR, config
 from navconfig.logging import logging
 
 # # disable debug on some libraries:
@@ -930,6 +931,19 @@ DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean("DEV_LOOP_REQUIRE_PLAN_
 # False (default) preserves the full QA gate.
 DEV_LOOP_SKIP_QA: bool = config.getboolean("DEV_LOOP_SKIP_QA", fallback=False)
 
+# Global default cap on reasoning turns for a Claude Code dispatch whose
+# profile leaves ``ClaudeCodeDispatchProfile.max_turns`` unset. 0 (default)
+# means no global cap — byte-identical to the pre-cap behavior. Hitting the
+# cap fails the dispatch loudly rather than truncating its output silently,
+# so raise it rather than leaving a legitimate long dispatch to die on it.
+DEV_LOOP_CLAUDE_MAX_TURNS: int = config.getint("DEV_LOOP_CLAUDE_MAX_TURNS", fallback=0)
+
+# Turn cap for the post-merge synthesis reconciliation dispatch specifically.
+# Reconciliation is bounded work (inspect the seams, run the suite, commit
+# the fixes); an unbounded session is how a 40-turn seam hunt happens. 0
+# disables the per-node cap and falls back to DEV_LOOP_CLAUDE_MAX_TURNS.
+DEV_LOOP_SYNTHESIS_MAX_TURNS: int = config.getint("DEV_LOOP_SYNTHESIS_MAX_TURNS", fallback=30)
+
 # FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
 # it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
 # re-acquiring it once the gate resolves. True (default) per spec §2 —
@@ -970,6 +984,26 @@ DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint("DEV_FLOW_GATE_TTL_QUESTIONS", 
 # carried into the spec's §8 by the planner. Read at execute() time (not
 # import time) so tests can monkeypatch it per-case.
 DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint("DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2)
+# Model for the primary dev-flow research seat (IdeationNode), replacing
+# the hardwired "claude-sonnet-4-6" that `IdeationNode._dispatch` used to
+# carry in its dispatch profile (`dev_flow/nodes/ideation.py`).
+#
+# FEAT-482 (§8 Q13) and FEAT-486 (§3 Module 1) introduced this key
+# INDEPENDENTLY, with the same name and the same default — a deliberate
+# convergence, not a collision: FEAT-486's spec explicitly says to share
+# FEAT-482's seam rather than duplicate it. Both rationales agree, and
+# both are kept here so neither is lost to the merge:
+#
+#   * the primary seat does the deepest reasoning in the pipeline and its
+#     output constrains every downstream phase, so it must be swappable
+#     (`claude-fable-5` is one env var away for comparison);
+#   * it writes the SDD document the whole pipeline is planned from, so it
+#     is the seat where reasoning quality compounds most — hence Opus 5 by
+#     default rather than Sonnet.
+#
+# Resolution order (FEAT-486): explicit constructor arg >
+# DevFlowModelPlan.research_primary > this key > the built-in default.
+DEV_FLOW_IDEATION_MODEL: str = config.get("DEV_FLOW_IDEATION_MODEL", fallback="claude-opus-5")
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if
@@ -1073,13 +1107,73 @@ DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
     "DEV_LOOP_NOVA_MECHANICAL_MODEL",
     fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
 )
-# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
-# {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see
-# byte-identical behaviour to pre-FEAT-405. Resolved through
-# ``catalog.resolve_adversarial_backend()`` (validates the value and
-# raises naming the valid options); this constant exists for discoverability
-# alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above (:1048,1053,1076).
+# FEAT-486: model used by the read-only mantle-adversarial counter-reviewer
+# (``MantleAdversarialReviewDispatcher``), served over the OpenAI-compatible
+# bedrock-mantle endpoint. A NEW key rather than a repoint of
+# ``DEV_LOOP_ADVERSARIAL_MODEL`` (:1048), which stays the codex seat's —
+# the two seats can run different models in the same deployment (they do by
+# default: gpt-5.5 on codex, gpt-5.6-sol here). Duplicated (not imported)
+# from ``dispatchers.mantle.MANTLE_DEFAULT_REVIEW_MODEL`` for the same
+# reason as _NOVA_DEFAULT_CONVERSE_MODEL above — conf.py must not import
+# ``parrot.flows``; the two literals are pinned equal by test.
+DEV_LOOP_MANTLE_REVIEW_MODEL: str = config.get(
+    "DEV_LOOP_MANTLE_REVIEW_MODEL",
+    fallback="gpt-5.6-sol",
+)
+# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]; widened by
+# FEAT-486): choice over {"codex", "nova", "mantle"}, defaulting to "codex"
+# — unconfigured deployments see byte-identical behaviour to pre-FEAT-405.
+# Resolved through ``catalog.resolve_adversarial_backend()`` (validates the
+# value and raises naming the valid options); this constant exists for
+# discoverability alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above
+# (:1048,1053,1076).
 DEV_LOOP_ADVERSARIAL_BACKEND: str = config.get("DEV_LOOP_ADVERSARIAL_BACKEND", fallback="codex")
+
+# FEAT-482: opt-in complementary (collaborative) research partner for the
+# dev-flow's `IdeationNode` / dev-loop's `ResearchNode`. A second, read-only
+# researcher investigates the same request in parallel with the primary
+# Claude seat via `ComplementaryResearchCoordinator`; its findings are
+# additive, never authoritative (`AbstractResearchPartner.advisory = True`).
+# Empty (default) disables the seat entirely — an operator who configures
+# nothing sees byte-identical behavior to pre-FEAT-482. Resolved through
+# `parrot.flows.dev_loop.catalog.resolve_research_partner_backend()`, which
+# validates the value (must be "gpt" or "nova") and hard-rejects an
+# Anthropic partner model (see the sibling *_MODEL keys below) — an
+# Anthropic partner would correlate priors with the primary Claude seat and
+# 400 on the Bedrock thinking path.
+DEV_FLOW_RESEARCH_PARTNER: str = config.get("DEV_FLOW_RESEARCH_PARTNER", fallback="")
+# Bedrock-mantle model for the "gpt" backend (default backend once the seat
+# is enabled). Reached via the OpenAI-compatible bedrock-mantle endpoint
+# (`BedrockMantleClient`), authenticated with the SAME `AWS_NOVA_API_KEY`
+# bearer token the Converse seats use below — no second vendor credential,
+# no `OPENAI_API_KEY`.
+DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL: str = config.get("DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL", fallback="gpt-5.6-sol")
+# Converse model for the "nova" backend. Mirrors DEV_LOOP_NOVA_REVIEW_MODEL
+# (:1069 above) but is independently configurable — the research-partner
+# seat and the adversarial-review seat may run different Nova models.
+DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL: str = config.get(
+    "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL", fallback="us.amazon.nova-2-lite-v1:0"
+)
+# Converse-only reasoning knob (`BedrockConverseBase.ask(thinking_budget=...)`,
+# bedrock.py:715). Ignored on the mantle ("gpt") path.
+DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET: int = config.getint(
+    "DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET", fallback=4096
+)
+# Mantle-only reasoning knob (OpenAI-shaped effort). Ignored on the Converse
+# ("nova") path.
+DEV_FLOW_RESEARCH_PARTNER_EFFORT: str = config.get("DEV_FLOW_RESEARCH_PARTNER_EFFORT", fallback="high")
+# Hard deadline (seconds) `ComplementaryResearchCoordinator` gives the
+# partner under `asyncio.timeout` before soft-degrading the run to
+# single-agent.
+DEV_FLOW_RESEARCH_PARTNER_TIMEOUT: int = config.getint("DEV_FLOW_RESEARCH_PARTNER_TIMEOUT", fallback=600)
+# Cost ceiling passed to the partner's `ask(max_tokens=...)` call.
+DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS: int = config.getint("DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS", fallback=16384)
+# External web-search egress via the partner's `ReadOnlyRepoToolkit`
+# (keyless `DdgSearchTool`, FEAT-484). ON by default when the seat itself is
+# enabled — inert while `DEV_FLOW_RESEARCH_PARTNER` is unset, so the
+# pure-addition guarantee holds. Set False if brief content reaching a
+# third-party search provider is unacceptable for this deployment.
+DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH: bool = config.getboolean("DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH", fallback=True)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)

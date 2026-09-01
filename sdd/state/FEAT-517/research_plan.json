@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is feature-shaped ('Crear un agente', 'Incorporar', 'aprovechar la capacidad') with rich named entities: PandasAgent, A2UI outputs/dashboards, QuerySource, DatasourceManager, InfographicToolkit, WorkingMemoryToolkit, skills (/widget, /infographic), kb documents, deterministic HTML refresh. Wiki unavailable (CLI+MCP timeout) — grep-first plan. Goal: locate every named building block and one or more existing PandasAgent-based dashboard agents to use as the pattern to extend.",
+  "wiki_available": false,
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate the PandasAgent class — the base the new agent extends.",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "class PandasAgent", "path": "packages/", "case_sensitive": true, "max_results": 10 }
+    },
+    {
+      "id": "Q002",
+      "intent": "Locate QuerySource / DatasourceManager — the data-feeding infra the ticket names.",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "class (QuerySource|DatasourceManager|DataSourceManager)", "path": "packages/", "case_sensitive": true, "max_results": 15 }
+    },
+    {
+      "id": "Q003",
+      "intent": "Locate the A2UI output/dashboard infrastructure (structured charts, hero cards, dashboards).",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "a2ui|A2UI", "path": "packages/", "case_sensitive": false, "max_results": 40 }
+    },
+    {
+      "id": "Q004",
+      "intent": "Find existing agents already built on PandasAgent (usage pattern to copy) in agents/ and examples/.",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "PandasAgent", "path": "agents/ examples/", "case_sensitive": true, "max_results": 30 }
+    },
+    {
+      "id": "Q005",
+      "intent": "Read the PandasAgent implementation to understand its constructor contract (datasources, kb, skills, toolkits).",
+      "type": "read",
+      "priority": 1,
+      "params": { "path": "<from Q001>", "lines": null }
+    },
+    {
+      "id": "Q006",
+      "intent": "Locate InfographicToolkit and how it is wired into an agent.",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "InfographicToolkit|infographic", "path": "packages/", "case_sensitive": false, "max_results": 30 }
+    },
+    {
+      "id": "Q007",
+      "intent": "Locate WorkingMemoryToolkit and its agent wiring.",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "WorkingMemoryToolkit", "path": "packages/ agents/ examples/", "case_sensitive": true, "max_results": 20 }
+    },
+    {
+      "id": "Q008",
+      "intent": "Understand the deterministic dashboard refresh mechanism (the 'refresh button' requirement).",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "deterministic", "path": "packages/ artifacts/deterministic-tool-execution.md", "case_sensitive": false, "max_results": 40 }
+    },
+    {
+      "id": "Q009",
+      "intent": "Read the most similar existing agent (finance_reporter.py or the best PandasAgent-based dashboard agent found in Q004) as the reference pattern.",
+      "type": "read",
+      "priority": 1,
+      "params": { "path": "agents/finance_reporter.py (or best Q004 hit)", "lines": null }
+    },
+    {
+      "id": "Q010",
+      "intent": "Understand how file-based skills with /trigger commands are declared per-agent (for /widget and /infographic).",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "SkillsDirectoryLoader|skills_dir|trigger", "path": "packages/ai-parrot/src/parrot/skills/ agents/", "case_sensitive": false, "max_results": 30 }
+    },
+    {
+      "id": "Q011",
+      "intent": "Understand how kb documents are attached to an agent (the KPI-definition docs requirement).",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "kb|knowledge_base", "path": "agents/", "case_sensitive": false, "max_results": 30 }
+    },
+    {
+      "id": "Q012",
+      "intent": "Inspect the target example dashboard HTML structure (hero cards, filters, embedded data) — docs/flex_program_report (39).html; the ticket's artifacts/a2ui_live/ path does not exist.",
+      "type": "read",
+      "priority": 2,
+      "params": { "path": "docs/flex_program_report (39).html", "lines": "structure scan (head + key sections only, file ~1-2MB)" }
+    },
+    {
+      "id": "Q013",
+      "intent": "Recent activity on the A2UI outputs infra — how fresh/volatile is it, what landed recently.",
+      "type": "git_log",
+      "priority": 3,
+      "params": { "path": "<A2UI outputs path from Q003>", "since": "60 days", "max_results": 20 }
+    },
+    {
+      "id": "Q014",
+      "intent": "Recent activity on PandasAgent — regressions/extension points landing now.",
+      "type": "git_log",
+      "priority": 3,
+      "params": { "path": "<PandasAgent path from Q001>", "since": "60 days", "max_results": 15 }
+    },
+    {
+      "id": "Q015",
+      "intent": "Inspect artifacts/a2ui_deterministic_refresh/ recipes to see the concrete refresh recipe format already produced.",
+      "type": "tree",
+      "priority": 2,
+      "params": { "path": "artifacts/a2ui_deterministic_refresh/", "maxdepth": 2 }
+    },
+    {
+      "id": "Q016",
+      "intent": "Locate existing QuerySource slug consumption examples (how a slug like flex_msl_brian_bi is fetched at runtime).",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "slug", "path": "packages/ai-parrot/src/parrot/bots/database/ agents/", "case_sensitive": false, "max_results": 30 }
+    }
+  ],
+  "expected_findings": [
+    "PandasAgent location + constructor contract (df/datasource/kb/skills wiring)",
+    "QuerySource / DatasourceManager API for consuming slugs",
+    "A2UI output components vocabulary (structured chart, hero card, map) and dashboard renderer",
+    "Deterministic refresh mechanism and recipe format",
+    "An existing reference agent (finance_reporter or similar) to pattern-match",
+    "Skill declaration pattern for /widget and /infographic triggers",
+    "kb document attachment pattern",
+    "Structure of the target flex_program_report HTML"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["PandasAgent", "A2UI", "QuerySource", "DatasourceManager", "InfographicToolkit", "WorkingMemoryToolkit", "kb", "/widget", "/infographic", "flex_program_report"],
+      "verbs": ["crear", "incorporar", "aprovechar", "mostrar", "filtrar"],
+      "polarity": "positive/feature"
+    },
+    "estimated_budget_use": {
+      "wiki_queries": 0,
+      "files_read": 3,
+      "grep_calls": 11,
+      "git_calls": 2
+    }
+  }
+}

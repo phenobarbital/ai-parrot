@@ -220,6 +220,19 @@ class TaskScheduler:
             self._skipped.add(current)
             to_skip.extend(dependents.get(current, []))
 
+    def all_tasks(self) -> List[TaskRef]:
+        """Return every task read from the index, in index order.
+
+        Public counterpart to the internal ``_tasks`` map so callers that
+        only want to *report* the plan (how many tasks the feature was
+        split into, and which ones) do not have to reach into private
+        state.
+
+        Returns:
+            One :class:`TaskRef` per entry in the per-spec index.
+        """
+        return list(self._tasks.values())
+
     def pending(self) -> List[TaskRef]:
         """Return currently pending (not yet dispatchable-checked) tasks."""
         return [self._tasks[tid] for tid in self._pending]

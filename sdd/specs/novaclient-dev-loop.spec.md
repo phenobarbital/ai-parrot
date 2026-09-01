@@ -87,6 +87,14 @@ That creates three concrete pain points:
   `ClaudeCodeDispatcher` + `/sdd-spec` + `/sdd-task`. A Bedrock API seat cannot
   invoke slash commands, so the generalization would ship an option that could
   not do the job — see brainstorm Q3/[R7].
+
+  > **Narrowed by FEAT-482 (2026-08-31)** — not reversed. This non-goal rules out
+  > *replacing* the research seat with a Bedrock seat, and that reasoning still
+  > holds: only the Claude seat can run slash commands, author the SDD document,
+  > and create the worktree. FEAT-482 (`devflow-complementary-research`) instead
+  > adds a Bedrock seat *beside* it as a read-only, advisory **collaborator** that
+  > contributes findings and never writes under `sdd/**`. Contribute-to, not
+  > replace. See `sdd/specs/devflow-complementary-research.spec.md` §1.
 - **A Converse↔OpenAI tool-call adapter on `BedrockConverseBase`.** Rejected in
   brainstorm Option B: Bedrock exposes no Chat Completions for Anthropic
   models, so a tool-using Claude worker is served by the existing `claude-code`

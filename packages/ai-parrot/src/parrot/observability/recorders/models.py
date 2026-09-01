@@ -14,7 +14,7 @@ PII contract (see ``observability/README.md``).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -40,6 +40,24 @@ class UsageRecord(BaseModel):
         trace_id: Correlation trace id (no content), or ``None``.
         service_name: Configured ``service.name``.
         timestamp: UTC timestamp at record construction.
+        run_id: FEAT-479 — the dev-loop / dev-flow run identifier, from the
+            ``current_run_id`` ContextVar, or ``None`` when unattributed.
+        seat: FEAT-479 — the accounting seat, e.g. ``"development"`` or a
+            pool-worker seat ``"development.w1"``, from the ``current_seat``
+            ContextVar, or ``None`` when unattributed.
+        node_id: FEAT-479 — the roll-up owner node id (``"development.w1"``
+            rolls up to ``"development"``), or ``None``.
+        cycle: FEAT-479 — 1-based attempt index within ``(run_id, seat)``,
+            assigned by the ledger sink at record time; ``None`` here (the
+            subscriber never assigns it).
+        usage_reported: FEAT-479 — ``False`` when the provider reported
+            neither token count (the ``0``-coercion on ``input_tokens``/
+            ``output_tokens`` still applies for Prometheus/OpenLit; this flag
+            preserves the distinction so the report renders ``—`` instead of
+            a fabricated ``0``).
+        status: FEAT-479 — ``"completed"`` or ``"failed"``.
+        error_type: FEAT-479 — the exception CLASS NAME only (never the
+            message — see the module's privacy contract), or ``None``.
     """
 
     provider: str
@@ -53,9 +71,18 @@ class UsageRecord(BaseModel):
     finish_reason: Optional[str] = None
     trace_id: Optional[str] = None
     service_name: str = "ai-parrot"
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # ── FEAT-479: flow attribution. All optional/defaulted. ──
+    run_id: Optional[str] = None
+    seat: Optional[str] = None
+    node_id: Optional[str] = None
+    cycle: Optional[int] = None
+
+    # ── FEAT-479: honesty + failure. ──
+    usage_reported: bool = True
+    status: Literal["completed", "failed"] = "completed"
+    error_type: Optional[str] = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
