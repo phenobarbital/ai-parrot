@@ -73,7 +73,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Own node file; depends only on scaffolding + FEAT-472.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2663-fetch-gate-and-scheduling.md"
+      "completed_at": "2026-09-01T02:53:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2663-fetch-gate-and-scheduling.md"
     },
     {
       "id": "TASK-2664",
