@@ -217,10 +217,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Implemented `research_partner.py` (models + ABC + factory),
+the `resolve_research_partner_backend()` / `RESEARCH_PARTNER_BACKEND` /
+`_RESEARCH_PARTNER_CHOICES` triad in `catalog.py`, and all 8
+`DEV_FLOW_RESEARCH_PARTNER_*` conf keys. 32 unit tests added/verified
+(`test_research_partner.py` + pre-existing `test_catalog.py` /
+`test_nova_wiring.py` regression pass), ruff-clean on the new file, and
+manually confirmed `resolve_research_partner_backend()` returns `""`
+(disabled) with the config unset — pure-addition guarantee holds.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. The family guard (Anthropic-model rejection) is implemented inside
+   `resolve_research_partner_backend()` by checking the *resolved model*
+   for whichever backend ("gpt"/"nova") is selected — reading
+   `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` respectively —
+   since the backend selector itself only ever holds `"gpt"`/`"nova"`,
+   never a raw model id. This is the only way an Anthropic model id could
+   reach this seat (an operator overriding the model conf key), and the
+   task's own acceptance criteria/test (`test_partner_rejects_anthropic_model`)
+   imply exactly this check.
+2. The `BackendInfo` entry required by the task ("Add a `BackendInfo`
+   entry with `roles=("research_partner",)`") was added to a **new**
+   `RESEARCH_PARTNER_BACKENDS` tuple rather than appended to the existing
+   `BACKENDS` tuple. `BACKENDS`' documented contract is "one entry per
+   `build_dispatcher` branch" and an existing test
+   (`test_backends_for_role_development_includes_all_backends`) asserts
+   every `BACKENDS` entry is development-capable; the bedrock-mantle
+   "gpt" backend has no coding dev_loop counterpart, so folding it into
+   `BACKENDS` broke that invariant. Instead: the existing "nova"
+   `BackendInfo` entry (already in `BACKENDS`, already development-
+   capable) gained `"research_partner"` in its `roles` tuple, and a new
+   "gpt" `BackendInfo` lives in the new `RESEARCH_PARTNER_BACKENDS` tuple
+   alongside a reference to the same "nova" entry. Both ids ("gpt",
+   "nova") are surfaced; no existing test's invariant was broken.

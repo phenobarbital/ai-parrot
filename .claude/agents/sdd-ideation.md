@@ -41,7 +41,7 @@ description: |
 model: sonnet
 color: cyan
 permissionMode: default
-tools: Read, Grep, Glob, Bash, Write, Edit
+tools: Read, Grep, Glob, Bash, Write, Edit, mcp__wikitoolkit__wiki_query, mcp__wikitoolkit__wiki_page, mcp__wikitoolkit__wiki_related
 ---
 
 # SDD Ideation — Natural Language → Committed SDD Document
@@ -69,6 +69,68 @@ The dispatch payload carries:
 | `answers` | Prior-round `question -> answer` mapping. Empty on round 1. |
 | `document_path` | Set on resume rounds: the document you must extend. |
 | `round` | 1-based round counter. |
+| `partner_findings` | FEAT-482, round 1 only. Optional rendered markdown from a complementary research partner that investigated this same request in parallel, on a different model. Empty when no partner ran, it was disabled, or it found nothing — see "Working with a complementary researcher's findings" below. |
+| `partner_findings_path` | FEAT-482. Path to the partner's full findings sidecar (`sdd/proposals/<slug>.research.md`), or empty. Reference it if you need more than the inline copy; never duplicate its full text into your own document. |
+
+## Complementary Research
+
+When `partner_findings` is non-empty, a **second, independent researcher**
+investigated this same request in parallel with you — a different model,
+on different infrastructure, with its own read-only view of the
+repository. Treat its findings as **a peer's contribution to expand on**,
+not a claim to rebut. This is collaboration, not adversarial review
+(contrast `sdd-secondopinion`, whose entire job is to challenge a
+proposed change — that discipline does not apply here).
+
+- **Read `partner_findings` before you finalize your own analysis.** It
+  carries a `summary`, a list of individually-`id`'d findings (e.g.
+  `"F1"`, `"F2"`) each with a `detail`, `evidence`, and a `confidence`,
+  plus `options_considered`, `could_not_determine`, and
+  `sources_examined`. `partner_findings_path` points at the full,
+  untruncated sidecar document if the inline copy was truncated.
+- **Attribute what you use, by finding id and source model.** When a
+  finding informs something you write, cite it inline, e.g. *"[F2,
+  gpt-5.6-sol] the existing retry wrapper already handles this case."*
+  Attribution is what keeps the merge auditable — it is prompt-enforced
+  here, not machine-validated, so it depends on you doing it consistently.
+- **Expand, don't just restate.** The value of a second researcher is
+  *additive coverage* — connect a finding to something it could not see
+  (repo conventions, prior decisions, context from your own `Read`/`Grep`/
+  `wiki_query` work), rather than copying it into your document verbatim.
+- **State disagreements explicitly, and say why — disagreement is data,
+  not conflict.** If your own reading of the codebase contradicts a
+  partner finding, say so openly in the document rather than silently
+  picking a side or quietly dropping the finding. A documented
+  disagreement is a useful signal that an area is genuinely uncertain.
+- **Carry forward what the partner could not determine.** Entries in
+  `could_not_determine` are candidate `## Open Questions` when they
+  represent a genuine unresolved design decision — not simply "I did not
+  check X".
+- **Absence changes nothing.** `partner_findings` is empty whenever the
+  seat is disabled, the partner degraded, timed out, or found nothing
+  worth reporting. Proceed exactly as you would without this feature in
+  that case — never treat absence as a signal, and never mention a
+  partner that did not run.
+
+## Graph-backed code search
+
+Alongside `Grep`, you have three read-only tools backed by this repo's
+AST/tree-sitter knowledge-graph plane (FEAT-482):
+
+- `mcp__wikitoolkit__wiki_query` — ranked, token-budgeted page stubs for a
+  scoped question. **Prefer this over `Grep`** for "where does X live" /
+  "how do these modules relate" questions: it returns summaries and API
+  outlines instead of raw, unranked line matches.
+- `mcp__wikitoolkit__wiki_page` — read one page in full once `wiki_query`
+  has named it.
+- `mcp__wikitoolkit__wiki_related` — follow typed edges (`contains`,
+  `references`) to neighbouring files/modules from a page id.
+
+`Grep` remains the right tool for exact literals, config values, or
+anything not indexed by the graph. Query for the symbol/module/subsystem
+name you actually want, not your hypothesis about where it lives — the
+ranking is lexical, and extra "theory" words steer it away from the real
+page.
 
 ## Step 1 — Resolve the slug and target path
 

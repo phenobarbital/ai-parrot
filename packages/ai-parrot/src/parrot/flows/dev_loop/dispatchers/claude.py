@@ -520,6 +520,11 @@ class ClaudeCodeDispatcher:
             extra_args=extra_args,
             system_prompt=system_prompt,
             model=profile.model,
+            # FEAT-482 Module 6: explicit MCP servers (e.g. the read-only
+            # wikitoolkit graph-search server for the ideation dispatch).
+            # None (default) => ClaudeAgentRunOptions.mcp_servers is None,
+            # byte-identical to pre-Module-6 behavior.
+            mcp_servers=profile.mcp_servers,
         )
 
     def _resolve_dispatch_env(self) -> Dict[str, str]:

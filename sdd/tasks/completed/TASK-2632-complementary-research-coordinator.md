@@ -211,10 +211,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Implemented `ComplementaryResearchCoordinator.research()` as a
+single `try/except Exception` degradation boundary: backend resolution,
+partner construction, the `asyncio.timeout`-wrapped partner call,
+triviality check, rendering, and the write/commit are all inside the one
+guarded block — ANY exception (including a misconfigured
+`resolve_research_partner_backend()`) degrades to `None` with a warning
+and a `partner.degraded` log event, never raises. `partner.started`/
+`partner.completed`/`partner.degraded` are emitted via a small `_emit()`
+structured-log helper (no `SessionHost`/telemetry-rendering coupling —
+FEAT-479 owns rendering and reads the log stream separately, per scope).
+`.research.md` is written to `sdd/proposals/<slug>.research.md` under the
+run's `cwd` and committed via two `_run_git()` calls (`add --  <path>`,
+`commit -m ... -- <path>`) — both use `asyncio.create_subprocess_exec`
+directly (no shell) and stage only that one path, never `-A`/`.`. A
+write/commit failure is caught separately inside `_write_and_commit()` so
+it degrades to `document_path=""` while the in-memory findings still
+return successfully (not the same failure path as a partner error).
+Trivial findings (`not findings.findings and not findings.summary.strip()`)
+are treated as absent — no file, returns `None`. Findings embedded in the
+dispatch payload (`ComplementaryFindings.rendered`) are truncated at 4000
+chars with an explicit marker; the full markdown always goes to the file
+untruncated.
 
-**Completed by**:
-**Date**:
-**Notes**:
+10 tests in `test_complementary_research.py`, all passing, covering every
+degradation path named in the acceptance criteria plus 4 extra (credential
+error, emitted-events assertion, oversized-findings truncation, and
+partner-construction-time error). Full `pytest packages/ai-parrot/tests/flows/dev_flow/`
+(211 tests) and a broader `tests/clients/` sweep pass with zero
+regressions attributable to this change (4 pre-existing failures in
+`test_live_envelope.py`/`test_nova_protocol_frames.py`/
+`test_parallel_tool_execution.py` reproduce identically on `dev` itself,
+confirmed by running them against the unmodified main checkout).
+`ruff check` clean on both changed files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **No `asyncio.gather` inside this class.** The Scope bullet says "Run
+   the partner under `asyncio.timeout(...)`, composed with the caller's
+   own work via `asyncio.gather`" and the Component Diagram shows
+   `asyncio.gather(primary ‖ partner)` — but the coordinator's own
+   contracted signature (`research(*, brief, question, cwd, slug, run_id,
+   node_id, session_host=None) -> Optional[ComplementaryFindings]`, both
+   here and in TASK-2629's "New Public Interfaces") takes no parameter
+   for "the caller's own work," and the task's own "Pattern to Follow"
+   snippet shows only `asyncio.timeout` wrapping the partner call, no
+   `gather`. Read literally, composing with the primary Claude dispatch
+   via `asyncio.gather` must happen one layer up, in the calling node
+   (`IdeationNode`/`ResearchNode`, TASK-2633/2634): e.g.
+   `await asyncio.gather(self._dispatch(...), coordinator.research(...))`.
+   This class only wraps its single partner call in a deadline.
+2. **No dedicated conf key for the dispatch-payload truncation bound.**
+   Spec §7 says findings are "truncate[d] with an explicit marker" but
+   names no size. Picked `4_000` characters as a local module constant
+   (`_MAX_RENDERED_CHARS`), same order of magnitude as
+   `ReadOnlyRepoToolkit`'s own `search_budget_tokens=4_000` default — no
+   new conf key added since none was requested in this task's files list.
+3. **`_resolve_model_for_backend()` duplicates two lines of
+   `BedrockResearchPartner._build_client()`'s model resolution** rather
+   than reading a private attribute off the partner instance —
+   `research_partner.py` is not in this task's Files to Create/Modify
+   list, so it was left untouched. Documented in both places for
+   discoverability; the duplication is two `conf.*` reads, trivially kept
+   in sync.
