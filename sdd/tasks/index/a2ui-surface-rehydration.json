@@ -14,7 +14,7 @@
       "feature_id": "FEAT-492",
       "feature": "a2ui-surface-rehydration",
       "spec": "sdd/specs/a2ui-surface-rehydration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Server-package persistence module; shares no files with TASK-2701 (core runner). Safe to run alongside it.",
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2700-pg-ui-surface-store.md"
+      "completed_at": "2026-09-01T18:00:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2700-pg-ui-surface-store.md"
     },
     {
       "id": "TASK-2701",
