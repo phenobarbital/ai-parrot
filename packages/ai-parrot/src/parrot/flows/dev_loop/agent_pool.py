@@ -259,6 +259,27 @@ class DevAgentPool:
                 node_id=worker.worker_id,
                 cwd=cwd_for(worker.worker_id),
             )
+            # A dispatch that names its OWN task in `incomplete_tasks` is
+            # telling us it did not finish. Introduced with the forced
+            # `final_output` salvage turn (LLMCodeDispatcher): a seat that
+            # runs out of turns can now return the work it committed instead
+            # of nothing, and the salvage prompt asks it to declare partial
+            # work honestly — so an output must not be able to buy a
+            # "completed" by admitting it is unfinished. Retried like any
+            # other failure.
+            declared_incomplete = list(getattr(output, "incomplete_tasks", []) or [])
+            if task.id in declared_incomplete:
+                self.logger.warning(
+                    "Task %s returned by %s but self-declared incomplete; treating as failed",
+                    task.id,
+                    worker.worker_id,
+                )
+                return (
+                    task.id,
+                    worker.worker_id,
+                    None,
+                    f"{task.id} reported itself incomplete by the dispatched agent",
+                )
             return task.id, worker.worker_id, output, None
         except (DispatchExecutionError, DispatchOutputValidationError) as exc:
             self.logger.warning(
