@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-01T10:29:38Z",
-  "completed_at": null,
+  "completed_at": "2026-09-01T10:53:28+00:00",
   "tasks": [
     {
       "id": "TASK-2676",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-487",
       "feature": "dev-flow-partner-env-key-dedup",
       "spec": "sdd/specs/dev-flow-partner-env-key-dedup.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task — one cohesive edit; splitting would leave the tree inconsistent.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2676-partner-env-key-dedup.md"
+      "started_at": "2026-09-01T10:47:38+00:00",
+      "completed_at": "2026-09-01T10:53:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2676-partner-env-key-dedup.md",
+      "verification": "verified"
     }
   ]
 }

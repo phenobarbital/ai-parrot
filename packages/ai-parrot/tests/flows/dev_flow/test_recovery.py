@@ -403,3 +403,183 @@ def test_dev_flow_runner_execution_policy_uses_build_dev_flow_shape() -> None:
         "development_pool_max": 4,
         "ideation_max_rounds": 3,
     }
+
+
+# ---------------------------------------------------------------------------
+# DevFlowRunner.inspect_checkpoint — the console's resume preflight
+# ---------------------------------------------------------------------------
+
+
+def _recovery_runner(store: FakeCheckpointStore, **kwargs: Any) -> DevFlowRunner:
+    """A DevFlowRunner wired for recovery against ``store``."""
+    return DevFlowRunner(
+        _CapturingFlow(),
+        redis_url="redis://x",
+        checkpoint_store=store,
+        dev_loop_flow_kwargs={"skip_qa": False, **kwargs},
+    )
+
+
+async def test_inspect_checkpoint_without_recovery_wiring(fake_store, nl_brief) -> None:
+    """No dev_loop_flow_kwargs -> the runner says so instead of claiming
+    the run is simply missing (which would invite a fresh, expensive re-run)."""
+    runner = DevFlowRunner(_CapturingFlow(), redis_url="redis://x", checkpoint_store=fake_store)
+
+    report = await runner.inspect_checkpoint("run-1", brief=nl_brief)
+
+    assert runner.recovery_enabled is False
+    assert report["recovery_enabled"] is False
+    assert report["reason"] == "recovery_disabled"
+    assert report["resumable"] is False
+
+
+async def test_inspect_checkpoint_unknown_run_id(fake_store, nl_brief) -> None:
+    report = await _recovery_runner(fake_store).inspect_checkpoint("run-never-ran", brief=nl_brief)
+
+    assert report["found"] is False
+    assert report["resumable"] is False
+    assert report["reason"] == "no_checkpoint"
+    assert report["flow_id"] == "dev-flow/run-never-ran"
+
+
+async def _seed_checkpoint(store, brief, run_id, tmp_path, **policy_kwargs) -> DevFlowRunner:
+    """Run one flow to completion under ``run_id`` so a checkpoint exists."""
+    runner = _recovery_runner(store, **policy_kwargs)
+    worktree_path = _real_worktree(tmp_path, "feat-777-x")
+    ideation_out = IdeationOutput(
+        document_path="sdd/proposals/x.proposal.md",
+        document_kind="proposal",
+        slug="x",
+        committed=True,
+    )
+    planner_out = PlannerOutput(
+        spec_path="sdd/specs/x.spec.md",
+        task_index_path="sdd/tasks/index/x.json",
+        feat_id="FEAT-777",
+        branch_name="feat-777-x",
+        worktree_path=str(worktree_path),
+    )
+    dev_out = DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="done")
+    ctx = FlowContext(initial_task="t")
+    flow, mode = await runner._checkpoint_coordinator.prepare(
+        workflow=runner.CHECKPOINT_WORKFLOW,
+        run_id=run_id,
+        brief=brief,
+        live_context=ctx,
+        flow_factory=lambda definition: _build_test_flow(
+            definition, store=store, ideation_out=ideation_out, planner_out=planner_out, dev_out=dev_out
+        ),
+        execution_policy=runner._execution_policy_for_fingerprint(),
+    )
+    assert mode == "fresh"
+    await flow.run_flow(ctx)
+    return runner
+
+
+async def test_inspect_checkpoint_reports_resumable_run(fake_store, nl_brief, tmp_path) -> None:
+    """The happy path the console's resume field depends on: same brief,
+    same policy -> resumable, naming the nodes that will NOT be re-dispatched."""
+    runner = await _seed_checkpoint(fake_store, nl_brief, "run-resumable", tmp_path)
+
+    report = await runner.inspect_checkpoint("run-resumable", brief=nl_brief)
+
+    assert report["found"] is True
+    assert report["resumable"] is True
+    assert report["reason"] is None
+    assert report["workflow"] == "dev-flow"
+    assert {"ideation", "planner"} <= set(report["completed_nodes"])
+    assert report["checkpoint_id"] is not None
+    assert report["created_at"]
+
+
+async def test_inspect_checkpoint_probe_without_brief_is_unknown_not_no(fake_store, nl_brief, tmp_path) -> None:
+    """The GET probe has no brief to fingerprint: `resumable` is None
+    ("unknown"), never False — a False there would read as "start over"."""
+    runner = await _seed_checkpoint(fake_store, nl_brief, "run-probe", tmp_path)
+
+    report = await runner.inspect_checkpoint("run-probe")
+
+    assert report["found"] is True
+    assert report["resumable"] is None
+    assert report["reason"] == "fingerprint_unchecked"
+    assert {"ideation", "planner"} <= set(report["completed_nodes"])
+
+
+async def test_inspect_checkpoint_detects_changed_brief(fake_store, nl_brief, tmp_path) -> None:
+    """A different brief under the same run_id is refused BEFORE the run
+    starts — `AgentsFlow.resume(expected_input=...)` would raise otherwise."""
+    runner = await _seed_checkpoint(fake_store, nl_brief, "run-mismatch", tmp_path)
+    changed = DevRequestBrief(
+        kind="enhancement",
+        title="compression budget telemetry",
+        description="A DIFFERENT request under the same run id.",
+    )
+
+    report = await runner.inspect_checkpoint("run-mismatch", brief=changed)
+
+    assert report["found"] is True
+    assert report["resumable"] is False
+    assert report["reason"] == "fingerprint_mismatch"
+
+
+async def test_inspect_checkpoint_detects_changed_execution_policy(fake_store, nl_brief, tmp_path) -> None:
+    """The fingerprint covers the server's routing policy too, not just the brief."""
+    await _seed_checkpoint(fake_store, nl_brief, "run-policy", tmp_path)
+    other = _recovery_runner(fake_store, require_plan_approval=True)
+
+    report = await other.inspect_checkpoint("run-policy", brief=nl_brief)
+
+    assert report["reason"] == "fingerprint_mismatch"
+
+
+async def test_inspect_checkpoint_namespace_is_per_workflow(fake_store, nl_brief, tmp_path) -> None:
+    """A dev-flow checkpoint is invisible to a dev-loop runner's probe."""
+    from parrot.flows.dev_loop.runner import DevLoopRunner
+
+    await _seed_checkpoint(fake_store, nl_brief, "run-ns", tmp_path)
+    dev_loop = DevLoopRunner(
+        _CapturingFlow(),
+        redis_url="redis://x",
+        checkpoint_store=fake_store,
+        dev_loop_flow_kwargs={"skip_qa": False},
+    )
+
+    assert DevLoopRunner.CHECKPOINT_WORKFLOW == "dev-loop"
+    assert DevFlowRunner.CHECKPOINT_WORKFLOW == "dev-flow"
+    report = await dev_loop.inspect_checkpoint("run-ns")
+    assert report["flow_id"] == "dev-loop/run-ns"
+    assert report["found"] is False
+
+
+async def test_inspect_checkpoint_store_outage_raises(nl_brief) -> None:
+    """A store outage must NOT be reported as "no checkpoint"."""
+    from parrot.bots.flows.core.checkpoint import CheckpointPersistenceError
+
+    class _BrokenStore(FakeCheckpointStore):
+        async def latest(self, flow_id: str):
+            raise ConnectionError("redis is down")
+
+    runner = _recovery_runner(_BrokenStore())
+    with pytest.raises(CheckpointPersistenceError):
+        await runner.inspect_checkpoint("run-x", brief=nl_brief)
+
+
+async def test_dev_loop_runner_feature_brief_is_not_resumable(tmp_path) -> None:
+    """dev-loop routes a FeatureBrief to _run_feature() before its recovery
+    gate, so its probe must not promise a resume it cannot deliver."""
+    from parrot.flows.dev_loop.runner import DevLoopRunner
+
+    runner = DevLoopRunner(
+        _CapturingFlow(),
+        redis_url="redis://x",
+        dev_loop_flow_kwargs={"skip_qa": False},
+    )
+    spec = tmp_path / "x.spec.md"
+    spec.write_text("# spec\n")
+    brief = FeatureBrief(document_path=str(spec), document_kind="spec")
+
+    report = await runner.inspect_checkpoint("run-f", brief=brief)
+
+    assert report["reason"] == "unsupported_brief"
+    # ...whereas dev-flow serves the very same brief through the coordinator.
+    assert DevFlowRunner(_CapturingFlow(), redis_url="redis://x")._recovery_supported(brief) is True

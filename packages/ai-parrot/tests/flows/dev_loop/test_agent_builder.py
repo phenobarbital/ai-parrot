@@ -5,11 +5,13 @@ from __future__ import annotations
 import pytest
 
 from parrot.flows.dev_loop.agent_builder import (
+    DEFAULT_LLM_MAX_TURNS,
+    ENV_LLM_MAX_TURNS,
     build_dispatcher,
     parse_pool_env,
     resolve_pool_max,
 )
-from parrot.flows.dev_loop.models import DevAgentSpec
+from parrot.flows.dev_loop.models import DevAgentSpec, LLMCodeDispatchProfile
 
 
 def fake_getter(env: dict):
@@ -96,6 +98,63 @@ class TestBuildDispatcher:
             config_getter=fake_getter({}),
         )
         assert profile.model == "claude-sonnet-4-6"
+
+
+class TestLLMTurnBudget:
+    """The in-process coding loop's turn budget (``DEV_LOOP_LLM_MAX_TURNS``).
+
+    Regression: `LLMCodeDispatchProfile`'s library default of 24 turns was
+    unreachable from config, and every seat of an 8-task run hit it — one
+    chat completion per turn is simply not the budget an agentic CLI spends.
+    The dev-loop wiring defaults to 60 and stays overridable.
+    """
+
+    LOOP_BACKENDS = ("nvidia", "grok", "zai", "moonshot", "nova")
+
+    @pytest.mark.parametrize("backend", LOOP_BACKENDS)
+    def test_default_is_sixty_not_the_library_default(self, backend):
+        _dispatcher, profile = build_dispatcher(
+            DevAgentSpec(agent=backend, model="m"),
+            redis_url="redis://x",
+            max_concurrent=1,
+            stream_ttl_seconds=60,
+            config_getter=fake_getter({}),
+        )
+        assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60
+        assert LLMCodeDispatchProfile.model_fields["max_turns"].default == 24
+
+    @pytest.mark.parametrize("backend", LOOP_BACKENDS)
+    def test_env_key_overrides(self, backend):
+        _dispatcher, profile = build_dispatcher(
+            DevAgentSpec(agent=backend, model="m"),
+            redis_url="redis://x",
+            max_concurrent=1,
+            stream_ttl_seconds=60,
+            config_getter=fake_getter({ENV_LLM_MAX_TURNS: "80"}),
+        )
+        assert profile.max_turns == 80
+
+    def test_unparsable_value_falls_back(self):
+        _dispatcher, profile = build_dispatcher(
+            DevAgentSpec(agent="nova", model="m"),
+            redis_url="redis://x",
+            max_concurrent=1,
+            stream_ttl_seconds=60,
+            config_getter=fake_getter({ENV_LLM_MAX_TURNS: "sesenta"}),
+        )
+        assert profile.max_turns == DEFAULT_LLM_MAX_TURNS
+
+    @pytest.mark.parametrize("backend", ["claude-code", "codex", "gemini"])
+    def test_agentic_cli_backends_have_no_turn_budget(self, backend):
+        """Those run their own loop — there is nothing here to set."""
+        _dispatcher, profile = build_dispatcher(
+            DevAgentSpec(agent=backend, model="m"),
+            redis_url="redis://x",
+            max_concurrent=1,
+            stream_ttl_seconds=60,
+            config_getter=fake_getter({ENV_LLM_MAX_TURNS: "80"}),
+        )
+        assert not hasattr(profile, "max_turns")
 
 
 class TestEnvParsing:

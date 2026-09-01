@@ -113,11 +113,28 @@ class DevLoopGraphMemory:
 
         Returns:
             A ready :class:`DevLoopGraphMemory`, or ``None`` when
-            ``DEV_LOOP_GRAPH_MEMORY_PATH`` is unset (the disabled default).
+            ``DEV_LOOP_GRAPH_MEMORY_PATH`` is unset (the disabled default),
+            blank, or not a ``str``/``Path``.
         """
         from parrot import conf  # noqa: PLC0415 - defer conf import to call time
 
-        db_dir = (getattr(conf, "DEV_LOOP_GRAPH_MEMORY_PATH", "") or "").strip()
+        raw_dir = getattr(conf, "DEV_LOOP_GRAPH_MEMORY_PATH", "")
+        # Only a real string/Path enables the plane. A non-str value means
+        # ``conf`` is a stand-in rather than the settings module: a MagicMock
+        # resolves every attribute to a truthy child mock whose
+        # ``__fspath__()`` is "MagicMock/<mock name>/<id>", which would sail
+        # past the falsy check below and make SQLitePersistence mkdir that
+        # junk tree in the CWD (it wrote a whole graph plane into the repo
+        # root this way).  Treat it as unset -> disabled.
+        if not isinstance(raw_dir, (str, Path)):
+            logger.warning(
+                "DevLoopGraphMemory.from_config: DEV_LOOP_GRAPH_MEMORY_PATH is "
+                "%s, not a str/Path — treating graph memory as disabled.",
+                type(raw_dir).__name__,
+            )
+            return None
+
+        db_dir = str(raw_dir).strip()
         if not db_dir:
             return None
 

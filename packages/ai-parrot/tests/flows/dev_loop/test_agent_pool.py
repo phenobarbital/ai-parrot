@@ -50,6 +50,27 @@ class AlwaysFailDispatcher:
         raise RuntimeError("always fails")
 
 
+class SelfDeclaredIncompleteDispatcher:
+    """Returns a well-formed output that admits it did not finish.
+
+    This is what a salvaged dispatch looks like when the model ran out of
+    turns mid-task: the payload validates, so the pool would otherwise bank
+    it as a completed task.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+        self.calls.append((brief.task_id, node_id))
+        return DevelopmentOutput(
+            files_changed=[f"{brief.task_id}.py"],
+            commit_shas=[],
+            summary="ran out of turns halfway",
+            incomplete_tasks=[brief.task_id],
+        )
+
+
 def _research() -> ResearchOutput:
     return ResearchOutput(
         jira_issue_key="OPS-1",
@@ -148,6 +169,48 @@ class TestPool:
         assert result.completed == {}
         assert result.failed == ["TASK-1"]
         assert len(d1.calls) == 2  # original + retry, both on the same worker
+
+    async def test_self_declared_incomplete_output_is_not_a_completion(self):
+        """A salvaged dispatch must not buy 'completed' by admitting failure.
+
+        The forced `final_output` salvage turn asks the model to declare
+        partial work in `incomplete_tasks`; honouring that declaration is
+        what keeps the salvage from turning lost tasks into false successes.
+        """
+        d1 = SelfDeclaredIncompleteDispatcher()
+        pool = _build_pool([d1])  # single worker: retry lands on itself
+        tasks = _tasks("TASK-1")
+
+        result = await pool.run_wave(
+            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert result.completed == {}
+        assert result.failed == ["TASK-1"]
+        assert len(d1.calls) == 2  # it still gets its retry
+
+    async def test_incomplete_tasks_naming_another_task_is_still_a_completion(self):
+        """Only the dispatch's OWN task id disqualifies it."""
+
+        class _OtherTaskIncomplete(SelfDeclaredIncompleteDispatcher):
+            async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+                self.calls.append((brief.task_id, node_id))
+                return DevelopmentOutput(
+                    files_changed=[],
+                    commit_shas=["sha-1"],
+                    summary="done; noted a sibling task is not",
+                    incomplete_tasks=["TASK-99"],
+                )
+
+        d1 = _OtherTaskIncomplete()
+        pool = _build_pool([d1])
+
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+        assert list(result.completed) == ["TASK-1"]
+        assert result.failed == []
 
     async def test_pool_max_truncates(self):
         config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=5)])

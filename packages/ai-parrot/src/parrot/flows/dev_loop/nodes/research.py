@@ -39,6 +39,7 @@ from parrot.flows.dev_flow.complementary_research import (
 )
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.flows.dev_loop.mcp_profiles import derive_mcp_tool_names
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -220,6 +221,19 @@ class ResearchNode(DevLoopNode):
             context, not a new field on the shared ``BugBrief``/
             ``WorkBrief`` model. Never raises — a disabled/degraded/timed-
             out partner simply contributes no extra section.
+        mcp_servers: Optional explicit MCP server configs (same shape as
+            ``ClaudeCodeDispatchProfile.mcp_servers``) forwarded on the
+            ``sdd-research`` dispatch profile — e.g. the wikitoolkit
+            graph-search server and FEAT-485 ``parrot mcp-local
+            <toolkit>`` servers. Required to reach ANY MCP server: the
+            dispatch keeps ``strict_mcp_config=True``, so the headless CLI
+            ignores the filesystem ``.mcp.json``. ``None`` (default)
+            keeps the dispatch profile byte-identical to pre-seam
+            behavior.
+        mcp_tools: Optional explicit ``mcp__...`` allow rules appended to
+            the profile's ``allowed_tools``. ``None`` (default) derives
+            one server-level ``mcp__<name>`` rule per server. Ignored
+            when ``mcp_servers`` is unset.
         name: Node id, default ``"research"``.
     """
 
@@ -237,6 +251,8 @@ class ResearchNode(DevLoopNode):
         graph_memory: Optional[DevLoopGraphMemory] = None,
         wiki_search: Optional[DevLoopWikiSearch] = None,
         coordinator: Optional[ComplementaryResearchCoordinator] = None,
+        mcp_servers: Optional[Dict[str, Any]] = None,
+        mcp_tools: Optional[List[str]] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
@@ -267,6 +283,11 @@ class ResearchNode(DevLoopNode):
         # injection. None (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
         object.__setattr__(self, "_wiki_search", wiki_search)
+        # Explicit MCP access for the sdd-research dispatch (wikitoolkit +
+        # FEAT-485 local toolkit servers). None (default) is a strict
+        # no-op: the dispatch profile stays byte-identical.
+        object.__setattr__(self, "_mcp_servers", mcp_servers)
+        object.__setattr__(self, "_mcp_tools", mcp_tools)
 
     # ------------------------------------------------------------------
     # Execute
@@ -388,21 +409,30 @@ class ResearchNode(DevLoopNode):
         )
 
         # 4. Dispatch the sdd-research subagent.
+        # SlashCommand: the subagent runs /sdd-spec and /sdd-task.
+        # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
+        # for triage, Bash for git worktree plumbing.
+        allowed_tools = [
+            "Read",
+            "Grep",
+            "Glob",
+            "Bash",
+            "Write",
+            "SlashCommand",
+        ]
+        if self._mcp_servers:
+            # strict_mcp_config stays True (profile default): reaching an
+            # MCP server needs BOTH the server config on the profile AND
+            # the matching mcp__... allow rules.
+            allowed_tools.extend(
+                self._mcp_tools if self._mcp_tools is not None else derive_mcp_tool_names(self._mcp_servers)
+            )
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-research",
             permission_mode="acceptEdits",
-            # SlashCommand: the subagent runs /sdd-spec and /sdd-task.
-            # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
-            # for triage, Bash for git worktree plumbing.
-            allowed_tools=[
-                "Read",
-                "Grep",
-                "Glob",
-                "Bash",
-                "Write",
-                "SlashCommand",
-            ],
+            allowed_tools=allowed_tools,
             model="claude-sonnet-4-6",
+            mcp_servers=dict(self._mcp_servers) if self._mcp_servers else None,
         )
         os.makedirs(dispatch_cwd, exist_ok=True)
         # Stash the excerpts on the brief so the subagent gets them.

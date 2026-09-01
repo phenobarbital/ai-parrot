@@ -260,6 +260,18 @@ textarea.input { resize: vertical; }
             <p class="hint" id="kind-hint"></p>
           </div>
 
+          <!-- FEAT-480: resume an interrupted run instead of paying for
+               intake/ideation/planning a second time. -->
+          <div class="field" id="resume-field">
+            <label for="f-resume-run-id">Resume a run — <span class="mono">run_id</span> (optional)</label>
+            <div style="display:flex;gap:8px">
+              <input id="f-resume-run-id" class="input mono" style="flex:1;min-width:0" placeholder="run-3f9a1c02" />
+              <button class="btn" type="button" id="resume-probe-btn">Check</button>
+            </div>
+            <div class="hint hidden" id="resume-probe" style="margin-top:6px"></div>
+            <p class="hint">Blank starts a new run. With a <span class="mono">run_id</span>, the nodes already checkpointed for it (intake, ideation, planner and their worktree) are <strong>restored, not re-dispatched</strong> — so the request below must be the <strong>same brief</strong> the original run used, or the server refuses the resume instead of silently starting over.</p>
+          </div>
+
           <div class="blueprint" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
             <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
             <span class="micro">Ready to dispatch</span>
@@ -449,6 +461,8 @@ const app = {
     review: { primary: { agent: "claude-code", model: "" }, counterModel: "" },
     // FEAT-412: per-run plan-approval gate toggle.
     requirePlanApproval: false,
+    // FEAT-480: blank = fresh run; a run_id = resume that run's checkpoint.
+    resumeRunId: "",
   },
   // HITL panel: the gate_id currently being answered, plus draft answers.
   hitl: { gateId: null, answers: {}, comment: "", busy: false },
@@ -786,6 +800,7 @@ function renderReady() {
         ["jira", f.jiraIssueKey || "none (optional)"],
         ["plan gate", f.requirePlanApproval ? "REQUIRED" : "off"],
         ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["run", f.resumeRunId.trim() ? `resume ${f.resumeRunId.trim()}` : "new run"],
       ]
     : [
         ["intent", app.kind],
@@ -797,6 +812,7 @@ function renderReady() {
         ["judges", `${effectiveJudges().length} · majority`],
         ["plan gate", f.requirePlanApproval ? "REQUIRED" : "off"],
         ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["run", f.resumeRunId.trim() ? `resume ${f.resumeRunId.trim()}` : "new run"],
       ];
   $("ready-rows").innerHTML = rows.map(([k, v]) => `
     <span style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px">
@@ -814,6 +830,22 @@ function renderReady() {
 
 const HITL_KINDS = ["open_questions", "plan_approval", "manual_criterion",
                     "review_escalation", "deployment_approval", "revision_approval"];
+
+/* Signature of the field set currently mounted in #hitl-fields.
+   render() runs on every streamed node event AND once a second while a run
+   is live (the elapsed-timer tick at the bottom of this file). Rewriting
+   #hitl-fields unconditionally replaced the very <textarea> the operator was
+   typing in, so the caret was yanked out roughly once a second and the panel
+   was impossible to answer. The inputs are uncontrolled — drafts already live
+   in app.hitl — so the DOM only has to be rebuilt when the FIELDS change
+   (a different gate, or a different question list), never on a repaint. */
+let hitlFieldsKey = null;
+
+function setHitlFields(key, buildHtml) {
+  if (hitlFieldsKey === key) return;
+  hitlFieldsKey = key;
+  $("hitl-fields").innerHTML = buildHtml();
+}
 
 function pendingGate() {
   const gates = Object.values(app.s.gates || {})
@@ -839,6 +871,7 @@ function renderHitl() {
   if (!gate) {
     section.classList.add("hidden");
     app.hitl.gateId = null;
+    hitlFieldsKey = null;
     return;
   }
 
@@ -863,13 +896,14 @@ function renderHitl() {
   $("hitl-identity").textContent = `as ${localStorage.getItem("devflow-user") || "console-user"}`;
 
   if (isQuestions) {
-    $("hitl-fields").innerHTML = questions.map((q, i) => `
+    setHitlFields(`q:${gate.gate_id}:${questions.join("\u241F")}`, () =>
+      questions.map((q, i) => `
       <div class="field">
         <label for="hq-${i}">${esc(q)}</label>
         <textarea id="hq-${i}" class="input mono" data-hitl-q="${esc(q)}"
           style="min-height:64px;font-size:12.5px;line-height:1.6"
           placeholder="Your answer — leave blank to leave this question open">${esc(app.hitl.answers[q] || "")}</textarea>
-      </div>`).join("");
+      </div>`).join(""));
     $("hitl-submit").textContent = "Submit answers";
     $("hitl-footnote").textContent =
       "Partial answers are fine — anything you leave blank stays '[ ]' in the " +
@@ -878,12 +912,12 @@ function renderHitl() {
   } else {
     // plan_approval and every other kind: approve/reject + a comment, no
     // structured answers.
-    $("hitl-fields").innerHTML = `
+    setHitlFields(`c:${gate.gate_id}`, () => `
       <div class="field">
         <label for="hitl-comment">Comment (optional — recorded on the gate)</label>
         <textarea id="hitl-comment" class="input mono" style="min-height:64px;font-size:12.5px;line-height:1.6"
           placeholder="Looks right — proceed.">${esc(app.hitl.comment)}</textarea>
-      </div>`;
+      </div>`);
     $("hitl-submit").textContent = "Approve";
     $("hitl-footnote").textContent = gate.kind === "plan_approval"
       ? "Approving releases the dev-agent fleet. Rejecting stops the run before any code is written."
@@ -1658,7 +1692,49 @@ function buildPayload() {
   // make it impossible to turn a server-default-on plan gate off for a run
   // (the omitted key silently falls back to that same default).
   payload.require_plan_approval = !!f.requirePlanApproval;
+  // FEAT-480: only sent when the operator asked to resume — an absent
+  // run_id is what makes the server mint a fresh identity.
+  if (f.resumeRunId.trim()) payload.run_id = f.resumeRunId.trim();
   return payload;
+}
+
+/* ── FEAT-480 resume ───────────────────────────────────────────────
+   The probe is deliberately a SEPARATE, read-only call: it answers "did
+   this run's ideation/planner work survive?" before the operator rebuilds
+   the brief, and it never starts anything. The binding verdict is still
+   the server's, issued on dispatch against the actual brief. */
+function describeProbe(data) {
+  if (!data.recovery_enabled) return "✗ This server has checkpoint recovery disabled — no run can be resumed.";
+  if (!data.found) return `✗ ${data.help || "no checkpoint for that run_id"}.`;
+  const nodes = (data.completed_nodes || []).join(", ") || "none yet";
+  const active = data.active ? " — still running on this server" : "";
+  return `✓ checkpoint #${data.checkpoint_id} (${data.status}), completed: ${nodes}${active}. `
+    + `Resume still requires the same brief as the original run.`;
+}
+
+async function probeResume() {
+  const runId = app.form.resumeRunId.trim();
+  const box = $("resume-probe");
+  if (!runId) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.textContent = "checking…";
+  try {
+    const tpl = app.config?.checkpoint_probe_url_template || "/api/flow/{run_id}/checkpoint";
+    const res = await fetch(tpl.replace("{run_id}", encodeURIComponent(runId)));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    box.textContent = describeProbe(data);
+  } catch (err) {
+    box.textContent = `✗ ${err.message}`;
+  }
+}
+
+function resumeBanner(data) {
+  const r = data && data.resume;
+  if (!r) return "";
+  const nodes = (r.completed_nodes || []).join(", ") || "none";
+  return `Resumed run ${data.run_id} from checkpoint #${r.checkpoint_id} — `
+    + `restored nodes: ${nodes}. Those are not being re-dispatched.`;
 }
 
 function showError(msg) {
@@ -1684,32 +1760,17 @@ function applyRequestCollapse() {
    per-run selection that differs from the server's plan does NOT take
    effect. The server already logs that and echoes the EFFECTIVE plan back
    in the run response — this surfaces it to the operator too, instead of
-   letting a changed selector silently do nothing. */
-function planMismatchWarning(submitted, effective) {
-  if (!effective) return "";
-  const seatDiffs = [];
-  const fmtPool = (rows) => (rows || [])
-    .map((r) => `${r.agent}:${r.model || "default"}${r.count > 1 ? `x${r.count}` : ""}`)
-    .join(", ") || "single-agent";
+   letting a changed selector silently do nothing.
 
-  const submittedPool = fmtPool(submitted.dev_agents);
-  const effectivePool = fmtPool(effective.dev_agents);
-  if (submittedPool !== effectivePool) {
-    seatDiffs.push(`dev pool (you chose ${submittedPool} — running ${effectivePool})`);
-  }
-  if (submitted.research_primary && submitted.research_primary !== effective.research_primary) {
-    seatDiffs.push(`research primary (you chose ${submitted.research_primary} — running ${effective.research_primary})`);
-  }
-  const subCounter = submitted.review?.counter_model;
-  if (subCounter && subCounter !== effective.review?.counter_model) {
-    seatDiffs.push(`counter-reviewer (you chose ${subCounter} — running ${effective.review?.counter_model})`);
-  }
-  const subPrimary = submitted.review?.primary?.agent;
-  if (subPrimary && subPrimary !== effective.review?.primary?.agent) {
-    seatDiffs.push(`review primary (you chose ${subPrimary} — running ${effective.review?.primary?.agent})`);
-  }
-  if (!seatDiffs.length) return "";
-  return `Model selection not applied to this run: ${seatDiffs.join("; ")}. `
+   The diff itself is the SERVER's (`model_plan_ignored`), not a second
+   one computed here: the first version of this function compared four
+   fields, so a difference in the research partner, the review primary's
+   model or a seat's count silently produced no banner at all — the same
+   blind spot the server-side warning had. */
+function planMismatchWarning(response) {
+  const ignored = (response && response.model_plan_ignored) || [];
+  if (!ignored.length) return "";
+  return `Model selection not applied to this run: ${ignored.join("; ")}. `
     + `The per-seat plan is fixed when the server builds its flow, so restart `
     + `the console with the DEV_FLOW_* env keys to change these seats.`;
 }
@@ -1733,6 +1794,27 @@ function showPlanWarning(message) {
   console.warn(message);
 }
 
+/* Same survival problem as showPlanWarning(): the request form is hidden
+   the moment a run starts, so the "this run was resumed" note has to live
+   on the execution surface instead. */
+function showResumeNote(message) {
+  let box = $("resume-note");
+  if (!message) {
+    if (box) box.classList.add("hidden");
+    return;
+  }
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "resume-note";
+    box.className = "blueprint";
+    box.style.cssText = "padding:10px 14px;margin-bottom:12px;font-size:12.5px";
+    const host = $("exec-section");
+    host.insertBefore(box, host.firstChild);
+  }
+  box.textContent = `↺ ${message}`;
+  box.classList.remove("hidden");
+}
+
 async function submit(ev) {
   ev.preventDefault();
   $("form-err").classList.add("hidden");
@@ -1751,7 +1833,9 @@ async function submit(ev) {
     // NOT via #form-err: that lives inside #request-form, which
     // applyRequestCollapse() hides the moment a run starts — the warning
     // has to survive on the execution surface instead.
-    showPlanWarning(planMismatchWarning(payload, data.model_plan));
+    showPlanWarning(planMismatchWarning(data));
+    // FEAT-480: name the work this run is NOT redoing (empty for a fresh run).
+    showResumeNote(resumeBanner(data));
 
     // Reset every per-run projection before the streams start.
     app.runId = data.run_id;
@@ -1804,6 +1888,7 @@ function restart() {
   app.telemetry = { input: 0, output: 0, cost: 0, turns: 0, reported: 0 };
   app.requestOpen = true;
   applyRequestCollapse();
+  showResumeNote("");
   $("exec-section").classList.add("hidden");
   $("summary-section").classList.add("hidden");
   $("report-box").classList.add("hidden");
@@ -1978,9 +2063,12 @@ document.addEventListener("input", (e) => {
   }
   const map = {
     "f-description": "description", "f-title": "title", "f-context": "context",
-    "f-document-path": "documentPath",
+    "f-document-path": "documentPath", "f-resume-run-id": "resumeRunId",
   };
   if (map[t.id]) { app.form[map[t.id]] = t.value; renderReady(); }
+  // A stale "✓ resumable" verdict under a run_id the operator has since
+  // edited would be worse than none — drop it until they check again.
+  if (t.id === "f-resume-run-id") $("resume-probe").classList.add("hidden");
   // HITL draft answers / comment — kept in state so a re-render (e.g. a
   // streamed node event) never wipes what the operator is typing.
   if (t.dataset.hitlQ != null) { app.hitl.answers[t.dataset.hitlQ] = t.value; return; }
@@ -1988,6 +2076,7 @@ document.addEventListener("input", (e) => {
 });
 
 $("request-form").addEventListener("submit", submit);
+$("resume-probe-btn").addEventListener("click", probeResume);
 
 /* ═══════════════════════════════════════════════════════════════════
    Boot
@@ -2010,6 +2099,12 @@ $("request-form").addEventListener("submit", submit);
       defaults: { ideation_max_rounds: 2, gate_ttl_questions: 86400 },
       gate_resolve_url_template: "/api/flow/{run_id}/gates/{gate_id}/resolve",
     };
+  }
+  // FEAT-480: a server built without checkpoint recovery would silently
+  // start a FRESH run for a pasted run_id — hide the control rather than
+  // offer one that cannot do what it says.
+  if (app.config.defaults?.recovery_enabled === false) {
+    $("resume-field").classList.add("hidden");
   }
   app.form.skipQa = !!app.config.defaults?.skip_qa;
   app.form.requirePlanApproval = !!app.config.defaults?.require_plan_approval;

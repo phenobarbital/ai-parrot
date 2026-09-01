@@ -232,6 +232,204 @@ async def test_invalid_final_tool_payload_raises_validation_error(
 
 
 @pytest.mark.asyncio
+async def test_exhausted_turns_are_salvaged_by_forcing_final_output(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """A model that did the work but never closed must not lose the task.
+
+    The observed failure: every seat of an 8-task run burned its turn budget
+    exploring, and each dispatch was discarded whole even though it had
+    patched and committed.
+    """
+    (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    client = _FakeClient(
+        [
+            # Two turns of real work, never calling final_output...
+            _Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})]),
+            _Message(tool_calls=[_ToolCall("c2", "read_file", {"path": "app.py"})]),
+            # ...then the forced salvage round closes the books.
+            _Message(
+                tool_calls=[
+                    _ToolCall(
+                        "c3",
+                        "final_output",
+                        {
+                            "files_changed": ["app.py"],
+                            "commit_shas": ["abc1234"],
+                            "summary": "patched and committed before running out of turns",
+                        },
+                    )
+                ]
+            ),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    result = await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=2),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    assert result.commit_shas == ["abc1234"]
+    # The salvage round forces the tool choice; the loop rounds do not.
+    assert client.calls[0]["tool_choice"] == "auto"
+    assert client.calls[-1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "final_output"},
+    }
+    # The nudge is appended without mutating the loop's own history.
+    assert client.calls[-1]["messages"][-1]["role"] == "user"
+    assert "turn budget is exhausted" in client.calls[-1]["messages"][-1]["content"].lower()
+
+    events = _published_events(dispatcher)
+    completed = next(e for e in events if e["kind"] == "dispatch.completed")
+    assert completed["payload"]["salvaged"] is True
+    assert completed["payload"]["max_turns"] == 2
+
+
+@pytest.mark.asyncio
+async def test_salvage_nudge_offers_the_raw_json_fallback(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """Forcing `tool_choice` is a request, not a guarantee.
+
+    A Bedrock Mantle seat answered a forced `final_output` with prose and
+    the salvage died on "Could not locate a JSON object in the assistant
+    output" — the model had the answer and no accepted way to give it. The
+    nudge must name the raw-JSON escape and the exact field names.
+    """
+    (_patch_worktree_base / "app.py").write_text("x\n", encoding="utf-8")
+    client = _FakeClient(
+        [
+            _Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})]),
+            _Message(content=json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"})),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=1),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    nudge = client.calls[-1]["messages"][-1]["content"]
+    assert "cannot call a tool" in nudge
+    assert "ONLY a raw JSON object" in nudge
+    assert "DevelopmentOutput" in nudge
+    # The exact field names, not a hand-written list that can drift.
+    for field in ("files_changed", "commit_shas", "summary", "incomplete_tasks"):
+        assert field in nudge
+    # ...and it still tells the model to be honest about partial work.
+    assert "do not claim work you did" in nudge
+
+
+@pytest.mark.asyncio
+async def test_salvage_accepts_plain_text_answer(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """Some backends answer a forced tool choice with text instead."""
+    (_patch_worktree_base / "app.py").write_text("x\n", encoding="utf-8")
+    client = _FakeClient(
+        [
+            _Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})]),
+            _Message(content=json.dumps({"files_changed": ["app.py"], "commit_shas": [], "summary": "done"})),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    result = await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=1),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    assert result.summary == "done"
+
+
+@pytest.mark.asyncio
+async def test_failed_salvage_still_reports_max_turns(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """A salvage that recovers nothing must not mask the real failure."""
+    (_patch_worktree_base / "app.py").write_text("x\n", encoding="utf-8")
+    client = _FakeClient(
+        [
+            _Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})]),
+            _Message(content="I still need to check a few more files."),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    with pytest.raises(DispatchExecutionError) as excinfo:
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(max_turns=1),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development.w1",
+            cwd=str(_patch_worktree_base),
+        )
+
+    message = str(excinfo.value)
+    assert "exceeded max_turns=1" in message
+    assert "final_output" in message
+    # The reason travels on the ordinary failure event, not a new kind.
+    failed = next(e for e in _published_events(dispatcher) if e["kind"] == "dispatch.failed")
+    assert "final_output" in failed["payload"]["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_provider_rejecting_forced_tool_choice_is_not_a_new_error(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """A backend without forced tool choice degrades to the max_turns error."""
+    (_patch_worktree_base / "app.py").write_text("x\n", encoding="utf-8")
+
+    class _RejectsForcedChoice(_FakeClient):
+        async def _chat_completion(self, **kwargs: Any) -> _Response:
+            if kwargs.get("tool_choice") != "auto":
+                raise RuntimeError("tool_choice not supported by this endpoint")
+            return await super()._chat_completion(**kwargs)
+
+    client = _RejectsForcedChoice([_Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})])])
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    with pytest.raises(DispatchExecutionError) as excinfo:
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(max_turns=1),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development.w1",
+            cwd=str(_patch_worktree_base),
+        )
+
+    assert "exceeded max_turns=1" in str(excinfo.value)
+    assert "tool_choice not supported" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
 async def test_cwd_outside_worktree_base_rejected(monkeypatch, brief):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
 

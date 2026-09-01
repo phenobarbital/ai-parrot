@@ -17,7 +17,7 @@ import logging
 import os
 import shlex
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -355,7 +355,34 @@ class LLMCodeDispatcher:
                             }
                         )
 
-                raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
+                # The turn budget is spent, but the dispatch is not
+                # necessarily wasted: the common failure of a chat model
+                # driven through this loop is one that patched, ran the
+                # tests and committed, then kept exploring instead of
+                # calling `final_output`. Spend ONE more round with the
+                # tool choice FORCED to `final_output` to close the books
+                # on the work already done, rather than discarding a whole
+                # task (and, in pool mode, burning the single retry).
+                salvaged, salvage_usage, salvage_error = await self._salvage_final_output(
+                    client=client,
+                    model=model,
+                    messages=messages,
+                    args=args,
+                    output_model=output_model,
+                    profile=profile,
+                    run_id=run_id,
+                    node_id=node_id,
+                    stream_key=stream_key,
+                    tc=tc,
+                )
+                if salvage_usage is not None:
+                    accumulated = salvage_usage if accumulated is None else accumulated + salvage_usage
+                if salvaged is not None:
+                    return salvaged
+                raise DispatchExecutionError(
+                    f"LLM code dispatch exceeded max_turns={profile.max_turns}; "
+                    f"the forced final_output turn did not recover a result ({salvage_error})"
+                )
             finally:
                 await self._safe_emit_after_call(
                     client,
@@ -365,6 +392,176 @@ class LLMCodeDispatcher:
                     input_tokens=accumulated.prompt_tokens if accumulated else None,
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
+
+    def _salvage_nudge(self, output_model: Type[BaseModel]) -> str:
+        """Build the final user turn sent when the budget is exhausted.
+
+        Covers BOTH ways a backend can answer, in one round. Forcing
+        ``tool_choice`` is a request, not a guarantee: a Bedrock Mantle
+        seat (zai.glm-5) answered a forced ``final_output`` with prose,
+        and the salvage failed with "Could not locate a JSON object in the
+        assistant output" — the model had the answer and no accepted way
+        to give it. Naming the raw-JSON fallback costs nothing (the caller
+        already tries ``_validate_text_output`` on the text) and turns
+        that dead end into a recovery.
+
+        Deliberately instructs the model to be HONEST about partial work:
+        a salvaged output naming its own task in ``incomplete_tasks`` is
+        treated as a failure by ``DevAgentPool._dispatch_one``, so claiming
+        completion buys nothing.
+
+        Args:
+            output_model: The structured output model to describe.
+
+        Returns:
+            The nudge text.
+        """
+        fields_block, required_block = self._output_field_blocks(output_model)
+        return (
+            "Your turn budget is exhausted. Stop working now: do not read, patch "
+            "or run anything else. Report the result of the work you have ALREADY "
+            "completed — the files you changed and the commits you actually made.\n\n"
+            "Call `final_output`. If you cannot call a tool on this turn, reply "
+            f"with ONLY a raw JSON object matching the `{output_model.__name__}` "
+            "schema — no prose, no explanation, no markdown fences around it. "
+            "Use these EXACT field names:\n"
+            f"{fields_block}\n\n"
+            f"Required fields: {required_block}.\n\n"
+            "If the task is not fully finished, say so plainly in `summary` and "
+            "list its TASK id in `incomplete_tasks`; do not claim work you did "
+            "not do."
+        )
+
+    async def _salvage_final_output(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        args: Dict[str, Any],
+        output_model: Type[T],
+        profile: LLMCodeDispatchProfile,
+        run_id: str,
+        node_id: str,
+        stream_key: str,
+        tc: Any,
+    ) -> Tuple[Optional[T], Optional[CompletionUsage], str]:
+        """Spend one extra round with ``tool_choice`` forced to ``final_output``.
+
+        Called only once, after the turn loop is exhausted. Never raises:
+        a provider that rejects a forced tool choice, a malformed payload
+        or an unparsable answer all come back as a reason string, so the
+        caller still reports the ``max_turns`` failure — with the salvage
+        outcome attached — instead of masking it with a second error.
+
+        Args:
+            client: The live SDK client the loop has been using.
+            model: Resolved model id.
+            messages: The conversation so far (copied, never mutated).
+            args: The loop's completion args (copied, never mutated).
+            output_model: Structured output model to validate against.
+            profile: The dispatch profile (read for ``max_turns`` only).
+            run_id: Flow run id, for the published events.
+            node_id: Seat id, for the published events.
+            stream_key: Redis stream the dispatch events go to.
+            tc: Trace context from ``_safe_emit_before_call``.
+
+        Returns:
+            ``(result, usage, error)``. ``result`` is ``None`` when nothing
+            could be recovered, in which case ``error`` says why; ``usage``
+            is whatever the round reported, so the caller can still bill it.
+        """
+        salvage_messages = [*messages, {"role": "user", "content": self._salvage_nudge(output_model)}]
+        salvage_args = dict(args)
+        salvage_args["tool_choice"] = {
+            "type": "function",
+            "function": {"name": "final_output"},
+        }
+
+        round_t0 = time.perf_counter()
+        try:
+            response = await self._chat_completion(
+                client=client,
+                model=model,
+                messages=salvage_messages,
+                args=salvage_args,
+            )
+        except Exception as exc:  # noqa: BLE001 - a failed salvage is not a new failure mode
+            self.logger.warning(
+                "Forced final_output turn failed for %s after max_turns=%d: %s",
+                node_id,
+                profile.max_turns,
+                exc,
+            )
+            return None, None, f"{type(exc).__name__}: {exc}"
+        round_duration_ms = (time.perf_counter() - round_t0) * 1000
+
+        message = self._response_message(response)
+        content = self._message_content(message)
+        tool_calls = self._message_tool_calls(message)
+        usage, raw_usage = self._extract_usage(response)
+        self._safe_emit_round_event(
+            client,
+            tc,
+            model=model,
+            round_number=profile.max_turns + 1,
+            usage=usage,
+            raw_usage=raw_usage,
+            tool_calls=[self._tool_call_name(call) for call in tool_calls],
+            duration_ms=round_duration_ms,
+        )
+
+        result: Optional[T] = None
+        error = "model returned no final_output payload"
+        for call in tool_calls:
+            if self._tool_call_name(call) != "final_output":
+                continue
+            try:
+                result = self._validate_final_tool(self._tool_call_arguments(call), output_model)
+            except DispatchOutputValidationError as exc:
+                error = f"final_output failed validation: {exc}"
+            except (TypeError, ValueError) as exc:
+                error = f"final_output arguments were unreadable: {exc}"
+            break
+        if result is None and content:
+            # Some backends answer a forced tool choice with plain text.
+            try:
+                result = self._validate_text_output(content, output_model)
+            except DispatchOutputValidationError as exc:
+                error = f"assistant text was not a valid {output_model.__name__}: {exc}"
+
+        if result is None:
+            # No `dispatch.salvage_failed` kind: the caller raises, and
+            # `dispatch()`'s handler already publishes `dispatch.failed`
+            # carrying this reason in its message. One event, one story.
+            return None, usage, error
+
+        self.logger.warning(
+            "Recovered %s from %s by forcing final_output after max_turns=%d — "
+            "the task ran out of turns before closing on its own; treat its "
+            "output as unverified.",
+            output_model.__name__,
+            node_id,
+            profile.max_turns,
+        )
+        # Marked on the ordinary completion event rather than as a new
+        # `DispatchEvent.kind`: a new kind would have to be threaded through
+        # the session-state projection, the CLI renderer and both consoles
+        # to earn its keep, and `salvaged` on the payload is already visible
+        # in the run bundle.
+        await self._publish_event(
+            stream_key,
+            kind="dispatch.completed",
+            run_id=run_id,
+            node_id=node_id,
+            payload={
+                "output_model": output_model.__name__,
+                "salvaged": True,
+                "max_turns": profile.max_turns,
+                "incomplete_tasks": list(getattr(result, "incomplete_tasks", []) or []),
+            },
+        )
+        return result, usage, ""
 
     def _create_client(self, profile: LLMCodeDispatchProfile, *, run_id: Optional[str] = None) -> Any:
         model_args = {
@@ -1038,12 +1235,20 @@ class LLMCodeDispatcher:
             },
         }
 
-    def _build_prompt(
-        self,
-        brief: BaseModel,
-        output_model: Type[BaseModel],
-    ) -> str:
-        brief_json = brief.model_dump_json()
+    @staticmethod
+    def _output_field_blocks(output_model: Type[BaseModel]) -> Tuple[str, str]:
+        """Render an output model's fields for a prompt.
+
+        Shared by the opening prompt and the salvage nudge so the two can
+        never describe the same model differently.
+
+        Args:
+            output_model: The structured output model.
+
+        Returns:
+            ``(fields_block, required_block)`` — an indented per-field
+            listing, and a comma-separated list of the required names.
+        """
         schema = output_model.model_json_schema()
         properties = schema.get("properties", {}) or {}
         required = schema.get("required", []) or []
@@ -1056,8 +1261,18 @@ class LLMCodeDispatcher:
             if fdesc:
                 line += f" — {fdesc}"
             field_lines.append(line)
-        fields_block = "\n".join(field_lines) or "  (no fields)"
-        required_block = ", ".join(required) if required else "(none)"
+        return (
+            "\n".join(field_lines) or "  (no fields)",
+            ", ".join(required) if required else "(none)",
+        )
+
+    def _build_prompt(
+        self,
+        brief: BaseModel,
+        output_model: Type[BaseModel],
+    ) -> str:
+        brief_json = brief.model_dump_json()
+        fields_block, required_block = self._output_field_blocks(output_model)
         return (
             f"Input brief:\n{brief_json}\n\n"
             f"Use tools to inspect and edit files as needed. When the work is "

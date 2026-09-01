@@ -27,6 +27,22 @@ import pytest
 # Worktree root — the directory that contains THIS file.
 _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
+
+# ---------------------------------------------------------------------------
+# Leaked ``MagicMock/`` directories — a test owns every artifact it creates
+# ---------------------------------------------------------------------------
+# A MagicMock reaching a filesystem path materialises a ``MagicMock/<mock
+# name>/<id>`` tree under the CWD (``MagicMock.__fspath__()``).  Importing
+# these two names registers the autouse cleanup fixture and the session-level
+# sweep that delete it; see mock_fspath_guard.py for the full rationale.
+if _WORKTREE_ROOT not in sys.path:
+    sys.path.insert(0, _WORKTREE_ROOT)
+
+from mock_fspath_guard import (
+    _cleanup_mock_fspath_artifacts,  # noqa: F401 - registers the fixture
+    pytest_sessionfinish,  # noqa: F401 - registers the session hook
+)
+
 # Prepend the worktree package src directories so they shadow the main-repo
 # editable-install .pth entries.
 _EXTRA_PATHS = [

@@ -179,6 +179,8 @@ def build_dev_flow_node_factories(
     ideation_max_rounds: int | None = None,
     model_plan: DevFlowModelPlan | None = None,
     research_coordinator: ComplementaryResearchCoordinator | None = None,
+    research_mcp_servers: dict[str, Any] | None = None,
+    research_mcp_tools: list[str] | None = None,
 ) -> dict[str, NodeFactory]:
     """Return the ``{node type: factory}`` map for the dev-flow graph.
 
@@ -231,6 +233,16 @@ def build_dev_flow_node_factories(
             explicit value here still wins over ``model_plan``'s
             ``research_partner`` group; see
             :func:`_resolve_research_coordinator` for the full precedence.
+        research_mcp_servers: Optional EXTRA MCP server configs for
+            :class:`IdeationNode`'s dispatch (e.g. the FEAT-485 ``parrot
+            mcp-local <toolkit>`` servers), merged under the node's
+            built-in wikitoolkit entry. ``None`` (default) keeps the
+            ideation dispatch byte-identical. Mirrors
+            ``dev_loop.factories``' kwarg of the same name for
+            ``ResearchNode``.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those extra servers; ``None`` derives server-level
+            ``mcp__<name>`` rules.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -295,6 +307,8 @@ def build_dev_flow_node_factories(
                 # conf.DEV_FLOW_IDEATION_MODEL itself.
                 model=resolved_plan.research_primary if resolved_plan else None,
                 coordinator=coordinator,
+                extra_mcp_servers=research_mcp_servers,
+                extra_mcp_tools=research_mcp_tools,
                 name=nd.id,
             ),
             deps,

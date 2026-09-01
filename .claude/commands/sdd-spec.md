@@ -282,13 +282,37 @@ This step prevents AI hallucinations during implementation. You MUST:
      worktree already has `main` checked out. Skipping reservation removes
      the problem rather than solving it.
 
-     For `TYPE == "feature"`, reserve via the ledger allocator (FEAT-387),
-     never hand-compute by checking existing specs and incrementing the
-     last one:
+     For `TYPE == "feature"`, **first check whether this slug already owns
+     an ID**. A slug has ONE feature ID for its lifetime: re-running
+     `/sdd-spec` over an existing spec must REUSE that number, never
+     reserve a second one. A second reservation forks the feature's
+     identity — the spec and the task index move to the new number while
+     the task files, the branch and the worktree keep the old one, and
+     `DevelopmentNode._find_feature_slug` (which matches strictly on the
+     index header's `feature_id` **inside the worktree**) then finds no
+     index at all and silently degrades a whole multi-agent pool to a
+     single agent. This is not hypothetical: it happened on 2026-09-01 to
+     `formfield-content-type` (FEAT-488 → FEAT-489), and cost a full run.
+
+     ```bash
+     EXISTING=$(python -c "
+     from pathlib import Path
+     from scripts.sdd.reserve_ids import existing_feature_id
+     found = existing_feature_id(Path('.'), '<feature-name>')
+     print(found[0] if found else '')")
+     ```
+
+     If `$EXISTING` is non-empty, **use it verbatim as this spec's Feature
+     ID and skip the reservation entirely** — say so in the §7 output
+     ("reusing FEAT-<NNN>, already owned by this slug"). Only when it is
+     empty do you reserve:
      ```bash
      FEAT_ID=$(python -m scripts.sdd.reserve_ids --kind feature --count 1 \
        --base-branch "$BASE_BRANCH" --label <feature-name>)
      ```
+     `reserve_ids.py` enforces the same rule itself and exits non-zero
+     naming the owned ID, so forgetting this check is a hard failure, not
+     a silently burned number.
      On success this prints exactly one `FEAT-<NNN>` line; use it verbatim
      as this spec's Feature ID. `reserve_ids.py` pushes its own ledger-only
      commit to `origin/$BASE_BRANCH` as part of this call (retrying

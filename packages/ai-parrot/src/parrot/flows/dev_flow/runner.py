@@ -49,6 +49,27 @@ class DevFlowRunner(DevLoopRunner):
         )
     """
 
+    #: Own checkpoint namespace — ``dev-flow/<run_id>``, disjoint from the
+    #: base class's ``dev-loop/<run_id>`` (FEAT-480 spec §2 step 1).
+    CHECKPOINT_WORKFLOW = "dev-flow"
+
+    def _recovery_supported(self, brief: Any) -> bool:
+        """Both dev-flow brief kinds run the recovery path.
+
+        The base class excludes ``FeatureBrief`` because dev-loop routes it
+        to ``_run_feature()``, which never reaches the coordinator. dev-flow
+        has ONE topology: :meth:`run` serves a ``FeatureBrief`` itself and
+        checkpoints it exactly like a ``DevRequestBrief``.
+
+        Args:
+            brief: The brief a caller intends to run.
+
+        Returns:
+            ``True`` for a dev-flow brief kind, ``False`` otherwise (a
+            bug-mode ``WorkBrief`` this topology cannot serve at all).
+        """
+        return isinstance(brief, (DevRequestBrief, FeatureBrief))
+
     # Deliberate Liskov narrowing: the base accepts ``WorkBrief |
     # FeatureBrief``, but the dev-flow graph cannot serve a bug-mode
     # ``WorkBrief`` (there is no bug_intake/research node in it). Narrowing the
@@ -141,7 +162,7 @@ class DevFlowRunner(DevLoopRunner):
         flow = self.flow
         if recovery_enabled:
             flow, mode = await self._checkpoint_coordinator.prepare(
-                workflow="dev-flow",
+                workflow=self.CHECKPOINT_WORKFLOW,
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
