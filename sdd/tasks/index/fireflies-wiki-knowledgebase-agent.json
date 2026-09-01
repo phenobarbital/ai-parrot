@@ -294,7 +294,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -306,8 +306,8 @@
       "parallelism_notes": "Separate read-only workflow files; archive also called by the orchestrator.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2673-health-lint-archive-graph-workflows.md"
+      "completed_at": "2026-09-01T04:42:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2673-health-lint-archive-graph-workflows.md"
     },
     {
       "id": "TASK-2674",
