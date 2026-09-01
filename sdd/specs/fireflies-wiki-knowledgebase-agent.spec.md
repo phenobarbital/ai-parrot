@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-481
 **Date**: 2026-08-31
 **Author**: Arturo Martinez
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 **Input**: `sdd/proposals/fireflies-wiki-knowledgebase-agent.brainstorm.md` (Recommended Option B; all open questions resolved)
