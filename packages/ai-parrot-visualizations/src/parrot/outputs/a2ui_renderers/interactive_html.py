@@ -78,6 +78,13 @@ from parrot.outputs.a2ui.renderers import (
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
+from ._semantics import (
+    is_kpi_row,
+    kpi_unit_html,
+    semantic_card_class,
+    semantic_text_class,
+    trend_attr_html,
+)
 from ._shell import document_shell
 
 logger = logging.getLogger(__name__)
@@ -315,14 +322,17 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         data_model_json = _safe_json(envelope.data_model)
         chart_js = _CHART_JS_SOURCE
-        style = DesignSystem.stylesheet(self.theme, self.layout)
+        theme, layout = DesignSystem.resolve(
+            envelope, theme_default=self.theme, layout_default=self.layout
+        )
+        style = DesignSystem.stylesheet(theme, layout)
 
         document = document_shell(
             title=envelope.surface_id,
             style=style,
             body="".join(body_parts),
-            theme=self.theme,
-            layout=self.layout,
+            theme=theme,
+            layout=layout,
             scripts=(
                 f'<script type="application/json" id="report-data">{data_model_json}</script>',
                 f"<script>{chart_js}</script>",
@@ -469,7 +479,12 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
         cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
-        return f'<p class="{cls}">{_esc(props.get("text"))}</p>'
+        semantic_cls = semantic_text_class(node)
+        if semantic_cls:
+            cls = f"{cls} {semantic_cls}"
+        extra = kpi_unit_html(node) if role == "value" else ""
+        attrs = trend_attr_html(node) if role == "delta" else ""
+        return f'<p class="{cls}"{attrs}>{_esc(props.get("text"))}{extra}</p>'
 
     def _render_prim_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -503,7 +518,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         return "".join(parts)
 
     def _render_prim_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
-        return f'<div class="a2ui-row">{self._render_children(node, degradations)}</div>'
+        cls = "a2ui-row kpi-grid" if is_kpi_row(node) else "a2ui-row"
+        return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
 
     def _render_prim_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         return f'<div class="a2ui-col">{self._render_children(node, degradations)}</div>'
@@ -516,7 +532,11 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
     def _render_prim_Card(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         inner = self._render_basic(node.child, degradations) if node.child is not None else ""
-        return f'<div class="a2ui-card">{inner}</div>'
+        cls = "a2ui-card"
+        variant_cls = semantic_card_class(node)
+        if variant_cls:
+            cls = f"{cls} {variant_cls}"
+        return f'<div class="{cls}">{inner}</div>'
 
     def _render_prim_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         """A ``Tabs`` primitive -> a ``[data-tabs]`` nav + ``[data-tabs-panes]``

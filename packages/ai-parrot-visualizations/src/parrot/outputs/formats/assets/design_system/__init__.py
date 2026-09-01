@@ -20,9 +20,12 @@ changes at runtime.
 """
 import logging
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from parrot.models.infographic import ThemeConfig, theme_registry
+
+if TYPE_CHECKING:
+    from parrot.outputs.a2ui.models import CreateSurface
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +119,101 @@ class DesignSystem:
         )
         cls._cache[cache_key] = sheet
         return sheet
+
+    @classmethod
+    def resolve(
+        cls,
+        envelope: "CreateSurface",
+        *,
+        theme_default: "str | None" = None,
+        layout_default: "str | None" = None,
+    ) -> tuple[str, str]:
+        """Resolve the effective ``(theme, layout)`` pair for an envelope.
+
+        Precedence, highest first:
+
+        1. ``envelope.metadata.extensions["parrot_theme"]`` /
+           ``["parrot_layout"]``.
+        2. The top-level ``Infographic`` component's ``theme`` prop
+           (theme axis only — this precedence level has no layout
+           equivalent), when the envelope's top-level component IS an
+           ``Infographic``.
+        3. ``theme_default`` / ``layout_default`` — the renderer's own
+           constructor kwargs.
+        4. :attr:`DEFAULT_THEME` / :attr:`DEFAULT_LAYOUT`.
+
+        Args:
+            envelope: The (not-yet-lowered) ``createSurface`` envelope —
+                lowering an ``Infographic`` discards its ``theme`` prop, so
+                this must be called on the original envelope.
+            theme_default: The renderer's own configured theme.
+            layout_default: The renderer's own configured layout.
+
+        Returns:
+            A ``(theme_name, layout_name)`` pair. An unknown value at ANY
+            precedence level is logged as a warning and treated as absent,
+            falling through to the next level — this method never raises.
+        """
+        theme = (
+            cls._valid_theme_name(cls._extension_value(envelope, "parrot_theme"))
+            or cls._valid_theme_name(cls._infographic_theme(envelope))
+            or cls._valid_theme_name(theme_default)
+            or cls.DEFAULT_THEME
+        )
+        layout = (
+            cls._valid_layout_name(cls._extension_value(envelope, "parrot_layout"))
+            or cls._valid_layout_name(layout_default)
+            or cls.DEFAULT_LAYOUT
+        )
+        return theme, layout
+
+    @staticmethod
+    def _extension_value(envelope: "CreateSurface", key: str) -> str | None:
+        """A string extension value off ``envelope.metadata.extensions``, if present."""
+        metadata = getattr(envelope, "metadata", None)
+        if metadata is None or metadata.extensions is None:
+            return None
+        value = metadata.extensions.root.get(key)
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def _infographic_theme(envelope: "CreateSurface") -> str | None:
+        """The top-level ``Infographic`` component's ``theme`` prop, if any.
+
+        Only consulted when the envelope's top-level component IS an
+        ``Infographic`` — this is a presentation hint on that one
+        composite, not a generic envelope-wide default.
+        """
+        for comp in envelope.components:
+            if comp.component == "Infographic":
+                props = comp.model_extra or {}
+                value = props.get("theme")
+                return value if isinstance(value, str) else None
+        return None
+
+    @classmethod
+    def _valid_theme_name(cls, name: str | None) -> str | None:
+        """``name`` if it resolves in ``theme_registry``, else ``None`` (warns)."""
+        if name is None:
+            return None
+        try:
+            theme_registry.get(name)
+        except KeyError:
+            logger.warning("Unknown design-system theme %r in resolve(); ignoring.", name)
+            return None
+        return name
+
+    @classmethod
+    def _valid_layout_name(cls, name: str | None) -> str | None:
+        """``name`` if it is a known, available layout, else ``None`` (warns)."""
+        if name is None:
+            return None
+        if name not in cls.LAYOUTS or _LAYOUT_CSS.get(name) is None:
+            logger.warning(
+                "Unknown or unavailable design-system layout %r in resolve(); ignoring.", name
+            )
+            return None
+        return name
 
     @classmethod
     def _resolve_theme(cls, theme: "str | ThemeConfig | None") -> tuple[ThemeConfig, str]:
