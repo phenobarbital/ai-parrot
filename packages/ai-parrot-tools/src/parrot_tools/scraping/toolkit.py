@@ -4,6 +4,7 @@ WebScrapingToolkit — AbstractToolkit-based entry point for scraping.
 Each public async method is automatically exposed as an individual tool
 for agents and chatbots via ``AbstractToolkit``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -128,16 +129,11 @@ def _score_extraction(result: Any) -> ExtractionScore:
 
         if isinstance(value, dict):
             non_empty = sum(
-                1 for v in value.values()
-                if v is not None and (
-                    not isinstance(v, str) or v.strip()
-                ) and v != []
+                1 for v in value.values() if v is not None and (not isinstance(v, str) or v.strip()) and v != []
             )
             ratio = non_empty / max(1, len(value))
             if ratio < 0.6:
-                reasons.append(
-                    f"{name!r}: single dict, {ratio:.0%} fields populated"
-                )
+                reasons.append(f"{name!r}: single dict, {ratio:.0%} fields populated")
             per_key_scores.append(ratio)
             continue
 
@@ -157,8 +153,7 @@ def _score_extraction(result: Any) -> ExtractionScore:
         reasons.append(
             f"{len(step_errors)} step error(s): "
             + "; ".join(
-                f"step {e.get('step_index')} ({e.get('action')}): "
-                f"{str(e.get('error'))[:80]}"
+                f"step {e.get('step_index')} ({e.get('action')}): " f"{str(e.get('error'))[:80]}"
                 for e in step_errors[:3]
             )
         )
@@ -185,18 +180,14 @@ def _format_extraction_summary(result: Any) -> str:
             lines.append(f"- {name}: {len(value)} row(s)")
             for i, row in enumerate(value[:2]):
                 if isinstance(row, dict):
-                    fields = ", ".join(
-                        f"{k}={_short(v)}" for k, v in list(row.items())[:6]
-                    )
+                    fields = ", ".join(f"{k}={_short(v)}" for k, v in list(row.items())[:6])
                     lines.append(f"    row[{i}]: {fields}")
                 else:
                     lines.append(f"    row[{i}]: {_short(row)}")
             if len(value) > 2:
                 lines.append(f"    ... ({len(value) - 2} more rows)")
         elif isinstance(value, dict):
-            fields = ", ".join(
-                f"{k}={_short(v)}" for k, v in list(value.items())[:6]
-            )
+            fields = ", ".join(f"{k}={_short(v)}" for k, v in list(value.items())[:6])
             lines.append(f"- {name}: {{ {fields} }}")
         else:
             lines.append(f"- {name}: {_short(value)}")
@@ -260,10 +251,7 @@ def _has_non_empty_values(extracted: Dict[str, Any]) -> bool:
                     return True
             continue
         if isinstance(value, dict):
-            if any(
-                (isinstance(v, str) and v.strip()) or v not in (None, "", [])
-                for v in value.values()
-            ):
+            if any((isinstance(v, str) and v.strip()) or v not in (None, "", []) for v in value.values()):
                 return True
             continue
         # Scalars (int, bool, etc.)
@@ -297,12 +285,12 @@ class WebScrapingToolkit(AbstractToolkit):
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
+    llm_dependent_tools: frozenset = frozenset({"plan_create"})
+
     def __init__(
         self,
         driver_type: Literal["selenium", "playwright"] = "selenium",
-        browser: Literal[
-            "chrome", "firefox", "edge", "safari", "undetected", "webkit"
-        ] = "chrome",
+        browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome",
         headless: bool = True,
         session_based: bool = False,
         mobile: bool = False,
@@ -421,7 +409,8 @@ class WebScrapingToolkit(AbstractToolkit):
         except (FileNotFoundError, OSError) as exc:
             self.logger.warning(
                 "Cached plan file missing: %s (%s); evicting stale entry",
-                plan_path, exc,
+                plan_path,
+                exc,
             )
             await registry.invalidate(entry.fingerprint)
             return None
@@ -468,7 +457,8 @@ class WebScrapingToolkit(AbstractToolkit):
                 self.logger.warning(
                     "Cached plan file missing: %s (%s); evicting stale "
                     "registry entry and falling through to regeneration",
-                    plan_path, exc,
+                    plan_path,
+                    exc,
                 )
                 await registry.invalidate(entry.fingerprint)
 
@@ -530,8 +520,7 @@ class WebScrapingToolkit(AbstractToolkit):
                     return cached
                 except (FileNotFoundError, OSError) as exc:
                     self.logger.warning(
-                        "Cached plan file missing: %s; evicting stale "
-                        "registry entry and regenerating via LLM",
+                        "Cached plan file missing: %s; evicting stale " "registry entry and regenerating via LLM",
                         exc,
                     )
                     await registry.invalidate(entry.fingerprint)
@@ -630,7 +619,8 @@ class WebScrapingToolkit(AbstractToolkit):
         except (FileNotFoundError, OSError) as exc:
             self.logger.warning(
                 "Plan file missing: %s (%s); evicting stale registry entry",
-                plan_path, exc,
+                plan_path,
+                exc,
             )
             await registry.invalidate(entry.fingerprint)
             return None
@@ -775,12 +765,11 @@ class WebScrapingToolkit(AbstractToolkit):
                         "plan, a cached plan must exist, or pass objective= "
                         "to auto-generate."
                     )
-                self.logger.info(
-                    "Capturing DOM snapshot via driver before plan generation"
-                )
+                self.logger.info("Capturing DOM snapshot via driver before plan generation")
                 snapshot = await snapshot_from_driver(drv, url=url)
                 resolved = await self.plan_create(
-                    url, objective,
+                    url,
+                    objective,
                     snapshot=snapshot,
                     auto_snapshot=False,  # we already captured via driver
                 )
@@ -795,27 +784,24 @@ class WebScrapingToolkit(AbstractToolkit):
             # Refinement loop — only when the plan came from LLM and the
             # user provided an objective to re-prompt against. Explicit /
             # cached plans are owned by the caller, not ours to revise.
-            if (
-                plan_was_generated
-                and objective
-                and max_refinement_attempts > 0
-            ):
+            if plan_was_generated and objective and max_refinement_attempts > 0:
                 attempt = 0
                 while attempt < max_refinement_attempts:
                     score = _score_extraction(result)
-                    self.logger.info(
-                        "Extraction quality %s", score.summary()
-                    )
+                    self.logger.info("Extraction quality %s", score.summary())
                     if not score.needs_refinement:
                         break
                     attempt += 1
                     self.logger.warning(
                         "Refinement pass %d/%d — weak extraction: %s",
-                        attempt, max_refinement_attempts, score.summary(),
+                        attempt,
+                        max_refinement_attempts,
+                        score.summary(),
                     )
                     try:
                         post_snapshot = await snapshot_from_driver(
-                            drv, scroll_sweep=False,
+                            drv,
+                            scroll_sweep=False,
                         )
                         client = self._get_llm_client()
                         gen = PlanGenerator(client)
@@ -830,9 +816,9 @@ class WebScrapingToolkit(AbstractToolkit):
                         )
                     except Exception as exc:  # noqa: BLE001
                         self.logger.error(
-                            "Refinement pass %d failed to produce a plan: %s; "
-                            "keeping prior result",
-                            attempt, exc,
+                            "Refinement pass %d failed to produce a plan: %s; " "keeping prior result",
+                            attempt,
+                            exc,
                         )
                         break
                     # Re-execute against the same driver. The refined
@@ -850,13 +836,10 @@ class WebScrapingToolkit(AbstractToolkit):
         # the cache instead of regenerating, locking in a broken plan.
         if save_plan:
             if not result.success:
-                self.logger.info(
-                    "Skipping plan auto-save: scrape did not succeed"
-                )
+                self.logger.info("Skipping plan auto-save: scrape did not succeed")
             elif not result.extracted_data or not _has_non_empty_values(result.extracted_data):
                 self.logger.info(
-                    "Skipping plan auto-save: extracted_data is empty — "
-                    "the plan ran but matched no content"
+                    "Skipping plan auto-save: extracted_data is empty — " "the plan ran but matched no content"
                 )
             else:
                 try:
@@ -903,9 +886,7 @@ class WebScrapingToolkit(AbstractToolkit):
         try:
             from .crawl_engine import CrawlEngine
         except ImportError:
-            raise NotImplementedError(
-                "CrawlEngine is not available. Install FEAT-013 to enable crawling."
-            )
+            raise NotImplementedError("CrawlEngine is not available. Install FEAT-013 to enable crawling.")
 
         # Resolve the per-page plan
         resolved = await self._resolve_plan(start_url, plan, objective)
@@ -925,13 +906,10 @@ class WebScrapingToolkit(AbstractToolkit):
 
         if save_plan and resolved:
             crawl_has_data = any(
-                _has_non_empty_values(getattr(page, "extracted_data", {}) or {})
-                for page in result.pages
+                _has_non_empty_values(getattr(page, "extracted_data", {}) or {}) for page in result.pages
             )
             if not crawl_has_data:
-                self.logger.info(
-                    "Skipping crawl plan auto-save: no page produced data"
-                )
+                self.logger.info("Skipping crawl plan auto-save: no page produced data")
             else:
                 try:
                     await self.plan_save(resolved)
