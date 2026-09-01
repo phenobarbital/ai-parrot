@@ -1,6 +1,7 @@
 """
 AbstractToolkit for creating collections of tools from class methods.
 """
+
 import asyncio
 import inspect
 from abc import ABC
@@ -57,11 +58,7 @@ class ToolkitTool(AbstractTool):
         self.bound_method = bound_method
 
         # Set up the tool
-        super().__init__(
-            name=name,
-            description=description or bound_method.__doc__ or f"Tool: {name}",
-            **kwargs
-        )
+        super().__init__(name=name, description=description or bound_method.__doc__ or f"Tool: {name}", **kwargs)
 
         # Set the args schema
         if args_schema:
@@ -81,19 +78,18 @@ class ToolkitTool(AbstractTool):
         if annotation is CallableType or origin is CallableType:
             return True
         if origin in (Union, UnionType):
-            return any(
-                arg is not type(None) and cls._is_unsupported_type(arg)
-                for arg in get_args(annotation)
-            )
+            return any(arg is not type(None) and cls._is_unsupported_type(arg) for arg in get_args(annotation))
 
         try:
             import pandas as pd
+
             cls._UNSUPPORTED_SCHEMA_TYPES.add(pd.DataFrame)
             cls._UNSUPPORTED_SCHEMA_TYPES.add(pd.Series)
         except ImportError:
             pass
         try:
             import pyarrow as pa
+
             cls._UNSUPPORTED_SCHEMA_TYPES.add(pa.Table)
         except ImportError:
             pass
@@ -113,7 +109,7 @@ class ToolkitTool(AbstractTool):
 
             for param_name, param in sig.parameters.items():
                 # Skip 'self' parameter (shouldn't be there for bound methods, but just in case)
-                if param_name == 'self':
+                if param_name == "self":
                     continue
 
                 # Get type hint
@@ -137,10 +133,7 @@ class ToolkitTool(AbstractTool):
 
             # Create dynamic Pydantic model
             if fields:
-                return create_model(
-                    f"{self.name}Args",
-                    **fields
-                )
+                return create_model(f"{self.name}Args", **fields)
             else:
                 # No parameters, return base schema
                 return AbstractToolArgsSchema
@@ -193,15 +186,11 @@ class ToolkitTool(AbstractTool):
 
         sig = inspect.signature(self.bound_method)
         params = sig.parameters
-        has_var_keyword = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
-        )
+        has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
         if not has_var_keyword:
             unknown = set(kwargs) - set(params)
             if unknown:
-                self.logger.debug(
-                    "Ignoring unknown kwargs for %s: %s", self.name, unknown
-                )
+                self.logger.debug("Ignoring unknown kwargs for %s: %s", self.name, unknown)
             kwargs = {k: v for k, v in kwargs.items() if k in params}
 
         result = await self.bound_method(**kwargs)
@@ -346,18 +335,14 @@ class AbstractToolkit(ABC):
             **kwargs: Additional configuration
         """
         # Configuration
-        self.return_direct = kwargs.get('return_direct', self.return_direct)
-        self.base_url = kwargs.get('base_url', self.base_url)
-        self.credential_provider = kwargs.get(
-            'credential_provider', self.credential_provider
-        )
+        self.return_direct = kwargs.get("return_direct", self.return_direct)
+        self.base_url = kwargs.get("base_url", self.base_url)
+        self.credential_provider = kwargs.get("credential_provider", self.credential_provider)
 
         # Remote execution wiring — propagated to every generated tool.
-        self.executor = kwargs.get('executor')
-        self.webhook_callback_url = kwargs.get('webhook_callback_url')
-        self.remote_timeout_seconds = int(
-            kwargs.get('remote_timeout_seconds', 300)
-        )
+        self.executor = kwargs.get("executor")
+        self.webhook_callback_url = kwargs.get("webhook_callback_url")
+        self.remote_timeout_seconds = int(kwargs.get("remote_timeout_seconds", 300))
 
         # Capture init kwargs so build_envelope_from_tool can
         # reconstruct the toolkit on the remote side. The executor
@@ -559,13 +544,19 @@ class AbstractToolkit(ABC):
         # Inspect all methods - get bound methods
         for name in dir(self):
             # Skip private methods and non-methods
-            if name.startswith('_'):
+            if name.startswith("_"):
                 continue
 
             # Skip toolkit management methods and subclass-excluded names
             if name in (
-                'get_tools', 'get_tools_filtered', 'get_tools_sync',
-                'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup',
+                "get_tools",
+                "get_tools_filtered",
+                "get_tools_sync",
+                "get_tool",
+                "list_tool_names",
+                "start",
+                "stop",
+                "cleanup",
                 *self.exclude_tools,
             ):
                 continue
@@ -659,7 +650,7 @@ class AbstractToolkit(ABC):
         description = description.strip()
 
         # Determine args schema - prioritize method-specific schema
-        args_schema = getattr(bound_method, '_args_schema', None)
+        args_schema = getattr(bound_method, "_args_schema", None)
 
         # If no custom schema is defined, always generate from method signature
         # This ensures each method only gets the parameters it actually needs
@@ -681,7 +672,7 @@ class AbstractToolkit(ABC):
         )
 
         # Copy permission requirements from method to tool
-        if hasattr(bound_method, '_required_permissions'):
+        if hasattr(bound_method, "_required_permissions"):
             tool._required_permissions = bound_method._required_permissions
 
         # FEAT-264: route generated tools through the CredentialBroker seam.
@@ -691,7 +682,7 @@ class AbstractToolkit(ABC):
         # Apply toolkit-level confirmation marking (FEAT-235).
         # Use the original (unprefixed) method name for lookup so the
         # confirming_tools set stays stable regardless of tool_prefix.
-        method_name = getattr(bound_method, '__name__', name)
+        method_name = getattr(bound_method, "__name__", name)
         if method_name in self.confirming_tools:
             if tool.routing_meta is None:
                 tool.routing_meta = {}
@@ -717,5 +708,5 @@ class AbstractToolkit(ABC):
             "tool_names": [tool.name for tool in tools],
             "tool_descriptions": {tool.name: tool.description for tool in tools},
             "return_direct": self.return_direct,
-            "base_url": self.base_url
+            "base_url": self.base_url,
         }

@@ -240,10 +240,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: FEAT-484 merged to `dev` (PR #1281) before this task started; the
+worktree branch was merged with `dev` first (`ReadOnlyRepoToolkit` verified
+present at `parrot.tools.repo.ReadOnlyRepoToolkit`, constructor signature
+re-read directly from the merged `toolkit.py` before writing any code, per
+the task's own Agent Instructions step 3).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Implemented `BedrockResearchPartner(AbstractResearchPartner)` in
+`research_partner.py`, registered under both `"gpt"` and `"nova"` via
+stacked `@ResearchPartnerFactory.register(...)` decorators on the same
+class. `_build_client()` builds `BedrockMantleClient(model=...)` for
+`"gpt"` / `NovaClient(model=...)` for `"nova"`; both share the identical
+`ask(use_tools=True, structured_output=ResearchFindings, max_tokens=...)`
+call in `research()`, with FEAT-484's `ReadOnlyRepoToolkit` (constructed
+with `enable_web_search=conf.DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH`, no
+other tool) registered via `client.register_tools(toolkit.get_tools())` —
+no per-transport tool adapter. The prompt builder emits only
+brief-JSON + repo root + question (neutrality guard). This class raises
+on any failure (bad client, Bedrock outage, unparseable structured
+output) — TASK-2632's coordinator owns degradation, per scope.
 
-**Deviations from spec**: none | describe if any
+22 tests in `test_research_partner.py` (14 pre-existing + 8 new for this
+task) all pass: backend→client mapping (mocked `BedrockMantleClient`/
+`NovaClient`), shared call-shape assertion, backend-appropriate reasoning
+knob, neutrality-guard prompt-content check, no-write-tool-registered
+check, disabled-backend rejection, and both-factory-keys registration.
+Full `pytest packages/ai-parrot/tests/flows/dev_flow/` (201 tests) and
+`pytest packages/ai-parrot/tests/tools/repo/` (133 tests, FEAT-484's own
+suite) both pass with zero regressions. `ruff check` clean on both
+changed files.
+
+**Deviations from spec**:
+1. **`DEV_FLOW_RESEARCH_PARTNER_EFFORT` is read by `conf.py` (TASK-2629)
+   but NOT threaded into any `ask()` call by this task.**
+   `BedrockMantleClient` inherits `OpenAIBaseClient.ask()` **unchanged**
+   (verified by direct read of both files) — that signature has no
+   `effort`/`reasoning_effort` parameter and no generic `**kwargs`/
+   `extra_body` passthrough for callers. Threading it through would
+   require modifying `openai_base.py` or `nova/mantle.py` — both shared
+   clients well outside this task's file list
+   (`research_partner.py`/its test only), and outside its scope note
+   ("this class MAY raise; NOT in scope: ... node wiring"). Mirrors the
+   precedent set by TASK-2630's Module 3, which made the identical call
+   for `output_config.effort` on the Converse side. `_reasoning_kwargs()`
+   returns `{}` for `"gpt"` — strictly additive, no unsupported kwarg
+   guessed. `DEV_FLOW_RESEARCH_PARTNER_EFFORT` remains a reserved,
+   currently-inert config key; wiring it is a natural follow-up once
+   `OpenAIBaseClient`/`BedrockMantleClient` gains a supported reasoning
+   knob (tracked here for whoever picks that up, not filed as a new
+   task since it's outside FEAT-482's stated scope).
+2. `run_id`/`node_id`/`session_host` (required by the ABC signature) are
+   accepted and logged (`self.logger.info(...)`) but not otherwise wired
+   into any telemetry/session system — there is no `run_id`/`node_id`
+   concept on `AbstractClient.ask()` itself, and FEAT-404's
+   `ClientRoundEvent`s are already emitted automatically inside
+   `ask()`/`ask_stream()` with no action needed from this class. Matches
+   the task's own "NOT in scope: ... No node wiring."

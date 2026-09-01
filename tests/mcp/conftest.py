@@ -1,9 +1,12 @@
 """Shared fixtures for tests/mcp/ (FEAT-262).
 
-Provides reusable pytest fixtures for MCP OAuth2 tests.
+Provides reusable pytest fixtures for MCP OAuth2 tests and toolkit testing.
 Individual test modules may define additional local fixtures.
 """
+
 from __future__ import annotations
+
+import sys
 
 import pytest
 from aiohttp import web
@@ -32,20 +35,24 @@ async def mock_oauth2_server(aiohttp_server):
         data = await request.post()
         grant_type = data.get("grant_type", "")
         if grant_type == "refresh_token":
-            return web.json_response({
-                "access_token": "refreshed-access-token",
+            return web.json_response(
+                {
+                    "access_token": "refreshed-access-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "new-refresh-token",
+                    "scope": "read write",
+                }
+            )
+        return web.json_response(
+            {
+                "access_token": "mock-access-token",
                 "token_type": "Bearer",
                 "expires_in": 3600,
-                "refresh_token": "new-refresh-token",
+                "refresh_token": "mock-refresh-token",
                 "scope": "read write",
-            })
-        return web.json_response({
-            "access_token": "mock-access-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-            "refresh_token": "mock-refresh-token",
-            "scope": "read write",
-        })
+            }
+        )
 
     app.router.add_get("/authorize", authorize)
     app.router.add_post("/token", token)
@@ -80,3 +87,18 @@ def client_credentials_mcp_oauth2_config():
         scopes=["mcp"],
         grant_type=MCPOAuth2GrantType.CLIENT_CREDENTIALS,
     )
+
+
+@pytest.fixture(autouse=True)
+def ensure_stub_toolkit_importable():
+    """Ensure stub_toolkit can be imported via dotted path (FEAT-485).
+
+    This fixture registers the stub_toolkit module so that
+    tests.mcp.stub_toolkit.StubToolkit can be resolved via importlib.
+    """
+    # Register the stub_toolkit module under the expected import path
+    from tests.mcp import stub_toolkit as stub_module
+
+    sys.modules["tests.mcp.stub_toolkit"] = stub_module
+    yield
+    # Module stays registered for subsequent tests

@@ -175,10 +175,64 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: FEAT-479 had already fully merged to `dev` before this task
+started (confirmed: `devflow-telemetry-accounting` index shows all tasks
+`done`, `completed_at` set) — no live conflict encountered; the current
+`research.py`/`factories.py` on disk already reflect its changes and the
+Codebase Contract's line numbers were re-verified against that state.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added `coordinator: Optional[ComplementaryResearchCoordinator] = None` to
+`ResearchNode.__init__` (`object.__setattr__`, matching the file's
+existing pattern) and one coordinator call in `execute()`, placed
+alongside the EXISTING wiki-search/graph-memory context-injection block
+(right after Jira resolution, right before dispatch — same place, same
+mechanism). `factories.py` (`dev_loop`, NOT `dev_flow` — a different file
+from TASK-2633's) gained a mirrored `research_coordinator` kwarg
+(defaults to a fresh inert `ComplementaryResearchCoordinator()`), wired
+into `ResearchNode` in `research_factory`.
 
-**Deviations from spec**: none | describe if any
+5 tests in `test_research_partner_seam.py`, all passing: the
+coordinator-omitted guard is IDENTITY-equal (`sent_brief is good_brief`,
+not just field-equal — see Deviation 1), findings reach the dispatch
+payload, Jira-then-partner-then-dispatch ordering holds, a degraded/
+`None` coordinator still completes the run, and `SlashCommand`
+allowed-tools stays unchanged. Full `pytest packages/ai-parrot/tests/flows/dev_loop/`
+sweep (1129 passed, 3 pre-existing `sdd-secondopinion`-prompt-parity
+failures reproduce identically on unmodified `dev`) and
+`pytest packages/ai-parrot/tests/flows/dev_flow/` (216 passed) both show
+zero regressions. `ruff check` clean on all three changed/created files
+(pre-existing lint debt count on `research.py`/`factories.py` unchanged
+from `dev` baseline after fixing the import-order-only findings my own
+edits introduced).
+
+**Deviations from spec**:
+1. **No new field on `BugBrief`/`WorkBrief`.** Unlike `IdeationNode`
+   (TASK-2633), which has a small LOCAL `_IdeationBrief` model it fully
+   owns, `ResearchNode` dispatches the SHARED `BugBrief`/`WorkBrief`
+   model — not in this task's Files to Create/Modify list
+   (`models.py`/`base.py` untouched). `research.py` already has a
+   sanctioned, existing mechanism for exactly this kind of best-effort
+   supplementary content: the wiki-search/graph-memory blocks append a
+   labeled `## <Section>\n<text>` string to `extra_context_parts`, which
+   only then triggers a SINGLE `brief.model_copy(update={"description":
+   ...})` if non-empty. The partner's findings are folded in via the
+   identical mechanism (`## Complementary research findings\n<rendered>`)
+   rather than inventing a second injection path or a new shared-model
+   field. Consequence: with the coordinator disabled/omitted AND no wiki/
+   graph-memory context either, `dispatch_brief` is not just field-equal
+   but OBJECT-IDENTICAL to the original `brief` (no `model_copy` call
+   happens at all) — a strictly stronger "byte-identical" guarantee than
+   TASK-2633's, verified directly (`test_unchanged_when_coordinator_none`
+   asserts `sent_brief is good_brief`).
+2. **`slug` is the resolved Jira issue key** (lowercased, e.g.
+   `"ops-1"`), not a title-derived slugification. Unlike `IdeationNode`
+   (no stable identifier exists before the ideation dispatch, forcing a
+   provisional slugify-from-title), `ResearchNode` already resolves a
+   real, stable, unique identifier — the Jira ticket — strictly BEFORE
+   the coordinator call (ordering pinned by the pre-existing
+   `test_research_node_creates_jira_then_dispatches` test, left
+   untouched). Reusing it avoids inventing a second slugification
+   algorithm and gives `sdd/proposals/<jira-key>.research.md` a
+   naturally unique, human-traceable name.

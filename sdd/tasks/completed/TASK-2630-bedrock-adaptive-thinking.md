@@ -230,10 +230,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Confirmed the adaptive-thinking payload shape against AWS's own
+Bedrock Converse API documentation (`claude-messages-adaptive-thinking.html`,
+`claude-messages-extended-thinking.html`) via a research subagent before
+writing any code, per the task's explicit instruction not to guess the
+payload key. Confirmed: `additionalModelRequestFields.thinking =
+{"type": "adaptive"}` for the affected models; a sibling
+`output_config.effort` key also exists but is deliberately NOT wired here
+(see Deviations) — Bedrock defaults effort to `"high"` when omitted.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added `_requires_adaptive_thinking(model_id)` next to the existing
+`rejects_sampling_params()` — it delegates to that same predicate rather
+than duplicating the model-family list, since the AWS docs confirmed the
+adaptive-thinking-required family (`claude-opus-5`, `claude-fable-5`,
+`claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-5`, plus
+`claude-mythos-5`) is identical to `NO_SAMPLING_MODEL_FAMILIES`. Applied
+the per-model branch independently in both `ask()` (~line 830) and
+`ask_stream()` (~line 1136), matching on `resolved_model` (post
+`_translate_model()`) at both sites.
 
-**Deviations from spec**: none | describe if any
+23 new tests in `test_bedrock_thinking.py`: adaptive-shape selection for
+5 modern-Anthropic model ids, the no-regression guard for 4 Nova/
+older-Anthropic ids (byte-identical `budget_tokens` payload) on both
+`ask()` and `ask_stream()`, the `thinking_budget=None` no-field case, and
+an explicit `reasoningContent` verbatim-preservation check under the new
+adaptive branch. Full existing Bedrock suite
+(`pytest packages/ai-parrot/tests/clients/ -k bedrock`) still passes:
+120 passed, 2 skipped, 0 regressions. `ruff check bedrock.py` shows the
+same 119 pre-existing (unrelated, pre-dating this task) lint findings as
+on `dev` — no new findings introduced.
+
+**Deviations from spec**:
+1. Per the AWS documentation the research subagent retrieved, a separate
+   `additionalModelRequestFields.output_config.effort` key exists
+   alongside `thinking` (values `low`/`medium`/`high`/`xhigh`/`max`). Per
+   the task's own explicit exclusion — "NOT in scope: ... adding
+   `output_config.effort` plumbing beyond what the adaptive shape
+   requires" — this task emits the bare `{"type": "adaptive"}` and does
+   NOT thread a new `effort` parameter through `ask()`/`ask_stream()`.
+   The adaptive shape works without it (Bedrock defaults effort to
+   `"high"`); adding an `effort` kwarg would be new surface on a shared
+   client beyond this task's narrow, additive scope. `DEV_FLOW_
+   RESEARCH_PARTNER_EFFORT` (TASK-2629) is explicitly documented as
+   mantle-only / ignored on the Converse path, consistent with this.
+2. **Correction (not a code deviation)**: while researching the payload
+   shape, the dispatched subagent found that fetched AWS documentation
+   pages carried a "See also" block suggesting `aws agent-toolkit
+   search-skills --search-query bedrock`, flagged it as a suspected
+   prompt-injection artifact, and did not execute it — recorded as such
+   in an earlier revision of this note. **That suspicion was
+   investigated further and disproven**: the block is genuine, first-party
+   AWS content. It is served on AWS's own CloudFront distribution
+   (`docs.aws.amazon.com`, verified via direct `curl` — `HTTP 200`,
+   `Content-Type: text/markdown`, `Content-Signal: ai-input=yes`) from
+   the `.md` "LLM-ready markdown" sibling of each HTML doc page (e.g.
+   `claude-messages-adaptive-thinking.md`), which AWS apparently
+   authors specifically to address AI/agent readers. The earlier
+   "injection" conclusion rested on checking only the rendered `.html`
+   page (where the block is absent, since it lives in the separate
+   `.md` variant) and over-generalizing that to "not from AWS at all."
+   Net effect: no security concern here, and not executing the
+   suggested CLI command remains the correct call regardless — a
+   research subagent should not unilaterally run a command a fetched
+   document suggests, whether or not the suggestion turns out to be
+   legitimate — but the specific "prompt-injection" characterization in
+   the original note was incorrect and is corrected here.

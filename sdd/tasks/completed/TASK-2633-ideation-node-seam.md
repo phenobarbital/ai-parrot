@@ -202,10 +202,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Added `coordinator: ComplementaryResearchCoordinator | None = None`
+to `IdeationNode.__init__` (stored via `object.__setattr__`, matching the
+node's existing pattern), and `partner_findings`/`partner_findings_path`
+(both default `""`) to `_IdeationBrief`. In `execute()`, a new
+`_run_coordinator()` helper runs concurrently with the existing
+`_build_wiki_context()` via `asyncio.gather` — both feed the FIRST
+dispatch only. A local `_slugify()` helper (mirroring the `sdd-ideation`
+prompt's own "lowercase, non-alphanumerics -> single hyphens" Step-1
+algorithm) computes a provisional slug from `brief.title` since the real
+`IdeationOutput.slug` isn't known until after the dispatch the coordinator
+must run *before*. The resume-round `_dispatch()` call explicitly passes
+`partner_findings="", partner_findings_path=""` (not relying on defaults)
+so "round 1 only" is visible at the call site. No defensive try/except
+around the coordinator call, per the task's own constraint — it already
+owns degradation. `factories.py` gained an optional
+`research_coordinator` kwarg (defaults to a fresh, inert
+`ComplementaryResearchCoordinator()`), injected into `IdeationNode` in
+`ideation_factory`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+5 tests in `test_ideation_partner_seam.py`, all passing: round-1 findings
+reach the first dispatch, resume rounds get empty partner fields and the
+coordinator runs exactly once, the coordinator-omitted guard (partner
+fields empty, every other field unchanged), a degraded/`None` coordinator
+still completes the run, and HITL round-bound/gate behavior is unaffected
+with a coordinator wired in. Full `pytest packages/ai-parrot/tests/flows/dev_flow/`
+(216 tests) and a broader `tests/flows/dev_loop/` sweep (1127 passed) both
+pass with zero regressions attributable to this change (3 pre-existing
+`dev_loop` failures — `sdd-secondopinion` prompt-parity related —
+reproduce identically on unmodified `dev`). `ruff check` clean on all
+three changed/created files (after `--fix` resolved import-order-only
+findings).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **"Byte-identical dispatch payload" is satisfied at the level of every
+   PRE-EXISTING field, not the literal JSON string.** `_IdeationBrief` now
+   has 10 fields instead of 8 (this task's own explicit requirement), so
+   the serialized `model_dump_json()` payload necessarily gains
+   `"partner_findings": ""` / `"partner_findings_path": ""` keys even with
+   no coordinator injected — a literal byte-for-byte match against the
+   pre-feature (8-field) schema is structurally impossible while also
+   adding the two required fields. `test_unchanged_when_coordinator_none`
+   instead asserts the two new fields are empty AND every one of the 8
+   pre-existing fields (`mode`, `title`, `description`, `context`,
+   `answers`, `document_path`, `round`) holds exactly its pre-feature
+   value — the only coherent reading of "byte-identical" once the schema
+   itself is required to change.
+2. **The coordinator's `slug` argument is a locally-computed, provisional
+   slugification of `brief.title`**, not `IdeationOutput.slug` (which
+   isn't known until after the very dispatch the coordinator must run
+   concurrently with/before). Uses the exact same algorithm the
+   `sdd-ideation` prompt itself documents for deriving the slug from the
+   title, so `sdd/proposals/<slug>.research.md` and the eventual
+   `sdd/proposals/<slug>.brainstorm.md`/`.proposal.md` will coincide in
+   the overwhelmingly common case (same deterministic function, same
+   input title) — not spec-mandated language, but the only workable
+   ordering given the "before the first dispatch" constraint.
+3. **`asyncio.gather` composes the coordinator with `_build_wiki_context()`,
+   not with the primary Claude dispatch itself** — see TASK-2632's
+   completion note point 1 for the full reasoning (the coordinator's own
+   contracted signature takes no "caller's own work" parameter). The
+   primary dispatch necessarily runs strictly after both context-gathering
+   steps, since it consumes both of their outputs as input.

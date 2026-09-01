@@ -18,6 +18,9 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.bots.flows.flow.definition import NodeDefinition
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_flow.nodes.dev_intake import DevIntakeNode
 from parrot.flows.dev_flow.nodes.ideation import IdeationNode
 from parrot.flows.dev_loop.factories import (
@@ -33,9 +36,7 @@ def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
     Same helper as ``dev_loop.factories._with_graph`` (kept local rather than
     importing a private symbol across packages).
     """
-    return node.model_copy(
-        update={"dependencies": set(deps), "successors": set(succs)}
-    )
+    return node.model_copy(update={"dependencies": set(deps), "successors": set(succs)})
 
 
 def build_dev_flow_node_factories(
@@ -53,6 +54,7 @@ def build_dev_flow_node_factories(
     require_plan_approval: bool = False,
     skip_qa: bool = False,
     ideation_max_rounds: int | None = None,
+    research_coordinator: ComplementaryResearchCoordinator | None = None,
 ) -> dict[str, NodeFactory]:
     """Return the ``{node type: factory}`` map for the dev-flow graph.
 
@@ -83,6 +85,11 @@ def build_dev_flow_node_factories(
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``
             on :class:`IdeationNode`. ``None`` reads the conf key at execute
             time.
+        research_coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482) injected into :class:`IdeationNode`. ``None``
+            (default) builds a fresh one — itself an inert no-op until
+            ``DEV_FLOW_RESEARCH_PARTNER`` is configured, so omitting this
+            kwarg preserves the pure-addition guarantee.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -105,12 +112,10 @@ def build_dev_flow_node_factories(
         )
     )
 
-    def dev_intake_factory(
-        nd: NodeDefinition, deps: set, succs: set
-    ) -> DevLoopNode:
-        return _with_graph(
-            DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs
-        )
+    def dev_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs)
+
+    coordinator = research_coordinator if research_coordinator is not None else ComplementaryResearchCoordinator()
 
     def ideation_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
@@ -118,6 +123,7 @@ def build_dev_flow_node_factories(
                 dispatcher=dispatcher,
                 wiki_search=wiki_search,
                 ideation_max_rounds=ideation_max_rounds,
+                coordinator=coordinator,
                 name=nd.id,
             ),
             deps,
