@@ -699,3 +699,51 @@ def test_same_closure_applies_the_plan_only_to_its_fresh_call() -> None:
 
     assert captured[0]["model_plan"] is plan
     assert "model_plan" not in captured[1]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 post-review fix #2: model_plan_applied must not claim success
+# when the recovery path was never taken at all
+# ---------------------------------------------------------------------------
+#
+# CRITICAL bug found by adversarial review, second finding: when
+# `recovery_enabled` is False (no `run_id`, or the runner was constructed
+# without `dev_loop_flow_kwargs`), `run()` reuses `self.flow` — the
+# construction-time flow — untouched: `_dev_loop_flow_factory`/
+# `build_dev_flow` is never even called, so a submitted `model_plan` never
+# reaches anything. `mode` stayed at its "fresh" default on that branch,
+# so `model_plan_applied = model_plan is not None and mode != "resumed"`
+# (pre-fix) wrongly evaluated True — `result.metadata["model_plan_
+# effective"]` claimed the submission applied when it silently did not.
+
+
+@pytest.mark.asyncio
+async def test_model_plan_not_applied_when_recovery_disabled_no_run_id(nl_brief):
+    """No `run_id` -> `recovery_enabled` is False regardless of
+    `dev_loop_flow_kwargs` -> a submitted plan never reaches anything."""
+    flow = _CapturingFlow()
+    runner = DevFlowRunner(
+        flow, redis_url="redis://x", dev_loop_flow_kwargs={"dispatcher": MagicMock(), "redis_url": "redis://x"}
+    )
+    plan = _plan()
+
+    result = await runner.run(nl_brief, model_plan=plan)  # no run_id
+
+    assert result.metadata["model_plan_requested"] == plan.model_dump(mode="json")
+    assert result.metadata["model_plan_effective"] is None
+    assert result.metadata["run_mode"] == "fresh"
+
+
+@pytest.mark.asyncio
+async def test_model_plan_not_applied_when_runner_has_no_recovery_wiring(nl_brief):
+    """`run_id` given, but the runner has no `dev_loop_flow_kwargs` at
+    all -> still `recovery_enabled is False` -> same silent no-op."""
+    flow = _CapturingFlow()
+    runner = DevFlowRunner(flow, redis_url="redis://x")  # no dev_loop_flow_kwargs
+    plan = _plan()
+
+    result = await runner.run(nl_brief, run_id="run-no-recovery", model_plan=plan)
+
+    assert result.metadata["model_plan_requested"] == plan.model_dump(mode="json")
+    assert result.metadata["model_plan_effective"] is None
+    assert result.metadata["run_mode"] == "fresh"

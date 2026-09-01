@@ -211,7 +211,16 @@ class DevFlowRunner(DevLoopRunner):
         # calls it with a real definition. `mode` (computed by `prepare()`
         # itself, using the SAME signal) is what makes that guarantee
         # correctly reportable here.
-        model_plan_applied = model_plan is not None and mode != "resumed"
+        #
+        # CORRECTED (post-review, 2nd finding): `recovery_enabled` must
+        # gate this too. When it is False, `flow = self.flow` above reuses
+        # the pre-built construction-time flow untouched — the recovery
+        # coordinator (and therefore `_dev_loop_flow_factory`/`build_dev_flow`)
+        # is never even called, so a submitted `model_plan` silently never
+        # reaches anything. `mode` stays at its "fresh" default in that
+        # branch (line ~182) — a leftover value, not evidence the plan
+        # applied — so `mode != "resumed"` alone is not sufficient here.
+        model_plan_applied = model_plan is not None and recovery_enabled and mode != "resumed"
 
         # Same manual acquire/park-aware structure as the base class's run()
         # (FEAT-377 TASK-1917 / G6), and mandatory here: an ideation
