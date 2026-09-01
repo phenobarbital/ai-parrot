@@ -8,6 +8,7 @@ PandasAgent)``, module-scoped fixture — instantiation is heavy). The
 dependency on ai-parrot-server actually being importable except for the one
 test that exercises the lazy-import guard itself.
 """
+
 from __future__ import annotations
 
 import subprocess

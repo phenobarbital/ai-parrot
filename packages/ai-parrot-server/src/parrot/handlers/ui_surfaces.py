@@ -13,6 +13,7 @@ handler class for the whole REST lane (``InfographicTalk`` precedent).
 Route registration itself is TASK-2703's job — this module only defines the
 service + handler classes.
 """
+
 from __future__ import annotations
 
 import logging
@@ -368,9 +369,7 @@ class UISurfacesHandler(BaseView):
         items = [{**_surface_metadata(r), "access": "owner"} for r in owned] + [
             {**_surface_metadata(r), "access": "shared"} for r in shared
         ]
-        return self.json_response(
-            {"status": "success", "count": len(items), "surfaces": items}
-        )
+        return self.json_response({"status": "success", "count": len(items), "surfaces": items})
 
     # ── POST: pin/save ──────────────────────────────────────────────────
 
@@ -396,9 +395,7 @@ class UISurfacesHandler(BaseView):
         has_inline = req.envelope is not None
         has_artifact = req.source_artifact_id is not None
         if has_inline == has_artifact:
-            return self._error(
-                "Exactly one of envelope or source_artifact_id is required", status=400
-            )
+            return self._error("Exactly one of envelope or source_artifact_id is required", status=400)
 
         if has_inline:
             envelope_dict = req.envelope
@@ -423,9 +420,7 @@ class UISurfacesHandler(BaseView):
                 artifact_id=req.source_artifact_id,
             )
             if artifact is None or artifact.definition is None:
-                return self._error(
-                    f"Artifact {req.source_artifact_id} not found", status=404
-                )
+                return self._error(f"Artifact {req.source_artifact_id} not found", status=404)
             envelope_dict = artifact.definition
 
         try:
@@ -453,9 +448,7 @@ class UISurfacesHandler(BaseView):
             updated_at=now,
         )
         surface_id = await self.store.save(record)
-        return self.json_response(
-            {"status": "success", "surface_id": surface_id}, status=201
-        )
+        return self.json_response({"status": "success", "surface_id": surface_id}, status=201)
 
     # ── POST: refresh ────────────────────────────────────────────────────
 
@@ -513,18 +506,14 @@ class UISurfacesHandler(BaseView):
             )
         except RecipeRunException as exc:
             status = 502 if exc.error.stage == "data" else 422
-            return self.json_response(
-                {"status": "error", **exc.error.model_dump()}, status=status
-            )
+            return self.json_response({"status": "error", **exc.error.model_dump()}, status=status)
         except Exception as exc:
             self.logger.exception("UISurfaces refresh failed")
             return self.json_response({"status": "error", "message": str(exc)}, status=500)
 
         envelope_dump = artifact.metadata.get("source_envelope")
         if envelope_dump is None:
-            return self.json_response(
-                {"status": "error", "message": "Refresh did not produce an envelope"}, status=500
-            )
+            return self.json_response({"status": "error", "message": "Refresh did not produce an envelope"}, status=500)
 
         await self.store.update_envelope(surface_id, envelope_dump, merged_params)
         updated = await self.store.get(surface_id)
@@ -554,9 +543,7 @@ class UISurfacesHandler(BaseView):
                 status=400,
             )
 
-        share = await self.store.mint_share(
-            surface_id, expires_at=req.expires_at, use_default_ttl=req.ttl
-        )
+        share = await self.store.mint_share(surface_id, expires_at=req.expires_at, use_default_ttl=req.ttl)
         return self.json_response(
             {
                 "status": "success",

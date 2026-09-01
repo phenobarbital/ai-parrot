@@ -1,4 +1,5 @@
 """Unit tests for ``PublishSurfaceTool`` (FEAT-492, TASK-2704)."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -63,9 +64,7 @@ class TestToolDelegatesToBot:
         fake_store.save = AsyncMock(return_value="surface-direct")
         tool = PublishSurfaceTool(bot=bot, surface_store=fake_store)
 
-        result = await tool._execute(
-            kind="widget", title="X", envelope=_sample_envelope("surface-direct")
-        )
+        result = await tool._execute(kind="widget", title="X", envelope=_sample_envelope("surface-direct"))
 
         assert result["surface_id"] == "surface-direct"
         fake_store.save.assert_awaited_once()
@@ -116,6 +115,4 @@ class TestToolExecuteDelegatesToStore:
 
         tool = PublishSurfaceTool()
         with pytest.raises(RuntimeError, match="ai-parrot-server"):
-            await tool._execute(
-                kind="dashboard", title="X", envelope=_sample_envelope("surface-no-store")
-            )
+            await tool._execute(kind="dashboard", title="X", envelope=_sample_envelope("surface-no-store"))

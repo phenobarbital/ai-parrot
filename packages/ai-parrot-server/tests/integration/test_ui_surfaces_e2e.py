@@ -16,6 +16,7 @@ Follows ``test_a2ui_e2e.py``'s environment conventions: real
 task's own instruction, a failing assertion here means a defect in the layer
 that owns it (recorded in the Completion Note), never weakened to pass.
 """
+
 from __future__ import annotations
 
 import json
@@ -166,9 +167,7 @@ class _FakeConn:
             rows = [r for r in state.surfaces.values() if r["user_id"] == user_id]
         elif sql == m._LIST_BY_KIND_SQL:
             user_id, kind = args
-            rows = [
-                r for r in state.surfaces.values() if r["user_id"] == user_id and r["kind"] == kind
-            ]
+            rows = [r for r in state.surfaces.values() if r["user_id"] == user_id and r["kind"] == kind]
         elif sql == m._LIST_SHARED_WITH_SQL:
             user_id = args[0]
             now = datetime.now(UTC)
@@ -339,9 +338,7 @@ class TestE2E:
             "parrot.outputs.a2ui_renderers.interactive_html",
             reason="ai-parrot-visualizations not installed — HTML leg skipped",
         )
-        h_html = _handler(
-            app, match_info={"surface_id": surface_id}, user_id="owner-1", query={"format": "html"}
-        )
+        h_html = _handler(app, match_info={"surface_id": surface_id}, user_id="owner-1", query={"format": "html"})
         resp_html = await _get(h_html)
         assert resp_html.status == 200
         doc = resp_html.body.decode() if isinstance(resp_html.body, (bytes, bytearray)) else resp_html.body
@@ -449,9 +446,7 @@ class TestE2E:
         token = (await _decode(resp_mint))["token"]
 
         # GET with token: 200 + claim recorded.
-        h_get = _handler(
-            app, match_info={"surface_id": surface_id}, user_id="viewer-1", query={"share": token}
-        )
+        h_get = _handler(app, match_info={"surface_id": surface_id}, user_id="viewer-1", query={"share": token})
         resp_get = await _get(h_get)
         assert resp_get.status == 200
 
@@ -482,16 +477,12 @@ class TestE2E:
         assert kwargs["pctx"].user_id == "owner-4"
 
         # Revoke (owner only).
-        h_revoke = _handler(
-            app, match_info={"surface_id": surface_id, "token": token}, user_id="owner-4"
-        )
+        h_revoke = _handler(app, match_info={"surface_id": surface_id, "token": token}, user_id="owner-4")
         resp_revoke = await _delete(h_revoke)
         assert resp_revoke.status == 200
 
         # GET with the now-revoked token -> 410, no oracle.
-        h_get2 = _handler(
-            app, match_info={"surface_id": surface_id}, user_id="viewer-1", query={"share": token}
-        )
+        h_get2 = _handler(app, match_info={"surface_id": surface_id}, user_id="viewer-1", query={"share": token})
         resp_get2 = await _get(h_get2)
         assert resp_get2.status == 410
 
@@ -517,9 +508,7 @@ class TestE2E:
         # Registration order — proves the literal segments were registered
         # BEFORE the bare "{agent_id}/a2ui" pattern (aiohttp resolves
         # dynamic patterns in registration order for ambiguous prefixes).
-        resource_paths = [
-            (r.get_info().get("formatter") or r.get_info().get("path")) for r in router.resources()
-        ]
+        resource_paths = [(r.get_info().get("formatter") or r.get_info().get("path")) for r in router.resources()]
         assert resource_paths == [
             "/api/v1/agents/{agent_id}/a2ui/capabilities",
             "/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}",

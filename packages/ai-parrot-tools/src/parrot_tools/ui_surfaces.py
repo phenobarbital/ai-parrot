@@ -13,6 +13,7 @@ non-core submodule name to ``parrot_tools`` (see ``parrot/tools/__init__.py``
 meta_path finder): ``from parrot.tools.ui_surfaces import PublishSurfaceTool``
 resolves to this module.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -29,9 +30,7 @@ __all__ = ["PublishSurfaceArgs", "PublishSurfaceTool"]
 class PublishSurfaceArgs(AbstractToolArgsSchema):
     """Arguments for persisting a rehydratable A2UI surface."""
 
-    kind: str = Field(
-        description="Surface kind: 'dashboard', 'infographic', or 'widget'."
-    )
+    kind: str = Field(description="Surface kind: 'dashboard', 'infographic', or 'widget'.")
     title: str = Field(description="Human-readable surface title.")
     envelope: dict[str, Any] = Field(
         description=(
@@ -42,10 +41,7 @@ class PublishSurfaceArgs(AbstractToolArgsSchema):
     )
     recipe_name: str | None = Field(
         default=None,
-        description=(
-            "When set, the surface becomes refreshable: this recipe is "
-            "replayed on POST .../refresh."
-        ),
+        description=("When set, the surface becomes refreshable: this recipe is " "replayed on POST .../refresh."),
     )
     recipe_owner: str | None = Field(
         default=None,

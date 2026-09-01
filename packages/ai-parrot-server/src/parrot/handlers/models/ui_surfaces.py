@@ -15,6 +15,7 @@ db.connection() as conn:``) and the ``CREATE TABLE IF NOT EXISTS`` auto-create
 convention illustrated by ``handlers/models/bots.py`` /
 ``autonomous/ledger.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -158,8 +159,7 @@ WHERE surface_id = $1
 _LIST_SQL = _GET_SQL.replace("WHERE surface_id = $1", "WHERE user_id = $1") + "\nORDER BY updated_at DESC"
 
 _LIST_BY_KIND_SQL = (
-    _GET_SQL.replace("WHERE surface_id = $1", "WHERE user_id = $1 AND kind = $2")
-    + "\nORDER BY updated_at DESC"
+    _GET_SQL.replace("WHERE surface_id = $1", "WHERE user_id = $1 AND kind = $2") + "\nORDER BY updated_at DESC"
 )
 
 _LIST_SHARED_WITH_SQL = """
@@ -388,8 +388,7 @@ class PgUISurfaceStore:
             except Exception as exc:
                 if not overwrite and _looks_like_unique_violation(exc):
                     raise ValueError(
-                        f"UI surface {record.surface_id!r} already exists "
-                        "(use overwrite=True to replace it)"
+                        f"UI surface {record.surface_id!r} already exists " "(use overwrite=True to replace it)"
                     ) from exc
                 raise
         return record.surface_id
@@ -402,9 +401,7 @@ class PgUISurfaceStore:
             row = await conn.fetchrow(_GET_SQL, surface_id)
         return _row_to_record(row) if row is not None else None
 
-    async def list(
-        self, user_id: str, *, kind: UISurfaceKind | None = None
-    ) -> list[UISurfaceRecord]:
+    async def list(self, user_id: str, *, kind: UISurfaceKind | None = None) -> list[UISurfaceRecord]:
         """List surfaces owned by ``user_id``, optionally filtered by ``kind``."""
         await self._ensure_ready()
         db = self._get_db()
@@ -423,16 +420,12 @@ class PgUISurfaceStore:
             rows = await conn.fetchall(_LIST_SHARED_WITH_SQL, user_id)
         return [_row_to_record(r) for r in rows]
 
-    async def update_envelope(
-        self, surface_id: str, envelope: dict[str, Any], recipe_params: dict[str, Any]
-    ) -> None:
+    async def update_envelope(self, surface_id: str, envelope: dict[str, Any], recipe_params: dict[str, Any]) -> None:
         """Replace ``envelope``/``recipe_params`` in place, bumping ``updated_at``."""
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.execute(
-                _UPDATE_ENVELOPE_SQL, surface_id, json.dumps(envelope), json.dumps(recipe_params)
-            )
+            await conn.execute(_UPDATE_ENVELOPE_SQL, surface_id, json.dumps(envelope), json.dumps(recipe_params))
 
     async def delete(self, surface_id: str, user_id: str) -> bool:
         """Delete a surface owned by ``user_id``. Returns ``True`` if a row was removed."""

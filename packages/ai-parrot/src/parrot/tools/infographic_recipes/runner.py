@@ -299,9 +299,7 @@ class RecipeRunner:
         envelope = self._assemble_envelope_or_raise(recipe, data_model)
         artifact = await self._render_or_raise(recipe, envelope)
         if include_envelope:
-            artifact.metadata["source_envelope"] = envelope.model_dump(
-                by_alias=True, mode="json"
-            )
+            artifact.metadata["source_envelope"] = envelope.model_dump(by_alias=True, mode="json")
         await self._deliver_best_effort(recipe, artifact)
         return artifact
 

@@ -89,6 +89,7 @@ async def _resolve_ui_surface_access(
         return record, None
     return None, ("Surface not found", 404)
 
+
 logger = logging.getLogger(__name__)
 
 #: How often to send an SSE keepalive comment while streaming (seconds).
@@ -290,9 +291,7 @@ class A2UIHandler(AgentTalk):
         qs = self.query_parameters(self.request)
         token = qs.get("share")
 
-        record, error = await _resolve_ui_surface_access(
-            self._ui_surfaces_store(), surface_id, user_id, token
-        )
+        record, error = await _resolve_ui_surface_access(self._ui_surfaces_store(), surface_id, user_id, token)
         if error is not None:
             message, status = error
             return self.json_response({"status": "error", "message": message}, status=status)

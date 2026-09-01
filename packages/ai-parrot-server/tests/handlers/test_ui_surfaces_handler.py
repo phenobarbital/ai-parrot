@@ -12,6 +12,7 @@ unit test of the handler's OWN request-handling logic.
 
 ``PgUISurfaceStore`` and ``RecipeRunner`` are mocked/stubbed throughout.
 """
+
 from __future__ import annotations
 
 import json
@@ -245,9 +246,7 @@ class TestGet:
     async def test_get_share_token_ok_and_claims(self, fake_store):
         record = _make_record(user_id="owner-a")
         fake_store.get.return_value = record
-        share = UISurfaceShare(
-            token="tok-1", surface_id="surface-1", created_at=datetime.now(UTC)
-        )
+        share = UISurfaceShare(token="tok-1", surface_id="surface-1", created_at=datetime.now(UTC))
         fake_store.resolve_share.return_value = share
         h = _handler(
             _app(fake_store),
@@ -349,9 +348,7 @@ class TestPinSave:
 
     async def test_post_pin_source_artifact_copies_envelope(self, fake_store):
         artifact_store = MagicMock()
-        artifact_store.get_artifact = AsyncMock(
-            return_value=SimpleNamespace(definition=_sample_envelope())
-        )
+        artifact_store.get_artifact = AsyncMock(return_value=SimpleNamespace(definition=_sample_envelope()))
         body = {
             "kind": "dashboard",
             "title": "X",
@@ -387,9 +384,7 @@ class TestRefresh:
         )
         fake_store.get.return_value = record
         refreshed_envelope = _sample_envelope()
-        fake_runner.run.return_value = SimpleNamespace(
-            metadata={"source_envelope": refreshed_envelope}
-        )
+        fake_runner.run.return_value = SimpleNamespace(metadata={"source_envelope": refreshed_envelope})
 
         h = _handler(
             _app(fake_store, runner=fake_runner),
@@ -413,13 +408,9 @@ class TestRefresh:
     async def test_refresh_share_bearer_uses_owner_pctx(self, fake_store, fake_runner):
         record = _make_record(user_id="owner-a", recipe_name="daily-budget")
         fake_store.get.return_value = record
-        share = UISurfaceShare(
-            token="tok-1", surface_id="surface-1", created_at=datetime.now(UTC)
-        )
+        share = UISurfaceShare(token="tok-1", surface_id="surface-1", created_at=datetime.now(UTC))
         fake_store.resolve_share.return_value = share
-        fake_runner.run.return_value = SimpleNamespace(
-            metadata={"source_envelope": _sample_envelope()}
-        )
+        fake_runner.run.return_value = SimpleNamespace(metadata={"source_envelope": _sample_envelope()})
 
         h = _handler(
             _app(fake_store, runner=fake_runner),

@@ -5,6 +5,7 @@ matches on the store's own module-level SQL constants (identity/equality),
 mirroring the ``_FakeAsyncDB``/``_FakeConnCtx`` idiom used by
 ``test_comm_center_dispatch.py`` — no live Postgres required.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -149,9 +150,7 @@ class _FakeConn:
             rows = [r for r in state.surfaces.values() if r["user_id"] == user_id]
         elif sql == m._LIST_BY_KIND_SQL:
             user_id, kind = args
-            rows = [
-                r for r in state.surfaces.values() if r["user_id"] == user_id and r["kind"] == kind
-            ]
+            rows = [r for r in state.surfaces.values() if r["user_id"] == user_id and r["kind"] == kind]
         elif sql == m._LIST_SHARED_WITH_SQL:
             user_id = args[0]
             now = datetime.now(UTC)
@@ -331,9 +330,7 @@ async def test_share_resolve_revoked_expired_missing_all_none(pg_store):
     await pg_store.revoke_share(revoked.token, record.surface_id)
     assert await pg_store.resolve_share(revoked.token) is None
 
-    expired = await pg_store.mint_share(
-        record.surface_id, expires_at=datetime.now(UTC) - timedelta(seconds=1)
-    )
+    expired = await pg_store.mint_share(record.surface_id, expires_at=datetime.now(UTC) - timedelta(seconds=1))
     assert await pg_store.resolve_share(expired.token) is None
 
     assert await pg_store.resolve_share("does-not-exist") is None

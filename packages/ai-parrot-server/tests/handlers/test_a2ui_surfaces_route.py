@@ -7,6 +7,7 @@ Real aiohttp ``TestClient`` end-to-end (``A2UIHandler`` does not use
 app-context slot ``UISurfacesHandler``/``A2UIHandler`` both lazily populate),
 so no live Postgres is required.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -56,9 +57,9 @@ def _bot_manager(agent):
 
 
 def _sample_envelope(surface_id="s-1") -> dict:
-    return CreateSurface(
-        surfaceId=surface_id, components=[], dataModel={"filters": {"window": "all"}}
-    ).model_dump(by_alias=True, mode="json")
+    return CreateSurface(surfaceId=surface_id, components=[], dataModel={"filters": {"window": "all"}}).model_dump(
+        by_alias=True, mode="json"
+    )
 
 
 def _make_record(**overrides) -> UISurfaceRecord:
@@ -121,18 +122,14 @@ class TestMirrorRouteNegotiation:
     async def test_mirror_route_json_and_html_negotiation(self, client, fake_store):
         fake_store.get.return_value = _make_record()
 
-        r_json = await client.get(
-            "/api/v1/agents/demo/a2ui/surfaces/surface-1", params=_auth_params()
-        )
+        r_json = await client.get("/api/v1/agents/demo/a2ui/surfaces/surface-1", params=_auth_params())
         assert r_json.status == 200
         assert r_json.content_type == "application/json"
         body = await r_json.json()
         assert body["metadata"]["surface_id"] == "surface-1"
 
         params_html = {**_auth_params(), "format": "html"}
-        r_html = await client.get(
-            "/api/v1/agents/demo/a2ui/surfaces/surface-1", params=params_html
-        )
+        r_html = await client.get("/api/v1/agents/demo/a2ui/surfaces/surface-1", params=params_html)
         assert r_html.status == 200
         assert r_html.content_type == "text/html"
 
@@ -227,9 +224,7 @@ class TestRouteOrdering:
         assert "supportedCatalogIds" in caps_body["v1.0"]
 
         fake_store.get.return_value = _make_record()
-        r_surface = await client.get(
-            "/api/v1/agents/demo/a2ui/surfaces/surface-1", params=_auth_params()
-        )
+        r_surface = await client.get("/api/v1/agents/demo/a2ui/surfaces/surface-1", params=_auth_params())
         assert r_surface.status == 200
         surface_body = await r_surface.json()
         assert "metadata" in surface_body  # negotiated surface response, NOT capabilities/SSE
@@ -238,7 +233,5 @@ class TestRouteOrdering:
         # GET without a body reader will hang on a live stream, so just
         # confirm it's routed to A2UIHandler and starts an SSE response by
         # checking headers via a short-lived connection).
-        async with client.session.get(
-            client.make_url("/api/v1/agents/demo/a2ui"), params=_auth_params()
-        ) as resp:
+        async with client.session.get(client.make_url("/api/v1/agents/demo/a2ui"), params=_auth_params()) as resp:
             assert resp.headers.get("Content-Type", "").startswith("text/event-stream")

@@ -6,6 +6,7 @@ fixture shape as `tests/tools/infographic_recipes/test_runner.py` — kept
 self-contained here rather than importing from that module, since this
 task's scope is limited to the new `include_envelope` flag.
 """
+
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -105,9 +106,7 @@ def _passthrough(inputs, params):
     return {"value": float(inputs["snapshots"]["value"].sum())}
 
 
-transformer_registry.register(
-    "test_envelope_passthrough", _passthrough, requires_columns={"snapshots": ["value"]}
-)
+transformer_registry.register("test_envelope_passthrough", _passthrough, requires_columns={"snapshots": ["value"]})
 
 
 def _make_recipe(**overrides) -> InfographicRecipe:
