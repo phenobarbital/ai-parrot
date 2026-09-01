@@ -5,6 +5,8 @@ FEAT-177 TASK-1229.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from parrot.core.events.lifecycle.events import (
@@ -39,9 +41,18 @@ def _reset_warned_unknown():
 def test_provider_mapping_covers_all_known_clients() -> None:
     """All providers documented in spec §2 must appear in the mapping."""
     expected = {
-        "openai", "anthropic", "claude-agent", "google", "gemini-live",
-        "groq", "grok", "nvidia", "huggingface", "gemma4",
-        "anthropic-bedrock", "bedrock",  # FEAT-232: Claude via AWS Bedrock
+        "openai",
+        "anthropic",
+        "claude-agent",
+        "google",
+        "gemini-live",
+        "groq",
+        "grok",
+        "nvidia",
+        "huggingface",
+        "gemma4",
+        "anthropic-bedrock",
+        "bedrock",  # FEAT-232: Claude via AWS Bedrock
     }
     assert expected.issubset(PROVIDER_TO_GEN_AI_SYSTEM.keys())
 
@@ -63,11 +74,77 @@ def test_resolve_gen_ai_system_known() -> None:
     assert resolve_gen_ai_system("gemma4") == "huggingface"
 
 
+def test_resolve_gen_ai_system_dispatched_coding_agents() -> None:
+    """dev-loop/dev-flow dispatchers emit their BACKEND id, not a client_name.
+
+    ``ClaudeCodeDispatcher._emit_usage_event`` emits ``client_name="claude-code"``
+    (and the Codex dispatcher ``"openai-codex"``) for out-of-process seats, which
+    warned as unknown providers and attributed their traces to a non-SemConv
+    value.
+    """
+    assert resolve_gen_ai_system("claude-code") == "anthropic"
+    assert resolve_gen_ai_system("openai-codex") == "openai"
+
+
+def test_resolve_gen_ai_system_bedrock_routes() -> None:
+    """Every Bedrock-hosted route shares Bedrock's canonical system value."""
+    assert resolve_gen_ai_system("nova") == "aws.bedrock"
+    assert resolve_gen_ai_system("bedrock-mantle") == "aws.bedrock"
+    assert resolve_gen_ai_system("bedrock-converse") == "aws.bedrock"
+
+
+def test_every_shipped_client_name_is_mapped() -> None:
+    """No first-party client may emit an unmapped ``client_name``.
+
+    The provider map drifted behind the clients package (13 shipped
+    ``client_name`` values were missing, so each one logged an unknown-provider
+    WARN on its first call). This walks the class attribute rather than a
+    hand-kept list, so a new client that forgets the mapping fails here.
+    """
+    import importlib
+    import pkgutil
+
+    import parrot.clients as clients_pkg
+
+    seen: set[str] = set()
+    for mod in pkgutil.iter_modules(clients_pkg.__path__):
+        try:
+            module = importlib.import_module(f"parrot.clients.{mod.name}")
+        except Exception:  # noqa: BLE001, S112 - optional provider SDK absent
+            continue
+        for obj in vars(module).values():
+            name = getattr(obj, "client_name", None)
+            if isinstance(name, str) and name and isinstance(obj, type):
+                seen.add(name)
+    unmapped = sorted(n for n in seen if n not in PROVIDER_TO_GEN_AI_SYSTEM)
+    assert not unmapped, f"client_name values missing from PROVIDER_TO_GEN_AI_SYSTEM: {unmapped}"
+
+
+def test_every_emitted_client_name_literal_is_mapped() -> None:
+    """Catch the dispatcher case the class-attribute walk cannot see.
+
+    ``ClaudeCodeDispatcher`` passes ``client_name="claude-code"`` as a literal
+    on the event it emits — no client class involved — which is exactly how
+    ``claude-code`` reached the provider map's blind spot. Scanning the source
+    for emitted literals covers both shapes.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[4]
+    pattern = re.compile(r'client_name=["\']([A-Za-z0-9._-]+)["\']')
+    literals: set[str] = set()
+    for path in root.glob("packages/*/src/parrot/**/*.py"):
+        literals.update(pattern.findall(path.read_text(encoding="utf-8")))
+    unmapped = sorted(n for n in literals if n not in PROVIDER_TO_GEN_AI_SYSTEM)
+    assert not unmapped, f"emitted client_name literals missing from PROVIDER_TO_GEN_AI_SYSTEM: {unmapped}"
+
+
 def test_resolve_gen_ai_system_unknown_falls_back_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Unknown provider falls back to raw value and warns exactly once."""
     import logging
+
     with caplog.at_level(logging.WARNING):
         result1 = resolve_gen_ai_system("brand-new-llm")
         result2 = resolve_gen_ai_system("brand-new-llm")
