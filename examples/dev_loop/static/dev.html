@@ -815,6 +815,22 @@ function renderReady() {
 const HITL_KINDS = ["open_questions", "plan_approval", "manual_criterion",
                     "review_escalation", "deployment_approval", "revision_approval"];
 
+/* Signature of the field set currently mounted in #hitl-fields.
+   render() runs on every streamed node event AND once a second while a run
+   is live (the elapsed-timer tick at the bottom of this file). Rewriting
+   #hitl-fields unconditionally replaced the very <textarea> the operator was
+   typing in, so the caret was yanked out roughly once a second and the panel
+   was impossible to answer. The inputs are uncontrolled — drafts already live
+   in app.hitl — so the DOM only has to be rebuilt when the FIELDS change
+   (a different gate, or a different question list), never on a repaint. */
+let hitlFieldsKey = null;
+
+function setHitlFields(key, buildHtml) {
+  if (hitlFieldsKey === key) return;
+  hitlFieldsKey = key;
+  $("hitl-fields").innerHTML = buildHtml();
+}
+
 function pendingGate() {
   const gates = Object.values(app.s.gates || {})
     .filter((g) => (g.status || "pending") === "pending" && HITL_KINDS.includes(g.kind));
@@ -839,6 +855,7 @@ function renderHitl() {
   if (!gate) {
     section.classList.add("hidden");
     app.hitl.gateId = null;
+    hitlFieldsKey = null;
     return;
   }
 
@@ -863,13 +880,14 @@ function renderHitl() {
   $("hitl-identity").textContent = `as ${localStorage.getItem("devflow-user") || "console-user"}`;
 
   if (isQuestions) {
-    $("hitl-fields").innerHTML = questions.map((q, i) => `
+    setHitlFields(`q:${gate.gate_id}:${questions.join("\u241F")}`, () =>
+      questions.map((q, i) => `
       <div class="field">
         <label for="hq-${i}">${esc(q)}</label>
         <textarea id="hq-${i}" class="input mono" data-hitl-q="${esc(q)}"
           style="min-height:64px;font-size:12.5px;line-height:1.6"
           placeholder="Your answer — leave blank to leave this question open">${esc(app.hitl.answers[q] || "")}</textarea>
-      </div>`).join("");
+      </div>`).join(""));
     $("hitl-submit").textContent = "Submit answers";
     $("hitl-footnote").textContent =
       "Partial answers are fine — anything you leave blank stays '[ ]' in the " +
@@ -878,12 +896,12 @@ function renderHitl() {
   } else {
     // plan_approval and every other kind: approve/reject + a comment, no
     // structured answers.
-    $("hitl-fields").innerHTML = `
+    setHitlFields(`c:${gate.gate_id}`, () => `
       <div class="field">
         <label for="hitl-comment">Comment (optional — recorded on the gate)</label>
         <textarea id="hitl-comment" class="input mono" style="min-height:64px;font-size:12.5px;line-height:1.6"
           placeholder="Looks right — proceed.">${esc(app.hitl.comment)}</textarea>
-      </div>`;
+      </div>`);
     $("hitl-submit").textContent = "Approve";
     $("hitl-footnote").textContent = gate.kind === "plan_approval"
       ? "Approving releases the dev-agent fleet. Rejecting stops the run before any code is written."
