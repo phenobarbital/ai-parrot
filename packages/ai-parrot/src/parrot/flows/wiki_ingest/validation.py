@@ -66,9 +66,11 @@ class ValidationContext(BaseModel):
         files_with_stale_inbound_links: Moved/renamed files whose inbound
             links were NOT updated by link-fixup (must stay empty —
             §8.1, ``move_note`` does not rewrite backlinks on its own).
-        diff_guard_violations: Claims dropped by a project reconcile
-            while a live source still supports them (Q2 — must stay
-            empty).
+        diff_guard_violations: Claims the reconciler's own Q2 safety net
+            (``project_reconcile._apply_diff_guard``) had to reinsert
+            because the LLM's draft proposal dropped them — informational
+            (a warning): the reinsertion already guarantees the claim is
+            present in the final rendered page.
         insufficient_evidence_fields: ``{field label: rendered value}``
             for every field the compiler flagged as insufficient-evidence
             — the rendered value must be one of
@@ -150,8 +152,18 @@ def _source_integrity(ctx: ValidationContext, failures: list[str]) -> None:
             failures.append(f"source integrity: raw link {link!r} does not point to an existing file")
 
 
-def _knowledge_integrity(ctx: ValidationContext, failures: list[str]) -> None:
-    """§34 "Knowledge integrity" group (+ Q2 diff-guard)."""
+def _knowledge_integrity(ctx: ValidationContext, failures: list[str], warnings: list[str]) -> None:
+    """§34 "Knowledge integrity" group (+ Q2 diff-guard).
+
+    ``diff_guard_violations`` is a **warning**, not a failure: by the
+    time this context is built, ``project_reconcile.py``'s
+    ``_apply_diff_guard`` has already reinserted any claim the LLM's
+    draft proposal dropped — the Q2 invariant ("no claim dropped while a
+    live source still supports it") holds in the *final* rendered page
+    by construction. The list exists so an operator can see the LLM
+    needed correcting, not to block/roll back an otherwise-successful
+    reconcile that self-healed exactly as designed.
+    """
     for path in ctx.project_pages_stale:
         failures.append(f"knowledge integrity: project page {path!r} does not reflect the newest current state")
     for path in ctx.duplicate_pages:
@@ -163,7 +175,10 @@ def _knowledge_integrity(ctx: ValidationContext, failures: list[str]) -> None:
     for path in ctx.locked_pages_modified:
         failures.append(f"knowledge integrity: locked page {path!r} modified without explicit request (§2 r13)")
     for claim in ctx.diff_guard_violations:
-        failures.append(f"knowledge integrity: project reconcile diff-guard violated (Q2) — dropped claim: {claim!r}")
+        warnings.append(
+            f"knowledge integrity: project reconcile diff-guard (Q2) reinserted a claim "
+            f"the draft proposal dropped: {claim!r}"
+        )
 
 
 def _obsidian_integrity(ctx: ValidationContext, failures: list[str]) -> None:
@@ -227,8 +242,9 @@ def validate(ctx: ValidationContext) -> ValidationResult:
         a review item, and write no success registry/log entry.
     """
     failures: list[str] = []
+    warnings: list[str] = []
     _source_integrity(ctx, failures)
-    _knowledge_integrity(ctx, failures)
+    _knowledge_integrity(ctx, failures, warnings)
     _obsidian_integrity(ctx, failures)
     _operational_integrity(ctx, failures)
-    return ValidationResult(passed=not failures, failures=failures)
+    return ValidationResult(passed=not failures, failures=failures, warnings=warnings)

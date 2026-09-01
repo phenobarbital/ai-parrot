@@ -49,10 +49,26 @@ async def test_agent_configure_builds_tier_clients() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_stub_raises_not_implemented() -> None:
-    """Module 1's ``ingest`` stub delegates to the (stub) runner, which
-    raises until the orchestrator is wired (spec Module 6)."""
+async def test_ingest_delegates_to_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``ingest()`` delegates to ``runner.run_ingest``, passing itself as
+    ``ctx.agent`` (spec Module 6 — TASK-2672 wires the full pipeline)."""
+    from unittest.mock import AsyncMock
+
+    from parrot.flows.wiki_ingest import runner as runner_module
+
     agent = FirefliesWikiKBAgent()
     await agent.configure()
-    with pytest.raises(NotImplementedError):
-        await agent.ingest()
+
+    captured_ctx = {}
+
+    async def _fake_run_ingest(ctx):
+        captured_ctx["ctx"] = ctx
+        return runner_module.IngestReport(processed=1)
+
+    monkeypatch.setattr(runner_module, "run_ingest", AsyncMock(side_effect=_fake_run_ingest))
+
+    report = await agent.ingest(limit=5)
+
+    assert report.processed == 1
+    assert captured_ctx["ctx"].agent is agent
+    assert captured_ctx["ctx"].limit == 5

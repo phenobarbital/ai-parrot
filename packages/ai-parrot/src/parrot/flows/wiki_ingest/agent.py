@@ -117,9 +117,10 @@ class FirefliesWikiKBAgent(Agent):
     ) -> IngestReport:
         """Run the §27 ingest workflow (fetch → compile → validate).
 
-        A stub in Module 1 — wired to the full pipeline in
-        :func:`~parrot.flows.wiki_ingest.runner.run_ingest` by a later
-        task (spec Module 6).
+        Delegates to :func:`~parrot.flows.wiki_ingest.runner.run_ingest`
+        (spec Module 6), passing ``self`` so the runner can reach
+        ``strong_client``/``cheap_client`` and the Fireflies MCP tool
+        surface.
 
         Args:
             limit: Per-run cap on meetings processed (defaults to
@@ -139,6 +140,7 @@ class FirefliesWikiKBAgent(Agent):
             force_refetch=force_refetch,
             since=since,
             lookback_days=lookback_days,
+            agent=self,
         )
         return await run_ingest(ctx)
 
@@ -149,12 +151,22 @@ class FirefliesWikiKBAgent(Agent):
             question: Free-text question about the knowledge base.
 
         Returns:
-            A ``QueryResult`` (spec Module 13) once
-            ``nodes/query.py`` is implemented.
+            The :class:`~.nodes.query.QueryResult`.
+
+        Raises:
+            RuntimeError: If ``configure()`` has not run yet (no
+                ``strong_client``).
         """
+        from . import vault
+        from .graph import build_wiki_kb_graph_toolkit
         from .nodes.query import run_query
 
-        return await run_query(self, question)
+        if self.strong_client is None:
+            raise RuntimeError("FirefliesWikiKBAgent.query() called before configure()")
+
+        wiki_toolkit = await build_wiki_kb_graph_toolkit(conf.WIKI_KB_VAULT_PATH)
+        vault_toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
+        return await run_query(self.strong_client, wiki_toolkit, vault_toolkit, question)
 
     async def health(self) -> Any:
         """Run the §29 fast operational health check.
