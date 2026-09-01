@@ -197,6 +197,21 @@ class LLMCodeDispatcher:
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
 
+    @staticmethod
+    def _log_id(node_id: str, brief: BaseModel) -> str:
+        """Build the log label for one dispatch: seat, plus task when known.
+
+        Args:
+            node_id: The dispatch seat, e.g. ``"development.w1"``.
+            brief: The dispatch brief; a ``TaskScopedBrief`` in pool mode.
+
+        Returns:
+            ``"development.w1 [TASK-1901]"`` when the brief is task-scoped,
+            otherwise ``node_id`` unchanged.
+        """
+        task_id = getattr(brief, "task_id", "")
+        return f"{node_id} [{task_id}]" if task_id else node_id
+
     async def _dispatch_loop(
         self,
         *,
@@ -214,6 +229,13 @@ class LLMCodeDispatcher:
         # `node_id` IS the seat here: DevAgentPool already passes
         # "development.w1"-style worker ids as `node_id` (agent_pool.py).
         with usage_attribution(run_id, node_id):
+            # In pool mode `node_id` is the SEAT ("development.w1"), which
+            # by itself never says which task the seat is chewing on. The
+            # brief already carries it (TaskScopedBrief.task_id), so the
+            # per-turn lines below can name it without any signature
+            # change; single-agent briefs have no task_id and keep the
+            # bare seat label.
+            log_id = self._log_id(node_id, brief)
             client = self._create_client(profile, run_id=run_id)
             await self._ensure_client_ready(client)
             model = self._resolve_model(profile, client)
@@ -242,7 +264,7 @@ class LLMCodeDispatcher:
             budget_marks = self._budget_marks(profile.max_turns)
             self.logger.info(
                 "%s dispatching %s on %s (budget: %d turns, %ds wall-clock)",
-                node_id,
+                log_id,
                 profile.subagent,
                 model,
                 profile.max_turns,
@@ -283,7 +305,7 @@ class LLMCodeDispatcher:
                     # tool failures visible while it happens.
                     self.logger.info(
                         "%s turn %d/%d: %s (%.1fs)",
-                        node_id,
+                        log_id,
                         turn_index + 1,
                         profile.max_turns,
                         ", ".join(self._tool_call_name(call) for call in tool_calls) or "no tool call",
@@ -408,7 +430,7 @@ class LLMCodeDispatcher:
                         )
                         self.logger.info(
                             "%s budget warning issued: %d/%d turns used",
-                            node_id,
+                            log_id,
                             turn_index + 1,
                             profile.max_turns,
                         )
@@ -743,8 +765,10 @@ class LLMCodeDispatcher:
                     "in ONE message. Reading five files one per turn spends "
                     "five turns for nothing.\n"
                     "- `run_command` execs a bare argv: there is NO shell, so "
-                    "no pipes, no `>` redirection, no `&&`, no `cd`. Write "
-                    "files with `write_file`, not `cat >` or `python -c`.\n"
+                    "no pipes, no `>` redirection, no `&&`, no `cd`. Create "
+                    "files with `write_file` and change them with "
+                    "`edit_file` — not `cat >`, `sed -i` or `python -c`, and "
+                    "not a unified diff unless nothing else fits.\n"
                     + (
                         f"- You are working in {cwd} — every tool path "
                         "resolves there. The brief may also name a "
@@ -1008,8 +1032,30 @@ class LLMCodeDispatcher:
                 },
             ),
             self._function_tool(
+                "edit_file",
+                "Replace an exact string in an existing file. PREFER THIS for "
+                "editing: it needs no line numbers, no hunk headers and no "
+                "context lines, so it cannot be 'corrupt' the way a diff can. "
+                "`old_string` must match the file byte-for-byte and appear "
+                "exactly once unless `replace_all` is true — include a few "
+                "surrounding lines to make it unique.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "old_string": {"type": "string"},
+                        "new_string": {"type": "string"},
+                        "replace_all": {"type": "boolean", "default": False},
+                    },
+                    "required": ["path", "old_string", "new_string"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_tool(
                 "apply_patch",
-                "Apply a git unified diff inside the current repository.",
+                "Apply a git unified diff. Last resort — use `edit_file` for "
+                "an edit and `write_file` for a new file; both avoid the "
+                "hunk-header arithmetic that makes diffs fail.",
                 {
                     "type": "object",
                     "properties": {"patch": {"type": "string"}},
@@ -1077,6 +1123,8 @@ class LLMCodeDispatcher:
                 return await self._tool_search_files(cwd, tool_args)
             if tool_name == "write_file":
                 return self._tool_write_file(cwd, tool_args, profile)
+            if tool_name == "edit_file":
+                return self._tool_edit_file(cwd, tool_args, profile)
             if tool_name == "apply_patch":
                 return await self._tool_apply_patch(cwd, tool_args, profile)
             if tool_name == "run_command":
@@ -1227,6 +1275,98 @@ class LLMCodeDispatcher:
             )
         return None, ""
 
+    #: `git apply` retry ladder, strictest first. Each rung fixes a
+    #: failure mode LLM-authored diffs actually hit: `--recount` ignores
+    #: the hunk-header line counts (models mis-add them constantly) and
+    #: `-C1` relaxes context matching when the surrounding lines drifted.
+    #: A diff that survives none of these is not worth another turn — the
+    #: tool result says to use edit_file instead.
+    _PATCH_FLAG_LADDER: Tuple[Tuple[str, ...], ...] = (
+        (),
+        ("--recount",),
+        ("--recount", "-C1"),
+    )
+
+    def _tool_edit_file(
+        self,
+        cwd: str,
+        args: Dict[str, Any],
+        profile: LLMCodeDispatchProfile,
+    ) -> Dict[str, Any]:
+        """Replace an exact string in a file — the reliable edit primitive.
+
+        ``apply_patch`` was the only way to change an existing file, and a
+        unified diff is the one edit format a model has to get arithmetic
+        right for: observed seats lost turns to "corrupt patch at line N"
+        over and over. An exact string replacement has no line numbers, no
+        hunk headers and no context arithmetic, so it either matches or
+        reports precisely why it did not.
+
+        Args:
+            cwd: Worktree root; ``path`` may not escape it.
+            args: ``{"path", "old_string", "new_string", "replace_all"?}``.
+            profile: Dispatch profile, read for its sandbox mode.
+
+        Returns:
+            A tool-result dict; ``ok`` is False (never an exception) when
+            the match is missing or ambiguous, so the model gets the count
+            back and can widen ``old_string``.
+
+        Raises:
+            ValueError: If the sandbox is read-only, the arguments are not
+                strings, or ``path`` escapes ``cwd``.
+        """
+        if profile.sandbox != "workspace-write":
+            raise ValueError("edit_file requires workspace-write sandbox")
+        old_string = args.get("old_string")
+        new_string = args.get("new_string")
+        if not isinstance(old_string, str) or not isinstance(new_string, str):
+            raise ValueError("old_string and new_string must be strings")
+        if not old_string:
+            raise ValueError("old_string must not be empty; use write_file to create a file")
+        path = self._resolve_repo_path(cwd, str(args["path"]))
+        rel_path = os.path.relpath(path, cwd)
+        if not os.path.isfile(path):
+            return {
+                "ok": False,
+                "path": rel_path,
+                "error": f"{rel_path} does not exist; use write_file to create it",
+            }
+
+        with open(path, "r", encoding="utf-8") as fh:
+            content = fh.read()
+        occurrences = content.count(old_string)
+        if occurrences == 0:
+            return {
+                "ok": False,
+                "path": rel_path,
+                "error": (
+                    "old_string not found. It must match the file "
+                    "byte-for-byte, including indentation — read the file "
+                    "and copy the exact text."
+                ),
+            }
+        replace_all = bool(args.get("replace_all"))
+        if occurrences > 1 and not replace_all:
+            return {
+                "ok": False,
+                "path": rel_path,
+                "occurrences": occurrences,
+                "error": (
+                    f"old_string matches {occurrences} places. Add "
+                    "surrounding lines to make it unique, or pass "
+                    "replace_all=true."
+                ),
+            }
+
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content.replace(old_string, new_string))
+        return {
+            "ok": True,
+            "path": rel_path,
+            "replacements": occurrences if replace_all else 1,
+        }
+
     def _tool_write_file(
         self,
         cwd: str,
@@ -1286,21 +1426,44 @@ class LLMCodeDispatcher:
             raise ValueError("apply_patch requires workspace-write sandbox")
         patch = str(args["patch"])
         self._validate_patch_paths(cwd, patch)
-        check = await self._run_argv(
-            ["git", "apply", "--check", "-"],
-            cwd=cwd,
-            timeout=profile.command_timeout_seconds,
-            stdin=patch,
-        )
-        if check["exit_code"] != 0:
-            return {**check, "ok": False}
-        applied = await self._run_argv(
-            ["git", "apply", "-"],
-            cwd=cwd,
-            timeout=profile.command_timeout_seconds,
-            stdin=patch,
-        )
-        return {**applied, "ok": applied["exit_code"] == 0}
+        if not patch.endswith("\n"):
+            # `git apply` reports "corrupt patch at line N" for a diff whose
+            # last line has no newline — a pure serialisation artifact of a
+            # model emitting the patch as a JSON string.
+            patch += "\n"
+
+        last: Dict[str, Any] = {}
+        for flags in self._PATCH_FLAG_LADDER:
+            check = await self._run_argv(
+                ["git", "apply", "--check", *flags, "-"],
+                cwd=cwd,
+                timeout=profile.command_timeout_seconds,
+                stdin=patch,
+            )
+            last = check
+            if check["exit_code"] != 0:
+                continue
+            applied = await self._run_argv(
+                ["git", "apply", *flags, "-"],
+                cwd=cwd,
+                timeout=profile.command_timeout_seconds,
+                stdin=patch,
+            )
+            return {
+                **applied,
+                "ok": applied["exit_code"] == 0,
+                "flags": list(flags),
+            }
+
+        return {
+            **last,
+            "ok": False,
+            "hint": (
+                "The diff did not apply, with or without --recount/-C1. Do "
+                "NOT retry another diff — read the file and use `edit_file` "
+                "(exact string replacement), or `write_file` to rewrite it."
+            ),
+        }
 
     async def _tool_run_command(
         self,

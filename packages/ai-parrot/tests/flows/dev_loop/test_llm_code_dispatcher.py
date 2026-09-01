@@ -721,3 +721,126 @@ def test_system_prompt_names_the_working_directory(monkeypatch, brief, tmp_path)
     assert f"You are working in {tmp_path}" in system
     assert "repo_path" in system
     assert "no pipes, no `>` redirection" in system
+
+
+def test_edit_file_replaces_a_unique_match(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    target = tmp_path / "mod.py"
+    target.write_text("a = 1\nb = 2\n", encoding="utf-8")
+
+    result = dispatcher._tool_edit_file(
+        str(tmp_path),
+        {"path": "mod.py", "old_string": "b = 2", "new_string": "b = 3"},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is True
+    assert result["replacements"] == 1
+    assert target.read_text() == "a = 1\nb = 3\n"
+
+
+def test_edit_file_reports_an_ambiguous_match_instead_of_guessing(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "mod.py").write_text("x = 1\nx = 1\n", encoding="utf-8")
+
+    result = dispatcher._tool_edit_file(
+        str(tmp_path),
+        {"path": "mod.py", "old_string": "x = 1", "new_string": "x = 2"},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert result["occurrences"] == 2
+    assert (tmp_path / "mod.py").read_text() == "x = 1\nx = 1\n"
+
+
+def test_edit_file_replace_all_is_opt_in(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "mod.py").write_text("x = 1\nx = 1\n", encoding="utf-8")
+
+    result = dispatcher._tool_edit_file(
+        str(tmp_path),
+        {
+            "path": "mod.py",
+            "old_string": "x = 1",
+            "new_string": "x = 2",
+            "replace_all": True,
+        },
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is True
+    assert result["replacements"] == 2
+    assert (tmp_path / "mod.py").read_text() == "x = 2\nx = 2\n"
+
+
+def test_edit_file_missing_match_does_not_raise(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "mod.py").write_text("a = 1\n", encoding="utf-8")
+
+    result = dispatcher._tool_edit_file(
+        str(tmp_path),
+        {"path": "mod.py", "old_string": "nope", "new_string": "x"},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "byte-for-byte" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_path):
+    """--recount rescues the arithmetic error models make most often."""
+    import subprocess
+
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    target = tmp_path / "mod.py"
+    target.write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
+    subprocess.run(["git", "add", "mod.py"], cwd=tmp_path, check=True)
+
+    # Header claims 9 lines of context; there are 3. Strict git apply says
+    # "corrupt patch at line N"; --recount infers the real counts.
+    patch = (
+        "diff --git a/mod.py b/mod.py\n"
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,9 +1,9 @@\n"
+        " a = 1\n"
+        "-b = 2\n"
+        "+b = 22\n"
+        " c = 3\n"
+    )
+
+    result = await dispatcher._tool_apply_patch(
+        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
+    )
+
+    assert result["ok"] is True
+    assert result["flags"] == ["--recount"]
+    assert target.read_text() == "a = 1\nb = 22\nc = 3\n"
+
+
+@pytest.mark.asyncio
+async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
+    import subprocess
+
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "mod.py").write_text("a = 1\n", encoding="utf-8")
+
+    patch = (
+        "diff --git a/mod.py b/mod.py\n"
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,1 +1,1 @@\n"
+        "-this line is not in the file\n"
+        "+replacement\n"
+    )
+
+    result = await dispatcher._tool_apply_patch(
+        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
+    )
+
+    assert result["ok"] is False
+    assert "edit_file" in result["hint"]
