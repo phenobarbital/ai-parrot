@@ -63,7 +63,9 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",
-            "parallel_tool_calls": False,
+            # Read from the profile (default True): one turn per tool call
+            # is what made whole tasks die against `max_turns`.
+            "parallel_tool_calls": getattr(profile, "parallel_tool_calls", True),
             "max_tokens": profile.max_tokens,
         }
         _provider, model = LLMFactory.parse_llm_string(profile.llm)

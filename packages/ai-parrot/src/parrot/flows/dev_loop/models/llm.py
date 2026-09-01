@@ -21,9 +21,21 @@ class LLMCodeDispatchProfile(BaseModel):
     approval_policy: Literal["never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     max_turns: int = Field(default=24, ge=1, le=100)
-    max_tokens: int = Field(default=4096, ge=256, le=32768)
+    max_tokens: int = Field(default=8192, ge=256, le=32768)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     command_timeout_seconds: int = Field(default=300, ge=1, le=3600)
+    parallel_tool_calls: bool = Field(
+        default=True,
+        description=(
+            "Let the model request several tools in ONE turn. The dispatch "
+            "loop already executes every call in a turn sequentially, so this "
+            "only changes how much work fits in a turn — and a turn is the "
+            "scarce resource: with it disabled, reading five files costs five "
+            "turns of a `max_turns` budget that whole tasks were dying "
+            "against. Set False for a backend that mis-handles multi-call "
+            "turns."
+        ),
+    )
     allowed_commands: List[str] = Field(
         default_factory=lambda: [
             "git",
@@ -32,13 +44,27 @@ class LLMCodeDispatchProfile(BaseModel):
             "python",
             "python3",
             "rg",
+            "grep",
             "ls",
             "pwd",
             "cat",
             "sed",
             "find",
+            "mkdir",
+            "mv",
+            "ruff",
+            "mypy",
         ],
-        description="Executable names allowed through the run_command tool.",
+        description=(
+            "Executable names allowed through the run_command tool. "
+            "`grep`/`mkdir`/`mv`/`ruff`/`mypy` are here because seats "
+            "reached for them constantly and every rejection cost a whole "
+            "turn: `ruff`/`mypy` ARE this repo's lint gate, `mkdir`/`mv` are "
+            "how a task creates a package or files a completed TASK, and "
+            "`grep` is what a model falls back to when search_files fails. "
+            "This list is an ergonomics guard, not a security boundary — "
+            "`python` and `git` are already on it."
+        ),
     )
     enable_thinking: bool = Field(
         default=False,

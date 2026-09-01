@@ -466,3 +466,196 @@ def test_patch_path_traversal_rejected(monkeypatch, tmp_path):
             str(tmp_path),
             "diff --git a/../outside.txt b/../outside.txt\n" "--- a/../outside.txt\n" "+++ b/../outside.txt\n",
         )
+
+
+# ---------------------------------------------------------------------------
+# Turn-budget economics: the loop used to spend a whole turn per tool call,
+# offer no way to write a file, fail every search on a host without ripgrep,
+# and never tell the model a budget existed. Each test below pins one of
+# those fixes.
+# ---------------------------------------------------------------------------
+
+
+def test_completion_args_enable_multi_call_turns(monkeypatch):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    args = dispatcher._completion_args(LLMCodeDispatchProfile(), tools=[])
+
+    assert args["parallel_tool_calls"] is True
+
+
+def test_completion_args_honour_profile_parallel_tool_calls(monkeypatch):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    profile = LLMCodeDispatchProfile(parallel_tool_calls=False)
+
+    args = dispatcher._completion_args(profile, tools=[])
+
+    assert args["parallel_tool_calls"] is False
+
+
+def test_search_command_prefers_ripgrep(monkeypatch):
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.llm.shutil.which",
+        lambda name: f"/usr/bin/{name}",
+    )
+
+    command, backend = LLMCodeDispatcher._search_command(
+        query="needle", rel_path="packages", file_glob=None
+    )
+
+    assert backend == "rg"
+    assert command[0] == "rg"
+    assert command[-2:] == ["needle", "packages"]
+
+
+def test_search_command_falls_back_to_git_grep_without_ripgrep(monkeypatch):
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.llm.shutil.which",
+        lambda name: None if name == "rg" else "/usr/bin/git",
+    )
+
+    command, backend = LLMCodeDispatcher._search_command(
+        query="-needle", rel_path="packages", file_glob="*.py"
+    )
+
+    assert backend == "git-grep"
+    assert command[:2] == ["git", "grep"]
+    # `-e` keeps a query starting with '-' from being read as a flag.
+    assert command[command.index("-e") + 1] == "-needle"
+    assert command[-1] == ":(glob)packages/**/*.py"
+
+
+@pytest.mark.asyncio
+async def test_search_files_without_any_backend_names_the_cause(monkeypatch, tmp_path):
+    """The old bare 'No such file or directory' read as a bad *path*."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.llm.shutil.which",
+        lambda _name: None,
+    )
+
+    result = await dispatcher._tool_search_files(str(tmp_path), {"query": "needle"})
+
+    assert result["ok"] is False
+    assert "ripgrep" in result["stderr"]
+    assert "NOT a bad path" in result["stderr"]
+
+
+def test_write_file_creates_parent_directories(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = dispatcher._tool_write_file(
+        str(tmp_path),
+        {"path": "pkg/core/voice.py", "content": "x = 1\n"},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is True
+    assert result["created"] is True
+    assert result["path"] == "pkg/core/voice.py"
+    assert (tmp_path / "pkg" / "core" / "voice.py").read_text() == "x = 1\n"
+
+
+def test_write_file_rejects_path_escaping_cwd(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    with pytest.raises(ValueError, match="escapes cwd"):
+        dispatcher._tool_write_file(
+            str(tmp_path / "inside"),
+            {"path": "../outside.txt", "content": "nope"},
+            LLMCodeDispatchProfile(),
+        )
+
+
+def test_budget_marks_are_descending_and_deduplicated():
+    assert LLMCodeDispatcher._budget_marks(60) == [15, 6]
+    # A tiny budget collapses to a single warning instead of two on one turn.
+    assert LLMCodeDispatcher._budget_marks(4) == [1]
+
+
+def test_budget_nudge_states_the_count_and_the_turn_economics():
+    text = LLMCodeDispatcher._budget_nudge(used=45, total=60)
+
+    assert "45 of 60 turns used, 15 left" in text
+    assert "incomplete_tasks" in text
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_the_budget_nudge_before_the_budget_runs_out(
+    monkeypatch,
+    brief,
+    tmp_path,
+):
+    """The warning must reach the conversation, not just exist as a helper."""
+    # max_turns=4 -> a single mark at 1 remaining turn, i.e. after turn 3.
+    profile = LLMCodeDispatchProfile(max_turns=4)
+    explore = _Message(tool_calls=[_ToolCall("c", "list_files", {"path": "."})])
+    finish = _Message(
+        tool_calls=[
+            _ToolCall(
+                "done",
+                "final_output",
+                {"summary": "s", "files_changed": [], "commit_shas": []},
+            )
+        ]
+    )
+    client = _FakeClient([explore, explore, explore, finish])
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=profile,
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(tmp_path),
+    )
+
+    # The last completion the loop sent must carry the nudge as a user turn.
+    nudges = [
+        message
+        for message in client.calls[-1]["messages"]
+        if message["role"] == "user" and "turns used" in str(message["content"])
+    ]
+    assert len(nudges) == 1
+    assert "3 of 4 turns used, 1 left" in nudges[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_one_turn_may_carry_several_tool_calls(monkeypatch, brief, tmp_path):
+    """A multi-call turn costs ONE turn — the point of parallel_tool_calls."""
+    (tmp_path / "a.txt").write_text("alpha\n", encoding="utf-8")
+    (tmp_path / "b.txt").write_text("beta\n", encoding="utf-8")
+    batched = _Message(
+        tool_calls=[
+            _ToolCall("c1", "read_file", {"path": "a.txt"}),
+            _ToolCall("c2", "read_file", {"path": "b.txt"}),
+        ]
+    )
+    finish = _Message(
+        tool_calls=[
+            _ToolCall(
+                "done",
+                "final_output",
+                {"summary": "s", "files_changed": [], "commit_shas": []},
+            )
+        ]
+    )
+    client = _FakeClient([batched, finish])
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(tmp_path),
+    )
+
+    # Two files read, two chat completions spent — not three.
+    assert len(client.calls) == 2
+    tool_messages = [m for m in client.calls[-1]["messages"] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_messages] == ["c1", "c2"]
+    assert "alpha" in tool_messages[0]["content"]
+    assert "beta" in tool_messages[1]["content"]

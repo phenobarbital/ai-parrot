@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
@@ -236,6 +237,17 @@ class LLMCodeDispatcher:
             tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
             loop_t0 = time.perf_counter()
             accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
+            # Remaining-turn counts at which the model gets told how much
+            # budget is left; consumed head-first. See _budget_nudge.
+            budget_marks = self._budget_marks(profile.max_turns)
+            self.logger.info(
+                "%s dispatching %s on %s (budget: %d turns, %ds wall-clock)",
+                node_id,
+                profile.subagent,
+                model,
+                profile.max_turns,
+                profile.timeout_seconds,
+            )
             try:
                 for turn_index in range(profile.max_turns):
                     round_t0 = time.perf_counter()
@@ -261,6 +273,21 @@ class LLMCodeDispatcher:
                         raw_usage=raw_usage,
                         tool_calls=[self._tool_call_name(call) for call in tool_calls],
                         duration_ms=round_duration_ms,
+                    )
+                    # This loop used to log NOTHING per turn: every detail
+                    # went to the Redis stream, so an operator watching the
+                    # server saw a node start and then half an hour of
+                    # silence, indistinguishable from a hang. One line per
+                    # turn is the cheapest way to tell "working" from
+                    # "stuck", and makes a budget being burned on repeated
+                    # tool failures visible while it happens.
+                    self.logger.info(
+                        "%s turn %d/%d: %s (%.1fs)",
+                        node_id,
+                        turn_index + 1,
+                        profile.max_turns,
+                        ", ".join(self._tool_call_name(call) for call in tool_calls) or "no tool call",
+                        round_duration_ms / 1000,
                     )
 
                     if content:
@@ -335,6 +362,18 @@ class LLMCodeDispatcher:
                             cwd=cwd,
                             profile=profile,
                         )
+                        if tool_result.get("ok") is False:
+                            self.logger.warning(
+                                "%s turn %d: %s failed: %s",
+                                node_id,
+                                turn_index + 1,
+                                tool_name,
+                                str(
+                                    tool_result.get("error")
+                                    or tool_result.get("stderr")
+                                    or ""
+                                ).strip()[:200],
+                            )
                         await self._publish_event(
                             stream_key,
                             kind="dispatch.tool_result",
@@ -353,6 +392,25 @@ class LLMCodeDispatcher:
                                 "name": tool_name,
                                 "content": json.dumps(tool_result, ensure_ascii=False),
                             }
+                        )
+
+                    remaining = profile.max_turns - (turn_index + 1)
+                    if budget_marks and remaining <= budget_marks[0]:
+                        budget_marks.pop(0)
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": self._budget_nudge(
+                                    used=turn_index + 1,
+                                    total=profile.max_turns,
+                                ),
+                            }
+                        )
+                        self.logger.info(
+                            "%s budget warning issued: %d/%d turns used",
+                            node_id,
+                            turn_index + 1,
+                            profile.max_turns,
                         )
 
                 # The turn budget is spent, but the dispatch is not
@@ -392,6 +450,54 @@ class LLMCodeDispatcher:
                     input_tokens=accumulated.prompt_tokens if accumulated else None,
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
+
+    @staticmethod
+    def _budget_marks(max_turns: int) -> List[int]:
+        """Remaining-turn counts at which to warn the model, head-first.
+
+        Two warnings: one with a quarter of the budget left (still time to
+        change plan) and one with a tenth left (time only to land and
+        report). Deduplicated and descending, so a tiny ``max_turns``
+        yields one mark rather than two on the same turn.
+
+        Args:
+            max_turns: The dispatch's turn budget.
+
+        Returns:
+            Descending remaining-turn thresholds, e.g. ``[15, 6]`` for 60.
+        """
+        marks = {max(1, int(max_turns * ratio)) for ratio in (0.25, 0.10)}
+        return sorted(marks, reverse=True)
+
+    @staticmethod
+    def _budget_nudge(*, used: int, total: int) -> str:
+        """Build the mid-loop reminder that the turn budget is finite.
+
+        Nothing in the prompt told the model a budget existed, so it had no
+        way to triage: observed seats were still opening files to "check
+        one more thing" on turn 59 of 60, and the work they had done was
+        recovered only by the forced-``final_output`` salvage — or lost.
+        Telling it the count converts a cliff into a deadline.
+
+        Args:
+            used: Turns spent so far.
+            total: The full turn budget.
+
+        Returns:
+            The nudge text, sent as a user turn.
+        """
+        remaining = total - used
+        return (
+            f"Budget check: {used} of {total} turns used, {remaining} left. "
+            "One turn is one assistant message, however many tools it calls "
+            "— so batch independent reads and searches into a single turn "
+            "instead of one per turn.\n\n"
+            "Stop exploring now. Land the change you are on: edit, run its "
+            "test, commit, then call `final_output`. If it will not fit in "
+            f"{remaining} turns, commit whatever already works and report "
+            "the rest honestly in `incomplete_tasks` — a partial result you "
+            "declare is worth more than a complete one you never return."
+        )
 
     def _salvage_nudge(self, output_model: Type[BaseModel]) -> str:
         """Build the final user turn sent when the budget is exhausted.
@@ -623,6 +729,24 @@ class LLMCodeDispatcher:
                     "subagent. Use the provided tools to inspect and update "
                     "only the current repository. Finish by calling "
                     "`final_output` with the exact structured result.\n\n"
+                    # The loop's economics, stated once. Every line here
+                    # answers a specific way observed seats burned their
+                    # budget: one tool per turn, `cat > f` and `cd x && y`
+                    # against a shell-less argv, and paths copied from the
+                    # main repo instead of the worktree.
+                    "How this loop works — it decides whether you finish:\n"
+                    f"- Your budget is {profile.max_turns} turns. One turn is "
+                    "one assistant message, no matter how many tools it "
+                    "calls, so put every independent read/search of a step "
+                    "in ONE message. Reading five files one per turn spends "
+                    "five turns for nothing.\n"
+                    "- `run_command` execs a bare argv: there is NO shell, so "
+                    "no pipes, no `>` redirection, no `&&`, no `cd`. Write "
+                    "files with `write_file`, not `cat >` or `python -c`.\n"
+                    "- Every path is relative to the worktree you are in. "
+                    "Absolute paths into another checkout are rejected.\n"
+                    f"- `run_command` only runs: "
+                    f"{', '.join(profile.allowed_commands)}.\n\n"
                     f"Subagent instructions:\n{body}"
                 ),
             },
@@ -640,7 +764,9 @@ class LLMCodeDispatcher:
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",
-            "parallel_tool_calls": False,
+            # Read from the profile (default True): one turn per tool call
+            # is what made whole tasks die against `max_turns`.
+            "parallel_tool_calls": getattr(profile, "parallel_tool_calls", True),
             "max_tokens": profile.max_tokens,
         }
         if profile.temperature is not None:
@@ -810,7 +936,7 @@ class LLMCodeDispatcher:
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 1000,
-                            "default": 200,
+                            "default": 400,
                         },
                     },
                     "required": ["path"],
@@ -851,6 +977,23 @@ class LLMCodeDispatcher:
                         },
                     },
                     "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_tool(
+                "write_file",
+                "Create or overwrite a UTF-8 text file under the current "
+                "repository, creating parent directories as needed. Prefer "
+                "this over `apply_patch` for a brand-new file or a rewrite: "
+                "`run_command` runs a bare argv with NO shell, so `cat > f`, "
+                "redirection and pipes do not work there.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
                     "additionalProperties": False,
                 },
             ),
@@ -922,6 +1065,8 @@ class LLMCodeDispatcher:
                 return self._tool_list_files(cwd, tool_args)
             if tool_name == "search_files":
                 return await self._tool_search_files(cwd, tool_args)
+            if tool_name == "write_file":
+                return self._tool_write_file(cwd, tool_args, profile)
             if tool_name == "apply_patch":
                 return await self._tool_apply_patch(cwd, tool_args, profile)
             if tool_name == "run_command":
@@ -937,7 +1082,7 @@ class LLMCodeDispatcher:
     def _tool_read_file(self, cwd: str, args: Dict[str, Any]) -> Dict[str, Any]:
         path = self._resolve_repo_path(cwd, str(args["path"]))
         start_line = int(args.get("start_line") or 1)
-        max_lines = min(int(args.get("max_lines") or 200), 1000)
+        max_lines = min(int(args.get("max_lines") or 400), 1000)
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
         selected = lines[start_line - 1 : start_line - 1 + max_lines]
@@ -968,31 +1113,157 @@ class LLMCodeDispatcher:
         cwd: str,
         args: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """Search the repository, preferring ripgrep and falling back to git.
+
+        A host without ``rg`` installed used to fail EVERY search with the
+        bare ``[Errno 2] No such file or directory`` that
+        :meth:`_run_argv` returns for a missing binary. To the model that
+        reads as a wrong *path*, not a missing *tool*: observed seats
+        re-ran the same search against invented paths, then fell back to
+        ``grep`` (not allow-listed at the time), and spent a fifth of a
+        60-turn budget discovering that their only search tool was dead.
+        ``git grep`` is on every host this dispatcher can run on — the
+        worktree is a git repo by construction — so the fallback is free,
+        and when neither backend exists the error now names the cause.
+        """
         query = str(args["query"])
         if not query:
             raise ValueError("query must not be empty")
         path = self._resolve_repo_path(cwd, str(args.get("path") or "."))
         max_results = min(int(args.get("max_results") or 50), 200)
-        command = [
-            "rg",
-            "--line-number",
-            "--no-heading",
-            "--color",
-            "never",
-            "--fixed-strings",
-        ]
         file_glob = args.get("file_glob")
-        if file_glob:
-            command.extend(["--glob", str(file_glob)])
-        command.extend([query, os.path.relpath(path, cwd)])
+
+        command, backend = self._search_command(
+            query=query,
+            rel_path=os.path.relpath(path, cwd),
+            file_glob=str(file_glob) if file_glob else None,
+        )
+        if command is None:
+            return {
+                "ok": False,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": (
+                    "no search backend available: neither 'rg' (ripgrep) nor "
+                    "'git' is installed on this host. This is NOT a bad path "
+                    "— use read_file/list_files instead of retrying."
+                ),
+            }
         result = await self._run_argv(command, cwd=cwd, timeout=30)
-        lines = result["stdout"].splitlines()[:max_results]
+        lines = result["stdout"].splitlines()
         if result["exit_code"] not in {0, 1}:
-            return {**result, "ok": False}
+            return {**result, "ok": False, "backend": backend}
         return {
             "ok": True,
-            "matches": lines,
-            "truncated": len(result["stdout"].splitlines()) > max_results,
+            "backend": backend,
+            "matches": lines[:max_results],
+            "truncated": len(lines) > max_results,
+        }
+
+    @staticmethod
+    def _search_command(
+        *,
+        query: str,
+        rel_path: str,
+        file_glob: Optional[str],
+    ) -> Tuple[Optional[List[str]], str]:
+        """Build the argv for the best available search backend.
+
+        Both backends exit 0 on a match and 1 on no match, so
+        :meth:`_tool_search_files` treats the two uniformly.
+
+        Args:
+            query: Literal (non-regex) string to search for.
+            rel_path: Search root, relative to ``cwd``.
+            file_glob: Optional filename glob to restrict the search.
+
+        Returns:
+            ``(argv, backend_name)``, or ``(None, "")`` when no backend is
+            installed.
+        """
+        if shutil.which("rg"):
+            command = [
+                "rg",
+                "--line-number",
+                "--no-heading",
+                "--color",
+                "never",
+                "--fixed-strings",
+            ]
+            if file_glob:
+                command.extend(["--glob", file_glob])
+            command.extend([query, rel_path])
+            return command, "rg"
+        if shutil.which("git"):
+            # `--untracked` so a file the seat just wrote is searchable;
+            # `-e` so a query starting with '-' is not read as a flag.
+            pathspec = os.path.normpath(rel_path)
+            if file_glob:
+                pathspec = f":(glob){os.path.join(pathspec, '**', file_glob)}"
+            return (
+                [
+                    "git",
+                    "grep",
+                    "--line-number",
+                    "--no-color",
+                    "--fixed-strings",
+                    "--untracked",
+                    "-e",
+                    query,
+                    "--",
+                    pathspec,
+                ],
+                "git-grep",
+            )
+        return None, ""
+
+    def _tool_write_file(
+        self,
+        cwd: str,
+        args: Dict[str, Any],
+        profile: LLMCodeDispatchProfile,
+    ) -> Dict[str, Any]:
+        """Write a whole file, cwd-confined.
+
+        The loop shipped without this, leaving ``apply_patch`` as the only
+        way to create a file — and a unified diff a model has to get
+        byte-exact is the wrong instrument for "write this new module".
+        Observed seats worked around it with `cat > path` (impossible:
+        ``run_command`` execs an argv with no shell), in-place `sed`
+        line-insert incantations,
+        and `python -c` scripts embedding the whole file as a string
+        literal — each attempt costing a turn, and the `python -c` ones
+        also spending the output-token budget twice on the same content.
+
+        Args:
+            cwd: Worktree root; ``path`` may not escape it.
+            args: ``{"path": str, "content": str}``.
+            profile: Dispatch profile, read for its sandbox mode.
+
+        Returns:
+            A tool-result dict with the relative path and bytes written.
+
+        Raises:
+            ValueError: If the sandbox is read-only, ``content`` is not a
+                string, or ``path`` escapes ``cwd``.
+        """
+        if profile.sandbox != "workspace-write":
+            raise ValueError("write_file requires workspace-write sandbox")
+        content = args.get("content")
+        if not isinstance(content, str):
+            raise ValueError("content must be a string")
+        path = self._resolve_repo_path(cwd, str(args["path"]))
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        existed = os.path.exists(path)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return {
+            "ok": True,
+            "path": os.path.relpath(path, cwd),
+            "created": not existed,
+            "bytes_written": len(content.encode("utf-8")),
         }
 
     async def _tool_apply_patch(
