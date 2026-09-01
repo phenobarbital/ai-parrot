@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-517",
+  "feature_slug": "flex-agent-infographic-a2ui",
+  "started_at": "2026-09-01T00:00:00+02:00",
+  "updated_at": "2026-09-01T17:14:26+02:00",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-517/source.md",
+    "fetched_at": "2026-09-01T00:00:00+02:00",
+    "summary_oneline": "New A2UI PandasAgent for Flex program — KPI dashboards, /widget + /infographic skills, QuerySource-fed datasets, deterministic HTML refresh"
+  },
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "wiki_available": false,
+  "wiki_unavailable_reason": "wikitoolkit MCP connect timeout and CLI `wikitoolkit status` timeout (30s) — plane unreachable this session, not 'not built'",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-01T00:00:00+02:00",
+      "completed_at": "2026-09-01T00:00:00+02:00",
+      "duration_seconds": 0.0
+    },
+    "plan": {
+      "status": "completed",
+      "queries_total": 16,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-517/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "queries_executed": 16,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 6,
+      "grep_calls": 14,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-517/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 8,
+      "claims_high_conf": 5,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/flex-agent-infographic-a2ui.proposal.md",
+      "commit_sha": "fb6b2363545f75ce76238c411af75ceb7b910694",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization; architecture predetermined by FinanceReporter + deterministic-refresh precedents."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 6,
+    "grep_calls": 14,
+    "git_calls": 2,
+    "wall_seconds": 0.0
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Run /sdd-spec FEAT-517."
+  }
+}
