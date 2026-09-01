@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2651, TASK-2652, TASK-2654
@@ -121,8 +121,41 @@ class TestReviewPairAssembly:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- Two private helpers in `dev_flow/factories.py`:
+  `_assemble_review_pair(plan, shared_dispatcher)` and
+  `_build_primary_reviewer(spec, shared_dispatcher)`. Assembly happens
+  once at build time, right after the pool wiring, and the result is
+  forwarded to `build_dev_loop_node_factories(codereview_dispatcher=...)`.
+- **Three-way precedence, all tested**: an explicit
+  `codereview_dispatcher=` argument always wins; otherwise a supplied
+  plan assembles the pair; otherwise `None` is forwarded and `QANode`'s
+  own backward-compat wrap (`qa.py:147-148`, a plain write-enabled
+  `ClaudeCodeReviewDispatcher`) applies exactly as before FEAT-486.
+  Note that `_codereview_dispatcher` is never `None` on a materialized
+  QANode — the fallback is applied in its constructor — so the "no plan"
+  test asserts the fallback *type* rather than `None`.
+- Primary seat: `claude-code` (the default) reuses the SHARED
+  `ClaudeCodeDispatcher` the flow was built with, so no second dispatcher
+  is constructed — the same wiring `build_dev_loop_node_factories` already
+  uses for QA (test: `test_primary_reuses_the_shared_dispatcher`). Any
+  other backend is materialized through `agent_builder.build_dispatcher`
+  first, so e.g. a `codex` primary gets a `CodexCodeDispatcher` rather
+  than being handed the Claude one.
+- Unsupported primary backends fail fast at build time with a message
+  naming `PRIMARY_REVIEW_BACKENDS` — before any run, never mid-review.
+- Adversary: `MantleAdversarialReviewDispatcher(model=plan.review.counter_model)`
+  from TASK-2654 — advisory/read-only, default `gpt-5.6-sol`.
+- `judge_enabled=False` / `judge_dispatcher=None`: the deterministic merge
+  stays authoritative, matching `DEV_LOOP_CODEREVIEW_JUDGE`'s default.
+- `JudgeSpec` and `JudgePanelReviewDispatcher` are untouched — asserted
+  positively by `TestJudgePanelUntouched` (the pair is not a judge panel;
+  `JudgeSpec(agent="mantle")` still raises), not merely by omission.
+- The `code_review` / `agent_builder` / `catalog` imports are function-local
+  so a plan-less `build_dev_flow` still does not pay for them.
+- 13 unit tests pass; full `tests/flows/dev_flow/` green (248 passed);
+  `ruff check` clean on both files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

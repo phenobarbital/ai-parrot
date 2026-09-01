@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T23:39:32Z",
-  "completed_at": null,
+  "completed_at": "2026-09-01T09:30:11+00:00",
   "tasks": [
     {
       "id": "TASK-2651",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation module \u2014 every other task imports it; runs first.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2651-dev-flow-model-plan.md"
+      "completed_at": "2026-09-01T00:18:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2651-dev-flow-model-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2652",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports TASK-2651's models; touches dev_flow flow.py/factories.py/runner.py.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2652-plan-threading-build-surface.md"
+      "completed_at": "2026-09-01T00:22:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2652-plan-threading-build-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2653",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "dev_loop-only files (development.py, planner.py) \u2014 shares no files or imports with TASK-2651/2652/2654; could run in a separate worktree, though per-spec sequential is the recommended isolation.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2653-single-task-collapse-deploy-log.md"
+      "completed_at": "2026-09-01T00:31:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2653-single-task-collapse-deploy-log.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2654",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +81,9 @@
       "parallelism_notes": "Touches code_review.py/dispatchers/catalog.py/conf.py \u2014 disjoint from TASK-2651/2652/2653 file sets.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2654-mantle-adversarial-dispatcher.md"
+      "completed_at": "2026-09-01T00:39:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2654-mantle-adversarial-dispatcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2655",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Joins the plan (2651/2652) with the Mantle adversary (2654) in factories.py.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2655-review-pair-assembly.md"
+      "completed_at": "2026-09-01T00:42:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2655-review-pair-assembly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2656",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "Touches factories.py (shared with 2652/2655) and ideation.py; coordinate with in-flight FEAT-482 edits to the same files.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2656-ideation-primary-model.md"
+      "completed_at": "2026-09-01T00:45:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2656-ideation-primary-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2657",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -141,9 +147,10 @@
       "parallel": false,
       "parallelism_notes": "EXTERNAL GATE: FEAT-482 must be merged to dev first (its modules do not exist as of 2026-09-01). Ship the feature without this task if FEAT-482 slips (spec contingency).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2657-research-partner-passthrough.md"
+      "started_at": "2026-09-01T01:48:36+00:00",
+      "completed_at": "2026-09-01T01:53:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2657-research-partner-passthrough.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2658",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -165,8 +172,9 @@
       "parallelism_notes": "Consumes the whole config surface; partner toggle ships here even if TASK-2657 is still gated (toggle no-ops until 2657 lands).",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2658-console-llm-selectors.md"
+      "completed_at": "2026-09-01T00:53:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2658-console-llm-selectors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2659",
@@ -175,7 +183,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -189,8 +197,9 @@
       "parallelism_notes": "Final verification lane; deliberately independent of the FEAT-482-gated TASK-2657.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2659-integration-tests-docs.md"
+      "completed_at": "2026-09-01T01:01:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2659-integration-tests-docs.md",
+      "verification": "verified"
     }
   ]
 }

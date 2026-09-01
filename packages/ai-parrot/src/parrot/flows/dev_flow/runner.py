@@ -309,19 +309,38 @@ class DevFlowRunner(DevLoopRunner):
         See ``DevLoopRunner._execution_policy_for_fingerprint()`` for the
         full rationale — identical here except derived from
         ``build_dev_flow``'s kwarg shape (no ``development_pool_config``/
-        ``repos`` — dev-flow's builder does not accept either).
+        ``repos`` — dev-flow's builder does not accept either; FEAT-486's
+        ``model_plan`` carries the pool instead).
+
+        FEAT-486: only the plan fields that actually shape execution join
+        the fingerprint — how many workers of which backend the pool
+        deploys, which backend reviews, and whether the research partner
+        seat runs at all. Pure model strings for seats that do not change
+        the graph or the worker count (the ideation primary's model, a
+        pool worker's model, the counter-reviewer's model) stay OUT, so
+        swapping a model mid-resume is a cache hit rather than a forced
+        fresh run. The whole ``model_plan`` key is omitted when no plan
+        was supplied, which keeps pre-FEAT-486 fingerprints stable.
 
         Returns:
             The policy dict passed to ``DevCheckpointCoordinator.prepare(
             execution_policy=...)``.
         """
         kwargs = self._dev_loop_flow_kwargs or {}
-        return {
+        policy: dict[str, Any] = {
             "skip_qa": kwargs.get("skip_qa", False),
             "require_plan_approval": kwargs.get("require_plan_approval", False),
             "development_pool_max": kwargs.get("development_pool_max", 4),
             "ideation_max_rounds": kwargs.get("ideation_max_rounds"),
         }
+        model_plan = kwargs.get("model_plan")
+        if model_plan is not None:
+            policy["model_plan"] = {
+                "dev_pool": [{"agent": spec.agent, "count": spec.count} for spec in model_plan.dev_pool],
+                "review_primary_agent": model_plan.review.primary.agent,
+                "research_partner_enabled": model_plan.research_partner.enabled,
+            }
+        return policy
 
 
 __all__ = ["DevFlowRunner"]

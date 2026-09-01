@@ -27,18 +27,26 @@ from typing import Any
 
 from parrot.flows.dev_flow.models import (
     DevFlowBrief,
+    DevFlowModelPlan,
     DevRequestBrief,
     DevRequestKind,
     IdeationOutput,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
     parse_dev_brief,
+    resolve_model_plan,
 )
 
 __all__ = [
     "DevFlowBrief",
+    "DevFlowModelPlan",
     "DevRequestBrief",
     "DevRequestKind",
     "IdeationOutput",
+    "ResearchPartnerPlan",
+    "ReviewPairPlan",
     "parse_dev_brief",
+    "resolve_model_plan",
 ]
 
 # Lazily-resolved exports: attribute name -> submodule it lives in. Keeping
@@ -70,9 +78,7 @@ def __getattr__(name: str) -> Any:
     """
     module_name = _LAZY_EXPORTS.get(name)
     if module_name is None:
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r}"
-        )
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 
     value = getattr(import_module(module_name), name)

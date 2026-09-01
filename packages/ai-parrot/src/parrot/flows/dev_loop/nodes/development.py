@@ -206,6 +206,8 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research, pool_cfg=pool_cfg)
 
+        pool_cfg = self._collapse_for_single_task(shared, pool_cfg, scheduler, research)
+
         first_wave = scheduler.next_wave()
         if not should_fan_out(first_wave, pool_cfg):
             effective_slots = sum(spec.count for spec in pool_cfg.agents)
@@ -413,6 +415,86 @@ class DevelopmentNode(DevLoopNode):
             isolation_mode = getattr(brief, "dev_isolation", None) or "shared"
             return DevAgentPoolConfig(agents=dev_agents, isolation_mode=isolation_mode)
         return self._pool_config
+
+    def _collapse_for_single_task(
+        self,
+        shared: dict[str, Any],
+        pool_cfg: DevAgentPoolConfig,
+        scheduler: TaskScheduler,
+        research: ResearchOutput,
+    ) -> DevAgentPoolConfig:
+        """Shrink a multi-seat pool to one agent for a single-task feature.
+
+        FEAT-486 (spec G3): a feature whose per-spec index holds exactly
+        one ``TASK-`` cannot use a pool — the extra seats would idle while
+        adding provider cost, log noise and (in ``isolated`` mode)
+        sub-worktree churn. The task count IS the signal: no new flag, no
+        new typed field, and no ``_SHARED_DATA_ALLOWLIST`` change
+        (``planner_output`` is already allowlisted).
+
+        The surviving seat is the first spec of
+        ``PlannerOutput.suggested_pool`` — this is the first consumer of
+        that field, computed at ``planner.py:171`` and previously read by
+        nothing — falling back to the first configured spec when the
+        planner suggested nothing usable.
+
+        Collapse only ever SHRINKS: the configured pool stays
+        authoritative as an upper bound, and a config that is already
+        single-slot is returned untouched (no log, nothing to say).
+
+        Args:
+            shared: The flow's shared state dict (source of
+                ``planner_output``).
+            pool_cfg: The pool config resolved by the cascade.
+            scheduler: The already-built scheduler — reused rather than
+                re-reading the index, so this costs no extra I/O.
+            research: The upstream research output (for log context).
+
+        Returns:
+            ``pool_cfg`` unchanged, or a new single-spec
+            :class:`DevAgentPoolConfig` preserving the isolation mode.
+        """
+        total_tasks = len(scheduler._tasks)  # noqa: SLF001 - same-package internal read
+        if total_tasks != 1:
+            return pool_cfg
+        if sum(spec.count for spec in pool_cfg.agents) <= 1:
+            return pool_cfg
+
+        suggested = self._first_suggested_spec(shared)
+        chosen = suggested if suggested is not None else pool_cfg.agents[0]
+        collapsed = chosen.model_copy(update={"count": 1})
+        self.logger.info(
+            "Single-task feature %s (1 task in the per-spec index): collapsing "
+            "the configured %d-slot pool to ONE dev sub-agent %s:%s (source: %s).",
+            research.feat_id,
+            sum(spec.count for spec in pool_cfg.agents),
+            collapsed.agent,
+            collapsed.model or "<backend default>",
+            "planner suggested_pool" if suggested is not None else "configured pool",
+        )
+        return DevAgentPoolConfig(agents=[collapsed], isolation_mode=pool_cfg.isolation_mode)
+
+    @staticmethod
+    def _first_suggested_spec(shared: dict[str, Any]) -> DevAgentSpec | None:
+        """Return the first spec of ``PlannerOutput.suggested_pool``, if any.
+
+        Read defensively via ``getattr`` (rather than assuming a
+        ``PlannerOutput``) because the bug/revision topologies put a
+        ``ResearchOutput`` in shared state and never set this key at all.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            The first suggested :class:`DevAgentSpec`, or ``None`` when no
+            planner output, no ``suggested_pool`` or an empty one.
+        """
+        planner_output = shared.get("planner_output")
+        suggested = getattr(planner_output, "suggested_pool", None)
+        agents = getattr(suggested, "agents", None)
+        if not agents:
+            return None
+        return agents[0]
 
     # ------------------------------------------------------------------
     # Single-agent path (byte-identical to the pre-FEAT-323 behaviour)
@@ -631,6 +713,20 @@ class DevelopmentNode(DevLoopNode):
             RuntimeError: Every dispatchable task ended up incomplete.
         """
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
+        # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
+        # build` is where the requested specs become the ACTUAL worker
+        # list (replicas expanded, `pool_max` cap applied), so this is the
+        # only place that can honestly report what is about to run.
+        self.logger.info(
+            "Deploying %d dev sub-agent(s) for %s: %s",
+            len(pool.workers),
+            research.feat_id,
+            ", ".join(
+                f"{worker.worker_id.rsplit('.', 1)[-1]}="
+                f"{worker.spec.agent}:{worker.spec.model or '<backend default>'}"
+                for worker in pool.workers
+            ),
+        )
         run_id = shared["run_id"]
 
         manager: Optional[SubWorktreeManager] = None
