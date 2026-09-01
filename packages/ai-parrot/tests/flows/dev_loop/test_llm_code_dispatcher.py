@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Sequence
 from unittest.mock import AsyncMock
 
@@ -844,3 +845,97 @@ async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
 
     assert result["ok"] is False
     assert "edit_file" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_run_command_cwd_replaces_the_cd_prefix(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "packages" / "pkg").mkdir(parents=True)
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path),
+        {"argv": ["pwd"], "cwd": "packages/pkg"},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is True
+    assert result["stdout"].strip().endswith(os.path.join("packages", "pkg"))
+
+
+@pytest.mark.asyncio
+async def test_run_command_cwd_cannot_escape_the_worktree(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "wt").mkdir()
+
+    with pytest.raises(ValueError, match="escapes cwd"):
+        await dispatcher._tool_run_command(
+            str(tmp_path / "wt"),
+            {"argv": ["pwd"], "cwd": "../"},
+            LLMCodeDispatchProfile(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_rejecting_cd_explains_it_is_a_shell_builtin(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path),
+        {"argv": ["cd", "packages", "&&", "pytest"]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "shell builtin" in result["hint"]
+    assert "pass `cwd`" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_rejecting_an_unknown_command_lists_what_is_allowed(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path),
+        {"argv": ["rm", "-rf", "."]},
+        LLMCodeDispatchProfile(allowed_commands=["git"]),
+    )
+
+    assert result["ok"] is False
+    assert "only runs: git" in result["hint"]
+
+
+def test_missing_file_suggests_the_real_sibling(monkeypatch, tmp_path):
+    """The brief names a task by id; only the directory knows its slug."""
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    tasks = tmp_path / "sdd" / "tasks" / "active"
+    tasks.mkdir(parents=True)
+    (tasks / "TASK-2684-tests.md").write_text("body\n", encoding="utf-8")
+    (tasks / "TASK-2500-unrelated.md").write_text("body\n", encoding="utf-8")
+
+    result = dispatcher._tool_read_file(
+        str(tmp_path),
+        {"path": "sdd/tasks/active/TASK-2684-formfield-content-type.md"},
+    )
+
+    assert result["ok"] is False
+    # Only the best prefix match, not every TASK-*.md in the directory.
+    assert result["did_you_mean"] == ["TASK-2684-tests.md"]
+
+
+def test_missing_file_falls_back_to_fuzzy_matches(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "renderer.py").write_text("x\n", encoding="utf-8")
+
+    result = dispatcher._tool_read_file(str(tmp_path), {"path": "renderers.py"})
+
+    assert result["ok"] is False
+    assert "renderer.py" in result["did_you_mean"]
+
+
+def test_missing_file_with_no_neighbours_suggests_nothing(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = dispatcher._tool_read_file(str(tmp_path), {"path": "nope.py"})
+
+    assert result["ok"] is False
+    assert result["did_you_mean"] == []

@@ -12,6 +12,7 @@ loop, Redis event streaming, cwd-safety guard, and output validation.
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import logging
 import os
@@ -765,7 +766,8 @@ class LLMCodeDispatcher:
                     "in ONE message. Reading five files one per turn spends "
                     "five turns for nothing.\n"
                     "- `run_command` execs a bare argv: there is NO shell, so "
-                    "no pipes, no `>` redirection, no `&&`, no `cd`. Create "
+                    "no pipes, no `>` redirection, no `&&`, no `cd` — to run "
+                    "in a subdirectory pass its `cwd` argument. Create "
                     "files with `write_file` and change them with "
                     "`edit_file` — not `cat >`, `sed -i` or `python -c`, and "
                     "not a unified diff unless nothing else fits.\n"
@@ -1065,7 +1067,10 @@ class LLMCodeDispatcher:
             ),
             self._function_tool(
                 "run_command",
-                "Run an allow-listed argv command in the repository.",
+                "Run an allow-listed argv command in the repository. There is "
+                "NO shell: `argv` is exec'd directly, so pipes, redirection, "
+                "`&&` and `cd` do not work. To run somewhere other than the "
+                "repository root, pass `cwd` instead of prefixing `cd`.",
                 {
                     "type": "object",
                     "properties": {
@@ -1073,6 +1078,13 @@ class LLMCodeDispatcher:
                             "type": "array",
                             "items": {"type": "string"},
                             "minItems": 1,
+                        },
+                        "cwd": {
+                            "type": "string",
+                            "description": (
+                                "Directory to run in, relative to the "
+                                "repository root. Replaces `cd <dir> && ...`."
+                            ),
                         },
                         "timeout_seconds": {
                             "type": "integer",
@@ -1139,6 +1151,19 @@ class LLMCodeDispatcher:
 
     def _tool_read_file(self, cwd: str, args: Dict[str, Any]) -> Dict[str, Any]:
         path = self._resolve_repo_path(cwd, str(args["path"]))
+        if not os.path.isfile(path):
+            # The brief names a task by id, never by filename, and the
+            # subagent instructions only show the SHAPE
+            # `TASK-<NNN>-<slug>.md` — so a seat's very first turn was a
+            # guess at <slug> (it reaches for the feature slug; the real
+            # one is per-task), and it then spent more turns hunting.
+            # Listing the actual neighbours turns that into one turn.
+            return {
+                "ok": False,
+                "error_class": "FileNotFoundError",
+                "error": f"{os.path.relpath(path, cwd)} does not exist",
+                "did_you_mean": self._suggest_siblings(path),
+            }
         start_line = int(args.get("start_line") or 1)
         max_lines = min(int(args.get("max_lines") or 400), 1000)
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -1151,6 +1176,41 @@ class LLMCodeDispatcher:
             "line_count": len(selected),
             "content": "".join(selected)[:20000],
         }
+
+    @staticmethod
+    def _suggest_siblings(path: str, limit: int = 5) -> List[str]:
+        """Name the files that the missing one was probably meant to be.
+
+        Prefix matches first (``TASK-2684-`` finds the one task file whose
+        slug the caller could not know), then fuzzy matches for a typo.
+
+        Args:
+            path: The absolute path that did not exist.
+            limit: Maximum number of suggestions.
+
+        Returns:
+            Sibling basenames, best first; empty when the parent directory
+            does not exist or holds nothing similar.
+        """
+        parent = os.path.dirname(path)
+        wanted = os.path.basename(path)
+        try:
+            entries = sorted(os.listdir(parent))
+        except OSError:
+            return []
+
+        # Score by shared prefix and keep only the BEST scorers: a flat
+        # threshold would return every `TASK-*.md` in the directory, which
+        # is noise, not an answer. `TASK-2684-<wrong-slug>.md` scores 10
+        # against its real sibling and 6 against any other task.
+        scored = [
+            (len(os.path.commonprefix([entry, wanted])), entry)
+            for entry in entries
+        ]
+        best = max((score for score, _ in scored), default=0)
+        if best >= 5:
+            return [entry for score, entry in scored if score == best][:limit]
+        return difflib.get_close_matches(wanted, entries, n=limit, cutoff=0.6)
 
     def _tool_list_files(self, cwd: str, args: Dict[str, Any]) -> Dict[str, Any]:
         root = self._resolve_repo_path(cwd, str(args.get("path") or "."))
@@ -1331,6 +1391,7 @@ class LLMCodeDispatcher:
                 "ok": False,
                 "path": rel_path,
                 "error": f"{rel_path} does not exist; use write_file to create it",
+                "did_you_mean": self._suggest_siblings(path),
             }
 
         with open(path, "r", encoding="utf-8") as fh:
@@ -1481,13 +1542,60 @@ class LLMCodeDispatcher:
                 "exit_code": None,
                 "stdout": "",
                 "stderr": f"command {command!r} is not allow-listed",
+                # A bare "not allow-listed" told the model nothing about
+                # what to do next, and `cd` in particular is not a missing
+                # permission at all — it is a shell builtin that can never
+                # work through an exec'd argv, so a seat could burn turns
+                # re-trying `cd x && pytest` forever.
+                "hint": self._rejected_command_hint(command, profile),
             }
+        run_cwd = cwd
+        if args.get("cwd"):
+            run_cwd = self._resolve_repo_path(cwd, str(args["cwd"]))
+            if not os.path.isdir(run_cwd):
+                return {
+                    "ok": False,
+                    "exit_code": None,
+                    "stdout": "",
+                    "stderr": f"cwd {args['cwd']!r} is not a directory",
+                }
         timeout = min(
             int(args.get("timeout_seconds") or profile.command_timeout_seconds),
             profile.command_timeout_seconds,
         )
-        result = await self._run_argv(argv, cwd=cwd, timeout=timeout)
+        result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
         return {**result, "ok": result["exit_code"] == 0}
+
+    @staticmethod
+    def _rejected_command_hint(
+        command: str,
+        profile: LLMCodeDispatchProfile,
+    ) -> str:
+        """Say what to do instead of the command that was just rejected.
+
+        Args:
+            command: The rejected executable name.
+            profile: Dispatch profile, read for its allow-list.
+
+        Returns:
+            A one-line, actionable hint.
+        """
+        shell_builtins = {
+            "cd": "pass `cwd` to run_command instead of `cd <dir> && ...`",
+            "export": "environment changes do not persist between calls",
+            "source": "there is no shell to source into",
+            ".": "there is no shell to source into",
+        }
+        if command in shell_builtins:
+            return (
+                f"`{command}` is a shell builtin, not a program: this loop "
+                f"execs a bare argv with no shell. {shell_builtins[command]}."
+            )
+        return (
+            "run_command only runs: "
+            f"{', '.join(profile.allowed_commands)}. Use read_file / "
+            "search_files / write_file / edit_file for file work."
+        )
 
     async def _run_argv(
         self,
