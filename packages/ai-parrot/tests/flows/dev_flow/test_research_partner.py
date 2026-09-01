@@ -387,9 +387,7 @@ class TestBedrockResearchPartner:
         partner directly with an explicit backend= bypasses
         resolve_research_partner_backend() entirely, so _build_client()
         must independently re-validate the resolved model."""
-        monkeypatch.setattr(
-            conf, "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL", "us.anthropic.claude-opus-5"
-        )
+        monkeypatch.setattr(conf, "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL", "us.anthropic.claude-opus-5")
         partner = BedrockResearchPartner(backend="nova")
         with pytest.raises(ValueError, match="(?s)decorrel.*400|400.*decorrel"):
             partner._build_client()
