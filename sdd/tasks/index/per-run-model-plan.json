@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T15:58:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2685-runner-flow-kwargs-overrides-seam.md"
+      "file": "sdd/tasks/completed/TASK-2685-runner-flow-kwargs-overrides-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2686",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:05:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2686-dev-flow-runner-per-run-plan.md"
+      "file": "sdd/tasks/completed/TASK-2686-dev-flow-runner-per-run-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2687",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:09:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2687-resume-keeps-original-seats.md"
+      "file": "sdd/tasks/completed/TASK-2687-resume-keeps-original-seats.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2688",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:16:51+00:00",
-      "file": "sdd/tasks/completed/TASK-2688-dev-console-per-run-plan-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2688-dev-console-per-run-plan-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2689",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:19:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2689-console-copy-per-run-seats.md"
+      "file": "sdd/tasks/completed/TASK-2689-console-copy-per-run-seats.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2690",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:29:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2690-ops-builder-model-plan-seam.md"
+      "file": "sdd/tasks/completed/TASK-2690-ops-builder-model-plan-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2691",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:33:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2691-ops-runner-per-run-plan.md"
+      "file": "sdd/tasks/completed/TASK-2691-ops-runner-per-run-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2692",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": "2026-09-01T16:38:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2692-per-run-plan-docs-and-integration.md"
+      "file": "sdd/tasks/completed/TASK-2692-per-run-plan-docs-and-integration.md",
+      "verification": "verified"
     }
   ]
 }
