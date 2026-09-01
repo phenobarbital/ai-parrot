@@ -151,7 +151,7 @@
       "feature_id": "FEAT-477",
       "feature": "mcp-as-agent",
       "spec": "sdd/specs/mcp-as-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -161,8 +161,8 @@
       "parallelism_notes": "Extends principal_guard.py; sequence after TASK-2605 to avoid same-file churn.",
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2606-result-size-deadline.md"
+      "completed_at": "2026-09-01T14:06:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2606-result-size-deadline.md"
     },
     {
       "id": "TASK-2607",
