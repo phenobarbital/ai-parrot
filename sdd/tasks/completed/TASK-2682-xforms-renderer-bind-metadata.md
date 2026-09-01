@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-488 — FormField Content-Type
 **Spec**: `sdd/specs/formfield-content-type.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2677
@@ -204,7 +204,7 @@ def test_xforms_bind_x_accept_content_types_comma_joined():
 
 *(Agent fills this in when done)*
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
+**Completed by**: sdd-worker
+**Date**: 2026-09-01
+**Notes**: Implemented conditional x-content-type and x-accept-content-types attributes on xf:bind elements. All 6 FEAT-488 tests pass. Ruff auto-fixed import sort and removed quoted type annotation in XFormsRenderer. Tests require PYTHONPATH to point at the worktree's src/ because the venv editable install resolves to the main repo (pre-merge); CI will use the merged branch directly.
 **Deviations from spec**: none
