@@ -11,7 +11,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from parrot.clients.factory import LLMFactory
+# NOTE: `LLMFactory` is intentionally NOT imported at module level. Its
+# import chain (parrot.clients.factory -> ... -> navconfig) triggers
+# navconfig's eager settings-loading side effects, which include a raw
+# `print()` (not routed through logging) straight to stdout — exactly the
+# channel this server reserves for JSON-RPC (FEAT-485 stdout-purity fix,
+# discovered by TASK-2650's e2e test). It is imported lazily below, inside
+# the same `contextlib.redirect_stdout(sys.stderr)` block that already
+# guards the toolkit class resolution import.
 from parrot.mcp.local_server import StdioMCPServer
 from parrot.mcp.server_base import LocalServerConfig
 from parrot.mcp.toolkit_config import load_toolkits_config
@@ -86,6 +93,8 @@ def create_toolkit_mcp_server(
         drop_tools: set[str] = set()
 
         if section.llm:
+            from parrot.clients.factory import LLMFactory
+
             llm_client = LLMFactory.create(section.llm)
         else:
             drop_tools = set(toolkit_cls.llm_dependent_tools)
