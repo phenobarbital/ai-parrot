@@ -86,6 +86,7 @@ from ._semantics import (
     trend_attr_html,
 )
 from ._shell import document_shell
+from ._table_format import format_cell_html
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,11 @@ _CHART_TYPE = {
 }
 
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
+
+#: A pager over a handful of rows is worse UX than none (spec §8 leaves this
+#: constant's final home open — a renderer constant unless a caller asks for
+#: per-table control). Search + pagination render only above this threshold.
+_PAGINATION_ROW_THRESHOLD = 100
 
 _BEHAVIOR_JS = r"""
 (function () {
@@ -192,10 +198,21 @@ _BEHAVIOR_JS = r"""
         var asc = state[key] !== "asc";
         state[key] = asc ? "asc" : "desc";
         rows.sort(function (a, b) {
-          var av = a.children[colIndex] ? a.children[colIndex].textContent : "";
-          var bv = b.children[colIndex] ? b.children[colIndex].textContent : "";
-          var an = parseFloat(av.replace(/[^0-9.-]/g, ""));
-          var bn = parseFloat(bv.replace(/[^0-9.-]/g, ""));
+          var aCell = a.children[colIndex];
+          var bCell = b.children[colIndex];
+          var av = aCell ? aCell.textContent : "";
+          var bv = bCell ? bCell.textContent : "";
+          var an, bn;
+          // Prefer the raw, unformatted value carried in data-v (TASK-2711)
+          // over the rendered text — the rendered text may carry thousands
+          // separators / currency formatting that mis-parses as a number.
+          if (aCell && aCell.hasAttribute("data-v") && bCell && bCell.hasAttribute("data-v")) {
+            an = parseFloat(aCell.getAttribute("data-v"));
+            bn = parseFloat(bCell.getAttribute("data-v"));
+          } else {
+            an = parseFloat(av.replace(/[^0-9.-]/g, ""));
+            bn = parseFloat(bv.replace(/[^0-9.-]/g, ""));
+          }
           var cmp;
           if (!isNaN(an) && !isNaN(bn)) { cmp = an - bn; } else { cmp = av.localeCompare(bv); }
           return asc ? cmp : -cmp;
@@ -203,6 +220,44 @@ _BEHAVIOR_JS = r"""
         rows.forEach(function (r) { tbody.appendChild(r); });
       });
     });
+  });
+
+  // DataTable search + pagination (TASK-2711) — rendered only above
+  // _PAGINATION_ROW_THRESHOLD rows; purely client-side over the
+  // already-baked rows, no data re-fetch.
+  document.querySelectorAll("[data-table-search]").forEach(function (input) {
+    var tableId = input.getAttribute("data-table-search");
+    var table = document.querySelector('table[data-table="' + tableId + '"]');
+    if (!table) return;
+    var tbody = table.querySelector("tbody");
+    var allRows = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+    var pager = document.querySelector('[data-table-pager="' + tableId + '"]');
+    var pageSize = 50;
+    var page = 0;
+
+    function matches() {
+      var q = input.value.trim().toLowerCase();
+      if (!q) return allRows;
+      return allRows.filter(function (r) { return r.textContent.toLowerCase().indexOf(q) !== -1; });
+    }
+
+    function render() {
+      var visible = matches();
+      var start = page * pageSize;
+      var pageRows = visible.slice(start, start + pageSize);
+      allRows.forEach(function (r) { r.style.display = "none"; });
+      pageRows.forEach(function (r) { r.style.display = ""; });
+      if (pager) {
+        var totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+        pager.textContent = "Page " + (page + 1) + " of " + totalPages + " (" + visible.length + " rows)";
+      }
+    }
+
+    input.addEventListener("input", function () {
+      page = 0;
+      render();
+    });
+    render();
   });
 
   // Generic Tabs primitive (FEAT-470 TASK-2544) — same active-class-toggle
@@ -664,12 +719,19 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         Bypasses catalog lowering entirely (``DataTableComponent.lower()``
         carries resolved rows via a ``ChildTemplate`` — real tabular
         rendering is a renderer concern here). ``props`` is the baked
-        component's own top-level dict (v1.0 — never nested).
+        component's own top-level dict (v1.0 — never nested). Cells are
+        formatted per ``TableColumn.type``/``.format`` in Python
+        (:func:`~parrot.outputs.a2ui_renderers._table_format.format_cell_html`,
+        TASK-2711) — no client-side JS is needed to display a formatted
+        value, only to sort/search/paginate the already-rendered rows.
         """
         columns = props.get("columns") or []
         rows = props.get("data")
         rows = rows if isinstance(rows, list) else []
         title = props.get("title")
+        total_rows = props.get("totalRows")
+        truncated = bool(props.get("truncated"))
+        table_id = f"table-{uuid.uuid4().hex[:8]}"
 
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
         header_cells = "".join(
@@ -683,16 +745,45 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             if not isinstance(row, dict):
                 continue
             cells = "".join(
-                f"<td>{html.escape('' if (v := row.get(col.get('name'))) is None else str(v))}</td>"
+                format_cell_html(row.get(col.get("name")), col_type=col.get("type"), col_format=col.get("format"))
                 for col in columns
                 if isinstance(col, dict)
             )
-            body_rows.append(f"<tr>{cells}</tr>")
+            # Optional, additive row-kind marker: a row may carry a reserved
+            # "_rowType" key ("total"/"group") alongside its column values —
+            # no such row-level field exists on StructuredTableConfig today,
+            # and DataTableComponent.lower()'s row template cannot express
+            # per-row metadata without breaking the pinned lowering golden,
+            # so this convention is scoped to THIS interception path only
+            # (see TASK-2711 Completion Note).
+            row_kind = row.get("_rowType")
+            row_cls = ""
+            if row_kind == "total":
+                row_cls = ' class="total-row"'
+            elif row_kind == "group":
+                row_cls = ' class="group-row"'
+            body_rows.append(f"<tr{row_cls}>{cells}</tr>")
+
+        notice_html = ""
+        if truncated and total_rows is not None:
+            notice_html = (
+                f'<p class="a2ui-table-notice">showing {len(rows)} of '
+                f"{html.escape(str(total_rows))} rows</p>"
+            )
+
+        search_html = ""
+        pager_html = ""
+        if len(rows) > _PAGINATION_ROW_THRESHOLD:
+            search_html = (
+                f'<input type="search" class="a2ui-table-search" '
+                f'data-table-search="{table_id}" placeholder="Search...">'
+            )
+            pager_html = f'<div class="a2ui-table-pager" data-table-pager="{table_id}"></div>'
 
         return (
-            f'<div class="a2ui-card a2ui-table-wrap">{title_html}'
-            f"<table data-sort-table><thead><tr>{header_cells}</tr></thead>"
-            f'<tbody>{"".join(body_rows)}</tbody></table></div>'
+            f'<div class="a2ui-card a2ui-table-wrap">{title_html}{search_html}'
+            f'<table data-sort-table data-table="{table_id}"><thead><tr>{header_cells}</tr></thead>'
+            f'<tbody>{"".join(body_rows)}</tbody></table>{pager_html}{notice_html}</div>'
         )
 
     def _render_infographic(self, props: dict[str, Any]) -> str:

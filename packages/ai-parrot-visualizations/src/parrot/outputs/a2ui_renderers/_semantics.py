@@ -57,7 +57,7 @@ def _esc(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
 
-def _extensions(node: BasicNode) -> dict[str, Any]:
+def node_extensions(node: BasicNode) -> dict[str, Any]:
     """The node's ``metadata.extensions.root`` dict, or ``{}`` when absent."""
     if node.metadata is not None and node.metadata.extensions is not None:
         return node.metadata.extensions.root
@@ -75,7 +75,7 @@ def semantic_card_class(node: BasicNode) -> str | None:
         variant — callers append nothing in that case, leaving the
         pre-existing bare ``a2ui-card`` class untouched.
     """
-    variant = _extensions(node).get("parrot_variant")
+    variant = node_extensions(node).get("parrot_variant")
     if not variant:
         return None
     return _CARD_VARIANT_CLASSES.get(variant, f"a2ui-card-{variant}")
@@ -91,7 +91,7 @@ def semantic_text_class(node: BasicNode) -> str | None:
         The semantic class name, or ``None`` when the role carries no
         design-system styling (e.g. ``cell``) or no role is set at all.
     """
-    role = _extensions(node).get("parrot_role")
+    role = node_extensions(node).get("parrot_role")
     if not role:
         return None
     return _TEXT_ROLE_CLASSES.get(role)
@@ -107,7 +107,7 @@ def kpi_unit_html(node: BasicNode) -> str:
         The unit ``<span>`` markup, or ``""`` when no unit is set — callers
         concatenate this directly onto the rendered ``<p>`` content.
     """
-    unit = _extensions(node).get("parrot_unit")
+    unit = node_extensions(node).get("parrot_unit")
     if not unit:
         return ""
     return f'<span class="kpi-unit">{_esc(unit)}</span>'
@@ -124,7 +124,7 @@ def trend_attr_html(node: BasicNode) -> str:
         attribute) when no trend is set. ``components.css`` colours the
         element based on this attribute's value.
     """
-    trend = _extensions(node).get("parrot_trend")
+    trend = node_extensions(node).get("parrot_trend")
     if not trend:
         return ""
     return f' data-trend="{_esc(trend)}"'
@@ -145,6 +145,6 @@ def is_kpi_row(node: BasicNode) -> bool:
     if not children:
         return False
     return all(
-        isinstance(child, BasicNode) and child.component == "Card" and _extensions(child).get("parrot_variant") == "kpi"
+        isinstance(child, BasicNode) and child.component == "Card" and node_extensions(child).get("parrot_variant") == "kpi"
         for child in children
     )
