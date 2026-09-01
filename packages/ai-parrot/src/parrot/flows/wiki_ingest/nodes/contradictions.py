@@ -236,9 +236,7 @@ async def run_contradiction_detection(
             # The LLM must cite an existing claim verbatim — if it does
             # not match anything we actually supplied, skip rather than
             # fabricate a source/date for Claim A (rule #12).
-            logger.warning(
-                "Contradiction detection cited an unknown existing claim: %r", conflict.existing_claim_text
-            )
+            logger.warning("Contradiction detection cited an unknown existing claim: %r", conflict.existing_claim_text)
             continue
         pages.append(
             build_contradiction_page(

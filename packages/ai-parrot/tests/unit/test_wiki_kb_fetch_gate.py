@@ -1,6 +1,7 @@
 """Unit tests for the fetch-gate node (FEAT-481, spec Module 2 /
 TASK-2663): dedup gate, watermark/catch-up, participant allowlist.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -87,9 +88,7 @@ def test_resolve_from_date_precedence() -> None:
     """since > lookback_days > suggested watermark; every override is
     still bounded by the max-catchup floor (G10 large-backlog guard)."""
     assert (
-        fetch_gate._resolve_from_date(
-            since="2026-08-25", lookback_days=5, suggested="2026-08-01", max_catchup_days=90
-        )
+        fetch_gate._resolve_from_date(since="2026-08-25", lookback_days=5, suggested="2026-08-01", max_catchup_days=90)
         == "2026-08-25"
     )
     assert fetch_gate._resolve_from_date(since=None, lookback_days=None, suggested=None, max_catchup_days=90) is None
@@ -98,9 +97,7 @@ def test_resolve_from_date_precedence() -> None:
 def test_resolve_from_date_clamped_to_max_catchup(monkeypatch: pytest.MonkeyPatch) -> None:
     """A suggested/explicit date older than WIKI_KB_MAX_CATCHUP_DAYS is
     clamped to the floor (large-backlog guard)."""
-    result = fetch_gate._resolve_from_date(
-        since="2000-01-01", lookback_days=None, suggested=None, max_catchup_days=30
-    )
+    result = fetch_gate._resolve_from_date(since="2000-01-01", lookback_days=None, suggested=None, max_catchup_days=30)
     # Clamped: never earlier than today - 30 days.
     assert result != "2000-01-01"
 
@@ -155,7 +152,16 @@ async def test_raw_known_id_skips_without_registry_classify(tmp_path: Path, monk
     by_id = {m.fireflies_id: m for m in gated}
     assert by_id["id-1"].outcome == "skip"
     assert by_id["id-2"].outcome == "fetch"
-    assert registry.classify_calls == [{"id": "id-2", "title": "Meeting Two", "date": "2026-08-21", "date_iso": "2026-08-21T10:00:00-05:00", "participants": [], "duration": 45.0}]
+    assert registry.classify_calls == [
+        {
+            "id": "id-2",
+            "title": "Meeting Two",
+            "date": "2026-08-21",
+            "date_iso": "2026-08-21T10:00:00-05:00",
+            "participants": [],
+            "duration": 45.0,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -181,7 +187,9 @@ async def test_create_fetches_transcript_and_summary(monkeypatch: pytest.MonkeyP
     listing_result = ToolResult(success=True, result=_LISTING)
     agent = _FakeAgent(_tools(listing_result, transcript_calls))
     registry = _FakeRegistry(
-        Classified(action="create", fetched_text="full transcript text", fingerprint="fp-1", summary_fingerprint="sfp-1")
+        Classified(
+            action="create", fetched_text="full transcript text", fingerprint="fp-1", summary_fingerprint="sfp-1"
+        )
     )
     monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
 

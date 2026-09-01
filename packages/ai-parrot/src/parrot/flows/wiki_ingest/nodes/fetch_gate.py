@@ -402,9 +402,7 @@ async def _classify_one(
             logger.warning("Fireflies summary fetch failed for %s", tid, exc_info=True)
         return None
 
-    classified = await registry.classify(
-        item, fetch=_fetch, fetch_summary=_fetch_summary, force_refetch=force_refetch
-    )
+    classified = await registry.classify(item, fetch=_fetch, fetch_summary=_fetch_summary, force_refetch=force_refetch)
 
     if classified.action == "create":
         outcome: Literal["fetch", "skip", "duplicate-skip"] = "fetch"

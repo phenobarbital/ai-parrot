@@ -301,7 +301,9 @@ async def run_project_reconcile(
         if not justification.justified:
             return ProjectReconcileResult(action="not_created")
 
-        state = _fresh_state_from_extraction(meeting_extraction, classification, meeting_source_link=meeting_source_link)
+        state = _fresh_state_from_extraction(
+            meeting_extraction, classification, meeting_source_link=meeting_source_link
+        )
         frontmatter = ProjectFrontmatter(
             id=f"project:{project_name.lower().replace(' ', '-')}",
             title=project_name,

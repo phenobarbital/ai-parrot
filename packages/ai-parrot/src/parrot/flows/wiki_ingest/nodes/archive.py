@@ -182,9 +182,7 @@ async def run_archive(
 
     for note in projects_listing.get("notes", []):
         project_name = note["path"].rsplit("/", 1)[-1].removesuffix(".md")
-        moved = await _archive_project_meeting_refs(
-            toolkit, project_name, active_window_days=window, today=reference
-        )
+        moved = await _archive_project_meeting_refs(toolkit, project_name, active_window_days=window, today=reference)
         if moved:
             archived_refs.append((project_name, moved))
 

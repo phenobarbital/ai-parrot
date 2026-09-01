@@ -181,9 +181,11 @@ async def run_meeting_page(
         executive_summary=extraction.executive_summary,
         purpose=extraction.purpose,
         participants=participants,
-        projects=[classification.primary_project] + classification.additional_projects
-        if classification.primary_project
-        else [],
+        projects=(
+            [classification.primary_project] + classification.additional_projects
+            if classification.primary_project
+            else []
+        ),
         clients=clients,
         concepts=classification.concepts,
         verified_quotes=verified_quotes,

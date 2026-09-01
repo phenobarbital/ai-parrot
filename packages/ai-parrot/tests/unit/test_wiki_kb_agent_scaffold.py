@@ -5,6 +5,7 @@ Covers: package import, agent registration, config defaults, and
 ``configure()`` building the strong/cheap tier clients from
 ``provider:model`` config strings (Google default, G7).
 """
+
 from __future__ import annotations
 
 import pytest

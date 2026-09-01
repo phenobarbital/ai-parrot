@@ -59,9 +59,7 @@ def render_review_item(
             ``"source-revision"`` — R3).
     """
     if review_type not in ALLOWED_REVIEW_TYPES:
-        raise ValueError(
-            f"review_type {review_type!r} is not allowed (§26); allowed: {sorted(ALLOWED_REVIEW_TYPES)}"
-        )
+        raise ValueError(f"review_type {review_type!r} is not allowed (§26); allowed: {sorted(ALLOWED_REVIEW_TYPES)}")
 
     related = ", ".join(f"[[{p}]]" for p in related_pages) if related_pages else "None"
     return (

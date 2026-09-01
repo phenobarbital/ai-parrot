@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field
 from ..models import ProjectFrontmatter
 
 _CLAIM_LINE_RE = re.compile(r"^- (?P<text>.*) — \[\[(?P<source>.*)\]\](?P<superseded> \(superseded\))?$")
-_STAKEHOLDER_ROW_RE = re.compile(r"^\| \[\[Wiki/Entities/People/(?P<person>[^|]+)\|[^\]]+\]\] \| (?P<role>[^|]+) \| (?P<responsibility>[^|]+) \|$")
+_STAKEHOLDER_ROW_RE = re.compile(
+    r"^\| \[\[Wiki/Entities/People/(?P<person>[^|]+)\|[^\]]+\]\] \| (?P<role>[^|]+) \| (?P<responsibility>[^|]+) \|$"
+)
 _WORKSTREAM_ROW_RE = re.compile(
     r"^\| (?P<task>[^|]+) \| (?P<owner>[^|]+) \| (?P<status>[^|]+) \| (?P<due>[^|]+) \| \[\[(?P<source>[^\]]+)\]\] \|$"
 )

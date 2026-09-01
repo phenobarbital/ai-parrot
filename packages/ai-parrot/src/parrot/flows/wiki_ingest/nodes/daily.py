@@ -206,6 +206,4 @@ async def run_daily_synthesis(
     )
     content = render_daily_page(frontmatter, state)
 
-    return DailySynthesisResult(
-        frontmatter=frontmatter, content=content, vault_path=f"Diary/Daily Notes/{day}.md"
-    )
+    return DailySynthesisResult(frontmatter=frontmatter, content=content, vault_path=f"Diary/Daily Notes/{day}.md")

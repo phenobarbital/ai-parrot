@@ -1,6 +1,7 @@
 """Unit tests for the contradiction protocol (FEAT-481, spec Module 11 /
 TASK-2669): detection, linking, never-resolve-by-recency.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -125,7 +126,12 @@ async def test_empty_existing_or_new_claims_skips_llm_call() -> None:
     client = _fake_client(ContradictionDetectionResult())
 
     pages = await run_contradiction_detection(
-        client, [], ["Some new claim."], new_claim_source="Wiki/Sources/Meetings/new", new_claim_date="2026-08-20", affected_pages=[]
+        client,
+        [],
+        ["Some new claim."],
+        new_claim_source="Wiki/Sources/Meetings/new",
+        new_claim_date="2026-08-20",
+        affected_pages=[],
     )
 
     assert pages == []

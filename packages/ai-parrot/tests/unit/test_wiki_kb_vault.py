@@ -1,6 +1,7 @@
 """Unit tests for the vault access layer (FEAT-481, spec Module 4 /
 TASK-2662): naming, §8.1 link-fixup, §11 init, §25 mirror.
 """
+
 from __future__ import annotations
 
 from datetime import date

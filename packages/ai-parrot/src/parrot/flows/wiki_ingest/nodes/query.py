@@ -177,7 +177,9 @@ async def run_query(
     return QueryResult(question=question, answer=result.output, candidates=candidates)
 
 
-def build_synthesis_page(query_result: QueryResult, *, related_pages: list[str] | None = None) -> tuple[SynthesisFrontmatter, str]:
+def build_synthesis_page(
+    query_result: QueryResult, *, related_pages: list[str] | None = None
+) -> tuple[SynthesisFrontmatter, str]:
     """§28 step 10 — render a synthesis page, ONLY when explicitly requested.
 
     This function is never called automatically by :func:`run_query` —
@@ -197,7 +199,9 @@ def build_synthesis_page(query_result: QueryResult, *, related_pages: list[str] 
 
     evidence = "\n".join(f"- {fact}" for fact in query_result.answer.supported_facts) or "- Not established"
     limitations = (
-        "\n".join(f"- {item}" for item in [*query_result.answer.unknowns, *query_result.answer.unresolved_contradictions])
+        "\n".join(
+            f"- {item}" for item in [*query_result.answer.unknowns, *query_result.answer.unresolved_contradictions]
+        )
         or "- None identified"
     )
     related = "\n".join(f"- [[{p}]]" for p in (related_pages or [])) or "- None identified"

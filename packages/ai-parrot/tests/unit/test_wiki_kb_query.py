@@ -2,6 +2,7 @@
 TASK-2671): retrieval-then-verify, fact-type distinctions, synthesis
 save gating.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -48,9 +49,7 @@ async def test_query_graphindex_then_verify_pages(tmp_path: Path) -> None:
     verified Obsidian page content, never the GraphIndex snippet."""
     meetings_dir = tmp_path / "Wiki" / "Sources" / "Meetings"
     meetings_dir.mkdir(parents=True)
-    (meetings_dir / "Acme Sync.md").write_text(
-        "# Acme Sync\n\n## Decisions\n- Ship v2 by Q4.\n", encoding="utf-8"
-    )
+    (meetings_dir / "Acme Sync.md").write_text("# Acme Sync\n\n## Decisions\n- Ship v2 by Q4.\n", encoding="utf-8")
 
     wiki_toolkit = _fake_wiki_toolkit(
         [{"node_id": "n1", "title": "Acme Sync", "score": 0.9, "source": "graphindex", "snippet": "STALE SNIPPET"}]

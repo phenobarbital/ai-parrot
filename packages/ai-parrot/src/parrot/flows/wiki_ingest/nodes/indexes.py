@@ -175,7 +175,7 @@ def render_project_meeting_index_archive(project_name: str, entries: list[tuple[
         by_year_month.setdefault((year, month), []).append((d, link, sig))
 
     sections = []
-    for (year, month) in sorted(by_year_month):
+    for year, month in sorted(by_year_month):
         rows = by_year_month[(year, month)]
         lines = "\n".join(f"- {d} - [[{link}|{link.rsplit('/', 1)[-1]}]] - {sig}" for d, link, sig in rows)
         sections.append(f"## {year}\n\n### {month}\n\n{lines}")

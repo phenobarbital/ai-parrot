@@ -101,7 +101,7 @@ def _make_cheap_client() -> AsyncMock:
 
 
 def _listing_entry(meeting_id: str, title: str, date_iso: str) -> str:
-    return f"  - id: {meeting_id}\n    title: \"{title}\"\n    dateString: \"{date_iso}\"\n    duration: 30\n"
+    return f'  - id: {meeting_id}\n    title: "{title}"\n    dateString: "{date_iso}"\n    duration: 30\n'
 
 
 class _FakeTool:
@@ -265,9 +265,7 @@ async def test_section_2_rule_1_private_never_accessed(tmp_path: Path, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_section_9_locked_page_and_human_notes_preserved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_section_9_locked_page_and_human_notes_preserved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     vault_path, report = await _run_conformance_ingest(tmp_path, monkeypatch, primary_project="Legacy Project")
 
     locked_page = vault_path / "Projects" / "Legacy Project" / "Legacy Project.md"
@@ -287,9 +285,7 @@ async def test_section_34_validation_gate_blocks_bad_writes(tmp_path: Path, monk
     from parrot.flows.wiki_ingest import runner as runner_module
     from parrot.flows.wiki_ingest.validation import ValidationResult
 
-    monkeypatch.setattr(
-        runner_module, "validate", lambda ctx: ValidationResult(passed=False, failures=["forced"])
-    )
+    monkeypatch.setattr(runner_module, "validate", lambda ctx: ValidationResult(passed=False, failures=["forced"]))
     vault_path, report = await _run_conformance_ingest(tmp_path, monkeypatch)
 
     assert report.failed == 1
@@ -389,7 +385,9 @@ async def test_section_16_new_project_negative_criteria(tmp_path: Path, monkeypa
         existing_frontmatter=None,
         locked=False,
         project_name="Random Chat",
-        meeting=GatedMeeting(fireflies_id="x", source_id="fireflies:x", title="Chat", meeting_date="2026-08-20", outcome="fetch"),
+        meeting=GatedMeeting(
+            fireflies_id="x", source_id="fireflies:x", title="Chat", meeting_date="2026-08-20", outcome="fetch"
+        ),
         meeting_extraction=MeetingExtraction(),
         meeting_source_link="Wiki/Sources/Meetings/x",
         classification=ClassificationModel(confidence="low"),
@@ -456,9 +454,7 @@ async def test_section_28_query_verifies_against_obsidian(tmp_path: Path, monkey
         ]
     )
     strong_client = _make_strong_client()
-    strong_client.invoke = AsyncMock(
-        return_value=_FakeInvokeResult(QueryAnswer(supported_facts=["Ship v2 by Q4."]))
-    )
+    strong_client.invoke = AsyncMock(return_value=_FakeInvokeResult(QueryAnswer(supported_facts=["Ship v2 by Q4."])))
 
     result = await run_query(strong_client, wiki_toolkit, toolkit, "What was decided?")
 

@@ -1,6 +1,7 @@
 """Unit tests for the canonical meeting source page renderer (FEAT-481,
 spec Module 8 / TASK-2666): §17 template fidelity, verified-quotes gate.
 """
+
 from __future__ import annotations
 
 from typing import Any

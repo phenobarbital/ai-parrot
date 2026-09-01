@@ -1,6 +1,7 @@
 """Unit tests for §10 frontmatter schemas + §34 validation (FEAT-481,
 spec Module 5 / TASK-2661).
 """
+
 from __future__ import annotations
 
 import pytest

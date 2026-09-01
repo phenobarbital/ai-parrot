@@ -140,8 +140,7 @@ def _source_integrity(ctx: ValidationContext, failures: list[str]) -> None:
         post_hash = ctx.post_move_hashes.get(path)
         if post_hash != pre_hash:
             failures.append(
-                f"source integrity: pre/post-move hash mismatch for {path!r} "
-                f"(pre={pre_hash!r} post={post_hash!r})"
+                f"source integrity: pre/post-move hash mismatch for {path!r} " f"(pre={pre_hash!r} post={post_hash!r})"
             )
 
     for path in ctx.raw_files_modified:

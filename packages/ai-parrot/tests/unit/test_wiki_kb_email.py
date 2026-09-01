@@ -1,6 +1,7 @@
 """Unit tests for the email digest node (FEAT-481, spec Module 15 /
 TASK-2674): flag-gated send, compiled-content-only.
 """
+
 from __future__ import annotations
 
 from datetime import date

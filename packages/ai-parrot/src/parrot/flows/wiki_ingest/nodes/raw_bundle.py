@@ -392,7 +392,9 @@ def reclassify_move(
 
     vault_path = Path(vault_path)
     year, month = meeting_date[:4], meeting_date[5:7]
-    destination = vault_path / conf.WIKI_KB_RAW_ROOT / "Processed" / client / project / year / month / processed.source_id
+    destination = (
+        vault_path / conf.WIKI_KB_RAW_ROOT / "Processed" / client / project / year / month / processed.source_id
+    )
 
     transcript_dst = destination / "transcript.md"
     _move_verified(vault_path / processed.transcript_path, transcript_dst)

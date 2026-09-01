@@ -2,6 +2,7 @@
 Module 6 / TASK-2672): end-to-end compile, chronological batch order,
 §34 validation-failure rollback.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,7 +38,9 @@ def _make_strong_client() -> AsyncMock:
 
     async def _invoke(prompt, *, output_type=None, **kwargs):
         if output_type is Classification:
-            return _FakeInvokeResult(Classification(confidence="high", primary_project="Acme Rollout", primary_client="Acme Corp"))
+            return _FakeInvokeResult(
+                Classification(confidence="high", primary_project="Acme Rollout", primary_client="Acme Corp")
+            )
         if output_type is ContradictionDetectionResult:
             return _FakeInvokeResult(ContradictionDetectionResult(conflicts=[]))
         if output_type is NewProjectJustification:
@@ -92,7 +95,7 @@ _LISTING_TEMPLATE = """[{count}]:
 
 
 def _listing_entry(meeting_id: str, title: str, date_iso: str) -> str:
-    return f"  - id: {meeting_id}\n    title: \"{title}\"\n    dateString: \"{date_iso}\"\n    duration: 30\n"
+    return f'  - id: {meeting_id}\n    title: "{title}"\n    dateString: "{date_iso}"\n    duration: 30\n'
 
 
 class _FakeTool:

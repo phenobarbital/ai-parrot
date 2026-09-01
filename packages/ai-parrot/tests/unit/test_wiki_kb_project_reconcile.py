@@ -2,6 +2,7 @@
 spec Module 9 / TASK-2667): Q2 diff-guard, chronological supersession,
 locked-page queueing, §16 negative criteria.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -126,7 +127,9 @@ async def test_chronological_no_regression() -> None:
     """An older late-arriving meeting integrates as historical context
     only — current-state fields are untouched (§19 rule 10)."""
     frontmatter, content = _existing_project(last_meeting="2026-08-20")
-    client = _fake_client(ProjectUpdateProposal(executive_summary="SHOULD NOT APPEAR", current_status="x", change_summary="x"))
+    client = _fake_client(
+        ProjectUpdateProposal(executive_summary="SHOULD NOT APPEAR", current_status="x", change_summary="x")
+    )
 
     result = await run_project_reconcile(
         client,
@@ -172,7 +175,9 @@ async def test_locked_page_is_queued_not_edited() -> None:
 
 @pytest.mark.asyncio
 async def test_new_project_created_when_justified() -> None:
-    client = _fake_client(NewProjectJustification(justified=True, reason="Ongoing rollout with decisions/requirements."))
+    client = _fake_client(
+        NewProjectJustification(justified=True, reason="Ongoing rollout with decisions/requirements.")
+    )
 
     result = await run_project_reconcile(
         client,

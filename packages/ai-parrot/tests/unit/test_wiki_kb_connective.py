@@ -2,6 +2,7 @@
 TASK-2670): daily synthesis, index reachability, review queue, append-only
 log.
 """
+
 from __future__ import annotations
 
 from datetime import date

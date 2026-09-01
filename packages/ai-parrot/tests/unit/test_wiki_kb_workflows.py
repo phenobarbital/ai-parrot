@@ -1,6 +1,7 @@
 """Unit tests for the Health/Lint/Archive/Graph workflows (FEAT-481,
 spec Module 14 / TASK-2673).
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -126,7 +127,7 @@ async def test_archive_never_moves_canonical_pages(tmp_path: Path) -> None:
     old_meeting = meetings_dir / "2026-01-05 - Old Meeting - abc12345.md"
     old_meeting.write_text("# Old Meeting\n", encoding="utf-8")
 
-    (tmp_path / "Projects" / "Acme" ).mkdir(parents=True)
+    (tmp_path / "Projects" / "Acme").mkdir(parents=True)
     (tmp_path / "Projects" / "Acme" / "Acme.md").write_text("# Acme\n", encoding="utf-8")
 
     toolkit = _toolkit(tmp_path)

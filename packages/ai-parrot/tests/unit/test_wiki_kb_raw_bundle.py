@@ -1,6 +1,7 @@
 """Unit tests for the raw bundle layer (FEAT-481, spec Module 3 /
 TASK-2664): pairing, hashing, immutable moves, duplicate routing.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -89,9 +90,7 @@ def test_immutable_move_hash_verify(tmp_path: Path) -> None:
     original_transcript_bytes = (incoming_dir / bundle.transcript_path).read_bytes()
     hashes = raw_bundle.hash_bundle(incoming_dir, bundle)
 
-    result = raw_bundle.move_to_processed(
-        tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date
-    )
+    result = raw_bundle.move_to_processed(tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date)
 
     assert result.outcome == "processed"
     assert result.transcript_path == "Raw/Processed/Uncategorized/id-1/transcript.md"
@@ -136,9 +135,7 @@ def test_known_id_duplicate_skip(tmp_path: Path) -> None:
     bundle = paired[0]
     hashes = raw_bundle.hash_bundle(incoming_dir, bundle)
 
-    result = raw_bundle.move_to_processed(
-        tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date
-    )
+    result = raw_bundle.move_to_processed(tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date)
 
     assert result.outcome == "duplicate-skip"
     assert result.transcript_path == "Raw/Processed/Duplicates/id-1/transcript.md"
@@ -154,9 +151,7 @@ def test_reclassify_move_relocates_processed_bundle(tmp_path: Path) -> None:
     paired, _ = raw_bundle.pair_incoming_bundles(incoming_dir)
     bundle = paired[0]
     hashes = raw_bundle.hash_bundle(incoming_dir, bundle)
-    processed = raw_bundle.move_to_processed(
-        tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date
-    )
+    processed = raw_bundle.move_to_processed(tmp_path, incoming_dir, bundle, hashes, meeting_date=meeting.meeting_date)
 
     relocated = raw_bundle.reclassify_move(
         tmp_path, processed, meeting_date="2026-08-20", client="Acme", project="Roadmap"

@@ -1,6 +1,7 @@
 """Unit tests for the classification node (FEAT-481, spec Module 7 /
 TASK-2665): summary-first, confidence, transcript fallback, §15.5 routing.
 """
+
 from __future__ import annotations
 
 from typing import Any

@@ -2,6 +2,7 @@
 / TASK-2668): match-before-create, §20/§21 template fidelity, materiality
 gating.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -94,7 +95,9 @@ async def test_entity_resolve_updates_existing_not_duplicate(tmp_path: Path) -> 
     )
     toolkit = _toolkit(tmp_path)
     client = _fake_client(
-        EntityExtraction(materially_relevant=True, summary="A key client for the rollout.", known_roles=["Primary client"])
+        EntityExtraction(
+            materially_relevant=True, summary="A key client for the rollout.", known_roles=["Primary client"]
+        )
     )
 
     result = await run_entity_resolve(
@@ -136,9 +139,7 @@ async def test_entity_resolve_creates_new(tmp_path: Path) -> None:
 async def test_no_concept_for_every_noun(tmp_path: Path) -> None:
     """materially_relevant=False produces no page (§21 — not every noun)."""
     toolkit = _toolkit(tmp_path)
-    client = _fake_client(
-        ConceptExtraction(materially_relevant=False, definition="x", why_it_matters="x")
-    )
+    client = _fake_client(ConceptExtraction(materially_relevant=False, definition="x", why_it_matters="x"))
 
     result = await run_concept_resolve(
         client,
