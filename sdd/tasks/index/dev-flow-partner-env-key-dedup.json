@@ -14,14 +14,14 @@
       "feature_id": "FEAT-487",
       "feature": "dev-flow-partner-env-key-dedup",
       "spec": "sdd/specs/dev-flow-partner-env-key-dedup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task — one cohesive edit; splitting would leave the tree inconsistent.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T10:47:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2676-partner-env-key-dedup.md"
     }
