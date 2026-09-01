@@ -50,6 +50,29 @@ _SESSION_HOST_CTX: "contextvars.ContextVar[Optional[SessionHost]]" = contextvars
 )
 
 
+def _owning_node_id(node_id: str) -> str:
+    """Map a dispatch seat onto the flow node that owns it.
+
+    Pool dispatches carry a worker seat (``"development.w1"``, and the
+    merge-conflict ``"development.resolver"``), but ``session_state``'s
+    ``NodeId`` is a closed ``Literal`` of flow node ids — a seat-keyed
+    action fails validation and is swallowed, which is why a pooled
+    ``development`` node reported 0 messages and 0 tool uses in the run
+    bundle while its workers did all the work. Rolling the seat up to its
+    node aggregates every worker's dispatch into the node they belong to
+    — the same ``seat.split(".", 1)[0]`` convention the FEAT-479 usage
+    ledger already uses. Node ids never contain a dot, so this is a no-op
+    for every single-agent dispatch.
+
+    Args:
+        node_id: The dispatch seat as passed to ``dispatch()``.
+
+    Returns:
+        The owning flow node id.
+    """
+    return node_id.split(".", 1)[0]
+
+
 def _apply_to_session_host(event: DispatchEvent) -> None:
     """Fold one dispatch event into the current dispatch's SessionHost, if any.
 
@@ -63,7 +86,7 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
         return
     try:
         action = action_from_dispatch_event(
-            event.kind, event.node_id, event.ts, event.payload
+            event.kind, _owning_node_id(event.node_id), event.ts, event.payload
         )
         if action is not None:
             host.apply(action)

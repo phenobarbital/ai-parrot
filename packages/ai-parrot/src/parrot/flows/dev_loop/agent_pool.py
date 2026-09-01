@@ -25,8 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
@@ -230,6 +231,7 @@ class DevAgentPool:
         run_id: str,
         cwd_for: Callable[[str], str],
         escalate: bool = False,
+        session_host: Optional[Any] = None,
     ) -> _DispatchAttempt:
         """Dispatch a single task to a single worker, never raising.
 
@@ -245,6 +247,10 @@ class DevAgentPool:
                 that model instead of ``worker.spec.model`` (same backend).
                 Only the retry call site passes ``True``; first attempts
                 always use the worker's base profile unchanged.
+            session_host: The run's ``SessionHost``, so this dispatch's
+                events fold into session state exactly as the single-agent
+                path's do. Without it a pooled ``development`` node showed
+                0 messages / 0 tool uses in the run bundle.
 
         Returns:
             A ``(task_id, worker_id, output, error)`` tuple. Exactly one of
@@ -267,6 +273,17 @@ class DevAgentPool:
                 task.id,
                 worker.spec.escalation_model,
             )
+        # A dispatch is the longest-running thing in the whole flow (up to
+        # the profile's wall-clock budget). Bracketing it with a start and
+        # an end line is what lets an operator read the interleaved
+        # per-turn dispatcher logs back to the task that produced them.
+        self.logger.info(
+            "%s starting %s%s",
+            worker.worker_id,
+            task.id,
+            f" — {task.title}" if task.title else "",
+        )
+        started = time.perf_counter()
         try:
             output = await worker.dispatcher.dispatch(
                 brief=brief,
@@ -275,6 +292,7 @@ class DevAgentPool:
                 run_id=run_id,
                 node_id=worker.worker_id,
                 cwd=cwd_for(worker.worker_id),
+                session_host=session_host,
             )
             # A dispatch that names its OWN task in `incomplete_tasks` is
             # telling us it did not finish. Introduced with the forced
@@ -297,6 +315,12 @@ class DevAgentPool:
                     None,
                     f"{task.id} reported itself incomplete by the dispatched agent",
                 )
+            self.logger.info(
+                "%s finished %s in %.1fs",
+                worker.worker_id,
+                task.id,
+                time.perf_counter() - started,
+            )
             return task.id, worker.worker_id, output, None
         except (DispatchExecutionError, DispatchOutputValidationError) as exc:
             self.logger.warning(
@@ -352,6 +376,7 @@ class DevAgentPool:
         run_id: str,
         cwd_for: Callable[[str], str],
         escalate: bool = False,
+        session_host: Optional[Any] = None,
     ) -> WaveResult:
         """Dispatch one wave of tasks across the pool, round-robin, with retry.
 
@@ -369,6 +394,8 @@ class DevAgentPool:
                 :class:`TaskScopedBrief`).
             run_id: The flow run id.
             cwd_for: ``worker_id -> cwd`` resolver.
+            session_host: The run's ``SessionHost``, forwarded to every
+                dispatch in this wave (see :meth:`_dispatch_one`).
 
         Returns:
             A :class:`WaveResult` with completed/failed tasks and one
@@ -385,12 +412,24 @@ class DevAgentPool:
         assignments: Dict[str, PoolWorker] = {
             t.id: self.workers[i % len(self.workers)] for i, t in enumerate(tasks)
         }
+        self.logger.info(
+            "Wave assignment (%d task(s) over %d worker(s)): %s",
+            len(tasks),
+            len(self.workers),
+            ", ".join(
+                f"{t.id} -> {assignments[t.id].worker_id}"
+                f"({assignments[t.id].spec.agent}:"
+                f"{assignments[t.id].spec.model or '<backend default>'})"
+                for t in tasks
+            ),
+        )
 
         first_attempts = await asyncio.gather(
             *(
                 self._dispatch_one(
                     t, assignments[t.id], research=research, run_id=run_id,
                     cwd_for=cwd_for, escalate=escalate,
+                    session_host=session_host,
                 )
                 for t in tasks
             )
@@ -425,6 +464,7 @@ class DevAgentPool:
                         run_id=run_id,
                         cwd_for=cwd_for,
                         escalate=True,
+                        session_host=session_host,
                     )
                     for (task, _fw), retry_worker in zip(retry_targets, retry_workers)
                 )

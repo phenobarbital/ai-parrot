@@ -1184,3 +1184,110 @@ def test_write_file_rejects_unknown_mode(monkeypatch, tmp_path):
             {"path": "big.py", "content": "x", "mode": "prepend"},
             LLMCodeDispatchProfile(),
         )
+
+
+class _UsageResponse(_Response):
+    """A response that reports token usage, like a real provider's."""
+
+    def __init__(self, message: _Message, *, prompt: int, completion: int) -> None:
+        super().__init__(message)
+        self.usage = {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+        }
+
+
+@pytest.mark.asyncio
+async def test_dispatch_completed_carries_the_loop_usage(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """Without this the run bundle showed `n/a` tokens for LLM-backed nodes.
+
+    `session_state.action_from_dispatch_event` reads token/turn figures
+    out of the completed event's `usage` object; this loop published only
+    the output-model name.
+    """
+    (_patch_worktree_base / "app.py").write_text("x = 1\n", encoding="utf-8")
+
+    class _UsageClient(_FakeClient):
+        async def _chat_completion(self, **kwargs: Any) -> _Response:
+            self.calls.append(kwargs)
+            message = self.responses.pop(0)
+            return _UsageResponse(message, prompt=100, completion=25)
+
+    client = _UsageClient(
+        [
+            _Message(tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})]),
+            _Message(
+                tool_calls=[
+                    _ToolCall(
+                        "call_2",
+                        "final_output",
+                        {
+                            "files_changed": ["app.py"],
+                            "commit_shas": ["abc1234"],
+                            "summary": "done",
+                        },
+                    )
+                ]
+            ),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=4),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    completed = [e for e in _published_events(dispatcher) if e["kind"] == "dispatch.completed"]
+    usage = completed[-1]["payload"]["usage"]
+    # Both rounds are summed, and the turn count is real.
+    assert usage["input_tokens"] == 200
+    assert usage["output_tokens"] == 50
+    assert usage["num_turns"] == 2
+    assert usage["duration_ms"] >= 0
+    # No price table here: a fabricated cost would read as free.
+    assert "total_cost_usd" not in usage
+
+
+def test_completion_usage_payload_omits_unreported_tokens():
+    payload = LLMCodeDispatcher._completion_usage_payload(None, turns=3, started_at=0.0)
+
+    assert payload["num_turns"] == 3
+    assert "input_tokens" not in payload
+    assert "output_tokens" not in payload
+
+
+@pytest.mark.asyncio
+async def test_queued_event_names_the_backend(monkeypatch, brief, _patch_worktree_base):
+    """The run bundle's "Dispatcher" column read a key nobody set."""
+    client = _FakeClient(
+        [
+            _Message(
+                content=json.dumps(
+                    {"files_changed": [], "commit_shas": [], "summary": "done"}
+                )
+            )
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3"),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    queued = [e for e in _published_events(dispatcher) if e["kind"] == "dispatch.queued"]
+    assert queued[0]["payload"]["dispatcher"] == "nvidia"

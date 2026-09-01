@@ -20,6 +20,7 @@ import re
 import shlex
 import shutil
 import time
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
@@ -92,6 +93,20 @@ class LLMCodeDispatcher:
         """
         self._event_registry_resolver = resolver
 
+    @property
+    def event_registry_resolver(self) -> Optional[Callable[[str], Optional["EventRegistry"]]]:
+        """The wired ``run_id -> EventRegistry`` lookup, if any.
+
+        Public so an owner that was handed ONE wired dispatcher can pass
+        the same lookup on to dispatchers it did not build itself — the
+        dev-agent pool's workers, which ``agent_builder.build_dispatcher``
+        constructs with no knowledge of the run.
+
+        Returns:
+            The resolver, or ``None`` when none was wired.
+        """
+        return self._event_registry_resolver
+
     async def dispatch(
         self,
         *,
@@ -118,7 +133,15 @@ class LLMCodeDispatcher:
                 kind="dispatch.queued",
                 run_id=run_id,
                 node_id=node_id,
-                payload={"profile": profile.model_dump(mode="json")},
+                payload={
+                    "profile": profile.model_dump(mode="json"),
+                    # The run bundle's "Dispatcher" column reads this key
+                    # (session_state.DispatchQueued.dispatcher) and showed
+                    # `n/a` for every node because nobody ever set it.
+                    # Every subclass funnels through here with
+                    # `llm="<backend>:<model>"`.
+                    "dispatcher": profile.llm.split(":", 1)[0] or profile.llm,
+                },
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
@@ -343,7 +366,14 @@ class LLMCodeDispatcher:
                             kind="dispatch.completed",
                             run_id=run_id,
                             node_id=node_id,
-                            payload={"output_model": output_model.__name__},
+                            payload={
+                                "output_model": output_model.__name__,
+                                "usage": self._completion_usage_payload(
+                                    accumulated,
+                                    turns=turn_index + 1,
+                                    started_at=loop_t0,
+                                ),
+                            },
                         )
                         return result
 
@@ -442,7 +472,14 @@ class LLMCodeDispatcher:
                                 kind="dispatch.completed",
                                 run_id=run_id,
                                 node_id=node_id,
-                                payload={"output_model": output_model.__name__},
+                                payload={
+                                    "output_model": output_model.__name__,
+                                    "usage": self._completion_usage_payload(
+                                        accumulated,
+                                        turns=turn_index + 1,
+                                        started_at=loop_t0,
+                                    ),
+                                },
                             )
                             return result
 
@@ -540,6 +577,42 @@ class LLMCodeDispatcher:
                     input_tokens=accumulated.prompt_tokens if accumulated else None,
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
+
+    @staticmethod
+    def _completion_usage_payload(
+        accumulated: Optional[CompletionUsage],
+        *,
+        turns: int,
+        started_at: float,
+    ) -> Dict[str, Any]:
+        """Shape the loop's totals the way ``dispatch.completed`` reports them.
+
+        ``session_state.action_from_dispatch_event`` reads token/turn/
+        duration figures out of a ``dispatch.completed`` payload's
+        ``usage`` object; this loop published only the output-model name,
+        so a node driven by an in-process LLM backend showed ``n/a``
+        tokens in the run bundle's Agents table even when it had reported
+        usage on every round. No ``total_cost_usd``: this loop has no
+        price table, and a fabricated zero would read as "free".
+
+        Args:
+            accumulated: The per-call usage total, or ``None`` when no
+                round reported usage.
+            turns: Rounds actually spent.
+            started_at: ``time.perf_counter()`` at loop start.
+
+        Returns:
+            A ``usage`` payload dict; token keys are omitted entirely
+            when unreported, never zero-filled.
+        """
+        usage: Dict[str, Any] = {
+            "num_turns": turns,
+            "duration_ms": int((time.perf_counter() - started_at) * 1000),
+        }
+        if accumulated is not None:
+            usage["input_tokens"] = accumulated.prompt_tokens
+            usage["output_tokens"] = accumulated.completion_tokens
+        return usage
 
     @staticmethod
     def _budget_marks(max_turns: int) -> List[int]:
@@ -1028,7 +1101,15 @@ class LLMCodeDispatcher:
                 "total_tokens": getattr(usage_obj, "total_tokens", None),
             }
         try:
-            usage = CompletionUsage.from_openai(usage_obj)
+            # ``CompletionUsage.from_openai`` reads ATTRIBUTES. A backend
+            # that reports usage as a plain dict (some OpenAI-compatible
+            # gateways do) would otherwise yield a silently zeroed usage —
+            # tokens reported as 0 rather than as unreported. Adapt the
+            # already-normalized ``raw_usage`` mapping to attributes.
+            source: Any = usage_obj
+            if isinstance(usage_obj, dict):
+                source = SimpleNamespace(**raw_usage)
+            usage = CompletionUsage.from_openai(source)
         except Exception:  # noqa: BLE001 - usage extraction must never break dispatch
             usage = None
         return usage, raw_usage

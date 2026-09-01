@@ -149,6 +149,20 @@ class ClaudeCodeDispatcher:
         """
         self._event_registry_resolver = resolver
 
+    @property
+    def event_registry_resolver(self) -> Optional[Callable[[str], Optional[EventRegistry]]]:
+        """The wired ``run_id -> EventRegistry`` lookup, if any.
+
+        Public so an owner that was handed ONE wired dispatcher can pass
+        the same lookup on to dispatchers it did not build itself — the
+        dev-agent pool's workers, which ``agent_builder.build_dispatcher``
+        constructs with no knowledge of the run.
+
+        Returns:
+            The resolver, or ``None`` when none was wired.
+        """
+        return self._event_registry_resolver
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -206,7 +220,12 @@ class ClaudeCodeDispatcher:
                 kind="dispatch.queued",
                 run_id=run_id,
                 node_id=node_id,
-                payload={"profile": profile.model_dump(mode="json")},
+                payload={
+                    "profile": profile.model_dump(mode="json"),
+                    # Fills the run bundle's "Dispatcher" column, which
+                    # read this key and found nothing (see llm.py).
+                    "dispatcher": "claude-code",
+                },
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)

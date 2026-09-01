@@ -189,6 +189,70 @@ def test_dispatch_event_bumps_counters():
     assert dispatch_state.dispatcher == "claude-code"
 
 
+def test_pool_worker_seats_fold_into_their_owning_node():
+    """A pooled `development` node used to report 0 msgs / 0 tools.
+
+    `NodeId` is a closed Literal, so a "development.w1"-keyed action was
+    rejected and swallowed. Seats now roll up to the node that owns them,
+    and several workers accumulate onto that one node.
+    """
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        for seat in ("development.w1", "development.w2"):
+            _apply_to_session_host(
+                _dispatch_event("dispatch.queued", node_id=seat, dispatcher="nvidia")
+            )
+            _apply_to_session_host(_dispatch_event("dispatch.message", node_id=seat))
+            _apply_to_session_host(
+                _dispatch_event("dispatch.tool_use", node_id=seat, tool_name="write_file")
+            )
+            _apply_to_session_host(
+                _dispatch_event(
+                    "dispatch.completed",
+                    node_id=seat,
+                    usage={"input_tokens": 100, "output_tokens": 20, "num_turns": 3},
+                )
+            )
+        _apply_to_session_host(
+            _dispatch_event("dispatch.tool_use", node_id="development.resolver", tool_name="Bash")
+        )
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    assert "development.w1" not in host.state.nodes
+    dispatch_state = host.state.nodes["development"].dispatch
+    assert dispatch_state.message_count == 2
+    assert dispatch_state.tool_use_count == 3
+    # Both workers' spend is summed, not overwritten by the last one.
+    assert dispatch_state.input_tokens == 200
+    assert dispatch_state.output_tokens == 40
+    assert dispatch_state.num_turns == 6
+
+
+def test_dispatch_completed_without_usage_keeps_earlier_totals():
+    """An unreported second dispatch must not blank the first's numbers."""
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        _apply_to_session_host(
+            _dispatch_event(
+                "dispatch.completed",
+                node_id="development.w1",
+                usage={"input_tokens": 7, "output_tokens": 11},
+            )
+        )
+        _apply_to_session_host(_dispatch_event("dispatch.completed", node_id="development.w2"))
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    dispatch_state = host.state.nodes["development"].dispatch
+    assert dispatch_state.input_tokens == 7
+    assert dispatch_state.output_tokens == 11
+    # Never fabricated: nothing reported cost anywhere.
+    assert dispatch_state.total_cost_usd is None
+
+
 def test_dispatch_event_no_host_bound_is_noop():
     # No _SESSION_HOST_CTX.set() call — must not raise (default is None).
     _apply_to_session_host(_dispatch_event("dispatch.queued"))

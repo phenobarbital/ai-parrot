@@ -33,7 +33,7 @@ class FakeDispatcher:
         self.calls = []
         self.fail_ids = set(fail_ids)
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((brief.task_id, node_id, cwd, profile))
         if brief.task_id in self.fail_ids:
             self.fail_ids.discard(brief.task_id)
@@ -51,7 +51,7 @@ class AlwaysFailDispatcher:
     def __init__(self):
         self.calls = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((brief.task_id, node_id, cwd))
         raise RuntimeError("always fails")
 
@@ -67,7 +67,7 @@ class SelfDeclaredIncompleteDispatcher:
     def __init__(self):
         self.calls = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((brief.task_id, node_id))
         return DevelopmentOutput(
             files_changed=[f"{brief.task_id}.py"],
@@ -199,7 +199,7 @@ class TestPool:
         """Only the dispatch's OWN task id disqualifies it."""
 
         class _OtherTaskIncomplete(SelfDeclaredIncompleteDispatcher):
-            async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+            async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
                 self.calls.append((brief.task_id, node_id))
                 return DevelopmentOutput(
                     files_changed=[],
@@ -432,6 +432,7 @@ class TestAggregate:
         merged = agg.worker_summaries[0]
         assert merged.tasks_completed == ["TASK-1", "TASK-2"]
         assert "wave1" in merged.summary and "wave2" in merged.summary
+
 
 # ---------------------------------------------------------------------------
 # An internal error is OUR bug, not a failed dispatch. Swallowed as "task

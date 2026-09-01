@@ -80,13 +80,19 @@ class FakeDispatcher:
 
     def __init__(self, fail_ids=()):
         self.calls = []
+        self.session_hosts = []
         self.fail_ids = set(fail_ids)
+        self.resolver = None
+
+    def set_event_registry_resolver(self, resolver):
+        self.resolver = resolver
 
     async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kwargs):
-        # **_kwargs tolerates the single-agent path's ``session_host=``
-        # (FEAT-466 TASK-2506); the pool path never passes it.
+        # **_kwargs tolerates ``session_host=``, which BOTH the
+        # single-agent path (FEAT-466 TASK-2506) and the pool path pass.
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
+        self.session_hosts.append(_kwargs.get("session_host"))
         if task_id in self.fail_ids:
             self.fail_ids.discard(task_id)
             raise RuntimeError("boom")
@@ -97,7 +103,7 @@ class AlwaysFailDispatcher:
     def __init__(self):
         self.calls = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((getattr(brief, "task_id", None), node_id, cwd))
         raise RuntimeError("always fails")
 
@@ -677,6 +683,71 @@ class TestPoolPath:
         assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
         assert result.incomplete_tasks == []
         assert ctx["development_output"] is result
+
+    async def test_pool_dispatch_carries_the_session_host_and_run_registry(self, tmp_path):
+        """Both usage seams the pool path used to drop on the floor.
+
+        Without ``session_host`` the run bundle showed a pooled
+        ``development`` node with 0 messages / 0 tool uses; without the
+        per-run EventRegistry resolver its seats never reached the run's
+        usage ledger, so the whole node was missing from the Usage table
+        while planner/synthesis (which use the runner-wired dispatcher)
+        reported normally.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        resolver = MagicMock(name="run_id -> EventRegistry")
+        shared_dispatcher = MagicMock()
+        shared_dispatcher.event_registry_resolver = resolver
+        host = object()
+        node = DevelopmentNode(
+            dispatcher=shared_dispatcher,
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        await node.execute({"run_id": "r1", "research_output": research, "session_host": host})
+
+        assert d1.session_hosts and all(h is host for h in d1.session_hosts)
+        assert d2.session_hosts and all(h is host for h in d2.session_hosts)
+        assert d1.resolver is resolver
+        assert d2.resolver is resolver
+
+    async def test_pool_wiring_is_optional(self, tmp_path):
+        """No host and no wired resolver stays exactly as before."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        shared_dispatcher = MagicMock()
+        shared_dispatcher.event_registry_resolver = None
+        node = DevelopmentNode(
+            dispatcher=shared_dispatcher,
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        result = await node.execute({"run_id": "r1", "research_output": research})
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert d1.resolver is None
+        assert d1.session_hosts == [None]
 
     async def test_all_incomplete_raises(self, tmp_path):
         # FEAT-377 TASK-1913: 2 independent tasks + count=2 to satisfy

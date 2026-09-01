@@ -651,6 +651,47 @@ class DevelopmentNode(DevLoopNode):
     # Pool path
     # ------------------------------------------------------------------
 
+    def _propagate_usage_wiring(self, pool: DevAgentPool) -> None:
+        """Give every pool worker this node's per-run EventRegistry resolver.
+
+        ``DevLoopRunner`` wires ``run_id -> EventRegistry`` into the ONE
+        dispatcher it is constructed with (``runner.py``'s
+        ``set_event_registry_resolver`` call). Pool workers are built
+        later and independently by ``dispatcher_builder``
+        (``agent_builder.build_dispatcher``), which knows nothing about
+        the runner — so their clients self-created an isolated registry,
+        their ``AfterClientCallEvent``s never reached the run's
+        ``UsageRecordingSubscriber``, and the whole ``development`` node
+        was missing from the run's Usage table while planner/synthesis
+        (which DO use the wired dispatcher) reported normally.
+
+        Copying the resolver across is safe and idempotent: it is a
+        ``run_id`` lookup, not per-run state, and a dispatcher that does
+        not support the hook (an out-of-process CLI backend) is skipped.
+
+        Args:
+            pool: The freshly built pool whose workers need wiring.
+        """
+        resolver = getattr(self._dispatcher, "event_registry_resolver", None)
+        if resolver is None:
+            return
+        for worker in pool.workers:
+            setter = getattr(worker.dispatcher, "set_event_registry_resolver", None)
+            if callable(setter):
+                setter(resolver)
+
+    @staticmethod
+    def _task_label(task: TaskRef) -> str:
+        """Render one task as ``TASK-NNN (title)`` for a log line.
+
+        Args:
+            task: The scheduler's task ref.
+
+        Returns:
+            The id alone when the index carries no title.
+        """
+        return f"{task.id} ({task.title})" if task.title else task.id
+
     @staticmethod
     def _find_feature_slug(worktree_path: str, feat_id: str) -> Optional[str]:
         """Resolve the per-spec index feature slug by scanning the index dir.
@@ -736,6 +777,7 @@ class DevelopmentNode(DevLoopNode):
             RuntimeError: Every dispatchable task ended up incomplete.
         """
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
+        self._propagate_usage_wiring(pool)
         # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
         # build` is where the requested specs become the ACTUAL worker
         # list (replicas expanded, `pool_max` cap applied), so this is the
@@ -750,6 +792,23 @@ class DevelopmentNode(DevLoopNode):
                 for worker in pool.workers
             ),
         )
+        # The pool deployment line above says WHO is about to run; without
+        # this one the operator never learns WHAT it runs — how many tasks
+        # the feature was decomposed into, or which of them are already
+        # done. Both halves of the answer are already in the scheduler.
+        all_tasks = scheduler.all_tasks()
+        done_ids = {t.id for t in scheduler.done()}
+        todo = [t for t in all_tasks if t.id not in done_ids]
+        self.logger.info(
+            "%s task plan: %d task(s) in the per-spec index — %d already done, "
+            "%d to run: %s",
+            research.feat_id,
+            len(all_tasks),
+            len(done_ids),
+            len(todo),
+            ", ".join(self._task_label(t) for t in todo) or "(none)",
+        )
+
         run_id = shared["run_id"]
 
         manager: Optional[SubWorktreeManager] = None
@@ -769,7 +828,14 @@ class DevelopmentNode(DevLoopNode):
             return research.worktree_path
 
         async def _resolver(path: str, description: str) -> bool:
-            return await self._resolve_conflict(path, description, pool=pool, research=research, run_id=run_id)
+            return await self._resolve_conflict(
+                path,
+                description,
+                pool=pool,
+                research=research,
+                run_id=run_id,
+                session_host=shared.get("session_host"),
+            )
 
         # FEAT-377 TASK-1912 (G3): on a QA repair-loop redispatch
         # (attempt >= 2 — stamped by `_with_repair_feedback` above), every
@@ -778,11 +844,21 @@ class DevelopmentNode(DevLoopNode):
         escalate = shared.get("qa_attempt", 1) >= 2
 
         wave_results: List[WaveResult] = []
+        wave_number = 0
         try:
             while True:
                 wave = scheduler.next_wave()
                 if not wave:
                     break
+
+                wave_number += 1
+                self.logger.info(
+                    "%s wave %d: dispatching %d task(s): %s",
+                    research.feat_id,
+                    wave_number,
+                    len(wave),
+                    ", ".join(self._task_label(t) for t in wave),
+                )
 
                 result = await pool.run_wave(
                     wave,
@@ -790,6 +866,7 @@ class DevelopmentNode(DevLoopNode):
                     run_id=run_id,
                     cwd_for=_cwd_for,
                     escalate=escalate,
+                    session_host=shared.get("session_host"),
                 )
                 wave_results.append(result)
 
@@ -797,6 +874,19 @@ class DevelopmentNode(DevLoopNode):
                     scheduler.mark_done(task_id)
                 for task_id in result.failed:
                     scheduler.mark_failed(task_id)
+
+                self.logger.info(
+                    "%s wave %d complete: %d completed (%s), %d failed (%s); "
+                    "%d task(s) still pending, %d skipped",
+                    research.feat_id,
+                    wave_number,
+                    len(result.completed),
+                    ", ".join(sorted(result.completed)) or "-",
+                    len(result.failed),
+                    ", ".join(sorted(result.failed)) or "-",
+                    len(scheduler.pending()),
+                    len(scheduler.skipped()),
+                )
 
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
@@ -830,6 +920,7 @@ class DevelopmentNode(DevLoopNode):
         pool: DevAgentPool,
         research: ResearchOutput,
         run_id: str,
+        session_host: Optional[Any] = None,
     ) -> bool:
         """Merge-conflict resolver policy: first pool worker, claude-code fallback.
 
@@ -855,6 +946,9 @@ class DevelopmentNode(DevLoopNode):
             pool: The active pool (its first worker is the primary resolver).
             research: The shared research output.
             run_id: The flow run id.
+            session_host: The run's ``SessionHost``, forwarded so a
+                resolver dispatch is as visible in session state as any
+                other ``development`` dispatch.
 
         Returns:
             ``True`` if either dispatch succeeded, ``False`` otherwise.
@@ -870,6 +964,7 @@ class DevelopmentNode(DevLoopNode):
                 run_id=run_id,
                 node_id="development.resolver",
                 cwd=path,
+                session_host=session_host,
             )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
@@ -880,6 +975,10 @@ class DevelopmentNode(DevLoopNode):
 
         try:
             fallback_dispatcher, fallback_profile = self._dispatcher_builder(DevAgentSpec(agent="claude-code"))
+            resolver = getattr(self._dispatcher, "event_registry_resolver", None)
+            setter = getattr(fallback_dispatcher, "set_event_registry_resolver", None)
+            if resolver is not None and callable(setter):
+                setter(resolver)
             await fallback_dispatcher.dispatch(
                 brief=brief,
                 profile=fallback_profile,
@@ -887,6 +986,7 @@ class DevelopmentNode(DevLoopNode):
                 run_id=run_id,
                 node_id="development.resolver",
                 cwd=path,
+                session_host=session_host,
             )
             return True
         except Exception as exc:  # noqa: BLE001 - fallback failure -> resolver fully failed
