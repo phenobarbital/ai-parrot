@@ -111,7 +111,7 @@
       "feature_id": "FEAT-491",
       "feature": "flex-agent-infographic-a2ui",
       "spec": "sdd/specs/flex-agent-infographic-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Markdown-only, but its discovery test exercises the TASK-2696 agent's skill_paths; sequenced after 2696 in the same worktree (could overlap with TASK-2697 — different files).",
       "assigned_to": null,
       "started_at": "2026-09-01T16:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2698-flex-skills.md"
+      "completed_at": "2026-09-01T19:24:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2698-flex-skills.md"
     },
     {
       "id": "TASK-2699",
