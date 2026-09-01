@@ -1531,19 +1531,36 @@ class DevLoopRunner:
         using the SAME kwargs the caller originally built ``self.flow``
         with (``self._dev_loop_flow_kwargs``), with checkpointing forced
         on — per-run construction is mandatory for the recovery path
-        (spec §7: shared flow instances are concurrent today). The
-        ``definition`` argument ``AgentsFlow.resume()``/
-        ``DevCheckpointCoordinator`` pass to this closure is deliberately
-        ignored, matching the ``flow_factory`` contract documented in
-        ``parrot.flows.dev_loop.checkpoint``: ``build_dev_loop_flow``
-        always derives its own declarative snapshot via
-        ``build_dev_loop_definition()`` regardless.
+        (spec §7: shared flow instances are concurrent today).
+
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS SAME closure — ``flow_factory(checkpoint.definition)`` — to
+        rebuild the topology of a run it is resuming, not only
+        ``DevCheckpointCoordinator.prepare()``'s cache-miss branch
+        (``flow_factory(None)``). A prior version of this docstring
+        claimed the ``definition`` argument was "deliberately ignored" and
+        merged ``overrides`` unconditionally before returning the closure —
+        that silently applied a NEWLY submitted per-run override (e.g. a
+        different ``model_plan``) to every not-yet-completed node of a
+        RESUMED run, contradicting the resume rule (spec §8 Q1: a resumed
+        run keeps the seats/config it was created with). The definition's
+        *content* is still ignored (``build_dev_loop_flow`` always derives
+        its own declarative snapshot via ``build_dev_loop_definition()``
+        regardless) — but its *presence* is the only signal available at
+        this call site for "is this call rebuilding a FRESH run or
+        RESUMING one," per ``DevCheckpointCoordinator.prepare()``'s
+        contract (``flow_factory(None)`` on a cache miss,
+        ``flow_factory(checkpoint.definition)`` — never ``None`` — inside
+        ``AgentsFlow.resume()``). ``overrides`` is therefore applied
+        INSIDE the closure, gated on ``_definition is None``.
 
         Args:
             overrides: FEAT-490 — optional per-run overrides merged over
-                ``self._dev_loop_flow_kwargs`` for THIS call only. Captured
-                in the closure's local ``kwargs`` dict, never assigned to
-                ``self`` — concurrent runs each get their own closure.
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY when the closure is invoked on the fresh (cache-miss)
+                path. Captured in the closure and re-evaluated per
+                invocation — never assigned to ``self`` — concurrent runs
+                each get their own closure.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -1559,11 +1576,20 @@ class DevLoopRunner:
                 "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
                 "to have been passed to DevLoopRunner.__init__()."
             )
-        kwargs = dict(self._dev_loop_flow_kwargs)
-        if overrides:
-            kwargs.update(overrides)
+        base_kwargs = self._dev_loop_flow_kwargs
 
         def _factory(_definition: Optional[Any]) -> AgentsFlow:
+            # `_definition is None` <=> DevCheckpointCoordinator.prepare()'s
+            # cache-miss branch (flow_factory(None)) — the ONLY case a
+            # per-run override may apply. A non-None `_definition` means
+            # AgentsFlow.resume() is rebuilding a RESUMED run's topology;
+            # the override must NOT reach it, or a resumed run's
+            # not-yet-completed nodes would adopt a newly submitted
+            # per-run config instead of keeping the one the run was
+            # created with.
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
             return build_dev_loop_flow(
                 **kwargs,
                 checkpoint=True,

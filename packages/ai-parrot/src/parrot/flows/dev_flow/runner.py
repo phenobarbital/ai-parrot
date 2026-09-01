@@ -199,14 +199,18 @@ class DevFlowRunner(DevLoopRunner):
                 mode,
             )
 
-        # spec §8 Q1 (resolved: "keep the original"): on the resume branch,
-        # DevCheckpointCoordinator.prepare() never calls flow_factory at all
-        # (dev_loop/checkpoint.py:553-558 — flow_factory only fires on a
-        # cache miss) — so `flow_kwargs_overrides` above was already never
-        # applied to a resumed run's seats BY CONSTRUCTION. This is the
-        # explicit, documented statement of that fact for reporting: a
-        # resumed run's effective plan is the one it was created with, never
-        # whatever was newly submitted.
+        # spec §8 Q1 (resolved: "keep the original"): a resumed run must
+        # keep the seats it was created with. CORRECTED (post-review):
+        # DevCheckpointCoordinator.prepare()'s resume branch does NOT skip
+        # flow_factory — AgentsFlow.resume() calls the SAME closure
+        # (`flow_factory(checkpoint.definition)`) to rebuild the topology
+        # of every not-yet-completed node. The rule above is therefore
+        # enforced INSIDE `_dev_loop_flow_factory()`'s closure — it only
+        # merges `flow_kwargs_overrides` when invoked with `_definition is
+        # None` (the cache-miss/fresh signal), never when AgentsFlow.resume()
+        # calls it with a real definition. `mode` (computed by `prepare()`
+        # itself, using the SAME signal) is what makes that guarantee
+        # correctly reportable here.
         model_plan_applied = model_plan is not None and mode != "resumed"
 
         # Same manual acquire/park-aware structure as the base class's run()
@@ -341,12 +345,23 @@ class DevFlowRunner(DevLoopRunner):
         See ``DevLoopRunner._dev_loop_flow_factory()`` for the full
         rationale — identical here except it calls ``build_dev_flow``.
 
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS closure — ``flow_factory(checkpoint.definition)`` — to rebuild
+        a RESUMED run's topology too, not only ``prepare()``'s cache-miss
+        branch (``flow_factory(None)``). ``overrides`` (e.g. a per-run
+        ``model_plan``) must therefore only apply when ``_definition is
+        None`` — otherwise a resumed run's not-yet-completed nodes would
+        silently adopt a newly submitted ``model_plan`` instead of keeping
+        the one the run was created with (spec §8 Q1). See the base
+        class's docstring for the full explanation of this signal.
+
         Args:
             overrides: FEAT-490 — optional per-run overrides (e.g.
                 ``{"model_plan": ...}``) merged over
-                ``self._dev_loop_flow_kwargs`` for THIS call only. Captured
-                in the closure's local ``kwargs`` dict, never assigned to
-                ``self``.
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY on the fresh (cache-miss) path. Captured in the
+                closure and re-evaluated per invocation — never assigned
+                to ``self``.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -360,11 +375,12 @@ class DevFlowRunner(DevLoopRunner):
                 "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
                 "to have been passed to DevFlowRunner.__init__()."
             )
-        kwargs = dict(self._dev_loop_flow_kwargs)
-        if overrides:
-            kwargs.update(overrides)
+        base_kwargs = self._dev_loop_flow_kwargs
 
         def _factory(_definition: Any) -> AgentsFlow:
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
             return build_dev_flow(
                 **kwargs,
                 checkpoint=True,

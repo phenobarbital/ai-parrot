@@ -618,3 +618,84 @@ def test_execution_policy_for_fingerprint_is_unmodified_by_this_feature():
 
     sig = inspect.signature(DevFlowRunner._execution_policy_for_fingerprint)
     assert list(sig.parameters) == ["self"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 post-review fix: overrides must NOT reach a RESUMED run's rebuild
+# ---------------------------------------------------------------------------
+#
+# CRITICAL bug found by adversarial review: `AgentsFlow.resume()`
+# (bots/flows/flow/flow.py:1556) calls `flow_factory(checkpoint.definition)`
+# — the SAME closure `_dev_loop_flow_factory()` returns, and never `None` —
+# to rebuild a RESUMED run's topology. The original implementation merged
+# `overrides` (e.g. a per-run `model_plan`) into `kwargs` before returning
+# the closure, so it silently reached a resumed run's rebuild too — every
+# `test_resumed_run_*` test above mocks `_checkpoint_coordinator.prepare()`
+# directly and therefore never invoked the real closure with a non-None
+# definition, so none of them could have caught this. Fixed by gating the
+# merge on `_definition is None` INSIDE the closure. These tests drive the
+# closure with both call shapes directly — the same signal the real
+# coordinator/`AgentsFlow.resume()` use.
+
+
+def test_overrides_apply_on_the_fresh_definition_none_call() -> None:
+    """`factory(None)` — the cache-miss/fresh signal — still applies
+    overrides (regression guard: the fix must not disable the fresh path)."""
+    captured: list[dict] = []
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        factory = runner._dev_loop_flow_factory({"model_plan": plan})
+        factory(None)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert captured[0]["model_plan"] is plan
+
+
+def test_overrides_do_not_reach_a_resumed_rebuild() -> None:
+    """`factory(<a real definition, i.e. what AgentsFlow.resume() passes>)`
+    — the exact call shape `AgentsFlow.resume()` uses
+    (`flow_factory(checkpoint.definition)`) — must build with ONLY the
+    construction-time kwargs, never the per-run override. This is the
+    precise regression guard: before the fix, this assertion failed."""
+    captured: list[dict] = []
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        factory = runner._dev_loop_flow_factory({"model_plan": plan})
+        # A stand-in for `checkpoint.definition` — any non-None object is
+        # the correct signal; AgentsFlow.resume() never passes None here.
+        sentinel_definition = object()
+        factory(sentinel_definition)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert "model_plan" not in captured[0]
+
+
+def test_same_closure_applies_the_plan_only_to_its_fresh_call() -> None:
+    """A single closure instance, called first fresh then as-if-resuming —
+    mirrors `prepare()` calling the SAME closure it built once per `run()`
+    invocation. Only the `_definition is None` call sees the plan."""
+    captured: list[dict] = []
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        factory = runner._dev_loop_flow_factory({"model_plan": plan})
+        factory(None)
+        factory(object())
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert captured[0]["model_plan"] is plan
+    assert "model_plan" not in captured[1]
