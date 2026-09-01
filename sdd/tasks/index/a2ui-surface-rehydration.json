@@ -71,7 +71,7 @@
       "feature_id": "FEAT-492",
       "feature": "a2ui-surface-rehydration",
       "spec": "sdd/specs/a2ui-surface-rehydration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Extends handlers/a2ui.py and manager.py using the shared service from TASK-2702; sequential.",
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2703-a2ui-mirror-route-registration.md"
+      "completed_at": "2026-09-01T18:26:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2703-a2ui-mirror-route-registration.md"
     },
     {
       "id": "TASK-2704",

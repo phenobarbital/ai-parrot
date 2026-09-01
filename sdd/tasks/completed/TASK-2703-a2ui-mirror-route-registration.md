@@ -172,10 +172,54 @@ async def test_routes_registered_and_ordering(): ...   # surfaces before bare a2
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
 **Notes**:
+Added a `/surfaces/{surface_id}` branch to `A2UIHandler.get()` (before the
+`/capabilities` branch's sibling check, both resolved BEFORE any
+`StreamResponse` preparation — the bare pattern's SSE branch is unaffected).
+`_get_surface()` calls the existing `_authenticate()` for agent/user
+resolution (parity with every other route on this handler), then delegates
+negotiation to the SAME `SurfaceNegotiationService` instance
+`UISurfacesHandler` uses — both lazily cached on `app["ui_surfaces_store"]`/
+`app["ui_surfaces_negotiation"]`, so whichever handler is hit first wires
+them for both. `manager.py` registers the mirror route literal-before-bare
+(next to the existing `/capabilities` ordering comment, extended to mention
+`surfaces`) plus the five `UISurfacesHandler` URL shapes.
+
+12 new tests across two areas: `test_a2ui_surfaces_route.py` (8, real
+aiohttp `TestClient` — `A2UIHandler` doesn't use `@is_authenticated()`,
+confirmed from its own module docstring, so the `test_a2ui_handler.py`
+client-fixture idiom applies directly: negotiation JSON/HTML, shared-service
+delegation via monkeypatched spies, share-token access + claim, 404/410
+discipline, `/capabilities` + POST dispatch unchanged, and route ordering).
+Reran `test_a2ui_handler.py` (27) + `test_infographic_recipes.py`/
+`test_ui_surfaces_handler.py`/`test_ui_surfaces_store.py` alongside (71
+total) — all green, no regressions to existing POST/SSE/`/capabilities`
+behavior. `ruff check` clean on both modified files; confirmed via a
+byte-identical `ruff check` run against `manager.py`'s pre-task committed
+version (`git show <prev-sha>`) that its 105 pre-existing violations are
+unchanged by this diff (my +17 lines add none).
 
 **Deviations from spec**:
+- The task's Scope says to "reuse [`UISurfacesHandler`'s] helper, do not
+  duplicate" for the owner/share access-check rules, but its own Files to
+  Create/Modify table does NOT list `ui_surfaces.py` (TASK-2702's file) —
+  only `a2ui.py`/`manager.py`/the new test file. Rather than violate File
+  Fidelity by touching a file outside this task's declared scope (or
+  contorting `UISurfacesHandler._resolve_surface_for_access` into an
+  importable module-level function, itself an undeclared change to
+  TASK-2702's file), I reimplemented the SAME 4-branch rule set (owner
+  match → 200; token resolves + matches → claim + 200; unmatched/missing
+  token → 404; bad token → 410) as a small standalone function in
+  `a2ui.py` (`_resolve_ui_surface_access`), taking a `store` and returning
+  `(record, None)` / `(None, (message, status))` so each handler builds its
+  own response with its own `json_response` helper. The AC's actual
+  "no duplication" test is scoped to negotiation only ("assert the service
+  is called — no duplicated negotiation code in a2ui.py"), which IS
+  satisfied literally (verified by `test_mirror_route_delegates_to_shared_service`
+  monkeypatching `SurfaceNegotiationService.negotiate`/`respond` and
+  asserting both were called). Flagging this tension for the spec/task
+  author: either add `ui_surfaces.py` to a future task's Files table to
+  truly share the helper, or accept the small, rules-mirrored duplication
+  as intentional given the file-scope boundary.
