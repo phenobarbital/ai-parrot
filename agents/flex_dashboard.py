@@ -624,9 +624,7 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             partial transformer coverage (nothing is saved in that case,
             matching ``publish_recipe``'s own contract).
         """
-        recipe = await self.publish_recipe(
-            self.DASHBOARD_RECIPE_NAME, self.dashboard_descriptor(), overwrite=overwrite
-        )
+        recipe = await self.publish_recipe(self.DASHBOARD_RECIPE_NAME, self.dashboard_descriptor(), overwrite=overwrite)
         if isinstance(recipe, GapReport):
             return recipe
         recipe.params = self.recipe_params()
@@ -742,9 +740,7 @@ class RefreshDashboardTool(AbstractTool):
         # `_permission_context` kwarg) wins over the constructor-captured
         # one — see the class docstring.
         effective_pctx = getattr(self, "_current_pctx", None) or self._pctx
-        artifact = await self._runner.run(
-            FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=effective_pctx
-        )
+        artifact = await self._runner.run(FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=effective_pctx)
         return {
             "filters": params,
             "filter_source": (

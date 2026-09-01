@@ -107,9 +107,7 @@ class TestPayrollHero:
         SAME filters as the rest of the dashboard — a month-filtered replay
         must not show all-time totals in the hero cards."""
         payroll_hero = loaded_flex_transformers.payroll_hero
-        unfiltered = payroll_hero(
-            {"hours": flex_frames["hours"], "finance": flex_frames["finance"]}, {}
-        )
+        unfiltered = payroll_hero({"hours": flex_frames["hours"], "finance": flex_frames["finance"]}, {})
         filtered = payroll_hero(
             {"hours": flex_frames["hours"], "finance": flex_frames["finance"]},
             {"month": "2025-10"},
@@ -182,9 +180,7 @@ class TestPayCodeSections:
         """Code-review finding (adopted): consistent with the sibling
         pay_code_hours table — a pay_code filter narrows the allocation
         base too (trivially 100% for the one selected code)."""
-        out = loaded_flex_transformers.pay_code_allocation(
-            {"hours": flex_frames["hours"]}, {"pay_code": "Admin Time"}
-        )
+        out = loaded_flex_transformers.pay_code_allocation({"hours": flex_frames["hours"]}, {"pay_code": "Admin Time"})
         assert [r["pay_code"] for r in out["records"]] == ["Admin Time"]
         assert out["records"][0]["share_pct"] == pytest.approx(100.0)
         assert out["total_hours"] == pytest.approx(25.0 + 30.199996)

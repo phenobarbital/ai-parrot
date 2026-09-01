@@ -258,9 +258,7 @@ class TestRefreshDashboardTool:
         assert kwargs["pctx"] == "per-call-pctx"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_constructor_pctx_without_per_call_context(
-        self, flex_dashboard_module
-    ):
+    async def test_falls_back_to_constructor_pctx_without_per_call_context(self, flex_dashboard_module):
         """Direct/demo calls (never routed through ToolManager.execute_tool)
         never get `_current_pctx` set — the constructor pctx is the only
         one available and must still be used."""
@@ -309,9 +307,7 @@ class TestPublishDashboardRecipe:
         recipe_store.save.assert_awaited_once_with(published)
 
     @pytest.mark.asyncio
-    async def test_publish_dashboard_recipe_returns_gap_report_unsaved(
-        self, flex_dashboard_module
-    ):
+    async def test_publish_dashboard_recipe_returns_gap_report_unsaved(self, flex_dashboard_module):
         FlexDashboard = flex_dashboard_module.FlexDashboard
         GapReport = flex_dashboard_module.GapReport
 
