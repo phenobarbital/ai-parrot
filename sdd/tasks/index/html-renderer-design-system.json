@@ -52,7 +52,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Touches only new .css files + the composer's asset table — disjoint from TASK-2709's renderer edits, so the two can run concurrently after 2707.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2708-layout-report-print-css.md"
+      "completed_at": "2026-09-01T21:04:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2708-layout-report-print-css.md"
     },
     {
       "id": "TASK-2709",
