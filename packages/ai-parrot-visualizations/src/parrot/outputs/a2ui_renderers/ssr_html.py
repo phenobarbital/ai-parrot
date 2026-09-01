@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import html
 import logging
-from typing import Any, Optional
+from typing import Any
 
 # Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
 # registered so lowering/dispatch can resolve every component name.
@@ -53,30 +53,13 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
+from parrot.outputs.formats.assets.design_system import DesignSystem
+
+from ._shell import document_shell
 
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "ssr_html"
-
-_STYLE = (
-    "body{font-family:sans-serif;margin:1rem;color:#1a1a1a}"
-    ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
-    ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
-    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
-    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
-    ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
-    ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-notice{color:#a00}"
-    ".a2ui-deeplink{display:inline-block;margin:.25rem 0}"
-    ".a2ui-tabs{border:1px solid #ddd;border-radius:6px;margin:.5rem 0}"
-    ".a2ui-tab{border-top:1px solid #eee;padding:.5rem}"
-    ".a2ui-tab-title{font-weight:600;margin-bottom:.25rem}"
-    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
-    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
-    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
-    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
-    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
-    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
-)
 
 #: Basic Catalog composite/container primitives whose children render
 #: recursively (the CSS class used for the wrapping ``<div>``).
@@ -125,12 +108,29 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     #: weasyprint cannot play media in a rasterized PDF).
     _UNSUPPORTED: frozenset[str] = frozenset()
 
+    def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
+        """Initialize the renderer with a default ``(theme, layout)`` pair.
+
+        Args:
+            theme: Default theme name resolved by
+                :class:`~parrot.outputs.formats.assets.design_system.DesignSystem`.
+            layout: Default layout name.
+
+        Both keyword arguments MUST default — ``RecipeRunner`` calls
+        ``renderer_cls()`` with no arguments (``runner.py``), and
+        :class:`~parrot.outputs.a2ui_renderers.pdf.PDFRenderer` subclasses
+        this renderer without its own ``__init__``, so it inherits these
+        same defaults.
+        """
+        self.theme = theme
+        self.layout = layout
+
     async def render(
         self,
         envelope: CreateSurface,
         *,
         bake: bool = True,
-        deep_links: Optional[list[DeepLink]] = None,
+        deep_links: list[DeepLink] | None = None,
     ) -> RenderedArtifact:
         """Render an envelope to a baked, self-contained HTML ``RenderedArtifact``.
 
@@ -166,12 +166,13 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 f"{html.escape(link.action_label)}</a>"
             )
 
-        document = (
-            "<!DOCTYPE html>"
-            '<html lang="en"><head><meta charset="utf-8">'
-            f"<title>{html.escape(envelope.surface_id)}</title>"
-            f"<style>{_STYLE}</style></head>"
-            f'<body>{"".join(body_parts)}</body></html>'
+        style = DesignSystem.stylesheet(self.theme, self.layout)
+        document = document_shell(
+            title=envelope.surface_id,
+            style=style,
+            body="".join(body_parts),
+            theme=self.theme,
+            layout=self.layout,
         )
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
@@ -227,7 +228,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         children_ids = data.pop("children", None)
         metadata = data.pop("metadata", None)
 
-        tabs: Optional[list[TabSpec]] = None
+        tabs: list[TabSpec] | None = None
         if "tabs" in data:
             tabs = [
                 TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")

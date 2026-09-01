@@ -76,6 +76,9 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
+from parrot.outputs.formats.assets.design_system import DesignSystem
+
+from ._shell import document_shell
 
 logger = logging.getLogger(__name__)
 
@@ -104,38 +107,6 @@ _CHART_TYPE = {
     "scatter": "scatter",
     "pie": "pie",
 }
-
-_STYLE = (
-    "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;"
-    "margin:1rem;color:#1a1a1a}"
-    ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
-    ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
-    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
-    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
-    ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
-    ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-subtitle{color:#5b6b8c}"
-    ".a2ui-section{margin:.5rem 0}.a2ui-notice{color:#a00}"
-    ".a2ui-tabs{display:flex;gap:.25rem;margin:.5rem 0}"
-    ".daytab{padding:.25rem .75rem;border:1px solid #ccc;border-radius:999px;"
-    "background:#fff;cursor:pointer}.daytab.active{background:#1f3864;color:#fff}"
-    ".a2ui-metric-toggle{display:flex;gap:.25rem;margin:.5rem 0}"
-    ".metricbtn{padding:.2rem .6rem;border:1px solid #ccc;border-radius:4px;"
-    "background:#f4f4f4;cursor:pointer}.metricbtn.active{background:#2e8b57;color:#fff}"
-    "table{border-collapse:collapse;width:100%}"
-    "th,td{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;font-size:.9rem}"
-    "th[data-sort-key]{cursor:pointer;user-select:none}"
-    ".a2ui-tabs-nav{display:flex;gap:.25rem;border-bottom:1px solid #ddd;margin:.5rem 0}"
-    ".tabbtn{padding:.35rem .75rem;border:1px solid #ccc;border-bottom:none;"
-    "border-radius:6px 6px 0 0;background:#f4f4f4;cursor:pointer}"
-    ".tabbtn.active{background:#fff;font-weight:600}"
-    ".a2ui-tab-pane{padding:.5rem 0}"
-    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
-    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
-    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
-    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
-    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
-    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
-)
 
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 
@@ -295,6 +266,21 @@ def _esc(value: Any) -> str:
 class InteractiveHTMLRenderer(AbstractA2UIRenderer):
     """Self-contained interactive HTML renderer (vendored Chart.js + vanilla JS)."""
 
+    def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
+        """Initialize the renderer with a default ``(theme, layout)`` pair.
+
+        Args:
+            theme: Default theme name resolved by
+                :class:`~parrot.outputs.formats.assets.design_system.DesignSystem`.
+            layout: Default layout name.
+
+        Both keyword arguments MUST default — ``RecipeRunner`` calls
+        ``renderer_cls()`` with no arguments (``runner.py``); a required
+        parameter here would break every existing recipe run.
+        """
+        self.theme = theme
+        self.layout = layout
+
     async def render(self, envelope: CreateSurface, *, bake: bool = True) -> RenderedArtifact:
         """Render an envelope to a self-contained, interactive HTML ``RenderedArtifact``.
 
@@ -329,17 +315,19 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         data_model_json = _safe_json(envelope.data_model)
         chart_js = _CHART_JS_SOURCE
+        style = DesignSystem.stylesheet(self.theme, self.layout)
 
-        document = (
-            "<!DOCTYPE html>"
-            '<html lang="en"><head><meta charset="utf-8">'
-            f"<title>{html.escape(envelope.surface_id)}</title>"
-            f"<style>{_STYLE}</style></head>"
-            f'<body>{"".join(body_parts)}'
-            f'<script type="application/json" id="report-data">{data_model_json}</script>'
-            f"<script>{chart_js}</script>"
-            f"<script>{_BEHAVIOR_JS}</script>"
-            "</body></html>"
+        document = document_shell(
+            title=envelope.surface_id,
+            style=style,
+            body="".join(body_parts),
+            theme=self.theme,
+            layout=self.layout,
+            scripts=(
+                f'<script type="application/json" id="report-data">{data_model_json}</script>',
+                f"<script>{chart_js}</script>",
+                f"<script>{_BEHAVIOR_JS}</script>",
+            ),
         )
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
