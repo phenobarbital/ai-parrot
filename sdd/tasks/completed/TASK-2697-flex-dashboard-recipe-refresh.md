@@ -228,3 +228,26 @@ comments:
 overrides at all, which the spec's own "narrative step stays optional so
 replay works with no narrator" principle implies should also hold for the
 per-section filters.
+
+**ADDENDUM (during TASK-2699, same worktree/session)**: the
+"Proximity Staffing" section's `"text": {"path": "/narrative"}` binding +
+the layout's `metadata.extensions.parrot_optional` entry were REMOVED.
+Root cause: `RecipeRunner._assemble_envelope_or_raise`'s Infographic path
+(`build_infographic` → `build_surface`, `parrot/outputs/a2ui/builders.py`)
+never threads `layout.metadata` onto the built wire `Component` — so ANY
+layout-level binding to an absent key raises `BakeError` unconditionally
+at render time, regardless of what `parrot_optional` declares. This is a
+pre-existing, cross-cutting CORE bug (confirmed reproducible on `dev`,
+completely unrelated to FEAT-491): FinanceReporter's own e2e tests
+`test_dashboard_profile_replay` AND `test_report_profile_replay_no_narrator`
+are BOTH independently broken by it too (verified by running them
+directly against dev's current `packages/ai-parrot/tests/integration/
+test_finance_reporter_narrative_e2e.py`). Fixing it is out of this
+feature's scope (spec §1 Non-Goals: "No changes to core packages").
+`narrative=cls._narrative_spec()` is kept — a configured narrator still
+runs and populates `/narrative` in the data model, it is just never bound
+in the layout. `test_flex_dashboard_descriptors.py::
+test_narrative_binds_are_optional` was renamed to
+`test_no_narrative_layout_binding` and now asserts the ABSENCE of any
+`/narrative` layout binding, with the full reasoning in its docstring.
+See TASK-2699's Completion Note for the full reproduction.

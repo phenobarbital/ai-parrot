@@ -131,7 +131,7 @@
       "feature_id": "FEAT-491",
       "feature": "flex-agent-infographic-a2ui",
       "spec": "sdd/specs/flex-agent-infographic-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "End-to-end over everything prior; last.",
       "assigned_to": null,
       "started_at": "2026-09-01T16:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2699-flex-example-runner-e2e.md"
+      "completed_at": "2026-09-01T20:08:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2699-flex-example-runner-e2e.md"
     }
   ]
 }
