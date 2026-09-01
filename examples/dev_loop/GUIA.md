@@ -414,7 +414,50 @@ curl -X POST http://localhost:8081/api/flow/run \
 `affected_component`, `log_sources` ni `acceptance_criteria` — eso es del
 intake de bugs.
 
-### 9.6. Gate de aprobación del plan (opcional)
+### 9.6. Recuperar un run interrumpido (FEAT-480)
+
+El dev-flow hace checkpoint después de cada nodo. Si un run se cortó (crash,
+reinicio del servidor, `Ctrl+C`), **no hay que repetir intake, ideation ni
+planner**: se vuelve a lanzar con el mismo `run_id` y esos nodos —con sus
+respuestas a las Open Questions, el spec, el índice de tareas y el worktree
+que creó el planner— se restauran en vez de re-dispararse.
+
+En la consola es el campo **«Resume a run — run_id»** del bloque 01, con un
+botón *Check* que consulta si ese run sigue siendo recuperable.
+
+Por curl:
+
+```bash
+# 1. ¿Sigue vivo el checkpoint? (TTL de 24h en Redis por defecto)
+curl -s http://localhost:8081/api/flow/run-3f9a1c02/checkpoint | jq
+# {"found": true, "completed_nodes": ["dev_intake","ideation","planner"], ...}
+
+# 2. Reanudarlo: MISMO brief que el run original + su run_id.
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/mi-feature.brainstorm.md",
+    "document_kind": "brainstorm",
+    "run_id": "run-3f9a1c02"
+  }'
+```
+
+Condiciones (el servidor las comprueba **antes** de arrancar nada):
+
+* **El brief tiene que ser idéntico.** La reanudación se valida con una huella
+  SHA-256 del brief normalizado (kind, title/description o document_path/
+  document_kind, context, jira_issue_key, dev_agents, judge_panel) más la
+  política de ejecución del servidor. Si cambia algo → **409
+  `fingerprint_mismatch`**. Ojo: un run de lenguaje natural **no** se reanuda
+  apuntando al documento que produjo su ideation — eso es otro brief; hay que
+  reenviar el `title`/`description` originales.
+* **Un `run_id` desconocido o caducado es un 409, nunca un run nuevo.** Así no
+  se gastan horas de agentes rehaciendo lo que pediste reutilizar.
+* **El worktree tiene que seguir existiendo** (registrado, en su rama, con el
+  spec y el índice de tareas). Si no, el run falla diciendo qué falta.
+
+### 9.7. Gate de aprobación del plan (opcional)
 
 En la pestaña **Ideation & gates** hay un check **Require plan approval**. Si
 lo marcas, después del planner y **antes** de que salga la flota de agentes se
@@ -422,7 +465,7 @@ abre un gate `plan_approval` que se contesta en el mismo panel (aprobar/
 rechazar + comentario). Es **por run**: manda sobre el valor con el que se
 construyó el servidor, sin reconstruir el flujo.
 
-### 9.7. Selectores de LLM por asiento (FEAT-486)
+### 9.8. Selectores de LLM por asiento (FEAT-486)
 
 Cada asiento LLM del dev-flow es configurable. La consola trae defaults
 opinionados y expone tres grupos de selectores más un toggle:
@@ -470,7 +513,7 @@ Dos comportamientos que conviene saber:
 
 Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
 
-### 9.8. Variables nuevas
+### 9.9. Variables nuevas
 
 | Variable | Default | Para qué |
 |---|---|---|
@@ -492,7 +535,7 @@ El resto se reutiliza tal cual de las `DEV_LOOP_*` que ya conoces
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
 `DEV_LOOP_DEV_AGENTS`, `FLOW_MAX_CONCURRENT_RUNS`…).
 
-### 9.9. Acceso MCP para los agentes de research (FEAT-484/485)
+### 9.10. Acceso MCP para los agentes de research (FEAT-484/485)
 
 Las dos consolas entregan a los **agentes de research** despachados una
 superficie MCP explícita (montada por el módulo hermano `mcp_wiring.py` al
