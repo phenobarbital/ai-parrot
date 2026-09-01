@@ -15,15 +15,14 @@ class StubToolkit(AbstractToolkit):
     confirming_tools = frozenset({"dangerous"})
     llm_dependent_tools = frozenset({"needs_llm"})
 
-    def __init__(self, llm_client: Any = None, **kwargs) -> None:
+    def __init__(self, llm_client: Any = None) -> None:
         """Initialize stub toolkit.
 
         Args:
             llm_client: Optional LLM client.
-            **kwargs: Additional arguments (ignored).
         """
         self.llm_client = llm_client
-        super().__init__(**kwargs)
+        super().__init__()
 
     async def plain(self, x: str) -> str:
         """A plain tool that does not require LLM."""

@@ -50,8 +50,8 @@ def test_serves_stub_toolkit(stub_config, monkeypatch):
     assert server.config.name == "parrot-stub"
 
     # Check tools are registered
-    assert len(server._tools) >= 2
-    tool_names = {t.name for t in server._tools}
+    assert len(server.tools) >= 2
+    tool_names = set(server.tools.keys())
     assert "plain" in tool_names
     assert "dangerous" in tool_names
     # needs_llm should NOT be present (no LLM configured)
@@ -74,7 +74,7 @@ def test_include_wins_over_exclude(stub_config, monkeypatch):
     )
 
     server = create_toolkit_mcp_server("stub", stub_config)
-    tool_names = {t.name for t in server._tools}
+    tool_names = set(server.tools.keys())
 
     # Include should win: only plain present
     assert "plain" in tool_names
@@ -92,7 +92,7 @@ def test_exclude_works_alone(stub_config, monkeypatch):
     )
 
     server = create_toolkit_mcp_server("stub", stub_config)
-    tool_names = {t.name for t in server._tools}
+    tool_names = set(server.tools.keys())
 
     # dangerous should be absent, plain present
     assert "plain" in tool_names
@@ -104,7 +104,7 @@ def test_llm_dependent_dropped_without_llm(stub_config, monkeypatch):
     monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config)
-    tool_names = {t.name for t in server._tools}
+    tool_names = set(server.tools.keys())
 
     # needs_llm should be absent (no LLM configured)
     assert "needs_llm" not in tool_names
@@ -121,18 +121,22 @@ def test_llm_wired_when_configured(stub_config, monkeypatch):
         "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    llm: 'test:model'\n"
     )
 
-    # Mock LLMFactory.create
+    # Mock LLMFactory.create — force-import first, then monkeypatch the
+    # class method directly (avoids path resolution going through the
+    # already-monkeypatched importlib.import_module).
     mock_client = MagicMock()
-    monkeypatch.setattr("parrot.mcp.toolkit_server.LLMFactory.create", return_value=mock_client)
+    from parrot.clients.factory import LLMFactory
 
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(lambda *a, **kw: mock_client))
     server = create_toolkit_mcp_server("stub", stub_config)
 
-    # Check toolkit has the mocked client
-    toolkit = server._tools[0].bound_method.__self__
+    # Check toolkit has the mocked client — pick any adapter from the dict
+    adapter = next(iter(server.tools.values()))
+    toolkit = adapter.tool.bound_method.__self__
     assert toolkit.llm_client is mock_client
 
     # Check needs_llm tool is now present (LLM was wired)
-    tool_names = {t.name for t in server._tools}
+    tool_names = set(server.tools.keys())
     assert "needs_llm" in tool_names
 
 
@@ -142,17 +146,12 @@ def test_confirm_flag_in_schema(stub_config, monkeypatch):
 
     server = create_toolkit_mcp_server("stub", stub_config)
 
-    # Find the dangerous tool
-    dangerous_tool = None
-    for tool in server._tools:
-        if tool.name == "dangerous":
-            dangerous_tool = tool
-            break
-
-    assert dangerous_tool is not None
+    # Find the dangerous tool adapter
+    assert "dangerous" in server.tools
+    dangerous_adapter = server.tools["dangerous"]
 
     # Check MCP schema has confirm property
-    schema = dangerous_tool.to_mcp_tool_definition()
+    schema = dangerous_adapter.to_mcp_tool_definition()
     assert "inputSchema" in schema
     assert "properties" in schema["inputSchema"]
     assert "confirm" in schema["inputSchema"]["properties"]
@@ -197,7 +196,7 @@ def test_cli_override_include(stub_config, monkeypatch):
     monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config, include=["plain"])
-    tool_names = {t.name for t in server._tools}
+    tool_names = set(server.tools.keys())
 
     # Only plain should be present
     assert "plain" in tool_names
