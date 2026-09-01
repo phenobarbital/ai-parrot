@@ -224,6 +224,11 @@ def build_dev_loop_node_factories(
             PlannerNode(
                 dispatcher=dispatcher,
                 development_pool_max=development_pool_max,
+                # FEAT-486: the planner's derived `suggested_pool` must
+                # name the operator's configured backends, not a
+                # hardcoded claude-code. `None` (no pool configured)
+                # keeps the pre-FEAT-486 claude-code fallback.
+                development_pool_config=development_pool_config,
                 graph_memory=graph_memory,
                 name=nd.id,
             ),
