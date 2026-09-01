@@ -103,16 +103,12 @@ class TestPublishSurfaceInjectedStore:
         assert uuid.UUID(dict_record.surface_id)
         assert dict_record.envelope == dict_envelope
 
-    async def test_publish_surface_mints_fresh_uuid_even_with_non_uuid_envelope_id(
-        self, agent, fake_surface_store
-    ):
+    async def test_publish_surface_mints_fresh_uuid_even_with_non_uuid_envelope_id(self, agent, fake_surface_store):
         """Regression test (code review CRITICAL finding): a recipe-backed
         envelope's surfaceId is `{recipe_name}-infographic` — NOT a UUID.
         The row PK must always be a real UUID regardless, or `store.save()`
         fails against a real Postgres `UUID` column."""
-        recipe_style_envelope = CreateSurface(
-            surfaceId="daily-budget-infographic", components=[], dataModel={}
-        )
+        recipe_style_envelope = CreateSurface(surfaceId="daily-budget-infographic", components=[], dataModel={})
         await agent.publish_surface(
             kind="dashboard",
             title="Recipe-style id",
