@@ -99,6 +99,12 @@ class IdeationNode(DevLoopNode):
             search, or a search that finds nothing, simply yields no context.
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
             ``None`` (default) reads the conf key at execute time.
+        model: FEAT-486 — model for this (research-primary) seat, replacing
+            the ``claude-sonnet-4-6`` literal this node used to hardcode in
+            its dispatch profile. ``None`` (default) reads
+            ``conf.DEV_FLOW_IDEATION_MODEL`` at dispatch time, itself
+            defaulting to ``claude-opus-5``. Normally supplied by
+            ``DevFlowModelPlan.research_primary`` through the factory.
         name: Node id, default ``"ideation"``.
     """
 
@@ -108,12 +114,19 @@ class IdeationNode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         wiki_search: DevLoopWikiSearch | None = None,
         ideation_max_rounds: int | None = None,
+        model: str | None = None,
         name: str = "ideation",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_wiki_search", wiki_search)
         object.__setattr__(self, "_max_rounds", ideation_max_rounds)
+        # FEAT-486: the research-primary seat's model. `None` (default)
+        # resolves `conf.DEV_FLOW_IDEATION_MODEL` at dispatch time — read
+        # late, not at import, so a test (or a per-deployment env change)
+        # can monkeypatch it, matching how `_max_rounds` treats
+        # DEV_FLOW_IDEATION_MAX_ROUNDS.
+        object.__setattr__(self, "_model", model)
 
     # ------------------------------------------------------------------
     # Execute
@@ -259,6 +272,25 @@ class IdeationNode(DevLoopNode):
             return max(0, int(self._max_rounds))
         return max(0, int(getattr(conf, "DEV_FLOW_IDEATION_MAX_ROUNDS", 2)))
 
+    def _resolve_model(self) -> str:
+        """Resolve this seat's model (constructor override > conf key).
+
+        FEAT-486: same late-binding shape as :meth:`_resolve_max_rounds` —
+        the conf key is read at dispatch time, not import time, so a
+        deployment (or a test) can change it without rebuilding the flow.
+        A blank override falls through to the conf key rather than
+        dispatching with an empty model id.
+
+        Returns:
+            The model id for the ideation dispatch profile.
+        """
+        if self._model:
+            return str(self._model)
+        return str(
+            getattr(conf, "DEV_FLOW_IDEATION_MODEL", "claude-opus-5")
+            or "claude-opus-5"
+        )
+
     async def _build_wiki_context(self, brief: DevRequestBrief) -> str:
         """Best-effort ranked repo context for the dispatch.
 
@@ -335,7 +367,7 @@ class IdeationNode(DevLoopNode):
             # PROJECT_ROOT waiver of the WORKTREE_BASE_PATH confinement —
             # ideation predates the feature worktree by construction.
             allow_project_root_cwd=True,
-            model="claude-sonnet-4-6",
+            model=self._resolve_model(),
         )
         return await self._dispatcher.dispatch(
             brief=dispatch_brief,

@@ -970,6 +970,16 @@ DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint("DEV_FLOW_GATE_TTL_QUESTIONS", 
 # carried into the spec's §8 by the planner. Read at execute() time (not
 # import time) so tests can monkeypatch it per-case.
 DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint("DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2)
+# FEAT-486: model for the dev-flow ideation (research primary) seat,
+# replacing the "claude-sonnet-4-6" literal that IdeationNode used to
+# hardcode in its dispatch profile. Raised to Opus 5 by default: ideation
+# writes the SDD document the whole downstream pipeline is planned from,
+# so it is the seat where reasoning quality compounds most.
+# Resolution order is explicit constructor arg > DevFlowModelPlan.
+# research_primary > this key > the literal default. This is the SAME key
+# FEAT-482 introduces for its own primary-seat selection — deliberately
+# shared rather than duplicated (spec §3 Module 1).
+DEV_FLOW_IDEATION_MODEL: str = config.get("DEV_FLOW_IDEATION_MODEL", fallback="claude-opus-5")
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if

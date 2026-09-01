@@ -180,7 +180,8 @@ def build_dev_flow_node_factories(
             ``DevAgentPoolConfig`` with ``agent_builder.build_dispatcher``
             as its worker builder, and ``plan.review`` assembles
             ``QANode``'s review pair (unless ``codereview_dispatcher`` was
-            passed explicitly).
+            passed explicitly), and ``plan.research_primary`` selects
+            :class:`IdeationNode`'s model.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -242,6 +243,10 @@ def build_dev_flow_node_factories(
                 dispatcher=dispatcher,
                 wiki_search=wiki_search,
                 ideation_max_rounds=ideation_max_rounds,
+                # FEAT-486: the research-primary seat's model. `None`
+                # (no plan) leaves the node to resolve
+                # conf.DEV_FLOW_IDEATION_MODEL itself.
+                model=resolved_plan.research_primary if resolved_plan else None,
                 name=nd.id,
             ),
             deps,
