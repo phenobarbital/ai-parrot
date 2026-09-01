@@ -17,7 +17,7 @@ evidence over broad style opinions.
 
 ## Neutral-Brief Rule
 
-When invoking a second-opinion tool (agy, codex, or any external reviewer),
+When invoking a second-opinion tool (`codex` or any external reviewer),
 never feed it your reasoning, draft conclusions, justification, or preferred
 answer. Give it only:
 - the requirement or task statement;
@@ -30,35 +30,24 @@ Feeding conclusions produces ratification, not review.
 
 Use an external CLI agent as an independent perspective for adversarial
 reviews, design opinions, brainstorming, research cross-checks, and sanity
-checks. **Prefer `agy` (Google Gemini)** when available; fall back to
-`codex` (OpenAI) otherwise.
+checks. The reviewer is **`codex` (OpenAI)**.
 
-**Detection — pick the first available:**
+> **`agy` (Google Gemini / Antigravity) MUST NOT be used as a reviewer.**
+> Removed 2026-09-01 after it returned a fabricated review — an invented
+> 188-test pytest run whose test names did not exist in the branch under
+> review, then `Error: timeout waiting for response`. Hallucinated passing
+> evidence is worse than no review, because it reads like corroboration.
+> Do not re-add it and do not fall back to it: with no external reviewer
+> available, say so and rely on a Claude subagent. (Unrelated to the
+> `google_coding` dev-loop *coding* backend, which drives the same binary.)
+
+**Detection:**
 ```bash
-if command -v agy &>/dev/null; then REVIEWER="agy"
-elif command -v codex &>/dev/null; then REVIEWER="codex"
+if command -v codex &>/dev/null; then REVIEWER="codex"
 fi
 ```
 
-### agy commands (preferred)
-```bash
-# Reviews
-agy --sandbox --print "Review the uncommitted changes (run git diff). \
-  Focus on correctness, security, async patterns, and project conventions. \
-  Output findings with file:line references."
-agy --sandbox --print "Review changes between current branch and dev \
-  (run git diff dev...HEAD). List findings with file:line references."
-agy --sandbox --print "Review commit <sha> (run git show <sha>). \
-  List findings with file:line references."
-
-# Opinions, brainstorming, and cross-checks
-agy --sandbox --print "<neutral brief>" > <scratch-file>
-
-# Follow-up in the same agy session
-agy --continue --print "<question>"
-```
-
-### codex commands (fallback)
+### codex commands
 ```bash
 # Reviews
 codex exec review --uncommitted
@@ -77,7 +66,7 @@ Each reviewer call is a full agent session and can take 30 seconds to
 
 ## Disposition Discipline
 
-Treat reviewer output (agy, codex, or any subagent) as advisory. For every
+Treat reviewer output (`codex` or any subagent) as advisory. For every
 substantive finding:
 - `CONFIRM`: adopt it and explain the change or required action.
 - `REJECT`: explain why it does not apply.
@@ -85,6 +74,11 @@ substantive finding:
   domain-owner judgment.
 
 Never silently concede to another agent. Never silently drop a finding.
+
+**Verify the reviewer's evidence before relying on it.** If it cites a test
+run, a file, or a symbol, spot-check that the thing exists. An unverifiable
+claim is not a finding — report the review as unusable rather than as a
+pass.
 
 ## Review Focus
 
@@ -112,7 +106,7 @@ For design reviews and brainstorming:
 ## Parallel Perspective
 
 When the stakes are high, run one Claude subagent and one background
-reviewer session (agy or codex) with the same neutral brief. Synthesize:
+reviewer session (`codex`) with the same neutral brief. Synthesize:
 - where both reviewers agree;
 - where they disagree;
 - which findings are confirmed, rejected, or escalated;

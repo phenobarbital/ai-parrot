@@ -61,6 +61,16 @@ def _extract_spatial_result_from_tools(tool_calls):
                 continue
             if isinstance(result, SpatialResult):
                 return result
+            # Tolerate class-identity splits (issue #1268): the object may
+            # be a SpatialResult from a stale module copy; round-trip it.
+            if (
+                type(result).__name__ == "SpatialResult"
+                and hasattr(result, "layers")
+            ):
+                try:
+                    return SpatialResult.model_validate(result.model_dump())
+                except Exception:
+                    pass
             if isinstance(result, dict) and "layers" in result and "version" in result:
                 try:
                     return SpatialResult(**result)
@@ -81,7 +91,11 @@ def test_extract_spatial_result_returns_direct():
         }
     )
     result = _extract_spatial_result_from_tools([_make_tool_call(sr)])
-    assert result is sr
+    # In a clean process `result is sr` (direct passthrough). Under pytest's
+    # broad multi-directory collection the class-identity split (issue #1268)
+    # may force a round-trip through model_validate — verify data equality.
+    assert result is not None
+    assert result.model_dump() == sr.model_dump()
 
 
 def test_extract_spatial_result_parses_dict():
@@ -101,7 +115,8 @@ def test_extract_spatial_result_parses_dict():
         },
     }
     result = _extract_spatial_result_from_tools([_make_tool_call(sr_dict)])
-    assert isinstance(result, SpatialResult)
+    assert result is not None
+    assert type(result).__name__ == "SpatialResult"
     assert "schools" in result.layers
 
 
@@ -128,7 +143,8 @@ def test_extract_spatial_result_takes_last_in_order():
         [_make_tool_call(sr1), _make_tool_call(sr2)]
     )
     # reversed → sr2 is checked first
-    assert result is sr2
+    assert result is not None
+    assert result.model_dump() == sr2.model_dump()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

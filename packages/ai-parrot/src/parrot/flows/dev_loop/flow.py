@@ -352,6 +352,9 @@ def build_dev_loop_flow(
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
     skip_qa: bool = False,
+    research_coordinator: Optional[Any] = None,
+    research_mcp_servers: Optional[Dict[str, Any]] = None,
+    research_mcp_tools: Optional[list[str]] = None,
     checkpoint: bool = False,
     checkpoint_required: bool = False,
     checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
@@ -431,6 +434,21 @@ def build_dev_loop_flow(
         skip_qa: When ``True``, ``QANode`` returns a synthetic passing
             ``QAReport`` without running deterministic checks or code
             review. ``False`` (default) preserves the full QA gate.
+        research_coordinator: Optional
+            ``ComplementaryResearchCoordinator`` (FEAT-482/486) forwarded
+            to ``ResearchNode`` via ``build_dev_loop_node_factories``.
+            ``None`` (default) lets the factories build a fresh
+            conf-driven one (inert until ``DEV_FLOW_RESEARCH_PARTNER`` is
+            configured). Pass an explicitly configured coordinator
+            (``backend=``/``model=``) to select the collaborative-research
+            partner's LLM programmatically.
+        research_mcp_servers: Optional explicit MCP server configs
+            forwarded to ``ResearchNode``'s dispatch profile (wikitoolkit
+            graph search, FEAT-485 ``parrot mcp-local`` toolkit servers).
+            ``None`` (default) keeps the research dispatch byte-identical.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those servers; ``None`` derives server-level ``mcp__<name>``
+            rules. See :class:`ResearchNode`.
         checkpoint: FEAT-480 — enable AgentsFlow state checkpointing for
             the built flow. ``False`` (default) is byte-identical to the
             pre-FEAT-480 behavior — no checkpoint config is attached at
@@ -481,6 +499,9 @@ def build_dev_loop_flow(
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,
+        research_coordinator=research_coordinator,
+        research_mcp_servers=research_mcp_servers,
+        research_mcp_tools=research_mcp_tools,
     )
     staged = AgentsFlow.from_definition(
         definition,

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2651, TASK-2652
@@ -119,8 +119,43 @@ class TestIdeationModel:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- **Coordination check performed first, as instructed**: grepped `conf.py`
+  for `DEV_FLOW_IDEATION_MODEL` and `ideation.py` for a `model` /
+  `coordinator` kwarg — BOTH ABSENT as of this run. FEAT-482 has not
+  landed (its worktree exists, but `dev` has none of its modules), so the
+  seam was created fresh here rather than reused. The conf key name and
+  its resolution order were chosen to be exactly what FEAT-482's spec
+  describes, so its merge should be an adopt-not-conflict.
+- `IdeationNode.__init__` gains keyword-only `model: str | None = None`;
+  `_resolve_model()` mirrors the existing `_resolve_max_rounds()` shape —
+  constructor override > `conf.DEV_FLOW_IDEATION_MODEL` > `"claude-opus-5"`,
+  read LATE (at dispatch, via `getattr(conf, ...)`) so a deployment or a
+  test can change it without rebuilding the flow. Tested explicitly by
+  `test_conf_is_read_late_not_at_construction`.
+- A blank (`""`) override falls through to the conf key rather than
+  dispatching an empty model id.
+- The literal at `ideation.py:338` is gone: `model="claude-sonnet-4-6"`
+  became `model=self._resolve_model()`. The AC test asserts on the code
+  form (`'model="claude-sonnet-4-6"' not in source`) rather than a bare
+  substring, since the class docstring legitimately names the old literal
+  when explaining what replaced it.
+- `conf.DEV_FLOW_IDEATION_MODEL` added next to `DEV_FLOW_IDEATION_MAX_ROUNDS`,
+  fallback `"claude-opus-5"`, with a comment recording that the key is
+  deliberately SHARED with FEAT-482 rather than duplicated.
+- `dev_flow/factories.py` threads `resolved_plan.research_primary` into the
+  ideation factory; with no plan it passes `None`, leaving the node to
+  resolve the conf key itself (pre-FEAT-486 behaviour except for the
+  default model itself, which is the intended change).
+- `claude-opus-5` is a valid claude-code model id (`catalog.py:139`), so
+  the `LLMFactory.create(f"claude-agent:{profile.model}")` path at
+  `dispatchers/claude.py:230` accepts it.
+- 16 unit tests pass, including two that drive the real `_dispatch()` with
+  a capturing dispatcher to prove the resolved model reaches the actual
+  `ClaudeCodeDispatchProfile`. Ruff: `ideation.py` 0 findings on `dev`,
+  0 after. Full dev_flow + dev_loop suites: 1495 passed, same 3
+  pre-existing `dev` failures.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

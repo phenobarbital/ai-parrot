@@ -1,0 +1,33 @@
+# Example FEAT-485 local-MCP toolkit config for the dev-loop consoles.
+#
+# Copy this file to <repo-root>/.parrot/mcp-toolkits.yaml and adjust the
+# paths. Every enabled section becomes a `parrot mcp-local <name>` stdio
+# MCP server that the consoles (server.py / server_dev.py) expose to the
+# research seats (ResearchNode / IdeationNode dispatches) — see
+# mcp_wiring.build_research_mcp().
+#
+# Selection is controlled by DEV_LOOP_RESEARCH_MCP_TOOLKITS:
+#   auto (default)  → exactly the sections declared in this file
+#   repo,memory,... → an explicit comma list (may include the built-ins
+#                     scraping / browsing / memory)
+
+toolkits:
+  # FEAT-484: confined, strictly read-only repository access for research
+  # agents — search_code / related_code (wiki code graph), read_file /
+  # list_files / grep_files, git_log / git_show / git_blame.
+  #
+  # NOTE: the FEAT-482 collaborative-research partner already registers
+  # this toolkit natively (research_partner.py); this section is what
+  # ADDITIONALLY exposes it to the dispatched Claude Code research agents
+  # over MCP.
+  repo:
+    class: parrot.tools.repo.toolkit.ReadOnlyRepoToolkit
+    enabled: true
+    kwargs:
+      # IMPORTANT: use an ABSOLUTE path. dev-loop research dispatches run
+      # from WORKTREE_BASE_PATH (or a clone path), not the repo root, and
+      # the MCP server inherits that cwd — a relative path would resolve
+      # against the wrong directory. In DEV_LOOP_REPOS (clone) mode this
+      # still points at the base checkout, not the per-run clone.
+      repo_root: /abs/path/to/your/checkout
+      # enable_web_search: true   # opt-in DuckDuckGo web_search tool

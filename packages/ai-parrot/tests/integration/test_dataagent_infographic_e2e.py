@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -27,32 +26,14 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
-# ---------------------------------------------------------------------------
-# Renderer registration (interactive-html) — same boilerplate as FEAT-324's
-# tests/integration/infographic_recipes/test_e2e.py: the ai-parrot-visualizations
-# satellite must self-register its renderers, and its parrot.outputs subpackage
-# must be merged into the already-cached namespace __path__.
-# ---------------------------------------------------------------------------
-_VISUALIZATIONS_SRC = (
-    Path(__file__).resolve().parents[4] / "packages" / "ai-parrot-visualizations" / "src"
-)
-if str(_VISUALIZATIONS_SRC) not in sys.path:
-    sys.path.insert(0, str(_VISUALIZATIONS_SRC))
+import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401
 
-import parrot.outputs as _parrot_outputs  # noqa: E402
-
-_vis_outputs_path = str(_VISUALIZATIONS_SRC / "parrot" / "outputs")
-if _vis_outputs_path not in _parrot_outputs.__path__:
-    _parrot_outputs.__path__.insert(0, _vis_outputs_path)
-
-import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401,E402
-
-from parrot.bots.data import PandasAgent  # noqa: E402
-from parrot.bots.mixins import InfographicAuthoringMixin  # noqa: E402
-from parrot.outputs.a2ui.recipes import library as _recipe_library  # noqa: F401,E402
-from parrot.outputs.a2ui.recipes.store import FileRecipeStore  # noqa: E402
-from parrot.outputs.a2ui.recipes.transformers import transformer_registry  # noqa: E402
-from parrot.storage.artifacts import ArtifactStore  # noqa: E402
+from parrot.bots.data import PandasAgent
+from parrot.bots.mixins import InfographicAuthoringMixin
+from parrot.outputs.a2ui.recipes import library as _recipe_library  # noqa: F401
+from parrot.outputs.a2ui.recipes.store import FileRecipeStore
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.backends import build_overflow_store  # noqa: E402
 from parrot.storage.backends.sqlite import ConversationSQLiteBackend  # noqa: E402
 from parrot.tools.dataset_manager.tool import DatasetManager  # noqa: E402

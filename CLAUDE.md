@@ -125,8 +125,20 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 
 Use an external CLI agent as an independent perspective for adversarial
 code reviews, design opinions, brainstorming, research cross-checks, and
-implementation sanity checks. **Prefer `agy` (Google Gemini)** when
-available; fall back to `codex` (OpenAI) otherwise.
+implementation sanity checks. The reviewer is **`codex` (OpenAI)**.
+
+> **`agy` (Google Gemini / Antigravity) MUST NOT be used as a reviewer.**
+> It was removed as an option on 2026-09-01 after it returned a fabricated
+> review: invented a 188-test pytest run with test names that do not exist
+> in the branch under review, then terminated with `Error: timeout waiting
+> for response`. A reviewer that hallucinates passing evidence is worse
+> than no reviewer, because its output reads like corroboration. Do not
+> re-add it, and do not fall back to it when `codex` is unavailable — when
+> there is no external reviewer, say so and rely on a Claude subagent.
+>
+> This bans `agy` **as a reviewer only**. It is unrelated to the
+> `google_coding` dev-loop backend, which drives the same `agy` binary as a
+> *coding* agent (`dispatchers/google_coding.py`) and is untouched.
 
 Rules:
 - Never feed the reviewer your reasoning, justification, or preferred
@@ -141,33 +153,18 @@ Rules:
 - For parallel perspective, use one Claude subagent and one background
   reviewer session with the same neutral brief, then synthesize agreements
   and disagreements.
+- **Verify the reviewer's evidence before believing it.** If it claims a
+  test run, a file, or a symbol, spot-check that the thing exists. Treat an
+  unverifiable claim as no finding at all, and say the review was
+  unusable rather than reporting it as a pass.
 
-**Detection — pick the first available:**
+**Detection:**
 ```bash
-if command -v agy &>/dev/null; then REVIEWER="agy"
-elif command -v codex &>/dev/null; then REVIEWER="codex"
+if command -v codex &>/dev/null; then REVIEWER="codex"
 else echo "No external reviewer CLI found"; fi
 ```
 
-#### agy commands (preferred)
-```bash
-# Reviews
-agy --sandbox --print "Review the uncommitted changes (run git diff). \
-  Focus on correctness, security, async patterns, and project conventions. \
-  Output findings with file:line references."
-agy --sandbox --print "Review changes between current branch and dev \
-  (run git diff dev...HEAD). List findings with file:line references."
-agy --sandbox --print "Review commit <sha> (run git show <sha>). \
-  List findings with file:line references."
-
-# Opinions, brainstorming, and cross-checks
-agy --sandbox --print "<neutral brief>" > <scratch-file>
-
-# Follow-up in the same agy session
-agy --continue --print "<question>"
-```
-
-#### codex commands (fallback)
+#### codex commands
 ```bash
 # Reviews
 codex exec review --uncommitted

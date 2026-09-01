@@ -50,7 +50,10 @@ from parrot.flows.dev_flow.research_partner import (
     ResearchPartnerFactory,
     resolve_backend_model,
 )
-from parrot.flows.dev_loop.catalog import resolve_research_partner_backend
+from parrot.flows.dev_loop.catalog import (
+    resolve_research_partner_backend,
+    validate_research_partner_model,
+)
 from parrot.flows.dev_loop.session_state import SessionHost
 
 #: Character bound for `ComplementaryFindings.rendered` — the copy that
@@ -64,6 +67,11 @@ _MAX_RENDERED_CHARS = 4_000
 
 _TRUNCATION_MARKER = "\n\n... [truncated for dispatch payload; full text in the .research.md file] ...\n"
 
+#: FEAT-486: valid values for an EXPLICIT ``backend=`` override. Kept equal
+#: to ``catalog._RESEARCH_PARTNER_CHOICES`` without importing a private
+#: name across modules; ``test_partner_passthrough.py`` pins the two equal.
+_EXPLICIT_BACKEND_CHOICES: tuple[str, ...] = ("gpt", "nova")
+
 
 class ComplementaryResearchCoordinator:
     """Shared research seam for `IdeationNode` and `ResearchNode` (FEAT-482).
@@ -74,8 +82,34 @@ class ComplementaryResearchCoordinator:
     failure, including when the seat is disabled. Never raises.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, backend: str | None = None, model: str | None = None) -> None:
+        """Initialize the coordinator.
+
+        Args:
+            backend: FEAT-486 — an explicit ``"gpt"``/``"nova"`` selection
+                that bypasses the ``DEV_FLOW_RESEARCH_PARTNER`` config
+                lookup in :meth:`research`. ``None`` (default) keeps the
+                original conf-driven path byte-identical, INCLUDING the
+                "unset ⇒ disabled" pure-addition guarantee.
+            model: FEAT-486 — an explicit model id for the partner,
+                forwarded to the constructed partner and used to stamp
+                ``ComplementaryFindings.model``. ``None`` (default)
+                resolves the per-backend conf key as before.
+
+        Note:
+            These exist so a caller holding its own configuration — a
+            ``DevFlowModelPlan``'s ``research_partner`` group (FEAT-486
+            TASK-2657) — can select this seat without an env var. Without
+            them a plan-enabled partner would still resolve
+            ``DEV_FLOW_RESEARCH_PARTNER`` (default ``""``) and silently
+            return ``None``, i.e. an enable toggle that cannot enable.
+            An explicit ``backend`` is validated in :meth:`research` just
+            like a configured one, and an explicit ``model`` is validated
+            by the partner's own family guard.
+        """
         self.logger = logging.getLogger(__name__)
+        self._backend = backend
+        self._model = model
 
     async def research(
         self,
@@ -109,7 +143,7 @@ class ComplementaryResearchCoordinator:
         """
         start = time.perf_counter()
         try:
-            backend = resolve_research_partner_backend()
+            backend = self._resolve_backend()
             if not backend:
                 # Disabled: no client built, no work performed — the
                 # pure-addition guarantee, not a degradation.
@@ -123,7 +157,7 @@ class ComplementaryResearchCoordinator:
                 slug=slug,
             )
 
-            partner = ResearchPartnerFactory.create(backend, backend=backend)
+            partner = ResearchPartnerFactory.create(backend, backend=backend, model=self._model)
             timeout = conf.DEV_FLOW_RESEARCH_PARTNER_TIMEOUT
             async with asyncio.timeout(timeout):
                 findings = await partner.research(
@@ -145,7 +179,7 @@ class ComplementaryResearchCoordinator:
                 )
                 return None
 
-            model = self._resolve_model_for_backend(backend)
+            model = self._model or self._resolve_model_for_backend(backend)
             full_markdown = self._render_markdown(findings=findings, backend=backend, model=model, slug=slug)
             document_path = await self._write_and_commit(cwd=cwd, slug=slug, rendered=full_markdown)
             rendered = self._truncate_for_dispatch(full_markdown)
@@ -209,6 +243,36 @@ class ComplementaryResearchCoordinator:
         no empty section in any merged document), not as a degradation.
         """
         return not findings.findings and not findings.summary.strip()
+
+    def _resolve_backend(self) -> str:
+        """Resolve the effective backend: explicit override > config.
+
+        FEAT-486: an explicit ``backend`` passed to ``__init__`` is
+        validated through the SAME two gates the config path uses — the
+        ``("gpt", "nova")`` choice set and the Anthropic family guard on
+        the resolved model — so injection is not a way around either.
+        Raising here is safe and intended: ``research()`` wraps this call
+        in its degradation boundary, so a misconfigured override degrades
+        the seat (logged, ``partner.degraded``) instead of failing the run.
+
+        Returns:
+            ``""`` (disabled), ``"gpt"`` or ``"nova"``.
+
+        Raises:
+            ValueError: If an explicit backend is not ``"gpt"``/``"nova"``,
+                or its effective model is an Anthropic model id.
+        """
+        if self._backend is None:
+            return resolve_research_partner_backend()
+        backend = self._backend
+        if backend not in _EXPLICIT_BACKEND_CHOICES:
+            raise ValueError(
+                f"Invalid research-partner backend {backend!r}; must be one "
+                f"of {_EXPLICIT_BACKEND_CHOICES} (gpt, nova). Pass backend="
+                "None to fall back to DEV_FLOW_RESEARCH_PARTNER."
+            )
+        validate_research_partner_model(self._model or resolve_backend_model(backend))
+        return backend
 
     @staticmethod
     def _resolve_model_for_backend(backend: str) -> str:

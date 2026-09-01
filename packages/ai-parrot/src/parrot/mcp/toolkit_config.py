@@ -77,7 +77,7 @@ BUILTIN_TOOLKITS: dict[str, ToolkitSection] = {
 }
 
 
-def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
+def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPToolkitsConfig:
     """Load and merge toolkit configuration.
 
     Reads `.parrot/mcp-toolkits.yaml` from the project root if present,
@@ -92,22 +92,36 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
 
     Args:
         root: Project root directory.
+        config_path: Optional explicit config file path (the `parrot
+            mcp-local --config` override). When given it is used instead of
+            `<root>/.parrot/mcp-toolkits.yaml`, and — unlike the default
+            path, whose absence silently falls back to the built-ins — a
+            missing explicit file raises ValueError: an operator who named
+            a file expects it to be read.
 
     Returns:
         MCPToolkitsConfig with merged sections.
 
     Raises:
         ValueError: If the file exists but is malformed YAML, contains unknown
-            top-level keys, or has a non-mapping `toolkits:` value. Error message
-            names the file path and the offending section/key.
+            top-level keys, or has a non-mapping `toolkits:` value — or if an
+            explicit `config_path` does not exist. Error message names the
+            file path and the offending section/key.
     """
-    config_path = root / ".parrot" / "mcp-toolkits.yaml"
+    explicit = config_path is not None
+    if config_path is None:
+        config_path = root / ".parrot" / "mcp-toolkits.yaml"
+    else:
+        config_path = Path(config_path)
 
     # Start with built-in defaults (these will be overridden by file sections)
     merged: dict[str, ToolkitSection] = {name: section.model_copy() for name, section in BUILTIN_TOOLKITS.items()}
 
-    # If file does not exist, return builtins only
+    # If file does not exist: builtins only for the default path; an
+    # explicitly named file that is absent is operator error.
     if not config_path.exists():
+        if explicit:
+            raise ValueError(f"Toolkit config file not found: {config_path}")
         return MCPToolkitsConfig(toolkits=merged)
 
     # Load and parse YAML

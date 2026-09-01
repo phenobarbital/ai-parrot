@@ -971,11 +971,25 @@ DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint("DEV_FLOW_GATE_TTL_QUESTIONS", 
 # carried into the spec's §8 by the planner. Read at execute() time (not
 # import time) so tests can monkeypatch it per-case.
 DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint("DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2)
-# FEAT-482 §8 Q13: the primary dev-flow research seat's model, replacing
-# the hardwired `claude-sonnet-4-6` in `IdeationNode._dispatch`
-# (`nodes/ideation.py`). Configurable because the primary seat does the
-# deepest reasoning in the pipeline and its output constrains every
-# downstream phase — `claude-fable-5` is one env var away for comparison.
+# Model for the primary dev-flow research seat (IdeationNode), replacing
+# the hardwired "claude-sonnet-4-6" that `IdeationNode._dispatch` used to
+# carry in its dispatch profile (`dev_flow/nodes/ideation.py`).
+#
+# FEAT-482 (§8 Q13) and FEAT-486 (§3 Module 1) introduced this key
+# INDEPENDENTLY, with the same name and the same default — a deliberate
+# convergence, not a collision: FEAT-486's spec explicitly says to share
+# FEAT-482's seam rather than duplicate it. Both rationales agree, and
+# both are kept here so neither is lost to the merge:
+#
+#   * the primary seat does the deepest reasoning in the pipeline and its
+#     output constrains every downstream phase, so it must be swappable
+#     (`claude-fable-5` is one env var away for comparison);
+#   * it writes the SDD document the whole pipeline is planned from, so it
+#     is the seat where reasoning quality compounds most — hence Opus 5 by
+#     default rather than Sonnet.
+#
+# Resolution order (FEAT-486): explicit constructor arg >
+# DevFlowModelPlan.research_primary > this key > the built-in default.
 DEV_FLOW_IDEATION_MODEL: str = config.get("DEV_FLOW_IDEATION_MODEL", fallback="claude-opus-5")
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
@@ -1080,12 +1094,26 @@ DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
     "DEV_LOOP_NOVA_MECHANICAL_MODEL",
     fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
 )
-# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
-# {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see
-# byte-identical behaviour to pre-FEAT-405. Resolved through
-# ``catalog.resolve_adversarial_backend()`` (validates the value and
-# raises naming the valid options); this constant exists for discoverability
-# alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above (:1048,1053,1076).
+# FEAT-486: model used by the read-only mantle-adversarial counter-reviewer
+# (``MantleAdversarialReviewDispatcher``), served over the OpenAI-compatible
+# bedrock-mantle endpoint. A NEW key rather than a repoint of
+# ``DEV_LOOP_ADVERSARIAL_MODEL`` (:1048), which stays the codex seat's —
+# the two seats can run different models in the same deployment (they do by
+# default: gpt-5.5 on codex, gpt-5.6-sol here). Duplicated (not imported)
+# from ``dispatchers.mantle.MANTLE_DEFAULT_REVIEW_MODEL`` for the same
+# reason as _NOVA_DEFAULT_CONVERSE_MODEL above — conf.py must not import
+# ``parrot.flows``; the two literals are pinned equal by test.
+DEV_LOOP_MANTLE_REVIEW_MODEL: str = config.get(
+    "DEV_LOOP_MANTLE_REVIEW_MODEL",
+    fallback="gpt-5.6-sol",
+)
+# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]; widened by
+# FEAT-486): choice over {"codex", "nova", "mantle"}, defaulting to "codex"
+# — unconfigured deployments see byte-identical behaviour to pre-FEAT-405.
+# Resolved through ``catalog.resolve_adversarial_backend()`` (validates the
+# value and raises naming the valid options); this constant exists for
+# discoverability alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above
+# (:1048,1053,1076).
 DEV_LOOP_ADVERSARIAL_BACKEND: str = config.get("DEV_LOOP_ADVERSARIAL_BACKEND", fallback="codex")
 
 # FEAT-482: opt-in complementary (collaborative) research partner for the

@@ -5,7 +5,8 @@ Originally a single ``dispatcher.py`` module; split into a sub-package
 (renamed ``dispatchers``) so each LLM client's dispatcher lives in its own
 file: ``claude.py``, ``codex.py``, ``gemini.py``, ``google_coding.py``,
 ``llm.py`` (the local OpenAI-compatible base loop), ``grok.py``, ``zai.py``,
-and ``moonshot.py``. Shared exceptions, the ``DevLoopCodeDispatcher``
+``moonshot.py``, and ``mantle.py`` (the FEAT-486 read-only counter-reviewer
+over the bedrock-mantle endpoint). Shared exceptions, the ``DevLoopCodeDispatcher``
 protocol, and the session-host dual-publish shim live in ``_shared.py``.
 
 This ``__init__`` re-exports every public name that used to live on
@@ -25,6 +26,7 @@ from parrot.flows.dev_loop.dispatchers.gemini import GeminiCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.google_coding import GoogleCodingDispatcher
 from parrot.flows.dev_loop.dispatchers.grok import GrokCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
+from parrot.flows.dev_loop.dispatchers.mantle import MantleAdversarialReviewDispatcher
 from parrot.flows.dev_loop.dispatchers.moonshot import MoonshotCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.nova import (
     NovaAdversarialReviewDispatcher,
@@ -38,6 +40,7 @@ __all__ = [
     "CodexCodeDispatcher",
     "GeminiCodeDispatcher",
     "LLMCodeDispatcher",
+    "MantleAdversarialReviewDispatcher",
     "GrokCodeDispatcher",
     "MoonshotCodeDispatcher",
     "NovaAdversarialReviewDispatcher",

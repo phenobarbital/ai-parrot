@@ -441,6 +441,12 @@ const app = {
     devAgents: [], devIsolation: "shared",
     flowType: "auto", baseBranch: "auto",
     judges: [], skipQa: false, skipJira: false,
+    // FEAT-486 per-seat LLM plan. Seeded from /api/config's
+    // defaults.model_plan at boot, so what the operator sees is what the
+    // server actually built its flow with.
+    researchPrimary: "",
+    researchPartner: { enabled: false, backend: "gpt", model: "" },
+    review: { primary: { agent: "claude-code", model: "" }, counterModel: "" },
     // FEAT-412: per-run plan-approval gate toggle.
     requirePlanApproval: false,
   },
@@ -1375,7 +1381,39 @@ function tabBodyHtml(tab) {
     const d = app.config?.defaults || {};
     const rounds = d.ideation_max_rounds ?? 2;
     const ttlHours = Math.round((d.gate_ttl_questions ?? 86400) / 3600);
+    const mp = d.model_plan || {};
+    const partner = f.researchPartner;
+    // FEAT-486 selector group 1 of 3 — the research seats.
+    const researchGroup = `
+      <div class="field" style="grid-column:1/-1">
+        <span class="field-label">Research primary model (DEV_FLOW_IDEATION_MODEL)</span>
+        <input class="input mono" data-plan="researchPrimary" value="${esc(f.researchPrimary)}"
+               placeholder="claude-opus-5" list="dl-claude-models" />
+        <datalist id="dl-claude-models">${
+          modelOptions("claude-code", "").replace(/<option[^>]*value=""[^>]*>[^<]*<\/option>/, "")}</datalist>
+        <p class="hint">The seat that writes the SDD document every later phase is planned from. Free text — the list is a suggestion, never a whitelist.</p>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" data-plan-toggle="partner" ${partner.enabled ? "checked" : ""} style="width:16px;height:16px" />
+          <span class="field-label" style="margin:0">Enable complementary research partner (FEAT-482)</span>
+        </label>
+        <p class="hint">Off by default. A second, independent research seat whose findings complement the primary's; its failure never fails the run.</p>
+      </div>
+      <div class="field">
+        <span class="field-label">Partner backend</span>
+        <select class="input" data-plan="partnerBackend" ${partner.enabled ? "" : "disabled"}>${
+          (mp.partner_backends || ["gpt", "nova"]).map((b) =>
+            `<option value="${esc(b)}"${b === partner.backend ? " selected" : ""}>${esc(b)}</option>`).join("")}</select>
+      </div>
+      <div class="field">
+        <span class="field-label">Partner model</span>
+        <input class="input mono" data-plan="partnerModel" value="${esc(partner.model)}"
+               placeholder="gpt-5.6-sol" ${partner.enabled ? "" : "disabled"} />
+        <p class="hint">Over Bedrock Mantle. Anthropic ids are rejected by the partner resolver by design.</p>
+      </div>`;
     return grid(`
+      ${researchGroup}
       <div class="field"><span class="field-label">Open-Questions rounds (DEV_FLOW_IDEATION_MAX_ROUNDS)</span>
         <input class="input mono" value="${esc(String(rounds))}" disabled />
         <p class="hint">Max HITL rounds. Anything still unanswered afterwards stays in the document and flows into the spec's §8.</p>
@@ -1416,8 +1454,12 @@ function tabBodyHtml(tab) {
           <input class="input mono" type="number" min="1" max="8" data-agent-field="count" data-idx="${i}" value="${a.count}" /></div>
         <button type="button" class="btn btn-danger" data-agent-del="${i}" style="padding:8px 10px" title="Remove">✕</button>
       </div>`).join("");
+    const mp = d.model_plan || {};
     return `<div style="display:flex;flex-direction:column;gap:12px">
       <span class="field-label">Development agent pool — leave empty to let the planner size it from the task graph</span>
+      <p class="hint" style="margin:0">FEAT-486: seeded from this server's model plan (<span class="mono">${
+        esc((mp.dev_agents || []).map((a) => `${a.agent}:${a.model || "default"}`).join(", ") || "single-agent")
+      }</span>). A single-TASK feature automatically collapses to ONE sub-agent whatever is declared here. NVIDIA NIM is selectable but never a default — it currently returns 401 for this account.</p>
       ${rows || `<p class="hint" style="margin:0">No pool declared.</p>`}
       <button type="button" class="btn" id="add-agent-btn" style="align-self:flex-start">+ Add agent</button>
       <div class="field" style="max-width:280px">
@@ -1440,6 +1482,35 @@ function tabBodyHtml(tab) {
     const judges = f.judges.length ? f.judges : (app.config?.default_judge_panel || []);
     const advBackend = app.config?.adversarial_backend || "codex";
     const adv = app.config?.adversarial_review || {};
+    const mp = d.model_plan || {};
+    // FEAT-486 selector group 3 of 3 — the adversarial review PAIR. Note
+    // `review_pair_active`: this console wires the FEAT-378 judge panel as
+    // its reviewer, and an explicit dispatcher wins over the plan by
+    // design, so the pair is configured but not the active reviewer here.
+    // Said plainly rather than implied.
+    const pairActive = mp.review_pair_active !== false;
+    const reviewPairGroup = `
+      <div class="blueprint" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro" style="color:var(--color-accent-700)">Adversarial review pair (FEAT-486)${
+          pairActive ? "" : " — configured, NOT the active reviewer on this server"}</span>
+        ${pairActive ? "" : `<span class="muted" style="font-size:12px">This console runs the judge panel above. The pair below is validated and recorded, and is what an embedder that passes no explicit reviewer would get.</span>`}
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+          <div class="field"><span class="field-label">Primary backend</span>
+            <select class="input" data-plan="reviewPrimaryAgent">${
+              (mp.review_primary_backends || ["claude-code", "codex", "gemini", "google_coding"]).map((b) =>
+                `<option value="${esc(b)}"${b === f.review.primary.agent ? " selected" : ""}>${esc(b)}</option>`).join("")}</select>
+            <p class="hint">Write-enabled — it may fix what it finds.</p>
+          </div>
+          <div class="field"><span class="field-label">Primary model</span>
+            <input class="input mono" data-plan="reviewPrimaryModel" value="${esc(f.review.primary.model)}" placeholder="claude-opus-5" />
+          </div>
+          <div class="field"><span class="field-label">Counter-reviewer model</span>
+            <input class="input mono" data-plan="reviewCounterModel" value="${esc(f.review.counterModel)}" placeholder="gpt-5.6-sol" />
+            <p class="hint">Read-only by construction, over Bedrock Mantle.</p>
+          </div>
+        </div>
+      </div>`;
     const rows = judges.map((j, i) => {
       const locked = j.agent === advBackend;
       return `<div class="judge-row">
@@ -1466,6 +1537,7 @@ function tabBodyHtml(tab) {
       ${rows}
       <button type="button" class="btn" id="add-judge-btn" style="align-self:flex-start">+ Add judge</button>
       <p class="hint" style="margin:0">Simple majority. A tie, or an abstention that breaks majority, escalates rather than passing.</p>
+      ${reviewPairGroup}
     </div>`;
   }
   // guardrails
@@ -1562,6 +1634,18 @@ function buildPayload() {
   if (f.jiraIssueKey.trim()) payload.jira_issue_key = f.jiraIssueKey.trim();
   if (f.devAgents.length) payload.dev_agents = f.devAgents;
   if (f.judges.length) payload.judge_panel = f.judges;
+  // FEAT-486: field names mirror DevFlowModelPlan exactly, so server-side
+  // parsing is a straight model_validate (server_dev._parse_model_plan).
+  if (f.researchPrimary.trim()) payload.research_primary = f.researchPrimary.trim();
+  payload.research_partner = {
+    enabled: !!f.researchPartner.enabled,
+    backend: f.researchPartner.backend,
+    model: f.researchPartner.model.trim(),
+  };
+  payload.review = {
+    primary: { agent: f.review.primary.agent, model: f.review.primary.model.trim() },
+    counter_model: f.review.counterModel.trim(),
+  };
   if (f.skipQa) payload.skip_qa = true;
   if (f.skipJira) payload.skip_jira = true;
   // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
@@ -1596,18 +1680,78 @@ function applyRequestCollapse() {
   }
 }
 
+/* FEAT-486 code-review fix: `model_plan` is a BUILD-time input, so a
+   per-run selection that differs from the server's plan does NOT take
+   effect. The server already logs that and echoes the EFFECTIVE plan back
+   in the run response — this surfaces it to the operator too, instead of
+   letting a changed selector silently do nothing. */
+function planMismatchWarning(submitted, effective) {
+  if (!effective) return "";
+  const seatDiffs = [];
+  const fmtPool = (rows) => (rows || [])
+    .map((r) => `${r.agent}:${r.model || "default"}${r.count > 1 ? `x${r.count}` : ""}`)
+    .join(", ") || "single-agent";
+
+  const submittedPool = fmtPool(submitted.dev_agents);
+  const effectivePool = fmtPool(effective.dev_agents);
+  if (submittedPool !== effectivePool) {
+    seatDiffs.push(`dev pool (you chose ${submittedPool} — running ${effectivePool})`);
+  }
+  if (submitted.research_primary && submitted.research_primary !== effective.research_primary) {
+    seatDiffs.push(`research primary (you chose ${submitted.research_primary} — running ${effective.research_primary})`);
+  }
+  const subCounter = submitted.review?.counter_model;
+  if (subCounter && subCounter !== effective.review?.counter_model) {
+    seatDiffs.push(`counter-reviewer (you chose ${subCounter} — running ${effective.review?.counter_model})`);
+  }
+  const subPrimary = submitted.review?.primary?.agent;
+  if (subPrimary && subPrimary !== effective.review?.primary?.agent) {
+    seatDiffs.push(`review primary (you chose ${subPrimary} — running ${effective.review?.primary?.agent})`);
+  }
+  if (!seatDiffs.length) return "";
+  return `Model selection not applied to this run: ${seatDiffs.join("; ")}. `
+    + `The per-seat plan is fixed when the server builds its flow, so restart `
+    + `the console with the DEV_FLOW_* env keys to change these seats.`;
+}
+
+function showPlanWarning(message) {
+  let box = $("plan-warn");
+  if (!message) {
+    if (box) box.classList.add("hidden");
+    return;
+  }
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "plan-warn";
+    box.className = "err-box";
+    box.style.marginBottom = "12px";
+    const host = $("exec-section");
+    host.insertBefore(box, host.firstChild);
+  }
+  box.textContent = `\u26A0 ${message}`;
+  box.classList.remove("hidden");
+  console.warn(message);
+}
+
 async function submit(ev) {
   ev.preventDefault();
   $("form-err").classList.add("hidden");
   $("submit-btn").disabled = true;
   try {
+    const payload = buildPayload();
     const res = await fetch("/api/flow/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload()),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
+
+    // Tell the operator when their selection was overridden (see above).
+    // NOT via #form-err: that lives inside #request-form, which
+    // applyRequestCollapse() hides the moment a run starts — the warning
+    // has to survive on the execution surface instead.
+    showPlanWarning(planMismatchWarning(payload, data.model_plan));
 
     // Reset every per-run projection before the streams start.
     app.runId = data.run_id;
@@ -1777,11 +1921,39 @@ document.addEventListener("click", (e) => {
       renderReady();
       break;
   }
+  // FEAT-486: the research-partner enable toggle. Re-renders the tab so
+  // the backend/model inputs enable and disable with it.
+  if (t.dataset.planToggle === "partner") {
+    app.form.researchPartner.enabled = t.checked;
+    renderTabs(); renderReady();
+  }
 });
 
 document.addEventListener("input", (e) => {
   const t = e.target;
   if (t.dataset.form) { app.form[t.dataset.form] = t.value; renderReady(); return; }
+
+  // FEAT-486 per-seat plan fields. Every model input is free text: the
+  // catalog's model lists are a suggestion, never a whitelist — only
+  // BACKENDS are validated (server-side, with the supported list in the
+  // error). No re-render on text input, so typing is never interrupted.
+  const plan = t.dataset.plan;
+  if (plan) {
+    switch (plan) {
+      case "researchPrimary": app.form.researchPrimary = t.value; break;
+      case "partnerBackend": app.form.researchPartner.backend = t.value; break;
+      case "partnerModel": app.form.researchPartner.model = t.value; break;
+      case "reviewPrimaryAgent":
+        app.form.review.primary.agent = t.value;
+        app.form.review.primary.model = "";
+        renderTabs();
+        break;
+      case "reviewPrimaryModel": app.form.review.primary.model = t.value; break;
+      case "reviewCounterModel": app.form.review.counterModel = t.value; break;
+    }
+    renderReady();
+    return;
+  }
 
   const af = t.dataset.agentField;
   if (af) {
@@ -1841,6 +2013,30 @@ $("request-form").addEventListener("submit", submit);
   }
   app.form.skipQa = !!app.config.defaults?.skip_qa;
   app.form.requirePlanApproval = !!app.config.defaults?.require_plan_approval;
+  // FEAT-486: adopt the server's resolved model plan as the form's starting
+  // point — the dev pool default (Bedrock GLM + Qwen3 coder), the research
+  // primary, the partner toggle and the review pair all come from
+  // /api/config rather than being duplicated here. NIM is present in the
+  // pickers via the catalog's role lists but is never preselected.
+  const mp = app.config.defaults?.model_plan;
+  if (mp) {
+    app.form.devAgents = (mp.dev_agents || []).map((a) => ({
+      agent: a.agent, model: a.model || "", count: a.count || 1,
+    }));
+    app.form.researchPrimary = mp.research_primary || "";
+    app.form.researchPartner = {
+      enabled: !!mp.research_partner?.enabled,
+      backend: mp.research_partner?.backend || "gpt",
+      model: mp.research_partner?.model || "",
+    };
+    app.form.review = {
+      primary: {
+        agent: mp.review?.primary?.agent || "claude-code",
+        model: mp.review?.primary?.model || "",
+      },
+      counterModel: mp.review?.counter_model || "",
+    };
+  }
   applyMode();
   render();
 })();

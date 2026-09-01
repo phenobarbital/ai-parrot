@@ -45,8 +45,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-import shutil
-import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,6 +60,12 @@ from parrot.flows.dev_flow.complementary_research import (
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
 from parrot.flows.dev_flow.research_partner import ComplementaryFindings
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.mcp_profiles import (
+    WIKI_MCP_TOOLS,
+    derive_mcp_tool_names,
+    resolve_wikitoolkit_command,
+    wikitoolkit_mcp_entry,
+)
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, FeatureBrief
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
@@ -74,39 +78,11 @@ _MODE_FOR_KIND: dict[str, str] = {
 }
 
 
-#: FEAT-482 Module 6 (§8 Q11): read-only wiki graph-search tools exposed to
-#: the primary ideation seat. Deliberately excludes the write tools
-#: (`wiki_remember` / `wiki_note`) — the primary seat may read the graph,
-#: never mutate it via this seam.
-_WIKI_MCP_TOOLS: tuple[str, ...] = (
-    "mcp__wikitoolkit__wiki_query",
-    "mcp__wikitoolkit__wiki_page",
-    "mcp__wikitoolkit__wiki_related",
-)
-
-
-def _resolve_wikitoolkit_command() -> str:
-    """Resolve the ``wikitoolkit`` CLI path robustly.
-
-    The repo's own ``.mcp.json`` hardcodes an absolute venv path, which
-    would break in any other checkout/environment. Resolve it the same
-    way any other console-script installed into the running
-    interpreter's venv is found: ``PATH`` first (``shutil.which``), then
-    a same-directory-as-``sys.executable`` fallback (covers a venv whose
-    ``bin/`` is not on ``PATH`` but IS where the running Python lives).
-
-    Returns:
-        The resolved ``wikitoolkit`` command path, or the bare
-        ``"wikitoolkit"`` string as a last resort (lets the CLI's own
-        "not found" error surface instead of silently omitting the tool).
-    """
-    found = shutil.which("wikitoolkit")
-    if found:
-        return found
-    candidate = Path(sys.executable).parent / "wikitoolkit"
-    if candidate.is_file():
-        return str(candidate)
-    return "wikitoolkit"
+# Backward-compat aliases: these lived here (private) before moving to the
+# shared ``parrot.flows.dev_loop.mcp_profiles`` module so ``ResearchNode``
+# could reuse them. Kept so existing imports/monkeypatches keep working.
+_WIKI_MCP_TOOLS = WIKI_MCP_TOOLS
+_resolve_wikitoolkit_command = resolve_wikitoolkit_command
 
 
 def _slugify(title: str) -> str:
@@ -164,6 +140,12 @@ class IdeationNode(DevLoopNode):
             search, or a search that finds nothing, simply yields no context.
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
             ``None`` (default) reads the conf key at execute time.
+        model: FEAT-486 — model for this (research-primary) seat, replacing
+            the ``claude-sonnet-4-6`` literal this node used to hardcode in
+            its dispatch profile. ``None`` (default) reads
+            ``conf.DEV_FLOW_IDEATION_MODEL`` at dispatch time, itself
+            defaulting to ``claude-opus-5``. Normally supplied by
+            ``DevFlowModelPlan.research_primary`` through the factory.
         coordinator: Optional :class:`ComplementaryResearchCoordinator`
             (FEAT-482). ``None`` (default) means no complementary research
             partner ever runs — the dispatch payload's partner fields stay
@@ -171,6 +153,17 @@ class IdeationNode(DevLoopNode):
             it is called on round 1 only; it never raises (it owns its own
             degradation), so a disabled/degraded/timed-out partner simply
             yields empty partner fields too.
+        extra_mcp_servers: Optional extra MCP server configs (same shape as
+            ``ClaudeCodeDispatchProfile.mcp_servers``) merged UNDER the
+            built-in ``wikitoolkit`` entry — on a key collision the
+            built-in wins (with a warning). Use this to expose the
+            FEAT-485 ``parrot mcp-local <toolkit>`` servers to the
+            research-primary seat. ``None`` (default) keeps the dispatch
+            profile byte-identical to pre-seam behavior.
+        extra_mcp_tools: Optional explicit ``mcp__...`` allow rules for the
+            extra servers, appended to ``allowed_tools``. ``None``
+            (default) derives one server-level ``mcp__<name>`` rule per
+            extra server. Ignored when ``extra_mcp_servers`` is unset.
         name: Node id, default ``"ideation"``.
     """
 
@@ -180,14 +173,25 @@ class IdeationNode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         wiki_search: DevLoopWikiSearch | None = None,
         ideation_max_rounds: int | None = None,
+        model: str | None = None,
         coordinator: ComplementaryResearchCoordinator | None = None,
+        extra_mcp_servers: dict[str, Any] | None = None,
+        extra_mcp_tools: list[str] | None = None,
         name: str = "ideation",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_wiki_search", wiki_search)
         object.__setattr__(self, "_max_rounds", ideation_max_rounds)
+        # FEAT-486: the research-primary seat's model. `None` (default)
+        # resolves `conf.DEV_FLOW_IDEATION_MODEL` at dispatch time — read
+        # late, not at import, so a test (or a per-deployment env change)
+        # can monkeypatch it, matching how `_max_rounds` treats
+        # DEV_FLOW_IDEATION_MAX_ROUNDS.
+        object.__setattr__(self, "_model", model)
         object.__setattr__(self, "_coordinator", coordinator)
+        object.__setattr__(self, "_extra_mcp_servers", extra_mcp_servers)
+        object.__setattr__(self, "_extra_mcp_tools", extra_mcp_tools)
 
     # ------------------------------------------------------------------
     # Execute
@@ -364,6 +368,22 @@ class IdeationNode(DevLoopNode):
             return max(0, int(self._max_rounds))
         return max(0, int(getattr(conf, "DEV_FLOW_IDEATION_MAX_ROUNDS", 2)))
 
+    def _resolve_model(self) -> str:
+        """Resolve this seat's model (constructor override > conf key).
+
+        FEAT-486: same late-binding shape as :meth:`_resolve_max_rounds` —
+        the conf key is read at dispatch time, not import time, so a
+        deployment (or a test) can change it without rebuilding the flow.
+        A blank override falls through to the conf key rather than
+        dispatching with an empty model id.
+
+        Returns:
+            The model id for the ideation dispatch profile.
+        """
+        if self._model:
+            return str(self._model)
+        return str(getattr(conf, "DEV_FLOW_IDEATION_MODEL", "claude-opus-5") or "claude-opus-5")
+
     async def _build_wiki_context(self, brief: DevRequestBrief) -> str:
         """Best-effort ranked repo context for the dispatch.
 
@@ -464,6 +484,23 @@ class IdeationNode(DevLoopNode):
             partner_findings=partner_findings,
             partner_findings_path=partner_findings_path,
         )
+        # Extra caller-supplied servers (e.g. FEAT-485 `parrot mcp-local`
+        # toolkits) merge UNDER the built-in wikitoolkit entry: with no
+        # extras the dict is exactly {"wikitoolkit": ...}, byte-identical
+        # to pre-seam behavior.
+        mcp_servers: dict[str, Any] = dict(self._extra_mcp_servers or {})
+        if "wikitoolkit" in mcp_servers:
+            self.logger.warning(
+                "extra_mcp_servers supplied a 'wikitoolkit' entry; the built-in one takes precedence."
+            )
+        mcp_servers["wikitoolkit"] = wikitoolkit_mcp_entry()
+        allowed_tools = ["Read", "Grep", "Glob", "Bash", "Write", "Edit", *WIKI_MCP_TOOLS]
+        if self._extra_mcp_servers:
+            allowed_tools.extend(
+                self._extra_mcp_tools
+                if self._extra_mcp_tools is not None
+                else derive_mcp_tool_names(self._extra_mcp_servers)
+            )
         profile = ClaudeCodeDispatchProfile(
             # NOT profile.subagent: that path resolves the prompt through
             # dev_loop's loader, which does not know the dev_flow-owned
@@ -477,25 +514,23 @@ class IdeationNode(DevLoopNode):
             # FEAT-482 Module 6 (§8 Q11): plus the three read-only wiki
             # graph-search tools — the primary seat does the deepest
             # research in the pipeline and benefits most from it.
-            allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit", *_WIKI_MCP_TOOLS],
+            allowed_tools=allowed_tools,
             # The dispatch is write-capable AND runs at the base checkout
             # (see _dispatch_cwd), so it needs the dispatcher's narrow
             # PROJECT_ROOT waiver of the WORKTREE_BASE_PATH confinement —
             # ideation predates the feature worktree by construction.
             allow_project_root_cwd=True,
-            model=conf.DEV_FLOW_IDEATION_MODEL,
+            # FEAT-486 supersedes FEAT-482's direct
+            # `conf.DEV_FLOW_IDEATION_MODEL` read here: _resolve_model()
+            # falls back to that SAME key, but first honours an explicit
+            # constructor argument (i.e. DevFlowModelPlan.research_primary).
+            model=self._resolve_model(),
             # FEAT-482 Module 6: strict_mcp_config stays at its True
             # default (NOT overridden here) — the field's own docstring
             # records that flipping it makes non-interactive runs exit
-            # with an empty error result. Passing the server explicitly
-            # is the correct way to reach it under that isolation.
-            mcp_servers={
-                "wikitoolkit": {
-                    "command": _resolve_wikitoolkit_command(),
-                    "args": ["mcp"],
-                    "env": {},
-                }
-            },
+            # with an empty error result. Passing the servers explicitly
+            # is the correct way to reach them under that isolation.
+            mcp_servers=mcp_servers,
         )
         return await self._dispatcher.dispatch(
             brief=dispatch_brief,

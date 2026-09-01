@@ -66,6 +66,8 @@ def build_dev_loop_node_factories(
     require_plan_approval: bool = False,
     skip_qa: bool = False,
     research_coordinator: Optional[ComplementaryResearchCoordinator] = None,
+    research_mcp_servers: Optional[Dict[str, Any]] = None,
+    research_mcp_tools: Optional[List[str]] = None,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -139,6 +141,13 @@ def build_dev_loop_node_factories(
             ``dev_flow.factories.build_dev_flow_node_factories``'s
             equivalent kwarg for ``IdeationNode`` (D1: one shared
             mechanism serves both seats).
+        research_mcp_servers: Optional explicit MCP server configs
+            forwarded to ``ResearchNode`` (wikitoolkit graph search,
+            FEAT-485 ``parrot mcp-local`` toolkit servers, ...). ``None``
+            (default) keeps the research dispatch profile byte-identical.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those servers; ``None`` derives server-level ``mcp__<name>``
+            rules. See :class:`ResearchNode`.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -167,6 +176,8 @@ def build_dev_loop_node_factories(
                 graph_memory=graph_memory,
                 wiki_search=wiki_search,
                 coordinator=coordinator,
+                mcp_servers=research_mcp_servers,
+                mcp_tools=research_mcp_tools,
                 name=nd.id,
             ),
             deps,
@@ -242,6 +253,11 @@ def build_dev_loop_node_factories(
             PlannerNode(
                 dispatcher=dispatcher,
                 development_pool_max=development_pool_max,
+                # FEAT-486: the planner's derived `suggested_pool` must
+                # name the operator's configured backends, not a
+                # hardcoded claude-code. `None` (no pool configured)
+                # keeps the pre-FEAT-486 claude-code fallback.
+                development_pool_config=development_pool_config,
                 graph_memory=graph_memory,
                 name=nd.id,
             ),

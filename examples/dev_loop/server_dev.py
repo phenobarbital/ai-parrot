@@ -31,6 +31,13 @@ from** ``server.py`` rather than copied, so the two consoles cannot drift.
 Deliberately NOT imported: ``_build_log_toolkits`` (CloudWatch) and
 ``_build_brief_from_form`` (bug intake).
 
+FEAT-484/485/486 wiring (see ``README.md`` §"Research-seat MCP access"):
+the ideation (research) seat gets the ``.parrot/mcp-toolkits.yaml`` toolkit
+servers as extra MCP servers (its wikitoolkit server is built in), via the
+sibling ``mcp_wiring.build_research_mcp``; ``DEV_FLOW_USE_REVIEW_PAIR=true``
+swaps the judge panel for the model plan's review pair as the active QA
+reviewer.
+
 Run it with::
 
     PORT=8081 python examples/dev_loop/server_dev.py
@@ -52,6 +59,13 @@ import redis.asyncio as aioredis
 from aiohttp import web
 from parrot import conf
 from parrot.flows.dev_flow.flow import build_dev_flow
+from parrot.flows.dev_flow.model_plan import (
+    DevFlowModelPlan,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
+    resolve_model_plan,
+    supported_dev_pool_backends,
+)
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_flow.runner import DevFlowRunner
 from parrot.flows.dev_loop import (
@@ -74,6 +88,7 @@ from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 # ``llm_catalog``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llm_catalog
+import mcp_wiring
 import server as ops_server
 
 logger = logging.getLogger("dev_flow.server")
@@ -104,6 +119,108 @@ def _normalise_kind(raw: Any) -> str:
         caller reports the error.
     """
     return (str(raw or "")).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+#: FEAT-486 (spec G2/G7): the console's default development pool —
+#: Bedrock GLM 5 + Bedrock Qwen3 coder, both over bedrock-mantle via the
+#: ``nova`` backend. NVIDIA NIM stays in the picker (catalog role lists)
+#: but is never a default: it currently returns 401 Unauthorized for this
+#: account, so defaulting to it would break every run.
+CONSOLE_DEFAULT_DEV_POOL: list[dict[str, Any]] = [
+    {"agent": "nova", "model": "zai.glm-5", "count": 1},
+    {"agent": "nova", "model": "qwen.qwen3-coder-480b-a35b-v1:0", "count": 1},
+]
+
+
+def _console_default_model_plan() -> DevFlowModelPlan:
+    """Build the dev console's default :class:`DevFlowModelPlan`.
+
+    The console is opinionated where the library is not: the library's
+    default plan has an EMPTY ``dev_pool`` (so ``build_dev_flow`` stays
+    backward compatible), while the console ships the two-seat Bedrock
+    pool spec §3 Module 6 specifies. Everything else takes the library
+    defaults, then :func:`resolve_model_plan` lets ``DEV_FLOW_*`` env keys
+    override any of it — so an operator can repoint a deployment without
+    touching this file.
+
+    Returns:
+        The resolved plan the console builds its flow with.
+    """
+    return resolve_model_plan(DevFlowModelPlan.model_validate({"dev_pool": CONSOLE_DEFAULT_DEV_POOL}))
+
+
+def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
+    """Translate the console's selector groups into a ``DevFlowModelPlan``.
+
+    Field names mirror the ``DevFlowModelPlan`` schema exactly, so parsing
+    stays trivial: ``dev_agents`` (reusing the ops console's own row
+    parser), ``research_primary``, ``research_partner``
+    (``{enabled, backend, model}``) and ``review``
+    (``{primary: {agent, model}, counter_model}``).
+
+    Validation posture matches the ops console (``server.py:1026-1058``):
+    **backends are strict**, model ids are free text — the catalog's model
+    lists are a curated starting point, never a whitelist
+    (``catalog.py:22-24``).
+
+    Args:
+        form: The decoded JSON body posted by the console.
+
+    Returns:
+        The parsed plan, or ``None`` when the payload declared none of the
+        plan fields (meaning "use the server's default plan").
+
+    Raises:
+        ValueError: If a row names a backend the dev-loop cannot build, or
+            the review primary names a non-review backend — both naming
+            the supported set.
+    """
+    keys = ("dev_agents", "research_primary", "research_partner", "review")
+    if not any(key in form for key in keys):
+        return None
+
+    payload: dict[str, Any] = {}
+
+    pool_rows = ops_server._parse_dev_agents(form.get("dev_agents"))
+    if pool_rows is not None:
+        payload["dev_pool"] = pool_rows
+
+    research_primary = (form.get("research_primary") or "").strip()
+    if research_primary:
+        payload["research_primary"] = research_primary
+
+    partner = form.get("research_partner")
+    if isinstance(partner, dict):
+        partner_kwargs: dict[str, Any] = {"enabled": bool(partner.get("enabled"))}
+        backend = (partner.get("backend") or "").strip()
+        if backend:
+            partner_kwargs["backend"] = backend
+        model = (partner.get("model") or "").strip()
+        if model:
+            partner_kwargs["model"] = model
+        payload["research_partner"] = ResearchPartnerPlan(**partner_kwargs)
+
+    review = form.get("review")
+    if isinstance(review, dict):
+        review_kwargs: dict[str, Any] = {}
+        primary = review.get("primary")
+        if isinstance(primary, dict):
+            agent = (primary.get("agent") or "").strip()
+            if agent:
+                if agent not in llm_catalog.PRIMARY_REVIEW_BACKENDS:
+                    raise ValueError(
+                        f"backend {agent!r} cannot serve as the primary "
+                        "reviewer — supported: "
+                        f"{', '.join(llm_catalog.PRIMARY_REVIEW_BACKENDS)}"
+                    )
+                review_kwargs["primary"] = DevAgentSpec(agent=agent, model=(primary.get("model") or "").strip())
+        counter_model = (review.get("counter_model") or "").strip()
+        if counter_model:
+            review_kwargs["counter_model"] = counter_model
+        if review_kwargs:
+            payload["review"] = ReviewPairPlan(**review_kwargs)
+
+    return DevFlowModelPlan.model_validate(payload) if payload else None
 
 
 def _build_dev_brief_from_form(form: dict[str, Any]) -> DevRequestBrief | Any:
@@ -192,6 +309,47 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC_DIR / "dev.html")
 
 
+def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = True) -> dict[str, Any]:
+    """Serialise a :class:`DevFlowModelPlan` for ``/api/config``.
+
+    Field names mirror the model exactly, so the console can post the same
+    shape straight back to ``/api/flow/run``. The pool rows use the
+    ``{agent, model, count}`` shape the ops console's existing dev-agent
+    row editor already speaks.
+
+    Args:
+        plan: The already-resolved plan.
+        review_pair_active: Whether the plan's review pair is the reviewer
+            this deployment actually uses. This console passes an explicit
+            ``judge_panel`` dispatcher into ``build_dev_flow``, and an
+            explicit dispatcher wins over the plan by design (TASK-2655
+            precedence) — so the review selectors are reported as INACTIVE
+            here rather than silently pretending. Told to the UI, not
+            hidden from it.
+
+    Returns:
+        A JSON-serialisable dict.
+    """
+    return {
+        "review_pair_active": review_pair_active,
+        "research_primary": plan.research_primary,
+        "research_partner": plan.research_partner.model_dump(mode="json"),
+        "dev_agents": [{"agent": spec.agent, "model": spec.model, "count": spec.count} for spec in plan.dev_pool],
+        "review": {
+            "primary": {
+                "agent": plan.review.primary.agent,
+                "model": plan.review.primary.model,
+            },
+            "counter_model": plan.review.counter_model,
+        },
+        "pool_backends": list(supported_dev_pool_backends()),
+        "review_primary_backends": list(llm_catalog.PRIMARY_REVIEW_BACKENDS),
+        # Derived from the catalog's role lists rather than a hardcoded
+        # literal, so a new partner backend shows up here automatically.
+        "partner_backends": [b.id for b in llm_catalog.backends_for_role("research_partner")],
+    }
+
+
 async def handle_config(request: web.Request) -> web.Response:
     """Serve the dev console's configuration catalog.
 
@@ -230,15 +388,26 @@ async def handle_config(request: web.Request) -> web.Response:
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
                 "wiki_search": app.get("wiki_search") is not None,
                 "jira_configured": app.get("jira_toolkit") is not None,
+                # FEAT-486 (spec G7): the per-seat LLM plan this server
+                # actually built its flow with — already env-resolved, so
+                # the console shows what will really run rather than what
+                # this file hardcodes (same honesty rule as
+                # `catalog.effective_default_model`).
+                "model_plan": _model_plan_payload(
+                    app.get("model_plan") or _console_default_model_plan(),
+                    review_pair_active=bool(app.get("review_pair_active", False)),
+                ),
             },
             "adversarial_review": {
                 "mandatory": True,
                 "scope": conf.DEV_LOOP_ADVERSARIAL_SCOPE,
                 "base_ref": conf.DEV_LOOP_ADVERSARIAL_BASE_REF,
                 "note": (
-                    "Every dev-flow run carries the read-only Codex "
-                    "sdd-secondopinion seat as a judge in the QA panel. It "
-                    "cannot be switched off."
+                    "Every dev-flow run carries a read-only adversarial "
+                    "second seat. Which MODEL fills it is configurable "
+                    "(defaults.model_plan.review.counter_model, FEAT-486 — "
+                    "gpt-5.6-sol over Bedrock Mantle by default); that the "
+                    "seat EXISTS is not — it cannot be switched off."
                 ),
             },
         }
@@ -269,6 +438,17 @@ async def handle_run(request: web.Request) -> web.Response:
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
 
+    # FEAT-486: validate the run's per-seat selection BEFORE anything is
+    # started, so a typo'd backend is a 400 naming the supported set rather
+    # than a provider error hours into a run.
+    try:
+        requested_plan = _parse_model_plan(form)
+    except (ValueError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - validation surface
+        return web.json_response({"error": str(exc)}, status=400)
+    effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
+
     kind = getattr(brief, "kind", "")
     if kind == "feature":
         label = brief.document_path
@@ -291,6 +471,32 @@ async def handle_run(request: web.Request) -> web.Response:
     # the flow's build-time default instead of silently overriding it.
     if "require_plan_approval" in form:
         extra_shared["require_plan_approval"] = bool(form.get("require_plan_approval"))
+    # FEAT-486: the per-seat plan is a BUILD-time input
+    # (`build_dev_flow(model_plan=...)`), because the seats it selects are
+    # baked into node constructors — DevelopmentNode's pool_config,
+    # IdeationNode's model, QANode's review dispatcher. This console builds
+    # ONE flow at startup, so a run cannot swap them mid-flight. A
+    # submitted plan is therefore fully validated and echoed back, but only
+    # takes effect when it matches the server's build-time plan; any
+    # difference is logged loudly rather than silently ignored, and the
+    # response always reports what will REALLY run.
+    if requested_plan is not None and requested_plan != effective_plan:
+        logger.warning(
+            "dev-flow run_id=%s requested a model plan that differs from the "
+            "server's build-time plan; the run will use the SERVER plan "
+            "(requested pool=%s research=%s review=%s/%s; effective pool=%s "
+            "research=%s review=%s/%s). Restart the console with the desired "
+            "DEV_FLOW_* env keys to change the seats.",
+            run_id,
+            [f"{s.agent}:{s.model}" for s in requested_plan.dev_pool],
+            requested_plan.research_primary,
+            requested_plan.review.primary.agent,
+            requested_plan.review.counter_model,
+            [f"{s.agent}:{s.model}" for s in effective_plan.dev_pool],
+            effective_plan.research_primary,
+            effective_plan.review.primary.agent,
+            effective_plan.review.counter_model,
+        )
 
     async def _run() -> None:
         try:
@@ -329,6 +535,12 @@ async def handle_run(request: web.Request) -> web.Response:
             "state_ws_url": f"/api/flow/{run_id}/ws?view=state",
             "bundle_url": f"/api/flow/{run_id}/bundle",
             "gate_resolve_url": f"/api/flow/{run_id}/gates/{{gate_id}}/resolve",
+            # FEAT-486: what this run's seats will REALLY be — never the
+            # submitted selection when the two differ (see the warning above).
+            "model_plan": _model_plan_payload(
+                effective_plan,
+                review_pair_active=bool(request.app.get("review_pair_active", False)),
+            ),
         }
     )
 
@@ -428,9 +640,9 @@ async def _on_startup(app: web.Application) -> None:
         )
     else:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
-            f"got {development_agent!r}"
+            f"DEV_LOOP_DEVELOPMENT_AGENT must be one of "
+            f"{', '.join(supported_dev_pool_backends())} "
+            f"(or the legacy alias 'llm'), got {development_agent!r}"
         )
 
     # -- QA review: the judge panel is dev-flow's default review gate ----
@@ -439,7 +651,20 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher=development_dispatcher,
         redis_url=redis_url,
     )
-    judge_panel_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
+    # FEAT-486: opt-in switch to the model plan's review PAIR (primary +
+    # mantle counter-reviewer). Default false keeps the FEAT-378 judge
+    # panel byte-identical. An explicit dispatcher wins over the plan by
+    # design (TASK-2655 precedence), so activating the pair means passing
+    # codereview_dispatcher=None and letting the factories assemble it.
+    use_review_pair = mcp_wiring._config_flag("DEV_FLOW_USE_REVIEW_PAIR", False)
+    qa_review_dispatcher = None
+    if use_review_pair:
+        logger.info(
+            "DEV_FLOW_USE_REVIEW_PAIR=true — QA uses the model plan's "
+            "review pair (primary + counter-model) instead of the judge panel."
+        )
+    else:
+        qa_review_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
 
     repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
     if repos:
@@ -459,25 +684,52 @@ async def _on_startup(app: web.Application) -> None:
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
     if development_pool_config is not None:
-        # Honest reporting: dev-flow sizes the pool the way feature-mode does —
-        # PlannerNode derives it from the first task-dependency wave (capped at
-        # development_pool_max), or the brief's own `dev_agents` overrides it.
-        # `build_dev_flow` deliberately takes no `development_pool_config`
-        # (its signature mirrors build_dev_loop_feature_flow), so this env
-        # value is NOT injected into DevelopmentNode here.
+        # FEAT-486 superseded the old "NOT injected" note here: dev-flow now
+        # HAS a pool path (`build_dev_flow(model_plan=...)`), fed by the
+        # console's model plan below rather than by DEV_LOOP_DEV_AGENTS.
+        # That env var remains the ops console's (dev_loop's) knob; the
+        # dev-flow equivalent is DEV_FLOW_DEV_POOL.
         logger.info(
-            "DEV_LOOP_DEV_AGENTS is set (%s, isolation=%s) but dev-flow does "
-            "NOT inject it: the pool is planner-sized (cap pool_max=%d) or set "
-            "per run via the brief's dev_agents. Use the console's "
-            "'Agents & models' tab to pin a pool for a run.",
+            "DEV_LOOP_DEV_AGENTS is set (%s, isolation=%s) — that is the ops "
+            "console's pool knob. dev-flow's pool comes from its model plan "
+            "(DEV_FLOW_DEV_POOL, or the console default) instead; cap "
+            "pool_max=%d.",
             ", ".join(f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents),
             development_pool_config.isolation_mode,
             development_pool_max,
         )
 
+    # -- per-seat LLM plan (FEAT-486) -------------------------------------
+    model_plan = _console_default_model_plan()
+    app["model_plan"] = model_plan
+    logger.info(
+        "dev-flow model plan: research=%s | dev pool=%s | review=%s/%s + " "%s (read-only) | research partner %s",
+        model_plan.research_primary,
+        ", ".join(f"{spec.agent}:{spec.model or '<default>'}x{spec.count}" for spec in model_plan.dev_pool)
+        or "<single-agent>",
+        model_plan.review.primary.agent,
+        model_plan.review.primary.model or "<default>",
+        model_plan.review.counter_model,
+        "ENABLED" if model_plan.research_partner.enabled else "disabled",
+    )
+
     graph_memory = await DevLoopGraphMemory.from_config()
     wiki_search = DevLoopWikiSearch.from_project()
     app["wiki_search"] = wiki_search
+
+    # FEAT-484/485: extra MCP servers for the ideation (research) seat —
+    # the wikitoolkit graph-search server is BUILT IN to IdeationNode, so
+    # only the `.parrot/mcp-toolkits.yaml` toolkit servers (e.g. the
+    # ReadOnlyRepoToolkit `repo` section) are additive here; a duplicate
+    # wikitoolkit entry from the wiring is overridden by the node's own.
+    research_mcp_servers, research_mcp_tools = mcp_wiring.build_research_mcp(Path(conf.PROJECT_ROOT))
+    extra_mcp_servers = {k: v for k, v in research_mcp_servers.items() if k != "wikitoolkit"}
+    extra_mcp_tools = [t for t in research_mcp_tools if not t.startswith("mcp__wikitoolkit")]
+    if extra_mcp_servers:
+        logger.info(
+            "Ideation-seat extra MCP servers: %s",
+            ", ".join(sorted(extra_mcp_servers)),
+        )
 
     jira_toolkit = _build_optional_jira_toolkit()
     app["jira_toolkit"] = jira_toolkit
@@ -499,13 +751,25 @@ async def _on_startup(app: web.Application) -> None:
         "jira_toolkit": jira_toolkit,
         "git_toolkit": git_toolkit,
         "wiki_toolkit": wiki_toolkit,
-        "codereview_dispatcher": judge_panel_dispatcher,
+        "codereview_dispatcher": qa_review_dispatcher,
         "development_dispatcher_builder": development_dispatcher_builder,
         "development_pool_max": development_pool_max,
         "graph_memory": graph_memory,
         "wiki_search": wiki_search,
         "skip_qa": skip_qa,
         "require_plan_approval": require_plan_approval,
+        # FEAT-486: selects every LLM seat — the development pool (with
+        # `agent_builder.build_dispatcher` as its worker builder), the
+        # ideation model, and QANode's review pair. The plan's review pair
+        # only activates when `codereview_dispatcher` is None
+        # (DEV_FLOW_USE_REVIEW_PAIR=true); the default judge panel keeps
+        # precedence otherwise.
+        "model_plan": model_plan,
+        # FEAT-485: `.parrot/mcp-toolkits.yaml` servers for the ideation
+        # seat (its wikitoolkit server is built in). None keeps the
+        # dispatch byte-identical.
+        "research_mcp_servers": extra_mcp_servers or None,
+        "research_mcp_tools": extra_mcp_tools or None,
         "name": "dev-flow-console",
     }
     app["flow"] = build_dev_flow(**dev_loop_flow_kwargs)
@@ -516,7 +780,7 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=git_toolkit,
         wiki_toolkit=wiki_toolkit,
         redis_url=redis_url,
-        codereview_dispatcher=judge_panel_dispatcher,
+        codereview_dispatcher=qa_review_dispatcher,
         graph_memory=graph_memory,
         # FEAT-480 (TASK-2628): see server.py's identical wiring note — each
         # `handle_run` request below mints its own stable per-job `run_id`
@@ -527,7 +791,13 @@ async def _on_startup(app: web.Application) -> None:
     )
 
     app["runner"] = runner
-    app["codereview_agent_key"] = codereview_agent_key
+    app["codereview_agent_key"] = "review-pair" if use_review_pair else codereview_agent_key
+    # FEAT-486: by default this console keeps the FEAT-378 judge panel as
+    # its QA reviewer (an explicit `codereview_dispatcher` wins over the
+    # plan by design), so the plan's review PAIR is configured but not the
+    # active reviewer. DEV_FLOW_USE_REVIEW_PAIR=true flips it. Reported
+    # honestly to the UI rather than implied.
+    app["review_pair_active"] = use_review_pair
     app["development_pool_max"] = development_pool_max
     app["require_plan_approval"] = require_plan_approval
     app["flow_tasks"] = {}  # run_id -> asyncio.Task

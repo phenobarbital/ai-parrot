@@ -145,3 +145,26 @@ def test_mcp_config_defaults(tmp_path):
     """MCPToolkitsConfig defaults to empty toolkits dict."""
     cfg = MCPToolkitsConfig()
     assert cfg.toolkits == {}
+
+
+def test_explicit_config_path_override(tmp_path):
+    """FEAT-485 fix: an explicit config_path is read INSTEAD of
+    <root>/.parrot/mcp-toolkits.yaml (previously a documented no-op)."""
+    elsewhere = tmp_path / "custom-toolkits.yaml"
+    elsewhere.write_text("toolkits:\n" "  custom:\n" "    class: test.CustomToolkit\n")
+    # A decoy default-path file proves the override actually wins.
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir()
+    (parrot_dir / "mcp-toolkits.yaml").write_text("toolkits:\n" "  decoy:\n" "    class: test.Decoy\n")
+
+    cfg = load_toolkits_config(tmp_path, config_path=elsewhere)
+
+    assert "custom" in cfg.toolkits
+    assert "decoy" not in cfg.toolkits
+
+
+def test_explicit_config_path_missing_raises(tmp_path):
+    """An explicitly named file that is absent is operator error — unlike
+    the default path, whose absence silently falls back to built-ins."""
+    with pytest.raises(ValueError, match="not found"):
+        load_toolkits_config(tmp_path, config_path=tmp_path / "nope.yaml")

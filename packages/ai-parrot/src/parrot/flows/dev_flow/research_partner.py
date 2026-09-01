@@ -213,7 +213,7 @@ class BedrockResearchPartner(AbstractResearchPartner):
 
     partner_name = "bedrock-research-partner"
 
-    def __init__(self, *, backend: str | None = None) -> None:
+    def __init__(self, *, backend: str | None = None, model: str | None = None) -> None:
         """Initialize the partner for a resolved backend.
 
         Args:
@@ -221,6 +221,13 @@ class BedrockResearchPartner(AbstractResearchPartner):
                 :func:`resolve_research_partner_backend` (empty/disabled
                 is rejected — a coordinator must never construct this
                 class for a disabled seat).
+            model: FEAT-486 — explicit model id override for this seat.
+                ``None`` (default) resolves ``resolve_backend_model(backend)``
+                exactly as before, so every pre-FEAT-486 construction path
+                is byte-identical. A supplied model is still run through
+                :func:`validate_research_partner_model` in
+                :meth:`_build_client`, so the Anthropic family guard cannot
+                be bypassed by injecting one here.
 
         Raises:
             ValueError: If the resolved backend is empty (disabled) or
@@ -228,6 +235,7 @@ class BedrockResearchPartner(AbstractResearchPartner):
         """
         self.logger = logging.getLogger(__name__)
         self.backend = backend if backend is not None else resolve_research_partner_backend()
+        self.model = model or ""
         if self.backend not in ("gpt", "nova"):
             raise ValueError(
                 f"BedrockResearchPartner requires an enabled backend "
@@ -252,7 +260,10 @@ class BedrockResearchPartner(AbstractResearchPartner):
             ``AWS_NOVA_API_KEY`` credential; no ``OPENAI_API_KEY`` is
             read, and no Codex CLI is involved.
         """
-        model = resolve_backend_model(self.backend)
+        # FEAT-486: an explicit `model=` wins over the conf mapping; the
+        # family guard below runs either way, so an injected model is no
+        # less validated than a configured one.
+        model = self.model or resolve_backend_model(self.backend)
         validate_research_partner_model(model)
         if self.backend == "gpt":
             return BedrockMantleClient(model=model)

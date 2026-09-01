@@ -12,19 +12,10 @@ Verifies the renderer contract:
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
-# ── Satellite path wiring ──────────────────────────────────────────────────────
-# Add ai-parrot-visualizations/src to sys.path so the PEP 420 namespace merge
-# can discover the satellite renderer modules (e.g. structured_map.py).
-_REPO_ROOT = Path(__file__).resolve().parents[5]
-_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SATELLITE_SRC))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
