@@ -316,9 +316,7 @@ class TestAgentMCPIntegration:
         """
         api_key_store = APIKeyStore()
         record = api_key_store.issue_key(user_id="dev-user")
-        auth_template = MCPServerConfig(
-            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-        )
+        auth_template = MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store)
 
         async def deny_restricted(pctx, resource: str, required_permissions) -> bool:
             return "restricted" not in resource
@@ -330,9 +328,7 @@ class TestAgentMCPIntegration:
             default_tenant_id="acme",
             aggregate_enabled=True,
         )
-        mount = AgentMCPMount(
-            bot_manager, cfg, pbac_resolver=deny_restricted, auth_template=auth_template
-        )
+        mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=deny_restricted, auth_template=auth_template)
         app = web.Application()
         mount.setup(app)
 
@@ -348,9 +344,7 @@ class TestAgentMCPIntegration:
             r = await client.post("/mcp", json=_INIT_REQ, headers=headers)
             assert r.status == 200
 
-            listed = await (
-                await client.post("/mcp", json=_LIST_REQ, headers=headers)
-            ).json()
+            listed = await (await client.post("/mcp", json=_LIST_REQ, headers=headers)).json()
             assert "finance__forecast" in [t["name"] for t in listed["result"]["tools"]]
 
             called = await (
@@ -374,9 +368,7 @@ class TestAgentMCPIntegration:
         """
         api_key_store = APIKeyStore()
         record = api_key_store.issue_key(user_id="dev-user")
-        auth_template = MCPServerConfig(
-            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-        )
+        auth_template = MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store)
 
         async def deny_forecast(pctx, resource: str, required_permissions) -> bool:
             return "forecast" not in resource
@@ -388,9 +380,7 @@ class TestAgentMCPIntegration:
             default_tenant_id="acme",
         )
         # No `policy_filter=` here — exactly the docs' worked example.
-        mount = AgentMCPMount(
-            bot_manager, cfg, pbac_resolver=deny_forecast, auth_template=auth_template
-        )
+        mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=deny_forecast, auth_template=auth_template)
         app = web.Application()
         mount.setup(app)
 
@@ -404,9 +394,7 @@ class TestAgentMCPIntegration:
                 "method": "resources/read",
                 "params": {"uri": "agent://finance/tools"},
             }
-            resp = await (
-                await client.post("/mcp/agents/finance", json=read_req, headers=headers)
-            ).json()
+            resp = await (await client.post("/mcp/agents/finance", json=read_req, headers=headers)).json()
             catalog = json.loads(resp["result"]["contents"][0]["text"])
             assert "forecast" not in catalog["tools"]
         finally:

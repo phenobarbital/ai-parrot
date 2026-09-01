@@ -56,9 +56,7 @@ class TestWireAgentMount:
 
         manager._wire_agent_mount(cfg)
 
-        spy.assert_called_once_with(
-            manager, cfg, pbac_resolver=None, audit_sink=None, auth_template=None
-        )
+        spy.assert_called_once_with(manager, cfg, pbac_resolver=None, audit_sink=None, auth_template=None)
         mount_instance.setup.assert_called_once_with(manager.app)
 
     def test_all_security_params_reach_agent_mcp_mount(self, monkeypatch):
@@ -81,9 +79,7 @@ class TestWireAgentMount:
         def audit_sink(entry):
             return None
 
-        manager._wire_agent_mount(
-            cfg, auth_template=auth_template, pbac_resolver=resolver, audit_sink=audit_sink
-        )
+        manager._wire_agent_mount(cfg, auth_template=auth_template, pbac_resolver=resolver, audit_sink=audit_sink)
 
         spy.assert_called_once_with(
             manager,
@@ -177,16 +173,16 @@ class TestWireAgentMount:
                 resource_server_url="https://h/mcp/agents/finance",
                 default_tenant_id="acme",
             ),
-            agent_mount_auth_template=MCPServerConfig(
-                auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-            ),
+            agent_mount_auth_template=MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store),
             agent_mount_pbac_resolver=lambda pctx, resource, required_permissions: True,
         )
 
         client = TestClient(TestServer(app))
         await client.start_server()
         try:
-            no_auth = await client.post("/mcp/agents/finance", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+            no_auth = await client.post(
+                "/mcp/agents/finance", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+            )
             assert no_auth.status == 401
 
             authed = await client.post(
