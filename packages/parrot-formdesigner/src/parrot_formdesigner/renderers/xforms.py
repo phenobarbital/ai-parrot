@@ -336,11 +336,17 @@ class XFormsRenderer(AbstractFormRenderer):
         if relevant is not None:
             attrs["relevant"] = relevant
 
-        # FEAT-488: emit content-type metadata as plain attributes on <xf:bind>
+        # FEAT-488: emit content-type metadata as plain attributes on
+        # <xf:bind>. An empty accept list would serialize to x-accept-
+        # content-types="", which a client cannot tell apart from "the empty
+        # MIME type is accepted" — so emit only when non-empty, matching how
+        # every other optional attribute here is gated.
         if field.content_type is not None:
             attrs["x-content-type"] = field.content_type
-        if field.accept_content_types is not None:
+        if field.accept_content_types:
             attrs["x-accept-content-types"] = ",".join(field.accept_content_types)
+        if field.answer_envelope is not None:
+            attrs["x-answer-envelope"] = field.answer_envelope
 
         bind = etree.Element(_qn("bind"), attrib=attrs)
         binds.append(bind)

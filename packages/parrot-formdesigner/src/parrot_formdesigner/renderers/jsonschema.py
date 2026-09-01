@@ -666,11 +666,16 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         elif field.default is not None:
             prop["default"] = field.default
 
-        # Content type extensions (FEAT-488)
+        # Content type extensions (FEAT-488). Emitted only when they carry
+        # information: an empty accept list is indistinguishable from "no
+        # constraint" to a consumer, so it is omitted rather than exported
+        # as [] and round-tripped back as a meaningless empty list.
         if field.content_type is not None:
             prop["x-content-type"] = field.content_type
-        if field.accept_content_types is not None:
+        if field.accept_content_types:
             prop["x-accept-content-types"] = field.accept_content_types
+        if field.answer_envelope is not None:
+            prop["x-answer-envelope"] = field.answer_envelope
 
         return prop
 

@@ -99,10 +99,23 @@ class FormField(BaseModel):
             ``None`` (default) means the field carries no relational
             meaning; existing renderers and consumers are unaffected.
         meta: Arbitrary metadata for renderer-specific extensions.
-        content_type: Optional MIME type hint for text-like fields (e.g.
-            "text/markdown", "text/plain"). Advisory only in v1.
-        accept_content_types: List of acceptable MIME types for file/upload
-            fields. Controls submission shape in audio renderers.
+        content_type: Optional MIME type hint for the expected answer (e.g.
+            "text/markdown", "text/yaml", "application/json"). ``None`` means
+            "inferred from ``field_type``". Advisory only in v1 — no MIME
+            mismatch is rejected at submission time.
+        accept_content_types: Additional MIME types the field accepts,
+            order-significant (first entry preferred). Surfaced by the
+            renderers so a client knows what it may submit. Including
+            "application/json" on a TEXT/TEXT_AREA field also lets that field
+            carry a ``dict`` answer instead of a plain string; see
+            ``answer_envelope`` for the typed variant.
+        answer_envelope: Opt-in marker declaring that a ``dict`` answer on
+            this field follows a known typed envelope rather than being
+            arbitrary JSON. ``"voice"`` selects
+            :class:`~parrot_formdesigner.core.voice_answer.VoiceAnswerEnvelope`
+            and makes the validator enforce that shape. ``None`` (default)
+            leaves a submitted dict unvalidated, which is what a field simply
+            holding arbitrary JSON wants.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -127,6 +140,7 @@ class FormField(BaseModel):
     meta: dict[str, Any] | None = None
     content_type: str | None = None
     accept_content_types: list[str] | None = None
+    answer_envelope: Literal["voice"] | None = None
 
     @property
     def is_relational(self) -> bool:
@@ -196,10 +210,6 @@ class FormSubsection(BaseModel):
         fields: List of fields in this subsection.
         depends_on: Dependency rule controlling conditional visibility.
         meta: Arbitrary metadata for renderer-specific extensions.
-        content_type: Optional MIME type hint for text-like fields (e.g.
-            "text/markdown", "text/plain"). Advisory only in v1.
-        accept_content_types: List of acceptable MIME types for file/upload
-            fields. Controls submission shape in audio renderers.
     """
 
     model_config = ConfigDict(extra="forbid")

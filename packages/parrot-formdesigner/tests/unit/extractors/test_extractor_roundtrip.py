@@ -405,3 +405,91 @@ class TestLegacyReexport:
         assert "get_dependency_rule_snippets" in source, (
             f"get_dependency_rule_snippets not re-exported in {forms_init}"
         )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-488: content-type annotations survive a render -> extract round trip
+# ---------------------------------------------------------------------------
+
+
+class TestContentTypeRoundTrip:
+    """JsonSchemaRenderer emits the x-* keys; the extractor must read them back."""
+
+    @staticmethod
+    def _form(**field_kwargs) -> FormSchema:
+        return FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[
+                FormSection(
+                    section_id="s1",
+                    fields=[
+                        FormField(
+                            field_id="notes",
+                            field_type=FieldType.TEXT_AREA,
+                            label="Notes",
+                            **field_kwargs,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    async def _roundtrip(self, **field_kwargs) -> FormField:
+        rendered = (await JsonSchemaRenderer().render(self._form(**field_kwargs))).content
+        imported = JsonSchemaExtractor().extract(rendered, form_id="test", title="Test")
+        return {f.field_id: f for f in imported.iter_all_fields()}["notes"]
+
+    @pytest.mark.asyncio
+    async def test_content_type_survives(self) -> None:
+        field = await self._roundtrip(content_type="text/markdown")
+        assert field.content_type == "text/markdown"
+
+    @pytest.mark.asyncio
+    async def test_accept_content_types_survive_in_order(self) -> None:
+        """Order is significant — the first entry is the preferred type."""
+        field = await self._roundtrip(
+            accept_content_types=["text/plain", "application/json"]
+        )
+        assert field.accept_content_types == ["text/plain", "application/json"]
+
+    @pytest.mark.asyncio
+    async def test_answer_envelope_survives(self) -> None:
+        field = await self._roundtrip(
+            accept_content_types=["application/json"], answer_envelope="voice"
+        )
+        assert field.answer_envelope == "voice"
+
+    @pytest.mark.asyncio
+    async def test_absent_annotations_stay_none(self) -> None:
+        """No regression: a field without the annotations imports them as None."""
+        field = await self._roundtrip()
+        assert field.content_type is None
+        assert field.accept_content_types is None
+        assert field.answer_envelope is None
+
+    @pytest.mark.asyncio
+    async def test_empty_accept_list_is_not_exported(self) -> None:
+        """An empty list carries no information, so it is omitted, not exported as []."""
+        rendered = (await JsonSchemaRenderer().render(self._form(accept_content_types=[]))).content
+        assert "x-accept-content-types" not in rendered["properties"]["notes"]
+
+    def test_malformed_annotations_are_ignored_not_fatal(self) -> None:
+        """Hand-written schemas must not crash the extractor."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string",
+                    "title": "Notes",
+                    "x-content-type": 123,
+                    "x-accept-content-types": "text/plain",
+                    "x-answer-envelope": "telepathy",
+                }
+            },
+        }
+        imported = JsonSchemaExtractor().extract(schema, form_id="test", title="Test")
+        field = {f.field_id: f for f in imported.iter_all_fields()}["notes"]
+        assert field.content_type is None
+        assert field.accept_content_types is None
+        assert field.answer_envelope is None

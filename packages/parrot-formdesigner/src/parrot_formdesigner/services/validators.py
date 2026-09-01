@@ -14,11 +14,13 @@ from datetime import datetime
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field
+from pydantic import ValidationError as PydanticValidationError
 
 from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
+from ..core.voice_answer import VoiceAnswerEnvelope
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 from .unknown_fields import compute_extra_data
@@ -172,6 +174,26 @@ class ValidationResult(BaseModel):
     errors: dict[str, list[str]]
     sanitized_data: dict[str, Any]
     extra_data: dict[str, Any] = Field(default_factory=dict)
+
+
+def _summarize_pydantic_errors(exc: PydanticValidationError) -> str:
+    """Render a Pydantic ValidationError as a short, user-facing string.
+
+    Pydantic's own ``str(exc)`` is multi-line and includes a docs URL, which
+    reads badly inside a form field error list.
+
+    Args:
+        exc: The ValidationError raised by ``model_validate``.
+
+    Returns:
+        Comma-separated ``field: message`` pairs, e.g.
+        ``"answer: Field required, extra: Extra inputs are not permitted"``.
+    """
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ())) or "(root)"
+        parts.append(f"{loc}: {err.get('msg', 'invalid')}")
+    return ", ".join(parts)
 
 
 class FormValidator:
@@ -364,8 +386,15 @@ class FormValidator:
         if field.field_type == FieldType.REST:
             return self._validate_rest_field(field, value, label, is_required)
 
-        # Required check
-        is_empty = value is None or (isinstance(value, str) and not value.strip())
+        # Required check. FEAT-488: a dict answer needs its own emptiness
+        # rule — `is_empty` used to only recognise None and blank strings, so
+        # a required field accepting application/json was satisfied by `{}`
+        # or by an envelope whose answer was blank.
+        is_empty = (
+            value is None
+            or (isinstance(value, str) and not value.strip())
+            or (isinstance(value, dict) and self._is_empty_dict_answer(value, field))
+        )
         if is_required and is_empty:
             errors.append(f"{label} is required")
             return errors
@@ -394,14 +423,22 @@ class FormValidator:
             errors.append(str(exc))
             return errors
 
-        # Apply FieldConstraints
+        # Apply FieldConstraints.
+        #
+        # FEAT-488: the length/pattern checks below are gated on `str`, so a
+        # dict answer would skip them entirely. For a declared voice envelope
+        # the text the author meant to constrain is the transcript, so use it
+        # here — otherwise adding accept_content_types to an existing
+        # TEXT_AREA would silently drop its max_length/pattern guarantees.
+        # Arbitrary JSON has no such text and is left alone.
+        text_value = self._constrainable_text(coerced, field)
         if field.constraints:
             c = field.constraints
-            if c.min_length is not None and isinstance(coerced, str):
-                if len(coerced) < c.min_length:
+            if c.min_length is not None and text_value is not None:
+                if len(text_value) < c.min_length:
                     errors.append(f"{label} must be at least {c.min_length} characters")
-            if c.max_length is not None and isinstance(coerced, str):
-                if len(coerced) > c.max_length:
+            if c.max_length is not None and text_value is not None:
+                if len(text_value) > c.max_length:
                     errors.append(f"{label} must be at most {c.max_length} characters")
             if c.min_value is not None and isinstance(coerced, (int, float)):
                 if coerced < c.min_value:
@@ -409,8 +446,8 @@ class FormValidator:
             if c.max_value is not None and isinstance(coerced, (int, float)):
                 if coerced > c.max_value:
                     errors.append(f"{label} must be at most {c.max_value}")
-            if c.pattern is not None and isinstance(coerced, str):
-                if not re.fullmatch(c.pattern, str(coerced)):
+            if c.pattern is not None and text_value is not None:
+                if not re.fullmatch(c.pattern, text_value):
                     msg = _resolve_localized(c.pattern_message, locale)
                     errors.append(msg or f"{label} format is invalid")
             if c.min_items is not None and isinstance(coerced, list):
@@ -495,6 +532,57 @@ class FormValidator:
             return [f"{label} must be a list of scalar IDs"]
         return []
 
+    @staticmethod
+    def _is_voice_envelope_field(field: FormField) -> bool:
+        """Whether `field` declares its dict answer as a VoiceAnswerEnvelope."""
+        return (
+            field.answer_envelope == "voice"
+            and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
+        )
+
+    def _is_empty_dict_answer(self, value: dict[str, Any], field: FormField) -> bool:
+        """Whether a dict answer counts as "not answered" for the required check.
+
+        Args:
+            value: The raw submitted dict.
+            field: The field being validated.
+
+        Returns:
+            True when the dict carries no answer. An empty dict is always
+            empty. A voice envelope is empty when its transcript is blank
+            *and* it references no audio — a recorded note with an empty
+            transcript is still an answer.
+        """
+        if not value:
+            return True
+        if not self._is_voice_envelope_field(field):
+            return False
+        answer = value.get("answer")
+        has_text = isinstance(answer, str) and bool(answer.strip())
+        has_audio = bool(value.get("blob_ref")) or bool(value.get("data_url"))
+        return not (has_text or has_audio)
+
+    def _constrainable_text(self, coerced: Any, field: FormField) -> str | None:
+        """The string that length/pattern constraints should apply to.
+
+        Args:
+            coerced: The value returned by `_coerce_value`.
+            field: The field being validated.
+
+        Returns:
+            `coerced` itself for a plain string; the transcript for a declared
+            voice envelope; None when there is no text to constrain (arbitrary
+            JSON, numbers, lists, ...), in which case the caller skips the
+            text constraints as before.
+        """
+        if isinstance(coerced, str):
+            return coerced
+        if isinstance(coerced, dict) and self._is_voice_envelope_field(field):
+            answer = coerced.get("answer")
+            if isinstance(answer, str):
+                return answer
+        return None
+
     def _coerce_value(self, value: Any, field: FormField) -> Any:
         """Coerce a value to the appropriate Python type for the field.
 
@@ -531,6 +619,19 @@ class FormValidator:
             and field.accept_content_types is not None
             and "application/json" in field.accept_content_types
         ):
+            if field.answer_envelope == "voice":
+                # The field declared a typed envelope, so the shape IS
+                # checkable — enforce it and return the canonical dump so
+                # consumers always see blob_ref/data_url present.
+                try:
+                    return VoiceAnswerEnvelope.model_validate(value).model_dump()
+                except PydanticValidationError as exc:
+                    raise ValueError(
+                        f"{field.field_id} expects a voice answer envelope "
+                        f"({{answer, blob_ref?, data_url?}}): "
+                        f"{_summarize_pydantic_errors(exc)}"
+                    ) from exc
+            # No declared envelope: arbitrary JSON, passed through as-is.
             return value
 
         if ft in (

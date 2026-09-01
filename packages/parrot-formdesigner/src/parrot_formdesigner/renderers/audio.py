@@ -364,6 +364,7 @@ class AudioFormRenderer(AbstractFormRenderer):
         # When set, the client may submit a VoiceAnswerEnvelope dict instead of
         # a plain string.
         accept_content_types = field.accept_content_types
+        answer_envelope = field.answer_envelope
 
         return [
             AudioQuestion(
@@ -381,6 +382,7 @@ class AudioFormRenderer(AbstractFormRenderer):
                 render_mode=render_mode,
                 sensitive=sensitive,
                 accept_content_types=accept_content_types,
+                answer_envelope=answer_envelope,
             )
         ]
 
