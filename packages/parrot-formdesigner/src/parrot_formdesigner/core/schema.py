@@ -99,6 +99,10 @@ class FormField(BaseModel):
             ``None`` (default) means the field carries no relational
             meaning; existing renderers and consumers are unaffected.
         meta: Arbitrary metadata for renderer-specific extensions.
+        content_type: Optional MIME type hint for text-like fields (e.g.
+            "text/markdown", "text/plain"). Advisory only in v1.
+        accept_content_types: List of acceptable MIME types for file/upload
+            fields. Controls submission shape in audio renderers.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -121,6 +125,8 @@ class FormField(BaseModel):
     item_template: FormField | None = None
     relation: RelationSpec | None = None
     meta: dict[str, Any] | None = None
+    content_type: str | None = None
+    accept_content_types: list[str] | None = None
 
     @property
     def is_relational(self) -> bool:
@@ -190,6 +196,10 @@ class FormSubsection(BaseModel):
         fields: List of fields in this subsection.
         depends_on: Dependency rule controlling conditional visibility.
         meta: Arbitrary metadata for renderer-specific extensions.
+        content_type: Optional MIME type hint for text-like fields (e.g.
+            "text/markdown", "text/plain"). Advisory only in v1.
+        accept_content_types: List of acceptable MIME types for file/upload
+            fields. Controls submission shape in audio renderers.
     """
 
     model_config = ConfigDict(extra="forbid")
