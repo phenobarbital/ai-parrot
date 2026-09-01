@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-01T17:39:39Z",
-  "completed_at": null,
+  "completed_at": "2026-09-01T20:42:13+00:00",
   "tasks": [
     {
       "id": "TASK-2700",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:00:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2700-pg-ui-surface-store.md"
+      "file": "sdd/tasks/completed/TASK-2700-pg-ui-surface-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2701",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:06:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2701-recipe-runner-envelope.md"
+      "file": "sdd/tasks/completed/TASK-2701-recipe-runner-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2702",
@@ -62,7 +64,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:20:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2702-ui-surfaces-handler.md"
+      "file": "sdd/tasks/completed/TASK-2702-ui-surfaces-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2703",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:26:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2703-a2ui-mirror-route-registration.md"
+      "file": "sdd/tasks/completed/TASK-2703-a2ui-mirror-route-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2704",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:38:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2704-publish-surface-writers.md"
+      "file": "sdd/tasks/completed/TASK-2704-publish-surface-writers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2705",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
       "completed_at": "2026-09-01T18:45:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2705-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2705-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
