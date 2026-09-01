@@ -53,6 +53,12 @@ from typing import Any
 from aiohttp import web
 from parrot.auth.context import _pctx_var
 from parrot.auth.permission import PermissionContext, build_principal_context
+from parrot.mcp.result_policy import (
+    MCPToolError,
+    apply_size_policy,
+    resolve_cap,
+    run_with_deadline,
+)
 
 logger = logging.getLogger("Parrot.MCP.PrincipalGuard")
 
@@ -348,6 +354,47 @@ async def _call_hook(hook: Callable[..., Any] | None, *args: Any) -> Any:
     return result
 
 
+def _apply_result_size_policy(mcp_result: dict[str, Any], cap: int) -> dict[str, Any]:
+    """Apply `result_policy.apply_size_policy` to an MCP `tools/call` response.
+
+    `MCPToolAdapter.execute()` (`mcp/adapter.py:59`) already converted the
+    tool's raw result into the MCP `{"content": [...], "isError": ...}`
+    envelope by the time this guard sees it. The structured payload
+    (dict/list) a tool returned lives, JSON-serialized, in the first
+    content block's `text` — this unwraps it, applies the size policy, and
+    re-serializes the (possibly truncated) payload back in place. A plain
+    string result is size-policed as a string via the same function.
+
+    Args:
+        mcp_result: The MCP `tools/call` response (never an error result —
+            callers only invoke this on success).
+        cap: Approximate token budget (see `result_policy.resolve_cap`).
+
+    Returns:
+        `mcp_result` unchanged if it does not need policing, or with its
+        first content block's `text` replaced by the size-policed,
+        JSON-serialized payload.
+    """
+    content = mcp_result.get("content")
+    if not content or not isinstance(content, list) or not isinstance(content[0], dict):
+        return mcp_result
+    text = content[0].get("text")
+    if text is None:
+        return mcp_result
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        payload = text
+    policed = apply_size_policy(payload, cap)
+    if not policed["truncated"]:
+        return mcp_result
+    new_content = [
+        {**content[0], "text": json.dumps(policed, sort_keys=True, default=str)},
+        *content[1:],
+    ]
+    return {**mcp_result, "content": new_content}
+
+
 class PBACGuard:
     """Per-agent PBAC enforcement wrapping one mounted server's tools.
 
@@ -368,7 +415,16 @@ class PBACGuard:
             when PBAC is not wired in yet).
         audit_sink: Optional callback invoked with every `tools/call`
             decision (see `AuditSink`). `None` (default) only logs.
+        mount_config: Optional `AgentMCPMountConfig` (TASK-2601), read for
+            its `max_result_tokens` mount-default cap and
+            `call_deadline_seconds` (spec §3 Module 3, goals G7/G8 —
+            TASK-2606). `None` falls back to `result_policy`'s own
+            defaults (`DEFAULT_MAX_RESULT_TOKENS`, 240s).
     """
+
+    #: Fallback deadline when `mount_config` carries none — matches
+    #: `AgentMCPMountConfig.call_deadline_seconds`'s own default.
+    _DEFAULT_DEADLINE_SECONDS: float = 240.0
 
     def __init__(
         self,
@@ -376,11 +432,13 @@ class PBACGuard:
         server: Any,
         resolver: PBACResolver | None = None,
         audit_sink: AuditSink | None = None,
+        mount_config: Any = None,
     ) -> None:
         self._agent_name = agent_name
         self._server = server
         self._resolver = resolver
         self._audit_sink = audit_sink
+        self._mount_config = mount_config
 
     def resource_for(self, tool_name: str) -> str:
         """See module-level `resource_for` — bound to this guard's agent."""
@@ -472,19 +530,23 @@ class PBACGuard:
     async def tools_call(
         self, params: dict[str, Any], pctx: PermissionContext
     ) -> dict[str, Any]:
-        """Re-verified, audited `tools/call`.
+        """Re-verified, audited, size/deadline-policed `tools/call`.
 
         Never trusts `tools/list` as an authorization record — re-evaluates
         policy against the same canonical resource independently. Deny-by
-        -default for an unknown tool name.
+        -default for an unknown tool name. Wraps adapter execution with
+        `call_deadline_seconds` (TASK-2606, G7) and applies the per-tool
+        (else mount-default) result-size policy to a successful response
+        (TASK-2606, G8).
 
         Args:
             params: The `tools/call` request params (`name`, `arguments`).
             pctx: The caller's resolved `PermissionContext`.
 
         Returns:
-            The tool's result on success, or a clean `{"isError": True}`
-            payload (never a stack trace) on denial.
+            The (possibly size-policed) tool result on success, or a clean
+            `{"isError": True}` payload (never a stack trace) on denial or
+            timeout.
         """
         tool_name = params.get("name")
         arguments = params.get("arguments") or {}
@@ -499,11 +561,23 @@ class PBACGuard:
             await self._audit(pctx, tool_name, arguments, decision, duration)
             return _mcp_error(f"Not permitted to call tool {tool_name!r}")
 
+        deadline = getattr(
+            self._mount_config, "call_deadline_seconds", None
+        ) or self._DEFAULT_DEADLINE_SECONDS
         try:
-            result = await self._server.handle_tools_call(params)
+            result = await run_with_deadline(
+                lambda: self._server.handle_tools_call(params), deadline, tool_name
+            )
+        except MCPToolError as exc:
+            result = _mcp_error(str(exc))
         finally:
             duration = time.monotonic() - start
             await self._audit(pctx, tool_name, arguments, decision, duration)
+
+        if not result.get("isError"):
+            declaration = getattr(self._server.tools[tool_name], "_declaration", None)
+            cap = resolve_cap(declaration, self._mount_config)
+            result = _apply_result_size_policy(result, cap)
         return result
 
 
