@@ -600,7 +600,8 @@ See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL for an `open_questions` gate. **Fail-closed** — expiry routes the run to `failure_handler`. |
 | `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Research-primary seat model (FEAT-486; shared with FEAT-482). |
 | `DEV_FLOW_DEV_POOL` | *(unset)* | Dev pool as a JSON array of `{agent, model, count}`. Only read when a `model_plan` is supplied. |
-| `DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` | `false` / `gpt` / `gpt-5.6-sol` | Complementary research partner passthrough (FEAT-482). |
+| `DEV_FLOW_RESEARCH_PARTNER` | `""` (disabled) | Complementary research partner (FEAT-482): `""` disables the seat, otherwise the backend — `gpt` or `nova`. Enable **and** backend in one key. |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Partner model, **per backend**. FEAT-486's `_ENABLED`/`_BACKEND`/`_MODEL` keys were retired by FEAT-487 and are inert. |
 | `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Write-enabled primary reviewer. |
 | `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Read-only counter-reviewer, over Bedrock Mantle. |
 | `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | The Mantle counter-reviewer's own model key. Distinct from `DEV_LOOP_ADVERSARIAL_MODEL` (the codex seat's). |

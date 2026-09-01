@@ -38,6 +38,7 @@ from typing import Any, get_args
 from pydantic import BaseModel, Field, field_validator
 
 from parrot import conf
+from parrot.flows.dev_loop.catalog import resolve_research_partner_backend
 from parrot.flows.dev_loop.models.base import (
     DevAgentBackend,
     DevAgentPoolConfig,
@@ -64,7 +65,11 @@ DEFAULT_RESEARCH_PRIMARY: str = "claude-opus-5"
 #: Bedrock Nova). Validated by FEAT-482's own
 #: ``resolve_research_partner_backend()``, never here.
 DEFAULT_PARTNER_BACKEND: str = "gpt"
+#: Default model for the ``"gpt"`` backend. FEAT-487: the model default is
+#: now chosen AFTER the backend is known, so a ``"nova"`` partner no longer
+#: inherits a ``gpt-*`` default (the latent mismatch FEAT-486 shipped).
 DEFAULT_PARTNER_MODEL: str = "gpt-5.6-sol"
+DEFAULT_PARTNER_NOVA_MODEL: str = "us.amazon.nova-2-lite-v1:0"
 
 #: Adversarial review pair (spec G5): Claude Opus 5 primary + Bedrock
 #: Mantle ``gpt-5.6-sol`` read-only counter-reviewer.
@@ -78,9 +83,17 @@ DEFAULT_REVIEW_COUNTER_MODEL: str = "gpt-5.6-sol"
 
 #: Shared with FEAT-482 — the ideation primary seat's model.
 ENV_RESEARCH_PRIMARY: str = "DEV_FLOW_IDEATION_MODEL"
-ENV_PARTNER_ENABLED: str = "DEV_FLOW_RESEARCH_PARTNER_ENABLED"
-ENV_PARTNER_BACKEND: str = "DEV_FLOW_RESEARCH_PARTNER_BACKEND"
-ENV_PARTNER_MODEL: str = "DEV_FLOW_RESEARCH_PARTNER_MODEL"
+#: FEAT-487: the research-partner seat has NO enable/backend key of its
+#: own. FEAT-486 originally invented ``DEV_FLOW_RESEARCH_PARTNER_ENABLED``
+#: / ``_BACKEND`` / ``_MODEL`` here, written against a predicted FEAT-482
+#: API before that feature merged. FEAT-482 shipped a different, better
+#: shape — ``DEV_FLOW_RESEARCH_PARTNER`` ("" = disabled, else the backend
+#: id) plus a PER-BACKEND model key — so the duplicates were retired and
+#: this resolver now reads FEAT-482's keys through
+#: ``catalog.resolve_research_partner_backend()``: one key set, one parse,
+#: one place where the Anthropic family guard lives.
+ENV_PARTNER_GPT_MODEL: str = "DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL"
+ENV_PARTNER_NOVA_MODEL: str = "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL"
 #: JSON list of ``{"agent": ..., "model": ..., "count": ...}`` rows.
 ENV_DEV_POOL: str = "DEV_FLOW_DEV_POOL"
 ENV_REVIEW_PRIMARY_BACKEND: str = "DEV_FLOW_REVIEW_PRIMARY_BACKEND"
@@ -254,6 +267,32 @@ def _as_bool(value: Any, fallback: bool) -> bool:
     return fallback
 
 
+def _partner_model_default(backend: str, getter: ConfigGetter) -> str:
+    """Return the configured default model for the partner ``backend``.
+
+    FEAT-487: mirrors FEAT-482's per-backend mapping
+    (``research_partner.resolve_backend_model``) but reads through the
+    injected ``getter``, with the built-in as fallback — the shape every
+    other default in this module uses, and what keeps tests hermetic.
+    Deliberately NOT an import of ``resolve_backend_model``: that reads
+    ``conf.*`` module attributes directly and would ignore ``getter``.
+
+    Args:
+        backend: ``"gpt"`` or ``"nova"``. Anything else falls back to the
+            gpt key — an invalid backend has already raised by this point,
+            inside ``resolve_research_partner_backend``.
+        getter: ``(key, fallback=...) -> Any`` config accessor.
+
+    Returns:
+        The model id for that backend.
+    """
+    if backend == "nova":
+        key, fallback = ENV_PARTNER_NOVA_MODEL, DEFAULT_PARTNER_NOVA_MODEL
+    else:
+        key, fallback = ENV_PARTNER_GPT_MODEL, DEFAULT_PARTNER_MODEL
+    return str(getter(key, fallback=fallback) or "").strip() or fallback
+
+
 def _pool_from_env(raw: Any) -> list[dict[str, Any]] | None:
     """Parse the ``DEV_FLOW_DEV_POOL`` JSON list into raw spec rows.
 
@@ -335,22 +374,27 @@ def resolve_model_plan(
     partner_explicit = base.research_partner.model_fields_set if "research_partner" in explicit else frozenset()
     partner = base.research_partner
     partner_kwargs: dict[str, Any] = {}
+    # FEAT-487: `enabled` and `backend` come from ONE key,
+    # `DEV_FLOW_RESEARCH_PARTNER` ("" = disabled, else the backend id),
+    # resolved through FEAT-482's own `resolve_research_partner_backend()`.
+    # Delegating rather than re-parsing keeps the enable/backend semantics
+    # AND the Anthropic family guard in a single place — with two separate
+    # key sets the two could disagree.
+    configured_backend = resolve_research_partner_backend(getter)
     if "enabled" in partner_explicit:
         partner_kwargs["enabled"] = partner.enabled
     else:
-        partner_kwargs["enabled"] = _as_bool(getter(ENV_PARTNER_ENABLED, fallback=None), False)
+        partner_kwargs["enabled"] = bool(configured_backend)
     if "backend" in partner_explicit:
         partner_kwargs["backend"] = partner.backend
     else:
-        partner_kwargs["backend"] = (
-            str(getter(ENV_PARTNER_BACKEND, fallback=DEFAULT_PARTNER_BACKEND) or "").strip() or DEFAULT_PARTNER_BACKEND
-        )
+        partner_kwargs["backend"] = configured_backend or DEFAULT_PARTNER_BACKEND
     if "model" in partner_explicit:
         partner_kwargs["model"] = partner.model
     else:
-        partner_kwargs["model"] = (
-            str(getter(ENV_PARTNER_MODEL, fallback=DEFAULT_PARTNER_MODEL) or "").strip() or DEFAULT_PARTNER_MODEL
-        )
+        # Resolved AFTER the backend, from that backend's own key — the
+        # whole point of the FEAT-487 dedup.
+        partner_kwargs["model"] = _partner_model_default(partner_kwargs["backend"], getter)
 
     # ── development pool ────────────────────────────────────────────
     dev_pool: list[Any] = list(base.dev_pool)
