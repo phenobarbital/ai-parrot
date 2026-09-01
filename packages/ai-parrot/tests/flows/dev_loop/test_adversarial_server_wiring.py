@@ -117,6 +117,36 @@ def test_nova_adversarial_respects_scope_guards(monkeypatch):
         module._build_nova_adversarial_reviewer()
 
 
+# ---------------------------------------------------------------------------
+# FEAT-486: mantle joins the selectable adversarial backends. Previously
+# "mantle" passed the catalog's validation and silently built the CODEX
+# reviewer here — the mantle-adversarial dispatcher was unreachable from
+# this console.
+# ---------------------------------------------------------------------------
+
+
+def test_adversarial_backend_selects_mantle(monkeypatch):
+    from parrot.flows.dev_loop.dispatchers.mantle import (
+        MantleAdversarialReviewDispatcher,
+    )
+
+    monkeypatch.setattr(conf, "DEV_LOOP_ADVERSARIAL_SCOPE", "uncommitted")
+    monkeypatch.setattr(conf, "DEV_LOOP_ADVERSARIAL_BASE_REF", "")
+    monkeypatch.setenv("DEV_LOOP_ADVERSARIAL_BACKEND", "mantle")
+    module = _load_server_module()
+    reviewer, agent_key = module._build_adversarial_reviewer(MagicMock())
+    assert isinstance(reviewer, MantleAdversarialReviewDispatcher)
+    assert agent_key == "mantle-adversarial"
+
+
+def test_mantle_adversarial_respects_scope_guards(monkeypatch):
+    monkeypatch.setattr(conf, "DEV_LOOP_ADVERSARIAL_SCOPE", "base")
+    monkeypatch.setattr(conf, "DEV_LOOP_ADVERSARIAL_BASE_REF", "")
+    module = _load_server_module()
+    with pytest.raises(RuntimeError, match="DEV_LOOP_ADVERSARIAL_BASE_REF"):
+        module._build_mantle_adversarial_reviewer()
+
+
 def test_resolve_codereview_dispatcher_advisory_mode_uses_nova(monkeypatch):
     """End-to-end: DEV_LOOP_CODEREVIEW_AGENT=codex-adversarial + backend=nova
     returns the nova reviewer as the advisory-only dispatcher."""

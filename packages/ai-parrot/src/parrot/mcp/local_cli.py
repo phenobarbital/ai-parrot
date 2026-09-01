@@ -31,7 +31,7 @@ def _configure_stderr_logging() -> None:
     root_logger.setLevel(logging.WARNING)
 
 
-def _print_toolkit_list(root: Path) -> None:
+def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     """Print resolvable toolkit names, enabled state, and class path.
 
     Deliberately does NOT import any toolkit class — only the config
@@ -40,10 +40,11 @@ def _print_toolkit_list(root: Path) -> None:
 
     Args:
         root: Project root to resolve ``.parrot/mcp-toolkits.yaml`` from.
+        config_path: Optional explicit config file (``--config`` override).
     """
     from parrot.mcp.toolkit_config import load_toolkits_config
 
-    cfg = load_toolkits_config(root)
+    cfg = load_toolkits_config(root, config_path=config_path)
     if not cfg.toolkits:
         click.echo("No toolkits resolvable.")
         return
@@ -104,7 +105,7 @@ def mcp_local(
     root = Path.cwd()
 
     if list_toolkits:
-        _print_toolkit_list(root)
+        _print_toolkit_list(root, config_path)
         return
 
     if not name:

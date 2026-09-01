@@ -219,3 +219,20 @@ def test_toolkit_instantiation_error(stub_config, monkeypatch):
 
     with pytest.raises(ValueError, match="Failed to instantiate toolkit"):
         create_toolkit_mcp_server("stub", stub_config)
+
+
+def test_config_path_override_honored(tmp_path, monkeypatch):
+    """FEAT-485 fix: the documented `config_path` override (the
+    `parrot mcp-local --config` flag) must actually be used — it was a
+    silent no-op before."""
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
+    elsewhere = tmp_path / "custom-toolkits.yaml"
+    elsewhere.write_text(
+        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n"
+    )
+
+    # No .parrot/ under tmp_path at all — only the override can resolve "stub".
+    server = create_toolkit_mcp_server("stub", tmp_path, config_path=str(elsewhere))
+
+    assert server.config.name == "parrot-stub"
+    assert "plain" in server.tools

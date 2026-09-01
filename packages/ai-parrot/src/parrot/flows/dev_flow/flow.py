@@ -99,6 +99,9 @@ def build_dev_flow(
     require_plan_approval: bool = False,
     ideation_max_rounds: int | None = None,
     model_plan: DevFlowModelPlan | None = None,
+    research_coordinator: Any | None = None,
+    research_mcp_servers: dict[str, Any] | None = None,
+    research_mcp_tools: list[str] | None = None,
     name: str = "dev-flow",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
@@ -142,6 +145,18 @@ def build_dev_flow(
             sub-agents through ``agent_builder.build_dispatcher``; an
             explicit ``development_dispatcher_builder`` still wins over
             the plan-derived one.
+        research_coordinator: Optional
+            ``ComplementaryResearchCoordinator`` (FEAT-482/486) for the
+            ideation seat; an explicit value wins over ``model_plan``'s
+            ``research_partner`` group. ``None`` (default) keeps the
+            factories' precedence untouched.
+        research_mcp_servers: Optional EXTRA MCP server configs for the
+            ideation dispatch (e.g. FEAT-485 ``parrot mcp-local``
+            toolkit servers), merged under the built-in wikitoolkit
+            entry. ``None`` (default) keeps the dispatch byte-identical.
+        research_mcp_tools: Optional explicit ``mcp__...`` allow rules for
+            those extra servers; ``None`` derives server-level
+            ``mcp__<name>`` rules.
         name: Flow name (default ``"dev-flow"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
@@ -179,6 +194,9 @@ def build_dev_flow(
         skip_qa=skip_qa,
         ideation_max_rounds=ideation_max_rounds,
         model_plan=model_plan,
+        research_coordinator=research_coordinator,
+        research_mcp_servers=research_mcp_servers,
+        research_mcp_tools=research_mcp_tools,
     )
     staged = AgentsFlow.from_definition(
         definition,

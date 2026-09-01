@@ -60,8 +60,12 @@ def create_toolkit_mcp_server(
     """
     root = Path(root)
 
-    # Load config
-    cfg = load_toolkits_config(root)
+    # Load config — honoring the documented `config_path` override (the
+    # `parrot mcp-local --config` flag). Needed because stdio MCP servers
+    # inherit the MCP host's cwd, which is not always the project root
+    # (e.g. dev-loop research dispatches run from WORKTREE_BASE_PATH).
+    config_path = overrides.get("config_path")
+    cfg = load_toolkits_config(root, config_path=Path(config_path) if config_path else None)
 
     # Check for unknown name
     if name not in cfg.toolkits:
