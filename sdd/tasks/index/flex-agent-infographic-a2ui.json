@@ -14,7 +14,7 @@
       "feature_id": "FEAT-491",
       "feature": "flex-agent-infographic-a2ui",
       "spec": "sdd/specs/flex-agent-infographic-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module — every transformer imports it; runs first.",
       "assigned_to": null,
       "started_at": "2026-09-01T16:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2693-flex-normalization-layer.md"
+      "completed_at": "2026-09-01T17:19:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2693-flex-normalization-layer.md"
     },
     {
       "id": "TASK-2694",
