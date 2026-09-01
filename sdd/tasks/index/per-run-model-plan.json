@@ -93,7 +93,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Copy follows the behaviour change in TASK 4.",
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2689-console-copy-per-run-seats.md"
+      "completed_at": "2026-09-01T16:19:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2689-console-copy-per-run-seats.md"
     },
     {
       "id": "TASK-2690",
