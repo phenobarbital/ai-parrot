@@ -111,6 +111,9 @@ from ..handlers.comm_center import CommCenterHandler
 
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+# FEAT-477: agent-as-MCP-server mount (Module 2, TASK-2602)
+from ..mcp.agent_mount import AgentMCPMount
+from ..mcp.config import AgentMCPMountConfig
 
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
@@ -1962,7 +1965,26 @@ class BotManager:
 
         configure_liveavatar_output_subscriber(self.app)
 
-    def setup(self, app: web.Application) -> web.Application:
+    def setup(
+        self,
+        app: web.Application,
+        *,
+        agent_mount_config: Optional[AgentMCPMountConfig] = None,
+    ) -> web.Application:
+        """Register BotManager routes on `app`.
+
+        Args:
+            app: The aiohttp application to configure.
+            agent_mount_config: Optional FEAT-477 agent-as-MCP-server mount
+                configuration. When provided, one MCP endpoint per listed
+                agent (plus the optional aggregate) is registered alongside
+                the tool-level `ParrotMCPServer`, if any (G11 — the
+                tool-level server's behavior is unchanged either way).
+                Defaults to `None` (no agent mount — today's behavior).
+
+        Returns:
+            The configured `app`.
+        """
         self.app = None
         if app:
             self.app = app if isinstance(app, web.Application) else app.get_app()
@@ -2253,6 +2275,11 @@ Available documentation UIs:
 - RapiDoc:     http://localhost:5000/api/docs/rapidoc
 - OpenAPI Spec: http://localhost:5000/api/docs/swagger.json
             """)
+        # FEAT-477: agent-as-MCP-server mount (Module 2). Opt-in — only
+        # wired when the caller passes a config, so today's behavior is
+        # unchanged by default (G11).
+        if agent_mount_config is not None:
+            AgentMCPMount(self, agent_mount_config).setup(self.app)
         return self.app
 
     async def _cleanup_expired_bots(self) -> None:
