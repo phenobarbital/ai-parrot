@@ -145,10 +145,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Added `model_plan: DevFlowModelPlan | None = None` (keyword-only)
+to `DevFlowRunner.run()`. It is merged into a `flow_kwargs_overrides` dict
+(`{"model_plan": model_plan}` when not `None`) built as a local variable and
+passed to `self._dev_loop_flow_factory(flow_kwargs_overrides)` — never
+stored on `self`. `_dev_loop_flow_factory()` now accepts an optional
+`overrides` param (mirrors TASK-2685's base-class seam) and merges it over
+`dict(self._dev_loop_flow_kwargs)` per call. Also recorded
+`result.metadata["model_plan_requested"]` (the requested plan's
+`model_dump(mode="json")`, or `None`) right before `run()` returns, so a
+caller can see what was submitted — TASK-2687 refines this for the resumed
+case (original seats win; the newly submitted plan must be reported as not
+applied). Added 4 tests to `test_runner.py`: byte-identical without a plan,
+a plan reaching `build_dev_flow`, no per-run plan left on the instance, and
+two back-to-back factory closures with different plans not leaking into
+each other — same `__globals__`-patching technique as TASK-2685 (not a
+dotted monkeypatch string), for the same `test_lazy_import.py` orphaned-
+module reason documented there. `pytest packages/ai-parrot/tests/flows/dev_flow -q`:
+438 passed. `pytest packages/ai-parrot/tests/flows/dev_loop -q`: 1296 passed,
+3 pre-existing unrelated failures (same ones verified failing on `dev`
+before this feature). `ruff check` clean on both modified files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**POST-REVIEW CORRECTION (same session, before push)**: same bug as
+TASK-2685 (this file's `_dev_loop_flow_factory` override, added by this
+task, had the identical unconditional-merge defect). Fixed identically:
+the merge of `overrides` (here, `{"model_plan": model_plan}`) now happens
+INSIDE the closure, gated on `_definition is None`, so a per-run
+`model_plan` never reaches a RESUMED run's node rebuild via
+`AgentsFlow.resume()`'s `flow_factory(checkpoint.definition)` call. Added
+3 regression tests to `test_runner.py`
+(`test_overrides_apply_on_the_fresh_definition_none_call`,
+`test_overrides_do_not_reach_a_resumed_rebuild`,
+`test_same_closure_applies_the_plan_only_to_its_fresh_call`), the second
+of which was confirmed to fail against the pre-fix code via `git stash`
+before being confirmed passing against the fix. Full details in
+TASK-2687's completion note.

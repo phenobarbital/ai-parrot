@@ -134,10 +134,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Added `model_plan: Optional[DevFlowModelPlan] = None` to
+`build_dev_loop_flow()`. Wired to the TWO seats this topology actually
+has (no `IdeationNode` — verified by reading the builder first, per the
+"Does NOT Exist" list): the development pool
+(`development_pool_config`/`development_dispatcher_builder`) and QANode's
+review pair (`codereview_dispatcher`). Precedence matches the dev-flow
+sibling exactly (explicit argument > plan > default), adapted for the one
+real difference: this builder already exposes `development_pool_config`
+as a direct kwarg (FEAT-323 predates this feature), so the "explicit
+wins" check applies to it too, not just the dispatcher-builder — dev-flow's
+own `build_dev_flow_node_factories` has no such kwarg to protect.
+`research_coordinator` is untouched — it stays an explicit-only seam,
+matching the task's own "Does NOT Exist" guidance not to invent an
+ideation-equivalent mapping.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Local duplication, not a private cross-package import**: the review-pair
+assembly logic (`_build_primary_reviewer`/`_assemble_review_pair`) is
+duplicated locally in `dev_loop/flow.py` rather than imported from
+`dev_flow.factories` — those are underscore-prefixed (private) there, and
+`dev_flow/factories.py` itself sets the precedent of keeping a small
+helper (`_with_graph`) local "rather than importing a private symbol
+across packages." Both duplicated helpers use ONLY `dev_loop`-native
+symbols (`code_review.CodeReviewDispatcherFactory`,
+`dispatchers.mantle.MantleAdversarialReviewDispatcher`,
+`agent_builder.build_dispatcher`, `catalog.PRIMARY_REVIEW_BACKENDS`), so
+no new cross-package dependency was introduced by them.
 
-**Deviations from spec**: none | describe if any
+**Circular import found and fixed**: a top-level
+`from parrot.flows.dev_flow.model_plan import DevFlowModelPlan,
+resolve_model_plan` broke test collection
+(`ImportError: cannot import name 'DevFlowModelPlan' from partially
+initialized module`) whenever something imports `dev_flow` before
+`dev_loop` finishes initializing — `dev_flow/model_plan.py` itself imports
+`parrot.flows.dev_loop.catalog`/`models.base` at module load, and
+`dev_loop/flow.py` is imported transitively by `dev_loop/__init__.py`
+(via `commands.py` → `runner.py` → `flow.py`), so a module-level import
+of `dev_flow.model_plan` from `dev_loop/flow.py` is a genuine cycle.
+Caught by running `pytest packages/ai-parrot/tests/flows/dev_flow -q`
+(the full task suite, not just the new test file) — a
+`test_complementary_research.py` collection error. Fixed by moving
+`DevFlowModelPlan` to a `TYPE_CHECKING`-guarded import (safe: the file
+already has `from __future__ import annotations`, so the signature's type
+hint is never evaluated at runtime) and `resolve_model_plan` to a lazy,
+function-body import (mirrors the existing `agent_builder.build_dispatcher`
+lazy-import pattern a few lines below it, same file). This is exactly the
+FEAT-490-cross-cutting risk the wider spec's Module 7/8 worktree-strategy
+note flags — worth calling out for whoever eventually revisits Module 8.
+
+Added `packages/ai-parrot/tests/flows/dev_loop/test_model_plan_seam.py`
+(new file, mirrors `tests/flows/dev_flow/test_plan_threading.py`'s
+harness/assertion style exactly — materialized node private attributes:
+`_pool_config`/`_dispatcher_builder` on `DevelopmentNode`,
+`_codereview_dispatcher` on `QANode`): byte-identical without a plan
+(omitted, explicit `None`, and every existing explicit kwarg still
+honoured), the plan applying to both seats, explicit-argument-wins for
+both seats independently, the no-IdeationNode / research_coordinator-
+untouched guard, and the unknown-backend rejection tests. 19 new tests,
+all passing. `pytest packages/ai-parrot/tests/flows/dev_flow -q`: 449
+passed (this is what caught the circular import). `pytest
+packages/ai-parrot/tests/flows/dev_loop -q`: 1315 passed, 3 pre-existing
+unrelated failures (same three as every other task in this feature).
+`ruff check`: the test file is clean; `flow.py` gained exactly 2 new
+baseline-style violations (`Optional[DevFlowModelPlan]`/`UP045`,
+`UP006`), matching the file's own pre-existing, unmodernized
+`Optional[...]`/`Dict[...]` convention throughout (29 baseline errors
+before this task's edit, 31 after) — not a drive-by modernization.
+
+**Deviations from spec**: none in behavior. The circular-import fix
+(TYPE_CHECKING + lazy import) is an implementation detail necessitated by
+the codebase's actual module graph, not present in the task's Codebase
+Contract — documented here since a future maintainer touching these
+imports needs to know why they are structured this way.

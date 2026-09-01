@@ -31,6 +31,7 @@ from parrot.bots.flows.core.context import FlowContext
 # Same module the base runner imports FlowResult from (runner.py:36).
 from parrot.bots.flows.core.result import FlowResult
 from parrot.flows.dev_flow.flow import build_dev_flow
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_loop.models import FeatureBrief
 from parrot.flows.dev_loop.runner import DevLoopRunner
@@ -83,6 +84,7 @@ class DevFlowRunner(DevLoopRunner):
         run_id: str | None = None,
         initial_task: str = "",
         extra_shared: dict[str, Any] | None = None,
+        model_plan: DevFlowModelPlan | None = None,
     ) -> FlowResult:
         """Execute one dev-flow run for *brief*, respecting the run cap.
 
@@ -105,6 +107,14 @@ class DevFlowRunner(DevLoopRunner):
             extra_shared: Extra entries merged into ``shared_data`` — this is
                 how the server passes per-run knobs such as
                 ``require_plan_approval`` and ``skip_qa``.
+            model_plan: FEAT-490 — optional per-run ideation model / review
+                pair selection. Reaches ``build_dev_flow`` for THIS run only
+                on the fresh (cache-miss) checkpoint path, via the TASK-2685
+                overrides seam — never stored on ``self``, so concurrent
+                runs never leak seats into each other. On a resumed run
+                (``mode == "resumed"``) this is not applied; the run keeps
+                the seats it was created with (spec §8 Q1). ``None`` (the
+                default) leaves every existing caller byte-identical.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -159,6 +169,17 @@ class DevFlowRunner(DevLoopRunner):
             shared_data=shared,
         )
 
+        # FEAT-490: a per-run plan travels as a call argument into the
+        # per-call factory closure below — never assigned to `self`, so
+        # concurrent runs with different plans never leak seats into each
+        # other (spec §2 Overview step 2, §7 "Concurrency leak" risk).
+        flow_kwargs_overrides = {"model_plan": model_plan} if model_plan is not None else None
+
+        # spec §8 Q1 / §3 Module 3: a run that never enters the checkpoint
+        # coordinator at all (recovery disabled) is inherently a plain fresh
+        # run — "fresh" is the correct default here, not "unknown", so the
+        # metadata recorded below is accurate even off the recovery path.
+        mode: Literal["fresh", "resumed"] = "fresh"
         flow = self.flow
         if recovery_enabled:
             flow, mode = await self._checkpoint_coordinator.prepare(
@@ -166,7 +187,7 @@ class DevFlowRunner(DevLoopRunner):
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
-                flow_factory=self._dev_loop_flow_factory(),
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
                 execution_policy=self._execution_policy_for_fingerprint(),
             )
             # spec §5: recovered runs must be distinguishable in session
@@ -177,6 +198,29 @@ class DevFlowRunner(DevLoopRunner):
                 rid,
                 mode,
             )
+
+        # spec §8 Q1 (resolved: "keep the original"): a resumed run must
+        # keep the seats it was created with. CORRECTED (post-review):
+        # DevCheckpointCoordinator.prepare()'s resume branch does NOT skip
+        # flow_factory — AgentsFlow.resume() calls the SAME closure
+        # (`flow_factory(checkpoint.definition)`) to rebuild the topology
+        # of every not-yet-completed node. The rule above is therefore
+        # enforced INSIDE `_dev_loop_flow_factory()`'s closure — it only
+        # merges `flow_kwargs_overrides` when invoked with `_definition is
+        # None` (the cache-miss/fresh signal), never when AgentsFlow.resume()
+        # calls it with a real definition. `mode` (computed by `prepare()`
+        # itself, using the SAME signal) is what makes that guarantee
+        # correctly reportable here.
+        #
+        # CORRECTED (post-review, 2nd finding): `recovery_enabled` must
+        # gate this too. When it is False, `flow = self.flow` above reuses
+        # the pre-built construction-time flow untouched — the recovery
+        # coordinator (and therefore `_dev_loop_flow_factory`/`build_dev_flow`)
+        # is never even called, so a submitted `model_plan` silently never
+        # reaches anything. `mode` stays at its "fresh" default in that
+        # branch (line ~182) — a leftover value, not evidence the plan
+        # applied — so `mode != "resumed"` alone is not sufficient here.
+        model_plan_applied = model_plan is not None and recovery_enabled and mode != "resumed"
 
         # Same manual acquire/park-aware structure as the base class's run()
         # (FEAT-377 TASK-1917 / G6), and mandatory here: an ideation
@@ -226,6 +270,16 @@ class DevFlowRunner(DevLoopRunner):
             self._pending_gate_count.pop(rid, None)
 
         self.logger.info("Dev-flow run %s finished status=%s", rid, result.status)
+        # FEAT-490 spec §8 Q1/Q4: record what was requested AND what was
+        # actually effective, so a caller (or an embedder reusing a stable
+        # run_id) can tell what ran without guessing from the flow's build
+        # kwargs. On a resumed run the newly submitted plan is reported as
+        # NOT applied — the run kept the seats it was created with.
+        result.metadata["model_plan_requested"] = model_plan.model_dump(mode="json") if model_plan is not None else None
+        result.metadata["model_plan_effective"] = (
+            model_plan.model_dump(mode="json") if model_plan_applied else None
+        )
+        result.metadata["run_mode"] = mode
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -294,11 +348,29 @@ class DevFlowRunner(DevLoopRunner):
     # attribute name stays generic across both workflows; only the
     # factory function it is applied to differs).
 
-    def _dev_loop_flow_factory(self) -> Callable[[Any], AgentsFlow]:
+    def _dev_loop_flow_factory(self, overrides: dict[str, Any] | None = None) -> Callable[[Any], AgentsFlow]:
         """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
 
         See ``DevLoopRunner._dev_loop_flow_factory()`` for the full
         rationale — identical here except it calls ``build_dev_flow``.
+
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS closure — ``flow_factory(checkpoint.definition)`` — to rebuild
+        a RESUMED run's topology too, not only ``prepare()``'s cache-miss
+        branch (``flow_factory(None)``). ``overrides`` (e.g. a per-run
+        ``model_plan``) must therefore only apply when ``_definition is
+        None`` — otherwise a resumed run's not-yet-completed nodes would
+        silently adopt a newly submitted ``model_plan`` instead of keeping
+        the one the run was created with (spec §8 Q1). See the base
+        class's docstring for the full explanation of this signal.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides (e.g.
+                ``{"model_plan": ...}``) merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY on the fresh (cache-miss) path. Captured in the
+                closure and re-evaluated per invocation — never assigned
+                to ``self``.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -312,9 +384,12 @@ class DevFlowRunner(DevLoopRunner):
                 "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
                 "to have been passed to DevFlowRunner.__init__()."
             )
-        kwargs = dict(self._dev_loop_flow_kwargs)
+        base_kwargs = self._dev_loop_flow_kwargs
 
         def _factory(_definition: Any) -> AgentsFlow:
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
             return build_dev_flow(
                 **kwargs,
                 checkpoint=True,

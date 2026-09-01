@@ -1193,6 +1193,7 @@ class DevLoopRunner:
         run_id: Optional[str] = None,
         initial_task: str = "",
         extra_shared: Optional[Dict[str, Any]] = None,
+        flow_kwargs_overrides: Optional[Dict[str, Any]] = None,
     ) -> FlowResult:
         """Execute one dev-loop run for *brief*, respecting the run cap.
 
@@ -1213,6 +1214,22 @@ class DevLoopRunner:
             initial_task: Optional human-readable task line stored as the
                 context's ``initial_task``.
             extra_shared: Extra entries merged into ``shared_data``.
+            flow_kwargs_overrides: FEAT-490 — optional per-run overrides
+                merged over ``self._dev_loop_flow_kwargs`` when building a
+                fresh flow on the recovery path (cache miss). Passed as a
+                call argument and closed over per call — never stored on
+                ``self``, since this runner executes up to
+                ``max_concurrent_runs`` runs concurrently. ``None`` (the
+                default) leaves every existing caller byte-identical.
+                TASK-2691: an ops embedder threads a per-run
+                ``DevFlowModelPlan`` (Module 7's new
+                ``build_dev_loop_flow(model_plan=...)`` kwarg, TASK-2690)
+                by passing ``flow_kwargs_overrides={"model_plan": plan}``
+                here — this base class stays a dev-flow-agnostic generic
+                mapping by design (spec §8 Q5); it does not, and must not,
+                gain a typed ``model_plan`` parameter of its own. The ops
+                console is not wired to send one (spec §1 Non-Goals) —
+                this is library-level parity only.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -1273,7 +1290,7 @@ class DevLoopRunner:
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
-                flow_factory=self._dev_loop_flow_factory(),
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
                 execution_policy=self._execution_policy_for_fingerprint(),
             )
             # spec §5: recovered runs must be distinguishable in session
@@ -1505,20 +1522,45 @@ class DevLoopRunner:
         report["resumable"] = True
         return report
 
-    def _dev_loop_flow_factory(self) -> Callable[[Optional[Any]], AgentsFlow]:
+    def _dev_loop_flow_factory(
+        self, overrides: Optional[Dict[str, Any]] = None
+    ) -> Callable[[Optional[Any]], AgentsFlow]:
         """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
 
         Rebuilds a genuinely fresh ``AgentsFlow`` via ``build_dev_loop_flow``
         using the SAME kwargs the caller originally built ``self.flow``
         with (``self._dev_loop_flow_kwargs``), with checkpointing forced
         on — per-run construction is mandatory for the recovery path
-        (spec §7: shared flow instances are concurrent today). The
-        ``definition`` argument ``AgentsFlow.resume()``/
-        ``DevCheckpointCoordinator`` pass to this closure is deliberately
-        ignored, matching the ``flow_factory`` contract documented in
-        ``parrot.flows.dev_loop.checkpoint``: ``build_dev_loop_flow``
-        always derives its own declarative snapshot via
-        ``build_dev_loop_definition()`` regardless.
+        (spec §7: shared flow instances are concurrent today).
+
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS SAME closure — ``flow_factory(checkpoint.definition)`` — to
+        rebuild the topology of a run it is resuming, not only
+        ``DevCheckpointCoordinator.prepare()``'s cache-miss branch
+        (``flow_factory(None)``). A prior version of this docstring
+        claimed the ``definition`` argument was "deliberately ignored" and
+        merged ``overrides`` unconditionally before returning the closure —
+        that silently applied a NEWLY submitted per-run override (e.g. a
+        different ``model_plan``) to every not-yet-completed node of a
+        RESUMED run, contradicting the resume rule (spec §8 Q1: a resumed
+        run keeps the seats/config it was created with). The definition's
+        *content* is still ignored (``build_dev_loop_flow`` always derives
+        its own declarative snapshot via ``build_dev_loop_definition()``
+        regardless) — but its *presence* is the only signal available at
+        this call site for "is this call rebuilding a FRESH run or
+        RESUMING one," per ``DevCheckpointCoordinator.prepare()``'s
+        contract (``flow_factory(None)`` on a cache miss,
+        ``flow_factory(checkpoint.definition)`` — never ``None`` — inside
+        ``AgentsFlow.resume()``). ``overrides`` is therefore applied
+        INSIDE the closure, gated on ``_definition is None``.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY when the closure is invoked on the fresh (cache-miss)
+                path. Captured in the closure and re-evaluated per
+                invocation — never assigned to ``self`` — concurrent runs
+                each get their own closure.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -1534,9 +1576,20 @@ class DevLoopRunner:
                 "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
                 "to have been passed to DevLoopRunner.__init__()."
             )
-        kwargs = dict(self._dev_loop_flow_kwargs)
+        base_kwargs = self._dev_loop_flow_kwargs
 
         def _factory(_definition: Optional[Any]) -> AgentsFlow:
+            # `_definition is None` <=> DevCheckpointCoordinator.prepare()'s
+            # cache-miss branch (flow_factory(None)) — the ONLY case a
+            # per-run override may apply. A non-None `_definition` means
+            # AgentsFlow.resume() is rebuilding a RESUMED run's topology;
+            # the override must NOT reach it, or a resumed run's
+            # not-yet-completed nodes would adopt a newly submitted
+            # per-run config instead of keeping the one the run was
+            # created with.
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
             return build_dev_loop_flow(
                 **kwargs,
                 checkpoint=True,

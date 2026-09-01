@@ -620,6 +620,19 @@ async def handle_run(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
+    # FEAT-490: the server's static build-time plan — the baseline for a
+    # FRESH run (narrowed below to the submission itself, since a fresh
+    # run genuinely applies it) and for the resume-diff/log/response below.
+    # KNOWN LIMITATION (code review, accepted — not fixed here): for a
+    # RESUME specifically, this is NOT necessarily the plan the resumed
+    # run's checkpoint was actually created with — only an embedder that
+    # itself submitted a differing per-run plan on the ORIGINAL call and
+    # then reuses that same run_id would see a diff computed against the
+    # wrong baseline here. This console never does that (it mints a fresh
+    # run_id on every request that doesn't explicitly resume), so the
+    # common case is unaffected; a correct fix would need the original
+    # per-run plan persisted on the checkpoint and read back during the
+    # `inspect_checkpoint` preflight — out of scope for this pass.
     effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
 
     kind = getattr(brief, "kind", "")
@@ -688,27 +701,35 @@ async def handle_run(request: web.Request) -> web.Response:
     # the flow's build-time default instead of silently overriding it.
     if "require_plan_approval" in form:
         extra_shared["require_plan_approval"] = bool(form.get("require_plan_approval"))
-    # FEAT-486: the per-seat plan is a BUILD-time input
-    # (`build_dev_flow(model_plan=...)`), because the seats it selects are
-    # baked into node constructors — DevelopmentNode's pool_config,
-    # IdeationNode's model, QANode's review dispatcher. This console builds
-    # ONE flow at startup, so a run cannot swap them mid-flight. A
-    # submitted plan is therefore fully validated and echoed back, but only
-    # takes effect when it matches the server's build-time plan; any
-    # difference is logged loudly rather than silently ignored, and the
-    # response always reports what will REALLY run.
+    # FEAT-490: the per-seat plan is now a PER-RUN input on the fresh path —
+    # `runner.run(model_plan=...)` below threads it into THIS run's flow
+    # build (dev_flow/runner.py TASK-2686), no server restart required. A
+    # RESUME is the one case that remains build-time-like: TASK-2687's rule
+    # keeps a resumed run on the seats it was created with, since its
+    # completed nodes already ran under them — a newly submitted plan on a
+    # resume is validated and echoed back, but does not take effect. This
+    # narrows `effective_plan` (originally just the server's static
+    # build-time default) to the plan that will REALLY govern this specific
+    # run, so both the diff below and the response's echoed `model_plan`
+    # tell the truth for a fresh run instead of describing a plan the run
+    # is about to leave behind.
+    if requested_plan is not None and resume_run_id is None:
+        effective_plan = requested_plan
+
     # The diff is field-level and expressed-fields-only (see
     # `_plan_field_diffs`): whole-model `!=` equality fired on fields the
     # message never printed — a changed research partner or a blank review
     # primary model logged "requested == effective" and read as a false
-    # positive. `plan_diffs` both gates the warning and IS the warning.
+    # positive. `plan_diffs` both gates the warning and IS the warning. For
+    # a fresh run `effective_plan` was just narrowed to `requested_plan`
+    # above, so this is always empty there (spec §8 Q4) — the diff now
+    # fires only for the resume case, where a submission genuinely will not
+    # apply.
     # `dev_pool` is deliberately NOT reported: the development pool IS
     # per-run. `_build_dev_brief_from_form` puts the very same `dev_agents`
     # rows on the brief, `IdeationNode` forwards them onto the FeatureBrief,
     # and `DevelopmentNode._resolve_pool_config` reads the brief BEFORE its
-    # injected build-time config. The remaining seats (ideation model,
-    # review pair) really are baked into node constructors at flow-build
-    # time, and those are what this warning is about.
+    # injected build-time config.
     plan_diffs: list[str] = []
     if requested_plan is not None:
         plan_diffs = [
@@ -717,9 +738,9 @@ async def handle_run(request: web.Request) -> web.Response:
     if plan_diffs:
         logger.warning(
             "dev-flow run_id=%s requested a model plan that differs from the "
-            "server's build-time plan; the run will use the SERVER plan. "
-            "Differing seats: %s. Restart the console with the desired "
-            "DEV_FLOW_* env keys to change them.",
+            "seats this run keeps — it resumed a checkpoint, and a resumed "
+            "run keeps the seats it was created with (spec §8 Q1). "
+            "Differing seats: %s. Start a fresh run (no run_id) to use them.",
             run_id,
             "; ".join(plan_diffs),
         )
@@ -739,6 +760,11 @@ async def handle_run(request: web.Request) -> web.Response:
                 run_id=run_id,
                 initial_task=initial_task,
                 extra_shared=extra_shared or None,
+                # FEAT-490: passed unconditionally — on a fresh run this
+                # reaches build_dev_flow for THIS run (TASK-2686); on a
+                # resume the runner itself never applies it (TASK-2687),
+                # matching the `effective_plan`/`plan_diffs` narrowing above.
+                model_plan=requested_plan,
             )
             logger.info(
                 "dev-flow run_id=%s finished status=%s in %.1fs",
@@ -786,11 +812,14 @@ async def handle_run(request: web.Request) -> web.Response:
             "state_ws_url": f"/api/flow/{run_id}/ws?view=state",
             "bundle_url": f"/api/flow/{run_id}/bundle",
             "gate_resolve_url": f"/api/flow/{run_id}/gates/{{gate_id}}/resolve",
-            # FEAT-486: what this run's seats will REALLY be — never the
-            # submitted selection when the two differ (see the warning above).
-            # `model_plan_ignored` names each expressed seat the server is
-            # NOT honouring, so the console renders the server's own diff
-            # instead of re-deriving a partial one in JavaScript.
+            # FEAT-486/FEAT-490: what this run's seats will REALLY be —
+            # the submitted selection itself for a fresh run (per-run,
+            # TASK-2686), or the seats a resumed run was created with when
+            # the two differ (see the warning above). `model_plan_ignored`
+            # names each expressed seat the server is NOT honouring —
+            # always `[]` for a fresh console run — so the console renders
+            # the server's own diff instead of re-deriving a partial one in
+            # JavaScript.
             "model_plan_ignored": plan_diffs,
             "model_plan": _model_plan_payload(
                 effective_plan,

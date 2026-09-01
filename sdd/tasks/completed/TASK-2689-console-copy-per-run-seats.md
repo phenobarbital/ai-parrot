@@ -100,10 +100,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Updated `planMismatchWarning()` (`dev.html`) — no longer says
+"the per-seat plan is fixed when the server builds its flow, so restart the
+console with the DEV_FLOW_* env keys to change these seats"; now says "This
+run resumed a checkpoint, and a resumed run keeps the seats it was created
+with. Start a fresh run (no run_id) to use these seats.", matching
+TASK-2688's corrected backend warning wording exactly (same "resumed a
+checkpoint" phrase, consumed by the new `test_ui_banner_no_longer_tells_
+operators_to_restart` test). Updated its preceding doc comment block from
+"FEAT-486 code-review fix... BUILD-time input" to "FEAT-490... PER-RUN
+input", stating the resume caveat explicitly. Rewrote README.md's "Two
+limitations" callout (now "Two things worth knowing") — limitation #1
+("`model_plan` is a build-time input... Restart the console with the
+desired DEV_FLOW_* keys") replaced with the per-run behaviour and the
+resume caveat; limitation #2 (judge-panel/review-pair precedence)
+untouched, per scope. Added two tests to `test_server_dev_model_plan.py`'s
+`TestUiSurfacesTheOverride`: `test_ui_banner_no_longer_tells_operators_to_restart`
+(TASK-2689's own named test) and `test_readme_no_longer_tells_operators_to_restart`
+(same check on the README section, not in the task's minimal test spec but
+directly required by its own acceptance criterion "Neither dev.html nor
+README.md tells the operator to restart the console"). All existing
+`TestUiSurfacesTheOverride` copy-structure assertions (helper-exists,
+driven-by-response, doesn't-use-collapsed-error-box) pass unchanged — none
+of them pinned the OLD literal wording, so no update was needed there.
+`pytest packages/ai-parrot/tests/flows/dev_flow -q`: 449 passed. `ruff
+check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — implemented exactly the two files listed,
+consistent with the corrected TASK-2688 wording it depends on.

@@ -144,10 +144,49 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Added `flow_kwargs_overrides: Optional[Dict[str, Any]] = None` to
+`DevLoopRunner.run()` and threaded it into `_dev_loop_flow_factory(overrides=None)`,
+which now merges `dict(self._dev_loop_flow_kwargs) | overrides` into a local
+`kwargs` dict per call — never assigned to `self`. `_execution_policy_for_fingerprint()`
+left untouched, as required. Added 4 unit tests to
+`test_recovery_lifecycle.py` covering byte-identical behaviour without
+overrides, an override reaching `build_dev_loop_flow`, no per-run state
+leaking onto the instance, and two back-to-back factory builds with
+different overrides not leaking into each other. Tests patch the exact
+`__globals__` dict of `_dev_loop_flow_factory` (not a dotted monkeypatch
+string) — the same pitfall this test file's own `patch_handoff` fixture
+already documents (test_lazy_import.py can leave the class bound to a
+module object `sys.modules` no longer resolves to). Full
+`pytest packages/ai-parrot/tests/flows/dev_loop -q` run: 1296 passed, 3
+pre-existing unrelated failures (test_qa_codereview, test_secondopinion_brief,
+test_subagent_parity — verified failing identically on `dev` before this
+change, unrelated to FEAT-490). `ruff check` on the modified file shows the
+same pre-existing `Optional[Dict[...]]`-style baseline debt already present
+throughout the file (87 baseline errors); my two new signatures follow the
+exact same established style as the surrounding, unmodified code in this
+file (e.g. `dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None`) rather
+than a drive-by modernization.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**POST-REVIEW CORRECTION (same session, before push)**: the adversarial
+code-reviewer found a CRITICAL bug in the override-merge logic added by
+this task. `_dev_loop_flow_factory(overrides)` merged `overrides` into
+`kwargs` UNCONDITIONALLY before returning the closure. This is wrong
+because `AgentsFlow.resume()` (`bots/flows/flow/flow.py:1556`) calls the
+SAME closure — `flow_factory(checkpoint.definition)` — to rebuild the
+topology of a run's not-yet-completed nodes on a RESUME, not only
+`DevCheckpointCoordinator.prepare()`'s fresh/cache-miss branch
+(`flow_factory(None)`). The original merge therefore applied per-run
+overrides to a resumed run's rebuild too — harmless for THIS task in
+isolation (its own tests only ever call `factory(None)`), but load-bearing
+for TASK-2687's resume rule built on top of this seam. Fixed by moving the
+merge INSIDE the closure, gated on `_definition is None` (the only signal
+available at the call site distinguishing "fresh" from "resuming").
+Verified the fix is real (not cosmetic) by writing a regression test,
+confirming it FAILS against the pre-fix code via `git stash`, then passes
+after. See TASK-2687's completion note for the full analysis — this note
+exists so a reader of TASK-2685 alone sees the correction too, since the
+buggy code originated here.

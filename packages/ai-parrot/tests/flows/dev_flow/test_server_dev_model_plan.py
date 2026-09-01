@@ -9,6 +9,7 @@ because ``examples/`` is not a package) and drives it with
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -47,12 +48,27 @@ class _StubFlow:
 
 @pytest.fixture
 def make_client(server_dev, aiohttp_client):
-    async def _make(**app_overrides: Any):
+    async def _make(
+        *,
+        checkpoint_store: Any = None,
+        dev_loop_flow_kwargs: dict[str, Any] | None = None,
+        **app_overrides: Any,
+    ):
         flow = _StubFlow()
         app = server_dev.build_app(redis_url="redis://x")
         app.on_startup.clear()
         app.on_cleanup.clear()
-        runner = DevFlowRunner(flow, redis_url="redis://x")
+        # FEAT-490: `dev_loop_flow_kwargs` is what turns the runner's
+        # recovery path on (same knob as test_server_dev.py's own
+        # `make_client`) — omitted (the default) keeps every EXISTING test
+        # below on the pre-FEAT-490 code path. Tests that need to exercise
+        # an actual resume pass it (and a `checkpoint_store`) explicitly.
+        runner = DevFlowRunner(
+            flow,
+            redis_url="redis://x",
+            checkpoint_store=checkpoint_store,
+            dev_loop_flow_kwargs=dev_loop_flow_kwargs,
+        )
         app["runner"] = runner
         app["dev_loop_runner"] = runner
         app["flow"] = flow
@@ -65,9 +81,20 @@ def make_client(server_dev, aiohttp_client):
         app["model_plan"] = server_dev._console_default_model_plan()
         app["review_pair_active"] = False
         app.update(app_overrides)
-        return await aiohttp_client(app)
+        client = await aiohttp_client(app)
+        client.app_flow = flow  # type: ignore[attr-defined]
+        client.app_runner = runner  # type: ignore[attr-defined]
+        return client
 
     return _make
+
+
+@pytest.fixture
+def fake_store():
+    """The in-memory CheckpointStore from the recovery suite (not re-declared)."""
+    from .test_recovery import FakeCheckpointStore
+
+    return FakeCheckpointStore()
 
 
 def _nl_form(**extra: Any) -> dict[str, Any]:
@@ -232,6 +259,27 @@ class TestRunEndpoint:
         body = await resp.json()
         assert body["model_plan"]["research_primary"] == "claude-opus-5"
 
+    async def test_console_mints_a_fresh_run_id_when_none_is_supplied(self, make_client):
+        """Pins the premise the fresh-path reporting rests on (spec §8 Q4).
+
+        `handle_run` mints its own `run_id` (`f"run-{uuid.uuid4().hex[:8]}"`)
+        whenever the payload carries none — that half of the spec's premise
+        holds. What the spec did NOT anticipate (its §1 "no resume
+        endpoint" claim, written before `_parse_resume_run_id` landed) is
+        that a caller who DOES supply a `run_id` opts into a resume
+        instead — see `TestRunResponseReportsIgnoredSeats`'s resume tests
+        for that corrected branch.
+        """
+        client = await make_client()
+        resp1 = await client.post("/api/flow/run", json=_nl_form())
+        resp2 = await client.post("/api/flow/run", json=_nl_form())
+
+        run_id_1 = (await resp1.json())["run_id"]
+        run_id_2 = (await resp2.json())["run_id"]
+        assert run_id_1.startswith("run-")
+        assert run_id_2.startswith("run-")
+        assert run_id_1 != run_id_2
+
     async def test_run_rejects_unknown_backend_with_supported_list(self, make_client):
         client = await make_client()
         resp = await client.post("/api/flow/run", json=_nl_form(dev_agents=[{"agent": "bogus"}]))
@@ -247,17 +295,27 @@ class TestRunEndpoint:
         assert "primary reviewer" in (await resp.json())["error"]
 
     async def test_response_echoes_the_effective_plan(self, make_client):
-        """A differing request must be told what will REALLY run."""
+        """FEAT-490: a fresh console run genuinely applies the submission —
+        the response must echo it, not the server's static build-time plan
+        (which is the pre-FEAT-490 behaviour, now only true on a resume)."""
         client = await make_client()
         resp = await client.post(
             "/api/flow/run", json=_nl_form(dev_agents=[{"agent": "claude-code", "model": "", "count": 1}])
         )
         body = await resp.json()
-        # The server's build-time plan, not the submitted one.
         assert [(r["agent"], r["model"]) for r in body["model_plan"]["dev_agents"]] == [
-            ("nova", "zai.glm-5"),
-            ("nova", "qwen.qwen3-coder-480b-a35b-v1:0"),
+            ("claude-code", ""),
         ]
+
+    async def test_run_endpoint_applies_ideation_model(self, make_client):
+        """Spec §4: a differing research_primary builds THIS run with it —
+        the response echoes it back, with no server restart."""
+        client = await make_client()
+        resp = await client.post(
+            "/api/flow/run", json=_nl_form(research_primary="claude-sonnet-5")
+        )
+        body = await resp.json()
+        assert body["model_plan"]["research_primary"] == "claude-sonnet-5"
 
     async def test_run_without_plan_fields_still_works(self, make_client):
         client = await make_client()
@@ -343,18 +401,31 @@ class TestPlanMismatchDiff:
 
 @pytest.mark.asyncio
 class TestRunResponseReportsIgnoredSeats:
+    """FEAT-490: a fresh console run now genuinely APPLIES a submitted plan
+    (TASK-2686/2688), so ``model_plan_ignored`` is always ``[]`` for one —
+    even when the submission differs from the server's static default.
+    The one case that remains is a RESUME (TASK-2687's rule: the run keeps
+    the seats it was created with), simulated below the same way
+    ``test_server_dev.py``'s own resume suite does — ``run_id`` in the
+    payload + a stubbed ``inspect_checkpoint``/``prepare`` reporting
+    ``"resumed"`` — since ``handle_run`` decides ``model_plan_ignored``
+    synchronously from ``resume_run_id``, before the background run even
+    starts.
+    """
+
     async def test_matching_plan_reports_nothing_ignored(self, make_client, server_dev):
         client = await make_client()
         form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
         resp = await client.post("/api/flow/run", json=_nl_form(**form))
         assert (await resp.json())["model_plan_ignored"] == []
 
-    async def test_ignored_seat_is_reported_to_the_console(self, make_client, server_dev):
+    async def test_run_endpoint_reports_nothing_ignored_on_fresh_run(self, make_client, server_dev):
+        """A differing submission on a FRESH run is fully honoured now."""
         client = await make_client()
         form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
         form["research_partner"]["enabled"] = True
         resp = await client.post("/api/flow/run", json=_nl_form(**form))
-        assert (await resp.json())["model_plan_ignored"] == ["research_partner.enabled: requested=True effective=False"]
+        assert (await resp.json())["model_plan_ignored"] == []
 
     async def test_dev_pool_is_never_reported_as_ignored(self, make_client, server_dev):
         """The development pool IS per-run — reporting it as ignored was wrong.
@@ -362,7 +433,7 @@ class TestRunResponseReportsIgnoredSeats:
         The console's `dev_agents` rows also travel on the brief, and
         `DevelopmentNode._resolve_pool_config` reads the brief before its
         injected build-time config, so a per-run pool really does take
-        effect. Only the ideation and review seats are build-time.
+        effect regardless of the ideation/review seats above.
         """
         client = await make_client()
         form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
@@ -376,15 +447,78 @@ class TestRunResponseReportsIgnoredSeats:
         brief = flow.contexts[-1].shared_data["dev_brief"]
         assert [(spec.agent, spec.model) for spec in brief.dev_agents] == [("nova", "moonshotai.kimi-k2.5")]
 
-    async def test_warning_names_the_differing_seat(self, make_client, server_dev, caplog):
-        import logging
+    @staticmethod
+    async def _resume_client(make_client, run_id: str, *, monkeypatch):
+        """A console client wired for recovery, with `run_id` preflighted
+        as a resumable checkpoint (mirrors test_server_dev.py's own
+        `test_resumable_run_id_is_used_as_the_run_identity`)."""
+        client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
 
-        client = await make_client()
+        async def _fake_inspect(rid, *, brief=None):
+            return {
+                "run_id": rid,
+                "workflow": "dev-flow",
+                "flow_id": f"dev-flow/{rid}",
+                "recovery_enabled": True,
+                "found": True,
+                "resumable": True,
+                "reason": None,
+                "status": "running",
+                "checkpoint_id": 1,
+                "created_at": "2026-09-01T10:00:00+00:00",
+                "completed_nodes": ["dev_intake", "ideation", "planner"],
+            }
+
+        monkeypatch.setattr(client.app_runner, "inspect_checkpoint", _fake_inspect)
+
+        async def _fake_prepare(**kwargs):
+            return client.app_flow, "resumed"
+
+        monkeypatch.setattr(client.app_runner._checkpoint_coordinator, "prepare", _fake_prepare)
+        return client
+
+    async def test_ignored_seat_is_reported_on_resume(self, make_client, server_dev, monkeypatch):
+        """A differing submission on a RESUME is reported as not applied —
+        the run keeps the seats it was created with (spec §8 Q1)."""
+        client = await self._resume_client(make_client, "run-resume-diff", monkeypatch=monkeypatch)
         form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
         form["research_partner"]["enabled"] = True
+        form["run_id"] = "run-resume-diff"
+
+        resp = await client.post("/api/flow/run", json=_nl_form(**form))
+
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["model_plan_ignored"] == ["research_partner.enabled: requested=True effective=False"]
+        # ...and the response echoes the server's default (what the resumed
+        # run actually keeps), not the submission.
+        assert body["model_plan"]["research_partner"]["enabled"] is False
+
+    async def test_matching_plan_on_resume_reports_nothing_ignored(self, make_client, server_dev, monkeypatch):
+        client = await self._resume_client(make_client, "run-resume-match", monkeypatch=monkeypatch)
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        form["run_id"] = "run-resume-match"
+
+        resp = await client.post("/api/flow/run", json=_nl_form(**form))
+
+        assert (await resp.json())["model_plan_ignored"] == []
+
+    async def test_warning_names_the_differing_seat_on_resume(self, make_client, server_dev, monkeypatch, caplog):
+        import logging
+
+        client = await self._resume_client(make_client, "run-resume-warn", monkeypatch=monkeypatch)
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        form["research_partner"]["enabled"] = True
+        form["run_id"] = "run-resume-warn"
+
         with caplog.at_level(logging.WARNING, logger="dev_flow.server"):
             await client.post("/api/flow/run", json=_nl_form(**form))
+
         assert any("research_partner.enabled" in record.getMessage() for record in caplog.records)
+        # The copy no longer tells the operator to restart the console for
+        # a seat that is now per-run (TASK-2689 narrows dev.html/README to
+        # match) — this backend log line is the resume-specific half.
+        assert any("resumed a checkpoint" in record.getMessage() for record in caplog.records)
 
 
 class TestUiSurfacesTheOverride:
@@ -417,3 +551,109 @@ class TestUiSurfacesTheOverride:
         warn_fn = warn_fn[: warn_fn.index("\nasync function submit")]
         assert "form-err" not in warn_fn
         assert "exec-section" in warn_fn
+
+    def test_ui_banner_no_longer_tells_operators_to_restart(self):
+        """FEAT-490 TASK-2689: seats are per-run now — the banner must stop
+        telling operators to restart the console with DEV_FLOW_* env keys,
+        and must instead name the one case that remains (a resumed run
+        keeping its original seats)."""
+        source = self._dev_html()
+        warn_fn = source[source.index("function planMismatchWarning(") :]
+        warn_fn = warn_fn[: warn_fn.index("\nfunction showPlanWarning(")]
+        assert "restart" not in warn_fn.lower()
+        assert "DEV_FLOW_*" not in warn_fn
+        assert "resumed a checkpoint" in warn_fn
+
+    def test_readme_no_longer_tells_operators_to_restart(self):
+        """Same correction applied to the README's model-plan section."""
+        source = (_REPO_ROOT / "examples" / "dev_loop" / "README.md").read_text(encoding="utf-8")
+        section = source[source.index("### Per-seat LLM selectors") :]
+        section = section[: section.index("### New configuration keys")]
+        assert "restart the console" not in section
+        assert "per-run" in section
+        assert "resumed run" in section
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2692: end-to-end coverage spanning the whole feature
+# ---------------------------------------------------------------------------
+#
+# Every earlier task's tests exercise their own layer (the runner in
+# isolation, the endpoint's synchronous response shape) — this is the one
+# test that closes the loop the spec's acceptance criteria actually care
+# about: an HTTP request reaches `build_dev_flow` with the submitted plan,
+# through the REAL recovery-enabled runner (not the lightweight `_StubFlow`
+# every other test in this file uses), the same way the production console
+# is wired (`dev_loop_flow_kwargs` always set — `server_dev.py:1061`).
+
+
+async def _wait_for(predicate, timeout: float = 2.0):
+    """Poll `predicate()` until truthy or `timeout` elapses (mirrors
+    test_server_dev.py's `_wait_for_context`, generalised to any check —
+    the background run task here calls a monkeypatched `build_dev_flow`,
+    not something with a `.contexts` list to poll directly)."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition was never met")
+
+
+class TestEndToEndAppliesThePerSeatSelection:
+    """spec §4: `test_run_endpoint_applies_ideation_model` — a console run
+    with a differing `research_primary` builds ITS flow with that model,
+    through the real `DevFlowRunner` recovery path (TASK-2686), reached
+    from the HTTP layer (TASK-2688)."""
+
+    async def test_run_endpoint_applies_ideation_model_end_to_end(self, make_client, monkeypatch):
+        captured: list[dict] = []
+
+        def fake_build_dev_flow(**kwargs):
+            captured.append(kwargs)
+            return _StubFlow()
+
+        target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+        monkeypatch.setitem(target_globals, "build_dev_flow", fake_build_dev_flow)
+
+        client = await make_client(dev_loop_flow_kwargs={"skip_qa": False})
+
+        resp = await client.post(
+            "/api/flow/run",
+            json=_nl_form(research_primary="claude-sonnet-5"),
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["model_plan"]["research_primary"] == "claude-sonnet-5"
+        assert body["model_plan_ignored"] == []
+
+        await _wait_for(lambda: len(captured) >= 1)
+        assert captured[0]["model_plan"].research_primary == "claude-sonnet-5"
+
+    async def test_run_endpoint_without_a_plan_reaches_build_dev_flow_unchanged(self, make_client, monkeypatch):
+        """Control: no submission -> the server's own construction-time
+        model_plan reaches build_dev_flow, exactly as before this feature."""
+        captured: list[dict] = []
+
+        def fake_build_dev_flow(**kwargs):
+            captured.append(kwargs)
+            return _StubFlow()
+
+        target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+        monkeypatch.setitem(target_globals, "build_dev_flow", fake_build_dev_flow)
+
+        # A real (if minimal) DevFlowModelPlan — not a bare MagicMock:
+        # `_execution_policy_for_fingerprint()` reads real attributes off
+        # `dev_loop_flow_kwargs["model_plan"]` (e.g. `.dev_pool`) before
+        # `run()` ever reaches `flow_factory`, and a mock does not behave
+        # like the real model there.
+        server_default = DevFlowModelPlan(research_primary="claude-opus-5")
+        client = await make_client(
+            dev_loop_flow_kwargs={"skip_qa": False, "model_plan": server_default},
+        )
+
+        resp = await client.post("/api/flow/run", json=_nl_form())
+        assert resp.status == 200
+
+        await _wait_for(lambda: len(captured) >= 1)
+        assert captured[0]["model_plan"] is server_default
