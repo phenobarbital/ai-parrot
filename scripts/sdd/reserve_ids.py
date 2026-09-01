@@ -25,8 +25,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -409,6 +411,60 @@ def _sync_local_branch(root: Path, base_branch: str, commit_sha: str) -> None:
     )
 
 
+#: A real, already-issued feature id. Deliberately does NOT match the
+#: template placeholder ``FEAT-<NNN>`` in ``sdd/templates/spec.md``, so a
+#: scaffolded-but-unnumbered spec never looks like an existing identity.
+_FEATURE_ID_RE = re.compile(r"\bFEAT-(\d{3,})\b")
+
+
+def existing_feature_id(root: Path, label: str) -> tuple[str, str] | None:
+    """Return the feature id a slug already owns, if any.
+
+    A slug has ONE feature id for its lifetime. Re-running ``/sdd-spec``
+    over an existing spec must reuse that id, never reserve a second one:
+    a second reservation forks the feature's identity — the spec and the
+    task index move to the new number while the task files, the branch and
+    the worktree keep the old one, and ``DevelopmentNode._find_feature_slug``
+    (which matches strictly on the index header's ``feature_id`` inside the
+    worktree) then finds no index at all and silently degrades a whole
+    multi-agent pool to a single agent.
+
+    Args:
+        root: Repository root.
+        label: The feature slug (``--label``), i.e. the stem of
+            ``sdd/specs/<slug>.spec.md``.
+
+    Returns:
+        ``(feature_id, source_path)`` when the slug already carries an id,
+        or ``None`` when it does not (no spec, no index, or a spec still
+        holding the template's ``FEAT-<NNN>`` placeholder).
+    """
+    spec = root / "sdd" / "specs" / f"{label}.spec.md"
+    if spec.is_file():
+        try:
+            for line in spec.read_text(encoding="utf-8").splitlines():
+                if line.lstrip().startswith("**Feature ID**"):
+                    match = _FEATURE_ID_RE.search(line)
+                    if match:
+                        return f"FEAT-{match.group(1)}", str(spec)
+                    # Placeholder line — scaffolded, not yet numbered.
+                    break
+        except OSError:
+            pass
+
+    index = root / "sdd" / "tasks" / "index" / f"{label}.json"
+    if index.is_file():
+        try:
+            data = json.loads(index.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict):
+            candidate = str(data.get("feature_id") or "")
+            if _FEATURE_ID_RE.fullmatch(candidate):
+                return candidate, str(index)
+    return None
+
+
 def reserve_ids(
     kind: Literal["task", "feature"],
     count: int,
@@ -475,12 +531,37 @@ def reserve_ids(
         ValueError: If ``count < 1``.
         IdReservationError: When every attempt is rejected up to
             ``max_retries``, when a push fails for a non-retryable reason,
-            or when the contract check (clean tree, correct branch) fails.
+            when the contract check (clean tree, correct branch) fails, or
+            — for ``kind="feature"`` — when ``label`` already owns a
+            feature id (see :func:`existing_feature_id`).
     """
     if count < 1:
         raise ValueError(f"count must be >= 1, got {count!r}")
 
     root = repo_root if repo_root is not None else Path.cwd()
+
+    # A slug owns ONE feature id. Checked BEFORE the working-tree/branch
+    # contract so a duplicate /sdd-spec run gets the actionable message
+    # rather than an unrelated "wrong branch" one. Task reservations are
+    # untouched: reserving more TASK ids for an existing feature is the
+    # normal case.
+    if kind == "feature":
+        owned = existing_feature_id(root, label)
+        if owned is not None:
+            feature_id, source = owned
+            raise IdReservationError(
+                f"refusing to reserve a NEW feature id: slug {label!r} already "
+                f"owns {feature_id} (declared in {source}). Reuse it. A second "
+                "reservation forks the feature's identity — spec and task index "
+                "move to the new number while the task files, branch and worktree "
+                "keep the old one, and the dev-loop then finds no task index for "
+                "the run's feat_id and degrades the whole pool to a single agent. "
+                "If this is genuinely a different feature, give it a different "
+                "slug; if it is a deliberate multi-spec split of one initiative, "
+                "set reuse_feature_id in the spec frontmatter and do not call this "
+                "allocator."
+            )
+
     _assert_safe_to_reserve(root, base_branch)
     prefix = "TASK" if kind == "task" else "FEAT"
 

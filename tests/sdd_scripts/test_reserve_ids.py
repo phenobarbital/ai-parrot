@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from scripts.sdd.id_ledger import LEDGER_PATH, IdLedger, load_ledger, save_ledger
-from scripts.sdd.reserve_ids import IdReservationError, main, reserve_ids
+from scripts.sdd.reserve_ids import (
+    IdReservationError,
+    existing_feature_id,
+    main,
+    reserve_ids,
+)
 
 
 def _git(args: list[str], cwd: Path) -> None:
@@ -575,3 +581,141 @@ class TestReserveIdsRobustness:
 
         with pytest.raises(IdReservationError, match="timed out"):
             reserve_ids("task", 1, "dev", "feature-o", repo_root=clone)
+
+
+def _write_spec(clone: Path, slug: str, feature_id_line: str) -> Path:
+    spec = clone / "sdd" / "specs" / f"{slug}.spec.md"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(
+        f"# Feature Specification: {slug}\n\n{feature_id_line}\n**Status**: draft\n",
+        encoding="utf-8",
+    )
+    return spec
+
+
+def _write_index(clone: Path, slug: str, feature_id: str) -> Path:
+    index = clone / "sdd" / "tasks" / "index" / f"{slug}.json"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(
+        json.dumps({"feature": slug, "feature_id": feature_id, "tasks": []}),
+        encoding="utf-8",
+    )
+    return index
+
+
+class TestOneFeatureIdPerSlug:
+    """A slug owns ONE feature id for its lifetime.
+
+    Regression (2026-09-01): a second ``/sdd-spec`` run over an existing
+    spec reserved a second id, forking the feature's identity — the spec
+    and task index moved to the new number while the eight task files, the
+    branch and the worktree kept the old one. The dev-loop then found no
+    task index for the run's ``feat_id`` and silently degraded an 8-task,
+    2-seat pool to a single agent.
+    """
+
+    def test_existing_feature_id_reads_the_spec(self, bare_remote_and_clone) -> None:
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "my-feature", "**Feature ID**: FEAT-488")
+
+        found = existing_feature_id(clone, "my-feature")
+
+        assert found is not None
+        assert found[0] == "FEAT-488"
+        assert found[1].endswith("my-feature.spec.md")
+
+    def test_existing_feature_id_falls_back_to_the_index(
+        self, bare_remote_and_clone
+    ) -> None:
+        """A slug with an index but no spec still owns its id."""
+        _remote, clone = bare_remote_and_clone
+        _write_index(clone, "my-feature", "FEAT-321")
+
+        found = existing_feature_id(clone, "my-feature")
+
+        assert found is not None
+        assert found[0] == "FEAT-321"
+
+    def test_template_placeholder_is_not_an_existing_id(
+        self, bare_remote_and_clone
+    ) -> None:
+        """A scaffolded-but-unnumbered spec must not block its own reservation."""
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "my-feature", "**Feature ID**: FEAT-<NNN>")
+
+        assert existing_feature_id(clone, "my-feature") is None
+
+    def test_unknown_slug_owns_nothing(self, bare_remote_and_clone) -> None:
+        _remote, clone = bare_remote_and_clone
+
+        assert existing_feature_id(clone, "never-seen") is None
+
+    def test_second_feature_reservation_is_refused(
+        self, bare_remote_and_clone
+    ) -> None:
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "formfield-content-type", "**Feature ID**: FEAT-488")
+
+        with pytest.raises(IdReservationError, match="already owns FEAT-488"):
+            reserve_ids("feature", 1, "dev", "formfield-content-type", repo_root=clone)
+
+        # The ledger must be untouched — no id burned.
+        ledger = load_ledger(clone / LEDGER_PATH)
+        assert ledger.next_feature_id == 100
+
+    def test_refusal_survives_a_dirty_tree(self, bare_remote_and_clone) -> None:
+        """The duplicate message must win over the generic contract error.
+
+        Checked before the working-tree contract on purpose: a duplicate run
+        should be told what is actually wrong, not sent chasing an unrelated
+        'uncommitted changes' complaint.
+        """
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "my-feature", "**Feature ID**: FEAT-488")
+        _dirty_tracked_file(clone, "unrelated.txt")
+
+        with pytest.raises(IdReservationError, match="already owns"):
+            reserve_ids("feature", 1, "dev", "my-feature", repo_root=clone)
+
+    def test_task_reservations_are_not_blocked(self, bare_remote_and_clone) -> None:
+        """Reserving more TASK ids for an existing feature is the normal case."""
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "my-feature", "**Feature ID**: FEAT-488")
+
+        reservation = reserve_ids("task", 3, "dev", "my-feature", repo_root=clone)
+
+        assert reservation.ids == ["TASK-1000", "TASK-1001", "TASK-1002"]
+
+    def test_first_reservation_for_a_new_slug_still_works(
+        self, bare_remote_and_clone
+    ) -> None:
+        _remote, clone = bare_remote_and_clone
+
+        reservation = reserve_ids("feature", 1, "dev", "brand-new", repo_root=clone)
+
+        assert reservation.ids == ["FEAT-100"]
+
+    def test_cli_refuses_with_a_clean_error(
+        self, bare_remote_and_clone, capsys, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _remote, clone = bare_remote_and_clone
+        _write_spec(clone, "my-feature", "**Feature ID**: FEAT-488")
+        monkeypatch.chdir(clone)
+
+        exit_code = main(
+            [
+                "--kind",
+                "feature",
+                "--count",
+                "1",
+                "--base-branch",
+                "dev",
+                "--label",
+                "my-feature",
+            ]
+        )
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""  # stdout stays parseable: no id printed
+        assert "already owns FEAT-488" in captured.err
