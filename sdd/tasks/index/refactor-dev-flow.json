@@ -110,7 +110,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Touches factories.py (shared with 2652/2655) and ideation.py; coordinate with in-flight FEAT-482 edits to the same files.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2656-ideation-primary-model.md"
+      "completed_at": "2026-09-01T00:45:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2656-ideation-primary-model.md"
     },
     {
       "id": "TASK-2657",
