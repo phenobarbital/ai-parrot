@@ -13,17 +13,10 @@ row into exactly one row node per data-model row, and the static
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-
-_REPO_ROOT = Path(__file__).resolve().parents[5]
-_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SATELLITE_SRC))
 
 pytest.importorskip("jsonpointer")
 pytest.importorskip("weasyprint")

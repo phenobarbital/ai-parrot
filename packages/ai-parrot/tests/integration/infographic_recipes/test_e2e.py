@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -24,40 +23,14 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
-# This test needs ai-parrot-visualizations (the interactive-html/ssr_html
-# renderers). Tests under packages/ai-parrot/ get their rootdir from
-# packages/ai-parrot/pyproject.toml's [tool.pytest.ini_options] (closer than
-# the worktree-root pytest.ini), so pytest's conftest collection stops there
-# and never reaches the worktree-root conftest.py's ai-parrot-visualizations
-# sys.path entry (added for TASK-1871). `parrot.outputs` may ALSO already be
-# imported (and its `pkgutil.extend_path`-merged `__path__` cached) by the
-# time this module loads, so a plain sys.path insert is not enough — extend
-# the already-cached `__path__` directly. Scoped to this module rather than
-# touching shared conftest files further for one test.
-_VISUALIZATIONS_SRC = Path(__file__).resolve().parents[5] / "packages" / "ai-parrot-visualizations" / "src"
-if str(_VISUALIZATIONS_SRC) not in sys.path:
-    sys.path.insert(0, str(_VISUALIZATIONS_SRC))
-
-import parrot.outputs as _parrot_outputs  # noqa: E402
-
-_vis_outputs_path = str(_VISUALIZATIONS_SRC / "parrot" / "outputs")
-if _vis_outputs_path not in _parrot_outputs.__path__:
-    # INSERT at position 0 (not append): `a2ui_renderers` is a REGULAR
-    # subpackage (its own __init__.py, not a namespace package) shipped by
-    # BOTH the main-repo editable install and this worktree — Python's
-    # import system resolves it from the FIRST matching directory in
-    # `__path__` and never looks further, so the worktree's copy must come
-    # first or it is silently shadowed by the main-repo one.
-    _parrot_outputs.__path__.insert(0, _vis_outputs_path)
-
 # Ensure the satellite's renderers self-register (interactive-html, ssr_html).
-import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401,E402
-import parrot.outputs.a2ui_renderers.ssr_html  # noqa: F401,E402
-from parrot.outputs.a2ui.builders import build_infographic  # noqa: E402
-from parrot.outputs.a2ui.recipes import InfographicRecipe  # noqa: E402
-from parrot.outputs.a2ui.recipes.store import FileRecipeStore  # noqa: E402
-from parrot.tools.dataset_manager.tool import DatasetManager  # noqa: E402
-from parrot.tools.infographic_recipes.freeze import freeze_session_envelope  # noqa: E402
+import parrot.outputs.a2ui_renderers.interactive_html  # noqa: F401
+import parrot.outputs.a2ui_renderers.ssr_html  # noqa: F401
+from parrot.outputs.a2ui.builders import build_infographic
+from parrot.outputs.a2ui.recipes import InfographicRecipe
+from parrot.outputs.a2ui.recipes.store import FileRecipeStore
+from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.infographic_recipes.freeze import freeze_session_envelope
 from parrot.tools.infographic_recipes.runner import RecipeRunner  # noqa: E402
 
 pytestmark = pytest.mark.asyncio

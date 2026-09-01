@@ -12,8 +12,6 @@ isolated renderer unit tests in test_db_agent_structured_table.py.
 from __future__ import annotations
 
 import importlib.util
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,12 +23,6 @@ from parrot.bots.database import DatabaseAgent
 from parrot.bots.database.models import QueryDataset, QueryResponse
 from parrot.models import AIMessage
 from parrot.models.outputs import OutputMode
-
-# ── Satellite path wiring ──────────────────────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parents[5]
-_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
-if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SATELLITE_SRC))
 
 satellite_available = pytest.mark.skipif(
     importlib.util.find_spec("parrot.outputs.formats.version") is None,

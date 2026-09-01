@@ -298,12 +298,29 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                     return None, msg
 
             if not isinstance(spatial_result, SpatialResult):
-                msg = (
-                    f"StructuredMapRenderer: response.data must be a SpatialResult, "
-                    f"got {type(spatial_result).__name__}"
-                )
-                logger.warning(msg)
-                return None, msg
+                # Fallback: tolerate class-identity splits caused by
+                # duplicate module loading in test/worktree environments
+                # (issue #1268). If the object quacks like a SpatialResult
+                # (has .layers dict with SpatialLayerResult-shaped values),
+                # round-trip it through the canonical class.
+                if (
+                    type(spatial_result).__name__ == "SpatialResult"
+                    and hasattr(spatial_result, "layers")
+                ):
+                    try:
+                        spatial_result = SpatialResult.model_validate(
+                            spatial_result.model_dump()
+                        )
+                    except Exception:
+                        pass  # fall through to the error below
+
+                if not isinstance(spatial_result, SpatialResult):
+                    msg = (
+                        f"StructuredMapRenderer: response.data must be a SpatialResult, "
+                        f"got {type(spatial_result).__name__}"
+                    )
+                    logger.warning(msg)
+                    return None, msg
 
             # Attempt to load profile registry (fail-open: renderer continues without profiles)
             try:
