@@ -448,3 +448,120 @@ async def test_run_id_omitted_is_plain_fresh_run(mock_jira, patch_handoff, patch
     # A fresh run every time — no checkpoint was ever consulted/written
     # for a specific stable identity (nothing to assert on fake_store
     # beyond "did not raise"); the point is the recovery path was skipped.
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2685: per-run flow-kwargs overrides seam
+# ---------------------------------------------------------------------------
+
+
+def test_run_without_overrides_is_byte_identical(mock_jira) -> None:
+    """``_dev_loop_flow_factory()`` with no overrides builds with exactly
+    today's kwargs — the bug flow must not notice this change at all."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    # Patch the exact globals dict `_dev_loop_flow_factory`'s code executes
+    # against — NOT a dotted monkeypatch string. Same pitfall this file's
+    # `patch_handoff` fixture already documents: test_lazy_import.py can
+    # leave `DevLoopRunner` bound to a module object `sys.modules` no
+    # longer resolves to, so a string-path patch can silently land on an
+    # orphaned module while the live method keeps calling the real thing.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+        factory = runner._dev_loop_flow_factory()
+        factory(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert len(captured) == 1
+    for key, value in kwargs.items():
+        assert captured[0][key] == value
+    assert captured[0]["checkpoint"] is True
+    assert captured[0]["checkpoint_required"] is True
+
+
+def test_overrides_reach_the_flow_factory(mock_jira) -> None:
+    """A supplied override appears in the kwargs ``build_dev_loop_flow`` is
+    called with."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    # See test_run_without_overrides_is_byte_identical for why this patches
+    # the method's own __globals__ rather than a dotted monkeypatch string.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+        factory = runner._dev_loop_flow_factory({"redis_url": "redis://override:6399/0"})
+        factory(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://override:6399/0"
+    # Everything else is unaffected.
+    assert captured[0]["dispatcher"] is dispatcher
+
+
+def test_overrides_are_not_stored_on_the_instance(mock_jira) -> None:
+    """Inspect the runner after building a factory with overrides: no
+    per-run kwargs left behind on ``self``."""
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    runner._dev_loop_flow_factory({"redis_url": "redis://override:6399/0"})
+
+    # The instance's own kwargs dict is untouched — no override key leaked in.
+    assert runner._dev_loop_flow_kwargs == kwargs
+    assert runner._dev_loop_flow_kwargs["redis_url"] == kwargs["redis_url"]
+    assert not hasattr(runner, "_current_flow_kwargs")
+    assert not hasattr(runner, "_flow_kwargs_overrides")
+
+
+def test_concurrent_runs_do_not_leak_overrides(mock_jira) -> None:
+    """Two interleaved runs with different overrides each build with theirs."""
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**built_kwargs):
+        captured.append(built_kwargs)
+        return MagicMock()
+
+    # See test_run_without_overrides_is_byte_identical for why this patches
+    # the method's own __globals__ rather than the (possibly orphaned)
+    # module object reachable through a fresh `import ... as` statement.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        # Two closures built back-to-back, simulating two concurrent runs
+        # with distinct per-run overrides — neither must see the other's.
+        factory_a = runner._dev_loop_flow_factory({"redis_url": "redis://a:6399/0"})
+        factory_b = runner._dev_loop_flow_factory({"redis_url": "redis://b:6399/0"})
+        factory_a(None)
+        factory_b(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://a:6399/0"
+    assert captured[1]["redis_url"] == "redis://b:6399/0"

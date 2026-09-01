@@ -1193,6 +1193,7 @@ class DevLoopRunner:
         run_id: Optional[str] = None,
         initial_task: str = "",
         extra_shared: Optional[Dict[str, Any]] = None,
+        flow_kwargs_overrides: Optional[Dict[str, Any]] = None,
     ) -> FlowResult:
         """Execute one dev-loop run for *brief*, respecting the run cap.
 
@@ -1213,6 +1214,13 @@ class DevLoopRunner:
             initial_task: Optional human-readable task line stored as the
                 context's ``initial_task``.
             extra_shared: Extra entries merged into ``shared_data``.
+            flow_kwargs_overrides: FEAT-490 — optional per-run overrides
+                merged over ``self._dev_loop_flow_kwargs`` when building a
+                fresh flow on the recovery path (cache miss). Passed as a
+                call argument and closed over per call — never stored on
+                ``self``, since this runner executes up to
+                ``max_concurrent_runs`` runs concurrently. ``None`` (the
+                default) leaves every existing caller byte-identical.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -1273,7 +1281,7 @@ class DevLoopRunner:
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
-                flow_factory=self._dev_loop_flow_factory(),
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
                 execution_policy=self._execution_policy_for_fingerprint(),
             )
             # spec §5: recovered runs must be distinguishable in session
@@ -1505,7 +1513,9 @@ class DevLoopRunner:
         report["resumable"] = True
         return report
 
-    def _dev_loop_flow_factory(self) -> Callable[[Optional[Any]], AgentsFlow]:
+    def _dev_loop_flow_factory(
+        self, overrides: Optional[Dict[str, Any]] = None
+    ) -> Callable[[Optional[Any]], AgentsFlow]:
         """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
 
         Rebuilds a genuinely fresh ``AgentsFlow`` via ``build_dev_loop_flow``
@@ -1519,6 +1529,12 @@ class DevLoopRunner:
         ``parrot.flows.dev_loop.checkpoint``: ``build_dev_loop_flow``
         always derives its own declarative snapshot via
         ``build_dev_loop_definition()`` regardless.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only. Captured
+                in the closure's local ``kwargs`` dict, never assigned to
+                ``self`` — concurrent runs each get their own closure.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -1535,6 +1551,8 @@ class DevLoopRunner:
                 "to have been passed to DevLoopRunner.__init__()."
             )
         kwargs = dict(self._dev_loop_flow_kwargs)
+        if overrides:
+            kwargs.update(overrides)
 
         def _factory(_definition: Optional[Any]) -> AgentsFlow:
             return build_dev_loop_flow(
