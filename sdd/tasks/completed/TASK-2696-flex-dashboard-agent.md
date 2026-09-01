@@ -87,6 +87,21 @@ class DatasetManager(AbstractToolkit):                      # line 501
     async def add_dataset(self, name, ..., query_slug=None, ...,
                           permanent_filter=None, ...)       # line 966
     # exactly ONE of query_slug / query / table / dataframe (lines 1031-1037)
+    # ⚠ CONTRACT CORRECTION (verified 2026-09-01 while implementing TASK-2696):
+    # add_dataset(query_slug=...) is EAGER — its own docstring says "Unlike
+    # the lazy add_query / add_table_source methods, this executes the
+    # source immediately" (fetches via `await source.fetch(**params)` at
+    # tool.py:1049-1050). It is NOT the lazy method the spec's Overview and
+    # this task's Scope describe. The genuinely lazy registration method is:
+    def add_query(self, name: str, query_slug: str, description=None,
+                  metadata=None, is_active=True, permanent_filter=None,
+                  query_filter=None, computed_columns=None,
+                  usage_guidance=None) -> str: ...   # line ~1405 — SYNC, no await
+    # Registers a QuerySlugSource with NO fetch; data loads later on first
+    # `fetch_dataset()`/REPL access. `register_datasets()` MUST call
+    # `self._dataset_manager.add_query(name=<alias>, query_slug=<slug>, ...)`
+    # for all six aliases — NOT `add_dataset` — to satisfy "no eager fetch
+    # at construction/configure time".
 
 # packages/ai-parrot/src/parrot/bots/abstract.py  (AbstractBot — PandasAgent base)
 #   __init__ kwargs: use_kb: bool = False (line 287), local_kb (line 288),
@@ -106,6 +121,29 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):  
     async def configure(self, app=None, queries=None):      # line 179
         await self.register_datasets()
         await super().configure(app=app, queries=queries)
+
+# ⚠ CONTRACT ADDITION (verified 2026-09-01): InfographicToolkit REQUIRES a
+# real ArtifactStore (no default) — `InfographicToolkit.__init__(self, *,
+# artifact_store: ArtifactStore, ...)` (infographic_toolkit.py:213). Simply
+# constructing `InfographicToolkit()` bare and appending it to `tools=`
+# would both fail (missing required arg) AND bypass
+# `InfographicAuthoringMixin`'s own tier-1 wiring (`self._infographic_toolkit
+# .set_bot(self)` — prompt-guidance injection, `generate_infographic()`).
+# packages/ai-parrot/src/parrot/bots/mixins/infographic_authoring.py:72-98
+class InfographicAuthoringMixin:
+    def __init__(self, *args, infographic_toolkit=None, artifact_store=None,
+                 recipe_store=None, template_dirs=None, **kwargs) -> None:
+        # builds InfographicToolkit(artifact_store=..., recipe_store=...,
+        # template_dirs=...) itself when infographic_toolkit is None and
+        # artifact_store is not None, appends it to kwargs["tools"], THEN
+        # chains super().__init__(*args, **kwargs).
+        ...
+# => FlexDashboard.__init__ must accept/forward `artifact_store=`/
+# `recipe_store=` kwargs (building an offline-safe default artifact_store
+# when the caller doesn't supply one — local SQLite + local-filesystem
+# overflow, no network — per `examples/agents/a2ui/
+# deterministic_refresh_dashboard.py`'s own offline pattern) rather than
+# constructing `InfographicToolkit` by hand.
 ```
 
 ### Does NOT Exist
@@ -198,10 +236,45 @@ def test_mixin_order():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Implemented `FlexDashboard` in `agents/flex_dashboard.py` per
+scope. 11 unit tests pass; `ruff check` is clean. Two Codebase Contract
+corrections were discovered and documented in-place in this task file
+BEFORE implementing (per the anti-hallucination protocol):
 
-**Completed by**:
-**Date**:
-**Notes**:
+1. **`add_dataset(query_slug=...)` is EAGER, not lazy** — its own docstring
+   says it fetches immediately. The genuinely lazy method is
+   `DatasetManager.add_query(name, query_slug, ...)` (sync, no `await`),
+   which `register_datasets()` uses instead. Verified by reading
+   `tool.py`'s `add_query` docstring ("Register a query slug for lazy
+   loading") and confirmed by `test_register_datasets_does_not_fetch`
+   (each dataset's `.df is None` after registration).
+2. **`InfographicToolkit` requires a real `ArtifactStore`** (no default) —
+   simply appending a bare `InfographicToolkit()` to `tools=` would both
+   fail (missing required arg) and bypass
+   `InfographicAuthoringMixin.__init__`'s own toolkit-building/binding
+   logic (`artifact_store=`/`recipe_store=` kwargs already build and
+   attach the toolkit, then call `set_bot(self)`). `FlexDashboard.__init__`
+   forwards `artifact_store=`/`recipe_store=` to the mixin instead of
+   constructing the toolkit by hand, defaulting to an offline-safe local
+   SQLite + local-filesystem `ArtifactStore` (same primitives
+   `deterministic_refresh_dashboard.py` uses) when the caller supplies
+   none — satisfying "instantiates without network/DB".
 
-**Deviations from spec**: none
+Also verified empirically that `agents/flex_dashboard.py` (module) and
+`agents/flex_dashboard/` (package) coexisting under the same name is safe:
+production's `AgentRegistry._load_modules_from_directory` loads `agents/
+*.py` files via `importlib.util.spec_from_file_location` under a synthetic
+name — never a plain `import agents.flex_dashboard` — so the file is never
+shadowed by the package in practice. Confirmed the opposite is true for a
+plain dotted import (`import agents.flex_dashboard` resolves to the
+PACKAGE, not this file) and designed `test_flex_dashboard_agent.py`'s
+loader accordingly (mirrors the production loader's technique, loading the
+agent file under its own distinct synthetic name).
+
+**Deviations from spec**: `register_datasets()` calls
+`DatasetManager.add_query`, not `add_dataset` as spec §2/§3 Module 3 and
+this task's original Scope/Codebase Contract stated — required to satisfy
+the "no eager fetch" requirement those same sections also state (the two
+were in tension until traced to the real method signatures; see Notes).
