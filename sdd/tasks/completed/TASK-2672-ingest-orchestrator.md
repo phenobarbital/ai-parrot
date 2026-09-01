@@ -100,3 +100,35 @@ packages/ai-parrot/tests/integration/test_wiki_kb_ingest.py` (84 passed
 mirror+log, chronological batch processed oldest→newest with a spy
 confirming call order, §34-forced-failure rollback with raw untouched
 and no log/registry entry); `ruff check` clean; `mypy` clean.
+
+**Post-review remediation** (adversarial code-review pass across the
+full FEAT-481 diff, after all 16 tasks landed): `runner.py` and
+`agent.py` had several findings, all fixed in-place rather than
+reopening this task:
+- `agent.py`'s `health()`/`lint()`/`archive()`/`build_graph_report()`
+  were calling `run_health(self)` etc. (the bare agent instance) instead
+  of building the `ObsidianToolkit`/`MeetingRegistry` those functions
+  actually take — a call-time break, now fixed to match TASK-2673's
+  real signatures.
+- `raw_bundle.reclassify_move()` (TASK-2664) was implemented but never
+  called — wired into `_process_one_meeting()` so a resolved
+  client/project classification actually relocates the raw bundle out
+  of `Raw/Processed/Uncategorized/`.
+- `ValidationContext.private_accessed`/`.obsidian_dir_modified` were
+  hardcoded to `False` — now derived from the real set of paths touched
+  during the meeting's processing.
+- `existing_source_ids`, and `new_wikilinks`/`existing_or_queued_pages`/
+  `written_filenames` coverage, are now populated for entity/concept
+  writes too, not just meeting/project/daily pages.
+- Daily synthesis now reuses the meeting's own `MeetingExtraction`
+  (decisions/requirements/action items/risks) instead of passing empty
+  literals, and computes it once instead of twice.
+- `raw_bundle_node`'s synchronous file I/O is now wrapped in
+  `asyncio.to_thread()` per the project's async-first convention.
+- A `duplicate-skip` outcome (R3 permanent skip) is now logged to
+  `Wiki/log.md` via its own `§33` op, previously silently counted in
+  `IngestReport.skipped` with no log trace.
+
+Re-verified after remediation: full FEAT-481 suite (`test_wiki_kb_*.py`
+across unit + integration) — 112/112 passed; `ruff check` clean; `mypy`
+introduces zero new errors in `agent.py`/`runner.py`/`validation.py`.
