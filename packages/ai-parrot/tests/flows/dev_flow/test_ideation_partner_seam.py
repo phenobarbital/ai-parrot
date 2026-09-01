@@ -130,9 +130,7 @@ class TestIdeationPartnerSeam:
 
     async def test_resume_round_skips_partner(self, doc):
         """Round 2+ does not re-run the partner and passes empty partner fields."""
-        dispatcher = ScriptedDispatcher(
-            [_output(open_questions=[Q1], committed=True), _output()]
-        )
+        dispatcher = ScriptedDispatcher([_output(open_questions=[Q1], committed=True), _output()])
         coordinator = _FakeCoordinator(result=_findings())
         node = IdeationNode(dispatcher=dispatcher, coordinator=coordinator)
         host = SessionHost(RUN_ID)
@@ -195,12 +193,8 @@ class TestIdeationPartnerSeam:
         async def _approve_every_gate():
             for _ in range(2):
                 await asyncio.sleep(0.01)
-                gate_id = next(
-                    g for g, gate in host.state.gates.items() if gate.status == "pending"
-                )
-                host.resolve_gate(
-                    gate_id, "approved", resolved_by="alice", answers={Q1: "an answer"}
-                )
+                gate_id = next(g for g, gate in host.state.gates.items() if gate.status == "pending")
+                host.resolve_gate(gate_id, "approved", resolved_by="alice", answers={Q1: "an answer"})
 
         resolver = asyncio.ensure_future(_approve_every_gate())
         await asyncio.wait_for(node.execute(ctx), timeout=5)

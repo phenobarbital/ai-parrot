@@ -137,12 +137,8 @@ class ComplementaryResearchCoordinator:
                 return None
 
             model = self._resolve_model_for_backend(backend)
-            full_markdown = self._render_markdown(
-                findings=findings, backend=backend, model=model, slug=slug
-            )
-            document_path = await self._write_and_commit(
-                cwd=cwd, slug=slug, rendered=full_markdown
-            )
+            full_markdown = self._render_markdown(findings=findings, backend=backend, model=model, slug=slug)
+            document_path = await self._write_and_commit(cwd=cwd, slug=slug, rendered=full_markdown)
             rendered = self._truncate_for_dispatch(full_markdown)
             duration_ms = (time.perf_counter() - start) * 1000
 
@@ -168,8 +164,7 @@ class ComplementaryResearchCoordinator:
         except Exception as exc:  # noqa: BLE001 — this IS the degradation boundary
             duration_ms = (time.perf_counter() - start) * 1000
             self.logger.warning(
-                "Complementary research degraded (run_id=%s node_id=%s "
-                "slug=%s): %s",
+                "Complementary research degraded (run_id=%s node_id=%s " "slug=%s): %s",
                 run_id,
                 node_id,
                 slug,
@@ -221,9 +216,7 @@ class ComplementaryResearchCoordinator:
         return conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
 
     @staticmethod
-    def _render_markdown(
-        *, findings: ResearchFindings, backend: str, model: str, slug: str
-    ) -> str:
+    def _render_markdown(*, findings: ResearchFindings, backend: str, model: str, slug: str) -> str:
         """Render `findings` as the full `.research.md` markdown body.
 
         Args:
@@ -249,10 +242,7 @@ class ComplementaryResearchCoordinator:
             lines.append("## Findings")
             lines.append("")
             for finding in findings.findings:
-                lines.append(
-                    f"### {finding.id} — {finding.title} "
-                    f"(confidence: {finding.confidence})"
-                )
+                lines.append(f"### {finding.id} — {finding.title} " f"(confidence: {finding.confidence})")
                 lines.append("")
                 lines.append(finding.detail)
                 if finding.evidence:
@@ -318,9 +308,7 @@ class ComplementaryResearchCoordinator:
             )
             return rel_path
         except Exception as exc:  # noqa: BLE001 — write/commit must not lose findings
-            self.logger.warning(
-                "Failed to write/commit %s: %s", rel_path, exc
-            )
+            self.logger.warning("Failed to write/commit %s: %s", rel_path, exc)
             return ""
 
     @staticmethod

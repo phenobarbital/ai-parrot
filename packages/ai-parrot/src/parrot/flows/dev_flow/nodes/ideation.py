@@ -237,12 +237,20 @@ class IdeationNode(DevLoopNode):
 
         self.logger.info(
             "Ideation starting: kind=%s -> mode=%s, title=%s, max_rounds=%d",
-            brief.kind, mode, brief.title, max_rounds,
+            brief.kind,
+            mode,
+            brief.title,
+            max_rounds,
         )
 
         output = await self._dispatch(
-            shared=shared, brief=brief, mode=mode,
-            graph_context=graph_context, answers={}, document_path="", round_=1,
+            shared=shared,
+            brief=brief,
+            mode=mode,
+            graph_context=graph_context,
+            answers={},
+            document_path="",
+            round_=1,
             partner_findings=partner_findings.rendered if partner_findings else "",
             partner_findings_path=partner_findings.document_path if partner_findings else "",
         )
@@ -254,23 +262,31 @@ class IdeationNode(DevLoopNode):
                 "shared state (autonomous construction) — proceeding WITHOUT "
                 "an open_questions gate; the questions stay in %s and are "
                 "carried into the spec by the planner.",
-                len(output.open_questions), output.document_path,
+                len(output.open_questions),
+                output.document_path,
             )
 
         rounds_used = 0
         while output.open_questions and host is not None and rounds_used < max_rounds:
             rounds_used += 1
             answers = await self._run_question_round(
-                host=host, output=output, round_=rounds_used,
+                host=host,
+                output=output,
+                round_=rounds_used,
                 max_rounds=max_rounds,
             )
             output = await self._dispatch(
-                shared=shared, brief=brief, mode=mode,
-                graph_context=graph_context, answers=answers,
-                document_path=output.document_path, round_=rounds_used + 1,
+                shared=shared,
+                brief=brief,
+                mode=mode,
+                graph_context=graph_context,
+                answers=answers,
+                document_path=output.document_path,
+                round_=rounds_used + 1,
                 # Round 1 only (spec §1 Non-Goals, D8): the partner's
                 # findings are already folded into the document by now.
-                partner_findings="", partner_findings_path="",
+                partner_findings="",
+                partner_findings_path="",
             )
 
         if output.open_questions:
@@ -278,7 +294,9 @@ class IdeationNode(DevLoopNode):
                 "Ideation finished with %d unresolved question(s) after %d "
                 "round(s) — they remain '[ ]' in %s and flow into the spec's "
                 "§8 via the planner (not a failure).",
-                len(output.open_questions), rounds_used, output.document_path,
+                len(output.open_questions),
+                rounds_used,
+                output.document_path,
             )
 
         # Fail fast: sdd-planner creates its worktree from base_branch HEAD,
@@ -306,7 +324,9 @@ class IdeationNode(DevLoopNode):
         shared["feature_brief"] = feature_brief
         self.logger.info(
             "Ideation complete: %s (kind=%s, resumed_existing=%s, rounds=%d)",
-            document_path, output.document_kind, output.resumed_existing,
+            document_path,
+            output.document_kind,
+            output.resumed_existing,
             rounds_used,
         )
         return feature_brief
@@ -364,9 +384,7 @@ class IdeationNode(DevLoopNode):
             return ""
         return context or ""
 
-    async def _run_coordinator(
-        self, *, brief: DevRequestBrief, shared: dict[str, Any]
-    ) -> ComplementaryFindings | None:
+    async def _run_coordinator(self, *, brief: DevRequestBrief, shared: dict[str, Any]) -> ComplementaryFindings | None:
         """Run the complementary research partner, or skip if not wired.
 
         FEAT-482: no defensive try/except here — the coordinator already
@@ -550,9 +568,12 @@ class IdeationNode(DevLoopNode):
             on_expiry="fail",
         )
         self.logger.info(
-            "Ideation round %d/%d: opened open_questions gate %s with %d "
-            "question(s) for %s",
-            round_, max_rounds, gate_id, len(questions), output.document_path,
+            "Ideation round %d/%d: opened open_questions gate %s with %d " "question(s) for %s",
+            round_,
+            max_rounds,
+            gate_id,
+            len(questions),
+            output.document_path,
         )
 
         gate = await host.wait_gate(gate_id)
@@ -566,7 +587,10 @@ class IdeationNode(DevLoopNode):
         answers = dict(gate.answers or {})
         self.logger.info(
             "Ideation round %d/%d: %d of %d question(s) answered by %s",
-            round_, max_rounds, len(answers), len(questions),
+            round_,
+            max_rounds,
+            len(answers),
+            len(questions),
             gate.resolved_by or "unknown",
         )
         return answers

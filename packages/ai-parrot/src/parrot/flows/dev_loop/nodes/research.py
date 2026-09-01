@@ -447,9 +447,7 @@ class ResearchNode(DevLoopNode):
                 session_host=shared.get("session_host"),
             )
             if partner_findings is not None:
-                extra_context_parts.append(
-                    f"## Complementary research findings\n{partner_findings.rendered}"
-                )
+                extra_context_parts.append(f"## Complementary research findings\n{partner_findings.rendered}")
 
         dispatch_brief = brief
         if extra_context_parts:

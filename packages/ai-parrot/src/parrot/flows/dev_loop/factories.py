@@ -205,7 +205,9 @@ def build_dev_loop_node_factories(
     def handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
             DeploymentHandoffNode(
-                jira_toolkit=jira_toolkit, git_toolkit=git_toolkit, name=nd.id,
+                jira_toolkit=jira_toolkit,
+                git_toolkit=git_toolkit,
+                name=nd.id,
                 require_deployment_approval=require_deployment_approval,
             ),
             deps,
@@ -215,7 +217,9 @@ def build_dev_loop_node_factories(
     def failure_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
             FailureHandlerNode(
-                jira_toolkit=jira_toolkit, graph_memory=graph_memory, name=nd.id,
+                jira_toolkit=jira_toolkit,
+                graph_memory=graph_memory,
+                name=nd.id,
             ),
             deps,
             succs,
@@ -249,9 +253,7 @@ def build_dev_loop_node_factories(
         return _with_graph(SynthesisNode(dispatcher=dispatcher, name=nd.id), deps, succs)
 
     def feedback_router_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
-        return _with_graph(
-            FeedbackRouterNode(dispatcher=dispatcher, name=nd.id), deps, succs
-        )
+        return _with_graph(FeedbackRouterNode(dispatcher=dispatcher, name=nd.id), deps, succs)
 
     def feature_handoff_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(

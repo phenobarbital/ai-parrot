@@ -51,15 +51,9 @@ def test_loader_unknown_name_raises():
 
 def test_loader_reads_package_data_dir():
     """The loader reads the package copy, not `.claude/agents/`."""
-    pkg_copy = (
-        resources.files("parrot.flows.dev_flow")
-        / "_subagent_data"
-        / "sdd-ideation.md"
-    )
+    pkg_copy = resources.files("parrot.flows.dev_flow") / "_subagent_data" / "sdd-ideation.md"
     assert pkg_copy.is_file()
-    assert load_subagent_definition("sdd-ideation") == _strip_frontmatter(
-        pkg_copy.read_text(encoding="utf-8")
-    )
+    assert load_subagent_definition("sdd-ideation") == _strip_frontmatter(pkg_copy.read_text(encoding="utf-8"))
 
 
 def test_strip_frontmatter_edge_cases():
@@ -77,8 +71,8 @@ def test_strip_frontmatter_edge_cases():
 
 def test_prompt_mentions_both_modes_and_output_fields(body: str):
     """One definition, two modes — and the full IdeationOutput contract."""
-    assert 'mode="brainstorm"' in body or "mode = \"brainstorm\"" in body
-    assert 'mode="proposal"' in body or "mode = \"proposal\"" in body
+    assert 'mode="brainstorm"' in body or 'mode = "brainstorm"' in body
+    assert 'mode="proposal"' in body or 'mode = "proposal"' in body
     assert "new_feature" in body
     assert "enhancement" in body
 
@@ -243,7 +237,7 @@ def test_existing_instructions_unchanged(body: str):
     """GUARD: the FEAT-482 additions are additive — every pre-existing
     behavioral guarantee (dual-mode, resume policy, frontmatter, explicit
     commit, JSON-only output) still holds verbatim."""
-    assert 'mode="brainstorm"' in body or "mode = \"brainstorm\"" in body
+    assert 'mode="brainstorm"' in body or 'mode = "brainstorm"' in body
     assert "RESUME/EXTEND IT IN PLACE" in body
     assert "type: feature" in body and "base_branch: dev" in body
     assert "git add sdd/proposals/" in body
@@ -270,11 +264,7 @@ def test_prompt_parity_with_repo_twin():
         pytest.skip("`.claude/agents/` not found — installed package, not a checkout.")
 
     repo_copy = agents_dir / "sdd-ideation.md"
-    pkg_copy = (
-        resources.files("parrot.flows.dev_flow")
-        / "_subagent_data"
-        / "sdd-ideation.md"
-    )
+    pkg_copy = resources.files("parrot.flows.dev_flow") / "_subagent_data" / "sdd-ideation.md"
     assert repo_copy.is_file(), f"Expected a repo-level twin at {repo_copy}."
     assert pkg_copy.read_text(encoding="utf-8") == repo_copy.read_text(
         encoding="utf-8"

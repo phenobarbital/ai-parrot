@@ -249,9 +249,7 @@ class TestBedrockResearchPartner:
             return_value=gpt_client,
         ):
             partner = BedrockResearchPartner(backend="gpt")
-            await partner.research(
-                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
-            )
+            await partner.research(brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n")
         _, gpt_kwargs = gpt_client.ask.call_args
         assert "thinking_budget" not in gpt_kwargs
 
@@ -261,9 +259,7 @@ class TestBedrockResearchPartner:
             return_value=nova_client,
         ):
             partner = BedrockResearchPartner(backend="nova")
-            await partner.research(
-                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
-            )
+            await partner.research(brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n")
         _, nova_kwargs = nova_client.ask.call_args
         assert "thinking_budget" in nova_kwargs
 
@@ -299,9 +295,7 @@ class TestBedrockResearchPartner:
             return_value=client,
         ):
             partner = BedrockResearchPartner(backend="gpt")
-            await partner.research(
-                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
-            )
+            await partner.research(brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n")
         (registered_tools,), _ = client.register_tools.call_args
         tool_names = {t.name for t in registered_tools}
         assert tool_names, "toolkit registered no tools at all"

@@ -87,8 +87,6 @@ class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
 
     subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-codereview"
     permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
-    allowed_tools: List[str] = Field(
-        default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-    )
+    allowed_tools: List[str] = Field(default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"])
     model: str = "claude-sonnet-4-6"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)

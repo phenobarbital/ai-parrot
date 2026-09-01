@@ -85,9 +85,7 @@ def _make_jira() -> MagicMock:
     jira.jira_find_user = AsyncMock(
         return_value={
             "found": True,
-            "matches": [
-                {"accountId": "557058:resolved", "emailAddress": "reporter@example.com"}
-            ],
+            "matches": [{"accountId": "557058:resolved", "emailAddress": "reporter@example.com"}],
         }
     )
     return jira
@@ -117,9 +115,7 @@ def _make_node(
 
 
 class TestResearchNodePartnerSeam:
-    async def test_unchanged_when_coordinator_none(
-        self, good_brief, research_out_fixture, monkeypatch, tmp_path
-    ):
+    async def test_unchanged_when_coordinator_none(self, good_brief, research_out_fixture, monkeypatch, tmp_path):
         """GUARD: dispatch payload byte-identical (same object!) to pre-feature."""
         node, dispatcher = _make_node(research_out_fixture, monkeypatch, tmp_path)
 
@@ -130,14 +126,10 @@ class TestResearchNodePartnerSeam:
         # the exact same brief object reaches the dispatcher.
         assert sent_brief is good_brief
 
-    async def test_findings_reach_dispatch_payload(
-        self, good_brief, research_out_fixture, monkeypatch, tmp_path
-    ):
+    async def test_findings_reach_dispatch_payload(self, good_brief, research_out_fixture, monkeypatch, tmp_path):
         """Injected coordinator's findings appear in the sdd-research payload."""
         coordinator = _FakeCoordinator(result=_findings())
-        node, dispatcher = _make_node(
-            research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator
-        )
+        node, dispatcher = _make_node(research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator)
 
         await node.execute(ctx={"run_id": "r1", "bug_brief": good_brief})
 
@@ -155,9 +147,7 @@ class TestResearchNodePartnerSeam:
     ):
         """Existing ordering guarantee is not disturbed by a wired coordinator."""
         coordinator = _FakeCoordinator(result=_findings())
-        node, _dispatcher = _make_node(
-            research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator
-        )
+        node, _dispatcher = _make_node(research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator)
         call_order: list[str] = []
 
         async def _jira(**_kwargs):
@@ -180,14 +170,10 @@ class TestResearchNodePartnerSeam:
 
         assert call_order == ["jira", "partner", "dispatch"]
 
-    async def test_degraded_partner_does_not_fail_run(
-        self, good_brief, research_out_fixture, monkeypatch, tmp_path
-    ):
+    async def test_degraded_partner_does_not_fail_run(self, good_brief, research_out_fixture, monkeypatch, tmp_path):
         """Coordinator returns None => research proceeds single-agent."""
         coordinator = _FakeCoordinator(result=None)
-        node, dispatcher = _make_node(
-            research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator
-        )
+        node, dispatcher = _make_node(research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator)
 
         result = await node.execute(ctx={"run_id": "r1", "bug_brief": good_brief})
 
@@ -196,14 +182,10 @@ class TestResearchNodePartnerSeam:
         assert sent_brief is good_brief
         assert len(coordinator.calls) == 1
 
-    async def test_slash_command_allowed_tools_unchanged(
-        self, good_brief, research_out_fixture, monkeypatch, tmp_path
-    ):
+    async def test_slash_command_allowed_tools_unchanged(self, good_brief, research_out_fixture, monkeypatch, tmp_path):
         """SlashCommand allowed-tools list unchanged with a coordinator wired in."""
         coordinator = _FakeCoordinator(result=_findings())
-        node, dispatcher = _make_node(
-            research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator
-        )
+        node, dispatcher = _make_node(research_out_fixture, monkeypatch, tmp_path, coordinator=coordinator)
 
         await node.execute(ctx={"run_id": "r1", "bug_brief": good_brief})
 
