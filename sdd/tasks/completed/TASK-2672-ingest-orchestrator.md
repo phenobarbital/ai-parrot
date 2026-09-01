@@ -132,3 +132,41 @@ reopening this task:
 Re-verified after remediation: full FEAT-481 suite (`test_wiki_kb_*.py`
 across unit + integration) — 112/112 passed; `ruff check` clean; `mypy`
 introduces zero new errors in `agent.py`/`runner.py`/`validation.py`.
+
+**Second remediation round** (Codex automated PR review of PR #1288, 6
+findings, all confirmed and fixed in `05847391a`):
+- GraphIndex ingestion (`graph.py`) did not exclude `Private/` — a hard
+  contract rule #1 violation ("Never access Private/. Do not read, list,
+  search, index, summarize, move, modify, or traverse it."). Fixed by
+  adding an additive `extra_skip_patterns` param to `LLMWikiToolkit.
+  ingest_obsidian_vault()` (shared FEAT-392 component; default `None`
+  preserves every other caller), passed as `["Private"]` from `graph.py`.
+- **Most severe**: any exception once compiled writes started
+  (contradiction detection onward) escaped `_process_one_meeting`
+  entirely with its local `writes` list lost — no rollback, no registry/
+  log entry, and since the raw bundle was already moved to
+  `Raw/Processed/`, the fetch-gate's raw-id scan then permanently skipped
+  the source on every future run (silent, unrecoverable partial ingest).
+  Fixed by wrapping the compiled-write phase in try/except that rolls
+  back via the existing `_rollback()` helper and surfaces a normal
+  validation failure instead.
+- Detected contradictions were rendered as standalone pages but never
+  linked back from the meeting source page's `## Contradictions` section
+  nor the project's `## Unresolved Contradictions` — violating contract
+  §22 rule 6. `run_meeting_page()`/`run_project_reconcile()` now accept
+  and wire the contradiction titles through.
+- `_extraction_from_meeting()`'s re-parse hardcoded `action_items=[]`
+  because it only parsed bullet-list sections, and Action Items renders
+  as a table — added a dedicated table-row parser.
+- `Wiki/index.md` rebuild listed `Projects/` non-recursively, but
+  canonical project pages live nested one level (`Projects/<Name>/
+  <Name>.md`) — always rendered "- None yet" even with active projects.
+- A §34 validation failure queued a "Validation failed" review entry
+  once per *unrelated* pre-existing review item (0 items → queued
+  nowhere; 2+ items → duplicated) instead of exactly once, independent
+  of other items.
+
+6 new regression tests added (`test_wiki_kb_graph.py` +
+`test_wiki_kb_ingest.py`); 118/118 FEAT-481 tests pass; `ruff check`
+clean; `mypy` introduces zero new errors. All 6 findings replied to
+individually on PR #1288 with CONFIRM + fix commit reference.
