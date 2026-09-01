@@ -4,12 +4,19 @@ Implements **Module 6** of FEAT-323 (parallel development node), extending
 the original **Module 6** of FEAT-129/FEAT-250 (single ``sdd-worker``
 dispatch).
 
-Config cascade (FEAT-323): ``WorkBrief.dev_agents`` (via
-``shared["work_brief"]`` / legacy ``shared["bug_brief"]``) takes priority
-over a ``pool_config`` injected at construction time (resolved from env by
-the server/factories, TASK-1859); when neither is present the node runs
-the **exact** single-dispatch path from before this feature — same default
-profile, same ``node_id``, same ``cwd``.
+Config cascade (FEAT-323): the brief's ``dev_agents`` takes priority over a
+``pool_config`` injected at construction time (resolved from env by the
+server/factories, TASK-1859, or from FEAT-486's ``model_plan``); when
+neither is present the node runs the **exact** single-dispatch path from
+before this feature — same default profile, same ``node_id``, same ``cwd``.
+
+The brief is read from every key a dev workflow publishes it under:
+``work_brief``/``bug_brief`` (dev-loop bug mode) **and**
+``feature_brief``/``dev_brief`` (dev-flow). Reading only the first pair
+silently disabled the per-run pool for every dev-flow run — the console's
+rows reached this node on the brief and were dropped one line before use,
+so the build-time plan always won and the UI told operators to restart the
+server to change a seat that was in fact meant to be per-run.
 
 The dispatcher's R4 cwd-safety check verifies that any dispatch ``cwd``
 (including sub-worktrees created for 'isolated' mode) lives under
@@ -399,6 +406,15 @@ class DevelopmentNode(DevLoopNode):
     # Config cascade
     # ------------------------------------------------------------------
 
+    #: Every shared-state key a dev workflow publishes its brief under, most
+    #: derived first. dev-loop (bug mode) sets ``work_brief``/``bug_brief``;
+    #: dev-flow sets ``feature_brief`` (post-ideation, and pre-seeded by
+    #: ``DevFlowRunner.run`` for a document intake) and ``dev_brief`` (the
+    #: raw intake). ``IdeationNode`` deliberately forwards ``dev_agents``
+    #: onto the ``FeatureBrief`` it publishes, so the per-run pool survives
+    #: ideation and is readable here under either dev-flow key.
+    _BRIEF_KEYS: tuple[str, ...] = ("work_brief", "bug_brief", "feature_brief", "dev_brief")
+
     def _resolve_pool_config(self, shared: Dict[str, Any]) -> Optional[DevAgentPoolConfig]:
         """Resolve the effective pool config: brief > injected > none.
 
@@ -409,11 +425,18 @@ class DevelopmentNode(DevLoopNode):
             A :class:`DevAgentPoolConfig`, or ``None`` when no pool config
             resolves from either source (single-agent path).
         """
-        brief = shared.get("work_brief") or shared.get("bug_brief")
-        dev_agents = getattr(brief, "dev_agents", None) if brief is not None else None
-        if dev_agents:
-            isolation_mode = getattr(brief, "dev_isolation", None) or "shared"
-            return DevAgentPoolConfig(agents=dev_agents, isolation_mode=isolation_mode)
+        # First brief that actually DECLARES a pool wins, rather than the
+        # first brief that merely exists: a dev-flow run carries both
+        # `dev_brief` and `feature_brief`, and keying off presence alone
+        # would make the answer depend on their ordering here.
+        for key in self._BRIEF_KEYS:
+            brief = shared.get(key)
+            if brief is None:
+                continue
+            dev_agents = getattr(brief, "dev_agents", None)
+            if dev_agents:
+                isolation_mode = getattr(brief, "dev_isolation", None) or "shared"
+                return DevAgentPoolConfig(agents=dev_agents, isolation_mode=isolation_mode)
         return self._pool_config
 
     def _collapse_for_single_task(

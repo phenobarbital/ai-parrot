@@ -550,9 +550,18 @@ async def handle_run(request: web.Request) -> web.Response:
     # message never printed — a changed research partner or a blank review
     # primary model logged "requested == effective" and read as a false
     # positive. `plan_diffs` both gates the warning and IS the warning.
+    # `dev_pool` is deliberately NOT reported: the development pool IS
+    # per-run. `_build_dev_brief_from_form` puts the very same `dev_agents`
+    # rows on the brief, `IdeationNode` forwards them onto the FeatureBrief,
+    # and `DevelopmentNode._resolve_pool_config` reads the brief BEFORE its
+    # injected build-time config. The remaining seats (ideation model,
+    # review pair) really are baked into node constructors at flow-build
+    # time, and those are what this warning is about.
     plan_diffs: list[str] = []
     if requested_plan is not None:
-        plan_diffs = _plan_field_diffs(requested_plan, effective_plan)
+        plan_diffs = [
+            diff for diff in _plan_field_diffs(requested_plan, effective_plan) if not diff.startswith("dev_pool")
+        ]
     if plan_diffs:
         logger.warning(
             "dev-flow run_id=%s requested a model plan that differs from the "

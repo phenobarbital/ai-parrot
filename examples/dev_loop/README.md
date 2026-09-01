@@ -578,9 +578,14 @@ Two behaviours worth knowing:
   via NIM.
 
 > **Two limitations, stated plainly.**
-> 1. `model_plan` is a **build-time** input — the seats it selects are
->    baked into node constructors, and this console builds one flow at
->    startup. A submitted plan is fully validated and echoed back in the
+> 1. `model_plan` is a **build-time** input for the ideation and review
+>    seats — those are baked into node constructors, and this console
+>    builds one flow at startup. **The development pool is the exception:
+>    it is per-run.** The console's `dev_agents` rows also travel on the
+>    brief, `IdeationNode` forwards them, and
+>    `DevelopmentNode._resolve_pool_config` reads the brief before its
+>    injected config — so changing the pool for a single run works and is
+>    never reported as ignored. A submitted plan is fully validated and echoed back in the
 >    run response, and any difference from the server's plan is logged as
 >    a warning — **field by field**, naming each seat, and only for fields
 >    the console actually expressed (a blank input means "server default",

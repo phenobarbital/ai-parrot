@@ -356,6 +356,26 @@ class TestRunResponseReportsIgnoredSeats:
         resp = await client.post("/api/flow/run", json=_nl_form(**form))
         assert (await resp.json())["model_plan_ignored"] == ["research_partner.enabled: requested=True effective=False"]
 
+    async def test_dev_pool_is_never_reported_as_ignored(self, make_client, server_dev):
+        """The development pool IS per-run — reporting it as ignored was wrong.
+
+        The console's `dev_agents` rows also travel on the brief, and
+        `DevelopmentNode._resolve_pool_config` reads the brief before its
+        injected build-time config, so a per-run pool really does take
+        effect. Only the ideation and review seats are build-time.
+        """
+        client = await make_client()
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        form["dev_agents"] = [{"agent": "nova", "model": "moonshotai.kimi-k2.5", "count": 1}]
+        resp = await client.post("/api/flow/run", json=_nl_form(**form))
+        body = await resp.json()
+
+        assert body["model_plan_ignored"] == []
+        # ...and the rows still reach the flow on the brief.
+        flow = client.app["flow"]
+        brief = flow.contexts[-1].shared_data["dev_brief"]
+        assert [(spec.agent, spec.model) for spec in brief.dev_agents] == [("nova", "moonshotai.kimi-k2.5")]
+
     async def test_warning_names_the_differing_seat(self, make_client, server_dev, caplog):
         import logging
 

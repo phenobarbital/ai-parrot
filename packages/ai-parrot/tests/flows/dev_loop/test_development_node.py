@@ -17,6 +17,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    FeatureBrief,
     FlowtaskCriterion,
     LogSource,
     ResearchOutput,
@@ -50,6 +51,20 @@ def _work_brief(**overrides) -> WorkBrief:
     )
     defaults.update(overrides)
     return WorkBrief(**defaults)
+
+
+def _feature_brief(tmp_path: Path, **overrides) -> FeatureBrief:
+    """dev-flow's brief shape — the one this node never used to look for.
+
+    ``FeatureBrief`` validates that ``document_path`` exists, so the spec
+    file is materialised under ``tmp_path``.
+    """
+    document = tmp_path / "x.spec.md"
+    if not document.exists():
+        document.write_text("# spec\n", encoding="utf-8")
+    defaults = dict(document_path=str(document), document_kind="spec")
+    defaults.update(overrides)
+    return FeatureBrief(**defaults)
 
 
 def _write_index(worktree_path: Path, feat_id: str, feature_slug: str, tasks: list) -> None:
@@ -362,6 +377,79 @@ class TestCascade:
 
         assert brief_dispatcher.calls  # brief's codex spec won
         assert not injected_dispatcher.calls
+
+    @pytest.mark.parametrize("brief_key", ["feature_brief", "dev_brief"])
+    async def test_dev_flow_brief_pool_overrides_injected(self, tmp_path, brief_key):
+        """dev-flow publishes its brief under its OWN keys, never the bug ones.
+
+        Regression: this resolver read only ``work_brief``/``bug_brief``, so
+        every dev-flow run silently ignored the console's per-run pool and
+        fell back to the build-time ``model_plan`` — while the UI told the
+        operator to restart the server to change a seat that was in fact
+        meant to be per-run. ``DevFlowRunner.run`` states outright that the
+        bug-mode keys stay unset.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        injected_dispatcher = FakeDispatcher()
+        brief_dispatcher = FakeDispatcher()
+        brief = _feature_brief(tmp_path, dev_agents=[DevAgentSpec(agent="codex", count=2)])
+
+        def _builder(spec: DevAgentSpec):
+            if spec.agent == "codex":
+                return brief_dispatcher, object()
+            return injected_dispatcher, object()
+
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_builder,
+            pool_max=4,
+        )
+
+        ctx = {"run_id": "r1", "research_output": research, brief_key: brief}
+        await node.execute(ctx)
+
+        assert brief_dispatcher.calls  # the per-run pool won
+        assert not injected_dispatcher.calls
+
+    async def test_brief_without_a_pool_still_falls_back_to_injected(self, tmp_path):
+        """Only a brief that DECLARES a pool displaces the build-time one."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+            pool_max=4,
+        )
+
+        ctx = {
+            "run_id": "r1",
+            "research_output": research,
+            # Present but silent about the pool — dev-flow always seeds this.
+            "dev_brief": _feature_brief(tmp_path),
+        }
+        await node.execute(ctx)
+
+        assert len(d1.calls) == 1 and len(d2.calls) == 1
 
     async def test_missing_index_degrades_to_single_via_declared_agent(self, tmp_path):
         """FEAT-466 TASK-2506: a missing per-spec index (the normal case for
