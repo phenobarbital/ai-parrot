@@ -316,7 +316,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -326,8 +326,8 @@
       "parallelism_notes": "Isolated node; off by default.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2674-email-digests-disabled.md"
+      "completed_at": "2026-09-01T04:46:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2674-email-digests-disabled.md"
     },
     {
       "id": "TASK-2675",

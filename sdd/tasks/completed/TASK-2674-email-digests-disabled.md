@@ -51,3 +51,27 @@ Spec Module 15. Keep daily/weekly email digests available for future use, shippe
 async def test_email_disabled_by_default(): ...
 async def test_email_sends_when_enabled(): ...
 ```
+
+### Completion Note
+
+`nodes/email.py`: `run_email_digest(agent, toolkit, *, kind, window_days,
+recipients, today=None) -> DigestOutcome` — ports the
+`_run_digest`/`email_daily_meeting_digest`/`email_weekly_insights`
+pattern from `agents/fireflies_wiki.py` (referenced only, never
+imported/edited). Gated by `conf.FIREFLIES_WIKI_EMAIL_ENABLED` (default
+`False`) as the very first check — `agent.send_email` is never even
+constructed-toward when the flag is off. `build_digest_content()` reads
+`Diary/Daily Notes/<date>.md` (this subsystem's own compiled synthesis,
+Module 12) over the lookback window and extracts each day's
+`## Daily Summary` section — never touches `Raw/` at all. Uses
+`agent.send_email()` + `agent.notification_succeeded()`
+(`NotificationMixin`, already mixed into `BasicAgent` → `Agent`) exactly
+as the reference agent does, including the same "never raises, read the
+result back" discipline (`status="partial"` vs `"ok"`).
+
+Verified: `pytest packages/ai-parrot/tests/unit/test_wiki_kb_email.py`
+(6 passed — disabled-by-default, sends when enabled, skips on no
+recipients, skips on no content, content-from-compiled-notes-not-raw
+with an explicit raw-transcript-string absence assertion, partial
+status on provider failure); `ruff check` clean; `mypy` clean; full
+wiki-kb suite (97 tests) stays green.
