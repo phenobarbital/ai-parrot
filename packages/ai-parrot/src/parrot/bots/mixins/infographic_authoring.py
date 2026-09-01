@@ -22,9 +22,20 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from parrot.outputs.a2ui.models import CreateSurface
+from parrot.outputs.a2ui.recipes.models import (
+    DataSourceSpec,
+    InfographicRecipe,
+    LayoutSpec,
+    RenderSpec,
+    TransformStep,
+)
+from parrot.outputs.a2ui.recipes.store import RecipeNotFoundError
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 from parrot.tools.infographic_sections import (
     GapReport,
     ProvenanceDescriptor,
@@ -38,15 +49,6 @@ from parrot.tools.infographic_toolkit import (
     InfographicToolkit,
     InfographicValidationError,
 )
-from parrot.outputs.a2ui.recipes.models import (
-    DataSourceSpec,
-    InfographicRecipe,
-    LayoutSpec,
-    RenderSpec,
-    TransformStep,
-)
-from parrot.outputs.a2ui.recipes.store import RecipeNotFoundError
-from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 
 logger = logging.getLogger(__name__)
 
@@ -434,6 +436,131 @@ class InfographicAuthoringMixin:
             bool(delivery),
         )
         return recipe
+
+    async def publish_surface(
+        self,
+        *,
+        kind: str,
+        title: str,
+        envelope: CreateSurface | dict,
+        recipe_name: str | None = None,
+        recipe_owner: str | None = None,
+        recipe_params: dict | None = None,
+        overwrite: bool = False,
+        surface_store: Any = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """Validate + persist a surface to the ui_surfaces plane (FEAT-492 G4).
+
+        Programmatic sibling of :meth:`publish_recipe`, for persisting a
+        rehydratable A2UI surface (dashboard/infographic/widget) so it can be
+        fetched later via ``GET /api/v1/ui/surfaces/{surface_id}`` (TASK-2702)
+        — independent of whether ``recipe_name`` is set (a recipe-backed
+        surface is additionally *refreshable*; a one-shot surface is not).
+
+        Args:
+            kind: One of ``"dashboard"``, ``"infographic"``, ``"widget"``
+                (``UISurfaceKind`` — validated by the store's row model).
+            title: Human-readable surface title.
+            envelope: A :class:`CreateSurface` instance, or its dict dump —
+                either is accepted and coerced via
+                ``CreateSurface.model_validate``.
+            recipe_name: When set, the surface is *refreshable* — stored as
+                its ``recipe_ref`` for ``POST .../refresh`` (TASK-2702) to
+                replay via ``RecipeRunner``.
+            recipe_owner: Owner scope the recipe was saved under (must match
+                ``publish_recipe``'s ``owner``, when applicable).
+            recipe_params: Params snapshot used to produce this envelope —
+                the refresh lane's "stored" precedence tier.
+            overwrite: Replace an existing ``surface_id`` row. When False
+                (default), a collision raises ``ValueError`` (store semantics).
+            surface_store: Injection seam (spec §8) — an explicit
+                ``PgUISurfaceStore``-shaped store. Takes precedence over a
+                ``self._surface_store`` attribute the hosting bot may carry,
+                which in turn takes precedence over lazily importing the
+                default ``PgUISurfaceStore`` from ai-parrot-server (core MUST
+                NOT import server code at module level — one-way import rule).
+            user_id: Attributed owner of the row. Falls back to
+                ``self.user_id`` (when the hosting bot carries one) and
+                finally to the resolved ``agent_id`` (self-authored surface,
+                never invented from nothing) — see the Completion Note for
+                TASK-2704's resolution of this injection seam.
+            session_id: Optional originating session, attached verbatim.
+
+        Returns:
+            The persisted ``surface_id``.
+
+        Raises:
+            ValueError: On a ``surface_id`` collision when ``overwrite`` is
+                False (propagated from the store).
+            RuntimeError: When no store is injected/wired AND
+                ai-parrot-server is not installed — an actionable message,
+                never a bare ``ModuleNotFoundError``.
+        """
+        envelope_model = envelope if isinstance(envelope, CreateSurface) else CreateSurface.model_validate(envelope)
+        surface_id = envelope_model.surface_id or uuid.uuid4().hex
+
+        PgUISurfaceStore, UISurfaceKind, UISurfaceRecord = self._lazy_import_ui_surfaces_models()
+        store = surface_store if surface_store is not None else getattr(self, "_surface_store", None)
+        if store is None:
+            store = PgUISurfaceStore()
+
+        agent_id = getattr(self, "name", None) or "unknown-agent"
+        resolved_user_id = user_id or getattr(self, "user_id", None) or agent_id
+
+        now = datetime.now(timezone.utc)
+        record = UISurfaceRecord(
+            surface_id=surface_id,
+            kind=UISurfaceKind(kind),
+            title=title,
+            envelope=envelope_model.model_dump(by_alias=True, mode="json"),
+            catalog_id=envelope_model.catalog_id,
+            agent_id=agent_id,
+            user_id=resolved_user_id,
+            session_id=session_id,
+            recipe_name=recipe_name,
+            recipe_owner=recipe_owner,
+            recipe_params=recipe_params or {},
+            created_at=now,
+            updated_at=now,
+        )
+        persisted_id = await store.save(record, overwrite=overwrite)
+        self.logger.info(
+            "publish_surface(%s): saved kind=%s title=%r refreshable=%s.",
+            persisted_id,
+            kind,
+            title,
+            recipe_name is not None,
+        )
+        return persisted_id
+
+    @staticmethod
+    def _lazy_import_ui_surfaces_models():
+        """Lazily import the ui_surfaces plane's store + row models (FEAT-492).
+
+        The store AND its Pydantic row models (``UISurfaceRecord``/
+        ``UISurfaceKind``) live in the server package
+        (``parrot.handlers.models.ui_surfaces``) — core MUST NOT import them
+        at module level (one-way import rule). Raises an actionable
+        ``RuntimeError`` (not a bare ``ModuleNotFoundError``) when
+        ai-parrot-server is not installed.
+        """
+        try:
+            from parrot.handlers.models.ui_surfaces import (
+                PgUISurfaceStore,
+                UISurfaceKind,
+                UISurfaceRecord,
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "InfographicAuthoringMixin.publish_surface requires the "
+                "ai-parrot-server package (for PgUISurfaceStore/UISurfaceRecord/"
+                "UISurfaceKind). Install/enable ai-parrot-server, or pass an "
+                "explicit surface_store= (with a compatible save()) to avoid "
+                "this dependency entirely."
+            ) from exc
+        return PgUISurfaceStore, UISurfaceKind, UISurfaceRecord
 
     @staticmethod
     def _transformer_name(section: SectionSpec) -> str:
