@@ -54,10 +54,12 @@ JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_cod
 ADVERSARIAL_BACKEND: str = "codex"
 
 # Valid values for the config-resolved adversarial backend selector
-# (FEAT-405 Module 5). Deliberately NOT the full ``DevAgentBackend`` set —
+# (FEAT-405 Module 5; widened by FEAT-486 with "mantle" - purely
+# additive, the "codex" default and "nova" choice are unchanged).
+# Deliberately NOT the full ``DevAgentBackend`` set —
 # only backends with a registered "<backend>-adversarial" review
 # dispatcher qualify.
-_ADVERSARIAL_BACKEND_CHOICES: Tuple[str, ...] = ("codex", "nova")
+_ADVERSARIAL_BACKEND_CHOICES: Tuple[str, ...] = ("codex", "nova", "mantle")
 
 
 def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) -> str:
@@ -73,11 +75,12 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
             ``conf.config.get``.
 
     Returns:
-        ``"codex"`` or ``"nova"``.
+        ``"codex"``, ``"nova"`` or ``"mantle"`` (FEAT-486 — the
+        read-only ``gpt-5.6-sol`` counter-reviewer over bedrock-mantle).
 
     Raises:
-        ValueError: If the configured value is neither ``"codex"`` nor
-            ``"nova"`` — names the valid options.
+        ValueError: If the configured value is not one of those three
+            — names the valid options.
     """
     getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
     value = str(
@@ -86,7 +89,7 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
     if value not in _ADVERSARIAL_BACKEND_CHOICES:
         raise ValueError(
             f"Invalid DEV_LOOP_ADVERSARIAL_BACKEND={value!r}; must be one "
-            f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova)."
+            f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova, mantle)."
         )
     return value
 
@@ -241,14 +244,22 @@ BACKENDS: Tuple[BackendInfo, ...] = (
             "us.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
+            # FEAT-486 additions (append-only — every id above is
+            # unchanged): the console's second default dev-pool seat,
+            # and the counter-reviewer model reachable over bedrock-mantle.
+            "qwen.qwen3-coder-480b-a35b-v1:0",
+            "gpt-5.6-sol",
         ),
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
         roles=("development", "adversarial"),
-        notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
-              "adversarial seat is a read-only, no-tools Converse call on "
-              "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
-              "us.anthropic.* ids remain selectable but require the "
-              "per-account Anthropic use-case form on Bedrock.",
+        notes="Dev seat routes MiniMax/Kimi/GLM/Qwen3-coder via "
+              "bedrock-mantle; the adversarial seat is a read-only, "
+              "no-tools call — Converse on Nova 2 Lite via "
+              "DEV_LOOP_ADVERSARIAL_BACKEND='nova', or Chat Completions "
+              "on bedrock-mantle (gpt-5.6-sol, FEAT-486) via "
+              "DEV_LOOP_ADVERSARIAL_BACKEND='mantle'. The us.anthropic.* "
+              "ids remain selectable but require the per-account "
+              "Anthropic use-case form on Bedrock.",
     ),
 )
 

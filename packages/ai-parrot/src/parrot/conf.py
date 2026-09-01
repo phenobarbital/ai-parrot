@@ -1073,12 +1073,26 @@ DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
     "DEV_LOOP_NOVA_MECHANICAL_MODEL",
     fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
 )
-# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
-# {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see
-# byte-identical behaviour to pre-FEAT-405. Resolved through
-# ``catalog.resolve_adversarial_backend()`` (validates the value and
-# raises naming the valid options); this constant exists for discoverability
-# alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above (:1048,1053,1076).
+# FEAT-486: model used by the read-only mantle-adversarial counter-reviewer
+# (``MantleAdversarialReviewDispatcher``), served over the OpenAI-compatible
+# bedrock-mantle endpoint. A NEW key rather than a repoint of
+# ``DEV_LOOP_ADVERSARIAL_MODEL`` (:1048), which stays the codex seat's —
+# the two seats can run different models in the same deployment (they do by
+# default: gpt-5.5 on codex, gpt-5.6-sol here). Duplicated (not imported)
+# from ``dispatchers.mantle.MANTLE_DEFAULT_REVIEW_MODEL`` for the same
+# reason as _NOVA_DEFAULT_CONVERSE_MODEL above — conf.py must not import
+# ``parrot.flows``; the two literals are pinned equal by test.
+DEV_LOOP_MANTLE_REVIEW_MODEL: str = config.get(
+    "DEV_LOOP_MANTLE_REVIEW_MODEL",
+    fallback="gpt-5.6-sol",
+)
+# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]; widened by
+# FEAT-486): choice over {"codex", "nova", "mantle"}, defaulting to "codex"
+# — unconfigured deployments see byte-identical behaviour to pre-FEAT-405.
+# Resolved through ``catalog.resolve_adversarial_backend()`` (validates the
+# value and raises naming the valid options); this constant exists for
+# discoverability alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above
+# (:1048,1053,1076).
 DEV_LOOP_ADVERSARIAL_BACKEND: str = config.get("DEV_LOOP_ADVERSARIAL_BACKEND", fallback="codex")
 
 # ---------------------------------------------------------------------------
