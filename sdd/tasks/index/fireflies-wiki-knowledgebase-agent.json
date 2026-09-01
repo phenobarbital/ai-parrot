@@ -14,7 +14,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation; creates the package + config + facade everything imports.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2660-scaffolding-config-agent-facade.md"
+      "completed_at": "2026-09-01T02:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2660-scaffolding-config-agent-facade.md"
     },
     {
       "id": "TASK-2661",
