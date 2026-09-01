@@ -22,6 +22,7 @@ worktree) rather than a possibly-stale editable install elsewhere on
    checkout, CI), they are used unmodified.
 3. Runs ``parrot.cli.cli()`` with the real CLI argv.
 """
+
 import json
 import subprocess
 import sys
@@ -33,8 +34,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CORE_SRC = _REPO_ROOT / "packages" / "ai-parrot" / "src"
 
-_BOOTSTRAP = textwrap.dedent(
-    f"""
+_BOOTSTRAP = textwrap.dedent(f"""
     import sys, types
     sys.path.insert(0, {str(_CORE_SRC)!r})
 
@@ -66,8 +66,7 @@ _BOOTSTRAP = textwrap.dedent(
 
     from parrot.cli import cli
     cli(prog_name="parrot")
-    """
-)
+    """)
 
 
 def _spawn(cwd: Path, *args: str) -> subprocess.Popen:
@@ -98,9 +97,7 @@ def _recv(proc: subprocess.Popen, timeout: float = 10.0) -> dict:
     line = proc.stdout.readline()
     if not line:
         stderr = proc.stderr.read()
-        raise AssertionError(
-            f"subprocess produced no output (exit={proc.poll()}); stderr:\n{stderr}"
-        )
+        raise AssertionError(f"subprocess produced no output (exit={proc.poll()}); stderr:\n{stderr}")
     try:
         return json.loads(line)
     except json.JSONDecodeError as exc:
@@ -215,17 +212,14 @@ def test_stdout_purity_with_printing_toolkit(tmp_path):
         "\n"
         "class PrintingToolkit(AbstractToolkit):\n"
         "    async def echo(self, x: str) -> str:\n"
-        "        \"\"\"Echo the input back.\"\"\"\n"
+        '        """Echo the input back."""\n'
         "        return x\n",
         encoding="utf-8",
     )
     parrot_dir = tmp_path / ".parrot"
     parrot_dir.mkdir()
     (parrot_dir / "mcp-toolkits.yaml").write_text(
-        "toolkits:\n"
-        "  printer:\n"
-        "    class: printing_toolkit.PrintingToolkit\n"
-        "    kwargs: {}\n",
+        "toolkits:\n" "  printer:\n" "    class: printing_toolkit.PrintingToolkit\n" "    kwargs: {}\n",
         encoding="utf-8",
     )
 
