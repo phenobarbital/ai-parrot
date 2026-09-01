@@ -31,6 +31,13 @@ from** ``server.py`` rather than copied, so the two consoles cannot drift.
 Deliberately NOT imported: ``_build_log_toolkits`` (CloudWatch) and
 ``_build_brief_from_form`` (bug intake).
 
+FEAT-484/485/486 wiring (see ``README.md`` §"Research-seat MCP access"):
+the ideation (research) seat gets the ``.parrot/mcp-toolkits.yaml`` toolkit
+servers as extra MCP servers (its wikitoolkit server is built in), via the
+sibling ``mcp_wiring.build_research_mcp``; ``DEV_FLOW_USE_REVIEW_PAIR=true``
+swaps the judge panel for the model plan's review pair as the active QA
+reviewer.
+
 Run it with::
 
     PORT=8081 python examples/dev_loop/server_dev.py
@@ -81,6 +88,7 @@ from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 # ``llm_catalog``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import llm_catalog
+import mcp_wiring
 import server as ops_server
 
 logger = logging.getLogger("dev_flow.server")
@@ -336,7 +344,9 @@ def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = Tr
         },
         "pool_backends": list(supported_dev_pool_backends()),
         "review_primary_backends": list(llm_catalog.PRIMARY_REVIEW_BACKENDS),
-        "partner_backends": ["gpt", "nova"],
+        # Derived from the catalog's role lists rather than a hardcoded
+        # literal, so a new partner backend shows up here automatically.
+        "partner_backends": [b.id for b in llm_catalog.backends_for_role("research_partner")],
     }
 
 
@@ -630,9 +640,9 @@ async def _on_startup(app: web.Application) -> None:
         )
     else:
         raise RuntimeError(
-            "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
-            "'gemini', 'nvidia', 'grok', 'zai', or 'moonshot', "
-            f"got {development_agent!r}"
+            f"DEV_LOOP_DEVELOPMENT_AGENT must be one of "
+            f"{', '.join(supported_dev_pool_backends())} "
+            f"(or the legacy alias 'llm'), got {development_agent!r}"
         )
 
     # -- QA review: the judge panel is dev-flow's default review gate ----
@@ -641,7 +651,20 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher=development_dispatcher,
         redis_url=redis_url,
     )
-    judge_panel_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
+    # FEAT-486: opt-in switch to the model plan's review PAIR (primary +
+    # mantle counter-reviewer). Default false keeps the FEAT-378 judge
+    # panel byte-identical. An explicit dispatcher wins over the plan by
+    # design (TASK-2655 precedence), so activating the pair means passing
+    # codereview_dispatcher=None and letting the factories assemble it.
+    use_review_pair = mcp_wiring._config_flag("DEV_FLOW_USE_REVIEW_PAIR", False)
+    qa_review_dispatcher = None
+    if use_review_pair:
+        logger.info(
+            "DEV_FLOW_USE_REVIEW_PAIR=true — QA uses the model plan's "
+            "review pair (primary + counter-model) instead of the judge panel."
+        )
+    else:
+        qa_review_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
 
     repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
     if repos:
@@ -694,6 +717,20 @@ async def _on_startup(app: web.Application) -> None:
     wiki_search = DevLoopWikiSearch.from_project()
     app["wiki_search"] = wiki_search
 
+    # FEAT-484/485: extra MCP servers for the ideation (research) seat —
+    # the wikitoolkit graph-search server is BUILT IN to IdeationNode, so
+    # only the `.parrot/mcp-toolkits.yaml` toolkit servers (e.g. the
+    # ReadOnlyRepoToolkit `repo` section) are additive here; a duplicate
+    # wikitoolkit entry from the wiring is overridden by the node's own.
+    research_mcp_servers, research_mcp_tools = mcp_wiring.build_research_mcp(Path(conf.PROJECT_ROOT))
+    extra_mcp_servers = {k: v for k, v in research_mcp_servers.items() if k != "wikitoolkit"}
+    extra_mcp_tools = [t for t in research_mcp_tools if not t.startswith("mcp__wikitoolkit")]
+    if extra_mcp_servers:
+        logger.info(
+            "Ideation-seat extra MCP servers: %s",
+            ", ".join(sorted(extra_mcp_servers)),
+        )
+
     jira_toolkit = _build_optional_jira_toolkit()
     app["jira_toolkit"] = jira_toolkit
     git_toolkit = ops_server._build_git_toolkit()
@@ -714,7 +751,7 @@ async def _on_startup(app: web.Application) -> None:
         "jira_toolkit": jira_toolkit,
         "git_toolkit": git_toolkit,
         "wiki_toolkit": wiki_toolkit,
-        "codereview_dispatcher": judge_panel_dispatcher,
+        "codereview_dispatcher": qa_review_dispatcher,
         "development_dispatcher_builder": development_dispatcher_builder,
         "development_pool_max": development_pool_max,
         "graph_memory": graph_memory,
@@ -723,10 +760,16 @@ async def _on_startup(app: web.Application) -> None:
         "require_plan_approval": require_plan_approval,
         # FEAT-486: selects every LLM seat — the development pool (with
         # `agent_builder.build_dispatcher` as its worker builder), the
-        # ideation model, and QANode's review pair. Note this OVERRIDES the
-        # `codereview_dispatcher` above only when that is None; the console
-        # passes an explicit judge panel, which keeps precedence.
+        # ideation model, and QANode's review pair. The plan's review pair
+        # only activates when `codereview_dispatcher` is None
+        # (DEV_FLOW_USE_REVIEW_PAIR=true); the default judge panel keeps
+        # precedence otherwise.
         "model_plan": model_plan,
+        # FEAT-485: `.parrot/mcp-toolkits.yaml` servers for the ideation
+        # seat (its wikitoolkit server is built in). None keeps the
+        # dispatch byte-identical.
+        "research_mcp_servers": extra_mcp_servers or None,
+        "research_mcp_tools": extra_mcp_tools or None,
         "name": "dev-flow-console",
     }
     app["flow"] = build_dev_flow(**dev_loop_flow_kwargs)
@@ -737,7 +780,7 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=git_toolkit,
         wiki_toolkit=wiki_toolkit,
         redis_url=redis_url,
-        codereview_dispatcher=judge_panel_dispatcher,
+        codereview_dispatcher=qa_review_dispatcher,
         graph_memory=graph_memory,
         # FEAT-480 (TASK-2628): see server.py's identical wiring note — each
         # `handle_run` request below mints its own stable per-job `run_id`
@@ -748,12 +791,13 @@ async def _on_startup(app: web.Application) -> None:
     )
 
     app["runner"] = runner
-    app["codereview_agent_key"] = codereview_agent_key
-    # FEAT-486: this console keeps the FEAT-378 judge panel as its QA
-    # reviewer (an explicit `codereview_dispatcher` wins over the plan by
-    # design), so the plan's review PAIR is configured but not the active
-    # reviewer here. Reported honestly to the UI rather than implied.
-    app["review_pair_active"] = False
+    app["codereview_agent_key"] = "review-pair" if use_review_pair else codereview_agent_key
+    # FEAT-486: by default this console keeps the FEAT-378 judge panel as
+    # its QA reviewer (an explicit `codereview_dispatcher` wins over the
+    # plan by design), so the plan's review PAIR is configured but not the
+    # active reviewer. DEV_FLOW_USE_REVIEW_PAIR=true flips it. Reported
+    # honestly to the UI rather than implied.
+    app["review_pair_active"] = use_review_pair
     app["development_pool_max"] = development_pool_max
     app["require_plan_approval"] = require_plan_approval
     app["flow_tasks"] = {}  # run_id -> asyncio.Task

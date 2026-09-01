@@ -460,11 +460,13 @@ Dos comportamientos que conviene saber:
 >    se devuelve en la respuesta, y cualquier diferencia con el plan del
 >    servidor se registra como warning — pero el run usa el plan del
 >    **servidor**. Reinicia la consola con las `DEV_FLOW_*` que quieras.
-> 2. Esta consola usa el **judge panel** de FEAT-378 como revisor de QA, y
->    un revisor explícito gana al plan por diseño. La pareja de revisión
->    queda configurada y validada pero no es el revisor activo aquí:
->    `defaults.model_plan.review_pair_active` lo reporta como `false` y la
->    UI lo dice.
+> 2. Por defecto esta consola usa el **judge panel** de FEAT-378 como
+>    revisor de QA, y un revisor explícito gana al plan por diseño. La
+>    pareja de revisión queda configurada y validada pero no es el revisor
+>    activo: `defaults.model_plan.review_pair_active` lo reporta como
+>    `false` y la UI lo dice. Con `DEV_FLOW_USE_REVIEW_PAIR=true` la
+>    consola suelta el judge panel y deja que el plan monte su pareja de
+>    revisión (primario + contra-revisor Mantle) como revisor activo.
 
 Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
 
@@ -480,11 +482,55 @@ Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
 | `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Modelo del partner, **por backend**. Las variables `_ENABLED`/`_BACKEND`/`_MODEL` de FEAT-486 quedaron retiradas por FEAT-487 y ya no hacen nada |
 | `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Revisor primario (con permisos de escritura) |
 | `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Contra-revisor de solo lectura, sobre Bedrock Mantle |
-| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | Modelo propio del contra-revisor Mantle. Distinta de `DEV_LOOP_ADVERSARIAL_MODEL` (la del asiento codex) |
+| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | Modelo propio del contra-revisor Mantle. Distinta de `DEV_LOOP_ADVERSARIAL_MODEL` (la del asiento codex). También la usa el revisor `mantle-adversarial` cuando `DEV_LOOP_ADVERSARIAL_BACKEND=mantle` |
+| `DEV_FLOW_USE_REVIEW_PAIR` | `false` | Solo consola dev: sustituye el judge panel por la pareja de revisión del plan como revisor de QA activo |
+| `DEV_LOOP_RESEARCH_MCP_ENABLED` | `true` | Interruptor del wiring MCP de los asientos de research (ambas consolas) — ver §9.9 |
+| `DEV_LOOP_RESEARCH_MCP_TOOLKITS` | `auto` | Secciones de `.parrot/mcp-toolkits.yaml` a servir a los asientos de research (`auto` = las declaradas en el archivo) |
+| `NOVA_CODE_MAX_CONCURRENT_DISPATCHES` | `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | Tope de concurrencia con `DEV_LOOP_DEVELOPMENT_AGENT=nova` |
 
 El resto se reutiliza tal cual de las `DEV_LOOP_*` que ya conoces
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
 `DEV_LOOP_DEV_AGENTS`, `FLOW_MAX_CONCURRENT_RUNS`…).
+
+### 9.9. Acceso MCP para los agentes de research (FEAT-484/485)
+
+Las dos consolas entregan a los **agentes de research** despachados una
+superficie MCP explícita (montada por el módulo hermano `mcp_wiring.py` al
+arrancar):
+
+* **Búsqueda en el grafo `wikitoolkit`** (FEAT-403) — el trío de solo
+  lectura `wiki_query` / `wiki_page` / `wiki_related`. En la consola ops
+  llega al dispatch `sdd-research` del `ResearchNode`; el `IdeationNode`
+  de la consola dev ya lo trae integrado.
+* **Servidores de toolkits locales FEAT-485** — cada sección declarada en
+  `<repo>/.parrot/mcp-toolkits.yaml` se sirve como `parrot mcp-local
+  <nombre>`. Copia `mcp-toolkits.example.yaml` para tener una sección
+  `repo` que expone el **`ReadOnlyRepoToolkit`** de FEAT-484 (acceso al
+  repositorio confinado y estrictamente de solo lectura: `search_code`,
+  `read_file`, `grep_files`, `git_log`/`git_show`/`git_blame`,
+  `web_search` opt-in).
+
+Como estos dispatches corren con `strict_mcp_config=True` (el CLI headless
+ignora el `.mcp.json` del sistema de archivos), los servidores se pasan
+explícitamente en el perfil de dispatch, y cada entrada lleva
+`--config <ruta absoluta>` para que `parrot mcp-local` encuentre el YAML
+aunque el cwd del dispatch sea `WORKTREE_BASE_PATH` y no la raíz del repo.
+Usa un `repo_root` **absoluto** en el YAML por la misma razón.
+
+Todo degrada con gracia: un binario `wikitoolkit` ausente, un YAML
+inválido o una sección desconocida solo generan un warning y se sirve el
+subconjunto que resuelva. `DEV_LOOP_RESEARCH_MCP_ENABLED=false` apaga el
+wiring completo; `DEV_LOOP_RESEARCH_MCP_TOOLKITS=repo,memory` fija una
+lista explícita (puede incluir los builtin `scraping`/`browsing`/`memory`
+— ojo con sus extras opcionales).
+
+Relacionado (FEAT-482/486): la consola ops ahora también honra
+`DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` para el
+research partner colaborativo del `ResearchNode` — el partner usa
+`ReadOnlyRepoToolkit` de forma nativa, sin MCP. Además, el pool de env
+(`DEV_LOOP_DEV_AGENTS`) llega ahora también a la topología **feature** de
+la consola ops, así que el `PlannerNode` sugiere los backends reales del
+operador también ahí.
 
 ---
 

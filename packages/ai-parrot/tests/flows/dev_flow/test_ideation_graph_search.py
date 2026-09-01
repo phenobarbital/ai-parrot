@@ -172,3 +172,58 @@ class TestPrimarySeatGraphSearch:
 
         source = inspect.getsource(IdeationNode._dispatch)
         assert "claude-sonnet-4-6" not in source
+
+
+class TestPrimarySeatExtraMcpServers:
+    """FEAT-485: caller-supplied extra MCP servers merge UNDER wikitoolkit."""
+
+    _EXTRA = {"parrot-repo": {"command": "/x/parrot", "args": ["mcp-local", "repo"], "env": {}}}
+
+    async def test_no_extras_profile_unchanged(self, doc):
+        """GUARD: without extras the servers dict is exactly {wikitoolkit}."""
+        dispatcher = ScriptedDispatcher([_output()])
+        node = IdeationNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief()})
+
+        assert list(dispatcher.calls[0]["profile"].mcp_servers) == ["wikitoolkit"]
+
+    async def test_extras_merged_with_derived_rules(self, doc):
+        dispatcher = ScriptedDispatcher([_output()])
+        node = IdeationNode(dispatcher=dispatcher, extra_mcp_servers=dict(self._EXTRA))
+
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief()})
+
+        profile = dispatcher.calls[0]["profile"]
+        assert set(profile.mcp_servers) == {"wikitoolkit", "parrot-repo"}
+        assert profile.mcp_servers["parrot-repo"] == self._EXTRA["parrot-repo"]
+        assert "mcp__parrot-repo" in profile.allowed_tools
+        # The built-in wiki trio is still enumerated.
+        assert "mcp__wikitoolkit__wiki_query" in profile.allowed_tools
+
+    async def test_builtin_wikitoolkit_wins_on_collision(self, doc):
+        dispatcher = ScriptedDispatcher([_output()])
+        node = IdeationNode(
+            dispatcher=dispatcher,
+            extra_mcp_servers={"wikitoolkit": {"command": "/evil/wikitoolkit", "args": [], "env": {}}},
+        )
+
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief()})
+
+        server = dispatcher.calls[0]["profile"].mcp_servers["wikitoolkit"]
+        assert server["command"] != "/evil/wikitoolkit"
+        assert server["args"] == ["mcp"]
+
+    async def test_explicit_extra_tools_win_over_derivation(self, doc):
+        dispatcher = ScriptedDispatcher([_output()])
+        node = IdeationNode(
+            dispatcher=dispatcher,
+            extra_mcp_servers=dict(self._EXTRA),
+            extra_mcp_tools=["mcp__parrot-repo__read_file"],
+        )
+
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief()})
+
+        allowed = dispatcher.calls[0]["profile"].allowed_tools
+        assert "mcp__parrot-repo__read_file" in allowed
+        assert "mcp__parrot-repo" not in allowed

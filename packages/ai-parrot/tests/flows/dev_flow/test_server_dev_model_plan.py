@@ -135,7 +135,10 @@ class TestConfigPayload:
         plan = (await (await client.get("/api/config")).json())["defaults"]["model_plan"]
         assert "nova" in plan["pool_backends"]
         assert "claude-code" in plan["review_primary_backends"]
-        assert plan["partner_backends"] == ["gpt", "nova"]
+        # Derived from llm_catalog.backends_for_role("research_partner")
+        # (catalog order) instead of a hardcoded literal — assert the
+        # membership, not the ordering.
+        assert set(plan["partner_backends"]) == {"gpt", "nova"}
 
     async def test_nim_listed_not_default(self, make_client):
         """NIM must remain selectable in the catalog but never preselected."""

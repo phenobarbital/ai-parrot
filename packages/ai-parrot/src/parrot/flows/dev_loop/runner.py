@@ -221,6 +221,7 @@ def build_dev_loop_feature_flow(
     redis_url: str,
     codereview_dispatcher: Optional[Any] = None,
     development_dispatcher_builder: Optional[Any] = None,
+    development_pool_config: Optional[Any] = None,
     development_pool_max: int = 4,
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
@@ -261,6 +262,14 @@ def build_dev_loop_feature_flow(
         development_dispatcher_builder: Optional ``(DevAgentSpec) ->
             (dispatcher, profile)`` callable (FEAT-323) for ``DevelopmentNode``
             pool-worker materialization.
+        development_pool_config: Optional :class:`DevAgentPoolConfig`
+            (FEAT-323/486) forwarded via ``build_dev_loop_node_factories``
+            to BOTH ``DevelopmentNode`` (default pool when the brief
+            carries no ``dev_agents``) and ``PlannerNode`` (so
+            ``suggested_pool`` names the operator's real backends instead
+            of the claude-code default). ``None`` (default) preserves the
+            single-agent behaviour exactly — same semantics as
+            ``build_dev_loop_flow``'s kwarg of the same name.
         development_pool_max: Hard cap on total pool workers (FEAT-323),
             also passed to ``PlannerNode`` for its own pool-sizing cap.
         graph_memory: FEAT-377 TASK-1914/1915 (G2) — an optional
@@ -296,6 +305,7 @@ def build_dev_loop_feature_flow(
         git_toolkit=git_toolkit,
         wiki_toolkit=wiki_toolkit,
         development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_config=development_pool_config,
         development_pool_max=development_pool_max,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,

@@ -584,11 +584,13 @@ Two behaviours worth knowing:
 >    run response, and any difference from the server's plan is logged as
 >    a warning, but the run uses the **server's** plan. Restart the console
 >    with the desired `DEV_FLOW_*` keys to change seats.
-> 2. This console wires the FEAT-378 **judge panel** as its QA reviewer,
->    and an explicit reviewer wins over the plan by design. The review pair
->    is therefore configured and validated but not the active reviewer
->    here — `defaults.model_plan.review_pair_active` reports this as
->    `false`, and the UI says so.
+> 2. By default this console wires the FEAT-378 **judge panel** as its QA
+>    reviewer, and an explicit reviewer wins over the plan by design. The
+>    review pair is therefore configured and validated but not the active
+>    reviewer — `defaults.model_plan.review_pair_active` reports this as
+>    `false`, and the UI says so. Set `DEV_FLOW_USE_REVIEW_PAIR=true` to
+>    drop the judge panel and let the plan assemble its review pair
+>    (primary + Mantle counter-reviewer) as the active QA reviewer.
 
 See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
 
@@ -604,7 +606,11 @@ See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
 | `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Partner model, **per backend**. FEAT-486's `_ENABLED`/`_BACKEND`/`_MODEL` keys were retired by FEAT-487 and are inert. |
 | `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Write-enabled primary reviewer. |
 | `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Read-only counter-reviewer, over Bedrock Mantle. |
-| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | The Mantle counter-reviewer's own model key. Distinct from `DEV_LOOP_ADVERSARIAL_MODEL` (the codex seat's). |
+| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | The Mantle counter-reviewer's own model key. Distinct from `DEV_LOOP_ADVERSARIAL_MODEL` (the codex seat's). Also used when `DEV_LOOP_ADVERSARIAL_BACKEND=mantle` selects the `mantle-adversarial` reviewer in the ops console. |
+| `DEV_FLOW_USE_REVIEW_PAIR` | `false` | Dev console only: replace the judge panel with the model plan's review pair as the active QA reviewer. |
+| `DEV_LOOP_RESEARCH_MCP_ENABLED` | `true` | Kill switch for the research seats' MCP wiring (both consoles) — see the FEAT-484/485 section below. |
+| `DEV_LOOP_RESEARCH_MCP_TOOLKITS` | `auto` | Which `.parrot/mcp-toolkits.yaml` sections to serve to the research seats (`auto` = the sections declared in the file). |
+| `NOVA_CODE_MAX_CONCURRENT_DISPATCHES` | `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | Concurrency cap when `DEV_LOOP_DEVELOPMENT_AGENT=nova`. |
 
 Everything else is reused unchanged from the existing `DEV_LOOP_*` keys
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
@@ -618,6 +624,45 @@ per-run toggle overrides.
 
 Revision mode (`DevLoopRunner.run_revision`) is a library/`e2e_demo` feature
 and is not served by either console.
+
+## Research-seat MCP access (FEAT-484/485)
+
+Both consoles hand the dispatched **research agents** an explicit MCP
+surface (built by the sibling module `mcp_wiring.py` at startup):
+
+* **`wikitoolkit` graph search** (FEAT-403) — the read-only trio
+  `wiki_query` / `wiki_page` / `wiki_related`. In the ops console this
+  reaches `ResearchNode`'s `sdd-research` dispatch; the dev console's
+  `IdeationNode` already ships it built in.
+* **FEAT-485 local toolkit servers** — every section declared in
+  `<repo>/.parrot/mcp-toolkits.yaml` is served as `parrot mcp-local
+  <name>` and exposed to the research seats. Copy
+  `mcp-toolkits.example.yaml` to get a `repo` section exposing the
+  FEAT-484 **`ReadOnlyRepoToolkit`** (confined, strictly read-only
+  repository access: `search_code`, `read_file`, `grep_files`,
+  `git_log`/`git_show`/`git_blame`, opt-in `web_search`).
+
+Because these dispatches run with `strict_mcp_config=True` (the headless
+CLI ignores the filesystem `.mcp.json`), the servers are passed explicitly
+on the dispatch profile, and each server entry carries
+`--config <abs path>` so `parrot mcp-local` finds the YAML even though the
+research dispatch cwd is `WORKTREE_BASE_PATH`, not the repo root. Use an
+**absolute** `repo_root` in the YAML for the same reason.
+
+Everything degrades gracefully: a missing `wikitoolkit` binary, a missing
+or invalid YAML, or an unknown section name logs a warning and serves
+whatever subset resolves. `DEV_LOOP_RESEARCH_MCP_ENABLED=false` turns the
+whole wiring off; `DEV_LOOP_RESEARCH_MCP_TOOLKITS=repo,memory` pins an
+explicit section list (which may include the built-ins
+`scraping`/`browsing`/`memory` — mind their optional extras).
+
+Related (FEAT-482/486): the ops console now also honours
+`DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` for
+`ResearchNode`'s collaborative-research partner — the partner itself uses
+`ReadOnlyRepoToolkit` natively, no MCP required. The env pool
+(`DEV_LOOP_DEV_AGENTS`) now also reaches the ops console's **feature**
+topology, so `PlannerNode` suggests the operator's real backends there
+too.
 
 ## Stream layout (for reference)
 
