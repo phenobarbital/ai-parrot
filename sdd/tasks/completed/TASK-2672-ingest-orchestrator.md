@@ -54,3 +54,49 @@ async def test_ingest_end_to_end(): ...
 async def test_chronological_batch(): ...
 async def test_validation_failure_rolls_back(): ...
 ```
+
+### Completion Note
+
+`runner.py`: `run_ingest(ctx)` wires every prior module into the ordered
+pipeline — fetch-gate → **G5 chronological sort of the whole batch**
+(`sorted(..., key=lambda m: m.meeting_date)`) → per meeting: raw bundle
+(Uncategorized default) → classify → **contradiction detection against
+the meeting's own summary text vs. the existing project's parsed claims**
+(run here, before the meeting page renders / the project is reconciled —
+per this task's own literal Scope ordering, ahead of "choose
+destination"/"meeting page", not after Module 8 as the spec's Component
+Diagram sketch alone might suggest — the meeting page's own future
+vault path is pre-computed deterministically via `naming.
+meeting_source_filename` so contradiction pages can cite it before it
+exists, `queued in the same operation` per §8.1) → meeting page →
+project reconcile/new-project → entities/concepts → daily synthesis →
+§24 index/overview → §25 registry mirror → §34 gate → §33 log → §27 step
+22 archive (lazily picked up via `try/except ImportError` — TASK-2673
+lands after this task with no need to re-touch `runner.py`) → derived
+GraphIndex rebuild (never blocks, wrapped in try/except).
+
+**§34 gate**: every compiled write is snapshotted before it happens
+(`_write_note`/`_PageWrite` — previous content, or `None` for a fresh
+create); on failure, `_rollback()` restores/deletes every recorded write
+in reverse order, a review item is queued, and — critically — neither
+`registry.record_synced()` nor the `ingest` log entry are ever reached
+for that meeting (both sit after the `if not outcome.validation_passed`
+early-continue). Raw bytes are never part of the rollback set.
+
+**Retroactive fix to TASK-2661's `validation.py`** (caught by this
+task's own `test_ingest_chronological_batch`): `diff_guard_violations`
+was originally wired as a hard §34 *failure*, but
+`project_reconcile._apply_diff_guard` (TASK-2667) already reinserts any
+claim the LLM's draft dropped — by the time validation runs, the Q2
+invariant already holds in the rendered page. Treating every
+self-healing correction as a blocking failure would make ordinary
+multi-meeting reconciliation fail routinely. Moved to
+`ValidationResult.warnings` instead; no existing TASK-2661 test
+asserted the old (incorrect) behavior.
+
+Verified: `pytest packages/ai-parrot/tests/unit/test_wiki_kb_*.py
+packages/ai-parrot/tests/integration/test_wiki_kb_ingest.py` (84 passed
+— e2e ingest producing meeting+project+entity+concept+daily+registry-
+mirror+log, chronological batch processed oldest→newest with a spy
+confirming call order, §34-forced-failure rollback with raw untouched
+and no log/registry entry); `ruff check` clean; `mypy` clean.
