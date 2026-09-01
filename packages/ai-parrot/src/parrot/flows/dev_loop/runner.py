@@ -1221,6 +1221,15 @@ class DevLoopRunner:
                 ``self``, since this runner executes up to
                 ``max_concurrent_runs`` runs concurrently. ``None`` (the
                 default) leaves every existing caller byte-identical.
+                TASK-2691: an ops embedder threads a per-run
+                ``DevFlowModelPlan`` (Module 7's new
+                ``build_dev_loop_flow(model_plan=...)`` kwarg, TASK-2690)
+                by passing ``flow_kwargs_overrides={"model_plan": plan}``
+                here — this base class stays a dev-flow-agnostic generic
+                mapping by design (spec §8 Q5); it does not, and must not,
+                gain a typed ``model_plan`` parameter of its own. The ops
+                console is not wired to send one (spec §1 Non-Goals) —
+                this is library-level parity only.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.

@@ -29,6 +29,7 @@ from parrot.bots.flows.core.checkpoint import (
     FlowCheckpoint,
     FlowStateSerializer,
 )
+from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.core.types import FlowStatus
 from parrot.flows.dev_loop import (
     BugBrief,
@@ -565,3 +566,119 @@ def test_concurrent_runs_do_not_leak_overrides(mock_jira) -> None:
 
     assert captured[0]["redis_url"] == "redis://a:6399/0"
     assert captured[1]["redis_url"] == "redis://b:6399/0"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2691: per-run plan threaded through the ops runner
+# ---------------------------------------------------------------------------
+
+
+class _StubOpsFlow:
+    """Completes immediately, recording the context it was handed —
+    avoids driving the real eight-node graph (already exhaustively
+    covered elsewhere in this suite) for a test about the SEAM."""
+
+    def __init__(self) -> None:
+        self.contexts: list = []
+        self._run_id_holder: dict = {}
+
+    async def run_flow(self, ctx, **kwargs) -> FlowResult:
+        self.contexts.append(ctx)
+        return FlowResult(output=ctx.shared_data["run_id"], status=FlowStatus.COMPLETED)
+
+
+async def test_dev_loop_runner_threads_a_per_run_plan(brief, mock_jira) -> None:
+    """Spec §3 Module 8: an ops embedder passes a per-run DevFlowModelPlan
+    through the SAME generic overrides mapping TASK-2685 added — no typed
+    `model_plan` parameter is added to `DevLoopRunner.run()` itself (spec
+    §8 Q5) — and it reaches `build_dev_loop_flow` (TASK-2690's new kwarg)
+    end to end through the public `run()` API."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        sentinel_plan = object()
+        result = await runner.run(
+            brief,
+            run_id="run-ops-plan",
+            flow_kwargs_overrides={"model_plan": sentinel_plan},
+        )
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert result.status == FlowStatus.COMPLETED
+    assert len(captured) == 1
+    assert captured[0]["model_plan"] is sentinel_plan
+
+
+async def test_ops_path_without_a_plan_is_byte_identical(brief, mock_jira) -> None:
+    """No `flow_kwargs_overrides` -> `build_dev_loop_flow` receives exactly
+    today's kwargs, with no `model_plan` key at all."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        result = await runner.run(brief, run_id="run-ops-no-plan")
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert result.status == FlowStatus.COMPLETED
+    assert len(captured) == 1
+    assert "model_plan" not in captured[0]
+    for key, value in kwargs.items():
+        assert captured[0][key] == value
+
+
+async def test_no_per_run_plan_state_leaks_across_concurrent_ops_runs(brief, mock_jira) -> None:
+    """No per-run state on the instance; concurrent runs stay isolated —
+    two sequential `run()` calls with different plans each build with
+    their own, and the instance's own kwargs are never mutated."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        plan_a, plan_b = object(), object()
+        await runner.run(
+            brief.model_copy(deep=True),
+            run_id="run-ops-a",
+            flow_kwargs_overrides={"model_plan": plan_a},
+        )
+        assert "model_plan" not in runner._dev_loop_flow_kwargs
+        await runner.run(
+            brief.model_copy(deep=True),
+            run_id="run-ops-b",
+            flow_kwargs_overrides={"model_plan": plan_b},
+        )
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["model_plan"] is plan_a
+    assert captured[1]["model_plan"] is plan_b
+    assert "model_plan" not in runner._dev_loop_flow_kwargs
