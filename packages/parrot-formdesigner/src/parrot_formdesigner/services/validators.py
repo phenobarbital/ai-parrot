@@ -513,10 +513,24 @@ class FormValidator:
 
         ft = field.field_type
 
-        # FEAT-488: pass dict values through unchanged for fields that
-        # declare accept_content_types (e.g. VoiceAnswerEnvelope payloads).
+        # FEAT-488: a TEXT/TEXT_AREA field that explicitly opts into
+        # "application/json" may carry a structured answer (e.g. a
+        # VoiceAnswerEnvelope) instead of a plain string; pass those dicts
+        # through unchanged, since str() would flatten them to a repr.
         # Parsing responsibility belongs to the consumer.
-        if field.accept_content_types is not None and isinstance(value, dict):
+        #
+        # Deliberately narrow: scoping to these two field types keeps the
+        # per-type normalisation below intact for everything else (PLACE's
+        # ISO/country rules, the upload types' legacy -> FileEnvelope
+        # mapping, and the types that reject a dict outright), and requiring
+        # "application/json" means an accept list such as ["image/png"] does
+        # not silently disable coercion. See spec Module 3.
+        if (
+            ft in (FieldType.TEXT, FieldType.TEXT_AREA)
+            and isinstance(value, dict)
+            and field.accept_content_types is not None
+            and "application/json" in field.accept_content_types
+        ):
             return value
 
         if ft in (

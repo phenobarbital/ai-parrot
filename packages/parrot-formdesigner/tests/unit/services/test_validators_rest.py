@@ -213,47 +213,72 @@ async def test_design_time_parse_catches_internal_missing_slash(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_coerce_dict_passthrough_with_json_accept(validator: FormValidator):
-    """Dict value passes through when accept_content_types contains 'application/json'."""
-    field = FormField(
-        field_id="voice",
-        field_type=FieldType.TEXT_AREA,
-        label="Voice note",
+VOICE_PAYLOAD = {
+    "answer": "I agree with the terms.",
+    "blob_ref": "s3://bucket/voice-notes/abc123.wav",
+    "data_url": None,
+}
+
+
+def _field(field_type: FieldType, **kwargs) -> FormField:
+    return FormField(field_id="f", field_type=field_type, label="F", **kwargs)
+
+
+def test_coerce_dict_passthrough_with_json_accept(validator: FormValidator):
+    """A TEXT_AREA opting into application/json keeps the dict identity."""
+    field = _field(
+        FieldType.TEXT_AREA,
         accept_content_types=["text/plain", "application/json"],
     )
-    voice_payload = {
-        "answer": "I agree with the terms.",
-        "blob_ref": "s3://bucket/voice-notes/abc123.wav",
-        "data_url": None,
-    }
-    result = await validator.validate_field(field, voice_payload)
-    assert result == []
-    # The dict should pass through unchanged (not coerced to string)
+    coerced = validator._coerce_value(VOICE_PAYLOAD, field)
+    assert coerced is VOICE_PAYLOAD
 
 
-@pytest.mark.asyncio
-async def test_coerce_str_unchanged_no_accept(validator: FormValidator):
+def test_coerce_dict_passthrough_applies_to_text(validator: FormValidator):
+    """TEXT gets the same pass-through as TEXT_AREA."""
+    field = _field(FieldType.TEXT, accept_content_types=["application/json"])
+    assert validator._coerce_value(VOICE_PAYLOAD, field) is VOICE_PAYLOAD
+
+
+def test_coerce_dict_without_json_in_accept_list_is_stringified(validator: FormValidator):
+    """An accept list that omits application/json must not disable coercion."""
+    field = _field(FieldType.TEXT_AREA, accept_content_types=["text/plain"])
+    coerced = validator._coerce_value({"key": "value"}, field)
+    assert isinstance(coerced, str)
+
+
+def test_coerce_dict_without_accept_content_types_is_stringified(validator: FormValidator):
+    """No regression: accept_content_types=None still coerces a dict to str."""
+    field = _field(FieldType.TEXT_AREA)
+    coerced = validator._coerce_value({"key": "value"}, field)
+    assert coerced == str({"key": "value"})
+
+
+def test_coerce_str_unchanged_with_json_accept(validator: FormValidator):
+    """A plain string on a json-accepting field still coerces and strips."""
+    field = _field(FieldType.TEXT_AREA, accept_content_types=["application/json"])
+    assert validator._coerce_value("  some text  ", field) == "some text"
+
+
+def test_coerce_str_unchanged_no_accept(validator: FormValidator):
     """No regression: str coercion unchanged when accept_content_types=None."""
-    field = FormField(
-        field_id="comment",
-        field_type=FieldType.TEXT_AREA,
-        label="Comment",
-    )
-    result = await validator.validate_field(field, "  some text  ")
-    assert result == []
-    # Should coerce to str and strip
+    field = _field(FieldType.TEXT_AREA)
+    assert validator._coerce_value("  some text  ", field) == "some text"
 
 
-@pytest.mark.asyncio
-async def test_coerce_dict_rejected_without_accept_content_types(validator: FormValidator):
-    """Dict value is coerced to string when accept_content_types is None."""
-    field = FormField(
-        field_id="comment",
-        field_type=FieldType.TEXT_AREA,
-        label="Comment",
-    )
-    # Without accept_content_types, dict should be coerced to str
-    result = await validator.validate_field(field, {"key": "value"})
-    # This may produce an error or coerce to string representation
-    # The key point is it doesn't pass through as dict
+def test_place_field_still_normalized_with_json_accept(validator: FormValidator):
+    """The guard is scoped to text types: PLACE keeps its own dict handling.
+
+    Regression test for a guard that fired on every field_type and so skipped
+    PLACE's country-required check and ISO uppercase normalisation.
+    """
+    field = _field(FieldType.PLACE, accept_content_types=["application/json"])
+    with pytest.raises(ValueError):
+        validator._coerce_value({"foo": 1}, field)
+
+
+def test_signature_field_still_rejects_dict_with_json_accept(validator: FormValidator):
+    """A non-text type that rejects dicts must keep rejecting them."""
+    field = _field(FieldType.SIGNATURE, accept_content_types=["application/json"])
+    with pytest.raises(ValueError):
+        validator._coerce_value({"foo": 1}, field)
