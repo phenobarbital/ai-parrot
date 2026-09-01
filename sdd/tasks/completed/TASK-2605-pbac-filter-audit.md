@@ -189,8 +189,57 @@ class TestPBACGuard:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `PBACGuard` added to `principal_guard.py`: `tools_list(params, pctx)`
+filters `server.tools` per principal via an injectable `resolver:
+(pctx, resource, required_permissions) -> bool` (the exact
+`PBACPermissionResolver.can_execute` shape); `tools_call(params, pctx)`
+independently re-verifies against the same canonical resource (never trusts
+the list), returns a clean `{"isError": True}` payload (no stack trace) on
+denial or unknown-tool, and always audits — allow or deny — via an
+injectable `audit_sink` callback recording `principal, tenant_id, agent,
+tool, argument_hash (SHA-256, never raw arguments), decision, duration`.
+Deny-by-default holds three ways: `resolver=None` denies everything,
+a resolver exception denies (fail-closed, logged), and an unknown tool name
+denies before the resolver is even asked. `resource_for`/
+`resource_from_aggregate` mirror `AgentMCPMount`'s TASK-2602 helper by
+algorithm (not by import — a per-request guard has no business depending
+upward on the mount object that constructs it), so both name forms hit the
+identical `mcp:agent:{name}:tool:{tool}` string. `parrot.auth.audit` is not
+imported anywhere in the change (verified via grep — the only occurrence of
+that string is a docstring mention). 8/8 new tests pass; full
+`packages/ai-parrot-server/tests/mcp/` suite (125 tests) stays green;
+`ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec — flagging for the Planner/next iteration (per
+WORKFLOW.md "Ask via the spec"):** the task's Codebase Contract lists
+`AuditLedger.append(self, ...)` (`security/audit_ledger.py:338`) as the
+canonical audit sink, with the `...` eliding its actual signature. Verified
+against the real code: `append(*, user_id, channel, tool, provider,
+credential_material) -> AuditLedgerEntry`, and `AuditLedgerEntry` itself
+carries only `entry_id, user_id, channel, tool, provider, key_fingerprint,
+signature, created_at` — **no field for a PBAC decision, a duration, or an
+argument hash.** This ledger is purpose-built for *credentialed tool
+invocations* (`CredentialBroker.resolve()`, `broker.py:616`, is its only
+other caller in the codebase): it fingerprints a real resolved secret so a
+raw credential is never stored. A PBAC allow/deny decision has no
+credential material to fingerprint, and forcing decision/duration/hash into
+`provider`/`credential_material` would either misrepresent the entry as a
+credential event or make the very fields this task must record
+unrecoverable (a one-way SHA-256 fingerprint, not a plaintext field).
+Rather than force that fit, `PBACGuard`'s `audit_sink` carries the required
+fields directly and in the open (verified in tests); `audit_ledger_sink()`
+is included as an explicit, documented best-effort bridge for a caller that
+still wants every PBAC decision mirrored into a shared `AuditLedger` for
+cross-referencing, with its limitations spelled out in its own docstring.
+Every decision is also logged via `self.logger.info(...)` regardless of
+whether an `audit_sink` is wired in. **This is a genuine spec/codebase gap,
+not a workaround of convenience** — flagging it explicitly rather than
+silently forcing a mismatched schema, per CLAUDE.md's Cardinal Rule 4
+("when in doubt, stop and write your concerns in the Completion Note") and
+the anti-hallucination instruction to correct a stale contract before
+proceeding. A follow-up task could add a dedicated
+`AuthorizationLedgerEntry` (decision/duration/argument_hash-shaped) to
+`security/audit_ledger.py` if a persisted, queryable PBAC audit trail
+(beyond the injectable `audit_sink`) is wanted.

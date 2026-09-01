@@ -216,8 +216,19 @@ class TestReification:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `AgentMethodTool(AbstractTool)` and `build_exposure_set()` implemented in
+`agent_tools.py`, exported from `mcp/__init__.py`. Weak reference to the agent
+(`weakref.ref`), agent resolved per call (never cached as a bound method).
+`build_exposure_set` scans `type(agent)` for coroutine methods carrying
+`MCP_TOOL_ATTR`, fails loudly (naming the agent class and offending method(s))
+on duplicate decorated names and on collisions with `agent.tool_manager.list_tools()`.
+`routing_meta` carries `requires_confirmation`, `read_only_hint`, `idempotent_hint`.
+`tool_manager` is never touched — OQ2 merge-blocking invariant covered by
+`test_reified_tool_not_in_tool_manager`. All 20 tests in
+`test_agent_tools.py` pass (`pytest packages/ai-parrot/tests/mcp/test_agent_tools.py -v`);
+`ruff check agent_tools.py` clean (the 3 pre-existing `__init__.py` lint findings —
+unsorted imports/`__all__` — predate this task and are out of scope).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

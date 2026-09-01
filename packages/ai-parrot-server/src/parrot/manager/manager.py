@@ -112,6 +112,11 @@ from ..handlers.comm_center import CommCenterHandler
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
 
+# FEAT-477: agent-as-MCP-server mount (Module 2, TASK-2602)
+from ..mcp.agent_mount import AgentMCPMount
+from ..mcp.config import AgentMCPMountConfig, MCPServerConfig
+from ..mcp.principal_guard import AuditSink, PBACResolver
+
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
 
@@ -1962,7 +1967,47 @@ class BotManager:
 
         configure_liveavatar_output_subscriber(self.app)
 
-    def setup(self, app: web.Application) -> web.Application:
+    def setup(
+        self,
+        app: web.Application,
+        *,
+        agent_mount_config: Optional[AgentMCPMountConfig] = None,
+        agent_mount_auth_template: Optional[MCPServerConfig] = None,
+        agent_mount_pbac_resolver: Optional[PBACResolver] = None,
+        agent_mount_audit_sink: Optional[AuditSink] = None,
+    ) -> web.Application:
+        """Register BotManager routes on `app`.
+
+        Args:
+            app: The aiohttp application to configure.
+            agent_mount_config: Optional FEAT-477 agent-as-MCP-server mount
+                configuration. When provided, one MCP endpoint per listed
+                agent (plus the optional aggregate) is registered alongside
+                the tool-level `ParrotMCPServer`, if any (G11 — the
+                tool-level server's behavior is unchanged either way).
+                Defaults to `None` (no agent mount — today's behavior).
+            agent_mount_auth_template: Optional `MCPServerConfig` whose
+                auth fields (`auth_method`, `oauth2_*`, `api_key_store`)
+                are copied onto every per-agent server this mount builds.
+                Without one, every agent-mount request gets
+                `AuthMethod.NONE` and is rejected by principal resolution
+                (fail-closed — never open — but also never functional).
+                Only read when `agent_mount_config` is also given.
+            agent_mount_pbac_resolver: Optional `(pctx, resource,
+                required_permissions) -> bool` PBAC resolver (the
+                `PBACPermissionResolver.can_execute` shape) enforcing
+                `tools/list`/`tools/call` on the agent mount. `None`
+                (default) denies every call — deny-by-default, not a
+                silent no-op. Only read when `agent_mount_config` is also
+                given.
+            agent_mount_audit_sink: Optional callback invoked with every
+                agent-mount `tools/call` decision and principal-resolution
+                failure. `None` (default) only logs. Only read when
+                `agent_mount_config` is also given.
+
+        Returns:
+            The configured `app`.
+        """
         self.app = None
         if app:
             self.app = app if isinstance(app, web.Application) else app.get_app()
@@ -2174,12 +2219,8 @@ class BotManager:
         # ai-parrot-server also exposes /api/v1/agent_tools; idempotent
         # against a host app (e.g. repo-root app.py) that still registers
         # it directly.
-        if 'tools_list' not in self.app.router.named_resources():
-            self.app.router.add_view(
-                '/api/v1/agent_tools',
-                ToolList,
-                name='tools_list'
-            )
+        if "tools_list" not in self.app.router.named_resources():
+            self.app.router.add_view("/api/v1/agent_tools", ToolList, name="tools_list")
         # Bot Handler
         router.add_view("/api/v1/chatbots", BotHandler)
         router.add_view("/api/v1/chatbots/{name}", BotHandler)
@@ -2253,7 +2294,46 @@ Available documentation UIs:
 - RapiDoc:     http://localhost:5000/api/docs/rapidoc
 - OpenAPI Spec: http://localhost:5000/api/docs/swagger.json
             """)
+        self._wire_agent_mount(
+            agent_mount_config,
+            auth_template=agent_mount_auth_template,
+            pbac_resolver=agent_mount_pbac_resolver,
+            audit_sink=agent_mount_audit_sink,
+        )
         return self.app
+
+    def _wire_agent_mount(
+        self,
+        agent_mount_config: Optional[AgentMCPMountConfig],
+        *,
+        auth_template: Optional[MCPServerConfig] = None,
+        pbac_resolver: Optional[PBACResolver] = None,
+        audit_sink: Optional[AuditSink] = None,
+    ) -> None:
+        """Build and mount the FEAT-477 agent-as-MCP-server surface, if configured.
+
+        Opt-in — only wired when `agent_mount_config` is given, so today's
+        behavior is unchanged by default (G11). Split out from `setup()`
+        so the wiring itself (which params reach `AgentMCPMount`) is
+        independently testable without exercising `setup()`'s much larger,
+        unrelated route-registration body.
+
+        Args:
+            agent_mount_config: The `AgentMCPMountConfig`, or `None` to
+                skip agent-mount wiring entirely.
+            auth_template: See `setup()`.
+            pbac_resolver: See `setup()`.
+            audit_sink: See `setup()`.
+        """
+        if agent_mount_config is None:
+            return
+        AgentMCPMount(
+            self,
+            agent_mount_config,
+            pbac_resolver=pbac_resolver,
+            audit_sink=audit_sink,
+            auth_template=auth_template,
+        ).setup(self.app)
 
     async def _cleanup_expired_bots(self) -> None:
         """Background task to cleanup expired temporary bot instances.

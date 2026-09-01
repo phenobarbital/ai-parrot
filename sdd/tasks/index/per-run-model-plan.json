@@ -1,0 +1,171 @@
+{
+  "feature": "per-run-model-plan",
+  "feature_id": "FEAT-490",
+  "spec": "sdd/specs/per-run-model-plan.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-01T15:40:19Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2685",
+      "slug": "runner-flow-kwargs-overrides-seam",
+      "title": "Per-run flow-kwargs overrides seam on DevLoopRunner",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation for TASK 2 and 7; edits dev_loop/runner.py, which TASK 7 also touches.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2685-runner-flow-kwargs-overrides-seam.md"
+    },
+    {
+      "id": "TASK-2686",
+      "slug": "dev-flow-runner-per-run-plan",
+      "title": "Accept a per-run model_plan on DevFlowRunner.run",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2685"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds on the TASK 1 seam; same file family.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2686-dev-flow-runner-per-run-plan.md"
+    },
+    {
+      "id": "TASK-2687",
+      "slug": "resume-keeps-original-seats",
+      "title": "A resumed run keeps the seats it was created with",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2686"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on the per-run plan existing; same file as TASK 2.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2687-resume-keeps-original-seats.md"
+    },
+    {
+      "id": "TASK-2688",
+      "slug": "dev-console-per-run-plan-wiring",
+      "title": "Dev console passes the parsed plan into the run",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2686",
+        "TASK-2687"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the runner parameter (TASK 2) and the reporting semantics (TASK 3).",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2688-dev-console-per-run-plan-wiring.md"
+    },
+    {
+      "id": "TASK-2689",
+      "slug": "console-copy-per-run-seats",
+      "title": "Console and README stop telling operators to restart",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2688"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Copy follows the behaviour change in TASK 4.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2689-console-copy-per-run-seats.md"
+    },
+    {
+      "id": "TASK-2690",
+      "slug": "ops-builder-model-plan-seam",
+      "title": "Add a model_plan parameter to build_dev_loop_flow",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "File-disjoint from TASKS 1-5 (dev_loop/flow.py only), so it CAN run in a separate worktree. The spec's Worktree Strategy still recommends one sequential worktree: TASK 7 shares dev_loop/runner.py with TASK 1, so a second worktree buys little on a chain this short.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2690-ops-builder-model-plan-seam.md"
+    },
+    {
+      "id": "TASK-2691",
+      "slug": "ops-runner-per-run-plan",
+      "title": "Thread a per-run plan through the ops runner",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2685",
+        "TASK-2690"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares dev_loop/runner.py with TASK 1; needs the TASK 6 builder kwarg.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2691-ops-runner-per-run-plan.md"
+    },
+    {
+      "id": "TASK-2692",
+      "slug": "per-run-plan-docs-and-integration",
+      "title": "Reference docs and end-to-end coverage",
+      "feature_id": "FEAT-490",
+      "feature": "per-run-model-plan",
+      "spec": "sdd/specs/per-run-model-plan.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2688",
+        "TASK-2689",
+        "TASK-2691"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Documents the finished behaviour; must land last.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2692-per-run-plan-docs-and-integration.md"
+    }
+  ]
+}

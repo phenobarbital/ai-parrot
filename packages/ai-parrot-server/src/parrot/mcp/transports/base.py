@@ -5,6 +5,7 @@ from typing import Any
 from aiohttp import web
 from parrot.mcp.config import AuthMethod, MCPServerConfig
 from parrot.mcp.oauth_server import (
+    WELL_KNOWN_PRM_PATH,
     APIKeyStore,
     ExternalOAuthValidator,
     OAuthAuthorizationServer,
@@ -26,12 +27,14 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
     def __init__(self, config: MCPServerConfig):
         # Core base only knows about LocalServerConfig — convert, then
         # override self.config with the full server-side config below.
-        super().__init__(LocalServerConfig(
-            name=config.name,
-            version=config.version,
-            description=config.description,
-            log_level=config.log_level,
-        ))
+        super().__init__(
+            LocalServerConfig(
+                name=config.name,
+                version=config.version,
+                description=config.description,
+                log_level=config.log_level,
+            )
+        )
         self.config = config
         self.resources: dict[str, MCPResource] = {}
         self.resource_handlers: dict[str, Callable[[str], Awaitable[str | bytes]]] = {}
@@ -46,11 +49,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
     # ... (rest of simple init methods) ...
 
-    def register_resource(
-        self,
-        resource: MCPResource,
-        read_handler: Callable[[str], Awaitable[str | bytes]]
-    ):
+    def register_resource(self, resource: MCPResource, read_handler: Callable[[str], Awaitable[str | bytes]]):
         """
         Register a resource with the MCP server.
 
@@ -68,15 +67,11 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         # Apply filtering (remote-only — core's register_tool has none)
         if self.config.allowed_tools and tool_name not in self.config.allowed_tools:
-            self.logger.info(
-                f"Skipping tool {tool_name} (not in allowed_tools)"
-            )
+            self.logger.info(f"Skipping tool {tool_name} (not in allowed_tools)")
             return
 
         if self.config.blocked_tools and tool_name in self.config.blocked_tools:
-            self.logger.info(
-                f"Skipping tool {tool_name} (in blocked_tools)"
-            )
+            self.logger.info(f"Skipping tool {tool_name} (in blocked_tools)")
             return
 
         super().register_tool(tool)
@@ -86,9 +81,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
     async def handle_resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/list request."""
         # Pagination can be implemented later with cursor
-        return {
-            "resources": [res.to_dict() for res in self.resources.values()]
-        }
+        return {"resources": [res.to_dict() for res in self.resources.values()]}
 
     async def handle_resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/read request."""
@@ -113,18 +106,15 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
                 "contents": [
                     {
                         "uri": uri,
-                        "mimeType": self.resources[uri].mime_type or ("text/plain" if is_text else "application/octet-stream"),
-                        "text" if is_text else "blob": content
+                        "mimeType": self.resources[uri].mime_type
+                        or ("text/plain" if is_text else "application/octet-stream"),
+                        "text" if is_text else "blob": content,
                     }
                 ]
             }
         except Exception as e:
-            self.logger.error(
-                f"Error reading resource {uri}: {e}"
-            )
-            raise RuntimeError(
-                f"Failed to read resource: {e}"
-            ) from e
+            self.logger.error(f"Error reading resource {uri}: {e}")
+            raise RuntimeError(f"Failed to read resource: {e}") from e
 
     async def handle_prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle prompts/list request."""
@@ -158,9 +148,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
                 for client_config in self.config.oauth_static_clients:
                     try:
                         client = self.oauth_server.registry.register(client_config)
-                        self.logger.info(
-                            f"Registered static OAuth client: {client.client_id} ({client.client_name})"
-                        )
+                        self.logger.info(f"Registered static OAuth client: {client.client_id} ({client.client_name})")
                     except Exception as e:  # noqa: BLE001
                         self.logger.error("Failed to register static client: %s", e)
 
@@ -168,18 +156,14 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         elif auth_method == AuthMethod.OAUTH2_EXTERNAL:
             if not self.config.oauth2_introspection_endpoint:
-                raise ValueError(
-                    "oauth2_introspection_endpoint required for OAUTH2_EXTERNAL"
-                )
+                raise ValueError("oauth2_introspection_endpoint required for OAUTH2_EXTERNAL")
             self.external_oauth = ExternalOAuthValidator(
                 introspection_endpoint=self.config.oauth2_introspection_endpoint,
                 client_id=self.config.oauth2_client_id or "",
                 client_secret=self.config.oauth2_client_secret or "",
                 resource_server_url=self.config.oauth2_resource_server_url,
             )
-            self.logger.info(
-                f"Authentication: OAuth2 (external) enabled - {self.config.oauth2_issuer_url}"
-            )
+            self.logger.info(f"Authentication: OAuth2 (external) enabled - {self.config.oauth2_issuer_url}")
 
         elif auth_method == AuthMethod.BEARER:
             self.logger.info("Authentication: Bearer (navigator-auth) enabled")
@@ -218,12 +202,13 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
         if not api_key:
             return self._unauthorized_response(
                 "API key required",
-                'X-API-Key realm="mcp"'
+                'X-API-Key realm="mcp"',
+                request=request,
             )
 
         record = self.api_key_store.validate_key(api_key)
         if not record:
-            return self._unauthorized_response("Invalid or expired API key")
+            return self._unauthorized_response("Invalid or expired API key", request=request)
 
         # Log session start
         self.api_key_store.log_session_start(api_key, record.user_id, time.time())
@@ -238,11 +223,9 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
         if not self.oauth_server:
             return None
 
-        token = self.oauth_server.bearer_token_from_header(
-            request.headers.get("Authorization")
-        )
+        token = self.oauth_server.bearer_token_from_header(request.headers.get("Authorization"))
         if not self.oauth_server.is_token_valid(token):
-            return self._unauthorized_response("Valid Bearer token is required")
+            return self._unauthorized_response("Valid Bearer token is required", request=request)
 
         return None
 
@@ -253,11 +236,11 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         token = self._extract_bearer_token(request.headers.get("Authorization"))
         if not token:
-            return self._unauthorized_response("Bearer token required")
+            return self._unauthorized_response("Bearer token required", request=request)
 
         token_info = await self.external_oauth.validate_token(token)
         if not token_info:
-            return self._unauthorized_response("Invalid or expired token")
+            return self._unauthorized_response("Invalid or expired token", request=request)
 
         # Store token info in request
         request["mcp_user"] = {
@@ -269,7 +252,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
     async def _authenticate_bearer(self, request: web.Request) -> web.Response | None:
         """Validate bearer token via navigator-auth."""
-        auth = request.app.get('auth')
+        auth = request.app.get("auth")
         if not auth:
             self.logger.warning("navigator-auth not configured in app['auth']")
             # Fall through if auth not configured (development mode)
@@ -278,11 +261,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
         try:
             userdata = await auth.get_session(request)
             if not userdata:
-                return web.json_response(
-                    {"error": "unauthorized", "error_description": "Session required"},
-                    status=401,
-                    headers={"WWW-Authenticate": 'Bearer realm="mcp"'}
-                )
+                return self._unauthorized_response("Session required", request=request)
 
             # Store user info in request
             request["mcp_user"] = userdata
@@ -290,11 +269,7 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         except Exception as e:  # noqa: BLE001
             self.logger.error("navigator-auth error: %s", e)
-            return web.json_response(
-                {"error": "unauthorized", "error_description": "Authentication failed"},
-                status=401,
-                headers={"WWW-Authenticate": 'Bearer realm="mcp"'}
-            )
+            return self._unauthorized_response("Authentication failed", request=request)
 
     def _extract_bearer_token(self, auth_header: str | None) -> str | None:
         """Extract bearer token from Authorization header."""
@@ -304,16 +279,55 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
             return None
         return auth_header.split(" ", 1)[1].strip()
 
+    def _resource_metadata_url(self, request: web.Request) -> str:
+        """Build the absolute RFC 9728 protected-resource metadata URL.
+
+        FEAT-477 TASK-2608 (G4): lets a 401'd client re-discover the
+        authorization server via the `resource_metadata` challenge
+        parameter.
+
+        Args:
+            request: The inbound request (used for scheme/host).
+
+        Returns:
+            The mixin's own `_oauth_paths()["protected_resource"]`
+            (base_path-prefixed) when `OAuthRoutesMixin` is present on
+            this instance — true for every HTTP-like transport — else the
+            bare well-known path (Unix/QUIC transports register no OAuth
+            routes to prefix).
+        """
+        base_url = f"{request.scheme}://{request.host}"
+        oauth_paths = getattr(self, "_oauth_paths", None)
+        path = oauth_paths()["protected_resource"] if oauth_paths else WELL_KNOWN_PRM_PATH
+        return f"{base_url}{path}"
+
     def _unauthorized_response(
         self,
         message: str,
-        www_authenticate: str = 'Bearer realm="mcp"'
+        www_authenticate: str = 'Bearer realm="mcp"',
+        *,
+        request: "web.Request | None" = None,
     ) -> web.Response:
-        """Create a 401 unauthorized response."""
+        """Create a 401 unauthorized response.
+
+        Args:
+            message: Human-readable, non-sensitive error description.
+            www_authenticate: Base challenge value.
+            request: The inbound request. When given, `resource_metadata=
+                "<PRM URL>"` (RFC 9728) is appended to the challenge so the
+                client can re-discover the AS (FEAT-477 TASK-2608, G4).
+                `None` (default) omits it — callers with no request
+                context at hand (none exist today; kept optional for
+                forward compatibility) fall back to the bare challenge.
+
+        Returns:
+            A 401 `web.Response`.
+        """
+        challenge = www_authenticate
+        if request is not None:
+            challenge = f"{www_authenticate}, resource_metadata=" f'"{self._resource_metadata_url(request)}"'
         return web.json_response(
-            {"error": "unauthorized", "error_description": message},
-            status=401,
-            headers={"WWW-Authenticate": www_authenticate}
+            {"error": "unauthorized", "error_description": message}, status=401, headers={"WWW-Authenticate": challenge}
         )
 
 

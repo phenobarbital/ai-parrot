@@ -436,7 +436,8 @@ subagent refuses to touch it and returns the collision as an open question.
 |---|---|---|
 | `/` | GET | Serves `static/dev.html` |
 | `/api/config` | GET | Backends/models catalog, the three intents, `document_kinds`, `nl_kinds`, `gate_resolve_url_template`, and the dev defaults (`ideation_max_rounds`, `gate_ttl_questions`, `require_plan_approval`, `qa_max_retries`, `development_pool_max`, `max_concurrent_runs`, …). Carries **no** `log_group`, `time_window_minutes` or `jira_project`. |
-| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`, the effective `model_plan`, and `model_plan_ignored` — one `field: requested=… effective=…` line per submitted seat the server is not honouring (empty when every expressed seat matches). |
+| `/api/flow/run` | POST | Start (or **resume**) a run. Body per the intent (below); an optional `run_id` resumes that run. Returns `run_id`, `resume` (null for a fresh run), `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`, the effective `model_plan`, and `model_plan_ignored` — one `field: requested=… effective=…` line per submitted seat the server is not honouring (empty when every expressed seat matches). |
+| `/api/flow/{run_id}/checkpoint` | GET | **Is this run resumable?** Read-only probe: `found`, `status`, `checkpoint_id`, `completed_nodes`, `active`, plus a `reason`/`help` pair. `resumable` is `null` here — with no brief to fingerprint the answer is *unknown*, not *no*. |
 | `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
 | `/api/flow/{run_id}/cancel` | POST | Cancel a run |
 | `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
@@ -477,6 +478,57 @@ curl -X POST http://localhost:8081/api/flow/run \
 
 Optional in both shapes: `jira_issue_key` (link-only), `dev_agents`,
 `judge_panel`, `skip_qa`, `skip_jira`, `require_plan_approval`.
+
+### Resuming an interrupted run (FEAT-480)
+
+A dev-flow run checkpoints after every node. Pass the original `run_id` back
+and the work already done — `dev_intake`, `ideation` (including the answered
+open questions), `planner` and the worktree/spec/task-index it created — is
+**restored instead of re-dispatched**; execution picks up at the first node
+that never completed.
+
+```bash
+# 1. Is the run still recoverable? (24h Redis TTL by default)
+curl -s http://localhost:8081/api/flow/run-3f9a1c02/checkpoint | jq
+# {"found": true, "status": "running", "checkpoint_id": 7,
+#  "completed_nodes": ["dev_intake", "ideation", "planner"], "resumable": null, ...}
+
+# 2. Resume it — SAME brief as the original run, plus its run_id.
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/my-feature.brainstorm.md",
+    "document_kind": "brainstorm",
+    "run_id": "run-3f9a1c02"
+  }'
+```
+
+In the console the same thing is the **"Resume a run — run_id"** field in
+section 01, with a *Check* button that calls the probe above.
+
+Rules worth knowing before you rely on it:
+
+* **The brief must be identical.** Resume is gated by a SHA-256 fingerprint
+  over the normalized brief (kind, title/description or document_path/
+  document_kind, context, jira_issue_key, dev_agents, judge_panel), the
+  topology version and the server's routing policy (`skip_qa`,
+  `require_plan_approval`, `development_pool_max`, `ideation_max_rounds`, the
+  model plan's pool shape/review backend). Change any of it and the server
+  answers **409 `fingerprint_mismatch`** rather than silently starting over.
+  A natural-language run cannot be resumed by pointing at the document its
+  ideation produced — that is a *different* brief; re-post the original
+  `title`/`description`.
+* **An unknown or expired `run_id` is a 409, never a fresh run.** Checkpoints
+  live in the ephemeral Redis tier for `FLOW_CHECKPOINT_REDIS_TTL` (24h);
+  after that the run is gone.
+* **The worktree must still be there.** A restored `planner_output` is
+  validated against the real repo (registered worktree, expected branch, spec
+  and task-index files present). If it moved, the run fails with a
+  `RecoveredArtifactError` naming what is missing.
+* Resume needs a server started with recovery wiring
+  (`defaults.recovery_enabled` in `/api/config`); the console hides the field
+  when it is false.
 
 ### The `open_questions` gate protocol
 

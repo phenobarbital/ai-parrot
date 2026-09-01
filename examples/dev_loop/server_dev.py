@@ -527,12 +527,13 @@ def _parse_resume_run_id(form: dict[str, Any]) -> str | None:
 
     Raises:
         ValueError: The field is present but not a usable identifier.
+        TypeError: The field is present but not a string.
     """
     raw = form.get("run_id")
     if raw is None:
         return None
     if not isinstance(raw, str):
-        raise ValueError("run_id must be a string")
+        raise TypeError("run_id must be a string")
     run_id = raw.strip()
     if not run_id:
         return None
@@ -632,7 +633,7 @@ async def handle_run(request: web.Request) -> web.Response:
     runner: DevFlowRunner = request.app["runner"]
     try:
         resume_run_id = _parse_resume_run_id(form)
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
 
     resume: dict[str, Any] | None = None

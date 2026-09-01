@@ -150,8 +150,40 @@ class TestAgentJobs:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `agent_jobs.py` implements `AgentJobRecord` field-for-field per spec
+§2 (no extensions — TTL/save-timestamp bookkeeping lives in `AgentJobStore`'s
+own persisted envelope, not the model). `AgentJobStore` reuses
+`SuspendedExecutionStore`'s semantics without depending on its HITL-specific
+`SuspendedExecution` type: caller-provided TTL (the underlying Redis key
+survives `ttl + 300s` grace so a post-TTL read can still observe `"expired"`
+instead of a bare miss), and `delete()` leaves a short-lived tombstone key
+(`{key}:tombstone`) mirroring "tombstone on delete." `AgentJobs` is the
+`start_*`/`*_status`/`*_result` trio: `start()` persists a `"pending"` record
+and fires an `asyncio.create_task()` background run (no queue framework
+exists in `parrot.mcp` — per the Codebase Contract's explicit instruction —
+so `asyncio` task management + persisted state is the mechanism), returning
+`job_id` immediately (verified <1s in tests). `status()`/`result()` both
+scope every read to `(tenant_id, principal)` via `_scoped()`, returning `None`
+— indistinguishable from a missing job — on any mismatch. `result()` returns
+only `_project_manifest()`'s bounded projection (type/keys/item_count or a
+200-char summary), never the raw payload. TTL expiry is promoted lazily on
+`load()`: a record still `"pending"`/`"running"` once its intended `ttl` has
+elapsed is read back as `"expired"` (a terminal outcome alongside
+`"succeeded"`/`"failed"`, per spec) — verified with a resolver that blocks
+forever (`asyncio.Event` never set) so the promotion logic, not resolver
+timing, is what the test exercises. A `method_resolver` constructor hook
+(`(agent_name, tool_name) -> async callable`, `None`-safe — fails the job
+with an error manifest) is the integration seam for wiring in the real
+exposure-set lookup later, since `agent_mount.py`/`build_exposure_set` are
+not in this task's file list. 7/7 new tests pass; full
+`packages/ai-parrot-server/tests/mcp/` suite (143 tests, up from 136) stays
+green; `ruff check` clean (fixed 3 pre-fix findings: `datetime.UTC` alias, an
+unused `noqa`, and `__all__` sort order — all in my own new file).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The `method_resolver` injection point is not
+itself named in the spec, but is the natural minimal seam for `start()` to
+actually run *something* without this task reaching into `agent_mount.py`
+(out of file scope) — same pattern as TASK-2603's `policy_filter` and
+TASK-2604's `audit_hook`.
