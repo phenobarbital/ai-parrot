@@ -40,23 +40,23 @@ The cause is that `DevFlowModelPlan` is consumed at **flow-build** time:
 to a node constructor — `IdeationNode(model=…)` (`factories.py:308`),
 `QANode(codereview_dispatcher=…)` (`factories.py:274,286`),
 `DevelopmentNode(development_pool_config=…)` (`factories.py:286`). The
-console builds one flow at startup (`server_dev.py:853`), so a per-run
+console builds one flow at startup (`server_dev.py:1029`), so a per-run
 plan has nowhere to land.
 
 **The finding that makes this cheap.** That premise is already stale.
 Since FEAT-480, a run with a stable `run_id` **and** `dev_loop_flow_kwargs`
 configured goes through `DevCheckpointCoordinator.prepare()`
-(`dev_loop/runner.py:1253`), and on a **cache miss — i.e. every new run —**
+(`dev_loop/runner.py:1271`), and on a **cache miss — i.e. every new run —**
 `prepare()` calls `flow_factory(None)` (`dev_loop/checkpoint.py:555`),
 which is `DevFlowRunner._dev_loop_flow_factory()` →
-`build_dev_flow(**self._dev_loop_flow_kwargs)` (`dev_flow/runner.py:295`).
-The console passes both (`server_dev.py:525,586` supplies `run_id`;
-`server_dev.py:826` builds the kwargs), so **a fresh flow is already built
+`build_dev_flow(**self._dev_loop_flow_kwargs)` (`dev_flow/runner.py:318`).
+The console passes both (`server_dev.py:640` supplies `run_id`;
+`server_dev.py:1002` builds the kwargs), so **a fresh flow is already built
 for every console run**. Nothing needs to be re-architected: the per-run
 plan simply is not threaded into those kwargs.
 
 **And the console can only ever take the fresh path.** `handle_run` mints
-its own `run_id` (`server_dev.py:525`, `uuid.uuid4().hex[:8]`), never
+its own `run_id` (`server_dev.py:640`, `uuid.uuid4().hex[:8]`), never
 accepts one from the client, and the console exposes no resume endpoint —
 so every console run is a guaranteed checkpoint cache miss. A per-run plan
 submitted from the UI therefore *always* applies; the resume branch is
@@ -118,7 +118,7 @@ flow build:
    over `self._dev_loop_flow_kwargs` — never stored on the instance, which
    would race across concurrent runs.
 3. The checkpoint fingerprint is **left alone** — it keeps deriving from
-   the construction kwargs (`dev_flow/runner.py:306-330`). Decided
+   the construction kwargs (`dev_flow/runner.py:327-351`). Decided
    2026-09-01 (§8 Q2'): the console always cache-misses, so the fingerprint
    never decides anything for it, and rewriting the inputs risks
    invalidating in-flight checkpoints on deploy for no gain. Accepted
@@ -163,22 +163,22 @@ POST /api/flow/run  ──_parse_model_plan()──→  requested_plan
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `DevFlowRunner.run()` (`dev_flow/runner.py:58`) | extends signature | New keyword-only `model_plan`, default `None` |
-| `DevFlowRunner._dev_loop_flow_factory()` (`dev_flow/runner.py:276`) | changes signature | Takes the run's plan; closure is per-call |
-| `DevLoopRunner.run()` (`dev_loop/runner.py:1171`) | seam only | Must keep working unchanged for the bug flow |
+| `DevFlowRunner.run()` (`dev_flow/runner.py:79`) | extends signature | New keyword-only `model_plan`, default `None` |
+| `DevFlowRunner._dev_loop_flow_factory()` (`dev_flow/runner.py:297`) | changes signature | Takes the run's plan; closure is per-call |
+| `DevLoopRunner.run()` (`dev_loop/runner.py:1189`) | seam only | Must keep working unchanged for the bug flow |
 | `DevCheckpointCoordinator.prepare()` (`dev_loop/checkpoint.py:471`) | uses | Consumes the per-call `flow_factory` / `execution_policy` — no change to the coordinator itself |
 | `build_dev_flow()` (`dev_flow/flow.py:86`) | uses | Already accepts `model_plan`; no change |
 | `build_dev_loop_flow()` (`dev_loop/flow.py:332`) | extends signature | Gains `model_plan`; has none of the 27 current kwargs for it (Module 7) |
 | `DevLoopRunner.run()` (`dev_loop/runner.py:1189`) | uses the new seam | Ops path threads a per-run plan through the same overrides mapping (Module 8) |
-| `examples/dev_loop/server_dev.py` `handle_run` (`:482`) | uses | Passes `requested_plan`; narrows `model_plan_ignored` |
-| `examples/dev_loop/static/dev.html` `planMismatchWarning` (`:1712`) | copy | Banner narrows to the resume case |
+| `examples/dev_loop/server_dev.py` `handle_run` (`:576`) | uses | Passes `requested_plan`; narrows `model_plan_ignored` |
+| `examples/dev_loop/static/dev.html` `planMismatchWarning` (`:1770`) | copy | Banner narrows to the resume case |
 
 ### Data Models
 
 No new models. The per-run input is the existing
 `parrot.flows.dev_flow.model_plan.DevFlowModelPlan` (`model_plan.py:167`),
 already parsed from the form by `server_dev._parse_model_plan()`
-(`server_dev.py:153`).
+(`server_dev.py:183`).
 
 ### New Public Interfaces
 
@@ -347,7 +347,7 @@ Reuse the existing console harness in
 ### Verified Imports
 
 ```python
-from parrot.flows.dev_flow.model_plan import DevFlowModelPlan, resolve_model_plan  # dev_flow/model_plan.py:167, :340
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan, resolve_model_plan  # dev_flow/model_plan.py:167, :334
 from parrot.flows.dev_flow.flow import build_dev_flow                              # dev_flow/flow.py:86
 from parrot.flows.dev_flow.runner import DevFlowRunner                             # dev_flow/runner.py:40
 from parrot.flows.dev_flow.models import DevRequestBrief                           # imported by dev_flow/runner.py
@@ -359,7 +359,7 @@ from parrot.flows.dev_loop.models import FeatureBrief                           
 ```python
 # packages/ai-parrot/src/parrot/flows/dev_flow/runner.py
 class DevFlowRunner(DevLoopRunner):                                     # line 40
-    async def run(                                                      # line 58
+    async def run(                                                      # line 79
         self,
         brief: DevRequestBrief | FeatureBrief,
         *,
@@ -367,24 +367,24 @@ class DevFlowRunner(DevLoopRunner):                                     # line 4
         initial_task: str = "",
         extra_shared: dict[str, Any] | None = None,
     ) -> FlowResult: ...
-    def _dev_loop_flow_factory(self) -> Callable[[Any], AgentsFlow]:    # line 276
+    def _dev_loop_flow_factory(self) -> Callable[[Any], AgentsFlow]:    # line 297
         # closes over dict(self._dev_loop_flow_kwargs); calls build_dev_flow
-        # with checkpoint=True, checkpoint_required=True                 # line 295-302
-    def _execution_policy_for_fingerprint(self) -> dict[str, Any]:      # line 306
-        # reads self._dev_loop_flow_kwargs; FEAT-486 note at line 313-321
+        # with checkpoint=True, checkpoint_required=True                 # line 318-324
+    def _execution_policy_for_fingerprint(self) -> dict[str, Any]:      # line 327
+        # reads self._dev_loop_flow_kwargs; FEAT-486 note at line 336-344
         # documents which model_plan fields join the fingerprint
 
 # packages/ai-parrot/src/parrot/flows/dev_loop/runner.py
-class DevLoopRunner:                                                    # line 371
-    def __init__(..., max_concurrent_runs: Optional[int] = None,        # line 403
-                 dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None) # line 412
-    self._dev_loop_flow_kwargs = dev_loop_flow_kwargs                   # line 466
-    async def run(...)                                                  # line 1171
-        recovery_enabled = run_id is not None and self._dev_loop_flow_kwargs is not None  # line 1219
-        flow, mode = await self._checkpoint_coordinator.prepare(         # line 1253
+class DevLoopRunner:                                                    # line 381
+    def __init__(..., max_concurrent_runs: Optional[int] = None,        # line 421
+                 dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None) # line 430
+    self._dev_loop_flow_kwargs = dev_loop_flow_kwargs                   # line 484
+    async def run(...)                                                  # line 1189
+        recovery_enabled = run_id is not None and self._dev_loop_flow_kwargs is not None  # line 1237
+        flow, mode = await self._checkpoint_coordinator.prepare(         # line 1271
             workflow="dev-loop", run_id=rid, brief=brief,
             live_context=ctx,
-            flow_factory=self._dev_loop_flow_factory(),                  # line 1258
+            flow_factory=self._dev_loop_flow_factory(),                  # line 1276
             execution_policy=self._execution_policy_for_fingerprint(),
         )
 
@@ -399,7 +399,7 @@ def build_dev_loop_flow(                                                 # line 
 # NOTE: there is NO `model_plan` kwarg here today — Module 7 adds it.
 
 # examples/dev_loop/server_dev.py — why the console never resumes
-run_id = f"run-{uuid.uuid4().hex[:8]}"                                   # line 525
+run_id = f"run-{uuid.uuid4().hex[:8]}"                                   # line 640
 # ...and no code path reads a client-supplied run_id.
 
 # packages/ai-parrot/src/parrot/flows/dev_loop/checkpoint.py
@@ -425,11 +425,11 @@ IdeationNode(model=resolved_plan.research_primary if resolved_plan else None)  #
 
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `run(model_plan=…)` | `_dev_loop_flow_factory` | per-call closure argument | `dev_flow/runner.py:276` |
+| `run(model_plan=…)` | `_dev_loop_flow_factory` | per-call closure argument | `dev_flow/runner.py:297` |
 | per-run factory | `build_dev_flow(model_plan=…)` | kwarg merge | `dev_flow/flow.py:101` |
-| per-run plan | `DevCheckpointCoordinator.prepare` | `flow_factory` / `execution_policy` | `dev_loop/runner.py:1253-1259` |
-| `handle_run` | `runner.run(...)` | new keyword | `examples/dev_loop/server_dev.py:482` |
-| `model_plan_ignored` | run response JSON | already present | `examples/dev_loop/server_dev.py:617` |
+| per-run plan | `DevCheckpointCoordinator.prepare` | `flow_factory` / `execution_policy` | `dev_loop/runner.py:1271-1277` |
+| `handle_run` | `runner.run(...)` | new keyword | `examples/dev_loop/server_dev.py:576,736` |
+| `model_plan_ignored` | run response JSON | already present | `examples/dev_loop/server_dev.py:793` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -441,7 +441,7 @@ IdeationNode(model=resolved_plan.research_primary if resolved_plan else None)  #
   is no API to re-seat a constructed flow. Per-run seats come from building
   a new flow, not from mutating one.
 - ~~`DevFlowModelPlan.merge()`~~ — does not exist. Precedence is
-  `resolve_model_plan()` (`model_plan.py:340`), *explicit argument > env >
+  `resolve_model_plan()` (`model_plan.py:334`), *explicit argument > env >
   built-in*, tracked via Pydantic `model_fields_set`.
 - ~~`shared["model_plan"]`~~ — no node reads a plan from shared state; seats
   are constructor arguments. A shared-state plan would be dead config.
@@ -497,7 +497,7 @@ IdeationNode(model=resolved_plan.research_primary if resolved_plan else None)  #
   `review_pair_active` (`server_dev.py:_model_plan_payload`).
 - **`_execution_policy_for_fingerprint` is shared with the base class.**
   The dev-flow override exists precisely because the kwarg shapes differ
-  (`dev_flow/runner.py:306-330`); keep that separation.
+  (`dev_flow/runner.py:327-351`); keep that separation.
 - **The ops flow has no reported problem.** Modules 7-8 add a seam, not a
   behaviour change. `model_plan=None` must leave `build_dev_loop_flow`
   byte-identical, and the bug flow's suite must pass untouched — a
@@ -524,7 +524,7 @@ None. No new packages.
       mints a fresh one.
 - [x] **Q2 — Should a pure model swap force a fresh run?** — *Resolved*:
       **no**. Today's fingerprint deliberately excludes model strings
-      (`dev_flow/runner.py:313-321`); changing that would make every model
+      (`dev_flow/runner.py:336-344`); changing that would make every model
       experiment a forced fresh run, the opposite of this feature's goal.
 - [x] **Q2' — How far to take the fingerprint work?** (raised while
       resolving Q2) — *Resolved*: **minimal — leave it deriving from the
@@ -544,7 +544,7 @@ None. No new packages.
       pass a plan; the console follows later.
 - [x] **Q4 — How does the console learn the effective plan and the
       fresh/resumed mode?** — *Resolved by evidence, not by choice*:
-      `handle_run` mints its own `run_id` (`server_dev.py:525`) and
+      `handle_run` mints its own `run_id` (`server_dev.py:640`) and
       exposes no resume endpoint, so **every console run is fresh** and
       `model_plan_ignored` is always empty from the UI. No probe, no
       WebSocket correction, no outcome-dependent response needed. The
@@ -581,4 +581,5 @@ None. No new packages.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-01 | Jesus Lara | Initial draft |
+| 0.3 | 2026-09-01 | Jesus Lara | §6 anchors re-verified after an unrelated merge moved `server_dev.py` (+~120 lines) and `dev_loop/runner.py` (+~180) |
 | 0.2 | 2026-09-01 | Jesus Lara | All open questions resolved; fingerprint work dropped to minimal (Q2'); ops library seam added as Modules 7-8, ops UI explicitly out (Q3); console's always-fresh `run_id` folded in, collapsing Q4 |
