@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-491
 **Date**: 2026-09-01
 **Author**: Jesus Lara (jlara@trocglobal.com) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Proposal**: `sdd/proposals/flex-agent-infographic-a2ui.proposal.md` (research artifact FEAT-517; audit at `sdd/state/FEAT-517/`)
 
