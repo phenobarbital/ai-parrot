@@ -246,6 +246,7 @@ class RecipeRunner:
         params: dict[str, Any] | None = None,
         pctx: Any | None = None,
         recipe_owner: Optional[str] = None,
+        include_envelope: bool = False,
     ) -> RenderedArtifact:
         """Run the full seven-step replay pipeline for recipe ``name``.
 
@@ -266,9 +267,21 @@ class RecipeRunner:
                 from the constructor's ``owner`` (the NotificationMixin-
                 bearing delivery owner — an unrelated concept) to avoid
                 confusion between the two.
+            include_envelope: When ``True``, attach the assembled
+                ``CreateSurface`` envelope dump
+                (``envelope.model_dump(by_alias=True, mode="json")`` — the
+                same shape ``persist_envelope`` stores) at
+                ``RenderedArtifact.metadata["source_envelope"]`` before
+                returning. Lets a refresh caller (FEAT-492) obtain the
+                envelope without a second ArtifactStore round-trip.
+                Non-breaking: defaults to ``False``, in which case the
+                ``"source_envelope"`` key is never added.
 
         Returns:
             The rendered, persisted-if-configured :class:`RenderedArtifact`.
+            When ``include_envelope=True``, its ``metadata`` dict carries the
+            reserved ``"source_envelope"`` key with the assembled envelope
+            dump.
 
         Raises:
             RecipeRunException: On any pipeline abort (stage-tagged diagnostic).
@@ -285,6 +298,10 @@ class RecipeRunner:
         self._check_bind_drift_or_raise(recipe, data_model)
         envelope = self._assemble_envelope_or_raise(recipe, data_model)
         artifact = await self._render_or_raise(recipe, envelope)
+        if include_envelope:
+            artifact.metadata["source_envelope"] = envelope.model_dump(
+                by_alias=True, mode="json"
+            )
         await self._deliver_best_effort(recipe, artifact)
         return artifact
 
