@@ -55,7 +55,7 @@ installer.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py` | MODIFY | toolkit tables in the managed MCP block |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py` | MODIFY | config-driven block build + reconciliation |
-| `tests/wiki/codex/test_installer_toolkit_entries.py` | CREATE | unit tests |
+| `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py` | CREATE | unit tests (corrected path — see Codebase Contract note) |
 
 ---
 
@@ -89,6 +89,15 @@ def mcp_block(root: Path) -> str:  # line 53 — current wikitoolkit-only block
 MCP_BEGIN  # marker constant — READ assets.py for its exact value and the
            # matching END marker before editing
 ```
+
+### Stale Contract Entry (corrected)
+- ~~`tests/wiki/codex/test_installer_toolkit_entries.py`~~ — no
+  `tests/wiki/` directory exists in this repo (same stale-path issue found
+  in TASK-2648). The actual test tree mirrors
+  `packages/ai-parrot/src/parrot/knowledge/wiki/` at `tests/knowledge/wiki/`
+  (see `tests/knowledge/wiki/test_codex_integration.py`, which already
+  covers the rest of this installer). Corrected path:
+  `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py`.
 
 ### Does NOT Exist
 - ~~`assets.toolkit_mcp_block`~~ — created by this task (or fold into an
@@ -158,10 +167,69 @@ def test_toml_always_valid(tmp_root_with_config): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-start (Claude)
+**Date**: 2026-09-01
 **Notes**:
+- `assets.py`: added `toolkit_mcp_block(root, sections)` — renders one
+  `[mcp_servers.parrot-<name>]` TOML table per (name, section) pair it is
+  given (an inline `env = { ... }` table when `section.env` is non-empty),
+  reusing `resolve_binary(root, "parrot")`. Extended `mcp_block(root,
+  toolkit_block="")` with an optional pre-built `toolkit_block` parameter
+  embedded inside the SAME `MCP_BEGIN`/`MCP_END` marker pair as the
+  wikitoolkit table; the default (`""`) reproduces the original
+  wikitoolkit-only block byte-for-byte (verified — `mcp_block(root)` with
+  no args is unchanged). `ToolkitSection` is imported only under
+  `TYPE_CHECKING` (module already has `from __future__ import
+  annotations`), matching the pattern used in TASK-2648's `claude_code/assets.py`.
+- `installer.py`: added `_existing_table_names(text)` (scans
+  `_TABLE_HEADER` matches) and rewired `_install_mcp` to, after its
+  unchanged wikitoolkit-table removal/validation steps,
+  `load_toolkits_config(root)`, filter to enabled sections, and for each
+  one check whether `mcp_servers.parrot-<name>` already exists as a
+  foreign table OUTSIDE the marker block (`without_existing`) — if so,
+  print a stderr warning and omit that toolkit from the block instead of
+  producing a duplicate-table TOML that `_validate_toml` would reject.
+  The surviving sections are rendered via `toolkit_mcp_block` and passed
+  into `mcp_block`; the whole managed block is regenerated on every
+  install, which **is** the reconciliation (disabled/deleted sections
+  simply vanish from the regenerated block — no per-table tracking).
+  `uninstall_codex_integration` needed NO changes: it already removes the
+  entire `MCP_BEGIN`/`MCP_END` block, which now happens to contain every
+  toolkit table too. Extended `integration_status` with an additional
+  `toolkit_count` key (counts `[mcp_servers.parrot-` table headers inside
+  the current block) — additive only; `codex/cli.py`'s `status` display
+  iterates a fixed `labels` dict so the new key is safely ignored there.
+- Added `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py` (8
+  tests): enabled sections get tables and disabled ones don't; a second
+  run with no config change is byte-identical; disabling a
+  previously-enabled section drops its table on re-run; the wikitoolkit
+  table's `args`/`default_tools_approval_mode`/`command` are unaffected;
+  uninstall removes the whole block (wikitoolkit + all toolkit tables);
+  the written config always parses as valid TOML; a foreign table with an
+  unrelated name is preserved; a foreign `parrot-<name>` table is left
+  untouched with a stderr warning (`capsys`) instead of causing a
+  duplicate-table TOML error. All 8 pass; `ruff check` clean on all three
+  touched files (verified zero *new* findings on `installer.py` — same 4
+  pre-existing `Optional`/style findings before and after, via `git
+  stash`).
+- Ran the existing `tests/knowledge/wiki/test_codex_integration.py` suite
+  (6/6 still pass unmodified) and the full `tests/knowledge/wiki/` suite
+  (1211 passed, only the TASK-2648-noted pre-existing
+  `test_fresh_install_writes_all_artifacts` failure, unrelated to Codex).
+  Also confirmed `packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py`
+  (a separate, stale duplicate test tree under the package's own
+  `tests/`) already fails to even *collect* on the pre-task commit
+  (`ModuleNotFoundError: parrot.utils.types`, unrelated import-chain
+  issue) — confirmed via `git stash` — so it is not part of the
+  effectively-running suite and out of scope.
+- Corrected the same stale Codebase Contract test-path pattern found in
+  TASK-2648: the task named
+  `tests/wiki/codex/test_installer_toolkit_entries.py`, but no
+  `tests/wiki/` directory exists — corrected to
+  `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py`, mirroring
+  `test_codex_integration.py`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none, beyond the stale test-path correction
+noted above (test location only, not scope/behavior) and the additive
+`toolkit_count` field on `integration_status` (explicitly optional per
+the task's Scope note).
