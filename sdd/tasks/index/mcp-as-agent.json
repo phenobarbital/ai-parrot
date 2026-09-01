@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T01:46:22+02:00",
-  "completed_at": "2026-09-01T14:54:17+00:00",
+  "completed_at": "2026-09-01T15:28:16+00:00",
   "tasks": [
     {
       "id": "TASK-2599",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-08-30T23:55:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2599-mcp-tool-decorator.md"
+      "file": "sdd/tasks/completed/TASK-2599-mcp-tool-decorator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2600",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T13:31:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2600-agentmethodtool-reification.md"
+      "file": "sdd/tasks/completed/TASK-2600-agentmethodtool-reification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2601",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T13:34:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2601-agent-mount-config.md"
+      "file": "sdd/tasks/completed/TASK-2601-agent-mount-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2602",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T13:46:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2602-agent-mcp-mount-endpoints.md"
+      "file": "sdd/tasks/completed/TASK-2602-agent-mcp-mount-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2603",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T13:51:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2603-agent-metadata-resources.md"
+      "file": "sdd/tasks/completed/TASK-2603-agent-metadata-resources.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2604",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T13:54:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2604-principal-resolution-tenant.md"
+      "file": "sdd/tasks/completed/TASK-2604-principal-resolution-tenant.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2605",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:01:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2605-pbac-filter-audit.md"
+      "file": "sdd/tasks/completed/TASK-2605-pbac-filter-audit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2606",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:06:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2606-result-size-deadline.md"
+      "file": "sdd/tasks/completed/TASK-2606-result-size-deadline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2607",
@@ -182,7 +190,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:11:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2607-job-handles.md"
+      "file": "sdd/tasks/completed/TASK-2607-job-handles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2608",
@@ -200,7 +209,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:19:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2608-prm-endpoint-401.md"
+      "file": "sdd/tasks/completed/TASK-2608-prm-endpoint-401.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2609",
@@ -218,7 +228,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:33:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2609-redis-session-store.md"
+      "file": "sdd/tasks/completed/TASK-2609-redis-session-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2610",
@@ -243,7 +254,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
       "completed_at": "2026-09-01T14:54:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2610-integration-tests-docs.md"
+      "file": "sdd/tasks/completed/TASK-2610-integration-tests-docs.md",
+      "verification": "verified"
     }
   ]
 }
