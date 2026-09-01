@@ -241,10 +241,28 @@ class TestCatalogAdditivity:
         )
 
     def test_nova_identity_fields_unchanged(self):
+        """FEAT-486 must not reshape nova's identity.
+
+        ``roles`` is asserted as a SUPERSET rather than an exact tuple:
+        FEAT-482 additively introduced the ``research_partner`` role on
+        this same backend row (its partner seat selects nova via
+        ``DEV_FLOW_RESEARCH_PARTNER=nova``). Pinning the tuple exactly
+        would make this test fail on a legitimately additive change by
+        another feature, which is the opposite of what it is guarding.
+        What matters is that FEAT-486 removed nothing and that the
+        adversarial role — the one this feature actually touches — is
+        still there.
+        """
         nova = llm_catalog.get_backend("nova")
         assert nova.default_model == "minimax.minimax-m2.5"
         assert nova.model_env == "DEV_LOOP_NOVA_CODE_MODEL"
-        assert nova.roles == ("development", "adversarial")
+        assert {"development", "adversarial"} <= set(nova.roles)
+
+    def test_feat486_added_no_role_to_nova(self):
+        """The catalog change was models-only — no role was introduced here."""
+        roles = set(llm_catalog.get_backend("nova").roles)
+        # "research_partner" is FEAT-482's; anything else would be ours.
+        assert roles - {"development", "adversarial", "research_partner"} == set()
 
     def test_codex_models_not_extended_with_gpt_5_6_sol(self):
         """Spec-resolved: the Codex CLI cannot run gpt-5.6-sol."""

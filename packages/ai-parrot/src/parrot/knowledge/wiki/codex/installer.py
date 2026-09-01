@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Optional
@@ -98,15 +99,58 @@ def _install_skill(root: Path) -> str:
     return f"{assets.SKILL_PATH} — {'updated' if before is not None else 'created'}"
 
 
+def _existing_table_names(text: str) -> set[str]:
+    """Top-level TOML table header names present in ``text``."""
+    names: set[str] = set()
+    for line in text.splitlines():
+        match = _TABLE_HEADER.match(line)
+        if match is not None:
+            names.add(match.group(1).strip())
+    return names
+
+
 def _install_mcp(root: Path) -> str:
+    """Write/refresh the managed MCP block: wikitoolkit table plus one
+    ``[mcp_servers.parrot-<name>]`` table per enabled toolkit section
+    (FEAT-485). Re-running regenerates the whole managed block from
+    config — that IS the reconciliation (disabled/deleted sections simply
+    disappear from the regenerated block; no per-table tracking needed).
+
+    A toolkit name colliding with a table already present OUTSIDE the
+    managed marker block is never overwritten: it is reported as a
+    warning on stderr and omitted from our managed block instead (mirrors
+    the Claude Code installer's warn-and-skip semantics for `.mcp.json`).
+    """
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
     path = root / ".codex" / "config.toml"
     before = path.read_text(encoding="utf-8") if path.exists() else ""
     _validate_toml(path, before)
     without_managed = _remove_marker_block(before, assets.MCP_BEGIN, assets.MCP_END)
     without_existing = _remove_toml_table(without_managed, assets.MCP_TABLE)
+
+    cfg = load_toolkits_config(root)
+    existing_tables = _existing_table_names(without_existing)
+
+    sections = {}
+    for name, section in cfg.toolkits.items():
+        if not section.enabled:
+            continue
+        table_name = f"mcp_servers.parrot-{name}"
+        if table_name in existing_tables:
+            print(
+                f"Warning: .codex/config.toml — '[{table_name}]' already exists outside "
+                "the managed block and was not written by `parrot codex install`; "
+                "omitting it from the managed MCP block.",
+                file=sys.stderr,
+            )
+            continue
+        sections[name] = section
+
+    toolkit_block = assets.toolkit_mcp_block(root, sections)
     after = _upsert_marker_block(
         without_existing,
-        assets.mcp_block(root),
+        assets.mcp_block(root, toolkit_block),
         assets.MCP_BEGIN,
         assets.MCP_END,
     )
@@ -115,6 +159,12 @@ def _install_mcp(root: Path) -> str:
         return ".codex/config.toml — wikitoolkit MCP already current"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(after, encoding="utf-8")
+    if sections:
+        names = ", ".join(f"parrot-{name}" for name in sorted(sections))
+        return (
+            ".codex/config.toml — wikitoolkit MCP installed with automatic tool approval; "
+            f"{len(sections)} toolkit table(s) ({names})"
+        )
     return ".codex/config.toml — wikitoolkit MCP installed with automatic tool approval"
 
 
@@ -225,6 +275,18 @@ def integration_status(root: Path) -> dict[str, Any]:
     agents_path = root / "AGENTS.md"
     codex_config = root / ".codex" / "config.toml"
     rules_path = root / assets.RULES_PATH
+
+    # FEAT-485: count enabled toolkit sections actually present as managed
+    # tables inside the current MCP block (0 when the block is absent or
+    # a name collided and was omitted at install time).
+    toolkit_count = 0
+    if codex_config.exists():
+        text = codex_config.read_text(encoding="utf-8")
+        if assets.MCP_BEGIN in text:
+            _, _, rest = text.partition(assets.MCP_BEGIN)
+            block = rest.partition(assets.MCP_END)[0]
+            toolkit_count = len(re.findall(r"^\[mcp_servers\.parrot-", block, flags=re.MULTILINE))
+
     return {
         "root": str(root),
         "config": config_path(root).exists(),
@@ -232,5 +294,6 @@ def integration_status(root: Path) -> dict[str, Any]:
         "agents_md_section": agents_path.exists() and assets.AGENTS_BEGIN in agents_path.read_text(encoding="utf-8"),
         "skill": (root / assets.SKILL_PATH).exists(),
         "mcp": codex_config.exists() and assets.MCP_BEGIN in codex_config.read_text(encoding="utf-8"),
+        "toolkit_count": toolkit_count,
         "permissions": rules_path.exists() and assets.RULES_BEGIN in rules_path.read_text(encoding="utf-8"),
     }

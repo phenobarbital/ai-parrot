@@ -198,10 +198,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Read the full existing prompt before editing (confirmed 8 exact
+Input fields, the Step 1-4 structure, and the Cardinal Rules) to make sure
+the new sections were additive and did not contradict the existing
+Code Context / anti-hallucination discipline. Added two new rows to the
+`## Input` table (`partner_findings`, `partner_findings_path`), a new
+`## Complementary Research` section (expand-not-rebut framing, attribution
+by finding id + source model with a worked example, explicit
+"disagreement is data" instruction, `could_not_determine` → Open
+Questions guidance, and an explicit "absence changes nothing" clause), and
+a `## Graph-backed code search` section documenting the three read-only
+wiki MCP tools from TASK-2635 with a preference note over `Grep`. Also
+extended the frontmatter `tools:` list with the three
+`mcp__wikitoolkit__*` names so the **interactive** `.claude/agents/`
+twin (which reads the repo's real `.mcp.json`, unlike a dispatched run)
+can actually reach them — not explicitly required by the task text, but a
+direct, in-scope consequence of "mirror the prompt" once the tool
+allow-list itself changed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Both prompt copies kept byte-identical via a straight file copy after
+editing the canonical one — `test_prompt_parity_with_repo_twin` (existing)
+and 8 new tests added to `test_subagent_defs.py` (not a new file — the
+task named no new test file, only that the existing suite must pass) all
+pass: new-section presence, the two new input-field names, the
+expand-not-rebut framing, attribution-by-id, open-disagreement language,
+partner-absence tolerance, the three read-only tool names present AND the
+two write tool names (`wiki_remember`/`wiki_note`) explicitly absent, and
+a guard that every pre-existing behavioral instruction (dual-mode,
+resume/extend policy, FEAT-145 frontmatter, explicit-path commit,
+JSON-only output) is still present verbatim. Full
+`pytest packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py`
+(25 passed) and the full dev_flow suite (233 passed) both green.
 
-**Deviations from spec**: none | describe if any
+Wrote `docs/dev_loop/complementary-research.md` (new file — no existing
+dev-flow-specific docs page existed to extend; placed under `docs/dev_loop/`
+to match the existing sibling operator docs there, `nova-backend.md` and
+`telemetry-accounting.md`, both cross-flow dev-loop-adjacent feature
+docs). Covers: the collaborator-not-adversary framing, the two seats
+(`IdeationNode`/`ResearchNode`) sharing one coordinator, the two backends
+and the Anthropic family-guard rationale, the read-only toolkit and the
+new primary-seat graph-search tools, the full soft-degradation contract,
+and all 9 config keys (8 `DEV_FLOW_RESEARCH_PARTNER_*` plus
+`DEV_FLOW_IDEATION_MODEL`) in a table. The web-search egress consequence
+is called out in its own subsection with an explicit warning, per the
+task's "say so plainly; do not bury it" instruction, and the
+`DEV_FLOW_RESEARCH_PARTNER_EFFORT` reserved-but-unwired status (TASK-2631's
+documented deviation) is disclosed rather than glossed over.
+
+**Deviations from spec**: none beyond the frontmatter `tools:` extension
+noted above, which is additive and in the spirit of "mirror the prompt,"
+not a scope change.

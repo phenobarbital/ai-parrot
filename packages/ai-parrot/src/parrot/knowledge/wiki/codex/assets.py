@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from parrot.mcp.toolkit_config import ToolkitSection
 
 AGENTS_BEGIN = "<!-- parrot:wiki:codex:begin -->"
 AGENTS_END = "<!-- parrot:wiki:codex:end -->"
@@ -50,17 +54,59 @@ def resolve_binary(root: Path, name: str) -> str:
     return shutil.which(name) or name
 
 
-def mcp_block(root: Path) -> str:
-    """Return the managed project-scoped Codex MCP configuration."""
+def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
+    """Build one ``[mcp_servers.parrot-<name>]`` TOML table per name (FEAT-485).
+
+    Args:
+        root: Project root — used to resolve the ``parrot`` binary.
+        sections: Mapping of toolkit name -> its config section. Callers
+            are responsible for pre-filtering to enabled, non-colliding
+            sections — this function renders exactly what it is given.
+
+    Returns:
+        The concatenated table strings (no enclosing markers), or ``""``
+        when ``sections`` is empty.
+    """
+    command = json.dumps(resolve_binary(root, "parrot"))
+    tables = []
+    for name in sorted(sections):
+        section = sections[name]
+        lines = [
+            f"[mcp_servers.parrot-{name}]",
+            f"command = {command}",
+            f"args = {json.dumps(['mcp-local', name])}",
+        ]
+        if section.env:
+            env_toml = ", ".join(f"{key} = {json.dumps(value)}" for key, value in section.env.items())
+            lines.append(f"env = {{ {env_toml} }}")
+        tables.append("\n".join(lines))
+    return "\n\n".join(tables)
+
+
+def mcp_block(root: Path, toolkit_block: str = "") -> str:
+    """Return the managed project-scoped Codex MCP configuration.
+
+    Args:
+        root: Project root — used to resolve the ``wikitoolkit`` binary.
+        toolkit_block: Pre-built toolkit tables from
+            :func:`toolkit_mcp_block` (FEAT-485), embedded inside the SAME
+            managed marker block as the wikitoolkit table. Omitted
+            (default ``""``) keeps the pre-feature wikitoolkit-only block
+            byte-identical.
+    """
     command = json.dumps(resolve_binary(root, "wikitoolkit"))
-    return (
-        f"{MCP_BEGIN}\n"
-        f"[{MCP_TABLE}]\n"
-        f"command = {command}\n"
-        'args = ["mcp"]\n'
-        'default_tools_approval_mode = "approve"\n'
-        f"{MCP_END}\n"
-    )
+    lines = [
+        MCP_BEGIN,
+        f"[{MCP_TABLE}]",
+        f"command = {command}",
+        'args = ["mcp"]',
+        'default_tools_approval_mode = "approve"',
+    ]
+    if toolkit_block:
+        lines.append("")
+        lines.append(toolkit_block)
+    lines.append(MCP_END)
+    return "\n".join(lines) + "\n"
 
 
 def rules_block(root: Path) -> str:

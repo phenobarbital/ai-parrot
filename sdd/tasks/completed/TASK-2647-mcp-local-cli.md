@@ -163,10 +163,49 @@ def test_overrides_passed(monkeypatch): ...  # assert factory called with includ
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-start (Claude)
+**Date**: 2026-09-01
 **Notes**:
+- Created `packages/ai-parrot/src/parrot/mcp/local_cli.py` exporting the
+  `mcp_local` Click command (`@click.command("mcp-local")`), matching
+  `LazyGroup.get_command`'s `cmd_name.replace("-", "_")` symbol-lookup
+  convention (verified against `cli/__init__.py:70-100` first).
+  `NAME` is a required-unless-`--list` argument; `--config`/`--include`
+  (repeatable)/`--exclude` (repeatable) build an `overrides` dict passed
+  to `create_toolkit_mcp_server(name, root, **overrides)` — only keys the
+  user actually supplied are included. `--list` loads
+  `load_toolkits_config(root)` and prints `name\tstate\tclass_path` without
+  ever importing a toolkit class (regression-tested via `sys.modules`
+  membership). Root logging is switched to stderr-only before the heavy
+  `toolkit_server` import (deferred to inside the command function, so
+  `parrot --help` / bare module import stay fast and stdout-clean).
+  Resolution/instantiation failures (`ValueError`/`ImportError`) print to
+  stderr and exit 1 (the underlying `ValueError` message already lists
+  resolvable names); `KeyboardInterrupt` around `asyncio.run(server.start())`
+  exits 0.
+- Registered `"mcp-local": "parrot.mcp.local_cli"` in
+  `packages/ai-parrot/src/parrot/cli/__init__.py`'s `cli._lazy_commands`
+  (single line; did not touch `_lazy_extras` — no optional extra applies).
+- Added `tests/mcp/test_local_cli.py` (9 tests, `click.testing.CliRunner`):
+  `--list` shows the 3 built-ins with enabled state and never imports a
+  toolkit class; unknown name exits non-zero with resolvable names on
+  stderr; missing `NAME` without `--list` exits non-zero;
+  `cli._lazy_commands["mcp-local"]` and `LazyGroup.get_command` resolution;
+  `--config`/`--include`/`--exclude` reach `create_toolkit_mcp_server` as
+  overrides (mocked factory + mocked `asyncio.run`); serve path against
+  `tests.mcp.stub_toolkit.StubToolkit` with `StdioMCPServer.start` mocked;
+  clean exit 0 on `KeyboardInterrupt`. All 9 pass; `ruff check` clean on
+  both new/modified files.
+- Pre-existing failures in `tests/mcp/test_toolkit_server.py` (8 tests,
+  from TASK-2646 "done-with-issues") are unrelated to this task — verified
+  identical failures on the pre-task commit via `git stash`. Not touched
+  (out of scope; TASK-2646 already flagged this for follow-up).
 
-**Deviations from spec**: none
+**Deviations from spec**: none. One pre-existing gap noted for awareness:
+`create_toolkit_mcp_server` (TASK-2646) documents a `config_path` override
+in its docstring but does not actually thread it into `load_toolkits_config`
+(always loads `root/.parrot/mcp-toolkits.yaml`). This task's acceptance
+criterion is only that `--config` "reaches `create_toolkit_mcp_server` as
+an override" — verified — not that the factory honors it yet; wiring
+`config_path` through `load_toolkits_config` is a TASK-2646 follow-up, out
+of this task's file scope.

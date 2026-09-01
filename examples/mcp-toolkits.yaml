@@ -1,0 +1,80 @@
+# examples/mcp-toolkits.yaml — annotated example for FEAT-485
+# "Expose Toolkits as Local MCP".
+#
+# Copy the sections you need into your project's OWN
+# `.parrot/mcp-toolkits.yaml` (relative to the directory the MCP host —
+# Claude Code, Codex — starts `parrot mcp-local <name>` in). This file is
+# NOT read automatically; it only documents the schema and shows how to
+# override the three zero-config built-ins (`scraping`, `browsing`,
+# `memory`) and how to add an arbitrary toolkit of your own.
+#
+# See docs/mcp-local-toolkits.md for the full reference and a
+# "trust note" you should read before pointing `class:` at code you did
+# not write.
+
+toolkits:
+  # --- built-ins (work with NO config file at all) ------------------------
+  # Listing a built-in name here REPLACES its defaults wholesale — kwargs
+  # are not merged with the built-in's kwargs, they are overwritten.
+
+  scraping:
+    class: parrot_tools.scraping.toolkit.WebScrapingToolkit
+    enabled: true
+    kwargs:
+      headless: true
+      plans_dir: .parrot/scraping_plans
+    # No `llm:` configured below -> tools named in
+    # WebScrapingToolkit.llm_dependent_tools (its plan-inference tools)
+    # are automatically dropped from exposure. Set `llm:` to expose them:
+    # llm: "openai:gpt-4o-mini"
+    llm: null
+
+  browsing:
+    class: parrot_tools.browsing.toolkit.WebBrowsingToolkit
+    kwargs:
+      catalog_dir: .parrot/browsing_catalog
+      headless: true
+
+  memory:
+    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit
+    # No kwargs needed — ephemeral, in-process DataFrame/result scratchpad.
+    # State is per-server-process: it never persists across restarts.
+
+  # --- include / exclude filtering (mutually exclusive; include wins) -----
+  # Only ONE of `include`/`exclude` takes effect at a time — if both are
+  # set, `include` wins and `exclude` is ignored entirely.
+
+  # memory-readonly:
+  #   class: parrot.tools.working_memory.tool.WorkingMemoryToolkit
+  #   include: [wm_get_result, wm_get_stored, wm_list_stored, wm_search_stored]
+
+  # scraping-no-plans:
+  #   class: parrot_tools.scraping.toolkit.WebScrapingToolkit
+  #   exclude: [save_plan, load_plan]
+
+  # --- a fully custom toolkit (the "extensibility door") ------------------
+  # Any AbstractToolkit subclass can be exposed this way — no code change,
+  # no release. `env` values are written into the generated `.mcp.json` /
+  # `.codex/config.toml` server entry (e.g. API keys the toolkit reads
+  # from the process environment); they are NOT passed as constructor
+  # kwargs.
+
+  # my-toolkit:
+  #   class: my_package.my_module.MyToolkit
+  #   enabled: true
+  #   kwargs:
+  #     some_option: value
+  #   llm: "anthropic:claude-3-5-haiku-latest"
+  #   env:
+  #     MY_TOOLKIT_API_KEY: "${MY_TOOLKIT_API_KEY}"
+
+  # --- disabling a built-in without deleting it ----------------------------
+  # `enabled: false` keeps the section around for inspection (`parrot
+  # mcp-local --list` still shows it, with "disabled" state) and hides it
+  # from `parrot claude install` / `parrot codex install`'s managed
+  # entries. It does NOT block a direct `parrot mcp-local <name>` — the
+  # installers are what respect `enabled`, not the serve path itself.
+
+  # browsing:
+  #   class: parrot_tools.browsing.toolkit.WebBrowsingToolkit
+  #   enabled: false

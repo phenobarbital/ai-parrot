@@ -223,10 +223,54 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Re-verified the Codebase Contract before writing anything, per
+the task's own warning about FEAT-479 touching `dispatchers/claude.py`
+(already merged, per TASK-2634's note). One correction found and applied
+to the contract: `ClaudeAgentRunOptions` (`parrot/clients/claude_agent.py`)
+**already has** an `mcp_servers: dict[str, Any] | None` field (added by
+FEAT-434, unrelated prior work) — the task's "NO mcp_servers field exists"
+claim is true only for `ClaudeCodeDispatchProfile`, not for
+`ClaudeAgentRunOptions`. This *simplified* the task: no changes needed to
+`clients/claude_agent.py` at all, just (1) add the field to the profile,
+(2) forward `profile.mcp_servers` into the already-existing
+`ClaudeAgentRunOptions(mcp_servers=...)` slot in `_resolve_run_options()`.
+Confirmed the exact stdio MCP server config shape
+(`McpStdioServerConfig` in `claude_agent_sdk.types`: `command: str`,
+`args: NotRequired[list[str]]`, `env: NotRequired[dict[str,str]]`, `type`
+optional) directly from the installed SDK before writing the
+`.mcp.json`-shaped dict.
 
-**Completed by**:
-**Date**:
-**Notes**:
+`_resolve_wikitoolkit_command()` resolves the CLI robustly (`shutil.which`
+first, then a `sys.executable`-sibling fallback) rather than copying the
+repo's `.mcp.json`'s hardcoded absolute venv path. `DEV_FLOW_IDEATION_MODEL`
+added to `conf.py` (default `claude-opus-5`); the previously-hardwired
+`model="claude-sonnet-4-6"` in `ideation.py`'s `_dispatch()` now reads it.
+`allowed_tools` gained exactly the three read-only wiki tools
+(`wiki_query`/`wiki_page`/`wiki_related`); `wiki_remember`/`wiki_note`
+deliberately excluded. `strict_mcp_config` was NOT touched — stays at its
+`True` default, with the server passed explicitly per the field's own
+docstring warning.
 
-**Deviations from spec**: none | describe if any
+9 new tests in `test_ideation_graph_search.py`: profile field defaults,
+`_resolve_run_options()` pass-through (both the None-default and an
+explicit-servers case), the `strict_mcp_config=True` guard, wikitoolkit
+server registration, the read-only-tools-only assertion, default/
+configurable model, and a source-inspection guard that the literal
+`"claude-sonnet-4-6"` string no longer appears in `_dispatch`'s source.
+All pre-existing `test_ideation_node.py` (25 tests) and dev_loop
+`-k claude` (17 tests) tests still pass unmodified — the profile/model/
+tool-list assertions there use membership checks, not exact-list
+equality, so they were compatible with the additions by construction.
+Full `pytest packages/ai-parrot/tests/flows/dev_flow/` (225 passed) and
+`pytest packages/ai-parrot/tests/flows/dev_loop/` (1129 passed, the same
+3 pre-existing `sdd-secondopinion`-parity failures reproduced on
+unmodified `dev`) both show zero regressions. `ruff check` shows only
+pre-existing debt (verified via line-by-line diff against `dev` — the
+`dispatchers/claude.py` diff is a pure line-number shift, and
+`models/claude.py`'s 2 new findings are the new field's own `Optional[...]`
+annotation, matching the file's existing style).
+
+**Deviations from spec**: none beyond the Codebase Contract correction
+above (which simplified rather than complicated the implementation).

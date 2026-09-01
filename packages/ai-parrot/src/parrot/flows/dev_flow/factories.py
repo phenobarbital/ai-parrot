@@ -27,6 +27,9 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.bots.flows.flow.definition import NodeDefinition
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_flow.model_plan import DevFlowModelPlan, resolve_model_plan
 from parrot.flows.dev_flow.nodes.dev_intake import DevIntakeNode
 from parrot.flows.dev_flow.nodes.ideation import IdeationNode
@@ -134,6 +137,7 @@ def build_dev_flow_node_factories(
     skip_qa: bool = False,
     ideation_max_rounds: int | None = None,
     model_plan: DevFlowModelPlan | None = None,
+    research_coordinator: ComplementaryResearchCoordinator | None = None,
 ) -> dict[str, NodeFactory]:
     """Return the ``{node type: factory}`` map for the dev-flow graph.
 
@@ -178,6 +182,11 @@ def build_dev_flow_node_factories(
             ``QANode``'s review pair (unless ``codereview_dispatcher`` was
             passed explicitly), and ``plan.research_primary`` selects
             :class:`IdeationNode`'s model.
+        research_coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482) injected into :class:`IdeationNode`. ``None``
+            (default) builds a fresh one — itself an inert no-op until
+            ``DEV_FLOW_RESEARCH_PARTNER`` is configured, so omitting this
+            kwarg preserves the pure-addition guarantee.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -229,6 +238,8 @@ def build_dev_flow_node_factories(
     def dev_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs)
 
+    coordinator = research_coordinator if research_coordinator is not None else ComplementaryResearchCoordinator()
+
     def ideation_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
             IdeationNode(
@@ -239,6 +250,7 @@ def build_dev_flow_node_factories(
                 # (no plan) leaves the node to resolve
                 # conf.DEV_FLOW_IDEATION_MODEL itself.
                 model=resolved_plan.research_primary if resolved_plan else None,
+                coordinator=coordinator,
                 name=nd.id,
             ),
             deps,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,21 @@ class ClaudeCodeDispatchProfile(BaseModel):
     )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     model: str = "claude-sonnet-4-6"
+    mcp_servers: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "FEAT-482 Module 6: explicit MCP server configs forwarded as "
+            "ClaudeAgentRunOptions.mcp_servers (itself forwarded as "
+            "ClaudeAgentOptions.mcp_servers). Required to reach ANY MCP "
+            "server on a dispatch that keeps `strict_mcp_config=True` "
+            "(the default) — that flag makes the dispatched headless CLI "
+            "ignore the filesystem `.mcp.json`, so allow-listing "
+            "`mcp__<server>__*` tool names alone does nothing without "
+            "also passing the server config here. `None` (default) means "
+            "no explicit MCP servers — byte-identical to pre-Module-6 "
+            "behavior."
+        ),
+    )
 
 
 class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
@@ -72,8 +87,6 @@ class ClaudeCodeReviewProfile(ClaudeCodeDispatchProfile):
 
     subagent: Optional[Literal["sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"]] = "sdd-codereview"
     permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "default"
-    allowed_tools: List[str] = Field(
-        default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-    )
+    allowed_tools: List[str] = Field(default_factory=lambda: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"])
     model: str = "claude-sonnet-4-6"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
