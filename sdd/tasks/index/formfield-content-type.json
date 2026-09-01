@@ -10,20 +10,20 @@
     {
       "id": "TASK-2677",
       "slug": "formfield-schema-extension",
-      "title": "FormField Schema Extension — Add content_type and accept_content_types",
+      "title": "FormField Schema Extension \u2014 Add content_type and accept_content_types",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "First task — no dependencies; all other tasks depend on this one.",
+      "parallelism_notes": "First task \u2014 no dependencies; all other tasks depend on this one.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2677-formfield-schema-extension.md"
+      "completed_at": "2026-09-01T18:22:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2677-formfield-schema-extension.md"
     },
     {
       "id": "TASK-2678",
@@ -68,7 +68,7 @@
     {
       "id": "TASK-2680",
       "slug": "jsonschema-renderer-content-type",
-      "title": "JSON Schema Renderer — Emit content_type Extension Keys",
+      "title": "JSON Schema Renderer \u2014 Emit content_type Extension Keys",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -79,7 +79,7 @@
         "TASK-2677"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on TASK-2677 only; independent of TASK-2678/2679/2682/2683. Priority renderer — ordered before audio and xforms.",
+      "parallelism_notes": "Depends on TASK-2677 only; independent of TASK-2678/2679/2682/2683. Priority renderer \u2014 ordered before audio and xforms.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -88,7 +88,7 @@
     {
       "id": "TASK-2681",
       "slug": "audio-renderer-accept-content-types",
-      "title": "Audio Renderer — Read accept_content_types for Submission Shape",
+      "title": "Audio Renderer \u2014 Read accept_content_types for Submission Shape",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -109,7 +109,7 @@
     {
       "id": "TASK-2682",
       "slug": "xforms-renderer-bind-metadata",
-      "title": "XForms Renderer — Emit content_type in <xf:bind>",
+      "title": "XForms Renderer \u2014 Emit content_type in <xf:bind>",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -129,7 +129,7 @@
     {
       "id": "TASK-2683",
       "slug": "field-helpers-text-area-snippet",
-      "title": "Field Helpers — Update TEXT_AREA Snippet with content_type Example",
+      "title": "Field Helpers \u2014 Update TEXT_AREA Snippet with content_type Example",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -149,7 +149,7 @@
     {
       "id": "TASK-2684",
       "slug": "tests",
-      "title": "Tests — Unit and Integration Tests for FEAT-488",
+      "title": "Tests \u2014 Unit and Integration Tests for FEAT-488",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -166,7 +166,7 @@
         "TASK-2683"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task — depends on all prior tasks. Cannot run until all implementation tasks are complete.",
+      "parallelism_notes": "Final task \u2014 depends on all prior tasks. Cannot run until all implementation tasks are complete.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
