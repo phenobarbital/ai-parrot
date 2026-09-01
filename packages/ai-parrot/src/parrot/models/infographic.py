@@ -1431,6 +1431,46 @@ class ThemeConfig(BaseModel):
     accent_teal: Optional[str] = Field(
         None, description="Teal accent used by the tip callout's border (FEAT-301)"
     )
+    content_width: Optional[str] = Field(
+        None, description="Max content width, e.g. '1400px' (derives to '1200px' if unset)"
+    )
+    radius: Optional[str] = Field(
+        None, description="Base border-radius, e.g. '10px' (derives to '8px' if unset)"
+    )
+    density: Optional[str] = Field(
+        None,
+        description=(
+            "Layout density — 'comfortable' or 'compact' "
+            "(derives to 'comfortable' if unset)"
+        ),
+    )
+    shadow: Optional[str] = Field(
+        None,
+        description=(
+            "Base box-shadow; 'none' for print "
+            "(derives to a soft default shadow if unset)"
+        ),
+    )
+    mono_family: Optional[str] = Field(
+        None,
+        description=(
+            "Monospace stack for numerics "
+            "(derives to a system monospace stack if unset)"
+        ),
+    )
+    panel_bg: Optional[str] = Field(
+        None,
+        description="Panel/section surface (derives from surface_bg, then neutral_bg, if unset)",
+    )
+    panel_border: Optional[str] = Field(
+        None, description="Panel border (derives from neutral_border if unset)"
+    )
+    header_bg: Optional[str] = Field(
+        None, description="Table header fill (derives from primary if unset)"
+    )
+    header_text: Optional[str] = Field(
+        None, description="Table header ink (derives from on_primary, then '#ffffff', if unset)"
+    )
 
     @field_validator(
         "primary", "primary_dark", "primary_light",
@@ -1442,6 +1482,7 @@ class ThemeConfig(BaseModel):
         "callout_error_bg", "callout_tip_bg",
         "on_primary", "callout_success_text", "callout_warning_text",
         "callout_error_text", "callout_tip_text", "accent_teal",
+        "panel_bg", "panel_border", "header_bg", "header_text",
         mode="before",
     )
     @classmethod
@@ -1451,6 +1492,21 @@ class ThemeConfig(BaseModel):
             raise ValueError(
                 f"Invalid CSS color value: {v!r}. "
                 "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+            )
+        return v
+
+    @field_validator("density", mode="before")
+    @classmethod
+    def _validate_density(cls, v: Any) -> Any:
+        """Validate the density enum-like string.
+
+        Raises:
+            ValueError: If the value is not 'comfortable' or 'compact'.
+        """
+        if v is not None and v not in ("comfortable", "compact"):
+            raise ValueError(
+                f"Invalid density value: {v!r}. "
+                "Expected 'comfortable' or 'compact'."
             )
         return v
 
@@ -1504,6 +1560,48 @@ class ThemeConfig(BaseModel):
             props.append(f"    --badge-put: {self.method_badge_palette.put};")
             props.append(f"    --badge-delete: {self.method_badge_palette.delete};")
             props.append(f"    --badge-patch: {self.method_badge_palette.patch};")
+
+        # Layout tokens (FEAT-493) — every field is optional with a
+        # documented derivation from an existing colour/font token, so
+        # the five registered themes keep working unchanged.
+        content_width = self.content_width or "1200px"
+        props.append(f"    --content-width: {content_width};")
+
+        radius = self.radius or "8px"
+        props.append(f"    --radius: {radius};")
+
+        density = self.density or "comfortable"
+        props.append(f"    --density: {density};")
+        props.append(
+            f"    --density-gap: {'0.5rem' if density == 'compact' else '1rem'};"
+        )
+        props.append(
+            f"    --density-padding: {'0.5rem' if density == 'compact' else '1rem'};"
+        )
+
+        shadow = self.shadow if self.shadow is not None else (
+            "0 1px 3px rgba(0, 0, 0, 0.1)"
+        )
+        props.append(f"    --shadow: {shadow};")
+
+        mono_family = self.mono_family or (
+            'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, '
+            '"Liberation Mono", monospace'
+        )
+        props.append(f"    --mono-family: {mono_family};")
+
+        panel_bg = self.panel_bg or self.surface_bg or self.neutral_bg
+        props.append(f"    --panel-bg: {panel_bg};")
+
+        panel_border = self.panel_border or self.neutral_border
+        props.append(f"    --panel-border: {panel_border};")
+
+        header_bg = self.header_bg or self.primary
+        props.append(f"    --header-bg: {header_bg};")
+
+        header_text = self.header_text or self.on_primary or "#ffffff"
+        props.append(f"    --header-text: {header_text};")
+
         return ":root {\n" + "\n".join(props) + "\n}"
 
 
