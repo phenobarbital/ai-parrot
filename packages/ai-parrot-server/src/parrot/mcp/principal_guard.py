@@ -16,13 +16,37 @@ claim is populated by navigator-auth today — the mount default is the only
 live path — but the claim lookups are written forward-compatibly. The wire
 ``client_id`` is the ``client_uid`` and is **never** used as a tenant.
 
-PBAC decisions, audit-ledger persistence, and re-verification are TASK-2605's
-job; this module only exposes an ``audit_hook`` callback so a resolution
-failure can be recorded by whatever TASK-2605 wires in without this module
-importing (and thus coupling to) ``security/audit_ledger.py`` directly.
+**PBAC filtering, re-verification and audit (FEAT-477 TASK-2605, spec OQ6,
+goal G6).** ``PBACGuard`` filters ``tools/list`` per principal and
+re-verifies every ``tools/call`` against the *same* canonical resource,
+``mcp:agent:{name}:tool:{tool}`` — the list is never trusted as an
+authorization record. Deny-by-default throughout, consistent with
+``setup_pbac()``'s ``PolicyEffect.DENY``: navigator-auth's upstream access
+gate is keyed ``(user_id, client_uid)`` and cannot express a per-agent
+grant, so this is the **only** place per-agent/per-tool authorization can
+happen (OQ6 — load-bearing, not defense-in-depth).
+
+Every ``tools/call`` is recorded via an injectable ``audit_sink`` callback
+carrying exactly the fields the spec requires — principal, agent, tool,
+argument hash (never raw arguments), decision, duration. **Deliberately not
+a direct call to** ``parrot.security.audit_ledger.AuditLedger.append()``:
+that ledger's schema (``user_id, channel, tool, provider,
+key_fingerprint``, derived from real ``credential_material``) exists for
+*credentialed tool invocations* (a resolved secret's fingerprint) and has
+no field for a PBAC decision, a duration, or an argument hash — forcing
+those into ``provider``/``credential_material`` would either misrepresent
+the entry as a credential event or silently discard the very fields this
+task must record. ``audit_ledger_sink()`` below provides an explicit,
+documented bridge for callers that still want every PBAC decision
+mirrored into a shared ``AuditLedger`` for correlation. (See this task's
+Completion Note for the full rationale.) ``parrot.auth.audit`` — the
+**deprecated** module — is never imported here.
 """
 import contextlib
+import hashlib
+import json
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -181,11 +205,319 @@ async def published_principal(pctx: PermissionContext) -> AsyncIterator[Permissi
         _pctx_var.reset(token)
 
 
+# ---------------------------------------------------------------------------
+# TASK-2605: PBAC filtering, re-verification and audit
+# ---------------------------------------------------------------------------
+
+#: Canonical PBAC resource for one agent/tool pair. Both the per-agent and
+#: aggregate `{agent}__{tool}` name forms resolve to the same string — the
+#: aggregate is naming sugar, never its own authorization path. Mirrors
+#: `AgentMCPMount.canonical_resource` (TASK-2602) by algorithm, not by
+#: import — a per-request guard module has no business depending upward on
+#: the mount object that constructs it.
+def resource_for(agent_name: str, tool_name: str) -> str:
+    """Build the canonical PBAC resource string for `agent_name`/`tool_name`.
+
+    Args:
+        agent_name: Configured agent name.
+        tool_name: Tool name as registered (per-agent form).
+
+    Returns:
+        `mcp:agent:{agent_name}:tool:{tool_name}`.
+    """
+    return f"mcp:agent:{agent_name}:tool:{tool_name}"
+
+
+def resource_from_aggregate(aggregate_name: str) -> str:
+    """Resolve an aggregate `{agent}__{tool}` name to its canonical resource.
+
+    Args:
+        aggregate_name: A name published on the aggregate endpoint.
+
+    Returns:
+        The same canonical resource string `resource_for` would produce
+        for the equivalent per-agent name.
+
+    Raises:
+        ValueError: If `aggregate_name` does not contain the `__` separator.
+    """
+    agent_name, sep, tool_name = aggregate_name.partition("__")
+    if not sep:
+        raise ValueError(
+            f"{aggregate_name!r} is not an aggregate name "
+            "('{agent}__{tool}' expected)"
+        )
+    return resource_for(agent_name, tool_name)
+
+
+def _hash_arguments(arguments: dict[str, Any] | None) -> str:
+    """Hash call arguments for the audit trail — never log raw values.
+
+    Args:
+        arguments: The `tools/call` `arguments` payload, if any.
+
+    Returns:
+        A SHA-256 hex digest of the canonicalized (sorted-key) JSON
+        representation of `arguments`.
+    """
+    canonical = json.dumps(arguments or {}, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _mcp_error(message: str) -> dict[str, Any]:
+    """Build a clean MCP tool-result error — never a stack trace.
+
+    Args:
+        message: Human-readable, non-sensitive error description.
+
+    Returns:
+        An `{"isError": True, ...}` payload matching `MCPToolAdapter`'s
+        own error shape.
+    """
+    return {"content": [{"type": "text", "text": message}], "isError": True}
+
+
+#: `(agent_name, tool_name) -> bool` (sync or async) — PBAC resolver hook.
+#: Mirrors `parrot.auth.resolver.PBACPermissionResolver.can_execute`'s
+#: shape (`can_execute(context, tool_name, required_permissions) -> bool`);
+#: pass a bound `resolver.can_execute` (with `required_permissions=set()`)
+#: or an equivalent async callable.
+PBACResolver = Callable[
+    [PermissionContext, str, "set[str]"], "bool | Awaitable[bool]"
+]
+
+#: Sink for one audited `tools/call` decision. Called with
+#: `{"principal", "tenant_id", "agent", "tool", "argument_hash",
+#: "decision", "duration"}`. Sync or async. `None` (default) only logs.
+AuditSink = Callable[[dict[str, Any]], "None | Awaitable[None]"]
+
+
+def audit_ledger_sink(ledger: Any) -> AuditSink:
+    """Bridge PBAC audit entries into a shared `AuditLedger` (best effort).
+
+    `AuditLedger.append()` (`security/audit_ledger.py:338`) is shaped for
+    *credentialed tool invocations* — `user_id`, `channel`, `tool`,
+    `provider`, and a `key_fingerprint` derived from real credential
+    material. It has no field for a PBAC decision, a duration, or an
+    argument hash, so this bridge folds the decision into `provider`
+    (a free-text field) and the duration/argument hash into
+    `credential_material` purely as fingerprint input — `credential_material`
+    is **not** a real credential here, only opaque correlation input, and
+    the ledger entry itself does not literally carry the duration/hash
+    back out. Callers that need those fields queryable in plain text
+    should read the entries handed to their own `audit_sink` instead;
+    this bridge is for teams that specifically want every PBAC decision
+    to *also* show up in the shared ledger for cross-referencing.
+
+    Args:
+        ledger: An `AuditLedger` instance.
+
+    Returns:
+        An `AuditSink` callable suitable for `PBACGuard(audit_sink=...)`.
+    """
+
+    async def _sink(entry: dict[str, Any]) -> None:
+        await ledger.append(
+            user_id=str(entry["principal"]),
+            channel=f"mcp:{entry['agent']}",
+            tool=str(entry["tool"]),
+            provider=f"pbac:{entry['decision']}",
+            credential_material=(
+                f"{entry['argument_hash']}:{entry['duration']:.6f}"
+            ),
+        )
+
+    return _sink
+
+
+async def _call_hook(hook: Callable[..., Any] | None, *args: Any) -> Any:
+    """Call `hook(*args)`, awaiting the result if it is awaitable.
+
+    Args:
+        hook: The callable to invoke, or `None` (no-op, returns `None`).
+        *args: Positional arguments to pass to `hook`.
+
+    Returns:
+        `hook`'s (possibly awaited) return value, or `None` if `hook` is `None`.
+    """
+    if hook is None:
+        return None
+    result = hook(*args)
+    if result is not None and hasattr(result, "__await__"):
+        return await result
+    return result
+
+
+class PBACGuard:
+    """Per-agent PBAC enforcement wrapping one mounted server's tools.
+
+    Filters `tools/list` per principal and re-verifies every `tools/call`
+    against the same canonical resource the list was filtered against —
+    the list is never trusted as an authorization record (spec OQ6).
+    Deny-by-default: no resolver configured, a resolver error, or an
+    unknown tool name all deny.
+
+    Args:
+        agent_name: Configured agent name (used to build canonical
+            resources and audit entries).
+        server: The per-agent server whose `.tools` (`dict[str,
+            MCPToolAdapter]`) this guard filters/re-verifies against.
+        resolver: Optional `(pctx, resource, required_permissions) ->
+            bool` PBAC resolver — the `PBACPermissionResolver.can_execute`
+            shape. `None` (default) denies every call (deny-by-default
+            when PBAC is not wired in yet).
+        audit_sink: Optional callback invoked with every `tools/call`
+            decision (see `AuditSink`). `None` (default) only logs.
+    """
+
+    def __init__(
+        self,
+        agent_name: str,
+        server: Any,
+        resolver: PBACResolver | None = None,
+        audit_sink: AuditSink | None = None,
+    ) -> None:
+        self._agent_name = agent_name
+        self._server = server
+        self._resolver = resolver
+        self._audit_sink = audit_sink
+
+    def resource_for(self, tool_name: str) -> str:
+        """See module-level `resource_for` — bound to this guard's agent."""
+        return resource_for(self._agent_name, tool_name)
+
+    def resource_from_aggregate(self, aggregate_name: str) -> str:
+        """See module-level `resource_from_aggregate` (agent-agnostic)."""
+        return resource_from_aggregate(aggregate_name)
+
+    async def _permitted(self, pctx: PermissionContext, tool_name: str) -> bool:
+        """Evaluate whether `pctx` may call `tool_name` (deny-by-default).
+
+        Args:
+            pctx: The caller's resolved `PermissionContext`.
+            tool_name: Candidate tool name.
+
+        Returns:
+            Whether the call is permitted.
+        """
+        if self._resolver is None:
+            return False
+        resource = self.resource_for(tool_name)
+        try:
+            return bool(await _call_hook(self._resolver, pctx, resource, set()))
+        except Exception:
+            logger.exception(
+                "PBAC resolver error for agent=%s tool=%s — denying (fail closed)",
+                self._agent_name,
+                tool_name,
+            )
+            return False
+
+    async def _audit(
+        self,
+        pctx: PermissionContext,
+        tool_name: str,
+        arguments: dict[str, Any] | None,
+        decision: str,
+        duration: float,
+    ) -> None:
+        """Record one `tools/call` decision.
+
+        Args:
+            pctx: The caller's resolved `PermissionContext`.
+            tool_name: The tool that was (attempted to be) called.
+            arguments: The raw call arguments — hashed, never logged raw.
+            decision: `"allow"` or `"deny"`.
+            duration: Wall-clock seconds the decision + call took.
+        """
+        entry = {
+            "principal": pctx.user_id,
+            "tenant_id": pctx.tenant_id,
+            "agent": self._agent_name,
+            "tool": tool_name,
+            "argument_hash": _hash_arguments(arguments),
+            "decision": decision,
+            "duration": duration,
+        }
+        logger.info(
+            "MCP tools/call audit: agent=%s tool=%s principal=%s decision=%s "
+            "duration=%.4fs",
+            self._agent_name,
+            tool_name,
+            pctx.user_id,
+            decision,
+            duration,
+        )
+        await _call_hook(self._audit_sink, entry)
+
+    async def tools_list(
+        self, params: dict[str, Any], pctx: PermissionContext
+    ) -> dict[str, Any]:
+        """Policy-filtered `tools/list` — omits tools `pctx` may not call.
+
+        Args:
+            params: The `tools/list` request params (unused; kept for
+                interface symmetry with `MCPServerBase.handle_tools_list`).
+            pctx: The caller's resolved `PermissionContext`.
+
+        Returns:
+            `{"tools": [...]}`, restricted to permitted tools.
+        """
+        visible = []
+        for tool_name, adapter in self._server.tools.items():
+            if await self._permitted(pctx, tool_name):
+                visible.append(adapter.to_mcp_tool_definition())
+        return {"tools": visible}
+
+    async def tools_call(
+        self, params: dict[str, Any], pctx: PermissionContext
+    ) -> dict[str, Any]:
+        """Re-verified, audited `tools/call`.
+
+        Never trusts `tools/list` as an authorization record — re-evaluates
+        policy against the same canonical resource independently. Deny-by
+        -default for an unknown tool name.
+
+        Args:
+            params: The `tools/call` request params (`name`, `arguments`).
+            pctx: The caller's resolved `PermissionContext`.
+
+        Returns:
+            The tool's result on success, or a clean `{"isError": True}`
+            payload (never a stack trace) on denial.
+        """
+        tool_name = params.get("name")
+        arguments = params.get("arguments") or {}
+        start = time.monotonic()
+
+        known = tool_name in self._server.tools
+        allowed = known and await self._permitted(pctx, tool_name)
+        decision = "allow" if allowed else "deny"
+
+        if not allowed:
+            duration = time.monotonic() - start
+            await self._audit(pctx, tool_name, arguments, decision, duration)
+            return _mcp_error(f"Not permitted to call tool {tool_name!r}")
+
+        try:
+            result = await self._server.handle_tools_call(params)
+        finally:
+            duration = time.monotonic() - start
+            await self._audit(pctx, tool_name, arguments, decision, duration)
+        return result
+
+
 __all__ = [
     "MCP_CHANNEL",
     "AuditHook",
+    "AuditSink",
+    "PBACGuard",
+    "PBACResolver",
+    "audit_ledger_sink",
     "published_principal",
     "resolve_principal",
     "resolve_tenant",
+    "resource_for",
+    "resource_from_aggregate",
     "runtime_key",
 ]
