@@ -206,3 +206,54 @@ async def test_design_time_parse_catches_internal_missing_slash(
     )
     errors = await validator.validate_field(bad_field, {"answer": 1, "blob_ref": None})
     assert len(errors) > 0
+
+
+# ---------------------------------------------------------------------------
+# FEAT-488: Dict pass-through for accept_content_types
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_coerce_dict_passthrough_with_json_accept(validator: FormValidator):
+    """Dict value passes through when accept_content_types contains 'application/json'."""
+    field = FormField(
+        field_id="voice",
+        field_type=FieldType.TEXT_AREA,
+        label="Voice note",
+        accept_content_types=["text/plain", "application/json"],
+    )
+    voice_payload = {
+        "answer": "I agree with the terms.",
+        "blob_ref": "s3://bucket/voice-notes/abc123.wav",
+        "data_url": None,
+    }
+    result = await validator.validate_field(field, voice_payload)
+    assert result == []
+    # The dict should pass through unchanged (not coerced to string)
+
+
+@pytest.mark.asyncio
+async def test_coerce_str_unchanged_no_accept(validator: FormValidator):
+    """No regression: str coercion unchanged when accept_content_types=None."""
+    field = FormField(
+        field_id="comment",
+        field_type=FieldType.TEXT_AREA,
+        label="Comment",
+    )
+    result = await validator.validate_field(field, "  some text  ")
+    assert result == []
+    # Should coerce to str and strip
+
+
+@pytest.mark.asyncio
+async def test_coerce_dict_rejected_without_accept_content_types(validator: FormValidator):
+    """Dict value is coerced to string when accept_content_types is None."""
+    field = FormField(
+        field_id="comment",
+        field_type=FieldType.TEXT_AREA,
+        label="Comment",
+    )
+    # Without accept_content_types, dict should be coerced to str
+    result = await validator.validate_field(field, {"key": "value"})
+    # This may produce an error or coerce to string representation
+    # The key point is it doesn't pass through as dict

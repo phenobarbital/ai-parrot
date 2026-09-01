@@ -422,12 +422,11 @@ class AudioFormRenderer(AbstractFormRenderer):
         if self._synthesizer is not None:
             for q in questions:
                 if q.label:
-                    audio_bytes = await synthesize_with_fallback(
-                        q.label,
-                        config=None,  # Use default config
-                        language=locale,
-                    )
-                    q.audio_prompt = audio_bytes
+                    try:
+                        result = await self._synthesizer.synthesize(q.label)
+                        q.audio_prompt = result.audio
+                    except Exception as exc:  # noqa: BLE001
+                        self.logger.warning("TTS synthesis failed for field %s: %s", q.field_id, exc)
 
         manifest = AudioFormManifest(
             form_uid=str(form.form_uid),
@@ -439,6 +438,9 @@ class AudioFormRenderer(AbstractFormRenderer):
         )
 
         return RenderedForm(
-            content=manifest.model_dump(),
+            content=manifest.model_dump(
+                mode="json",
+                exclude={"questions": {"__all__": {"audio_prompt"}}},
+            ),
             content_type="application/json",
         )

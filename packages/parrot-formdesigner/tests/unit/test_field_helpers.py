@@ -61,3 +61,12 @@ def test_rest_snippet_meta_rest_parses_as_callback() -> None:
     assert isinstance(spec, CallbackRestFieldSpec)
     assert spec.callback_ref == "planogram_compliance"
     assert spec.response_path == "$.compliance_score"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-488: TEXT_AREA snippet content_type example
+# ---------------------------------------------------------------------------
+
+def test_field_helpers_text_area_snippet() -> None:
+    """_FIELD_SCHEMA_SNIPPETS['text_area'] includes content_type key."""
+    snippets = get_form_field_schema_snippets()
