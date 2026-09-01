@@ -11,6 +11,13 @@ wrap them — and this module only adds the two dev-flow-owned intake types:
 Importing this module imports both node packages, which is what guarantees
 their ``@register_dev_loop_node`` decorators have run before the definition
 is materialized.
+
+FEAT-486 adds the ``model_plan`` seam: a :class:`DevFlowModelPlan` selects
+the LLM for each dev-flow seat, and this module turns it into the wiring
+the (reused) ``dev_loop`` factories already accept — a
+``DevAgentPoolConfig`` plus ``agent_builder.build_dispatcher`` for the
+development pool. Omitting ``model_plan`` leaves every factory kwarg
+byte-identical to pre-FEAT-486.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.bots.flows.flow.definition import NodeDefinition
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan, resolve_model_plan
 from parrot.flows.dev_flow.nodes.dev_intake import DevIntakeNode
 from parrot.flows.dev_flow.nodes.ideation import IdeationNode
 from parrot.flows.dev_loop.factories import (
@@ -53,6 +61,7 @@ def build_dev_flow_node_factories(
     require_plan_approval: bool = False,
     skip_qa: bool = False,
     ideation_max_rounds: int | None = None,
+    model_plan: DevFlowModelPlan | None = None,
 ) -> dict[str, NodeFactory]:
     """Return the ``{node type: factory}`` map for the dev-flow graph.
 
@@ -83,11 +92,37 @@ def build_dev_flow_node_factories(
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``
             on :class:`IdeationNode`. ``None`` reads the conf key at execute
             time.
+        model_plan: FEAT-486 — per-seat LLM configuration. ``None``
+            (default) is byte-identical to pre-FEAT-486: no pool config is
+            derived and no dispatcher builder is defaulted. Supplying a
+            plan (even an all-defaults one) additionally opts the run into
+            ``DEV_FLOW_*`` env resolution via
+            :func:`~parrot.flows.dev_flow.model_plan.resolve_model_plan`;
+            a non-empty ``dev_pool`` then reaches ``DevelopmentNode`` as a
+            ``DevAgentPoolConfig`` with ``agent_builder.build_dispatcher``
+            as its worker builder.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
         ``dev_loop.*`` type (the reused chain).
     """
+    # FEAT-486: the plan is resolved (env defaults applied) only when one
+    # was actually supplied — an omitted plan must not let a stray
+    # DEV_FLOW_DEV_POOL in the environment silently turn a single-agent
+    # deployment into a pool (backward-compat acceptance criterion).
+    pool_config: Any | None = None
+    pool_builder: Any | None = development_dispatcher_builder
+    resolved_plan: DevFlowModelPlan | None = None
+    if model_plan is not None:
+        resolved_plan = resolve_model_plan(model_plan)
+        pool_config = resolved_plan.to_pool_config()
+        if pool_config is not None and pool_builder is None:
+            # Imported lazily: agent_builder pulls in every coding-agent
+            # client module, and a plan-less build must not pay for it.
+            from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+            pool_builder = build_dispatcher
+
     factories: dict[str, NodeFactory] = dict(
         build_dev_loop_node_factories(
             dispatcher=dispatcher,
@@ -95,7 +130,8 @@ def build_dev_flow_node_factories(
             redis_url=redis_url,
             git_toolkit=git_toolkit,
             wiki_toolkit=wiki_toolkit,
-            development_dispatcher_builder=development_dispatcher_builder,
+            development_pool_config=pool_config,
+            development_dispatcher_builder=pool_builder,
             development_pool_max=development_pool_max,
             codereview_dispatcher=codereview_dispatcher,
             graph_memory=graph_memory,

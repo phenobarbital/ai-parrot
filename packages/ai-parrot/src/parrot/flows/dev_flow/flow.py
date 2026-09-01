@@ -25,6 +25,7 @@ from parrot.flows.dev_flow.definition import (
     build_dev_flow_definition,
 )
 from parrot.flows.dev_flow.factories import build_dev_flow_node_factories
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
 from parrot.flows.dev_loop.checkpoint import project_shared_data
 from parrot.flows.dev_loop.definition import (
@@ -97,6 +98,7 @@ def build_dev_flow(
     skip_qa: bool = False,
     require_plan_approval: bool = False,
     ideation_max_rounds: int | None = None,
+    model_plan: DevFlowModelPlan | None = None,
     name: str = "dev-flow",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
@@ -133,6 +135,13 @@ def build_dev_flow(
             gate; a per-run ``extra_shared["require_plan_approval"]``
             overrides it (FEAT-412 / TASK-2123).
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
+        model_plan: FEAT-486 — per-seat LLM configuration
+            (:class:`~parrot.flows.dev_flow.model_plan.DevFlowModelPlan`).
+            ``None`` (default) preserves today's wiring exactly. A plan
+            whose ``dev_pool`` is non-empty deploys that many development
+            sub-agents through ``agent_builder.build_dispatcher``; an
+            explicit ``development_dispatcher_builder`` still wins over
+            the plan-derived one.
         name: Flow name (default ``"dev-flow"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
@@ -169,6 +178,7 @@ def build_dev_flow(
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,
         ideation_max_rounds=ideation_max_rounds,
+        model_plan=model_plan,
     )
     staged = AgentsFlow.from_definition(
         definition,
