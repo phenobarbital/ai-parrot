@@ -50,6 +50,11 @@ from aiohttp import web
 from parrot.mcp.server_base import SUPPORTED_PROTOCOL_VERSIONS
 
 from parrot.mcp.config import AuthMethod, MCPServerConfig
+from parrot.mcp.session_store import (
+    InMemorySessionStore,
+    SessionStore,
+    SessionStoreUnavailable,
+)
 from parrot.mcp.transports.http import HttpMCPServer
 
 #: Seconds between SSE keep-alive comments on an idle stream.
@@ -260,6 +265,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
         self,
         config: MCPServerConfig,
         parent_app: web.Application | None = None,
+        session_store: SessionStore | None = None,
     ):
         super().__init__(config, parent_app=parent_app)
         self._sessions: dict[str, McpStreamSession] = {}
@@ -280,6 +286,15 @@ class StreamableHttpMCPServer(HttpMCPServer):
         )
         self._allow_any_origin: bool = bool(
             getattr(config, "allow_any_origin", False)
+        )
+        # FEAT-477 TASK-2609: shared session + event store. Defaults to the
+        # in-process implementation — an explicit choice preserving today's
+        # single-worker behavior byte-for-byte (G11). Pass a
+        # `RedisSessionStore` to make sessions/events visible across
+        # gunicorn workers and survive a worker recycle; never an automatic
+        # fallback (see `session_store.py`).
+        self._session_store: SessionStore = session_store or InMemorySessionStore(
+            ttl=int(self._session_ttl), max_events=self._event_buffer_size
         )
         self._prune_task: asyncio.Task | None = None
 
@@ -367,6 +382,13 @@ class StreamableHttpMCPServer(HttpMCPServer):
         Returns ``None`` when the server is already holding its configured
         maximum number of sessions, so the caller can answer 503 instead of
         growing memory without bound.
+
+        Mirrors the session's metadata into ``self._session_store``
+        (FEAT-477 TASK-2609) so another worker sharing a
+        ``RedisSessionStore`` can resolve it later (``_get_session``). This
+        propagates ``SessionStoreUnavailable`` — an explicitly configured
+        shared store that is unreachable must fail the request cleanly,
+        never silently mint a session only this process knows about.
         """
         await self._prune_sessions()
         if len(self._sessions) >= self._max_sessions:
@@ -375,9 +397,18 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 len(self._sessions),
             )
             return None
+        session_id = secrets.token_urlsafe(32)
+        # Control-plane operation: fail closed (propagate
+        # SessionStoreUnavailable) rather than mint a session this store
+        # will never be able to resolve for another worker.
+        await self._session_store.create_session(
+            user=principal,
+            protocol_version=protocol_version,
+            session_id=session_id,
+        )
         now = time.monotonic()
         session = McpStreamSession(
-            session_id=secrets.token_urlsafe(32),
+            session_id=session_id,
             protocol_version=protocol_version,
             created_at=now,
             last_seen=now,
@@ -393,11 +424,43 @@ class StreamableHttpMCPServer(HttpMCPServer):
 
         A session is only returned to the principal that created it, so a
         leaked ``Mcp-Session-Id`` cannot be replayed under another identity.
+
+        FEAT-477 TASK-2609: when the session is not held locally (this
+        worker did not create it, or was recycled since), falls through to
+        ``self._session_store``. A hit is adopted as a fresh local
+        ``McpStreamSession`` shell — the durable identity/principal
+        resolves correctly across workers, though in-flight dispatch tasks
+        and a live GET stream are inherently per-process and cannot be
+        recovered (buffered *events* still replay via the store; see
+        ``_handle_streamable_get``). Propagates
+        ``SessionStoreUnavailable`` so an explicitly configured shared
+        store that is unreachable fails the request cleanly rather than
+        silently reporting "session not found".
         """
         await self._prune_sessions()
         session = self._sessions.get(session_id)
         if session is None:
-            return None
+            record = await self._session_store.get_session(session_id)
+            if record is None:
+                return None
+            if record.principal != self._principal(request):
+                self.logger.warning(
+                    "Rejecting MCP session %s: principal mismatch", session_id
+                )
+                return None
+            now = time.monotonic()
+            session = McpStreamSession(
+                session_id=session_id,
+                protocol_version=record.protocol_version,
+                created_at=now,
+                last_seen=now,
+                principal=record.principal,
+            )
+            self._sessions[session_id] = session
+            self.logger.info(
+                "Adopted MCP session %s from shared store (cross-worker)", session_id
+            )
+            return session
         if session.principal != self._principal(request):
             self.logger.warning(
                 "Rejecting MCP session %s: principal mismatch", session_id
@@ -462,6 +525,31 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 )
         session.tasks.clear()
         session.wakeup.set()
+        # FEAT-477 TASK-2609: keep the shared store in sync so a pruned/
+        # deleted session cannot "resurrect" via _get_session's cross-worker
+        # fallback. Best effort — local teardown must complete regardless of
+        # the store's availability (unlike create/get, this is cleanup, not
+        # a control-plane decision to serve or refuse traffic).
+        try:
+            await self._session_store.delete_session(session.session_id)
+        except SessionStoreUnavailable as exc:
+            self.logger.warning(
+                "Could not mirror-delete session %s from the shared store: %s",
+                session.session_id,
+                exc,
+            )
+
+    @staticmethod
+    def _session_store_unavailable_response() -> web.Response:
+        """Clean 503 for a control-plane session-store failure (TASK-2609).
+
+        Returned when an explicitly configured shared store
+        (``RedisSessionStore``) cannot service a session create/lookup —
+        fail closed, never silently degrade to per-process state.
+        """
+        return web.json_response(
+            _jsonrpc_error(-32000, "Session store unavailable"), status=503
+        )
 
     def _track(
         self, session: McpStreamSession | None, message: dict[str, Any], coro
@@ -623,7 +711,10 @@ class StreamableHttpMCPServer(HttpMCPServer):
         if not is_initialize:
             session_id = request.headers.get("Mcp-Session-Id")
             if session_id:
-                session = await self._get_session(session_id, request)
+                try:
+                    session = await self._get_session(session_id, request)
+                except SessionStoreUnavailable:
+                    return self._session_store_unavailable_response()
                 if session is None:
                     return web.json_response(
                         _jsonrpc_error(-32001, "Session not found"),
@@ -696,10 +787,13 @@ class StreamableHttpMCPServer(HttpMCPServer):
             return web.Response(status=202)
 
         negotiated = response.get("result", {}).get("protocolVersion")
-        session = await self._create_session(
-            protocol_version=negotiated or ASSUMED_HEADER_VERSION,
-            principal=self._principal(request),
-        )
+        try:
+            session = await self._create_session(
+                protocol_version=negotiated or ASSUMED_HEADER_VERSION,
+                principal=self._principal(request),
+            )
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
             return web.json_response(
                 _jsonrpc_error(-32000, "Server session capacity reached"),
@@ -862,6 +956,34 @@ class StreamableHttpMCPServer(HttpMCPServer):
             session.wakeup.set()
         return response
 
+    async def _mirror_event(
+        self, session_id: str, stream_id: str, message: dict[str, Any]
+    ) -> None:
+        """Best-effort mirror of one buffered event into the shared store.
+
+        FEAT-477 TASK-2609: durability for the "launch a long tool call,
+        disconnect, reconnect on a different worker, collect the result"
+        scenario. Deliberately **not** fail-closed like session
+        create/get — a data-plane durability hiccup must not fail an
+        otherwise-successful in-process response delivery to the client
+        that is actually connected right now.
+
+        Args:
+            session_id: The owning session's id.
+            stream_id: The stream this event belongs to.
+            message: The JSON-RPC message being buffered.
+        """
+        try:
+            await self._session_store.append_event(session_id, stream_id, message)
+        except SessionStoreUnavailable as exc:
+            self.logger.warning(
+                "Could not mirror event for session %s stream %s to the "
+                "shared store: %s",
+                session_id,
+                stream_id,
+                exc,
+            )
+
     async def _dispatch_to_stream(
         self,
         session: McpStreamSession,
@@ -874,14 +996,15 @@ class StreamableHttpMCPServer(HttpMCPServer):
         except asyncio.CancelledError:
             # Record the cancellation for anyone resuming the stream, then
             # let the cancellation propagate.
-            buffer.append(
-                _jsonrpc_error(-32800, "Request cancelled", message.get("id"))
-            )
+            cancelled = _jsonrpc_error(-32800, "Request cancelled", message.get("id"))
+            buffer.append(cancelled)
+            await self._mirror_event(session.session_id, buffer.stream_id, cancelled)
             session.wakeup.set()
             raise
         if response is None:
             return None
         event = buffer.append(response)
+        await self._mirror_event(session.session_id, buffer.stream_id, response)
         session.wakeup.set()
         return event
 
@@ -908,7 +1031,10 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 _jsonrpc_error(-32600, "Missing Mcp-Session-Id header"),
                 status=400,
             )
-        session = await self._get_session(session_id, request)
+        try:
+            session = await self._get_session(session_id, request)
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
             return web.json_response(
                 _jsonrpc_error(-32001, "Session not found"), status=404
@@ -936,12 +1062,49 @@ class StreamableHttpMCPServer(HttpMCPServer):
             stream_id, sequence = parsed
             resumed = session.streams.get(stream_id)
             if resumed is None:
-                return web.json_response(
-                    _jsonrpc_error(
-                        -32001, f"Unknown stream in Last-Event-ID: {stream_id}"
-                    ),
-                    status=404,
+                # FEAT-477 TASK-2609: the stream may belong to a different
+                # worker (e.g. this session was just adopted from the
+                # shared store in ``_get_session``). Best-effort fallback:
+                # replay from the shared event log before giving up. A
+                # store hiccup here degrades to the existing "unknown
+                # stream" 404 rather than a hard failure — the client can
+                # still reconnect fresh without ``Last-Event-ID``.
+                try:
+                    store_events = await self._session_store.events_after(
+                        session.session_id, stream_id, sequence
+                    )
+                except SessionStoreUnavailable as exc:
+                    self.logger.warning(
+                        "Could not query the shared store for session %s "
+                        "stream %s replay: %s",
+                        session.session_id,
+                        stream_id,
+                        exc,
+                    )
+                    store_events = []
+                if not store_events:
+                    return web.json_response(
+                        _jsonrpc_error(
+                            -32001, f"Unknown stream in Last-Event-ID: {stream_id}"
+                        ),
+                        status=404,
+                    )
+                resumed = session.open_stream(
+                    self._event_buffer_size,
+                    stream_id=stream_id,
+                    max_streams=self._max_streams,
                 )
+                # Rehydrate the buffer preserving the store's original
+                # sequence numbers, so Last-Event-ID continuity holds.
+                for record in store_events:
+                    resumed._events.append(
+                        StreamEvent(
+                            stream_id=stream_id,
+                            sequence=record.sequence,
+                            message=record.message,
+                        )
+                    )
+                resumed._counter = max(record.sequence for record in store_events)
             # Replay from where the client says it stopped, delivered or not.
             replay = resumed.events_after(sequence)
 
@@ -1047,7 +1210,10 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 status=400,
             )
         # Look up before removing so ownership is enforced on DELETE too.
-        session = await self._get_session(session_id, request)
+        try:
+            session = await self._get_session(session_id, request)
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
             return web.json_response(
                 _jsonrpc_error(-32001, "Session not found"), status=404
