@@ -51,7 +51,7 @@ whose partner field no-ops), ops console (`server.py`) UI.
 |---|---|---|
 | `examples/dev_loop/server_dev.py` | MODIFY | config defaults + run parsing |
 | `examples/dev_loop/static/dev.html` | MODIFY | selector UI |
-| `packages/ai-parrot/tests/flows/dev_loop/test_server_dev_model_plan.py` (or the existing server_dev test module — grep first) | CREATE/MODIFY | Tests |
+| `packages/ai-parrot/tests/flows/dev_flow/test_server_dev_model_plan.py` | CREATE | Tests. **Path corrected at close time**: the row originally proposed `tests/flows/dev_loop/` *or* "the existing server_dev test module — grep first". That module is `tests/flows/dev_flow/test_server_dev.py`, so the file was created as its sibling in `dev_flow/` — the task's own second option. Recorded here so `/sdd-done`'s file-existence check does not read as a missing deliverable. |
 
 ---
 

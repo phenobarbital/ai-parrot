@@ -5,12 +5,12 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T23:39:32Z",
-  "completed_at": "2026-09-01T01:53:23+00:00",
+  "completed_at": "2026-09-01T09:30:11+00:00",
   "tasks": [
     {
       "id": "TASK-2651",
       "slug": "dev-flow-model-plan",
-      "title": "DevFlowModelPlan — per-seat LLM configuration model + resolver",
+      "title": "DevFlowModelPlan \u2014 per-seat LLM configuration model + resolver",
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
@@ -19,11 +19,12 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation module — every other task imports it; runs first.",
+      "parallelism_notes": "Foundation module \u2014 every other task imports it; runs first.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:18:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2651-dev-flow-model-plan.md"
+      "file": "sdd/tasks/completed/TASK-2651-dev-flow-model-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2652",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:22:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2652-plan-threading-build-surface.md"
+      "file": "sdd/tasks/completed/TASK-2652-plan-threading-build-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2653",
@@ -57,11 +59,12 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "dev_loop-only files (development.py, planner.py) — shares no files or imports with TASK-2651/2652/2654; could run in a separate worktree, though per-spec sequential is the recommended isolation.",
+      "parallelism_notes": "dev_loop-only files (development.py, planner.py) \u2014 shares no files or imports with TASK-2651/2652/2654; could run in a separate worktree, though per-spec sequential is the recommended isolation.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:31:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2653-single-task-collapse-deploy-log.md"
+      "file": "sdd/tasks/completed/TASK-2653-single-task-collapse-deploy-log.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2654",
@@ -75,11 +78,12 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Touches code_review.py/dispatchers/catalog.py/conf.py — disjoint from TASK-2651/2652/2653 file sets.",
+      "parallelism_notes": "Touches code_review.py/dispatchers/catalog.py/conf.py \u2014 disjoint from TASK-2651/2652/2653 file sets.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:39:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2654-mantle-adversarial-dispatcher.md"
+      "file": "sdd/tasks/completed/TASK-2654-mantle-adversarial-dispatcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2655",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:42:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2655-review-pair-assembly.md"
+      "file": "sdd/tasks/completed/TASK-2655-review-pair-assembly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2656",
@@ -122,12 +127,13 @@
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:45:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2656-ideation-primary-model.md"
+      "file": "sdd/tasks/completed/TASK-2656-ideation-primary-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2657",
       "slug": "research-partner-passthrough",
-      "title": "Research-partner passthrough (FEAT-482 coordinator wiring) — gated on FEAT-482 merge",
+      "title": "Research-partner passthrough (FEAT-482 coordinator wiring) \u2014 gated on FEAT-482 merge",
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
@@ -167,7 +173,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T00:53:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2658-console-llm-selectors.md"
+      "file": "sdd/tasks/completed/TASK-2658-console-llm-selectors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2659",
@@ -191,7 +198,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
       "completed_at": "2026-09-01T01:01:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2659-integration-tests-docs.md"
+      "file": "sdd/tasks/completed/TASK-2659-integration-tests-docs.md",
+      "verification": "verified"
     }
   ]
 }
