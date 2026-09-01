@@ -1,12 +1,24 @@
-"""Unit tests for PBAC filtering, re-verification and audit (FEAT-477, TASK-2605)."""
+"""Unit tests for PBAC filtering, re-verification and audit (FEAT-477, TASK-2605).
+
+Exercises `PBACGuard` directly against a plain `StreamableHttpMCPServer`
+with tools registered straight from `build_exposure_set()` — deliberately
+NOT through `AgentMCPMount`/`_AgentBoundMCPServer`. TASK-2610 wired a
+`PBACGuard` (built once per mounted agent, keyed off `_pctx_var`) directly
+into `_AgentBoundMCPServer.handle_tools_list`/`handle_tools_call`; calling
+those methods with a second, standalone `PBACGuard` — as this file did
+before TASK-2610 — would double-guard through two independent `PBACGuard`
+instances and require `_pctx_var` to already be published, which is
+`_guard()`'s job, not this unit test's. A plain server keeps this file's
+`PBACGuard` unit tests focused on `PBACGuard` itself.
+"""
 import json
 
 import pytest
 from parrot.auth.permission import PermissionContext, UserSession
-from parrot.mcp.agent_mount import AgentMCPMount
-from parrot.mcp.agent_tools import mcp_tool
-from parrot.mcp.config import AgentMCPMountConfig
+from parrot.mcp.agent_tools import build_exposure_set, mcp_tool
+from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.principal_guard import PBACGuard, resource_for, resource_from_aggregate
+from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
 from pydantic import BaseModel
 
 
@@ -48,14 +60,6 @@ class _FinanceAgent:
         return {"restricted": q}
 
 
-class _FakeBotManager:
-    def __init__(self, bots: dict):
-        self._bots = bots
-
-    def get_bots(self) -> dict:
-        return dict(self._bots)
-
-
 def _pctx(user_id: str) -> PermissionContext:
     return PermissionContext(
         session=UserSession(user_id=user_id, tenant_id="acme", roles=frozenset())
@@ -71,14 +75,19 @@ class _PolicyResolver:
 
 @pytest.fixture
 def server():
-    from aiohttp import web
-
-    app = web.Application()
-    bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
-    cfg = AgentMCPMountConfig(agents=["finance"], resource_server_url="https://h/mcp/agents")
-    mount = AgentMCPMount(bot_manager, cfg)
-    mount.setup(app)
-    return mount._servers["finance"]
+    """A plain `StreamableHttpMCPServer` with `_FinanceAgent`'s tools
+    registered directly (exposure set + its own `tool_manager` tools) —
+    the same registration `AgentMCPMount._register_agent_tools` performs,
+    without going through the mount (see module docstring).
+    """
+    agent = _FinanceAgent()
+    srv = StreamableHttpMCPServer(MCPServerConfig(name="test-pbac"))
+    for tool in build_exposure_set(agent):
+        srv.register_tool(tool)
+    # AgentMethodTool holds `agent` by weak reference only (TASK-2600) — keep
+    # a strong one alive for the test's duration.
+    srv._test_agent = agent
+    return srv
 
 
 @pytest.fixture
