@@ -167,9 +167,7 @@ class TestResolveModelPlan:
         """
         resolved = resolve_model_plan(
             DevFlowModelPlan(research_partner=ResearchPartnerPlan(enabled=True)),
-            config_getter=_getter(
-                {ENV_RESEARCH_PARTNER: "", ENV_PARTNER_GPT_MODEL: "openai.gpt-oss-120b"}
-            ),
+            config_getter=_getter({ENV_RESEARCH_PARTNER: "", ENV_PARTNER_GPT_MODEL: "openai.gpt-oss-120b"}),
         )
         # `enabled` was explicit, so the (disabled) config must not win...
         assert resolved.research_partner.enabled is True
@@ -178,9 +176,7 @@ class TestResolveModelPlan:
 
     def test_partner_backend_from_env(self):
         """FEAT-487: one key carries enable AND backend."""
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"}))
         assert resolved.research_partner.backend == "nova"
         assert resolved.research_partner.enabled is True
 
@@ -267,9 +263,7 @@ class TestPartnerKeyDedup:
     """
 
     def test_partner_enabled_from_feat482_key(self):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"}))
         assert resolved.research_partner.enabled is True
         assert resolved.research_partner.backend == "gpt"
 
@@ -279,23 +273,17 @@ class TestPartnerKeyDedup:
         assert resolved.research_partner.enabled is False
 
     def test_partner_disabled_when_key_blank(self):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PARTNER: ""})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: ""}))
         assert resolved.research_partner.enabled is False
 
     def test_partner_model_follows_backend_nova(self):
         """THE bug FEAT-487 fixes: a nova partner must not default to gpt-*."""
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"}))
         assert resolved.research_partner.model == "us.amazon.nova-2-lite-v1:0"
         assert not resolved.research_partner.model.startswith("gpt-")
 
     def test_partner_model_follows_backend_gpt(self):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"}))
         assert resolved.research_partner.model == "gpt-5.6-sol"
 
     def test_per_backend_model_keys_are_honoured(self):
@@ -311,11 +299,7 @@ class TestPartnerKeyDedup:
 
     def test_explicit_plan_still_beats_config(self):
         resolved = resolve_model_plan(
-            DevFlowModelPlan(
-                research_partner=ResearchPartnerPlan(
-                    enabled=True, backend="nova", model="pinned-model"
-                )
-            ),
+            DevFlowModelPlan(research_partner=ResearchPartnerPlan(enabled=True, backend="nova", model="pinned-model")),
             config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"}),
         )
         assert resolved.research_partner.backend == "nova"
@@ -347,9 +331,7 @@ class TestPartnerKeyDedup:
     def test_invalid_backend_surfaces_feat482_error(self):
         """Delegation means FEAT-482's own error text, not a second dialect."""
         with pytest.raises(ValueError, match="gpt, nova"):
-            resolve_model_plan(
-                None, config_getter=_getter({ENV_RESEARCH_PARTNER: "bogus"})
-            )
+            resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PARTNER: "bogus"}))
 
     def test_anthropic_partner_model_rejected(self):
         """The family guard now reaches the plan resolver via delegation."""
