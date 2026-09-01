@@ -499,7 +499,18 @@ class InfographicAuthoringMixin:
                 never a bare ``ModuleNotFoundError``.
         """
         envelope_model = envelope if isinstance(envelope, CreateSurface) else CreateSurface.model_validate(envelope)
-        surface_id = envelope_model.surface_id or uuid.uuid4().hex
+        # Code-review fix (post-merge hardening): ALWAYS mint a fresh UUID
+        # for the row's primary key — never reuse envelope_model.surface_id.
+        # navigator.ui_surfaces.surface_id is a Postgres UUID column
+        # (TASK-2700); CreateSurface.surface_id is a renderer-scoped
+        # identifier that is very often NOT a UUID at all — e.g. every
+        # recipe-backed envelope's surfaceId is
+        # f"{recipe.name}-infographic" (RecipeRunner._assemble_envelope_or_raise).
+        # Passing that straight through made every recipe-backed
+        # publish_surface() call fail against a real Postgres store.
+        # Matches UISurfacesHandler._pin_save's convention (TASK-2702),
+        # which already always mints str(uuid.uuid4()) for this exact reason.
+        surface_id = str(uuid.uuid4())
 
         PgUISurfaceStore, UISurfaceKind, UISurfaceRecord = self._lazy_import_ui_surfaces_models()
         store = surface_store if surface_store is not None else getattr(self, "_surface_store", None)

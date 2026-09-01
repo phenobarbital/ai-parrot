@@ -183,7 +183,13 @@ class PublishSurfaceTool(AbstractTool):
             ) from exc
 
         envelope_model = CreateSurface.model_validate(envelope)
-        surface_id = envelope_model.surface_id or uuid.uuid4().hex
+        # Code-review fix: ALWAYS mint a fresh UUID for the row's primary
+        # key — never reuse envelope_model.surface_id, which is a
+        # renderer-scoped identifier and very often NOT a UUID at all (e.g.
+        # every recipe-backed envelope's surfaceId is
+        # f"{recipe.name}-infographic"). Matches the mixin's identical fix
+        # and UISurfacesHandler._pin_save's established convention.
+        surface_id = str(uuid.uuid4())
         store = self._surface_store if self._surface_store is not None else PgUISurfaceStore()
         agent_id = self._agent_id or "publish_surface_tool"
         user_id = self._user_id or agent_id

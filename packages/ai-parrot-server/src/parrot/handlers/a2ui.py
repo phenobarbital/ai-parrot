@@ -37,8 +37,11 @@ from navconfig.logging import logging
 from parrot.a2a.models import A2UI_MEDIA_TYPE
 from parrot.auth.permission import build_principal_context
 from parrot.handlers.agent import AgentTalk
-from parrot.handlers.models.ui_surfaces import PgUISurfaceStore, UISurfaceRecord
-from parrot.handlers.ui_surfaces import SurfaceNegotiationService
+from parrot.handlers.models.ui_surfaces import PgUISurfaceStore
+from parrot.handlers.ui_surfaces import (
+    SurfaceNegotiationService,
+    resolve_surface_access,
+)
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 from parrot.outputs.a2ui.catalog.export import agent_capabilities
@@ -56,38 +59,6 @@ from parrot.outputs.a2ui.runtime.models import (
 from parrot.outputs.a2ui.serialization import iter_jsonl, serialize
 
 __all__ = ["A2UIHandler"]
-
-
-async def _resolve_ui_surface_access(
-    store: PgUISurfaceStore,
-    surface_id: str,
-    user_id: str | None,
-    token: str | None,
-) -> tuple[UISurfaceRecord | None, tuple[str, int] | None]:
-    """Same owner/share access rules as ``UISurfacesHandler._resolve_surface_for_access``
-    (FEAT-492 TASK-2702) — kept as a standalone function here (rather than
-    imported) so this task's file-modify scope stays limited to ``a2ui.py``/
-    ``manager.py`` (``ui_surfaces.py`` is not listed in TASK-2703's Files to
-    Create/Modify). Returns ``(record, None)`` on success, or
-    ``(None, (message, status))`` on failure — the caller builds the actual
-    ``web.Response`` with its own ``json_response`` helper.
-
-    Unknown/foreign-without-token id -> 404 (no existence oracle).
-    Revoked/expired/missing token (when one WAS supplied) -> 410.
-    """
-    record = await store.get(surface_id)
-    if record is None:
-        return None, ("Surface not found", 404)
-    if record.user_id == user_id:
-        return record, None
-    if token:
-        share = await store.resolve_share(token)
-        if share is None or share.surface_id != surface_id:
-            return None, ("Share link invalid or expired", 410)
-        if user_id:
-            await store.claim_share(token, user_id)
-        return record, None
-    return None, ("Surface not found", 404)
 
 
 logger = logging.getLogger(__name__)
@@ -291,7 +262,7 @@ class A2UIHandler(AgentTalk):
         qs = self.query_parameters(self.request)
         token = qs.get("share")
 
-        record, error = await _resolve_ui_surface_access(self._ui_surfaces_store(), surface_id, user_id, token)
+        record, error = await resolve_surface_access(self._ui_surfaces_store(), surface_id, user_id, token)
         if error is not None:
             message, status = error
             return self.json_response({"status": "error", "message": message}, status=status)

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -322,7 +323,9 @@ class TestE2E:
         """publish (mixin) -> GET JSON (envelope matches) -> GET HTML
         (interactive doc + a rendered chart) for a chart surface."""
         surface_id = await _publish(store, surface_id="surface-e2e-1", user_id="owner-1")
-        assert surface_id == "surface-e2e-1"
+        # The row PK is ALWAYS a freshly-minted UUID (code review fix) —
+        # independent of the envelope's own (renderer-scoped) surfaceId.
+        assert uuid.UUID(surface_id)
 
         app = {"ui_surfaces_store": store}
 
@@ -330,7 +333,7 @@ class TestE2E:
         resp_json = await _get(h_json)
         assert resp_json.status == 200
         body = await _decode(resp_json)
-        assert body["envelope"]["surfaceId"] == surface_id
+        assert body["envelope"]["surfaceId"] == "surface-e2e-1"
         assert body["envelope"]["dataModel"]["rows"] == [{"day": "Mon", "actual": 10}]
         assert body["metadata"]["refreshable"] is False
 

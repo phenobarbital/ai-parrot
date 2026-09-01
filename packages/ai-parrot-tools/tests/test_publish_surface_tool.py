@@ -88,6 +88,29 @@ class TestToolExecuteDelegatesToStore:
         assert record.agent_id == "agent-x"
         assert record.user_id == "user-x"
 
+    async def test_tool_mints_fresh_uuid_even_with_non_uuid_envelope_id(self):
+        """Regression test (code review CRITICAL finding): a recipe-backed
+        envelope's surfaceId (e.g. "daily-budget-infographic") is NOT a
+        UUID — the row PK must always be a real UUID regardless, since
+        navigator.ui_surfaces.surface_id is a Postgres UUID column
+        (TASK-2700). Matches the identical fix in
+        InfographicAuthoringMixin.publish_surface (TASK-2704)."""
+        import uuid
+
+        fake_store = MagicMock()
+        fake_store.save = AsyncMock(return_value="surface-recipe-style")
+        tool = PublishSurfaceTool(surface_store=fake_store)
+
+        await tool._execute(
+            kind="dashboard",
+            title="Recipe-style id",
+            envelope=_sample_envelope("daily-budget-infographic"),
+        )
+
+        record = fake_store.save.call_args.args[0]
+        assert uuid.UUID(record.surface_id)  # raises ValueError if not a real UUID
+        assert record.envelope["surfaceId"] == "daily-budget-infographic"
+
     async def test_tool_overwrite_false_conflict_raises(self):
         fake_store = MagicMock()
         fake_store.save = AsyncMock(side_effect=ValueError("surface already exists"))

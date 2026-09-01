@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -65,7 +66,12 @@ class TestPublishSurfaceInjectedStore:
         fake_surface_store.save.assert_awaited_once()
         record, kwargs = fake_surface_store.save.call_args.args, fake_surface_store.save.call_args.kwargs
         saved_record = record[0]
-        assert saved_record.surface_id == "surface-1"
+        # Code-review fix: the row PK is ALWAYS a freshly-minted UUID — never
+        # envelope_model.surface_id (a renderer-scoped identifier that is
+        # very often not a UUID at all, e.g. every recipe-backed envelope's
+        # surfaceId is "{recipe_name}-infographic" — see
+        # UISurfaceRecord.surface_id being a Postgres UUID column, TASK-2700).
+        assert uuid.UUID(saved_record.surface_id)  # raises ValueError if not a real UUID
         assert saved_record.kind.value == "dashboard"
         assert saved_record.title == "Q3 Revenue"
         assert saved_record.agent_id == "reporter"
@@ -81,7 +87,10 @@ class TestPublishSurfaceInjectedStore:
         )
         assert instance_id == "surface-1"  # store stub always returns this
         instance_record = fake_surface_store.save.call_args.args[0]
-        assert instance_record.surface_id == "surface-instance"
+        # Row PK is a fresh UUID, independent of the envelope's own surfaceId
+        # (preserved verbatim INSIDE the stored envelope dump, just below).
+        assert uuid.UUID(instance_record.surface_id)
+        assert instance_record.envelope["surfaceId"] == "surface-instance"
 
         dict_envelope = _sample_envelope("surface-dict").model_dump(by_alias=True, mode="json")
         await agent.publish_surface(
@@ -91,12 +100,31 @@ class TestPublishSurfaceInjectedStore:
             surface_store=fake_surface_store,
         )
         dict_record = fake_surface_store.save.call_args.args[0]
-        assert dict_record.surface_id == "surface-dict"
+        assert uuid.UUID(dict_record.surface_id)
         assert dict_record.envelope == dict_envelope
+
+    async def test_publish_surface_mints_fresh_uuid_even_with_non_uuid_envelope_id(
+        self, agent, fake_surface_store
+    ):
+        """Regression test (code review CRITICAL finding): a recipe-backed
+        envelope's surfaceId is `{recipe_name}-infographic` — NOT a UUID.
+        The row PK must always be a real UUID regardless, or `store.save()`
+        fails against a real Postgres `UUID` column."""
+        recipe_style_envelope = CreateSurface(
+            surfaceId="daily-budget-infographic", components=[], dataModel={}
+        )
+        await agent.publish_surface(
+            kind="dashboard",
+            title="Recipe-style id",
+            envelope=recipe_style_envelope,
+            surface_store=fake_surface_store,
+        )
+        record = fake_surface_store.save.call_args.args[0]
+        assert uuid.UUID(record.surface_id)  # raises ValueError if not a real UUID
+        assert record.envelope["surfaceId"] == "daily-budget-infographic"
 
     async def test_publish_surface_mints_uuid_when_surface_id_absent(self, agent, fake_surface_store):
         envelope_no_id = CreateSurface(surfaceId="", components=[], dataModel={})
-        # An empty string is falsy -> the mixin mints a fresh uuid4().hex.
         await agent.publish_surface(
             kind="widget",
             title="No id",
@@ -104,8 +132,7 @@ class TestPublishSurfaceInjectedStore:
             surface_store=fake_surface_store,
         )
         record = fake_surface_store.save.call_args.args[0]
-        assert record.surface_id  # non-empty
-        assert record.surface_id != ""
+        assert uuid.UUID(record.surface_id)
 
     async def test_publish_surface_derives_recipe_ref_fields(self, agent, fake_surface_store):
         await agent.publish_surface(

@@ -44,6 +44,7 @@ __all__ = [
     "RefreshSurfaceRequest",
     "SurfaceNegotiationService",
     "UISurfacesHandler",
+    "resolve_surface_access",
 ]
 
 logger = logging.getLogger("Parrot.UISurfaces")
@@ -132,6 +133,38 @@ def _surface_metadata(record: UISurfaceRecord) -> dict[str, Any]:
         "catalog_id": record.catalog_id,
         "agent_id": record.agent_id,
     }
+
+
+async def resolve_surface_access(
+    store: PgUISurfaceStore, surface_id: str, user_id: str | None, token: str | None
+) -> tuple[UISurfaceRecord | None, tuple[str, int] | None]:
+    """Resolve owner-or-share access to a surface.
+
+    SHARED between ``UISurfacesHandler`` (this module) and
+    ``A2UIHandler``'s mirror route (``handlers/a2ui.py``, TASK-2703) — code
+    review follow-up: this rule set was originally duplicated between the
+    two handlers (each building its own ``web.Response``); promoted to a
+    module-level, framework-response-agnostic function so it cannot drift
+    between the two routes. Returns ``(record, None)`` on success, or
+    ``(None, (message, status))`` on failure — the caller builds the actual
+    ``web.Response`` with its own response helper.
+
+    Unknown/foreign-without-token id -> 404 (no existence oracle).
+    Revoked/expired/missing token (when one WAS supplied) -> 410.
+    """
+    record = await store.get(surface_id)
+    if record is None:
+        return None, ("Surface not found", 404)
+    if record.user_id == user_id:
+        return record, None
+    if token:
+        share = await store.resolve_share(token)
+        if share is None or share.surface_id != surface_id:
+            return None, ("Share link invalid or expired", 410)
+        if user_id:
+            await store.claim_share(token, user_id)
+        return record, None
+    return None, ("Surface not found", 404)
 
 
 # ---------------------------------------------------------------------------
@@ -314,31 +347,23 @@ class UISurfacesHandler(BaseView):
     ) -> tuple[UISurfaceRecord | None, web.Response | None]:
         """Resolve owner-or-share access to a surface.
 
+        Thin wrapper building this handler's OWN ``web.Response`` from the
+        SHARED :func:`resolve_surface_access` rule set (module-level —
+        also used by ``A2UIHandler``'s mirror route, TASK-2703 — so the
+        rule set cannot drift between the two routes).
+
         Returns:
             ``(record, None)`` on success, or ``(None, error_response)``.
-            Unknown/foreign-without-token id -> 404 (no existence oracle).
-            Revoked/expired/missing token (when one WAS supplied) -> 410.
         """
-        record = await self.store.get(surface_id)
-        if record is None:
-            return None, self._error("Surface not found", status=404)
-        if record.user_id == user_id:
+        record, error = await resolve_surface_access(self.store, surface_id, user_id, token)
+        if error is None:
             return record, None
-        if token:
-            share = await self.store.resolve_share(token)
-            if share is None or share.surface_id != surface_id:
-                # 410 is NOT in BaseView.error()'s status whitelist (400/401/
-                # 403/404/406/412/428) — it silently downgrades to 400 there,
-                # so build the response directly via json_response instead
-                # (matches RecipeHandler._error_response's approach).
-                return None, self.json_response(
-                    {"status": "error", "message": "Share link invalid or expired"},
-                    status=410,
-                )
-            if user_id:
-                await self.store.claim_share(token, user_id)
-            return record, None
-        return None, self._error("Surface not found", status=404)
+        message, status = error
+        # self._error() always builds the response directly via
+        # json_response — never BaseView.error() and its status whitelist
+        # landmine (see _error's own docstring) — so any status works here,
+        # including 410 (NOT in that whitelist).
+        return None, self._error(message, status=status)
 
     async def _get_one(self, surface_id: str, user_id: str | None) -> web.Response:
         qs = self.query_parameters(self.request)
