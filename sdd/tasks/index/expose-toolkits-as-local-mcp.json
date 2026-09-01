@@ -136,7 +136,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -150,7 +150,7 @@
       "parallel": false,
       "parallelism_notes": "Closes the feature; depends on everything.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T00:14:26+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2650-e2e-tests-docs-example.md"
     }
