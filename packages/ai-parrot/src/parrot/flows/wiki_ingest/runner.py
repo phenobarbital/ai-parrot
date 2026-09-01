@@ -535,6 +535,27 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     report = IngestReport(skipped=skipped)
     all_projects_touched: set[str] = set()
 
+    # §33 — a "duplicate-skip" (R3 permanent skip: content changed on an
+    # already-known id) is an interesting event and gets its own log op,
+    # distinct from the silent "skip" (already-synced, no change) case.
+    for duplicate in (m for m in gated if m.outcome == "duplicate-skip"):
+        entry = log_node.render_log_entry(
+            op="duplicate-skip",
+            timestamp=now_iso(),
+            title=duplicate.title,
+            fields={
+                "Source ID": f"`{duplicate.source_id}`",
+                "Reason": "Content changed on an already-known id (R3 — no revision workflow).",
+            },
+        )
+        try:
+            log_note = await toolkit.read_note("Wiki/log.md")
+            log_content = log_note["content"]
+        except FileNotFoundError:
+            log_content = "# Operation Log\n\n"
+        log_content = log_node.append_log_entry(log_content, entry)
+        await toolkit.update_note("Wiki/log.md", log_content, preserve_frontmatter=False)
+
     for meeting in to_process:
         try:
             outcome = await _process_one_meeting(agent, toolkit, registry, vault_path, meeting)
