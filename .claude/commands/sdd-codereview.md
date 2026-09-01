@@ -1,7 +1,7 @@
 # /sdd-codereview — Code Review a Completed SDD Task
 
 Reads the task file from `sdd/tasks/completed/`, loads every referenced file, applies the
-`code-reviewer` rule, and runs an adversarial cross-check (agy or codex) before
+`code-reviewer` rule, and runs an adversarial cross-check (`codex`) before
 producing a structured review report.
 
 ## Usage
@@ -64,9 +64,17 @@ Evaluate the implementation across these dimensions:
 
 ### 4. Run Adversarial Cross-Check
 
-Use an external CLI agent as an independent second-opinion reviewer. **Prefer
-`agy` (Google Gemini)** when available; fall back to `codex` (OpenAI)
-otherwise.
+Use an external CLI agent as an independent second-opinion reviewer. The
+reviewer is **`codex` (OpenAI)**.
+
+> **`agy` (Google Gemini / Antigravity) MUST NOT be used as a reviewer.**
+> Removed 2026-09-01 after it returned a fabricated review — an invented
+> 188-test pytest run whose test names did not exist in the branch under
+> review, then `Error: timeout waiting for response`. Hallucinated passing
+> evidence is worse than no review, because it reads like corroboration. Do
+> not re-add it and do not fall back to it: with no external reviewer
+> available, say so and rely on a Claude subagent. (Unrelated to the
+> `google_coding` dev-loop *coding* backend, which drives the same binary.)
 
 Rules:
 - Never feed the reviewer your reasoning, draft review, justification, or
@@ -77,38 +85,17 @@ Rules:
 - Treat reviewer output as advisory. For each substantive finding, decide:
   `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
 - Never silently concede to the reviewer and never silently drop a finding.
+- Verify the reviewer's evidence: if it cites a test run, a file or a
+  symbol, spot-check that it exists. An unverifiable claim is not a
+  finding — report the review as unusable rather than as a pass.
 
 Detection:
 ```bash
-if command -v agy &>/dev/null; then REVIEWER="agy"
-elif command -v codex &>/dev/null; then REVIEWER="codex"
+if command -v codex &>/dev/null; then REVIEWER="codex"
 fi
 ```
 
-agy commands (preferred):
-```bash
-# If reviewing current uncommitted work
-agy --sandbox --print "Review the uncommitted changes (run git diff). \
-  Focus on correctness, security, async patterns, and project conventions. \
-  Output findings with file:line references."
-
-# If reviewing a task branch against the integration branch
-agy --sandbox --print "Review changes between current branch and dev \
-  (run git diff dev...HEAD). List findings with file:line references."
-
-# If reviewing a specific task commit
-agy --sandbox --print "Review commit <sha> (run git show <sha>). \
-  List findings with file:line references."
-
-# If a design opinion or cross-check is needed
-agy --sandbox --print "<neutral brief with task, acceptance criteria, \
-  changed files, and question>" > artifacts/reviews/<task>-review.txt
-
-# Follow-up in the same agy session
-agy --continue --print "<neutral follow-up question>"
-```
-
-codex commands (fallback):
+codex commands:
 ```bash
 # If reviewing current uncommitted work
 codex exec review --uncommitted
@@ -128,7 +115,7 @@ codex exec resume --last "<neutral follow-up question>"
 ```
 
 For a parallel perspective, invoke one Claude review agent and one background
-reviewer session (agy or codex) with the same neutral brief, then synthesize
+reviewer session (`codex`) with the same neutral brief, then synthesize
 agreements and disagreements in the final report.
 
 ### 5. Produce the Review Report
