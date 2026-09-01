@@ -180,7 +180,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -192,8 +192,8 @@
       "parallelism_notes": "Separate node/renderer files; independent of project reconcile.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2668-entity-concept-resolvers.md"
+      "completed_at": "2026-09-01T03:53:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2668-entity-concept-resolvers.md"
     },
     {
       "id": "TASK-2669",
