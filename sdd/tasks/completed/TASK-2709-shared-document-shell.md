@@ -244,10 +244,51 @@ class TestDocumentShell:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Created `_shell.py`'s `document_shell(*, title, style, body,
+theme, layout, scripts=())`, emitting `<!DOCTYPE html>`, `<meta
+name="viewport">`, `<title>`, `<style>`, and
+`<body><div class="ds-page" data-layout="…" data-theme="…">…</div>` with
+`scripts` (complete, pre-formed `<script>...</script>` HTML strings)
+emitted verbatim after the wrapper — this lets `interactive_html.py` keep
+building its own `type="application/json" id="report-data"` block, the
+Chart.js bundle, and `_BEHAVIOR_JS` exactly as before, just passed through
+the shell instead of hand-assembled. Deleted both `_STYLE` constants.
+Added `__init__(self, *, theme="light", layout="analytics")` to both
+renderers (`PDFRenderer` inherits SSR's, unmodified, per scope). Wired
+both `render()` methods to `DesignSystem.stylesheet(self.theme,
+self.layout)` + `document_shell(...)`. All 8 of this task's tests pass;
+the full `packages/ai-parrot-visualizations/tests/outputs/` suite (129
+tests, including the pre-existing `test_e2e_ssr_html.py` class-count
+assertion and `test_interactive_html.py`'s self-contained-invariant
+checks) passes unmodified; `ruff check` is clean on all four changed
+files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- `mypy --config-file mypy.ini src/parrot/outputs/a2ui_renderers/{interactive_html,ssr_html}.py`
+  (run to completion, ~5 min under heavy load from concurrent sessions)
+  reports 3 pre-existing `[arg-type]` errors in `interactive_html.py`
+  (`_render_nested_descriptor`, lines 403/409/411:
+  `get_component(name)`/`BasicNode(component=name, ...)`/
+  `Component(component=name, ...)` where `name = descriptor.get(
+  "component")` is `Any | None`) — none in code this task touched
+  (confirmed via `git show HEAD~1:...` — the identical call exists
+  unchanged, just at line 415, before `_STYLE`'s removal shifted line
+  numbers). `_shell.py`, the one new source file, mypy-checks clean in
+  isolation.
+- Investigated 3 failing tests in
+  `packages/ai-parrot/tests/integration/test_finance_reporter_narrative_e2e.py`
+  (`test_report_profile_replay_no_narrator`, `test_dashboard_profile_replay`,
+  `test_end_to_end_no_fabricated_figures`) since the Codebase Contract
+  names this file as a class-preservation constraint. All three fail with
+  an identical `RecipeRunException: Unresolvable data-model path
+  '/narrative'` — a pre-existing bug in the runner's optional-binding
+  handling (`runner.py`, untouched by this feature). Confirmed via
+  `git stash` that the SAME 3 tests fail identically with this task's
+  changes fully reverted (only TASK-2707/2708 applied), proving this is
+  not a regression from the document shell/composer wiring. The other 7
+  tests in that file — including
+  `test_interactive_html_renders_report_root` and the two
+  `a2ui-body`/`a2ui-summary`/`a2ui-value`/`a2ui-card` presence/absence
+  assertions this task's contract specifically calls out — pass.

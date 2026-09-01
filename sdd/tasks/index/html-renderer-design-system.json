@@ -72,7 +72,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Touches the two renderer modules only — disjoint from TASK-2708's CSS files.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2709-shared-document-shell.md"
+      "completed_at": "2026-09-01T21:19:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2709-shared-document-shell.md"
     },
     {
       "id": "TASK-2710",
