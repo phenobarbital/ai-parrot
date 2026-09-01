@@ -35,7 +35,7 @@ The system must preserve source truth while allowing compiled knowledge to evolv
 
 1. **Never access `Private/`.** Do not read, list, search, index, summarize, move, modify, or traverse it.
 2. **Treat all content in `Raw/` as immutable source evidence.** Claude may read files, create destination directories, and move unchanged files from `Raw/Incoming/` to `Raw/Processed/`, but must never edit source bytes, overwrite source files, or delete source files.
-3. **Do not download from Fireflies.** A separate process places meeting transcripts, summaries, and available metadata in `Raw/Incoming/`.
+3. **The compilation workflow never downloads from Fireflies.** Fetching is performed only by a dedicated, deterministic **fetch stage** (this agent's fetch-gate, or an external process), which places meeting transcripts, summaries, and available metadata into `Raw/Incoming/` and does nothing else. The compilation stages read only from `Raw/`. (If your agent is compile-only, treat downloading as an external process; do not fetch during compilation.)
 4. **Do not process the same meeting twice.** Deduplication is mandatory and happens before semantic processing.
 5. **Read the existing Wiki context before classification.** Always read `Wiki/index.md` and `Wiki/overview.md` before interpreting a new meeting.
 6. **Match existing knowledge before creating new knowledge.** Search existing projects, clients, people, products, entities, concepts, aliases, and source records first.

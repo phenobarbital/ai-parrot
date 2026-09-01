@@ -274,12 +274,12 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 5: §10 frontmatter schemas + §34 validation (QA oracle)
 - **Path**: `parrot/flows/wiki_ingest/models.py`, `parrot/flows/wiki_ingest/validation.py`
-- **Responsibility**: Pydantic models for every §10 page type (incl. D1 plain-path provenance, D2 `primary_project ∈ projects` validator, D4 `source_id` identity); the §34 Post-Operation Validation checklist as an executable function returning `ValidationResult`, incl. the §19 diff-guard assertion (Q2) and the `Private/`-never-accessed assertion.
+- **Responsibility**: Pydantic models for every §10 page type (incl. D1 plain-path provenance, D2 `primary_project ∈ projects` validator, D4 `source_id` identity); the §34 Post-Operation Validation checklist as an executable function returning `ValidationResult`, covering the four integrity groups (source/knowledge/Obsidian/operational) plus the §19 diff-guard assertion (Q2), `Private/`-never-accessed, **new wikilinks resolve (§8.1)**, **Obsidian-safe filenames (§8.2)**, and **no fabricated-looking values (rule #12)**.
 - **Depends on**: nothing new (shared contract; freeze first).
 
 ### Module 6: Ingest orchestrator (§27, chronological, catch-up-aware)
 - **Path**: `parrot/flows/wiki_ingest/runner.py`, `.../nodes/__init__.py`
-- **Responsibility**: the §27 ordered pipeline; **sort the whole batch oldest→newest by `meeting_date`** (G5) — so an hourly run and a large post-downtime catch-up both reconcile in temporal order; process in bounded chunks (`WIKI_KB_INGEST_LIMIT`) so a big backlog spans several runs without one giant transaction; read operating context (§12); on §34 failure roll back compiled changes (never raw), queue a review item, write no success registry/log entry; print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
+- **Responsibility**: the §27 ordered pipeline; **sort the whole batch oldest→newest by `meeting_date`** (G5) — so an hourly run and a large post-downtime catch-up both reconcile in temporal order; process in bounded chunks (`WIKI_KB_INGEST_LIMIT`) so a big backlog spans several runs without one giant transaction; read operating context (§12); **apply the §31 archive policy as ingest step 22** (invokes Module 14's archive; the manual `archive` intent shares that code); on §34 failure roll back compiled changes (never raw), queue a review item, write no success registry/log entry; print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
 - **Depends on**: Modules 2–5, 7–13.
 
 ### Module 7: Summary-first classification (§15)
@@ -294,7 +294,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 9: Project page reconciler (§19, diff-guarded)
 - **Path**: `parrot/flows/wiki_ingest/nodes/project_reconcile.py`
-- **Responsibility**: **typed section-merge** (no free-form whole-page regen) with the **strong-tier client**; the Q2 diff-guard — *no claim dropped while a live source still supports it*; chronological supersession (§19 rule 10); preserve `## Human Notes`; queue if `locked: true`.
+- **Responsibility**: **typed section-merge** (no free-form whole-page regen) with the **strong-tier client**; the Q2 diff-guard — *no claim dropped while a live source still supports it*; chronological supersession (§19 rule 10); preserve `## Human Notes`; queue if `locked: true`. Also owns **§16 new-project creation** — create a project only for an ongoing body of work; **never** for a passing topic, a single isolated question, a company mention without active work, a concept (→ `Wiki/Concepts/`), or a product (→ `Wiki/Entities/Products/`); when justified, create the full `Projects/<Name>/` structure + meeting indexes in the same ingest.
 - **Depends on**: Modules 5, 8.
 
 ### Module 10: Entity + concept resolvers (§20/§21)
@@ -314,7 +314,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 13: GraphIndex derived rebuild + Query (§28)
 - **Path**: `parrot/flows/wiki_ingest/graph.py`, `.../nodes/query.py`
-- **Responsibility**: build the wiki toolkit (PageIndex + GraphIndex) and `ingest_obsidian_vault(incremental=True)` after each ingest; §28 query — **GraphIndex/PageIndex retrieval (primary) → read Obsidian pages** for the answer + provenance; save synthesis on request.
+- **Responsibility**: build the wiki toolkit (PageIndex + GraphIndex) and `ingest_obsidian_vault(incremental=True)` after each ingest; §28 query — **GraphIndex/PageIndex retrieval (primary) → read Obsidian pages** for the answer + provenance; the answer explicitly distinguishes **supported facts / inferences / unknowns / unresolved contradictions** (§28 step 7); save synthesis on request.
 - **Depends on**: `LLMWikiToolkit`, `build_graph_memory_toolkit`, `PageIndexToolkit`.
 
 ### Module 14: Health / Lint / Archive / Graph workflows (§29–§32)
@@ -361,7 +361,7 @@ regions (`## Human Notes`, `locked: true` pages) are read and re-emitted unchang
 | §5 Core Knowledge Layers | raw→meeting→project→wiki→diary | M3 / M8 / M9 / M10–M11 / M12 | one module per layer |
 | §6 Supported User Intents | plain-English commands | M1 agent façade | `ingest`/`query`/`health`/`lint`/`archive`/`graph` |
 | §7 Safe Tool Use | scoped tools | M4 + deterministic nodes | path-scoped reads/writes; no source-script execution |
-| §8 Obsidian Conventions | links/filenames/tags/dates | renderers + M4 link-fixup | filename helpers; ISO dates; wikilinks for pages, plain paths for raw (D1) |
+| §8 Obsidian Conventions | links/filenames/tags/dates | renderers + M4 link-fixup + M5 validation | Obsidian-safe filename sanitization (`/ \ : * ? " < > \|`); meeting-page date in the **meeting's original tz**; no dangling wikilinks; wikilinks for pages, plain paths for raw (D1); ISO dates + preserved offset; lowercase-hyphenated tags |
 | §9 Page Protection / Human Notes | `locked`, `## Human Notes` | M9 + all renderers | read-and-preserve verbatim; queue locked-page updates |
 | §10 Required Frontmatter | 7 frontmatter schemas | **M5 Pydantic models** + renderers | one model per page type; renderers emit the YAML block |
 | §11 Initialization | create control files | M4 | idempotent; no overwrite |
@@ -413,6 +413,11 @@ regions (`## Human Notes`, `locked: true` pages) are read and re-emitted unchang
 | `test_link_fixup_after_move` | M4 | Backlinks rewritten after `move_note` (§8.1) |
 | `test_query_graphindex_primary` | M13 | Query retrieves via GraphIndex then verifies against Obsidian pages |
 | `test_email_disabled_by_default` | M15 | Digests do not send unless `FIREFLIES_WIKI_EMAIL_ENABLED` |
+| `test_filename_sanitization_and_tz` | M4/M5 | Unsafe punctuation stripped; meeting filename date is the meeting's original-tz date, not ingestion |
+| `test_no_dangling_wikilinks` | M5 | Validation rejects a wikilink to a non-existent page unless queued same-op |
+| `test_no_fabrication_placeholders` | M5/M8 | Insufficient fields render as `Unknown`/`Not established`/`Requires review` |
+| `test_new_project_negative_criteria` | M9 | A passing topic / lone company mention does NOT create a project (§16) |
+| `test_query_distinguishes_fact_types` | M13 | Answer separates supported facts / inferences / unknowns / contradictions (§28) |
 
 ### Integration Tests
 | Test | Description |
@@ -459,6 +464,10 @@ def sample_bundle():
 - [ ] **Scheduling + catch-up (G10):** default cron is hourly; a run after simulated downtime ingests the missed meetings in `meeting_date` order; a manual wide-window `ingest(lookback_days=…)` reconciles a large backlog chronologically in bounded chunks.
 - [ ] **Provider-agnostic LLM (G7):** model tiers are `provider:model` config strings; the agent runs on Google by default and on Claude/Codex when configured, with no code change.
 - [ ] **Page-template fidelity (§3.1):** rendered pages match the contract's exact §17/§19/§20/§21/§22/§23 heading structure verbatim; the LLM supplies only field content.
+- [ ] **Obsidian compatibility (§8):** every written file has an Obsidian-safe filename (unsafe punctuation sanitized; meeting page = `YYYY-MM-DD - <Title> - <short-source-id>.md` with the date in the **meeting's original timezone**, not the download time); every emitted wikilink resolves (or is queued same-op); tags are lowercase-hyphenated; dates are ISO with the meeting's original offset preserved.
+- [ ] **No fabrication (rule #12):** insufficient-evidence fields render as `Unknown`/`Not established`/`Requires review`; §34 flags fabricated-looking values.
+- [ ] **New-project discipline (§16):** a project page is created only for an ongoing body of work — never for a passing topic, single question, company-mention-without-work, concept, or product.
+- [ ] **Query distinctions (§28):** answers separate supported facts, inferences, unknowns, and unresolved contradictions.
 - [ ] All unit + integration tests pass (`pytest tests/ -v`); `ruff`/`mypy` clean on changed files.
 - [ ] No breaking change to FEAT-472 `MeetingRegistry` or the wiki `sources` schema.
 
@@ -556,6 +565,12 @@ async def build_graph_memory_toolkit(db_dir, tenant_id="default", agent_id="agen
 - **Additive-only (G11):** reuse existing code by import/inheritance/composition; **never edit** `agents/obsidian.py`, `agents/fireflies_wiki.py`, `tools/obsidian.py`, or FEAT-472 files. All new behavior lives under `parrot/flows/wiki_ingest/`.
 - **Re-check the reserved `toolmanager-tooldefinition-enforcement` feature** before finalizing how the agent declares its tools (Q1 note).
 - Freeze Module 5 (schemas + §34 validator) first — it is the shared contract that unblocks parallel fan-out.
+- **Obsidian compatibility (contract §8) — every written file must be Obsidian-valid:**
+  - *Filenames (§8.2):* project folders/pages Title-Case with spaces; entity/concept pages use canonical human-readable names; daily notes `YYYY-MM-DD.md`; canonical meeting pages `YYYY-MM-DD - <Meeting Title> - <short-source-id>.md` where **the date is the meeting's date in its ORIGINAL timezone, never the download/ingestion date**; **sanitize** `/ \ : * ? " < > |` out of every filename; store alternate spellings/abbreviations/former names in `aliases`.
+  - *Links (§8.1):* wikilinks for people/companies/projects/products/concepts; path-qualified when names are ambiguous; aliases for sentence flow; Markdown links only for external URLs; raw provenance as plain paths (D1); **never emit a wikilink to a page that does not exist** unless it is queued for creation in the same operation; after any move/rename run link-fixup and validate.
+  - *Tags (§8.3):* lowercase-hyphenated; for filtering/status only, never a substitute for a relationship.
+  - *Dates (§8.4):* ISO dates/timestamps; **preserve the meeting's original timezone/offset** from the Fireflies timestamp; if only a date is available, store the date and mark the time unknown; never substitute the ingestion date for the meeting date.
+- **No fabrication (rule #12):** when evidence is insufficient, write `Unknown` / `Not established` / `Requires review` — never invent owners, dates, decisions, requirements, or relationships; §34 validation flags fabricated-looking values.
 
 ### Known Risks / Gotchas
 - **Per-meeting cost/latency (§27):** the pipeline touches many pages per meeting with strong-model reasoning — bound with model tiering (G7) and batching; do not run the whole pipeline on the cheap model.
@@ -617,3 +632,4 @@ No new third-party dependencies — provider SDKs (Google / Anthropic / OpenAI-C
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Arturo Martinez | Initial draft from brainstorm (Option B); all decisions resolved; contract amended R1–R3/D1–D8 + chronological |
+| 0.2 | 2026-08-31 | Arturo Martinez | Final-pass audit: additive-only (G11), §3.1 contract operationalization, hourly+catch-up (G10), provider-agnostic tiers (G7), §8/§16/§28 coverage (filenames/links/tz/no-fabrication/new-project/query-distinctions); contract rule #3 amended |
