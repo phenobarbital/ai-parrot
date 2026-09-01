@@ -266,6 +266,107 @@ class TestRunEndpoint:
         assert "model_plan" in await resp.json()
 
 
+class TestPlanMismatchDiff:
+    """The mismatch report must NAME the differing seat.
+
+    Regression: the warning was gated on whole-model ``!=`` equality but
+    printed four values (pool, research primary, review primary agent,
+    counter model), so a difference in ``research_partner.*``,
+    ``review.primary.model`` or a seat's ``count`` logged two identical-looking
+    plans and read as a false positive.
+    """
+
+    @staticmethod
+    def _roundtrip_form(server_dev, plan) -> dict[str, Any]:
+        """Rebuild the payload the console posts back after hydrating from /api/config."""
+        payload = server_dev._model_plan_payload(plan)
+        return {
+            "dev_agents": [
+                {"agent": row["agent"], "model": row["model"], "count": row["count"]} for row in payload["dev_agents"]
+            ],
+            "research_primary": payload["research_primary"],
+            "research_partner": dict(payload["research_partner"]),
+            "review": {
+                "primary": dict(payload["review"]["primary"]),
+                "counter_model": payload["review"]["counter_model"],
+            },
+        }
+
+    def test_hydrated_form_produces_no_diff(self, server_dev):
+        """An untouched console form is not a mismatch."""
+        effective = server_dev._console_default_model_plan()
+        requested = server_dev._parse_model_plan(self._roundtrip_form(server_dev, effective))
+        assert server_dev._plan_field_diffs(requested, effective) == []
+
+    def test_partner_toggle_is_named(self, server_dev):
+        """The field that used to be invisible in the warning."""
+        effective = server_dev._console_default_model_plan()
+        form = self._roundtrip_form(server_dev, effective)
+        form["research_partner"]["enabled"] = True
+        diffs = server_dev._plan_field_diffs(server_dev._parse_model_plan(form), effective)
+        assert diffs == ["research_partner.enabled: requested=True effective=False"]
+
+    def test_review_primary_model_is_named(self, server_dev):
+        effective = server_dev._console_default_model_plan()
+        form = self._roundtrip_form(server_dev, effective)
+        form["review"]["primary"]["model"] = "claude-sonnet-5"
+        diffs = server_dev._plan_field_diffs(server_dev._parse_model_plan(form), effective)
+        assert diffs == ["review.primary.model: requested='claude-sonnet-5' effective='claude-opus-5'"]
+
+    def test_blank_field_expresses_nothing(self, server_dev):
+        """A cleared input means 'server default', never an ignored choice."""
+        effective = server_dev._console_default_model_plan()
+        form = self._roundtrip_form(server_dev, effective)
+        form["review"]["primary"]["model"] = ""
+        form["research_partner"]["model"] = ""
+        assert server_dev._plan_field_diffs(server_dev._parse_model_plan(form), effective) == []
+
+    def test_pool_seat_diff_names_the_seat(self, server_dev):
+        effective = server_dev._console_default_model_plan()
+        form = self._roundtrip_form(server_dev, effective)
+        form["dev_agents"][1]["count"] = 3
+        diffs = server_dev._plan_field_diffs(server_dev._parse_model_plan(form), effective)
+        assert diffs == ["dev_pool[1].count: requested=3 effective=1"]
+
+    def test_pool_length_diff_renders_both_pools(self, server_dev):
+        effective = server_dev._console_default_model_plan()
+        form = self._roundtrip_form(server_dev, effective)
+        form["dev_agents"] = [{"agent": "claude-code", "model": "claude-opus-5", "count": 1}]
+        diffs = server_dev._plan_field_diffs(server_dev._parse_model_plan(form), effective)
+        assert diffs == [
+            (
+                "dev_pool: requested=claude-code:claude-opus-5 "
+                "effective=nova:zai.glm-5, nova:qwen.qwen3-coder-480b-a35b-v1:0"
+            )
+        ]
+
+
+@pytest.mark.asyncio
+class TestRunResponseReportsIgnoredSeats:
+    async def test_matching_plan_reports_nothing_ignored(self, make_client, server_dev):
+        client = await make_client()
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        resp = await client.post("/api/flow/run", json=_nl_form(**form))
+        assert (await resp.json())["model_plan_ignored"] == []
+
+    async def test_ignored_seat_is_reported_to_the_console(self, make_client, server_dev):
+        client = await make_client()
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        form["research_partner"]["enabled"] = True
+        resp = await client.post("/api/flow/run", json=_nl_form(**form))
+        assert (await resp.json())["model_plan_ignored"] == ["research_partner.enabled: requested=True effective=False"]
+
+    async def test_warning_names_the_differing_seat(self, make_client, server_dev, caplog):
+        import logging
+
+        client = await make_client()
+        form = TestPlanMismatchDiff._roundtrip_form(server_dev, server_dev._console_default_model_plan())
+        form["research_partner"]["enabled"] = True
+        with caplog.at_level(logging.WARNING, logger="dev_flow.server"):
+            await client.post("/api/flow/run", json=_nl_form(**form))
+        assert any("research_partner.enabled" in record.getMessage() for record in caplog.records)
+
+
 class TestUiSurfacesTheOverride:
     """Code-review fix: a silently-ignored selection is a UX trap.
 
@@ -286,7 +387,8 @@ class TestUiSurfacesTheOverride:
 
     def test_warning_is_driven_by_the_run_response(self):
         source = self._dev_html()
-        assert "planMismatchWarning(payload, data.model_plan)" in source
+        assert "planMismatchWarning(data)" in source
+        assert "model_plan_ignored" in source
 
     def test_warning_does_not_use_the_collapsed_form_error_box(self):
         """#form-err lives inside #request-form, hidden once a run starts."""

@@ -82,6 +82,7 @@ from parrot.flows.dev_loop.commands import resolve_gate_handler
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import DevAgentSpec, JudgePanelConfig
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
+from pydantic import BaseModel
 
 # Sibling-module imports, resolvable whether this file is launched as a
 # script or imported from elsewhere — the same trick ``server.py`` uses for
@@ -213,7 +214,17 @@ def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
                         "reviewer — supported: "
                         f"{', '.join(llm_catalog.PRIMARY_REVIEW_BACKENDS)}"
                     )
-                review_kwargs["primary"] = DevAgentSpec(agent=agent, model=(primary.get("model") or "").strip())
+                # A blank model means "no opinion" here exactly as it does
+                # for `research_primary`, `counter_model` and the partner
+                # model — passing "" explicitly would make DevAgentSpec
+                # record it as an expressed choice ("use the backend
+                # default"), which then reads as an ignored selection in
+                # `_plan_field_diffs`.
+                primary_kwargs: dict[str, Any] = {"agent": agent}
+                primary_model = (primary.get("model") or "").strip()
+                if primary_model:
+                    primary_kwargs["model"] = primary_model
+                review_kwargs["primary"] = DevAgentSpec(**primary_kwargs)
         counter_model = (review.get("counter_model") or "").strip()
         if counter_model:
             review_kwargs["counter_model"] = counter_model
@@ -350,6 +361,60 @@ def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = Tr
     }
 
 
+def _plan_field_diffs(requested: Any, effective: Any, *, prefix: str = "") -> list[str]:
+    """Return one ``path: requested=X effective=Y`` line per differing seat.
+
+    Compares ONLY the fields the operator actually expressed
+    (``model_fields_set``), recursively — a field the console left blank
+    carries no opinion, so it can never manufacture a mismatch. This is
+    what makes the difference *nameable*: plain ``requested != effective``
+    equality covers every field of the model, while the warning it fed
+    printed four of them, so a difference in ``research_partner.*``,
+    ``review.primary.model`` or a seat's ``count`` read as "requested ==
+    effective" in the log (the FEAT-486 false-positive report).
+
+    Args:
+        requested: The operator's parsed plan (or a nested sub-model).
+        effective: The server's build-time plan at the same position.
+        prefix: Dotted path accumulated by the recursion.
+
+    Returns:
+        Human-readable diff lines; empty when every expressed field is
+        already what the server will run.
+    """
+    diffs: list[str] = []
+    if not isinstance(requested, BaseModel) or not isinstance(effective, BaseModel):
+        return diffs
+    for name in sorted(requested.model_fields_set):
+        req = getattr(requested, name, None)
+        eff = getattr(effective, name, None)
+        path = f"{prefix}{name}"
+        if isinstance(req, BaseModel) and isinstance(eff, BaseModel):
+            diffs.extend(_plan_field_diffs(req, eff, prefix=f"{path}."))
+        elif isinstance(req, list) and isinstance(eff, list):
+            if len(req) != len(eff):
+                diffs.append(f"{path}: requested={_fmt_seats(req)} effective={_fmt_seats(eff)}")
+                continue
+            for index, (req_item, eff_item) in enumerate(zip(req, eff)):
+                if isinstance(req_item, BaseModel) and isinstance(eff_item, BaseModel):
+                    diffs.extend(_plan_field_diffs(req_item, eff_item, prefix=f"{path}[{index}]."))
+                elif req_item != eff_item:
+                    diffs.append(f"{path}[{index}]: requested={req_item!r} effective={eff_item!r}")
+        elif req != eff:
+            diffs.append(f"{path}: requested={req!r} effective={eff!r}")
+    return diffs
+
+
+def _fmt_seats(seats: list[Any]) -> str:
+    """Render a seat list as ``agent:model xN`` for a diff line."""
+    rendered = [
+        (f"{spec.agent}:{spec.model or '<default>'}" + (f"x{spec.count}" if spec.count > 1 else ""))
+        for spec in seats
+        if isinstance(spec, DevAgentSpec)
+    ]
+    return ", ".join(rendered) or "<single-agent>"
+
+
 async def handle_config(request: web.Request) -> web.Response:
     """Serve the dev console's configuration catalog.
 
@@ -480,22 +545,22 @@ async def handle_run(request: web.Request) -> web.Response:
     # takes effect when it matches the server's build-time plan; any
     # difference is logged loudly rather than silently ignored, and the
     # response always reports what will REALLY run.
-    if requested_plan is not None and requested_plan != effective_plan:
+    # The diff is field-level and expressed-fields-only (see
+    # `_plan_field_diffs`): whole-model `!=` equality fired on fields the
+    # message never printed — a changed research partner or a blank review
+    # primary model logged "requested == effective" and read as a false
+    # positive. `plan_diffs` both gates the warning and IS the warning.
+    plan_diffs: list[str] = []
+    if requested_plan is not None:
+        plan_diffs = _plan_field_diffs(requested_plan, effective_plan)
+    if plan_diffs:
         logger.warning(
             "dev-flow run_id=%s requested a model plan that differs from the "
-            "server's build-time plan; the run will use the SERVER plan "
-            "(requested pool=%s research=%s review=%s/%s; effective pool=%s "
-            "research=%s review=%s/%s). Restart the console with the desired "
-            "DEV_FLOW_* env keys to change the seats.",
+            "server's build-time plan; the run will use the SERVER plan. "
+            "Differing seats: %s. Restart the console with the desired "
+            "DEV_FLOW_* env keys to change them.",
             run_id,
-            [f"{s.agent}:{s.model}" for s in requested_plan.dev_pool],
-            requested_plan.research_primary,
-            requested_plan.review.primary.agent,
-            requested_plan.review.counter_model,
-            [f"{s.agent}:{s.model}" for s in effective_plan.dev_pool],
-            effective_plan.research_primary,
-            effective_plan.review.primary.agent,
-            effective_plan.review.counter_model,
+            "; ".join(plan_diffs),
         )
 
     async def _run() -> None:
@@ -537,6 +602,10 @@ async def handle_run(request: web.Request) -> web.Response:
             "gate_resolve_url": f"/api/flow/{run_id}/gates/{{gate_id}}/resolve",
             # FEAT-486: what this run's seats will REALLY be — never the
             # submitted selection when the two differ (see the warning above).
+            # `model_plan_ignored` names each expressed seat the server is
+            # NOT honouring, so the console renders the server's own diff
+            # instead of re-deriving a partial one in JavaScript.
+            "model_plan_ignored": plan_diffs,
             "model_plan": _model_plan_payload(
                 effective_plan,
                 review_pair_active=bool(request.app.get("review_pair_active", False)),

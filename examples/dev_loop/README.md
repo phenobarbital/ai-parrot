@@ -436,7 +436,7 @@ subagent refuses to touch it and returns the collision as an open question.
 |---|---|---|
 | `/` | GET | Serves `static/dev.html` |
 | `/api/config` | GET | Backends/models catalog, the three intents, `document_kinds`, `nl_kinds`, `gate_resolve_url_template`, and the dev defaults (`ideation_max_rounds`, `gate_ttl_questions`, `require_plan_approval`, `qa_max_retries`, `development_pool_max`, `max_concurrent_runs`, …). Carries **no** `log_group`, `time_window_minutes` or `jira_project`. |
-| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`. |
+| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`, the effective `model_plan`, and `model_plan_ignored` — one `field: requested=… effective=…` line per submitted seat the server is not honouring (empty when every expressed seat matches). |
 | `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
 | `/api/flow/{run_id}/cancel` | POST | Cancel a run |
 | `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
@@ -582,8 +582,11 @@ Two behaviours worth knowing:
 >    baked into node constructors, and this console builds one flow at
 >    startup. A submitted plan is fully validated and echoed back in the
 >    run response, and any difference from the server's plan is logged as
->    a warning, but the run uses the **server's** plan. Restart the console
->    with the desired `DEV_FLOW_*` keys to change seats.
+>    a warning — **field by field**, naming each seat, and only for fields
+>    the console actually expressed (a blank input means "server default",
+>    never an ignored choice) — and returned as `model_plan_ignored` for
+>    the UI banner. The run still uses the **server's** plan. Restart the
+>    console with the desired `DEV_FLOW_*` keys to change seats.
 > 2. By default this console wires the FEAT-378 **judge panel** as its QA
 >    reviewer, and an explicit reviewer wins over the plan by design. The
 >    review pair is therefore configured and validated but not the active

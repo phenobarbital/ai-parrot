@@ -1702,32 +1702,17 @@ function applyRequestCollapse() {
    per-run selection that differs from the server's plan does NOT take
    effect. The server already logs that and echoes the EFFECTIVE plan back
    in the run response — this surfaces it to the operator too, instead of
-   letting a changed selector silently do nothing. */
-function planMismatchWarning(submitted, effective) {
-  if (!effective) return "";
-  const seatDiffs = [];
-  const fmtPool = (rows) => (rows || [])
-    .map((r) => `${r.agent}:${r.model || "default"}${r.count > 1 ? `x${r.count}` : ""}`)
-    .join(", ") || "single-agent";
+   letting a changed selector silently do nothing.
 
-  const submittedPool = fmtPool(submitted.dev_agents);
-  const effectivePool = fmtPool(effective.dev_agents);
-  if (submittedPool !== effectivePool) {
-    seatDiffs.push(`dev pool (you chose ${submittedPool} — running ${effectivePool})`);
-  }
-  if (submitted.research_primary && submitted.research_primary !== effective.research_primary) {
-    seatDiffs.push(`research primary (you chose ${submitted.research_primary} — running ${effective.research_primary})`);
-  }
-  const subCounter = submitted.review?.counter_model;
-  if (subCounter && subCounter !== effective.review?.counter_model) {
-    seatDiffs.push(`counter-reviewer (you chose ${subCounter} — running ${effective.review?.counter_model})`);
-  }
-  const subPrimary = submitted.review?.primary?.agent;
-  if (subPrimary && subPrimary !== effective.review?.primary?.agent) {
-    seatDiffs.push(`review primary (you chose ${subPrimary} — running ${effective.review?.primary?.agent})`);
-  }
-  if (!seatDiffs.length) return "";
-  return `Model selection not applied to this run: ${seatDiffs.join("; ")}. `
+   The diff itself is the SERVER's (`model_plan_ignored`), not a second
+   one computed here: the first version of this function compared four
+   fields, so a difference in the research partner, the review primary's
+   model or a seat's count silently produced no banner at all — the same
+   blind spot the server-side warning had. */
+function planMismatchWarning(response) {
+  const ignored = (response && response.model_plan_ignored) || [];
+  if (!ignored.length) return "";
+  return `Model selection not applied to this run: ${ignored.join("; ")}. `
     + `The per-seat plan is fixed when the server builds its flow, so restart `
     + `the console with the DEV_FLOW_* env keys to change these seats.`;
 }
@@ -1769,7 +1754,7 @@ async function submit(ev) {
     // NOT via #form-err: that lives inside #request-form, which
     // applyRequestCollapse() hides the moment a run starts — the warning
     // has to survive on the execution surface instead.
-    showPlanWarning(planMismatchWarning(payload, data.model_plan));
+    showPlanWarning(planMismatchWarning(data));
 
     // Reset every per-run projection before the streams start.
     app.runId = data.run_id;
