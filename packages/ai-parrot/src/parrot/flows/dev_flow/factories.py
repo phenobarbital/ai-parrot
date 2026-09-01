@@ -16,7 +16,9 @@ FEAT-486 adds the ``model_plan`` seam: a :class:`DevFlowModelPlan` selects
 the LLM for each dev-flow seat, and this module turns it into the wiring
 the (reused) ``dev_loop`` factories already accept — a
 ``DevAgentPoolConfig`` plus ``agent_builder.build_dispatcher`` for the
-development pool. Omitting ``model_plan`` leaves every factory kwarg
+development pool, and a ``ParallelPerspectiveReviewDispatcher`` pairing a
+write-enabled primary reviewer with the read-only Mantle counter-reviewer
+for ``QANode``. Omitting ``model_plan`` leaves every factory kwarg
 byte-identical to pre-FEAT-486.
 """
 
@@ -43,6 +45,80 @@ def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
     """
     return node.model_copy(
         update={"dependencies": set(deps), "successors": set(succs)}
+    )
+
+
+def _build_primary_reviewer(spec: Any, shared_dispatcher: Any) -> Any:
+    """Build the write-enabled primary reviewer named by ``spec``.
+
+    ``claude-code`` (the default) reuses the shared ``ClaudeCodeDispatcher``
+    the flow was built with — no second dispatcher is constructed, matching
+    how ``build_dev_loop_node_factories`` already wires QA. Any other
+    backend is materialized through ``agent_builder.build_dispatcher`` and
+    wrapped by its registered review dispatcher, so a ``codex`` primary
+    gets a ``CodexCodeDispatcher`` rather than being handed the Claude one.
+
+    Args:
+        spec: The plan's ``DevAgentSpec`` for the primary review seat.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A write-enabled ``AbstractCodeReviewDispatcher``.
+
+    Raises:
+        ValueError: If the backend has no registered *primary* review
+            dispatcher — named, with the supported set, before any run.
+    """
+    from parrot.flows.dev_loop.catalog import PRIMARY_REVIEW_BACKENDS
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+
+    if spec.agent not in PRIMARY_REVIEW_BACKENDS:
+        raise ValueError(
+            f"backend {spec.agent!r} cannot serve as the primary reviewer — "
+            f"supported: {', '.join(PRIMARY_REVIEW_BACKENDS)}"
+        )
+    if spec.agent == "claude-code":
+        review_dispatcher = shared_dispatcher
+    else:
+        from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+        review_dispatcher, _profile = build_dispatcher(spec)
+    kwargs: dict[str, Any] = {"dispatcher": review_dispatcher}
+    if spec.model:
+        kwargs["model"] = spec.model
+    return CodeReviewDispatcherFactory.create(spec.agent, **kwargs)
+
+
+def _assemble_review_pair(plan: DevFlowModelPlan, shared_dispatcher: Any) -> Any:
+    """Assemble the plan's review pair as a parallel-perspective reviewer.
+
+    Spec G5: a write-enabled primary (default claude-code /
+    ``claude-opus-5``) runs concurrently with the read-only,
+    Mantle-hosted counter-reviewer (default ``gpt-5.6-sol``), and
+    ``ParallelPerspectiveReviewDispatcher`` merges the two verdicts
+    deterministically. ``JudgeSpec`` and the judge panel are NOT involved
+    — the pair deliberately rides the parallel dispatcher instead.
+
+    The judge synthesis stays off (``judge_enabled=False``), matching the
+    deterministic-merge-is-authoritative default of
+    ``DEV_LOOP_CODEREVIEW_JUDGE``.
+
+    Args:
+        plan: The already-resolved model plan.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A ``ParallelPerspectiveReviewDispatcher`` over the configured pair.
+    """
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+    from parrot.flows.dev_loop.dispatchers.mantle import (
+        MantleAdversarialReviewDispatcher,
+    )
+
+    primary = _build_primary_reviewer(plan.review.primary, shared_dispatcher)
+    adversary = MantleAdversarialReviewDispatcher(model=plan.review.counter_model)
+    return CodeReviewDispatcherFactory.create(
+        "parallel", primary=primary, adversary=adversary
     )
 
 
@@ -75,7 +151,9 @@ def build_dev_flow_node_factories(
         wiki_toolkit: Optional ``LLMWikiToolkit`` for ``FeatureHandoffNode``'s
             docs-page ingest.
         codereview_dispatcher: Optional review dispatcher for ``QANode``
-            (typically a ``JudgePanelReviewDispatcher``).
+            (typically a ``JudgePanelReviewDispatcher``). FEAT-486: an
+            explicit value always wins over ``model_plan.review`` — the
+            plan only assembles a pair when this is ``None``.
         development_dispatcher_builder: Optional ``(DevAgentSpec) ->
             (dispatcher, profile)`` callable for the dev-agent pool.
         development_pool_max: Hard cap on pool workers, also passed to
@@ -100,7 +178,9 @@ def build_dev_flow_node_factories(
             :func:`~parrot.flows.dev_flow.model_plan.resolve_model_plan`;
             a non-empty ``dev_pool`` then reaches ``DevelopmentNode`` as a
             ``DevAgentPoolConfig`` with ``agent_builder.build_dispatcher``
-            as its worker builder.
+            as its worker builder, and ``plan.review`` assembles
+            ``QANode``'s review pair (unless ``codereview_dispatcher`` was
+            passed explicitly).
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -123,6 +203,14 @@ def build_dev_flow_node_factories(
 
             pool_builder = build_dispatcher
 
+    # FEAT-486 (spec G5): assemble the configurable adversarial review
+    # pair. Precedence is explicit argument > plan > None (which leaves
+    # QANode's own ClaudeCodeReviewDispatcher fallback, qa.py:147-148,
+    # exactly as before).
+    review_dispatcher = codereview_dispatcher
+    if review_dispatcher is None and resolved_plan is not None:
+        review_dispatcher = _assemble_review_pair(resolved_plan, dispatcher)
+
     factories: dict[str, NodeFactory] = dict(
         build_dev_loop_node_factories(
             dispatcher=dispatcher,
@@ -133,7 +221,7 @@ def build_dev_flow_node_factories(
             development_pool_config=pool_config,
             development_dispatcher_builder=pool_builder,
             development_pool_max=development_pool_max,
-            codereview_dispatcher=codereview_dispatcher,
+            codereview_dispatcher=review_dispatcher,
             graph_memory=graph_memory,
             wiki_search=wiki_search,
             require_plan_approval=require_plan_approval,
