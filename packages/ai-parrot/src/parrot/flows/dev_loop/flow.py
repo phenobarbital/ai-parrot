@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
@@ -51,6 +51,25 @@ from parrot.flows.dev_loop.session_state import (
     PullRequestLinked,
     action_from_flow_event,
 )
+
+if TYPE_CHECKING:
+    # FEAT-490 Module 7: type-only. `DevFlowModelPlan` is the shared,
+    # PUBLIC vocabulary type the spec says both builders reuse unchanged
+    # (§6 Codebase Contract: "the model, its validators and
+    # resolve_model_plan() precedence are unchanged") — but dev_flow
+    # imports FROM dev_loop at module-load time (dev_flow/model_plan.py
+    # itself imports parrot.flows.dev_loop.catalog/models.base), so a
+    # top-level runtime import here would be circular whenever something
+    # imports dev_flow BEFORE dev_loop finishes initializing (observed via
+    # tests/flows/dev_flow/test_complementary_research.py during
+    # development of this task). `resolve_model_plan` itself is imported
+    # lazily, inside the function body below, for the same reason — never
+    # a dev_flow-private (underscore) symbol either way; the review-pair
+    # wiring duplicates `dev_flow.factories._assemble_review_pair`'s small
+    # body locally instead, matching that module's own "kept local rather
+    # than importing a private symbol across packages" precedent for
+    # `_with_graph`.
+    from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
 
 _logger = logging.getLogger(__name__)
 
@@ -325,6 +344,81 @@ class _NullAgentRegistry:
 
 
 # ---------------------------------------------------------------------------
+# FEAT-490 Module 7: model_plan -> ops-topology seat wiring
+# ---------------------------------------------------------------------------
+#
+# Mirrors `dev_flow.factories._build_primary_reviewer`/`_assemble_review_pair`
+# EXACTLY (same seats: development pool + adversarial review pair — this
+# topology has no IdeationNode, so `model_plan.research_primary`/
+# `research_partner` have nothing to map onto here). Kept local rather than
+# importing those dev_flow-private (underscore) symbols across packages —
+# same precedent `dev_flow/factories.py` itself sets for `_with_graph`.
+
+
+def _build_primary_reviewer(spec: Any, shared_dispatcher: Any) -> Any:
+    """Build the write-enabled primary reviewer named by ``spec``.
+
+    ``claude-code`` (the default) reuses the flow's shared dispatcher — no
+    second dispatcher is constructed. Any other backend is materialized
+    through ``agent_builder.build_dispatcher``.
+
+    Args:
+        spec: The plan's ``DevAgentSpec`` for the primary review seat.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A write-enabled ``AbstractCodeReviewDispatcher``.
+
+    Raises:
+        ValueError: If the backend has no registered *primary* review
+            dispatcher — named, with the supported set, before any run.
+    """
+    from parrot.flows.dev_loop.catalog import PRIMARY_REVIEW_BACKENDS
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+
+    if spec.agent not in PRIMARY_REVIEW_BACKENDS:
+        raise ValueError(
+            f"backend {spec.agent!r} cannot serve as the primary reviewer — "
+            f"supported: {', '.join(PRIMARY_REVIEW_BACKENDS)}"
+        )
+    if spec.agent == "claude-code":
+        review_dispatcher = shared_dispatcher
+    else:
+        from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+        review_dispatcher, _profile = build_dispatcher(spec)
+    kwargs: Dict[str, Any] = {"dispatcher": review_dispatcher}
+    if spec.model:
+        kwargs["model"] = spec.model
+    return CodeReviewDispatcherFactory.create(spec.agent, **kwargs)
+
+
+def _assemble_review_pair(plan: DevFlowModelPlan, shared_dispatcher: Any) -> Any:
+    """Assemble the plan's review pair as a parallel-perspective reviewer.
+
+    A write-enabled primary (default claude-code / ``claude-opus-5``) runs
+    concurrently with the read-only, Mantle-hosted counter-reviewer
+    (default ``gpt-5.6-sol``); ``ParallelPerspectiveReviewDispatcher``
+    merges the two verdicts deterministically.
+
+    Args:
+        plan: The already-resolved model plan.
+        shared_dispatcher: The flow's shared ``ClaudeCodeDispatcher``.
+
+    Returns:
+        A ``ParallelPerspectiveReviewDispatcher`` over the configured pair.
+    """
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
+    from parrot.flows.dev_loop.dispatchers.mantle import (
+        MantleAdversarialReviewDispatcher,
+    )
+
+    primary = _build_primary_reviewer(plan.review.primary, shared_dispatcher)
+    adversary = MantleAdversarialReviewDispatcher(model=plan.review.counter_model)
+    return CodeReviewDispatcherFactory.create("parallel", primary=primary, adversary=adversary)
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -359,6 +453,7 @@ def build_dev_loop_flow(
     checkpoint_required: bool = False,
     checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
     flow_id: Optional[str] = None,
+    model_plan: Optional[DevFlowModelPlan] = None,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -471,10 +566,51 @@ def build_dev_loop_flow(
             (UUID4) otherwise when omitted — but omitting it defeats the
             purpose of a per-run checkpoint identity, so recovery-aware
             callers always supply it explicitly.
+        model_plan: FEAT-490 Module 7 — optional :class:`DevFlowModelPlan`
+            selecting the seats THIS topology actually has: the
+            development pool (mirrors ``development_pool_config``'s
+            shape) and ``QANode``'s adversarial review pair. There is no
+            ``IdeationNode`` here, so the plan's ``research_primary``/
+            ``research_partner`` fields have nothing to map onto — pass an
+            explicit ``research_coordinator`` for that seat instead, same
+            as before this parameter existed. Precedence matches the
+            dev-flow sibling exactly: an explicit
+            ``development_pool_config`` or ``codereview_dispatcher`` always
+            wins over the plan. ``None`` (the default) leaves every
+            existing call byte-identical — this is a pure seam, not a
+            behaviour change; the ops console is not wired to send a plan
+            (spec §1 Non-Goals).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
     """
+    # FEAT-490 Module 7: resolve the plan's seats onto THIS topology's own
+    # kwargs, with the caller's explicit values always winning — mirrors
+    # dev_flow.factories.build_dev_flow_node_factories' precedence exactly,
+    # adapted to the one difference: this builder already exposes
+    # `development_pool_config` directly (FEAT-323 predates this feature),
+    # so the "explicit wins" check applies to it too, not just the builder.
+    resolved_pool_config = development_pool_config
+    resolved_pool_builder = development_dispatcher_builder
+    resolved_review_dispatcher = codereview_dispatcher
+    if model_plan is not None:
+        # Lazy: avoids a module-load-time circular import (see the
+        # TYPE_CHECKING block above) — a plan-less build must not pay for
+        # it either way.
+        from parrot.flows.dev_flow.model_plan import resolve_model_plan
+
+        resolved_plan = resolve_model_plan(model_plan)
+        if resolved_pool_config is None:
+            resolved_pool_config = resolved_plan.to_pool_config()
+            if resolved_pool_config is not None and resolved_pool_builder is None:
+                # Imported lazily: agent_builder pulls in every coding-agent
+                # client module, and a plan-less build must not pay for it.
+                from parrot.flows.dev_loop.agent_builder import build_dispatcher
+
+                resolved_pool_builder = build_dispatcher
+        if resolved_review_dispatcher is None:
+            resolved_review_dispatcher = _assemble_review_pair(resolved_plan, dispatcher)
+
     # 1. Materialize the dev-loop nodes from the DECLARATIVE definition via the
     # engine's ``node_factories`` hook (FEAT-250 TASK-001). This validates the
     # definition (referential integrity + acyclic + registered types) and binds
@@ -486,14 +622,14 @@ def build_dev_loop_flow(
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
-        development_pool_config=development_pool_config,
-        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_config=resolved_pool_config,
+        development_dispatcher_builder=resolved_pool_builder,
         development_pool_max=development_pool_max,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         log_fetch_mode=log_fetch_mode,
         repos=repos,
-        codereview_dispatcher=codereview_dispatcher,
+        codereview_dispatcher=resolved_review_dispatcher,
         require_deployment_approval=require_deployment_approval,
         wiki_search=wiki_search,
         graph_memory=graph_memory,
