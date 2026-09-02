@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T12:03:18+00:00",
       "completed_at": "2026-09-02T12:09:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2753-builders-carry-layout-metadata.md"
+      "file": "sdd/tasks/completed/TASK-2753-builders-carry-layout-metadata.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2754",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T12:03:18+00:00",
       "completed_at": "2026-09-02T12:15:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2754-lowering-propagates-extensions.md"
+      "file": "sdd/tasks/completed/TASK-2754-lowering-propagates-extensions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2755",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T12:03:18+00:00",
       "completed_at": "2026-09-02T12:21:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2755-respond-html-structured-error.md"
+      "file": "sdd/tasks/completed/TASK-2755-respond-html-structured-error.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2756",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T12:03:18+00:00",
       "completed_at": "2026-09-02T13:15:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2756-e2e-verification-sweep.md"
+      "file": "sdd/tasks/completed/TASK-2756-e2e-verification-sweep.md",
+      "verification": "verified"
     }
   ]
 }
