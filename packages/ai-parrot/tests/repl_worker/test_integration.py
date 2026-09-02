@@ -15,6 +15,8 @@ explicitly needs a tighter deadline.
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from parrot.tools.pythonrepl import PythonREPLTool
@@ -33,6 +35,30 @@ async def tool(tmp_path):
     instance = PythonREPLTool(report_dir=str(tmp_path))
     yield instance
     await _shutdown(instance)
+
+
+async def test_execute_error_dict_never_blank(tmp_path, monkeypatch):
+    """FEAT-500 AC5: a message-less exception still yields a readable error.
+
+    A bare `TimeoutError()` — exactly what `_send` used to raise on the
+    5 s namespace budget — has `str() == ''`, which reached the LLM as
+    "Error executing Python code: " with an empty `ToolResult.error`.
+    """
+    tool = PythonREPLTool(report_dir=str(tmp_path))
+    try:
+
+        @contextlib.asynccontextmanager
+        async def boom():
+            raise TimeoutError()
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(tool, "_worker_session", boom)
+        out = await tool._execute("x = 1")
+        assert out["status"] == "error"
+        assert out["error"] == "TimeoutError"
+        assert out["result"].startswith("ToolError: TimeoutError: TimeoutError")
+    finally:
+        await _shutdown(tool)
 
 
 class TestExecuteContract:

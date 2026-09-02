@@ -957,9 +957,14 @@ print("Use 'execution_results' dict to store intermediate results.")
             async with self._worker_session() as handle:
                 output = await handle.execute(query, debug=debug)
         except Exception as e:
-            self.logger.error(f"Error executing Python code: {e}")
-            msg = f"ToolError: {type(e).__name__}: {str(e)}"
-            return {"status": "error", "result": msg, "error": str(e)}
+            # FEAT-500 (G3/AC5): never surface a blank error. A bare
+            # `TimeoutError()` has `str(e) == ''`, which is exactly how the
+            # cold-start incident reached the LLM as
+            # "Error executing Python code: " / ValueError('').
+            detail = str(e) or type(e).__name__
+            self.logger.error("Error executing Python code: %s", detail)
+            msg = f"ToolError: {type(e).__name__}: {detail}"
+            return {"status": "error", "result": msg, "error": detail}
 
         # The worker already classifies error-shaped output into the
         # {status, result, error} dict shape itself (it runs the exact same

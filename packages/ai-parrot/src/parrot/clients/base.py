@@ -1497,7 +1497,13 @@ $backstory
             )
             if isinstance(result, ToolResult):
                 if result.status == "error":
-                    raise ValueError(result.error)
+                    # FEAT-500 (G3/AC5): `ValueError('')` told the LLM
+                    # nothing. A tool that errors without a message still
+                    # gets a readable one here.
+                    raise ValueError(
+                        result.error
+                        or f"Tool {tool_name} returned status=error without a message"
+                    )
                 return result.result
             return result
         except Exception as e:

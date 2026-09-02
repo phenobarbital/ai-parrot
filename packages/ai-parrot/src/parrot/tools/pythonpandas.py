@@ -9,6 +9,7 @@ from .pythonrepl import (
     PythonREPLArgs,
     brace_escape
 )
+from .repl_worker import NamespaceTimeoutError, WorkerBootstrapError
 
 if TYPE_CHECKING:
     from .dataset_manager import DatasetManager
@@ -174,10 +175,19 @@ class PythonPandasTool(PythonREPLTool):
         if new_names:
             for name in new_names:
                 value = self.df_locals[name]
-                if isinstance(value, pd.DataFrame):
-                    await handle.inject_dataframe(name, value)
-                else:
-                    await handle.set_var(name, value)
+                try:
+                    if isinstance(value, pd.DataFrame):
+                        await handle.inject_dataframe(name, value)
+                    else:
+                        await handle.set_var(name, value)
+                except (NamespaceTimeoutError, WorkerBootstrapError) as exc:
+                    # FEAT-500 (G3): seeding is the step that used to fail
+                    # first and blankest on a cold worker. Say WHICH variable
+                    # failed, and keep the exception type so callers that
+                    # branch on TimeoutError still match.
+                    raise type(exc)(
+                        f"seeding {name!r} into the REPL worker failed: {exc}"
+                    ) from exc
             self._seeded_df_names |= new_names
         return handle
 
@@ -938,7 +948,10 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
         # the only way to see the worker's real namespace from here.
         try:
             pre_keys = set(await self.list_vars())
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - diagnostics probe, never fatal
+            # FEAT-500 (G3/G5): still non-fatal, but no longer silent — this
+            # is where a struggling worker first shows up.
+            self.logger.debug("python_repl_pandas: namespace probe failed: %s", exc)
             pre_keys = set()
 
         result = await super()._execute(code, debug=debug, **kwargs)
@@ -981,7 +994,8 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
             # worker's real namespace, not the stale host-side `self.locals`).
             try:
                 current_keys = set(await self.list_vars())
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 - diagnostics probe, never fatal
+                self.logger.debug("python_repl_pandas: namespace probe failed: %s", exc)
                 current_keys = set()
             new_keys = current_keys - pre_keys
 
@@ -991,7 +1005,12 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
 
                 try:
                     val = await self.get_var(key)
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 - diagnostics probe, never fatal
+                    self.logger.debug(
+                        "python_repl_pandas: reading %r for the audit preview failed: %s",
+                        key,
+                        exc,
+                    )
                     continue
                 if isinstance(val, pd.DataFrame) and not val.empty:
                     audit_parts.append(f"\n🔍 [AUDIT] Preview of '{key}' (first 3 rows):")
