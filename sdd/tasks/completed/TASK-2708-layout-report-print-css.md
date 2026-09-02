@@ -238,10 +238,50 @@ def test_all_theme_layout_pairs_compose(theme, layout):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Mechanically extracted the legacy `BASE_CSS`'s 172 unique
+top-level/nested selectors via a brace-depth parser, then wrote
+`layout-report.css` as every one of its top-level rule blocks EXCEPT the
+24 already defined verbatim in `components.css` (`.kpi-grid`, `.kpi-card`,
+`.kpi-value`, `.kpi-label`, `.callout-block` + its 5 variants + its `h3`,
+`.timeline-block`/`.timeline-event` (+ pseudo-elements)/`.timeline-date`/
+`.timeline-content`, `.progress-block`/`.progress-item`/`.progress-header`/
+`.progress-track`/`.progress-fill`/`.progress-target`) — including the two
+legacy `@media` breakpoint blocks verbatim, since a selector legitimately
+reappearing inside a narrow breakpoint override is not "the same rule
+restated." Verified 0-of-172 selectors missing from the composed
+`(theme, report)` sheet. Wrote `layout-print.css` with `@page { size: A4;
+margin: … }`, `break-inside: avoid` on cards/panels/table rows/timeline/
+progress blocks, `--shadow: none` scoped under
+`[data-layout="print"]`, and fixed (non-responsive) KPI grid column
+counts. `__init__.py` required no functional change — TASK-2707 already
+declared the `report`/`print` keys in `_LAYOUT_CSS` forward-looking for
+this task; only tightened a now-stale docstring comment. All 32 tests
+(this task's 6 + TASK-2707's 12 + the 5×3 all-pairs matrix, re-verified)
+pass; `ruff check` is clean; confirmed via an actual
+`python -m build --wheel` that both new CSS files ship in the wheel.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- Modified `components.css` (not listed in this task's Files table) to
+  change `.kpi-grid`'s `grid-template-columns` from
+  `repeat(auto-fit, minmax(180px, 1fr))` to a fixed `repeat(4, 1fr)`,
+  moving the responsive auto-fit/minmax behaviour into
+  `layout-analytics.css` (scoped under `[data-layout="analytics"]`)
+  instead. This was necessary: `components.css` is unconditionally
+  concatenated into every composed stylesheet including `print`, so its
+  original auto-fit/minmax literally appeared in
+  `DesignSystem.stylesheet(theme, "print")`, violating this task's own
+  acceptance criterion ("no `auto-fit`/`minmax`" in the print sheet) —
+  a cross-task interaction TASK-2707 could not have anticipated before
+  `print` existed. Re-ran TASK-2707's full test suite after the change;
+  all 12 tests still pass.
+- Added a fourth, supplementary test
+  (`test_report_layout_does_not_duplicate_components`) beyond the given
+  Test Specification, to make the acceptance criterion "layout-report.css
+  contains no rule already defined in components.css" independently
+  verifiable rather than only manually reasoned about. It compares only
+  TOP-LEVEL selectors (via the same brace-depth parser used to build the
+  migration) so a legitimate narrow `@media` breakpoint override (e.g.
+  `.kpi-grid` collapsing to one column under 560px, migrated verbatim
+  from the legacy sheet) is not flagged as duplication.

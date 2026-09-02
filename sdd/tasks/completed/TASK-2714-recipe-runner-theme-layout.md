@@ -218,10 +218,38 @@ class TestRunnerPlumbing:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `RenderSpec.layout: Optional[str] = None` and rewrote both
+`theme`/`layout` docstrings to describe the real, now-connected behaviour.
+`_render_or_raise` inspects `inspect.signature(renderer_cls).parameters`
+and builds a `kwargs` dict containing only `theme`/`layout` entries the
+renderer's own constructor declares AND whose recipe-declared value is not
+`None`, then calls `renderer_cls(**kwargs)` — verified against the full
+registered set (`interactive-html`, `ssr_html`, `pdf`, `echarts`,
+`folium_map`, `adaptive_cards`): the three non-HTML renderers declare no
+custom `__init__` at all (so neither kwarg is ever passed to them), and
+`pdf.PDFRenderer` (TASK-2713) declares `theme` only (no `layout` — it
+forces print internally), so it correctly receives only `theme`.
+`get_a2ui_renderer(...)` is still called BEFORE the signature inspection,
+unchanged, so the unknown/uninstalled-renderer `ImportError` still
+propagates exactly as before; the `try/except` around `renderer.render()`
+is untouched, so a genuine render failure still raises
+`RecipeRunException(stage="render")`. `recipe.render.theme` still flows
+into `build_infographic(theme=...)` at its one call site, unmodified.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Tests: this task's new
+`packages/ai-parrot/tests/outputs/a2ui/recipes/test_render_spec_layout.py`
+(8 tests) passes; the full `packages/ai-parrot/tests/outputs/a2ui/recipes/`
+suite (116 tests) passes; `packages/ai-parrot/tests/integration/
+infographic_recipes/` shows the SAME 3 pre-existing failures (an
+unrelated `/narrative` optional-binding issue) with and without this
+task's `runner.py` change, verified by swapping in the `origin/dev`
+version of the file and re-running (restored immediately after). `ruff
+check`: `models.py` unchanged at 19 pre-existing errors, `runner.py` at 7
+(down from 8 pre-existing — not caused by this change), the new test file
+is ruff-clean. `mypy`: identical single pre-existing `return-value` error
+at the equivalent line in both the original and modified `runner.py`
+(reproduced side-by-side) — 0 new issues; `models.py` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

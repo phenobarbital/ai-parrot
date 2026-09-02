@@ -46,6 +46,18 @@ the vendored Chart.js UMD bundle):
   ``[data-tabs-panes="<id>"]`` + ``[data-pane-index]`` panes (FEAT-470
   TASK-2544) — the generic ``Tabs`` PRIMITIVE's click-to-switch behavior,
   the same active-class-toggle pattern as the Chart day-tabs above.
+* ``[data-filterbar]`` (FEAT-493 TASK-2716) — a ``FilterBar``'s rendered
+  root: ``[data-filter-column]`` per filter (searchable multiselect —
+  ``[data-msf-toggle]``, ``[data-msf-search]``, ``[data-act="all"/"none"]``,
+  and its checkboxes), ``[data-filter-reset="<bar-id>"]`` (global reset),
+  ``[data-filter-chips="<bar-id>"]`` / ``[data-filter-summary="<bar-id>"]``
+  (live selection chips / summary line). Filtering never re-fetches or
+  re-renders from scratch: a filtered ``<table>``'s already-formatted
+  ``<tr data-row="...">`` rows (TASK-2711) are only shown/hidden, and each
+  chart's ORIGINAL embedded rows (``data-chart-config``) are re-filtered
+  and handed back to Chart.js. A filter applies only to a section whose
+  bound rows carry that filter's column — checked per-row/per-dataset,
+  never a hardcoded map.
 
 All hooks are driven purely by component properties / the embedded data —
 never hardcoded to any specific dashboard (the budget-variance example is
@@ -76,6 +88,18 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
+from parrot.outputs.formats.assets.design_system import DesignSystem
+
+from ._semantics import (
+    is_kpi_row,
+    kpi_unit_html,
+    node_extensions,
+    semantic_card_class,
+    semantic_text_class,
+    trend_attr_html,
+)
+from ._shell import document_shell
+from ._table_format import format_cell_html
 
 logger = logging.getLogger(__name__)
 
@@ -105,39 +129,12 @@ _CHART_TYPE = {
     "pie": "pie",
 }
 
-_STYLE = (
-    "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;"
-    "margin:1rem;color:#1a1a1a}"
-    ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
-    ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
-    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
-    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
-    ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
-    ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-subtitle{color:#5b6b8c}"
-    ".a2ui-section{margin:.5rem 0}.a2ui-notice{color:#a00}"
-    ".a2ui-tabs{display:flex;gap:.25rem;margin:.5rem 0}"
-    ".daytab{padding:.25rem .75rem;border:1px solid #ccc;border-radius:999px;"
-    "background:#fff;cursor:pointer}.daytab.active{background:#1f3864;color:#fff}"
-    ".a2ui-metric-toggle{display:flex;gap:.25rem;margin:.5rem 0}"
-    ".metricbtn{padding:.2rem .6rem;border:1px solid #ccc;border-radius:4px;"
-    "background:#f4f4f4;cursor:pointer}.metricbtn.active{background:#2e8b57;color:#fff}"
-    "table{border-collapse:collapse;width:100%}"
-    "th,td{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;font-size:.9rem}"
-    "th[data-sort-key]{cursor:pointer;user-select:none}"
-    ".a2ui-tabs-nav{display:flex;gap:.25rem;border-bottom:1px solid #ddd;margin:.5rem 0}"
-    ".tabbtn{padding:.35rem .75rem;border:1px solid #ccc;border-bottom:none;"
-    "border-radius:6px 6px 0 0;background:#f4f4f4;cursor:pointer}"
-    ".tabbtn.active{background:#fff;font-weight:600}"
-    ".a2ui-tab-pane{padding:.5rem 0}"
-    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
-    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
-    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
-    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
-    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
-    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
-)
-
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
+
+#: A pager over a handful of rows is worse UX than none (spec §8 leaves this
+#: constant's final home open — a renderer constant unless a caller asks for
+#: per-table control). Search + pagination render only above this threshold.
+_PAGINATION_ROW_THRESHOLD = 100
 
 _BEHAVIOR_JS = r"""
 (function () {
@@ -158,6 +155,12 @@ _BEHAVIOR_JS = r"""
 
   var chartTypeMap = { bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie" };
 
+  // Populated as each chart is created below; consulted by the FilterBar
+  // runtime (TASK-2716) to re-render a chart's ALREADY-embedded rows
+  // in place — never a data re-fetch.
+  var chartRegistry = {};
+  var chartOriginalData = {};
+
   document.querySelectorAll("[data-chart-config]").forEach(function (canvas) {
     var cfg = JSON.parse(canvas.getAttribute("data-chart-config"));
     var rows = (cfg.tabs && cfg.tabs.length) ? cfg.tabs[0].data : (cfg.data || []);
@@ -171,6 +174,8 @@ _BEHAVIOR_JS = r"""
     });
 
     var chartId = canvas.getAttribute("data-chart");
+    chartRegistry[chartId] = chart;
+    chartOriginalData[chartId] = rows;
 
     var tabsGroup = document.querySelector('[data-tabs-for="' + chartId + '"]');
     if (tabsGroup) {
@@ -214,10 +219,21 @@ _BEHAVIOR_JS = r"""
         var asc = state[key] !== "asc";
         state[key] = asc ? "asc" : "desc";
         rows.sort(function (a, b) {
-          var av = a.children[colIndex] ? a.children[colIndex].textContent : "";
-          var bv = b.children[colIndex] ? b.children[colIndex].textContent : "";
-          var an = parseFloat(av.replace(/[^0-9.-]/g, ""));
-          var bn = parseFloat(bv.replace(/[^0-9.-]/g, ""));
+          var aCell = a.children[colIndex];
+          var bCell = b.children[colIndex];
+          var av = aCell ? aCell.textContent : "";
+          var bv = bCell ? bCell.textContent : "";
+          var an, bn;
+          // Prefer the raw, unformatted value carried in data-v (TASK-2711)
+          // over the rendered text — the rendered text may carry thousands
+          // separators / currency formatting that mis-parses as a number.
+          if (aCell && aCell.hasAttribute("data-v") && bCell && bCell.hasAttribute("data-v")) {
+            an = parseFloat(aCell.getAttribute("data-v"));
+            bn = parseFloat(bCell.getAttribute("data-v"));
+          } else {
+            an = parseFloat(av.replace(/[^0-9.-]/g, ""));
+            bn = parseFloat(bv.replace(/[^0-9.-]/g, ""));
+          }
           var cmp;
           if (!isNaN(an) && !isNaN(bn)) { cmp = an - bn; } else { cmp = av.localeCompare(bv); }
           return asc ? cmp : -cmp;
@@ -225,6 +241,59 @@ _BEHAVIOR_JS = r"""
         rows.forEach(function (r) { tbody.appendChild(r); });
       });
     });
+  });
+
+  // DataTable search + pagination (TASK-2711) — rendered only above
+  // _PAGINATION_ROW_THRESHOLD rows; purely client-side over the
+  // already-baked rows, no data re-fetch. Registers a per-table hook in
+  // `tablePaginators` (keyed by table id) so the FilterBar runtime
+  // (TASK-2716) can narrow the paginated set to filtered rows instead of
+  // both features fighting over the same `<tr>.style.display` — without
+  // this hook, FilterBar's initial no-op `applyFilters()` call would
+  // force every row's display back to "", silently undoing pagination's
+  // page-1-only visibility on any surface that has both.
+  var tablePaginators = {};
+  document.querySelectorAll("[data-table-search]").forEach(function (input) {
+    var tableId = input.getAttribute("data-table-search");
+    var table = document.querySelector('table[data-table="' + tableId + '"]');
+    if (!table) return;
+    var tbody = table.querySelector("tbody");
+    var allRows = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+    var pager = document.querySelector('[data-table-pager="' + tableId + '"]');
+    var pageSize = 50;
+    var page = 0;
+    var rowFilter = null; // set via tablePaginators[tableId](predicate) by FilterBar
+
+    function matches() {
+      var base = rowFilter ? allRows.filter(rowFilter) : allRows;
+      var q = input.value.trim().toLowerCase();
+      if (!q) return base;
+      return base.filter(function (r) { return r.textContent.toLowerCase().indexOf(q) !== -1; });
+    }
+
+    function render() {
+      var visible = matches();
+      var start = page * pageSize;
+      var pageRows = visible.slice(start, start + pageSize);
+      allRows.forEach(function (r) { r.style.display = "none"; });
+      pageRows.forEach(function (r) { r.style.display = ""; });
+      if (pager) {
+        var totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+        pager.textContent = "Page " + (page + 1) + " of " + totalPages + " (" + visible.length + " rows)";
+      }
+    }
+
+    input.addEventListener("input", function () {
+      page = 0;
+      render();
+    });
+    render();
+
+    tablePaginators[tableId] = function (predicate) {
+      rowFilter = predicate;
+      page = 0;
+      render();
+    };
   });
 
   // Generic Tabs primitive (FEAT-470 TASK-2544) — same active-class-toggle
@@ -245,6 +314,177 @@ _BEHAVIOR_JS = r"""
         });
       });
     });
+  });
+
+  // FilterBar interactive multiselect + client-side dataModel filtering
+  // (TASK-2716). A filter applies ONLY to a chart/table whose bound rows
+  // carry that filter's column (checked per-row/per-chart-dataset, never a
+  // hardcoded map) — a section without the column is left untouched.
+  document.querySelectorAll("[data-filterbar]").forEach(function (bar) {
+    var barId = bar.getAttribute("data-filterbar");
+    var msfs = Array.prototype.slice.call(bar.querySelectorAll("[data-filter-column]"));
+
+    function closeAllPanels() {
+      msfs.forEach(function (m) { m.classList.remove("open"); });
+    }
+
+    function rowMatches(row, filters) {
+      for (var column in filters) {
+        if (!(column in row)) continue; // section doesn't carry this column -> untouched
+        if (filters[column].indexOf(String(row[column])) === -1) return false;
+      }
+      return true;
+    }
+
+    function activeFilters() {
+      var filters = {};
+      msfs.forEach(function (msf) {
+        var column = msf.getAttribute("data-filter-column");
+        var checked = Array.prototype.slice
+          .call(msf.querySelectorAll('input[type="checkbox"]:checked'))
+          .map(function (cb) { return cb.value; });
+        if (checked.length) filters[column] = checked;
+      });
+      return filters;
+    }
+
+    function optionLabel(msf, value) {
+      var input = msf.querySelector('input[type="checkbox"][value="' + value.replace(/"/g, '\\"') + '"]');
+      return input ? input.closest(".msf-opt").textContent.trim() : value;
+    }
+
+    function updateChipsAndSummary(filters) {
+      var chipsEl = document.querySelector('[data-filter-chips="' + barId + '"]');
+      var summaryEl = document.querySelector('[data-filter-summary="' + barId + '"]');
+      var chips = [];
+      var summaryParts = [];
+      msfs.forEach(function (msf) {
+        var column = msf.getAttribute("data-filter-column");
+        var label = msf.querySelector(".msf-label").textContent;
+        var checked = filters[column];
+        if (!checked || !checked.length) {
+          summaryParts.push(label + " = all");
+          return;
+        }
+        var labels = checked.map(function (v) { return optionLabel(msf, v); });
+        summaryParts.push(label + " = " + labels.join(", "));
+        labels.forEach(function (l) {
+          chips.push('<span class="msf-chip">' + label + ": " + l + "</span>");
+        });
+      });
+      if (chipsEl) chipsEl.innerHTML = chips.join("");
+      if (summaryEl) summaryEl.textContent = "Filters: " + summaryParts.join("; ");
+    }
+
+    function showEmptyState(el, show) {
+      var notice = el.nextElementSibling;
+      var hasNotice = notice && notice.classList && notice.classList.contains("a2ui-filter-empty");
+      if (show && !hasNotice) {
+        notice = document.createElement("p");
+        // Deliberately its own class, distinct from TASK-2711's
+        // truncation-notice class: that class's ABSENCE is asserted by
+        // test_rich_datatable.py as "table was not truncated", so reusing
+        // it here would make that assertion false whenever this runtime
+        // is simply present in the page, truncated or not.
+        notice.className = "a2ui-filter-empty";
+        notice.textContent = "No rows match the current filters.";
+        el.insertAdjacentElement("afterend", notice);
+        el.style.display = "none";
+      } else if (!show && hasNotice) {
+        notice.remove();
+        el.style.display = "";
+      }
+    }
+
+    function applyFilters() {
+      var filters = activeFilters();
+      updateChipsAndSummary(filters);
+
+      // Tables: toggle pre-rendered <tr> visibility — same, already-
+      // formatted cells either way (TASK-2711), never a from-scratch
+      // client-side re-render. A table with search/pagination (TASK-2711,
+      // registered in tablePaginators) delegates through it instead of
+      // setting `display` directly, so filtering narrows the paginated
+      // set rather than fighting it over the same attribute.
+      document.querySelectorAll("table[data-table]").forEach(function (table) {
+        var tableId = table.getAttribute("data-table");
+        var trs = Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-row]"));
+        if (trs.length === 0) return;
+        function rowPasses(tr) {
+          var row;
+          try { row = JSON.parse(tr.getAttribute("data-row")); } catch (e) { row = {}; }
+          return rowMatches(row, filters);
+        }
+        var visibleCount = trs.filter(rowPasses).length;
+        if (tablePaginators[tableId]) {
+          tablePaginators[tableId](rowPasses);
+        } else {
+          trs.forEach(function (tr) { tr.style.display = rowPasses(tr) ? "" : "none"; });
+        }
+        showEmptyState(table, visibleCount === 0);
+      });
+
+      // Charts: filter each chart's ORIGINAL embedded rows and redraw.
+      Object.keys(chartRegistry).forEach(function (chartId) {
+        var chart = chartRegistry[chartId];
+        var original = chartOriginalData[chartId] || [];
+        var canvas = document.querySelector('canvas[data-chart="' + chartId + '"]');
+        if (!canvas) return;
+        var cfg = JSON.parse(canvas.getAttribute("data-chart-config"));
+        var filtered = original.filter(function (row) { return rowMatches(row, filters); });
+        if (original.length > 0) showEmptyState(canvas, filtered.length === 0);
+        if (filtered.length === 0) return;
+        chart.data.labels = filtered.map(function (r) { return r[cfg.x]; });
+        chart.data.datasets = buildDatasets(cfg, filtered);
+        chart.update();
+      });
+    }
+
+    msfs.forEach(function (msf) {
+      var toggleBtn = msf.querySelector("[data-msf-toggle]");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", function (evt) {
+          evt.stopPropagation();
+          var wasOpen = msf.classList.contains("open");
+          closeAllPanels();
+          if (!wasOpen) msf.classList.add("open");
+        });
+      }
+      var searchInput = msf.querySelector("[data-msf-search]");
+      if (searchInput) {
+        searchInput.addEventListener("input", function () {
+          var q = searchInput.value.trim().toLowerCase();
+          msf.querySelectorAll(".msf-opt").forEach(function (opt) {
+            opt.style.display = opt.textContent.toLowerCase().indexOf(q) !== -1 ? "" : "none";
+          });
+        });
+      }
+      msf.querySelectorAll("[data-act]").forEach(function (actBtn) {
+        actBtn.addEventListener("click", function () {
+          var checkAll = actBtn.getAttribute("data-act") === "all";
+          msf.querySelectorAll(".msf-opt").forEach(function (opt) {
+            if (opt.style.display !== "none") opt.querySelector('input[type="checkbox"]').checked = checkAll;
+          });
+          applyFilters();
+        });
+      });
+      msf.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener("change", applyFilters);
+      });
+    });
+
+    var resetBtn = document.querySelector('[data-filter-reset="' + barId + '"]');
+    if (resetBtn) {
+      resetBtn.addEventListener("click", function () {
+        msfs.forEach(function (msf) {
+          msf.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+        });
+        applyFilters();
+      });
+    }
+
+    document.addEventListener("click", closeAllPanels);
+    applyFilters(); // render the initial chips/summary from lower()'s pre-selected values.
   });
 })();
 """
@@ -295,6 +535,21 @@ def _esc(value: Any) -> str:
 class InteractiveHTMLRenderer(AbstractA2UIRenderer):
     """Self-contained interactive HTML renderer (vendored Chart.js + vanilla JS)."""
 
+    def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
+        """Initialize the renderer with a default ``(theme, layout)`` pair.
+
+        Args:
+            theme: Default theme name resolved by
+                :class:`~parrot.outputs.formats.assets.design_system.DesignSystem`.
+            layout: Default layout name.
+
+        Both keyword arguments MUST default — ``RecipeRunner`` calls
+        ``renderer_cls()`` with no arguments (``runner.py``); a required
+        parameter here would break every existing recipe run.
+        """
+        self.theme = theme
+        self.layout = layout
+
     async def render(self, envelope: CreateSurface, *, bake: bool = True) -> RenderedArtifact:
         """Render an envelope to a self-contained, interactive HTML ``RenderedArtifact``.
 
@@ -329,17 +584,20 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         data_model_json = _safe_json(envelope.data_model)
         chart_js = _CHART_JS_SOURCE
+        theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
+        style = DesignSystem.stylesheet(theme, layout)
 
-        document = (
-            "<!DOCTYPE html>"
-            '<html lang="en"><head><meta charset="utf-8">'
-            f"<title>{html.escape(envelope.surface_id)}</title>"
-            f"<style>{_STYLE}</style></head>"
-            f'<body>{"".join(body_parts)}'
-            f'<script type="application/json" id="report-data">{data_model_json}</script>'
-            f"<script>{chart_js}</script>"
-            f"<script>{_BEHAVIOR_JS}</script>"
-            "</body></html>"
+        document = document_shell(
+            title=envelope.surface_id,
+            style=style,
+            body="".join(body_parts),
+            theme=theme,
+            layout=layout,
+            scripts=(
+                f'<script type="application/json" id="report-data">{data_model_json}</script>',
+                f"<script>{chart_js}</script>",
+                f"<script>{_BEHAVIOR_JS}</script>",
+            ),
         )
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
@@ -481,7 +739,12 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
         cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
-        return f'<p class="{cls}">{_esc(props.get("text"))}</p>'
+        semantic_cls = semantic_text_class(node)
+        if semantic_cls:
+            cls = f"{cls} {semantic_cls}"
+        extra = kpi_unit_html(node) if role == "value" else ""
+        attrs = trend_attr_html(node) if role == "delta" else ""
+        return f'<p class="{cls}"{attrs}>{_esc(props.get("text"))}{extra}</p>'
 
     def _render_prim_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -515,7 +778,66 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         return "".join(parts)
 
     def _render_prim_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
-        return f'<div class="a2ui-row">{self._render_children(node, degradations)}</div>'
+        if node_extensions(node).get("parrot_variant") == "filter-bar":
+            return self._render_filterbar_interactive(node)
+        cls = "a2ui-row kpi-grid" if is_kpi_row(node) else "a2ui-row"
+        return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
+
+    def _render_filterbar_interactive(self, node: BasicNode) -> str:
+        """Render a ``FilterBar`` (``parrot_variant: "filter-bar"`` Row) as the
+        reference interactive control (TASK-2716): a searchable multiselect
+        per filter, selection chips, a live filter-state summary, and a
+        global reset — matching ``docs/flex_program_report (39).html``'s
+        ``.filter-bar``/``.msf-*``/``.reset-btn``/``.filter-summary`` markup,
+        which ``components.css`` (TASK-2707) already styles.
+
+        Each child is a ``ChoicePicker`` primitive (TASK-2715's ``lower()``)
+        carrying ``label``/``options``/``value`` (pre-selected values) and
+        ``parrot_filter_column``. The client-side filtering runtime lives in
+        ``_BEHAVIOR_JS`` and hooks purely off the ``data-*`` attributes
+        emitted here — never hardcoded to a specific dashboard.
+        """
+        bar_id = f"filterbar-{node.id or uuid.uuid4().hex[:8]}"
+        children = node.children if isinstance(node.children, list) else []
+        controls = []
+        for child in children:
+            if not isinstance(child, BasicNode):
+                continue
+            props = child.model_extra or {}
+            column = node_extensions(child).get("parrot_filter_column", "")
+            label = props.get("label") or column
+            options = props.get("options") or []
+            selected = {o.get("value") for o in options if isinstance(o, dict)} & set(props.get("value") or [])
+            opts_html = "".join(
+                f'<label class="msf-opt"><input type="checkbox" '
+                f'value="{html.escape(str(o.get("value", "")), quote=True)}"'
+                f'{" checked" if o.get("value") in selected else ""}> {_esc(o.get("label", o.get("value", "")))}'
+                f"</label>"
+                for o in options
+                if isinstance(o, dict)
+            )
+            controls.append(
+                f'<div class="msf" data-filter-column="{html.escape(str(column), quote=True)}">'
+                f'<button class="msf-btn" type="button" data-msf-toggle>'
+                f'<span class="msf-label">{_esc(label)}</span><span class="chev">&#9662;</span></button>'
+                '<div class="msf-panel">'
+                '<input type="text" class="msf-search" placeholder="Search..." data-msf-search>'
+                '<div class="msf-actions">'
+                '<button type="button" data-act="all">Select all</button>'
+                '<button type="button" data-act="none">Clear</button>'
+                "</div>"
+                f"<div>{opts_html}</div>"
+                "</div></div>"
+            )
+        return (
+            f'<div class="filter-bar" data-filterbar="{bar_id}">'
+            f'<span class="filter-label">Filters</span>'
+            + "".join(controls)
+            + f'<button class="reset-btn" type="button" data-filter-reset="{bar_id}">Reset filters</button>'
+            "</div>"
+            f'<div class="msf-chips" data-filter-chips="{bar_id}"></div>'
+            f'<p class="filter-summary" data-filter-summary="{bar_id}"></p>'
+        )
 
     def _render_prim_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         return f'<div class="a2ui-col">{self._render_children(node, degradations)}</div>'
@@ -528,7 +850,11 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
     def _render_prim_Card(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         inner = self._render_basic(node.child, degradations) if node.child is not None else ""
-        return f'<div class="a2ui-card">{inner}</div>'
+        cls = "a2ui-card"
+        variant_cls = semantic_card_class(node)
+        if variant_cls:
+            cls = f"{cls} {variant_cls}"
+        return f'<div class="{cls}">{inner}</div>'
 
     def _render_prim_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         """A ``Tabs`` primitive -> a ``[data-tabs]`` nav + ``[data-tabs-panes]``
@@ -656,12 +982,19 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         Bypasses catalog lowering entirely (``DataTableComponent.lower()``
         carries resolved rows via a ``ChildTemplate`` — real tabular
         rendering is a renderer concern here). ``props`` is the baked
-        component's own top-level dict (v1.0 — never nested).
+        component's own top-level dict (v1.0 — never nested). Cells are
+        formatted per ``TableColumn.type``/``.format`` in Python
+        (:func:`~parrot.outputs.a2ui_renderers._table_format.format_cell_html`,
+        TASK-2711) — no client-side JS is needed to display a formatted
+        value, only to sort/search/paginate the already-rendered rows.
         """
         columns = props.get("columns") or []
         rows = props.get("data")
         rows = rows if isinstance(rows, list) else []
         title = props.get("title")
+        total_rows = props.get("totalRows")
+        truncated = bool(props.get("truncated"))
+        table_id = f"table-{uuid.uuid4().hex[:8]}"
 
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
         header_cells = "".join(
@@ -675,16 +1008,50 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             if not isinstance(row, dict):
                 continue
             cells = "".join(
-                f"<td>{html.escape('' if (v := row.get(col.get('name'))) is None else str(v))}</td>"
+                format_cell_html(row.get(col.get("name")), col_type=col.get("type"), col_format=col.get("format"))
                 for col in columns
                 if isinstance(col, dict)
             )
-            body_rows.append(f"<tr>{cells}</tr>")
+            # Optional, additive row-kind marker: a row may carry a reserved
+            # "_rowType" key ("total"/"group") alongside its column values —
+            # no such row-level field exists on StructuredTableConfig today,
+            # and DataTableComponent.lower()'s row template cannot express
+            # per-row metadata without breaking the pinned lowering golden,
+            # so this convention is scoped to THIS interception path only
+            # (see TASK-2711 Completion Note).
+            row_kind = row.get("_rowType")
+            row_cls = ""
+            if row_kind == "total":
+                row_cls = ' class="total-row"'
+            elif row_kind == "group":
+                row_cls = ' class="group-row"'
+            # Raw row values, for client-side FilterBar filtering (TASK-2716):
+            # toggling a pre-rendered <tr>'s visibility reuses this row's
+            # ALREADY-formatted cells verbatim — never a from-scratch
+            # client-side re-render, so filtered rows are guaranteed to look
+            # identical to unfiltered ones (TASK-2711's formatting).
+            row_attr = html.escape(_safe_json({k: v for k, v in row.items() if k != "_rowType"}), quote=True)
+            body_rows.append(f'<tr{row_cls} data-row="{row_attr}">{cells}</tr>')
+
+        notice_html = ""
+        if truncated and total_rows is not None:
+            notice_html = (
+                f'<p class="a2ui-table-notice">showing {len(rows)} of ' f"{html.escape(str(total_rows))} rows</p>"
+            )
+
+        search_html = ""
+        pager_html = ""
+        if len(rows) > _PAGINATION_ROW_THRESHOLD:
+            search_html = (
+                f'<input type="search" class="a2ui-table-search" '
+                f'data-table-search="{table_id}" placeholder="Search...">'
+            )
+            pager_html = f'<div class="a2ui-table-pager" data-table-pager="{table_id}"></div>'
 
         return (
-            f'<div class="a2ui-card a2ui-table-wrap">{title_html}'
-            f"<table data-sort-table><thead><tr>{header_cells}</tr></thead>"
-            f'<tbody>{"".join(body_rows)}</tbody></table></div>'
+            f'<div class="a2ui-card a2ui-table-wrap">{title_html}{search_html}'
+            f'<table data-sort-table data-table="{table_id}"><thead><tr>{header_cells}</tr></thead>'
+            f'<tbody>{"".join(body_rows)}</tbody></table>{pager_html}{notice_html}</div>'
         )
 
     def _render_infographic(self, props: dict[str, Any]) -> str:

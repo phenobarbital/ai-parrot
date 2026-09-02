@@ -284,10 +284,45 @@ class TestGoldensUntouched:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `DesignSystem.resolve(envelope, *, theme_default,
+layout_default) -> tuple[str, str]` implementing the 4-level precedence
+(envelope `metadata.extensions["parrot_theme"/"parrot_layout"]` -> the
+top-level `Infographic.theme` prop (theme axis only) -> the renderer's
+constructor kwargs -> `DEFAULT_THEME`/`DEFAULT_LAYOUT`), backed by
+`_valid_theme_name`/`_valid_layout_name` helpers that log a warning and
+fall through on an unrecognised name — never raises. Created
+`a2ui_renderers/_semantics.py` with free functions (`semantic_card_class`,
+`semantic_text_class`, `kpi_unit_html`, `trend_attr_html`, `is_kpi_row`) —
+free functions rather than a mixin, per the task's own rationale, since
+`interactive_html` dispatches via `_render_prim_<Name>` and `ssr_html` via
+`_render_<Name>`. Wired both renderers' `_render_prim_Card`/`_render_Card`,
+`_render_prim_Text`/`_render_Text`, and `_render_prim_Row`/`_render_Row` to
+these helpers (additive only — `a2ui-card`/`a2ui-<role>` classes are never
+replaced), and both `render()` methods to `DesignSystem.resolve()`.
+`parrot_unit` renders as `<span class="kpi-unit">` appended after a
+`value`-role Text's content; `parrot_trend` renders as
+`data-trend="up|down|flat"` on a `delta`-role Text's `<p>`. Touched no
+`lower()` — verified by a new `TestGoldensUntouched` test that
+`git diff`s `catalog/` and `golden/` against `origin/dev` and asserts no
+non-filterbar changes.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Tests: this task's new
+`packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_semantic_classes.py`
+(14 tests, incl. `test_e2e_ssr_html.py:75`'s exact
+`class="a2ui-text a2ui-cell"` count-of-6 assertion re-verified unmodified)
+passes; the full `packages/ai-parrot-visualizations/tests/` suite (147
+tests) passes unmodified; the KPICard/Infographic/Chart-DataTable-Map
+catalog test files under `packages/ai-parrot/tests/outputs/a2ui/` (36
+tests) pass unmodified. `ruff check` is clean on all changed/created
+files. Could not run the FULL `packages/ai-parrot/tests/outputs/a2ui/`
+suite in this sandbox — its package-level `conftest.py` bootstraps a
+Navigator/DB-backed app that times out with no DB/network reachable here
+(pre-existing environment constraint, unrelated to this feature; same
+constraint noted in prior sessions for this repo). Ran the golden-adjacent
+component test files individually instead, plus the git-diff-based
+goldens-untouched guard, as the concrete proof for that acceptance
+criterion.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

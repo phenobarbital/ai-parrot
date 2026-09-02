@@ -1,0 +1,108 @@
+/* ─────────────────────────────────────────────
+ * Design system — base.css (FEAT-493)
+ * Reset, typography scale, page shell, table skeleton.
+ * Styled exclusively through CSS custom properties emitted by
+ * ThemeConfig.to_css_variables() — never a hardcoded colour here.
+ * ───────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: var(--body-bg);
+    color: var(--neutral-text);
+    font-family: var(--font-family);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Page shell ---------- */
+/* The two data attributes (data-layout / data-theme) let layout CSS and
+ * an embedding container scope themselves without a bespoke :root. */
+.ds-page {
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: var(--density-padding, 1rem);
+}
+
+/* ---------- Typography scale ---------- */
+h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 0.5em;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--neutral-text);
+}
+
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; }
+h5, h6 { font-size: 0.9rem; }
+
+p {
+    margin: 0 0 1em;
+}
+
+a {
+    color: var(--primary);
+}
+
+small {
+    font-size: 0.85rem;
+    color: var(--neutral-muted);
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 1.5rem 0;
+}
+
+/* ---------- Table skeleton ---------- */
+/* Structural only — TASK-2711 owns numeric formatting, sticky headers,
+ * totals, truncation and pagination behaviour. */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+thead th {
+    background: var(--header-bg);
+    color: var(--header-text);
+    text-align: left;
+    padding: var(--density-padding, 0.75rem);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: var(--density-padding, 0.75rem);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+tbody tr:nth-child(even) {
+    background: var(--neutral-bg);
+}
+
+/* `table .num` covers interactive-html's real <table>/<td class="num">
+ * cells; `.a2ui-cell.num` covers ssr-html/pdf, whose DataTable lowering
+ * (catalog/parrot/datatable.py) degrades to a Card/Row/Text tree with no
+ * <table> ancestor at all — code review, FEAT-493: without the unscoped
+ * selector, numeric columns rendered right-aligned/tabular-nums only on
+ * interactive-html, never on ssr-html or the PDF surface that inherits it. */
+table .num,
+.a2ui-cell.num {
+    text-align: right;
+    font-family: var(--mono-family);
+    font-variant-numeric: tabular-nums;
+}

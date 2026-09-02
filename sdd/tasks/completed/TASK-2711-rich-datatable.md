@@ -265,10 +265,69 @@ class TestRichTableMarkup:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Created `_table_format.py` with pure `format_cell()` (thousands
+grouping for `integer`/`number`/`duration`; `currency`/`percent` format
+hints; pass-through for non-numeric types; `None` → `""`),
+`format_cell_html()` (wraps in `<td class="num" data-v="<raw>">` for a
+numeric column, plain `<td>` otherwise, HTML-escaped), and
+`is_numeric_column()`. `interactive_html._render_datatable` now consumes
+these directly (it already bypasses lowering for DataTable), plus renders
+the `truncated`/`totalRows` notice and, above `_PAGINATION_ROW_THRESHOLD`
+(100) rows, a search input (`data-table-search`) and pager
+(`data-table-pager`) wired up in `_BEHAVIOR_JS`. The client-side sort now
+prefers each `<td>`'s `data-v` (raw, unformatted) over its rendered text,
+fixing the pre-existing mis-sort once thousands separators appear.
 
-**Completed by**:
-**Date**:
-**Notes**:
+For `ssr_html` — which does NOT intercept DataTable and instead lowers it
+generically via `DataTableComponent.lower()` — column type/format is
+re-derived from the ORIGINAL, not-yet-lowered envelope
+(`_collect_table_columns`) and matched back onto the lowered/baked tree by
+walking it post-`_reconstruct` (`_index_datatable_cells`/
+`_index_table_rows`), correlating via the `parrot_component_id` extension
+`lower()` already stamps on the table's `Card`. `_render_Text` consults
+this map ONLY for `parrot_role: "cell"` nodes, appending `num`/`data-v`
+additively (never replacing `a2ui-cell`) and formatting the displayed
+text — `datatable.py`'s `lower()` is untouched, so `datatable_lowered.json`
+stays byte-identical (verified: `git diff --exit-code` clean, and the
+pre-existing `test_e2e_ssr_html.py:75` exact-count assertion re-verified
+unmodified since untyped columns format identically to the old
+`_esc(raw_value)` path). The truncation notice for SSR renders directly
+off the `Column(role="rows")` node's own `parrot_total_rows`/
+`parrot_truncated` metadata (no extra lookup needed — `lower()` already
+stamps this locally). Renamed `_semantics._extensions` →
+`node_extensions` (now a cross-module shared helper, used by
+`ssr_html.py`'s new tree-walk directly).
 
-**Deviations from spec**: none | describe if any
+Tests: this task's new
+`packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_rich_datatable.py`
+(27 tests) passes; the full `packages/ai-parrot-visualizations/tests/`
+suite (174 tests) passes; the pre-existing
+`test_interactive_html.py:135-153` sort-hook assertions re-verified
+unmodified (also re-asserted directly in the new test file); the
+KPICard/Infographic/Chart-DataTable-Map catalog test files under
+`packages/ai-parrot/tests/outputs/a2ui/` (36 tests) pass. `ruff check`
+clean on all changed/created files. `mypy` clean on all changed/created
+files (3 pre-existing, unrelated errors remain in
+`interactive_html.py:_render_descriptor`, confirmed present in
+`origin/dev` before this task, outside this task's scope). Could not run
+the FULL `packages/ai-parrot/tests/outputs/a2ui/` suite in this sandbox —
+same pre-existing Navigator/DB-bootstrap environment constraint noted in
+TASK-2710's Completion Note.
+
+**Deviations from spec**: Total/group row markup (`class="total-row"`/
+`"group-row"`) is implemented ONLY for `interactive_html`'s raw-row-dict
+path, via an additive, self-invented `row.get("_rowType")` convention
+(`"total"`/`"group"`) — there is no existing schema field
+(`StructuredTableConfig`/`TableColumn` has none) or repo convention for
+marking a row as total/group. For `ssr_html`, this is NOT implemented:
+`DataTableComponent.lower()`'s row template is a single, uniform
+`BasicNode` materialized identically once per data-model row (via
+`ChildTemplate`) — there is no mechanism to vary its metadata per
+materialized instance without changing what `lower()` itself returns,
+which would break the pinned `datatable_lowered.json` golden (a
+cross-task, spec-wide constraint, spec ll.111-114: "No changes to any
+catalog `lower()` method ... except ... `FilterBar`"). Flagging this for
+spec/task-writer awareness rather than inventing a lower()-touching
+mechanism unilaterally.

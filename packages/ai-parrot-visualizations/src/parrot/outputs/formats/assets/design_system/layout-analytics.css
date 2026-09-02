@@ -1,0 +1,60 @@
+/* ─────────────────────────────────────────────
+ * Design system — layout-analytics.css (FEAT-493)
+ * The dense dashboard aesthetic — the new default for
+ * interactive-html / ssr-html / infographic_html.
+ * Scoped under [data-layout="analytics"] so it only ever touches an
+ * element carrying that layout, even if a caller concatenates more than
+ * one layout sheet by mistake.
+ * ───────────────────────────────────────────── */
+
+.ds-page[data-layout="analytics"] {
+    /* Wide content width — the dense dashboard reference artifact uses
+     * 1400px; this deliberately widens beyond the theme's own
+     * content_width token, since layout (density/structure) is
+     * orthogonal to theme (palette). */
+    --content-width: 1400px;
+}
+
+/* Flat panels: no drop shadow, a crisp 1px border carries the surface. */
+.ds-page[data-layout="analytics"] .a2ui-card,
+.ds-page[data-layout="analytics"] .panel,
+.ds-page[data-layout="analytics"] .report-card,
+.ds-page[data-layout="analytics"] .kpi-card {
+    box-shadow: none;
+}
+
+/* Solid sticky table headers. */
+.ds-page[data-layout="analytics"] thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+/* Numeric columns get tabular alignment (base.css already sets the font
+ * feature; this reinforces right-alignment in the dense layout). */
+.ds-page[data-layout="analytics"] table .num {
+    font-variant-numeric: tabular-nums;
+}
+
+/* KPI hero row: a slightly denser grid than the shared default. */
+.ds-page[data-layout="analytics"] .kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+@media (max-width: 1100px) {
+    .ds-page[data-layout="analytics"] .kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .ds-page[data-layout="analytics"] {
+        padding: 0.75rem;
+    }
+    .ds-page[data-layout="analytics"] .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ds-page[data-layout="analytics"] .kpi-value {
+        font-size: 1.15rem;
+    }
+}

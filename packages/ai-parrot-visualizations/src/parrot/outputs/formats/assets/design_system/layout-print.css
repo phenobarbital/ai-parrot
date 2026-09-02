@@ -1,0 +1,84 @@
+/* ─────────────────────────────────────────────
+ * Design system — layout-print.css (FEAT-493)
+ * Forced unconditionally by PDFRenderer (TASK-2713, pdf.py's __init__ —
+ * no constructor kwarg can override it into a screen layout).
+ *
+ * Every construct below is now a VERIFIED choice against the pinned
+ * WeasyPrint 69.0, not an assumption — see docs/weasyprint-css-support.md
+ * for the full empirical findings (probe documents + captured WeasyPrint
+ * CSS-validation warnings + a cross-check of the installed
+ * weasyprint/css/validation/properties.py and weasyprint/layout/grid.py):
+ *   - `box-shadow` is NOT implemented at all in WeasyPrint 69.0 (zero
+ *     occurrences of "shadow" anywhere in the installed package) — the
+ *     `box-shadow: none` / `--shadow: none` below are inert for WeasyPrint
+ *     itself but kept as explicit intent (harmless if this HTML is ever
+ *     opened directly in a real browser, or WeasyPrint later implements it).
+ *   - the responsive grid-track sizing function screen surfaces use for
+ *     their KPI grid (see `layout-analytics.css`) is UNSUPPORTED here —
+ *     WeasyPrint silently substitutes a repeat count of 1, COLLAPSING a
+ *     responsive grid to a single stacked column (a real regression, not a
+ *     harmless no-op) — hence the fixed `repeat(4, 1fr)` / `repeat(2, 1fr)`
+ *     column counts below. A plain, fixed-count track-sizing function DOES
+ *     work fine. (Exact CSS syntax intentionally not spelled out in THIS
+ *     file — see docs/weasyprint-css-support.md — this stylesheet's own
+ *     text is asset-tested for the absence of those exact tokens.)
+ *   - `position: sticky` is REJECTED outright (not a partial/degraded
+ *     implementation — `sticky` isn't in the `position` property's accepted
+ *     value set at all) — irrelevant here anyway, since print's correct
+ *     repeating-header idiom is `thead { display: table-header-group }`,
+ *     used below, not sticky positioning.
+ *   - `break-inside: avoid` (cards/panels/table rows) and `@page` (size,
+ *     margin) both work as expected — WeasyPrint's core competency.
+ * ───────────────────────────────────────────── */
+
+@page {
+    size: A4;
+    margin: 16mm 14mm;
+}
+
+.ds-page[data-layout="print"] {
+    --shadow: none;
+    padding: 0;
+}
+
+/* No drop shadows anywhere in print. */
+.ds-page[data-layout="print"] .a2ui-card,
+.ds-page[data-layout="print"] .panel,
+.ds-page[data-layout="print"] .report-card,
+.ds-page[data-layout="print"] .kpi-card {
+    box-shadow: none;
+    border: 1px solid var(--panel-border);
+    break-inside: avoid;
+}
+
+/* Fixed column counts — never a responsive grid function on a paginated medium. */
+.ds-page[data-layout="print"] .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .ds-page[data-layout="print"] .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Table rows must not split across a page break. */
+.ds-page[data-layout="print"] table {
+    break-inside: auto;
+}
+.ds-page[data-layout="print"] tbody tr {
+    break-inside: avoid;
+}
+.ds-page[data-layout="print"] thead {
+    display: table-header-group;
+}
+
+/* Sections avoid splitting where practical. */
+.ds-page[data-layout="print"] .panel,
+.ds-page[data-layout="print"] .report-card,
+.ds-page[data-layout="print"] .timeline-block,
+.ds-page[data-layout="print"] .progress-block {
+    break-inside: avoid;
+}

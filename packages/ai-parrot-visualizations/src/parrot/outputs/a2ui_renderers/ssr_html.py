@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import html
 import logging
-from typing import Any, Optional
+from typing import Any
 
 # Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
 # registered so lowering/dispatch can resolve every component name.
@@ -53,30 +53,22 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
+from parrot.outputs.formats.assets.design_system import DesignSystem
+
+from ._semantics import (
+    is_kpi_row,
+    kpi_unit_html,
+    node_extensions,
+    semantic_card_class,
+    semantic_text_class,
+    trend_attr_html,
+)
+from ._shell import document_shell
+from ._table_format import format_cell, is_numeric_column
 
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "ssr_html"
-
-_STYLE = (
-    "body{font-family:sans-serif;margin:1rem;color:#1a1a1a}"
-    ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
-    ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
-    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
-    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
-    ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
-    ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-notice{color:#a00}"
-    ".a2ui-deeplink{display:inline-block;margin:.25rem 0}"
-    ".a2ui-tabs{border:1px solid #ddd;border-radius:6px;margin:.5rem 0}"
-    ".a2ui-tab{border-top:1px solid #eee;padding:.5rem}"
-    ".a2ui-tab-title{font-weight:600;margin-bottom:.25rem}"
-    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
-    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
-    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
-    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
-    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
-    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
-)
 
 #: Basic Catalog composite/container primitives whose children render
 #: recursively (the CSS class used for the wrapping ``<div>``).
@@ -125,12 +117,35 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     #: weasyprint cannot play media in a rasterized PDF).
     _UNSUPPORTED: frozenset[str] = frozenset()
 
+    def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
+        """Initialize the renderer with a default ``(theme, layout)`` pair.
+
+        Args:
+            theme: Default theme name resolved by
+                :class:`~parrot.outputs.formats.assets.design_system.DesignSystem`.
+            layout: Default layout name.
+
+        Both keyword arguments MUST default — ``RecipeRunner`` calls
+        ``renderer_cls()`` with no arguments (``runner.py``), and
+        :class:`~parrot.outputs.a2ui_renderers.pdf.PDFRenderer` subclasses
+        this renderer without its own ``__init__``, so it inherits these
+        same defaults.
+        """
+        self.theme = theme
+        self.layout = layout
+        #: ``id(cell_node) -> (col_type, col_format)`` for every materialized
+        #: DataTable cell Text node, populated fresh by :meth:`render` each
+        #: call (TASK-2711) — see :meth:`_collect_table_columns` for why this
+        #: is re-derived from the original envelope rather than read off the
+        #: lowered node's own metadata.
+        self._table_cell_columns: dict[int, tuple[str | None, str | None]] = {}
+
     async def render(
         self,
         envelope: CreateSurface,
         *,
         bake: bool = True,
-        deep_links: Optional[list[DeepLink]] = None,
+        deep_links: list[DeepLink] | None = None,
     ) -> RenderedArtifact:
         """Render an envelope to a baked, self-contained HTML ``RenderedArtifact``.
 
@@ -145,6 +160,14 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             component this renderer degraded is recorded in
             ``metadata["degraded"]``.
         """
+        # Column type/format lives on the ORIGINAL (not-yet-lowered)
+        # DataTable component — DataTableComponent.lower()'s row template is
+        # a single BasicNode materialized once per data-model row, with no
+        # room to carry per-column type/format without changing lower()'s
+        # own pinned output (breaking `datatable_lowered.json`). Capture it
+        # here so cell rendering can re-derive it later (TASK-2711).
+        table_columns_by_id = self._collect_table_columns(envelope)
+
         # Lower every composite BEFORE baking — a composite (e.g. DataTable)
         # may lower to a row `ChildTemplate`, and template/binding expansion
         # is exclusively `bake_envelope`'s job, which must see the fully
@@ -154,10 +177,13 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         baked_components = bake_envelope(lowered_envelope)
         by_id = {bc["id"]: bc for bc in baked_components}
 
+        self._table_cell_columns = {}
         degradations: list[dict[str, Any]] = []
         body_parts: list[str] = []
         if "root" in by_id:
             root = self._reconstruct(by_id["root"]["id"], by_id)
+            if table_columns_by_id:
+                self._index_datatable_cells(root, table_columns_by_id)
             body_parts.append(self._render_basic(root, degradations))
 
         for link in deep_links or []:
@@ -166,12 +192,14 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 f"{html.escape(link.action_label)}</a>"
             )
 
-        document = (
-            "<!DOCTYPE html>"
-            '<html lang="en"><head><meta charset="utf-8">'
-            f"<title>{html.escape(envelope.surface_id)}</title>"
-            f"<style>{_STYLE}</style></head>"
-            f'<body>{"".join(body_parts)}</body></html>'
+        theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
+        style = DesignSystem.stylesheet(theme, layout)
+        document = document_shell(
+            title=envelope.surface_id,
+            style=style,
+            body="".join(body_parts),
+            theme=theme,
+            layout=layout,
         )
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
@@ -210,6 +238,72 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 new_components.append(comp)
         return envelope.model_copy(update={"components": new_components})
 
+    # -- DataTable column type/format re-derivation (TASK-2711) -------------
+    # DataTableComponent.lower() cannot carry per-column type/format on its
+    # materialized row cells without changing its own pinned lowering
+    # output (breaking `datatable_lowered.json`) — so these helpers
+    # independently re-derive the column contract from the ORIGINAL,
+    # not-yet-lowered envelope and match it back onto the lowered/baked
+    # tree via the `parrot_component_id` extension `lower()` already
+    # stamps on the table's Card.
+
+    @staticmethod
+    def _collect_table_columns(envelope: CreateSurface) -> dict[str, list[dict[str, Any]]]:
+        """DataTable component id -> its declared ``columns``, envelope-wide.
+
+        ``envelope.components`` is a FLAT adjacency list (every component,
+        nested or not, is a top-level entry referenced by id) — so a single
+        pass over it finds every ``DataTable``, regardless of nesting depth.
+        """
+        columns_by_id: dict[str, list[dict[str, Any]]] = {}
+        for comp in envelope.components:
+            if comp.component == "DataTable":
+                props = comp.model_extra or {}
+                columns = props.get("columns")
+                if isinstance(columns, list):
+                    columns_by_id[comp.id] = [c for c in columns if isinstance(c, dict)]
+        return columns_by_id
+
+    def _index_datatable_cells(self, node: BasicNode, columns_by_id: dict[str, list[dict[str, Any]]]) -> None:
+        """Walk a reconstructed tree, populating ``self._table_cell_columns``.
+
+        A ``Card`` carrying ``parrot_component_id`` is a lowered DataTable —
+        descend into it and record each materialized row's cells.
+        """
+        table_id = node_extensions(node).get("parrot_component_id") if node.component == "Card" else None
+        columns = columns_by_id.get(table_id) if table_id else None
+        if columns:
+            self._index_table_rows(node, columns)
+        for child in self._children_of(node):
+            self._index_datatable_cells(child, columns_by_id)
+
+    def _index_table_rows(self, node: BasicNode, columns: list[dict[str, Any]]) -> None:
+        """Record ``id(cell) -> (type, format)`` for every cell of every
+        materialized ``parrot_role: "row"`` Row under ``node``, matching
+        column contracts to cells POSITIONALLY (the row template emits
+        exactly one cell per declared column, in declared order)."""
+        if node.component == "Row" and node_extensions(node).get("parrot_role") == "row":
+            cells = node.children if isinstance(node.children, list) else []
+            for col, cell in zip(columns, cells):
+                if isinstance(cell, BasicNode):
+                    self._table_cell_columns[id(cell)] = (col.get("type"), col.get("format"))
+        for child in self._children_of(node):
+            self._index_table_rows(child, columns)
+
+    @staticmethod
+    def _children_of(node: BasicNode) -> list[BasicNode]:
+        """Every immediate ``BasicNode`` child of ``node`` (``child``, list
+        ``children``, and ``tabs[].child``), for tree-walking purposes."""
+        kids: list[BasicNode] = []
+        if isinstance(node.child, BasicNode):
+            kids.append(node.child)
+        if isinstance(node.children, list):
+            kids.extend(c for c in node.children if isinstance(c, BasicNode))
+        for tab in node.tabs or []:
+            if isinstance(tab.child, BasicNode):
+                kids.append(tab.child)
+        return kids
+
     # -- tree reconstruction -------------------------------------------------
 
     def _reconstruct(self, node_id: str, by_id: dict[str, dict[str, Any]]) -> BasicNode:
@@ -227,7 +321,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         children_ids = data.pop("children", None)
         metadata = data.pop("metadata", None)
 
-        tabs: Optional[list[TabSpec]] = None
+        tabs: list[TabSpec] | None = None
         if "tabs" in data:
             tabs = [
                 TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")
@@ -280,7 +374,30 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
         cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
-        return f'<p class="{cls}">{_esc(props.get("text"))}</p>'
+        semantic_cls = semantic_text_class(node)
+        if semantic_cls:
+            cls = f"{cls} {semantic_cls}"
+        extra = kpi_unit_html(node) if role == "value" else ""
+        attrs = trend_attr_html(node) if role == "delta" else ""
+
+        raw_value = props.get("text")
+        col = self._table_cell_columns.get(id(node)) if role == "cell" else None
+        if col is not None:
+            col_type, col_format = col
+            # Additive, matching the TASK-2710 convention: "a2ui-cell" is
+            # never replaced, only appended to — a table with no `type`
+            # declared per column renders byte-identical to before this
+            # task (`format_cell` degrades to `str(value)`/"" exactly like
+            # the previous `_esc(raw_value)`).
+            if is_numeric_column(col_type):
+                cls = f"{cls} num"
+                raw_attr = html.escape("" if raw_value is None else str(raw_value), quote=True)
+                attrs += f' data-v="{raw_attr}"'
+            display = html.escape(format_cell(raw_value, col_type=col_type, col_format=col_format))
+        else:
+            display = _esc(raw_value)
+
+        return f'<p class="{cls}"{attrs}>{display}{extra}</p>'
 
     def _render_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -317,10 +434,65 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     # -- layout/containers --------------------------------------------------
 
     def _render_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
-        return f'<div class="a2ui-row">{self._render_children(node, degradations)}</div>'
+        if node_extensions(node).get("parrot_variant") == "filter-bar":
+            return self._render_filterbar_summary(node, degradations)
+        cls = "a2ui-row kpi-grid" if is_kpi_row(node) else "a2ui-row"
+        return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
+
+    def _render_filterbar_summary(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        """Degrade a ``FilterBar`` (``parrot_variant: "filter-bar"`` Row) to a
+        static summary line — never a ``<select>``/dropdown a reader could
+        click and that would do nothing on a JS-less surface (this renderer,
+        and :class:`~parrot.outputs.a2ui_renderers.pdf.PDFRenderer`, which
+        inherits this dispatch wholesale). Names EVERY declared filter,
+        using "all" for one with no currently-selected value — a summary
+        that omitted unset filters would read as though they were applied.
+        """
+        parts: list[str] = []
+        children = node.children if isinstance(node.children, list) else []
+        for child in children:
+            if not isinstance(child, BasicNode):
+                continue
+            props = child.model_extra or {}
+            label = props.get("label") or node_extensions(child).get("parrot_filter_column", "")
+            value = props.get("value")
+            options = props.get("options") or []
+            if isinstance(value, list) and value:
+                labels_by_value = {
+                    o.get("value"): o.get("label", o.get("value")) for o in options if isinstance(o, dict)
+                }
+                display = ", ".join(str(labels_by_value.get(v, v)) for v in value)
+            else:
+                display = "all"
+            parts.append(f"{_esc(label)} = {_esc(display)}")
+        degradations.append(
+            degradation_record(
+                node, f"{_SURFACE_NAME} renders FilterBar as a static summary (no client-side filtering)"
+            )
+        )
+        summary = "Filters: " + "; ".join(parts)
+        return f'<p class="a2ui-text a2ui-filter-summary">{summary}</p>'
 
     def _render_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
-        return f'<div class="a2ui-col">{self._render_children(node, degradations)}</div>'
+        inner = self._render_children(node, degradations)
+        inner += self._table_truncation_notice(node)
+        return f'<div class="a2ui-col">{inner}</div>'
+
+    @staticmethod
+    def _table_truncation_notice(node: BasicNode) -> str:
+        """The "showing N of M rows" notice for a DataTable's materialized
+        row Column (``parrot_role: "rows"``), or ``""`` when the table is
+        not truncated. ``parrot_total_rows``/``parrot_truncated`` are
+        already stamped on this Column's OWN metadata by
+        ``DataTableComponent.lower()`` — no extra lookup needed."""
+        ext = node_extensions(node)
+        if ext.get("parrot_role") != "rows" or not ext.get("parrot_truncated"):
+            return ""
+        total = ext.get("parrot_total_rows")
+        if total is None:
+            return ""
+        shown = len(node.children) if isinstance(node.children, list) else 0
+        return f'<p class="a2ui-table-notice">showing {shown} of {_esc(total)} rows</p>'
 
     def _render_List(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -330,7 +502,11 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
 
     def _render_Card(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         inner = self._render_basic(node.child, degradations) if node.child is not None else ""
-        return f'<div class="a2ui-card">{inner}</div>'
+        cls = "a2ui-card"
+        variant_cls = semantic_card_class(node)
+        if variant_cls:
+            cls = f"{cls} {variant_cls}"
+        return f'<div class="{cls}">{inner}</div>'
 
     def _render_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         panes = []

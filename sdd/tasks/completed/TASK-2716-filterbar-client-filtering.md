@@ -232,12 +232,34 @@ completion note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: The bulk of the FilterBar interactive multiselect + filtering
+runtime was already implemented (uncommitted) in the worktree when this
+session resumed FEAT-493; this session verified it against the Codebase
+Contract and the FilterBar catalog component (`catalog/parrot/filterbar.py`,
+TASK-2715), wrote the missing test module
+(`test_filterbar_interactive.py`), and fixed one regression it caused: the
+runtime's empty-result notice literally embedded the string
+`"a2ui-table-notice"` (TASK-2711's truncation-notice class) inside
+`_BEHAVIOR_JS`, which is inlined into every rendered page — that broke
+`test_rich_datatable.py::test_no_truncation_notice_when_not_truncated`,
+which asserts that class's *absence* means "not truncated". Fixed by giving
+the empty-result notice its own class (`a2ui-filter-empty` only, no shared
+class), since neither class carries any CSS styling today.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Manual verification performed**: Read-through of the full markup +
+`_BEHAVIOR_JS` diff against the task's Codebase Contract and Implementation
+Notes; confirmed `node_extensions`, `_esc`, `buildDatasets`, `data-table`/
+`data-chart`/`data-chart-config` hook names, and the FilterBar → Row →
+ChoicePicker lowering shape (`parrot_role`/`parrot_filter_column`) all match
+existing code exactly. No browser/Chart.js manual run performed (out of
+scope for this environment) — coverage is via markup/hook-presence
+assertions per the task's own Test Specification.
 
-**Manual verification performed**:
+**Deviations from spec**: none. (One in-scope bugfix, described above, to
+the file this task already modifies — not a scope change.)
 
-**Deviations from spec**: none | describe if any
+**Test results**: `pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/ -v`
+→ 150 passed. Full `ai-parrot-visualizations` suite → 217 passed.
+`ruff check` on both changed files → all checks passed.
