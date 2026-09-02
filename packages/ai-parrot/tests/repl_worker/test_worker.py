@@ -28,6 +28,7 @@ from parrot.tools.repl_worker.protocol import (
     ListNsResponse,
     PingRequest,
     PongResponse,
+    ReadyResponse,
     WorkerConfig,
     read_frame,
     write_frame,
@@ -115,6 +116,12 @@ class SpawnedWorker:
 
     def recv(self):
         return read_frame(self._from_worker)
+
+    def recv_ready(self) -> ReadyResponse:
+        """Consume the worker's FEAT-500 readiness frame (always the first one)."""
+        frame = self.recv()
+        assert isinstance(frame, ReadyResponse), f"expected ReadyResponse first, got {frame!r}"
+        return frame
 
     def close(self) -> None:
         self._to_worker.close()
@@ -222,6 +229,23 @@ class TestWorkerNamespaceGate:
 
 
 class TestWorkerSubprocess:
+    def test_worker_first_frame_is_ready(self, real_worker_config, tmp_path):
+        """FEAT-500 AC1 (worker half): readiness is announced as the first frame.
+
+        The frame is only written after ``WorkerNamespace`` is fully
+        constructed, and writing it does not disturb the service loop.
+        """
+        worker = _spawn_worker(real_worker_config, str(tmp_path))
+        try:
+            first = worker.recv()
+            assert isinstance(first, ReadyResponse)
+            assert first.pid == worker.proc.pid
+            assert first.bootstrap_ms >= 0
+            worker.send(PingRequest())
+            assert isinstance(worker.recv(), PongResponse)
+        finally:
+            worker.close()
+
     def test_bootstrap_per_worker(self, real_worker_config, tmp_path):
         """Two independently-spawned workers each bootstrap their own environment.
 
@@ -238,6 +262,7 @@ class TestWorkerSubprocess:
                 workers.append(_spawn_worker(real_worker_config, str(out_dir)))
 
             for worker in workers:
+                worker.recv_ready()  # FEAT-500: readiness frame precedes any reply
                 worker.send(ListNsRequest())
                 response = worker.recv()
                 assert isinstance(response, ListNsResponse)
@@ -250,6 +275,7 @@ class TestWorkerSubprocess:
     def test_ping_pong_over_real_subprocess(self, real_worker_config, tmp_path):
         worker = _spawn_worker(real_worker_config, str(tmp_path))
         try:
+            worker.recv_ready()  # FEAT-500: readiness frame precedes any reply
             worker.send(PingRequest())
             response = worker.recv()
             assert isinstance(response, PongResponse)
@@ -259,6 +285,7 @@ class TestWorkerSubprocess:
     def test_exec_over_real_subprocess(self, real_worker_config, tmp_path):
         worker = _spawn_worker(real_worker_config, str(tmp_path))
         try:
+            worker.recv_ready()  # FEAT-500: readiness frame precedes any reply
             worker.send(ExecRequest(code="x = 21 * 2\nresult = x", deadline_ms=2000))
             response = worker.recv()
             assert isinstance(response, ExecResult)
