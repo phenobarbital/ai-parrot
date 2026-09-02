@@ -132,7 +132,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Touches llm.py + its four subclass files only. Parallel with the rest of the wave.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2728-llm-family-payload-parity.md"
+      "completed_at": "2026-09-02T02:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2728-llm-family-payload-parity.md"
     },
     {
       "id": "TASK-2729",
