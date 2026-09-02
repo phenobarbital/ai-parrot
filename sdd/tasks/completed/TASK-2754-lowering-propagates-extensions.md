@@ -244,10 +244,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_016V1ED31jAfAKt2u9qoKZXx)
+**Date**: 2026-09-02
+**Notes**: Added a `_propagate_extensions(parent, lowered)` helper to both
+`InteractiveHTMLRenderer._lower_composites` and `SSRHTMLRenderer._lower_composites`
+(duplicated identically in each file per the one-way import rule — no shared
+core module added, since none was listed in this task's Files to
+Create/Modify). `to_components(tree, ...)` already returns the FULLY
+FLATTENED descendant list, so a single pass over it reaches grandchildren
+too, not just direct children. Child's own extension key wins on collision.
+`PDFRenderer` inherits the fix via `SSRHTMLRenderer`, verified directly
+(weasyprint available in this env). 15/15 new unit tests pass
+(`test_lowering_optional_propagation.py`), including the Report-profile
+regression test that TASK-2753 alone cannot fix. Full
+`packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/` (153
+passed) and `packages/ai-parrot/tests/outputs/a2ui/` +
+`tests/tools/infographic_recipes/` (677 passed, 1 skipped) show no
+regressions. `ruff check` clean (one auto-fixed import-sort nit in the new
+test file).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
