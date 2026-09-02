@@ -50,6 +50,11 @@ PERMISSION_RULES: tuple[str, ...] = (
     "Bash(parrot wiki:*)",
     "Bash(source .venv/bin/activate && wikitoolkit:*)",
     "Bash(source .venv/bin/activate && parrot wiki:*)",
+    # FEAT-498: structural-plane MCP tools (read-only, same trust level
+    # as the other wikitoolkit MCP tools).
+    "mcp__wikitoolkit__wiki_symbol_lookup",
+    "mcp__wikitoolkit__wiki_code_outline",
+    "mcp__wikitoolkit__wiki_blast_radius",
 )
 
 #: Filename of the slash command (under .claude/commands/).

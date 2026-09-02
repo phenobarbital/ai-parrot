@@ -85,6 +85,11 @@ def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
     )
 
 
+#: search_fts() over-fetch multiplier for wiki_query (FEAT-498): 3x
+#: search_fts's own default limit (10), so filtering out sym: stubs by
+#: default still leaves a full page of non-symbol results.
+_QUERY_FETCH_LIMIT = 30
+
 #: Shared description of the optional ``namespace`` argument (FEAT-450).
 _NAMESPACE_DESC = (
     "Federated namespace to read: a namespace name, 'all' to broadcast, "
@@ -97,6 +102,15 @@ class WikiQueryInput(BaseModel):
     question: str = Field(..., description="Search question for the knowledge graph")
     budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, description="Token budget for results")
     namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
+    include_symbols: bool = Field(
+        default=False,
+        description=(
+            "Include sym: (function/class/method) stubs in results "
+            "(FEAT-498). Off by default — use wiki_symbol_lookup for "
+            "symbol-specific search; set True to see symbols mixed in "
+            "with files/concepts here."
+        ),
+    )
 
 
 class WikiPageInput(BaseModel):
@@ -177,12 +191,19 @@ class WikiQueryTool(AbstractTool):
         question: str,
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         namespace: str | None = None,
+        include_symbols: bool = False,
     ) -> str:
         try:
             store = _scoped_store(self._store, namespace)
         except KeyError:
             return _unknown_namespace_error(self._store, str(namespace))
-        results = await store.search_fts(question)
+        # FEAT-498: sym: pages share the pages_fts index, so a plain
+        # search_fts() would mix them into every wiki_query result.
+        # Over-fetch (limit*3) to compensate for the ones dropped, so a
+        # question with few non-symbol hits doesn't come back thin.
+        results = await store.search_fts(question, limit=_QUERY_FETCH_LIMIT)
+        if not include_symbols:
+            results = [r for r in results if r.get("category") != "symbol"]
         packed = pack_results(results, budget_tokens=budget_tokens)
         return packed.text
 

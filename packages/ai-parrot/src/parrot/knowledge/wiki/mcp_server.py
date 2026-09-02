@@ -148,6 +148,13 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
     tools = create_wiki_tools(read_store, root=root, config=config)
 
+    # FEAT-498: symbol-plane tools (wiki_symbol_lookup, wiki_code_outline,
+    # wiki_blast_radius) share the same read_store, so they honour the
+    # same federated namespaces as the six tools above.
+    from parrot.knowledge.wiki.structural import create_structural_tools
+
+    tools = tools + create_structural_tools(read_store, root, config)
+
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register
     # the full ObsidianToolkit plus the wiki-side vault_ingest tool.
@@ -157,7 +164,10 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # above. Destructive obsidian_* tools carry
     # routing_meta["requires_confirmation"], which MCPToolAdapter turns
     # into a required `confirm` argument (soft HITL guard over stdio).
-    description = "Codebase knowledge graph — query, explore, and remember"
+    description = (
+        "Codebase knowledge graph — query, explore, remember, and look up "
+        "symbols (functions/classes/methods), outlines, and blast radius"
+    )
     if handles:
         names = ", ".join(sorted(h.name for h in handles))
         description += f" — federating {len(handles)} namespace(s): {names}"

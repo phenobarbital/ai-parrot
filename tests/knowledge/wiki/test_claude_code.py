@@ -51,6 +51,18 @@ def _built_repo(repo: Path) -> Path:
     return repo
 
 
+class TestStructuralPermissionRules:
+    """FEAT-498: the three structural-plane MCP tool names are allow-listed."""
+
+    def test_structural_tool_names_present(self):
+        for name in (
+            "mcp__wikitoolkit__wiki_symbol_lookup",
+            "mcp__wikitoolkit__wiki_code_outline",
+            "mcp__wikitoolkit__wiki_blast_radius",
+        ):
+            assert name in assets.PERMISSION_RULES
+
+
 class TestInstaller:
     def test_fresh_install_writes_all_artifacts(self, repo):
         actions = install_claude_integration(repo)
