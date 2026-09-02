@@ -3404,10 +3404,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Handle structured output
         final_output = None
-        if (structured_output_for_later or output_config) and assistant_response_text:
+        if structured_output_for_later or output_config:
             # A MAX_TOKENS response is known-truncated: fail here, before the
             # fast-path/reformat/combined-mode parsers below can leak the
             # truncated text as a plain string or "reformat" a partial answer.
+            # Deliberately NOT gated on non-empty text: a reasoning model can
+            # burn the whole output budget on thinking and return MAX_TOKENS
+            # with no text at all, which must not parse as "".
             self._raise_if_truncated(self._extract_finish_reason(final_response), model=model)
         if structured_output_for_later and use_tools and assistant_response_text:
             try:
@@ -3563,6 +3566,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     )
                 else:
                     final_output = parsed
+            except InvokeError:
+                # A truncated reformat response is a real error, not a fallback case.
+                raise
             except Exception as e:
                 self.logger.warning(
                     "Combined-mode parse raised %s — falling back to reformat call.",
@@ -3575,6 +3581,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
+                except InvokeError:
+                    raise
                 except Exception as reformat_err:
                     self.logger.error("Recovery reformat also failed: %s", reformat_err)
                     final_output = assistant_response_text

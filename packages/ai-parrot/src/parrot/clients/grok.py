@@ -761,6 +761,9 @@ class GrokClient(AbstractClient):
             output: Any
             if use_sdk_parse and config:
                 response, parsed = await chat.parse(config.output_type)
+                # The SDK may have parsed a truncated payload (or raised a
+                # generic error on it): attribute the failure to truncation.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 output = parsed
             else:
                 response = await chat.sample()
@@ -773,11 +776,11 @@ class GrokClient(AbstractClient):
                         output = config.custom_parser(raw_text)
                     else:
                         output = await self._parse_structured_output(
-                        raw_text,
-                        config,
-                        finish_reason=self._extract_finish_reason(response),
-                        model=resolved_model,
-                    )
+                            raw_text,
+                            config,
+                            finish_reason=self._extract_finish_reason(response),
+                            model=resolved_model,
+                        )
 
             usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
             return self._build_invoke_result(

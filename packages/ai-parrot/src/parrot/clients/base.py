@@ -2020,11 +2020,37 @@ $backstory
     async def _handle_structured_output(
         self,
         result: Dict[str, Any],
-        structured_output: Optional[type]
+        structured_output: Optional[type],
+        *,
+        finish_reason: Any = None,
+        model: Optional[str] = None,
     ) -> Any:
-        """Parse response into structured output format."""
+        """Parse a Chat-style ``result`` dict into ``structured_output``.
+
+        Legacy helper used by the local backends (HuggingFace, Gemma4). Like
+        :meth:`_parse_structured_output` it falls back to returning the input
+        unchanged when parsing fails, so the truncation guard runs first.
+
+        Args:
+            result: Chat-style response dict with a ``content`` block list.
+            structured_output: Target type, or ``None`` to skip parsing.
+            finish_reason: Provider finish/stop reason for this response;
+                truncation raises :class:`TruncatedResponseError` before parsing.
+                Defaults to ``result["stop_reason"]`` when present.
+            model: Model identifier, used only to enrich the truncation error.
+
+        Returns:
+            Parsed object, or ``result`` when parsing is skipped or fails.
+
+        Raises:
+            TruncatedResponseError: If the finish reason denotes truncation.
+        """
         if not structured_output:
             return result
+
+        if finish_reason is None and isinstance(result, dict):
+            finish_reason = result.get("stop_reason") or result.get("finish_reason")
+        self._raise_if_truncated(finish_reason, model=model)
 
         text_content = "".join(
             content_block["text"]

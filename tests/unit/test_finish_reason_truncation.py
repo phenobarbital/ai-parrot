@@ -188,6 +188,33 @@ class TestParseStructuredOutputGuard:
 
 
 # --------------------------------------------------------------------------- #
+# _handle_structured_output (legacy helper used by local backends)
+# --------------------------------------------------------------------------- #
+class TestHandleStructuredOutputGuard:
+    async def test_truncated_raises_before_parsing(self, client):
+        result = {"content": [{"type": "text", "text": '{"value": "ab'}]}
+        with pytest.raises(TruncatedResponseError):
+            await client._handle_structured_output(result, Payload, finish_reason="max_tokens")
+
+    async def test_stop_reason_in_result_dict_is_honoured(self, client):
+        result = {
+            "content": [{"type": "text", "text": '{"value": "ab'}],
+            "stop_reason": "max_tokens",
+        }
+        with pytest.raises(TruncatedResponseError):
+            await client._handle_structured_output(result, Payload)
+
+    async def test_no_signal_keeps_legacy_fallback(self, client):
+        result = {"content": [{"type": "text", "text": '{"value": "ab'}]}
+        assert await client._handle_structured_output(result, Payload) is result
+
+    async def test_parses_when_complete(self, client):
+        result = {"content": [{"type": "text", "text": '{"value": "ab"}'}]}
+        parsed = await client._handle_structured_output(result, Payload, finish_reason="stop")
+        assert isinstance(parsed, Payload)
+
+
+# --------------------------------------------------------------------------- #
 # _handle_invoke_error — never double-wrap
 # --------------------------------------------------------------------------- #
 class TestHandleInvokeErrorPassthrough:
