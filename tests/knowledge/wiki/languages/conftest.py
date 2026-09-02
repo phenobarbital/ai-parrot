@@ -108,7 +108,13 @@ def polyglot_repo(tmp_path: Path) -> Path:
     _write(
         tmp_path, "src/app.py",
         '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
-        '    """Run the app."""\n',
+        '    """Run the app."""\n\n\n'
+        # FEAT-498 TASK-2752: a Python symbol every e2e assertion can
+        # anchor on (`sym:src/app.py#helper`) without depending on the
+        # entrypoint's own name.
+        "def helper() -> int:\n"
+        '    """A tiny helper."""\n'
+        "    return 1\n",
     )
     _write(
         tmp_path, "src/Service.php",
@@ -150,5 +156,16 @@ def polyglot_repo(tmp_path: Path) -> Path:
         tmp_path, "lib/MyApp/User.pm",
         "package MyApp::User;\nuse MyApp::Schema;\n\n"
         "sub new {\n    my ($class) = @_;\n    return bless {}, $class;\n}\n1;\n",
+    )
+    # FEAT-498 TASK-2752: a Svelte file alongside everything else, so the
+    # e2e suite's polyglot build covers every language `all_scanners()`
+    # registers, not just the deep-scanned five. Routed through the JS/TS
+    # scanner (FEAT-396) — an isolated file, no cross-language edges.
+    _write(
+        tmp_path, "src/lib/Widget.svelte",
+        '<script lang="ts">\n'
+        "  export function render(): string { return 'x' }\n"
+        "</script>\n"
+        "<div>hi</div>\n",
     )
     return tmp_path
