@@ -56,6 +56,7 @@ Slack public-URL lookup), not re-invented as a separate persist call.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from typing import Any, Optional
@@ -632,7 +633,19 @@ class RecipeRunner:
         # Unknown/uninstalled renderer -> let ImportError propagate UNCHANGED
         # (acceptance criterion: "degrades with the existing actionable ImportError").
         renderer_cls = get_a2ui_renderer(recipe.render.profile)
-        renderer = renderer_cls()
+        # Detect support rather than assume it (FEAT-493 TASK-2714): not every
+        # registered renderer is an HTML one (echarts/folium-map/adaptive-cards
+        # have their own constructors) — pass only the (theme, layout) kwargs
+        # the callee's own constructor actually declares, so a renderer that
+        # cannot be themed keeps working exactly as before instead of raising
+        # a TypeError that would surface as a spurious stage="render" failure.
+        params = inspect.signature(renderer_cls).parameters
+        kwargs = {
+            name: value
+            for name, value in (("theme", recipe.render.theme), ("layout", recipe.render.layout))
+            if name in params and value is not None
+        }
+        renderer = renderer_cls(**kwargs)
         try:
             return await renderer.render(envelope)
         except Exception as exc:  # noqa: BLE001 - any renderer failure is stage="render"
