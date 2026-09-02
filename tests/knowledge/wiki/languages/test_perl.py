@@ -140,7 +140,13 @@ class TestHeuristic:
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("sub bar" in line for line in result.outline)
 
-    def test_moose_has(self, scanner: PerlScanner, moose_source: str, force_heuristic):
+    def test_moose_has(self, scanner: PerlScanner, moose_source: str, force_heuristic, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too — perl.yaml's
+        # ATTRIBUTE rule (TASK-2745) deliberately does not extract the
+        # `isa => 'Type'` suffix (finding the value tied to the specific
+        # key `isa`, as opposed to `is`, needs key/value pair matching
+        # beyond the seam's generic field/path primitives), so only the
+        # heuristic/tree-sitter tiers reproduce it.
         result = scanner.outline(moose_source, "lib/MyApp/Model/User.pm")
         assert any("has name" in line for line in result.outline)
         assert any("has email" in line for line in result.outline)
@@ -206,7 +212,11 @@ class TestHeuristic:
         assert "Foo::Bar" in result.imports
         assert "Baz::Qux" in result.imports
 
-    def test_sub_params_from_my_unpack(self, scanner: PerlScanner, force_heuristic):
+    def test_sub_params_from_my_unpack(self, scanner: PerlScanner, force_heuristic, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too — perl.yaml's
+        # `function` rule (TASK-2745) reads a real signature node only
+        # (matching perl.py's tree-sitter tier); the heuristic-only
+        # `my ($self, $x) = @_` unpack fallback is not reproduced.
         source = "sub bar {\n    my ($self, $x) = @_;\n    return $x;\n}\n"
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("$self" in line and "$x" in line for line in result.outline)
@@ -328,7 +338,9 @@ class TestSafety:
         result = scanner.outline(garbage, "binary.pl")
         assert isinstance(result, LanguageOutline)
 
-    def test_outline_failure_degrades_empty(self, scanner: PerlScanner, monkeypatch):
+    def test_outline_failure_degrades_empty(self, scanner: PerlScanner, monkeypatch, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too now that perl.yaml
+        # (TASK-2745) makes the ast-grep seam a real, working first tier.
         def _boom(source: str) -> tuple[str, list[str]]:
             raise RuntimeError("boom")
 

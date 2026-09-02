@@ -50,8 +50,8 @@ CASES = [
 #: Languages with a landed rule file (``languages/rules/<lang>.yaml``).
 #: TASK-2742 lands ``typescript.yaml`` (served under the ``javascript``
 #: scanner name); TASK-2743 lands ``php.yaml``; TASK-2744 lands
-#: ``rust.yaml``; TASK-2745 adds perl here as it lands.
-SERVED_BY_RULE = {"javascript", "php", "rust"}
+#: ``rust.yaml``; TASK-2745 lands ``perl.yaml``.
+SERVED_BY_RULE = {"javascript", "php", "rust", "perl"}
 
 
 #: Languages whose fallback comparison must be pinned to the regex
@@ -66,7 +66,14 @@ SERVED_BY_RULE = {"javascript", "php", "rust"}
 #: never been caught. Out of scope for this feature — not listed in any
 #: FEAT-498 task's files, and unrelated to the ast-grep seam — so the
 #: comparison is pinned here instead of "fixing" the walker.
-PIN_TO_HEURISTIC = {"rust"}
+#: TASK-2745: `perl.py`'s tree-sitter tier's doc lookup
+#: (`_leading_doc`, a plain `#` comment) is a completely different
+#: mechanism from its heuristic tier's (`_head2_docs`, POD `=head2`
+#: blocks) — a sub preceded by POD gets a doc under heuristic but not
+#: under tree-sitter. `perl.yaml`'s `pod_head2_or_leading_comment`
+#: reproduces the heuristic tier's (richer) behavior, so Perl is pinned
+#: here too rather than to whichever tier happens to be installed.
+PIN_TO_HEURISTIC = {"rust", "perl"}
 
 
 @pytest.mark.parametrize("lang,suffix,src", CASES, ids=[c[0] for c in CASES])

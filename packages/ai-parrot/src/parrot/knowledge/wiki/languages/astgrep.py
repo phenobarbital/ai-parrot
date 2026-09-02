@@ -25,6 +25,7 @@ from __future__ import annotations
 import functools
 import importlib.util
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -368,9 +369,16 @@ def first_heading_comment(node: SgNode) -> str:
 
 
 def pod_head2(node: SgNode) -> str:
-    """First non-empty line of a Perl ``=head2`` POD block preceding ``node``."""
-    pod = _first_comment_before(node)
-    if pod is None or "pod" not in pod.kind():
+    """First non-empty line of a Perl ``=head2`` POD block preceding ``node``.
+
+    TASK-2745: checks ``node.prev()`` directly for a ``"pod"``-kind node
+    — verified live against the dynamically-registered grammar that a
+    POD block's own kind is exactly ``"pod"``, which does NOT contain
+    the substring ``"comment"``, so :func:`_first_comment_before` (which
+    filters on that substring) can never find one.
+    """
+    pod = node.prev()
+    if pod is None or pod.kind() != "pod":
         return ""
     lines = pod.text().splitlines()
     for i, line in enumerate(lines):
@@ -431,6 +439,76 @@ def php_qualified_container(node: SgNode) -> str:
     return f"{namespace}\\{container_name}" if namespace else container_name
 
 
+def _pod_paragraph(pod_text: str, heading: str) -> str:
+    """First paragraph following ``=head1 <heading>`` inside ``pod_text``.
+
+    Mirrors ``perl.py``'s ``_pod_block`` regex logic, operating on an
+    already-extracted POD node's text instead of the full source.
+    """
+    match = re.search(rf"^=head1[ \t]+{heading}[ \t]*\n", pod_text, re.MULTILINE)
+    if match is None:
+        return ""
+    start = match.end()
+    next_command = re.search(r"^=\w", pod_text[start:], re.MULTILINE)
+    end = start + next_command.start() if next_command is not None else len(pod_text)
+    block = pod_text[start:end].strip()
+    if not block:
+        return ""
+    first_paragraph = block.split("\n\n", 1)[0].strip()
+    return " ".join(first_paragraph.split())
+
+
+def perl_pod_summary(root: SgNode) -> str:
+    """Module summary from the first top-level POD block (TASK-2745).
+
+    Mirrors ``perl.py``'s ``_pod_summary``: the first ``=head1 NAME``
+    paragraph, falling back to ``=head1 DESCRIPTION``.
+    """
+    for child in root.children():
+        if child.kind() == "pod":
+            return _pod_paragraph(child.text(), "NAME") or _pod_paragraph(child.text(), "DESCRIPTION")
+        if child.is_named():
+            break
+    return ""
+
+
+def pod_head2_or_leading_comment(node: SgNode) -> str:
+    """``pod_head2``, falling back to a plain leading ``#`` comment.
+
+    TASK-2745: reconciles ``perl.py``'s two fallback tiers, which use two
+    completely different doc mechanisms for the same symbols — the
+    heuristic tier's ``_head2_docs`` (POD ``=head2 NAME`` blocks) and the
+    tree-sitter tier's ``_leading_doc`` (a plain ``#`` comment
+    immediately before the declaration) — so this seam matches whichever
+    one the locally-installed fallback tier would have used.
+    """
+    return pod_head2(node) or leading_comment(node)
+
+
+#: Container kinds a Perl sub/method can be nested in as an ancestor
+#: (block-form ``package Foo { ... }``/``class Foo { ... }``/``role Foo
+#: { ... }``) — see :func:`perl_sub_parent`.
+_PERL_CONTAINER_KINDS = frozenset({"package_statement", "class_statement", "role_statement"})
+
+
+def perl_sub_parent(node: SgNode) -> str:
+    """Enclosing package/class/role name for a Perl sub or method.
+
+    Perl's container statements have two forms: block-form (``package
+    Foo { ... }``), which makes the container a real ancestor of
+    everything inside; and block-less (``package Foo;``), which scopes
+    as a *preceding sibling* instead (see :func:`preceding_package`).
+    Tries the ancestor form first (matches ``perl.py``'s tree-sitter
+    ``_walk`` recursing into a block with ``in_context`` set), then falls
+    back to the preceding-sibling form.
+    """
+    ancestor = next((a for a in node.ancestors() if a.kind() in _PERL_CONTAINER_KINDS), None)
+    if ancestor is not None:
+        name_field = ancestor.field("name")
+        return name_field.text() if name_field is not None else ""
+    return preceding_package(node)
+
+
 EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "none": lambda _node: "",
     "first_docstring": first_docstring,
@@ -438,10 +516,13 @@ EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "leading_comment_exported": leading_comment_exported,
     "leading_doc_comment": leading_doc_comment,
     "pod_head2": pod_head2,
+    "pod_head2_or_leading_comment": pod_head2_or_leading_comment,
+    "perl_pod_summary": perl_pod_summary,
     "module_docstring": module_docstring,
     "first_heading_comment": first_heading_comment,
     "preceding_package": preceding_package,
     "php_qualified_container": php_qualified_container,
+    "perl_sub_parent": perl_sub_parent,
 }
 
 

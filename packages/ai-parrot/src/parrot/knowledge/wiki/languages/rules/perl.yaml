@@ -1,0 +1,78 @@
+# FEAT-498 TASK-2745 — Perl structural rules (kind-only; NO `pattern:`
+# keys anywhere — verified: ast-grep patterns return [] against the
+# dynamically-registered tree-sitter-perl grammar).
+#
+# Kind names verified live against the dynamically-registered grammar
+# (design §1.2 + this session, ast-grep-py 0.45.3 + tree-sitter-perl
+# 1.2.1). Perl's block-less `package Foo;` form scopes everything until
+# the next such statement (or EOF) as a *preceding sibling*, not an
+# ancestor — `preceding_package`/`perl_sub_parent` (astgrep.py) resolve
+# it either way (block-less sibling OR block-form ancestor).
+language: perl
+summary: perl_pod_summary
+
+symbols:
+  - id: package
+    rule: { kind: package_statement }
+    name: { field: name }
+    depth: 1
+
+  - id: class
+    rule: { kind: class_statement }
+    name: { field: name }
+    doc: pod_head2_or_leading_comment
+    depth: 1
+
+  - id: role
+    rule: { kind: role_statement }
+    name: { field: name }
+    doc: pod_head2_or_leading_comment
+    depth: 1
+
+  # `depth` intentionally omitted: resolves to 1 (no preceding/ancestor
+  # package) or 2 (contextualized) per-instance, matching the walker's
+  # own "indent only when in_context is not None" behaviour exactly.
+  - id: function
+    rule: { kind: subroutine_declaration_statement }
+    name: { field: name }
+    signature: { path: [signature] }
+    doc: pod_head2_or_leading_comment
+    parent: perl_sub_parent
+
+  # Methods are always rendered indented by the walker regardless of
+  # context, so depth is pinned to 2 rather than left to the
+  # parent-presence default.
+  - id: method
+    rule: { kind: method_declaration_statement }
+    name: { field: name }
+    signature: { path: [signature] }
+    doc: pod_head2_or_leading_comment
+    parent: perl_sub_parent
+    depth: 2
+
+  # Corinna `field $x;` — a variable_declaration starting with the
+  # `field` keyword (vs. `my (...)`). `field` is an anonymous grammar
+  # token (verified: `find(kind="field")` raises "Kind `field` is
+  # invalid", same class of issue as TS's `async` keyword) — matched via
+  # `regex` against the node's own text instead of a nested `has: kind`.
+  - id: field
+    rule: { kind: variable_declaration, regex: "^field" }
+    name: { path: [scalar] }
+    depth: 2
+
+  # Moose/Moo `has 'name' => (...)` — an ambiguous_function_call_expression
+  # whose `function` field is the bareword `has`. The attribute name is
+  # the first string literal's *content* node (`path: [string_content]`),
+  # never the quoted `string_literal` itself.
+  - id: attribute
+    rule:
+      kind: ambiguous_function_call_expression
+      has: { field: function, regex: "^has$" }
+    name: { path: [string_content] }
+    depth: 2
+
+refs: []
+
+imports:
+  - rule: { kind: use_statement }
+  - rule: { kind: require_expression }
