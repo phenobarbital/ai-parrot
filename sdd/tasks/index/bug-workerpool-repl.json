@@ -52,7 +52,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Core of the fix; edits handle.py which TASK-2760/2761 import from (wait_ready, NamespaceTimeoutError, WorkerBootstrapError).",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2759-handle-readiness-and-nonlethal-timeouts.md"
+      "completed_at": "2026-09-02T14:57:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2759-handle-readiness-and-nonlethal-timeouts.md"
     },
     {
       "id": "TASK-2760",
