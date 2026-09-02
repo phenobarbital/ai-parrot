@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-02T14:50:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-09-02T17:12:49+00:00",
   "tasks": [
     {
       "id": "TASK-2757",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T14:40:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2757-protocol-ready-frame-and-config.md"
+      "file": "sdd/tasks/completed/TASK-2757-protocol-ready-frame-and-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2758",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T14:45:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2758-worker-emit-ready-frame.md"
+      "file": "sdd/tasks/completed/TASK-2758-worker-emit-ready-frame.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2759",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T14:57:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2759-handle-readiness-and-nonlethal-timeouts.md"
+      "file": "sdd/tasks/completed/TASK-2759-handle-readiness-and-nonlethal-timeouts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2760",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T15:02:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2760-pool-readiness-gated-spares.md"
+      "file": "sdd/tasks/completed/TASK-2760-pool-readiness-gated-spares.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2761",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T15:06:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2761-tool-client-error-legibility.md"
+      "file": "sdd/tasks/completed/TASK-2761-tool-client-error-legibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2762",
@@ -125,7 +130,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T15:13:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2762-cold-start-regression-tests.md"
+      "file": "sdd/tasks/completed/TASK-2762-cold-start-regression-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2763",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
       "completed_at": "2026-09-02T15:16:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2763-docs-and-bootstrap-profile.md"
+      "file": "sdd/tasks/completed/TASK-2763-docs-and-bootstrap-profile.md",
+      "verification": "verified"
     }
   ]
 }
