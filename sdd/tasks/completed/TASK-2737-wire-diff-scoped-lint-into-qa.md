@@ -255,10 +255,95 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-02
+**Notes**: Added `_RUFF_CHECK_RE` next to `_LINT_TARGET_RE`, `_baseline_aware_lint`
+between `_scope_lint_to_files` and `_scope_criteria`, and rewired the
+`lint_cmd = ...` composition in `_run_deterministic_qa`. All 4 unit tests
+from the Test Specification pass, plus the full
+`pytest packages/ai-parrot/tests/flows/dev_loop tests/sdd_scripts -v` suite
+(1472 + 104 passed; the 3 `test_recovery_lifecycle.py` failures are
+pre-existing/unrelated — reproduced on a clean `origin/dev` checkout).
+Also ran the direct end-to-end dogfood check:
+`python -m scripts.sdd.lint_new packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py`
+→ exit 0, "69 pre-existing finding(s) ... ignored" — this is the actual
+FEAT-494 regression scenario, now closed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec** (both required to make the AC above pass — the
+verbatim spec code, run as literally written, exits 1 on this exact file):
 
-**Deviations from spec**: none | describe if any
+1. **`_baseline_aware_lint`'s `_sub` callback preserves the trailing
+   whitespace `_RUFF_CHECK_RE` consumes.** The spec's given regex
+   (`\bruff\s+check\b[^&;]*`, unchanged, used verbatim) and the given
+   one-line `_RUFF_CHECK_RE.sub(lambda _match: replacement, command,
+   count=1)` together strip the space between the substituted text and a
+   following `&&`/`;`, producing `"...lint_new a.py&& mypy..."` instead of
+   the spec's OWN stated expected output
+   (`"...lint_new a.py && mypy..."`, both in spec §3's prose and in this
+   task's Test Specification / TASK-2737 §4). Fixed by re-appending the
+   trailing whitespace the match consumed inside the substitution callback
+   — the regex and the `replacement` string are unchanged; only the
+   callback body differs from the literal one-liner. Verified against
+   `test_ruff_half_is_replaced_mypy_half_scoped`.
+
+2. **Reverted TASK-2735's `FrozenSet` addition to the shared `typing`
+   import line, and switched the two new Module-1 helpers plus this task's
+   `_baseline_aware_lint`/`_sub` to builtin generics (`tuple`, `frozenset`,
+   `list`, `re.Match[str]`) instead of `typing.Tuple`/`FrozenSet`/`List`.**
+   Required for this task's own AC: verbatim TASK-2735 (adding `FrozenSet`
+   to the shared `from typing import Any, Dict, FrozenSet, List, Optional,
+   Tuple, Union` line) plus verbatim TASK-2735/2737 new-function signatures
+   made `python -m scripts.sdd.lint_new qa.py` exit 1 with 13 findings —
+   not because the new code is wrong, but because `lint_new.py`'s
+   diff-line attribution (chosen over baseline-subtraction in spec §2,
+   explicitly for its lower cost) flags a finding as "new" whenever its
+   reported range intersects ANY changed line, including a shared import
+   line where only one of several names actually changed. Two thirds of
+   the 13 findings were:
+   - `UP035`×4 on the shared `typing` import line: touching it to add
+     `FrozenSet` re-flagged the PRE-EXISTING `Dict`/`List`/`Tuple` findings
+     on that same line as "new", plus one genuinely-new one for
+     `FrozenSet` itself.
+   - `UP006`×5 + `UP037`×1 on the new functions' own signatures, using
+     `typing.Tuple`/`FrozenSet`/`List` and a quoted `"re.Match[str]"`
+     annotation (unnecessary given `from __future__ import annotations` is
+     already active at the top of the file) — these ARE genuinely
+     attributable to this branch, just avoidable.
+   - `I001`×1: the whole import-block's pre-existing un-sorted/oversized
+     `from parrot.flows.dev_loop.nodes.base import ...` line (rows 20-54)
+     was re-flagged because the diff touched line 27 inside that same
+     block. Fixed by wrapping that one long import onto multiple lines
+     (zero behavior change) — a second unavoidable-collateral case, same
+     root cause as (1).
+   - `S110`×1 on Module 1's spec-verbatim `except Exception: pass` — added
+     `S110` to the existing `# noqa: BLE001` comment; the exception
+     handling itself is unchanged.
+
+   Net effect: since `FrozenSet` was needed by NO other code in the file,
+   switching `_git_state`/`_paths_touched_since` to lowercase
+   `tuple[str, frozenset[str]]`/`list[str]` let the shared `typing` import
+   line revert to byte-identical with `origin/dev` — no diff on that line
+   at all, so its pre-existing `UP035` debt is correctly NOT attributed to
+   this branch. `Tuple`/`List` are still imported and still used
+   elsewhere in the file by pre-existing code, so removing only the
+   now-redundant `FrozenSet` name (not `Tuple`/`List`/`Dict`) was the
+   correct, minimal import change — verified `ruff check` reports the
+   `typing` import line with zero warnings pre- or post-change.
+
+   This is a real, load-bearing deviation from literally-verbatim TASK-2735
+   code (already committed before this task started) — recorded here
+   rather than retroactively editing TASK-2735's own Completion Note,
+   since the fix was made under this task's scope (`qa.py` is this task's
+   own MODIFY target) and is what actually satisfies TASK-2735's own
+   AC bullet "ruff check ... introduces no new findings", which TASK-2735
+   could not verify at the time because `lint_new.py` did not exist yet.
+
+**Trade-off surfaced for the feature-level summary**: the two "unavoidable
+collateral" categories above (shared-line UP035 re-flagging, whole-block
+I001 re-flagging) are structural to diff-line attribution, not bugs in
+`lint_new.py` — any future edit that touches one line of an existing,
+already-non-compliant import statement or import block will have the same
+effect. This PR's own diff needed two mechanical, zero-risk workarounds
+(avoid the shared line; reformat the long import) to stay clean; a file
+whose problematic import block can't be avoided or reformatted this
+cheaply would need a human judgment call, not an automatic exemption.
