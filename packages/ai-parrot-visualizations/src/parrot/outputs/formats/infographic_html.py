@@ -383,9 +383,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         if layout in DesignSystem.LAYOUTS:
             layout_name = layout
         else:
-            logger.warning(
-                "Unknown layout '%s', falling back to '%s'", layout, DesignSystem.DEFAULT_LAYOUT
-            )
+            logger.warning("Unknown layout '%s', falling back to '%s'", layout, DesignSystem.DEFAULT_LAYOUT)
             layout_name = DesignSystem.DEFAULT_LAYOUT
         style = DesignSystem.stylesheet(theme_cfg, layout_name)
 
