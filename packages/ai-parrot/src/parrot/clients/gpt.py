@@ -640,6 +640,19 @@ class OpenAIClient(OpenAIBaseClient):
             if isinstance(item, dict):
                 stop_reason = stop_reason or item.get("stop_reason")
 
+        # 4b) The Responses API reports truncation at the top level, not per
+        #     output item: ``status="incomplete"`` with
+        #     ``incomplete_details.reason`` ("max_output_tokens" |
+        #     "content_filter"). Surface it as the Chat-style finish_reason so
+        #     the shared truncation guard (_raise_if_truncated) can see it.
+        if finish_reason is None and getattr(resp, "status", None) == "incomplete":
+            details = getattr(resp, "incomplete_details", None)
+            if isinstance(details, dict):
+                finish_reason = details.get("reason")
+            else:
+                finish_reason = getattr(details, "reason", None)
+            finish_reason = finish_reason or "incomplete"
+
         # 5) Build a Chat-like container
         class _Msg:
             def __init__(self, content, tool_calls):
@@ -938,10 +951,19 @@ class OpenAIClient(OpenAIBaseClient):
         final_output = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=model_str)
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=model_str,
+                    )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 

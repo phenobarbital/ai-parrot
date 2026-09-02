@@ -999,6 +999,8 @@ class ClaudeAgentClient(AbstractClient):
         # Parse the assistant text into ``output_type`` when asked.
         parsed: Any = structured_output if structured_output is not None else ai_message.response
         if structured_output is None and output_type is not None and ai_message.response:
+            # Known-truncated output must not be parsed (shared guard).
+            self._raise_if_truncated(ai_message.stop_reason, model=resolved_model)
             parsed = self._parse_structured_output(ai_message.response, output_type)
 
         return InvokeResult(

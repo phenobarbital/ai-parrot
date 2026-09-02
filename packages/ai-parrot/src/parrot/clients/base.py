@@ -8,7 +8,8 @@ from typing import (
     Union,
     TypedDict,
     Any,
-    Callable
+    Callable,
+    FrozenSet,
 )
 from parrot._imports import lazy_import
 from datetime import datetime
@@ -53,7 +54,7 @@ from ..models import (
 )
 from ..models.responses import InvokeResult
 from ..models.basic import CompletionUsage
-from ..exceptions import InvokeError
+from ..exceptions import InvokeError, TruncatedResponseError
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import (
     ToolManager,
@@ -1974,17 +1975,160 @@ $backstory
 
         Returns:
             An :class:`InvokeError` with ``original`` set to the given exception.
+            An exception that already is an :class:`InvokeError` (e.g. a
+            :class:`TruncatedResponseError` raised by the shared parsing guard)
+            is returned unchanged so it is never double-wrapped.
         """
+        if isinstance(exception, InvokeError):
+            return exception
         return InvokeError(str(exception), original=exception)
+
+    # ------------------------------------------------------------------ #
+    # finish_reason truncation guard — shared by every provider           #
+    # ------------------------------------------------------------------ #
+
+    #: Provider finish/stop reasons that mean the completion was cut off by the
+    #: output-token limit. Compared after :meth:`_normalize_finish_reason`
+    #: (lower-cased, enum-class prefix stripped).
+    TRUNCATED_FINISH_REASONS: FrozenSet[str] = frozenset({
+        "max_tokens",         # Anthropic Messages API, Bedrock Converse
+        "max_output_tokens",  # Google / OpenAI Responses (incomplete_details)
+        "length",             # OpenAI-compatible chat completions (OpenAI, Groq,
+                              #   Z.AI, vLLM, LocalLLM, HuggingFace, ...)
+        "reason_max_len",     # xAI Grok SDK (sample_pb2.FinishReason)
+    })
+
+    @staticmethod
+    def _normalize_finish_reason(finish_reason: Any) -> Optional[str]:
+        """Normalise a provider finish/stop reason to a lower-case token.
+
+        Accepts the three shapes providers use: a plain string (``"length"``,
+        ``"max_tokens"``), an enum member exposing ``.name``
+        (``google.genai.types.FinishReason.MAX_TOKENS``), or the enum's string
+        representation (``"FinishReason.MAX_TOKENS"``).
+
+        Args:
+            finish_reason: Raw finish reason from the provider, or ``None``.
+
+        Returns:
+            Lower-case token with any ``Enum.`` prefix stripped, or ``None`` if
+            the value is empty.
+        """
+        if finish_reason is None:
+            return None
+        name = getattr(finish_reason, "name", None)
+        text = name if isinstance(name, str) else str(finish_reason)
+        text = text.strip()
+        if not text:
+            return None
+        return text.rsplit(".", 1)[-1].lower()
+
+    @staticmethod
+    def _extract_finish_reason(response: Any) -> Any:
+        """Best-effort extraction of the finish/stop reason from a raw response.
+
+        Understands the response shapes of every supported provider without
+        importing any SDK: OpenAI-compatible ``choices[0].finish_reason``,
+        Google ``candidates[0].finish_reason``, Anthropic ``stop_reason``, xAI
+        ``finish_reason``, and the Bedrock / Anthropic ``model_dump()``
+        dictionaries (``stopReason`` / ``stop_reason`` / ``finish_reason``).
+
+        Args:
+            response: Raw provider response object or mapping.
+
+        Returns:
+            The raw finish reason (string or enum), or ``None`` when the shape
+            is unknown or the field is absent.
+        """
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            for key in ("stopReason", "stop_reason", "finish_reason"):
+                if response.get(key) is not None:
+                    return response[key]
+            return None
+        for container in ("choices", "candidates"):
+            items = getattr(response, container, None)
+            if isinstance(items, (list, tuple)) and items:
+                reason = getattr(items[0], "finish_reason", None)
+                if reason is None:
+                    reason = getattr(items[0], "stop_reason", None)
+                if reason is not None:
+                    return reason
+        for attr in ("stop_reason", "finish_reason"):
+            reason = getattr(response, attr, None)
+            if reason is not None and not callable(reason):
+                return reason
+        return None
+
+    def _raise_if_truncated(
+        self,
+        finish_reason: Any,
+        *,
+        model: Optional[str] = None,
+    ) -> None:
+        """Raise :class:`TruncatedResponseError` if ``finish_reason`` means truncation.
+
+        Call this *before* attempting to parse structured output: a response
+        that stopped at the output-token limit is known-incomplete, so parsing
+        it can only yield a silent raw-string fallback or a validation error
+        that misattributes the cause.
+
+        Args:
+            finish_reason: Raw provider finish reason (any shape accepted by
+                :meth:`_normalize_finish_reason`), or ``None`` to skip the check.
+            model: Model identifier, included in the error message when known.
+
+        Raises:
+            TruncatedResponseError: When the normalised reason is one of
+                :attr:`TRUNCATED_FINISH_REASONS`.
+        """
+        normalized = self._normalize_finish_reason(finish_reason)
+        if normalized is None or normalized not in self.TRUNCATED_FINISH_REASONS:
+            return
+        model_part = f" from model {model!r}" if model else ""
+        raise TruncatedResponseError(
+            f"Response{model_part} was truncated by the provider "
+            f"(finish_reason={normalized!r}) before structured output could be "
+            "parsed. Increase max_tokens or shorten the prompt/schema.",
+            finish_reason=normalized,
+            model=model,
+        )
 
     async def _handle_structured_output(
         self,
         result: Dict[str, Any],
-        structured_output: Optional[type]
+        structured_output: Optional[type],
+        *,
+        finish_reason: Any = None,
+        model: Optional[str] = None,
     ) -> Any:
-        """Parse response into structured output format."""
+        """Parse a Chat-style ``result`` dict into ``structured_output``.
+
+        Legacy helper used by the local backends (HuggingFace, Gemma4). Like
+        :meth:`_parse_structured_output` it falls back to returning the input
+        unchanged when parsing fails, so the truncation guard runs first.
+
+        Args:
+            result: Chat-style response dict with a ``content`` block list.
+            structured_output: Target type, or ``None`` to skip parsing.
+            finish_reason: Provider finish/stop reason for this response;
+                truncation raises :class:`TruncatedResponseError` before parsing.
+                Defaults to ``result["stop_reason"]`` when present.
+            model: Model identifier, used only to enrich the truncation error.
+
+        Returns:
+            Parsed object, or ``result`` when parsing is skipped or fails.
+
+        Raises:
+            TruncatedResponseError: If the finish reason denotes truncation.
+        """
         if not structured_output:
             return result
+
+        if finish_reason is None and isinstance(result, dict):
+            finish_reason = result.get("stop_reason") or result.get("finish_reason")
+        self._raise_if_truncated(finish_reason, model=model)
 
         text_content = "".join(
             content_block["text"]
@@ -2347,9 +2491,34 @@ $backstory
     async def _parse_structured_output(  # noqa: C901
         self,
         response_text: str,
-        structured_output: StructuredOutputConfig
+        structured_output: StructuredOutputConfig,
+        *,
+        finish_reason: Any = None,
+        model: Optional[str] = None,
     ) -> Any:
-        """Parse structured output based on format."""
+        """Parse structured output based on format.
+
+        Args:
+            response_text: Raw assistant text to parse.
+            structured_output: Output configuration (type + format).
+            finish_reason: Provider finish/stop reason for the response that
+                produced ``response_text``. When it denotes truncation
+                (see :attr:`TRUNCATED_FINISH_REASONS`) a
+                :class:`TruncatedResponseError` is raised *before* any parse
+                attempt instead of falling back to the raw string. ``None``
+                skips the check (legacy behaviour).
+            model: Model identifier, used only to enrich the truncation error.
+
+        Returns:
+            The parsed object, or ``response_text`` itself when parsing fails
+            and the response was not known to be truncated.
+
+        Raises:
+            TruncatedResponseError: If ``finish_reason`` denotes truncation.
+        """
+        # Known-truncated responses must never reach the parser: the fallbacks
+        # below return the raw string on failure, which hides the real cause.
+        self._raise_if_truncated(finish_reason, model=model)
         try:
             output_type = structured_output.output_type
             if not output_type:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union, Tuple
+
+from ...exceptions import InvokeError
 import os
 import logging
 import asyncio
@@ -467,6 +469,7 @@ class GoogleAnalysis:
                 final_output = await self._parse_structured_output(
                     final_response,
                     output_config,
+                    finish_reason=self._extract_finish_reason(response),
                 )
 
             if not stateless:
@@ -638,6 +641,7 @@ class GoogleAnalysis:
                 structured_output = await self._parse_structured_output(
                     final_response,
                     output_config,
+                    finish_reason=self._extract_finish_reason(response),
                 )
             elif (detect_objects or response_schema) and original_size:
                 # Attempt to parse json and descale bounding boxes
@@ -879,7 +883,13 @@ class GoogleAnalysis:
             final_output: Any = None
             if output_config:
                 try:
-                    final_output = await self._parse_structured_output(final_response, output_config)
+                    final_output = await self._parse_structured_output(
+                        final_response,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                    )
+                except InvokeError:
+                    raise
                 except Exception as parse_exc:
                     self.logger.warning(
                         "Failed to parse structured output from document model: %s", parse_exc
