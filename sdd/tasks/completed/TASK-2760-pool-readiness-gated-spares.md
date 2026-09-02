@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2759
@@ -222,8 +222,60 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- `pool.py` imports `WorkerBootstrapError` alongside `WorkerHandle`. Two module
+  constants added next to `_CEILING_CAP`: `_RESTART_WINDOW_S = 60.0` and
+  `_RESTART_LOOP_THRESHOLD = 3` (the 60 s / 3 restarts from the spec, named
+  rather than inlined).
+- `_top_up_prewarmed()`: `ready = await handle.wait_ready()` immediately after
+  `_spawn_handle()`, still OUTSIDE `self._lock`. New
+  `except WorkerBootstrapError` branch -> `logger.exception("WorkerPool:
+  prewarmed worker failed to become ready")`, `await handle.kill()`, `return`;
+  the generic `except Exception` spawn-failure branch and the
+  `asyncio.CancelledError` re-raise are untouched, as is the post-spawn
+  `_started` re-check (it now runs after readiness too, so a spare that boots
+  during `shutdown()` is still killed rather than resurrected). The success log
+  became `"WorkerPool: prewarmed worker ready (pid=%s, bootstrap_ms=%d, pool
+  size=%d)"`, fed by the `ReadyResponse` that `wait_ready()` returns.
+- `acquire()`: binding logic, FIFO `pop(0)` and the verbatim
+  `"WorkerPool: session %r worker is dead, restarting"` line are all unchanged
+  (external log greps keep working). One call added right after that warning:
+  `self._record_restart(session_id, existing)`. No readiness await was added to
+  the fresh-spawn path — the handle's own first `_send()` covers it.
+- New `_record_restart(session_id, dead)` (private, called under `self._lock`):
+  prunes the session's timestamps to the 60 s window, appends `time.monotonic()`,
+  and at >= 3 logs `logger.warning("WorkerPool: session %r restarted %d times in
+  the last %ds — possible restart loop (last worker exit code=%s, stderr
+  tail=%r)")` using `dead._proc.returncode` and the last `_stderr_tail` line.
+- New public `restart_count(session_id) -> int` — prunes, then reports; `0` for
+  an unknown session.
+- Counter cleanup: `_evict_idle()` and `shutdown()` drop the session's restart
+  history when they unmap it. `release()` deliberately does NOT — reading it
+  showed it only resets the TTL clock and never unmaps the session, so clearing
+  there would erase a live session's history.
+- Per the task's explicit allowance, no `WorkerHandle.exit_code` property was
+  added; `_record_restart` reads `handle._proc.returncode` directly (the pool
+  already reaches into `handle` internals elsewhere).
+- Tests (`test_pool.py`, +4, 11 total, all passing):
+  `TestReadinessGate::test_pool_spare_not_ready_until_ready_frame` (asserts both
+  that `_prewarmed` is empty AND that "prewarmed worker ready" has not been
+  logged at 0.5 s — the actual regression), plus
+  `test_pool_spare_failing_bootstrap_is_never_appended`;
+  `TestRestartLoopVisibility::test_pool_restart_loop_warning` (3 external kills
+  -> `restart_count == 3`, exactly one warning) and
+  `test_restart_count_unknown_session_is_zero`.
+  Note: the task's sketch killed the worker 3x and re-acquired once at the end,
+  which only registers ONE restart (the pool must observe each death via an
+  `acquire()`); the test re-acquires inside the loop so all three deaths are
+  counted, as AC8 requires.
+- Verification: `pytest .../test_pool.py` -> 11 passed; whole
+  `tests/repl_worker/` -> 96 passed, 1 failed. The failure is the same
+  pre-existing `test_e2e_data_analysis_session` matplotlib/`plt` environment
+  issue documented in TASK-2759 (3 failures in that file at baseline, 1 now).
+  `ruff check` on both changed files: findings identical to baseline (verified
+  via `git stash`).
 
-**Deviations from spec**: none
+**Deviations from spec**: none (the restart-loop test's acquire placement is a
+correction to the task's illustrative snippet, not a behaviour change).

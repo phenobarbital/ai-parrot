@@ -73,7 +73,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Awaits WorkerHandle.wait_ready() from TASK-2759. Shares no files with TASK-2761 but both must precede TASK-2762.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2760-pool-readiness-gated-spares.md"
+      "completed_at": "2026-09-02T15:02:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2760-pool-readiness-gated-spares.md"
     },
     {
       "id": "TASK-2761",
