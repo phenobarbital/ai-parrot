@@ -160,7 +160,70 @@ modes. 7. Move to `completed/`. 8. Index → `done`. 9. Completion Note.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-02
+**Notes**: Added `tests/knowledge/wiki/test_structural_e2e.py` (8 tests:
+polyglot build produces symbols on/off, outline-body parity through the
+FULL ingest pipeline, no-extra no-op, nine-tool MCP registration + stdio
+round trip, `upsert --changed` symbol refresh, lookup→blast→edit→repair,
+and a read-only tree-snapshot invariant across tools + CLI) and
+`tests/knowledge/wiki/test_wheel_package_data.py` (AC17: a real
+`uv build --wheel` contains all five `languages/rules/*.yaml`, ~10s,
+skipped when `uv` is absent). Extended `polyglot_repo`
+(`languages/conftest.py`) with a `helper()` Python symbol (every
+assertion needs a stable anchor) and a `.svelte` file (per Scope);
+verified via the full `languages/` suite (265 passed) that this doesn't
+disturb any existing assertion (all `in`-style checks, no exact-set
+equality). Added a new `test-wiki-extras` CI job installing
+`wiki-languages` + `wiki-structural` (validated with `python -c
+"import yaml"`), since no job installing `wiki-languages` existed to
+extend (see Deviation 1). Full `pytest tests/knowledge/wiki/` (excluding
+the wheel test): **1402 passed**, 7 skipped (pre-existing ArangoDB-gated
+skips), 1 pre-existing unrelated failure
+(`test_claude_code.py::test_fresh_install_writes_all_artifacts`,
+confirmed via `git stash` to predate this task, same as every prior
+FEAT-498 task's Completion Note). `ruff` clean on every file this task
+touched. Also fixed two pre-existing SDD bookkeeping gaps discovered
+while working this task: TASK-2749's `active/`→`completed/` move never
+staged the deletion (separate correction commit before TASK-2750's own
+commit), and TASK-2751's Completion Note edit never made it into its
+completion commit (separate correction commit, this task).
+
+**Deviations from spec**:
+1. **CI**: the task's contract assumed a workflow job already installs
+   `wiki-languages` and asked to extend it with `wiki-structural`. Grepped
+   every file under `.github/workflows/` — no job installs `wiki-languages`
+   at all (`test-core` runs `uv sync --package ai-parrot` bare). Added a
+   NEW `test-wiki-extras` job installing both extras and running
+   `tests/knowledge/wiki/` (not the whole `tests/` tree, already covered
+   bare by `test-core`) instead of editing a nonexistent job.
+2. **`SourceCollectionManager` construction**: the literal Test
+   Specification's `SourceCollectionManager(polyglot_repo / ".parrot" /
+   "wiki")` (no `db_path`) resolves its default db path to
+   `<sources_dir>/../wiki.db` — one level above where
+   `create_wiki_store(polyglot_repo / ".parrot" / "wiki", ...)` actually
+   puts `wiki.db` (inside that directory). Used the established
+   `_open_sources`-style pair instead (`SourceCollectionManager(storage /
+   "sources", db_path=storage / "wiki.db")`, matching cli.py/every prior
+   FEAT-498 test fixture) — the task's own contract flagged this exact
+   line for verification ("verify constructor signature in
+   sources.py:107-130").
+3. **`test_upsert_changed_refreshes_symbols`**: Scope assumed a renamed
+   symbol leaves a dangling `calls` edge that `broken_edges()` reports
+   until the dependent file is upserted. Empirically false:
+   `replace_source_slice` (`store.py`) issues `DELETE FROM edges WHERE
+   src = ? OR dst = ?` for every removed concept id as part of the SAME
+   atomic transaction that drops the old page, and only re-adds incoming
+   edges whose destination SURVIVES the replacement — so the stale edge
+   is deleted immediately, never left dangling. This is a STRONGER
+   guarantee than what Scope assumed, not a bug; the test now asserts the
+   edge is gone immediately and `broken_edges()` is empty throughout,
+   with the SQL semantics documented inline.
+4. Several tests originally written as `async def` (pytest-asyncio) also
+   needed to invoke `CliRunner().invoke(wiki, ["build", ...])`, which
+   calls `asyncio.run()` internally (`cli.py`'s `_run`) — raising
+   "cannot be called from a running event loop" inside an
+   already-running pytest-asyncio test. Converted those to plain sync
+   `def` tests that call `asyncio.run()` themselves for just the async
+   portion (`TestMCPServerNineTools`, `TestEndToEndLookupBlastRepair`,
+   `TestToolCallsAreReadOnly`).

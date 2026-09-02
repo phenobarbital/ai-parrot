@@ -294,7 +294,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -309,8 +309,8 @@
       "parallelism_notes": "Closing task; needs every rule file and every surface in place.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2752-e2e-integration-and-parity-suite.md"
+      "completed_at": "2026-09-02T16:11:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2752-e2e-integration-and-parity-suite.md"
     }
   ]
 }
