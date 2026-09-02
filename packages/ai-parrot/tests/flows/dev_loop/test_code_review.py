@@ -13,7 +13,6 @@ from parrot.flows.dev_loop.code_review import (
     ClaudeCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
     CodexCodeReviewDispatcher,
-    GeminiCodeReviewDispatcher,
     ParallelPerspectiveReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
@@ -21,7 +20,6 @@ from parrot.flows.dev_loop.models import (
     CodeReviewFinding,
     CodeReviewVerdict,
     CodexCodeReviewProfile,
-    GeminiCodeReviewProfile,
 )
 from parrot.flows.dev_loop.nodes.qa import QANode
 
@@ -96,10 +94,12 @@ class TestReviewProfiles:
         assert p.sandbox == "workspace-write"
         assert p.approval_policy == "on-request"
 
-    def test_gemini_profile_no_sandbox(self):
-        p = GeminiCodeReviewProfile()
-        assert p.sandbox is False
-        assert p.approval_mode == "auto_edit"
+    def test_no_review_profile_for_banned_backends(self):
+        """Gemini/agy review profiles are gone, not merely unregistered."""
+        import parrot.flows.dev_loop.models as models
+
+        assert not hasattr(models, "GeminiCodeReviewProfile")
+        assert not hasattr(models, "GoogleCodingCodeReviewProfile")
 
 
 class TestClaudeCodeReviewDispatcher:
@@ -196,38 +196,40 @@ class TestCodexCodeReviewDispatcher:
         assert any("code-review could not run" in f.message for f in result.findings)
 
 
-class TestGeminiCodeReviewDispatcher:
-    def test_agent_name(self):
-        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
-        assert d.agent_name == "gemini"
+class TestBannedReviewBackends:
+    """Gemini and google_coding (agy) are barred from every review role.
 
-    def test_registered_in_factory(self):
-        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
-        assert isinstance(d, GeminiCodeReviewDispatcher)
+    See ``JudgeBackend`` in ``models/base.py`` and CLAUDE.md: ``agy``
+    returned a fabricated review (an invented 188-test pytest run naming
+    tests that do not exist), and a reviewer that hallucinates passing
+    evidence reads like corroboration. These assert the door stays shut —
+    a re-registration would make QA silently dispatch them again.
+    """
 
-    def test_build_review_profile(self):
-        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
-        p = d.build_review_profile()
-        assert isinstance(p, GeminiCodeReviewProfile)
-        assert p.sandbox is False
-        assert p.approval_mode == "auto_edit"
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_not_registered_as_a_review_dispatcher(self, banned):
+        with pytest.raises(ValueError, match="Unknown code review dispatcher"):
+            CodeReviewDispatcherFactory.create(banned, dispatcher=MagicMock())
 
-    @pytest.mark.asyncio
-    async def test_review_delegates(self):
-        mock_disp = MagicMock()
-        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
-        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
-        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
-        assert result.passed is True
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_not_accepted_as_a_judge(self, banned):
+        from pydantic import ValidationError
 
-    @pytest.mark.asyncio
-    async def test_review_degrades_on_error(self):
-        mock_disp = MagicMock()
-        mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
-        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
-        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
-        assert result.passed is True
-        assert any("code-review could not run" in f.message for f in result.findings)
+        from parrot.flows.dev_loop.models import JudgeSpec
+
+        with pytest.raises(ValidationError):
+            JudgeSpec(agent=banned)
+
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_still_a_development_backend(self, banned):
+        """The ban is reviewer-only — both remain coding agents."""
+        from parrot.flows.dev_loop.catalog import get_backend
+
+        info = get_backend(banned)
+        assert info is not None
+        assert "development" in info.roles
+        assert "judge" not in info.roles
+        assert "primary_review" not in info.roles
 
 
 class TestServerWiring:
@@ -241,9 +243,10 @@ class TestServerWiring:
         d = CodeReviewDispatcherFactory.create("codex", dispatcher=MagicMock())
         assert d.agent_name == "codex"
 
-    def test_factory_creates_gemini(self):
-        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
-        assert d.agent_name == "gemini"
+    def test_factory_creates_mantle_adversarial(self):
+        d = CodeReviewDispatcherFactory.create("mantle-adversarial")
+        assert d.agent_name == "mantle-adversarial"
+        assert d.advisory is True
 
 
 class TestBuildDevLoopNodeFactoriesWiring:

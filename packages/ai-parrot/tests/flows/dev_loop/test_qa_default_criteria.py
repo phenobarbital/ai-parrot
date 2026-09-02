@@ -278,3 +278,23 @@ async def test_tests_created_by_development_are_unioned_with_the_diff(ctx, mirro
         "pytest packages/ai-parrot/tests/flows/dev_loop "
         "packages/ai-parrot/tests/loaders/test_new.py"
     )
+
+
+def test_root_level_test_module_is_its_own_target(mirrored):
+    """The repo-root `tests/` tree mirrors no package — target the file."""
+    root_test = mirrored / "tests" / "handlers" / "test_scraping.py"
+    root_test.parent.mkdir(parents=True)
+    root_test.write_text("")
+    targets = QANode._pytest_targets(["tests/handlers/test_scraping.py"], str(mirrored))
+    assert targets == ["tests/handlers/test_scraping.py"]
+
+
+def test_deleted_root_test_module_falls_back_to_the_root_tree(mirrored):
+    (mirrored / "tests").mkdir()
+    targets = QANode._pytest_targets(["tests/handlers/test_gone.py"], str(mirrored))
+    assert targets == ["tests"]
+
+
+def test_root_test_without_a_root_tree_maps_to_nothing(worktree):
+    """No `tests/` at the root → no target (pytest exits 4 on a missing path)."""
+    assert QANode._pytest_targets(["tests/handlers/test_gone.py"], str(worktree)) == []

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel
@@ -194,6 +194,28 @@ class DevelopmentNode(DevLoopNode):
         research = self._with_prior_work_context(shared, research)
         research = self._with_repair_feedback(shared, research)
 
+        dev_out = await self._dispatch(shared, research)
+        return await self._reconcile_files_changed(shared, research, dev_out)
+
+    async def _dispatch(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+    ) -> DevelopmentOutput:
+        """Route to the single-agent or pool path and return its raw output.
+
+        Split out of :meth:`execute` so every path funnels through one
+        reconciliation step (:meth:`_reconcile_files_changed`) instead of
+        returning straight to the caller.
+
+        Args:
+            shared: The run's shared state.
+            research: The (context-enriched) upstream research output.
+
+        Returns:
+            The dispatch's :class:`DevelopmentOutput`, exactly as the
+            agent/pool produced it.
+        """
         pool_cfg = self._resolve_pool_config(shared)
         if pool_cfg is None:
             return await self._execute_single(shared, research)
@@ -227,6 +249,160 @@ class DevelopmentNode(DevLoopNode):
             )
 
         return await self._execute_pool(shared, research, pool_cfg, scheduler)
+
+    # ------------------------------------------------------------------
+    # files_changed reconciliation
+    # ------------------------------------------------------------------
+
+    async def _reconcile_files_changed(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        dev_out: DevelopmentOutput,
+    ) -> DevelopmentOutput:
+        """Union the agent's self-reported ``files_changed`` with git's truth.
+
+        Coding agents report the files they *think* they touched, and they
+        under-report systematically: they list the source files they set
+        out to edit and omit the test modules they created along the way.
+        That silently corrupts every downstream consumer — QA scopes its
+        pytest run to these paths (so an omitted test module is a test
+        that never runs), and the handoff nodes render them into the PR
+        body.
+
+        Git is the only authority on what actually changed, so anything
+        git reports and the agent did not is appended here. The agent's
+        own ordering is preserved and its entries are never dropped: a
+        path git cannot see (already reverted, or outside the worktree)
+        stays in the list rather than being second-guessed.
+
+        The object is returned **unchanged** — same identity, no
+        ``model_copy`` — whenever git adds nothing, which is also what
+        keeps a non-git worktree (and the single-path regression tests
+        that assert ``result is dev_out``) behaving exactly as before.
+
+        Args:
+            shared: The run's shared state, re-stamped when the list grows.
+            research: Upstream research output, for the worktree path and
+                the resolved base branch.
+            dev_out: The dispatch's raw output.
+
+        Returns:
+            ``dev_out`` itself, or a copy carrying the reconciled list.
+        """
+        try:
+            actual = await self._git_changed_files(research.worktree_path, research.base_branch)
+        except Exception:  # noqa: BLE001
+            self.logger.warning(
+                "Could not reconcile files_changed against git for %s; "
+                "keeping the agent's self-reported list.",
+                research.feat_id or research.jira_issue_key,
+                exc_info=True,
+            )
+            return dev_out
+
+        reported = list(dev_out.files_changed)
+        seen = set(reported)
+        missing = [f for f in actual if f not in seen]
+        if not missing:
+            return dev_out
+
+        untested = [f for f in missing if "test" in PurePosixPath(f).name]
+        self.logger.warning(
+            "Development under-reported files_changed for %s: git shows %d "
+            "file(s) the agent omitted (%d of them test modules). Adding "
+            "them: %s",
+            research.feat_id or research.jira_issue_key,
+            len(missing),
+            len(untested),
+            missing[:20],
+        )
+        reconciled = dev_out.model_copy(update={"files_changed": [*reported, *missing]})
+        shared["development_output"] = reconciled
+        return reconciled
+
+    @staticmethod
+    async def _git_changed_files(worktree_path: str, base_branch: str = "") -> List[str]:
+        """Every path the worktree changed, committed and uncommitted.
+
+        Committed work comes from a three-dot diff against the merge base
+        with the run's base branch (falling back to ``origin/dev`` then
+        ``origin/main``, the same ladder ``QANode`` walks). Uncommitted
+        work — including untracked files, which is how a just-written
+        test module looks before the worker commits — comes from
+        ``git status --porcelain``.
+
+        Deletions are excluded from both halves: a deleted path is not
+        something a downstream consumer can lint, test, or link to.
+
+        Args:
+            worktree_path: The worktree to inspect.
+            base_branch: The run's resolved base branch; ``''`` to rely
+                on the fallback ladder alone.
+
+        Returns:
+            Repo-relative paths, deduplicated, committed-first. Empty
+            when the directory is not a git worktree or git fails.
+        """
+        files: List[str] = []
+
+        upstreams = [f"origin/{base_branch}" if "/" not in base_branch else base_branch] if base_branch else []
+        upstreams += ["origin/dev", "origin/main"]
+        for upstream in upstreams:
+            # Select on whether the ref RESOLVES, not on whether its diff
+            # is non-empty: a branch with nothing committed yet has an
+            # empty diff against its true base, and falling through to
+            # the next candidate would then report every commit that base
+            # is ahead by as if this run had made it.
+            if not await DevelopmentNode._run_git(worktree_path, "rev-parse", "--verify", "--quiet", upstream):
+                continue
+            out = await DevelopmentNode._run_git(
+                worktree_path, "diff", "--name-only", "--diff-filter=d", f"{upstream}...HEAD"
+            )
+            files.extend(line.strip() for line in out.splitlines() if line.strip())
+            break
+
+        status = await DevelopmentNode._run_git(worktree_path, "status", "--porcelain", "--untracked-files=all")
+        for line in (status or "").splitlines():
+            if len(line) < 4:
+                continue
+            code, path = line[:2], line[3:].strip()
+            if "D" in code:
+                continue
+            # Renames render as "old -> new"; only the new path exists.
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            path = path.strip('"')
+            if path:
+                files.append(path)
+
+        return list(dict.fromkeys(files))
+
+    @staticmethod
+    async def _run_git(worktree_path: str, *args: str) -> str:
+        """Run one git command in ``worktree_path``, returning stdout.
+
+        Args:
+            worktree_path: Working directory for the command.
+            *args: Arguments after ``git``.
+
+        Returns:
+            Decoded stdout on success, ``""`` on a non-zero exit or any
+            OS-level failure — reconciliation is best-effort and must
+            never fail a successful dispatch.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+        except Exception:  # noqa: BLE001
+            return ""
+        return stdout.decode(errors="replace") if proc.returncode == 0 else ""
 
     # ------------------------------------------------------------------
     # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)

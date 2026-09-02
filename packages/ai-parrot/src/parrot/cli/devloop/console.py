@@ -31,16 +31,17 @@ logger = logging.getLogger(__name__)
 _GATE_POLL_INTERVAL = 0.25  # seconds
 _KIND_CHOICES: tuple[str, ...] = ("bug", "enhancement", "feature")
 
-#: Post-review fix: catalog.JUDGE_BACKENDS includes "google_coding" (which
-#: code_review.py's _build_judge DOES support), but JudgeSpec's own
-#: `_agent_must_have_review_profile` validator (models.py) has a narrower,
-#: hardcoded `supported = ("claude-code", "codex", "gemini")` that predates
-#: that backend landing — picking "google_coding" here would always raise
-#: pydantic.ValidationError. Fixing the validator is a models.py change
-#: (explicitly out of FEAT-388 scope, "zero model changes"); filtering the
-#: judge-panel picker to only what JudgeSpec actually accepts avoids
-#: offering a guaranteed-dead-end choice. Keep in sync with models.py.
-_JUDGE_REVIEW_CAPABLE_BACKENDS: tuple[str, ...] = ("claude-code", "codex", "gemini")
+#: Backends ``JudgeSpec`` actually accepts. Duplicated (not imported) from
+#: ``models.base.JudgeBackend`` because this module keeps
+#: ``parrot.flows.dev_loop.models`` behind ``TYPE_CHECKING`` to avoid a
+#: heavy runtime import; the two are pinned equal by test — the same
+#: idiom ``conf.py`` uses for ``DEV_LOOP_MANTLE_REVIEW_MODEL``.
+#:
+#: The previous value drifted from the model and offered rows
+#: (``google_coding``, then ``gemini``) that ``JudgeSpec`` rejects with a
+#: ``pydantic.ValidationError``; the pinning test exists so that cannot
+#: recur silently.
+_JUDGE_REVIEW_CAPABLE_BACKENDS: tuple[str, ...] = ("claude-code", "codex", "mantle")
 
 
 class DevLoopConsole:
@@ -599,8 +600,7 @@ class DevLoopConsole:
 
         Choices are limited to the catalog's ``JUDGE_BACKENDS``,
         intersected with ``_JUDGE_REVIEW_CAPABLE_BACKENDS`` (backends
-        ``JudgeSpec`` actually accepts today — see that constant's
-        docstring for the known ``google_coding`` gap). Default is skip
+        ``JudgeSpec`` actually accepts). Default is skip
         (``None``, i.e. ``JudgePanelReviewDispatcher`` falls back to
         ``default_judge_panel()`` / ``DEV_LOOP_JUDGE_PANEL``). A
         ``JudgeSpec`` construction failure is reported and the row is
@@ -629,7 +629,10 @@ class DevLoopConsole:
             return None
 
         judge_backend_ids = set(catalog.JUDGE_BACKENDS) & set(_JUDGE_REVIEW_CAPABLE_BACKENDS)
-        backends = [b for b in catalog.BACKENDS if b.id in judge_backend_ids]
+        # `backends_for_role` (not `catalog.BACKENDS`) — a reviewer need
+        # not be a dev-loop coding backend: "mantle" has no
+        # `build_dispatcher` branch and lives in `REVIEW_ONLY_BACKENDS`.
+        backends = [b for b in catalog.backends_for_role("judge") if b.id in judge_backend_ids]
         judges: list[JudgeSpec] = []
         while True:
             prompt = "Add a judge? [y/N]: " if judges else "Add a judge? [Y/n]: "

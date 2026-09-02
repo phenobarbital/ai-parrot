@@ -226,7 +226,7 @@ class QANode(DevLoopNode):
             # so deliberately, and is left alone.
             executable = await self._default_criteria(shared, research)
 
-        is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
+        is_advisory = getattr(self._active_reviewer(shared), "advisory", False)
 
         # FEAT-250 G4 / FEAT-270, optimised pipeline:
         #
@@ -562,7 +562,8 @@ class QANode(DevLoopNode):
         * ``packages/<dist>/src/<top_pkg>/<dirs>/<file>.py`` — mirrored to
           the deepest existing ``packages/<dist>/tests/<dirs>``.
         * anything else under ``packages/<dist>/`` — the package test root.
-        * anything outside ``packages/`` — dropped (nothing maps).
+        * ``tests/...`` — the repo-root suite, targeted directly.
+        * anything else (``scripts/``, ``docs/``…) — dropped (nothing maps).
 
         A distribution with no ``tests`` directory at all contributes no
         target: pytest exits 4 ("file or directory not found") on a
@@ -599,6 +600,18 @@ class QANode(DevLoopNode):
             to nothing that exists on disk.
         """
         parts = PurePosixPath(path).parts
+        if parts and parts[0] == "tests":
+            # The repo-root ``tests/`` tree (pytest's configured
+            # ``testpaths``, ~400 modules) lives outside ``packages/`` and
+            # mirrors nothing, so a change there has no package to map to.
+            # Left unmapped it produced NO target at all, which the caller
+            # turns into a bare ``pytest`` — the entire root suite. The
+            # changed module is its own target.
+            if os.path.exists(os.path.join(worktree_path, path)):
+                return path
+            # Deleted module — fall back to the root tree, but only if it
+            # exists (pytest exits 4 on a missing path).
+            return "tests" if os.path.isdir(os.path.join(worktree_path, "tests")) else None
         if len(parts) < 3 or parts[0] != "packages":
             return None
         tests_root = f"packages/{parts[1]}/tests"
@@ -741,6 +754,63 @@ class QANode(DevLoopNode):
     # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)
     # ------------------------------------------------------------------
 
+    def _active_reviewer(self, shared: Dict[str, Any]) -> AbstractCodeReviewDispatcher:
+        """Return the reviewer for THIS run, honouring a per-run judge panel.
+
+        ``FeatureBrief.judge_panel`` is what the console's "Review &
+        judges" tab writes, and it was dead weight: the field existed, the
+        server parsed it into the brief, and nothing ever read it. The QA
+        reviewer came exclusively from the dispatcher injected at
+        construction time — built once at server start from
+        ``DEV_LOOP_JUDGE_PANEL`` / ``default_judge_panel()`` — so editing
+        the panel in the UI changed nothing about the run, which is how a
+        Gemini judge kept being dispatched after it had been removed
+        there.
+
+        The override applies only when the injected reviewer is itself a
+        judge panel (it exposes ``with_judges``). A deployment that
+        deliberately swapped the panel for something else — e.g.
+        ``DEV_FLOW_USE_REVIEW_PAIR=true``, which installs the model plan's
+        primary+counter pair — keeps its reviewer, and the ignored
+        override is logged rather than silently dropped.
+
+        Args:
+            shared: The flow's shared dict; ``feature_brief`` is read from
+                it when present (bug-mode runs have none).
+
+        Returns:
+            The configured reviewer, or a run-scoped copy of the panel.
+        """
+        cached = shared.get("_active_reviewer")
+        if cached is not None:
+            return cached
+        dispatcher = self._codereview_dispatcher
+        panel = getattr(shared.get("feature_brief"), "judge_panel", None)
+        judges = list(getattr(panel, "judges", None) or [])
+        if not judges:
+            return dispatcher
+        with_judges = getattr(dispatcher, "with_judges", None)
+        if with_judges is None:
+            self.logger.warning(
+                "Run requested a %d-judge panel (%s) but the active reviewer "
+                "is %r, which is not a judge panel — override ignored",
+                len(judges),
+                ", ".join(j.agent for j in judges),
+                getattr(dispatcher, "agent_name", type(dispatcher).__name__),
+            )
+            return dispatcher
+        self.logger.info(
+            "Using this run's judge panel: %s",
+            ", ".join(f"{j.agent}:{j.model or 'default'}" for j in judges),
+        )
+        # Cached on `shared` (run-scoped), never on `self`: QANode is a
+        # flow node reused across runs, and `execute()` calls this both
+        # for the `advisory` branch decision and for the review itself —
+        # they must agree, and must not rebuild the panel per QA attempt.
+        reviewer = with_judges(judges)
+        shared["_active_reviewer"] = reviewer
+        return reviewer
+
     async def _run_code_review(
         self,
         shared: Dict[str, Any],
@@ -790,7 +860,7 @@ class QANode(DevLoopNode):
             qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
         try:
-            verdict = await self._codereview_dispatcher.review(
+            verdict = await self._active_reviewer(shared).review(
                 brief=review_brief,
                 run_id=shared["run_id"],
                 node_id=self.name,
