@@ -93,7 +93,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Touches pythonrepl.py, pythonpandas.py, clients/base.py — disjoint from TASK-2760's pool.py, so it could run alongside TASK-2760 in a second worktree; kept sequential (per-spec isolation) because the whole feature is small and a single worktree avoids a merge.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2761-tool-client-error-legibility.md"
+      "completed_at": "2026-09-02T15:06:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2761-tool-client-error-legibility.md"
     },
     {
       "id": "TASK-2762",

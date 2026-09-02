@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2759
@@ -199,8 +199,71 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- `pythonrepl.py` `_execute()` exception branch: `detail = str(e) or
+  type(e).__name__`, `%s`-style log, and
+  `{"status": "error", "result": f"ToolError: {type(e).__name__}: {detail}",
+  "error": detail}`. The `{status, result, error}` contract is unchanged (AC11);
+  only `error`'s content can no longer be empty.
+- `clients/base.py`: the wrapper is `AbstractClient._execute_tool` (confirmed by
+  grep — `:1454`, the `raise ValueError(result.error)` is at what is now
+  `:1499`). Changed to
+  `raise ValueError(result.error or f"Tool {tool_name} returned status=error
+  without a message")`. Nothing else in the wrapper was touched.
+- `pythonpandas.py`:
+  * imports `NamespaceTimeoutError, WorkerBootstrapError` from `.repl_worker`;
+  * the seeding loop in `_get_worker_handle()` wraps each
+    `inject_dataframe`/`set_var` and re-raises via
+    `raise type(exc)(f"seeding {name!r} into the REPL worker failed: {exc}")
+    from exc` — same exception type, so `except TimeoutError` callers still
+    match. The identity-based reseed logic and the DataFrame/scalar split are
+    untouched;
+  * all three swallowed namespace probes now `self.logger.debug(...)` with the
+    exception text (the two `list_vars()` sites share the "namespace probe
+    failed" message; the `get_var()` site names the key it was previewing).
+    They remain non-fatal.
+- **Caller audit (requested by the task)**: grepped every `packages/*/src` tree
+  for type-identity/equality comparisons against timeout classes
+  (`type(x) is/== TimeoutError`, `__class__ is ...`, `is asyncio.TimeoutError`,
+  `== asyncio.TimeoutError`) — **no matches anywhere**. Then read each
+  namespace-API call site named in the task: `bots/data.py:1724` (`get_var`,
+  guarded only by `hasattr`, relies on outer broad handling), `:2210`
+  (`snapshot`), `:2501`, `:2613`, `:2617`, `:2677`, `:2681` (`get_var`);
+  `bots/agent.py:251` (`snapshot`); `tools/agent.py:424`/`:430` (`set_var`).
+  None of them catches a timeout type specifically, let alone compares types by
+  identity, so `NamespaceTimeoutError` (a `TimeoutError` subclass) needs no
+  caller adjustments. **No files were changed outside the task's list.**
+- Tests:
+  * `test_integration.py::test_execute_error_dict_never_blank` — a
+    `_worker_session` that raises bare `TimeoutError()` now yields
+    `error == "TimeoutError"` and `result` starting with
+    `"ToolError: TimeoutError: TimeoutError"`.
+  * new `tests/unit/clients/test_tool_error_message.py` — 3 tests exercising
+    `AbstractClient._execute_tool` unbound against a `SimpleNamespace` stub
+    (it only reads `_tool_context`, `_permission_context`,
+    `_tool_param_names`, `tool_manager`, `logger`, so no provider client and no
+    network are needed): empty `error` -> fallback text naming the tool; a real
+    error message is preserved verbatim; the success path still returns
+    `result.result`.
+  * The seeding-message requirement was verified directly (a fake handle whose
+    `set_var` raises `NamespaceTimeoutError`): the re-raised exception is still
+    a `NamespaceTimeoutError` and reads
+    `seeding 'n_rows' into the REPL worker failed: repl_worker[pid=1]: ...`.
+- Verification: `test_integration.py` + the new client module -> 12 passed.
+  `test_pythonrepl_executor.py`, `test_pythonrepl_security.py`,
+  `test_pythonpandas_preview.py`, `test_pythonpandas_integration.py` ->
+  26 failed / 39 passed, **byte-identical to baseline** (`git stash -u`
+  comparison): all 26 are pre-existing failures in this environment, none
+  introduced here.
+- `ruff check` on the five changed files: total findings went DOWN, 327 ->
+  322 (the three `# noqa: BLE001` markers on the diagnostics probes account for
+  most of it). The only added finding is one `I001` in the new client test
+  file, because ruff's isort config treats `parrot` as third-party and wants no
+  blank line between `import pytest` and the `parrot` imports. Left as-is
+  deliberately: every existing test module in `tests/unit/clients/` (and
+  `test_integration.py`, which carries the same pre-existing I001) uses that
+  blank line, so "fixing" it would make the new file the only inconsistent one.
 
 **Deviations from spec**: none
