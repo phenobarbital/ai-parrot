@@ -85,8 +85,7 @@ def test_python_scanner_mode_is_ast():
 
 
 SAMPLE_SYMBOLS_SRC = (
-    'class A:\n    """Doc."""\n    async def m(self, x: int) -> int:\n'
-    "        return x\n\n@dec\ndef f(a, b=1): ...\n"
+    'class A:\n    """Doc."""\n    async def m(self, x: int) -> int:\n' "        return x\n\n@dec\ndef f(a, b=1): ...\n"
 )
 
 

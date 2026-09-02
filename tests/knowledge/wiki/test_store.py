@@ -29,9 +29,7 @@ from parrot.knowledge.wiki.store import (
 @pytest.fixture(params=["sqlite", "memory"])
 def store(tmp_path: Path, request: pytest.FixtureRequest) -> BaseWikiStore:
     """Fresh store of each backend, rooted at tmp_path."""
-    return create_wiki_store(
-        tmp_path, wiki_name="test-wiki", backend=request.param
-    )
+    return create_wiki_store(tmp_path, wiki_name="test-wiki", backend=request.param)
 
 
 def _page(cid: str, **kw) -> WikiPageRecord:
@@ -107,9 +105,7 @@ class TestPagesCrud:
 
     @pytest.mark.asyncio
     async def test_list_pages_category_filter(self, store: BaseWikiStore):
-        await store.upsert_pages(
-            [_page("a", category="entity"), _page("b", category="summary")]
-        )
+        await store.upsert_pages([_page("a", category="entity"), _page("b", category="summary")])
         entities = await store.list_pages(category="entity")
         assert [p["concept_id"] for p in entities] == ["a"]
         assert "body" not in entities[0]  # stubs only
@@ -138,10 +134,8 @@ class TestSearchFts:
     async def test_search_finds_relevant_page(self, store: BaseWikiStore):
         await store.upsert_pages(
             [
-                _page("nn", title="Neural Networks",
-                      body="A neural network is a computational model."),
-                _page("cooking", title="Cooking Pasta",
-                      body="Boil water and add salt."),
+                _page("nn", title="Neural Networks", body="A neural network is a computational model."),
+                _page("cooking", title="Cooking Pasta", body="Boil water and add salt."),
             ]
         )
         hits = await store.search_fts("neural network model")
@@ -211,9 +205,7 @@ class TestEdgesAndNeighbors:
     @pytest.mark.asyncio
     async def test_neighbors_rel_filter(self, store: BaseWikiStore):
         await store.upsert_pages([_page("a"), _page("b"), _page("c")])
-        await store.add_edges(
-            [("a", "b", "summarizes"), ("a", "c", "references")]
-        )
+        await store.add_edges([("a", "b", "summarizes"), ("a", "c", "references")])
         hits = await store.neighbors("a", rel="references", direction="out")
         assert [h["concept_id"] for h in hits] == ["c"]
 
@@ -268,9 +260,7 @@ class TestReplaceSourceSlice:
         assert await store.get_page("b") is not None
 
     @pytest.mark.asyncio
-    async def test_replace_preserves_incoming_edges_to_stable_ids(
-        self, store: BaseWikiStore
-    ):
+    async def test_replace_preserves_incoming_edges_to_stable_ids(self, store: BaseWikiStore):
         """Incoming edges from other sources survive a re-ingest.
 
         A directory 'contains' edge (or an importer's 'references'
@@ -284,14 +274,10 @@ class TestReplaceSourceSlice:
         await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
 
         incoming = await store.neighbors("a", direction="in")
-        assert [(n["concept_id"], n["rel"]) for n in incoming] == [
-            ("dir-x", "contains")
-        ]
+        assert [(n["concept_id"], n["rel"]) for n in incoming] == [("dir-x", "contains")]
 
     @pytest.mark.asyncio
-    async def test_replace_drops_incoming_edges_to_removed_ids(
-        self, store: BaseWikiStore
-    ):
+    async def test_replace_drops_incoming_edges_to_removed_ids(self, store: BaseWikiStore):
         """Incoming edges are NOT preserved when the target id vanishes."""
         await store.replace_source_slice("src-1", [_page("a", source_id="src-1")])
         await store.upsert_pages([_page("dir-x")])
@@ -355,9 +341,7 @@ class TestRebuildFromTree:
             ]
         }
         bodies = {"hipaa": "# HIPAA\n\nfull text", "0001": "# Safeguards"}
-        report = await store.rebuild_from_tree(
-            tree, content_loader=bodies.get, source_id="src-1"
-        )
+        report = await store.rebuild_from_tree(tree, content_loader=bodies.get, source_id="src-1")
         assert report["pages_written"] == 2
         root = await store.get_page("hipaa")
         assert root["body"] == "# HIPAA\n\nfull text"
@@ -375,9 +359,7 @@ class TestRebuildFromTree:
         assert page is not None and page["body"] == ""
 
 
-_skip_root = pytest.mark.skipif(
-    os.geteuid() == 0, reason="chmod is a no-op for root"
-)
+_skip_root = pytest.mark.skipif(os.geteuid() == 0, reason="chmod is a no-op for root")
 
 
 class TestReadOnlyFallback:
@@ -392,9 +374,7 @@ class TestReadOnlyFallback:
     async def ro_plane(self, tmp_path: Path):
         """A populated plane whose directory is then made read-only."""
         store = create_wiki_store(tmp_path, wiki_name="ro", backend="sqlite")
-        await store.upsert_pages(
-            [_page("ro-page", body="# ro\n\nneedle haystack content")]
-        )
+        await store.upsert_pages([_page("ro-page", body="# ro\n\nneedle haystack content")])
         db = tmp_path / "wiki.db"
         db.chmod(0o444)
         tmp_path.chmod(0o555)
@@ -454,9 +434,7 @@ class TestReadOnlyFallback:
 
     @_skip_root
     @pytest.mark.asyncio
-    async def test_longlived_instance_survives_readonly_transition(
-        self, tmp_path: Path
-    ):
+    async def test_longlived_instance_survives_readonly_transition(self, tmp_path: Path):
         """A store that already served writes keeps serving reads after
         the filesystem turns read-only mid-life (remount, snapshot swap)
         — the presence probe forces the lazy open before yield on every
@@ -483,9 +461,7 @@ class TestReadOnlyFallback:
         (tmp_path / "wiki.db").chmod(0o444)
         tmp_path.chmod(0o555)
         try:
-            fresh = create_wiki_store(
-                tmp_path, wiki_name="w", backend="sqlite"
-            )
+            fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
             assert await fresh.get_page("p1") is not None  # degraded read
         finally:
             tmp_path.chmod(0o755)
@@ -495,26 +471,19 @@ class TestReadOnlyFallback:
 
     @_skip_root
     @pytest.mark.asyncio
-    async def test_concurrent_writer_served_by_locking_ro_path(
-        self, tmp_path: Path
-    ):
+    async def test_concurrent_writer_served_by_locking_ro_path(self, tmp_path: Path):
         """With live -wal/-shm sidecars from a real writer, reads go
         through plain mode=ro (full locking) and SEE the WAL content."""
         store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
         await store.upsert_pages([_page("p1")])
         writer = sqlite3.connect(tmp_path / "wiki.db")
         try:
-            writer.execute(
-                "UPDATE pages SET summary = 'from-writer'"
-                " WHERE concept_id = 'p1'"
-            )
+            writer.execute("UPDATE pages SET summary = 'from-writer'" " WHERE concept_id = 'p1'")
             writer.commit()  # committed into the WAL, not yet checkpointed
             assert (tmp_path / "wiki.db-wal").stat().st_size > 0
             (tmp_path / "wiki.db").chmod(0o444)
             tmp_path.chmod(0o555)
-            fresh = create_wiki_store(
-                tmp_path, wiki_name="w", backend="sqlite"
-            )
+            fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
             page = await fresh.get_page("p1")
             assert page is not None
             assert page["summary"] == "from-writer"
@@ -534,9 +503,7 @@ class TestReadOnlyFallback:
         (tmp_path / "wiki.db").chmod(0o444)
         tmp_path.chmod(0o555)
         try:
-            fresh = create_wiki_store(
-                tmp_path, wiki_name="w", backend="sqlite"
-            )
+            fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
             with pytest.raises(sqlite3.OperationalError):
                 await fresh.get_page("p1")
         finally:
@@ -544,9 +511,7 @@ class TestReadOnlyFallback:
             (tmp_path / "wiki.db").chmod(0o644)
 
     @pytest.mark.asyncio
-    async def test_schema_replay_skipped_when_schema_present(
-        self, tmp_path: Path
-    ):
+    async def test_schema_replay_skipped_when_schema_present(self, tmp_path: Path):
         """The schema replay runs only when the presence probe misses."""
         store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
         await store.upsert_pages([_page("p1")])
@@ -575,9 +540,7 @@ class TestReadOnlyFallback:
 
     @_skip_root
     @pytest.mark.asyncio
-    async def test_hot_rollback_journal_refuses_immutable(
-        self, tmp_path: Path
-    ):
+    async def test_hot_rollback_journal_refuses_immutable(self, tmp_path: Path):
         """A hot -journal is refused like a live WAL — an immutable read
         would serve un-rolled-back data."""
         store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
@@ -586,9 +549,7 @@ class TestReadOnlyFallback:
         (tmp_path / "wiki.db").chmod(0o444)
         tmp_path.chmod(0o555)
         try:
-            fresh = create_wiki_store(
-                tmp_path, wiki_name="w", backend="sqlite"
-            )
+            fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
             with pytest.raises(sqlite3.OperationalError):
                 await fresh.get_page("p1")
         finally:
@@ -608,9 +569,7 @@ class TestExplicitReadOnlyMode:
     async def built_plane(self, tmp_path: Path) -> Path:
         """A populated, cleanly checkpointed plane (no -wal/-shm)."""
         store = create_wiki_store(tmp_path, wiki_name="foreign", backend="sqlite")
-        await store.upsert_pages(
-            [_page("ro-1", body="# doc\n\nneedle haystack content")]
-        )
+        await store.upsert_pages([_page("ro-1", body="# doc\n\nneedle haystack content")])
         async with aiosqlite.connect(str(tmp_path / "wiki.db")) as conn:
             await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             await conn.commit()
@@ -650,9 +609,7 @@ class TestExplicitReadOnlyMode:
 
         def columns() -> set[str]:
             with sqlite3.connect(str(db)) as conn:
-                return {
-                    row[1] for row in conn.execute("PRAGMA table_info(pages)")
-                }
+                return {row[1] for row in conn.execute("PRAGMA table_info(pages)")}
 
         before = columns()
         assert "asserted_by" not in before
@@ -743,9 +700,7 @@ class TestSymbolPlane:
 
     @pytest.mark.asyncio
     async def test_page_hashes(self, store: BaseWikiStore):
-        await store.upsert_pages(
-            [_page("a", content_hash="h1"), _page("b", content_hash=None)]
-        )
+        await store.upsert_pages([_page("a", content_hash="h1"), _page("b", content_hash=None)])
         hashes = await store.page_hashes(["a", "b", "missing"])
         assert hashes["a"] == "h1"
         assert hashes["b"] is None

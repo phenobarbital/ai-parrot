@@ -153,9 +153,7 @@ class TestBlastRadius:
             tmp_path,
             {
                 "a.py": "def helper():\n    return 1\n",
-                "tests/test_a.py": (
-                    "from a import helper\n\n\ndef test_it():\n    return helper()\n"
-                ),
+                "tests/test_a.py": ("from a import helper\n\n\ndef test_it():\n    return helper()\n"),
             },
         )
         out_with_tests = await svc.blast_radius("sym:a.py#helper", include_tests=True)

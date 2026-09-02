@@ -113,14 +113,11 @@ def test_polyglot_svelte_alongside_python(tmp_path):
     `.svelte` for the JS scanner must not let a Svelte import resolve
     into a Python page, nor vice versa.
     """
-    _write(
-        tmp_path, "svelte.config.js", "export default { kit: {} }\n"
-    )
+    _write(tmp_path, "svelte.config.js", "export default { kit: {} }\n")
     _write(
         tmp_path,
         "src/app.py",
-        '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
-        '    """Run the app."""\n',
+        '"""Application entrypoint."""\n\n\ndef main() -> None:\n' '    """Run the app."""\n',
     )
     _write(tmp_path, "src/lib/util.ts", "export function helper() {}\n")
     _write(

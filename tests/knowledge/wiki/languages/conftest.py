@@ -106,54 +106,60 @@ def polyglot_repo(tmp_path: Path) -> Path:
     per-language without any cross-language leakage.
     """
     _write(
-        tmp_path, "src/app.py",
-        '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
-        '    """Run the app."""\n\n\n'
+        tmp_path,
+        "src/app.py",
+        '"""Application entrypoint."""\n\n\ndef main() -> None:\n' '    """Run the app."""\n\n\n'
         # FEAT-498 TASK-2752: a Python symbol every e2e assertion can
         # anchor on (`sym:src/app.py#helper`) without depending on the
         # entrypoint's own name.
-        "def helper() -> int:\n"
-        '    """A tiny helper."""\n'
-        "    return 1\n",
+        "def helper() -> int:\n" '    """A tiny helper."""\n' "    return 1\n",
     )
     _write(
-        tmp_path, "src/Service.php",
+        tmp_path,
+        "src/Service.php",
         "<?php\nnamespace App;\n\nuse App\\Base\\Model;\n\n/**\n"
         " * Main application service.\n */\nclass Service extends Model {\n"
         "    /**\n     * Run the service.\n     */\n"
         "    public function run(): void { ... }\n}\n",
     )
     _write(
-        tmp_path, "composer.json",
+        tmp_path,
+        "composer.json",
         '{"autoload": {"psr-4": {"App\\\\": "src/"}}}\n',
     )
     _write(
-        tmp_path, "web/index.ts",
-        "import { helper } from './util';\n\n/**\n * Main entry.\n */\n"
-        "export function main(): void { ... }\n",
+        tmp_path,
+        "web/index.ts",
+        "import { helper } from './util';\n\n/**\n * Main entry.\n */\n" "export function main(): void { ... }\n",
     )
     _write(
-        tmp_path, "web/util/index.ts",
+        tmp_path,
+        "web/util/index.ts",
         'export function helper(): string {\n    return "ok";\n}\n',
     )
     _write(
-        tmp_path, "native/src/lib.rs",
+        tmp_path,
+        "native/src/lib.rs",
         "/// Native crate root.\npub mod parser;\n\npub fn init() {}\n",
     )
     _write(
-        tmp_path, "native/src/parser.rs",
+        tmp_path,
+        "native/src/parser.rs",
         "/// Parser module.\npub struct Parser;\n",
     )
     _write(
-        tmp_path, "public/index.html",
+        tmp_path,
+        "public/index.html",
         "<html><head><title>Public Site</title></head><body></body></html>\n",
     )
     _write(
-        tmp_path, "lib/MyApp/Schema.pm",
+        tmp_path,
+        "lib/MyApp/Schema.pm",
         "package MyApp::Schema;\n\nsub connect { }\n1;\n",
     )
     _write(
-        tmp_path, "lib/MyApp/User.pm",
+        tmp_path,
+        "lib/MyApp/User.pm",
         "package MyApp::User;\nuse MyApp::Schema;\n\n"
         "sub new {\n    my ($class) = @_;\n    return bless {}, $class;\n}\n1;\n",
     )
@@ -162,10 +168,8 @@ def polyglot_repo(tmp_path: Path) -> Path:
     # registers, not just the deep-scanned five. Routed through the JS/TS
     # scanner (FEAT-396) — an isolated file, no cross-language edges.
     _write(
-        tmp_path, "src/lib/Widget.svelte",
-        '<script lang="ts">\n'
-        "  export function render(): string { return 'x' }\n"
-        "</script>\n"
-        "<div>hi</div>\n",
+        tmp_path,
+        "src/lib/Widget.svelte",
+        '<script lang="ts">\n' "  export function render(): string { return 'x' }\n" "</script>\n" "<div>hi</div>\n",
     )
     return tmp_path

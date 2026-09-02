@@ -51,15 +51,12 @@ _RE_ENUM = re.compile(r"(?<![\w$])enum\s+(\w+)")
 _RE_FUNCTION = re.compile(r"(?<![\w$])function\s+(\w+)\s*\(([^)]*)\)")
 _RE_USE = re.compile(r"(?<![\w$])use\s+([\w\\]+)(?:\\?\{([^}]+)\})?\s*;")
 _RE_REQUIRE = re.compile(
-    r"(?<![\w$])(?:require_once|include_once|require|include)\s+"
-    r"(?:__DIR__\s*\.\s*)?['\"]([^'\"]+)['\"]"
+    r"(?<![\w$])(?:require_once|include_once|require|include)\s+" r"(?:__DIR__\s*\.\s*)?['\"]([^'\"]+)['\"]"
 )
 
 #: Visibility/abstractness keywords allowed between a docblock and the
 #: declaration it documents (only whitespace + these tokens tolerated).
-_MODIFIER_TOKENS = frozenset(
-    {"abstract", "final", "public", "protected", "private", "static"}
-)
+_MODIFIER_TOKENS = frozenset({"abstract", "final", "public", "protected", "private", "static"})
 
 #: Container keyword -> rendered outline label, in the exact style used by
 #: the existing Python outline (``kind Name: doc``).
@@ -82,10 +79,7 @@ def _docblock_first_line(doc_body: str) -> str:
 
 def _find_docblocks(source: str) -> list[tuple[int, int, str]]:
     """Every ``/** ... */`` block as ``(start, end, first_line)``, in order."""
-    return [
-        (m.start(), m.end(), _docblock_first_line(m.group(1)))
-        for m in _RE_DOCBLOCK.finditer(source)
-    ]
+    return [(m.start(), m.end(), _docblock_first_line(m.group(1))) for m in _RE_DOCBLOCK.finditer(source)]
 
 
 def _gap_is_modifiers_only(gap: str) -> bool:
@@ -207,26 +201,18 @@ class PhpScanner(LanguageScanner):
                 owner = self._enclosing_container(source, containers, pos)
                 doc = self._doc_for(source, docblocks, pos)
                 if owner is not None:
-                    lines.append(
-                        f"    def {fname}({fparams}): {doc}".rstrip(": ")
-                    )
+                    lines.append(f"    def {fname}({fparams}): {doc}".rstrip(": "))
                 else:
-                    lines.append(
-                        f"function {fname}({fparams}): {doc}".rstrip(": ")
-                    )
+                    lines.append(f"function {fname}({fparams}): {doc}".rstrip(": "))
 
-        first_keyword_pos = min(
-            (pos for pos, _ in entries), default=len(source)
-        )
+        first_keyword_pos = min((pos for pos, _ in entries), default=len(source))
         summary = ""
         if docblocks and docblocks[0][0] < first_keyword_pos:
             summary = docblocks[0][2]
         return summary, lines
 
     @staticmethod
-    def _doc_for(
-        source: str, docblocks: list[tuple[int, int, str]], decl_start: int
-    ) -> str:
+    def _doc_for(source: str, docblocks: list[tuple[int, int, str]], decl_start: int) -> str:
         """PHPDoc first line immediately preceding ``decl_start``, if any."""
         best = ""
         best_end = -1
@@ -274,9 +260,7 @@ class PhpScanner(LanguageScanner):
         lines: list[str] = []
 
         def _text(node: Any) -> str:
-            return source.encode("utf-8")[node.start_byte:node.end_byte].decode(
-                "utf-8", errors="replace"
-            )
+            return source.encode("utf-8")[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
         def _name_of(node: Any) -> str:
             name_node = node.child_by_field_name("name")
@@ -392,9 +376,7 @@ class PhpScanner(LanguageScanner):
                 return result
         return {}
 
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve a ``use`` namespace or a ``require``/``include`` path.
 
         Args:
@@ -413,15 +395,13 @@ class PhpScanner(LanguageScanner):
             clean = spec.strip("\\")
             for ns_prefix, dir_prefix in psr4_map.items():
                 if clean.startswith(ns_prefix):
-                    tail = clean[len(ns_prefix):].replace("\\", "/")
+                    tail = clean[len(ns_prefix) :].replace("\\", "/")
                     candidate = f"{dir_prefix.rstrip('/')}/{tail}.php".lstrip("/")
                     if candidate in file_set:
                         return candidate
             tail_name = clean.rsplit("\\", 1)[-1]
             matches = sorted(
-                p for p in file_set
-                if PurePosixPath(p).suffix == ".php"
-                and PurePosixPath(p).stem == tail_name
+                p for p in file_set if PurePosixPath(p).suffix == ".php" and PurePosixPath(p).stem == tail_name
             )
             return matches[0] if matches else None
 

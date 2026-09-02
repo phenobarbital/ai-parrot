@@ -174,9 +174,7 @@ _MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
 #: Tables ``WIKI_SCHEMA_SQL`` creates. The per-connection presence probe
 #: replays the schema when ANY of them is missing (fresh plane, external
 #: replacement, or a partial legacy database), not just ``pages``.
-_SCHEMA_TABLES = frozenset(
-    {"meta", "sources", "pages", "edges", "pages_fts", "embeddings", "symbols", "symbols_fts"}
-)
+_SCHEMA_TABLES = frozenset({"meta", "sources", "pages", "edges", "pages_fts", "embeddings", "symbols", "symbols_fts"})
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -1246,9 +1244,7 @@ class SQLiteWikiStore(BaseWikiStore):
             # FEAT-498: symbols/symbols_fts rows for this source are
             # cleared in the same transaction as the file/sym: pages
             # above, so a re-scan never accumulates stale symbol rows.
-            async with conn.execute(
-                "SELECT concept_id FROM symbols WHERE source_id = ?", (source_id,)
-            ) as cur:
+            async with conn.execute("SELECT concept_id FROM symbols WHERE source_id = ?", (source_id,)) as cur:
                 old_symbol_ids = [row["concept_id"] for row in await cur.fetchall()]
             if old_symbol_ids:
                 await conn.executemany(
@@ -1395,8 +1391,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 [(r[0],) for r in rows],
             )
             await conn.executemany(
-                "INSERT INTO symbols_fts (concept_id, name, qualname, doc, signature)"
-                " VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO symbols_fts (concept_id, name, qualname, doc, signature)" " VALUES (?, ?, ?, ?, ?)",
                 [(r[0], r[4], r[5], r[8], r[7]) for r in rows],
             )
             await conn.commit()

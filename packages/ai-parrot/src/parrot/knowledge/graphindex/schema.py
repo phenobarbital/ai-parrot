@@ -224,13 +224,9 @@ class UniversalEdge(BaseModel):
             ValueError: When the confidence/provenance combination is invalid.
         """
         if self.provenance == Provenance.INFERRED and self.confidence is None:
-            raise ValueError(
-                "confidence must be set when provenance is INFERRED"
-            )
+            raise ValueError("confidence must be set when provenance is INFERRED")
         if self.provenance != Provenance.INFERRED and self.confidence is not None:
-            raise ValueError(
-                "confidence must be None when provenance is not INFERRED"
-            )
+            raise ValueError("confidence must be None when provenance is not INFERRED")
         return self
 
 

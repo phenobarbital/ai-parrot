@@ -990,8 +990,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         # counted via `category`, surfaced here too for parity with the
         # other two backends' stats() shape.
         symbol_rows = await self._query(
-            "FOR doc IN @@collection FILTER doc.category == 'symbol'"
-            " COLLECT WITH COUNT INTO length RETURN length",
+            "FOR doc IN @@collection FILTER doc.category == 'symbol'" " COLLECT WITH COUNT INTO length RETURN length",
             {"@collection": PAGES_COLLECTION},
         )
         out["symbols"] = symbol_rows[0] if symbol_rows else 0

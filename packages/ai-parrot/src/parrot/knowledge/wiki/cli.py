@@ -635,7 +635,7 @@ def _owning_rel_path(concept_id: str) -> str | None:
         The rel path, or ``None`` for any other id shape.
     """
     if concept_id.startswith("file:"):
-        return concept_id[len("file:"):]
+        return concept_id[len("file:") :]
     if concept_id.startswith("sym:"):
         try:
             rel_path, _qualname, _ordinal = parse_sym_id(concept_id)
@@ -744,9 +744,7 @@ async def _ingest_files(
             # helper already accepts a 4th provenance element (mirrors
             # add_edges) — a type-annotation gap, not a runtime one.
             combined_edges = cast("list[tuple[str, str, str]]", [*slice_edges, *symbol_edges])
-            await store.replace_source_slice(
-                source_id, [file_slice.record, *sym_records], combined_edges
-            )
+            await store.replace_source_slice(source_id, [file_slice.record, *sym_records], combined_edges)
         if file_slice.symbols:
             await store.upsert_symbols(file_slice.symbols, source_id=source_id)
         ingested_pages.setdefault(source_id, []).append(file_slice.record.concept_id)
@@ -1935,11 +1933,7 @@ def symbols_lookup(
     """Find a symbol (function/class/method) by name or qualname."""
     tool = _structural_tool("wiki_symbol_lookup", path_)
     kind_enum = SymbolKind(kind) if kind else None
-    result = _run(
-        tool._execute(
-            query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit
-        )
-    )
+    result = _run(tool._execute(query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit))
     _echo_structural_result(result, as_json)
 
 
@@ -1947,9 +1941,7 @@ def symbols_lookup(
 @path_option
 @click.argument("target")
 @click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
-@click.option(
-    "--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only)."
-)
+@click.option("--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_outline(
     path_: str | None,
@@ -1968,16 +1960,22 @@ def symbols_outline(
 @path_option
 @click.argument("symbol")
 @click.option(
-    "--rel", "relations", multiple=True,
+    "--rel",
+    "relations",
+    multiple=True,
     help="Edge relation to follow (repeatable); default: calls, extends, implements.",
 )
 @click.option("--depth", default=2, type=int, help="Maximum BFS depth.")
 @click.option(
-    "--inferred/--no-inferred", "include_inferred", default=True,
+    "--inferred/--no-inferred",
+    "include_inferred",
+    default=True,
     help="Follow provenance='inferred' edges (globally-unique-name resolutions).",
 )
 @click.option(
-    "--tests/--no-tests", "include_tests", default=True,
+    "--tests/--no-tests",
+    "include_tests",
+    default=True,
     help="Include symbols under a tests/ path.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")

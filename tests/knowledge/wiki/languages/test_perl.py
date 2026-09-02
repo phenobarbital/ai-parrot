@@ -174,18 +174,14 @@ class TestHeuristic:
         assert "MyApp::Utils" in result.summary
         assert "Utility functions" in result.summary
 
-    def test_multiple_packages(
-        self, scanner: PerlScanner, multi_package_source: str, force_heuristic
-    ):
+    def test_multiple_packages(self, scanner: PerlScanner, multi_package_source: str, force_heuristic):
         result = scanner.outline(multi_package_source, "lib/Multi.pm")
         assert "package Foo" in result.outline
         assert "package Bar" in result.outline
         assert any("foo_method" in line for line in result.outline)
         assert any("bar_method" in line for line in result.outline)
 
-    def test_nested_sub_indentation(
-        self, scanner: PerlScanner, moose_source: str, force_heuristic
-    ):
+    def test_nested_sub_indentation(self, scanner: PerlScanner, moose_source: str, force_heuristic):
         result = scanner.outline(moose_source, "lib/MyApp/Model/User.pm")
         sub_lines = [line for line in result.outline if "sub validate" in line]
         assert sub_lines
@@ -221,9 +217,7 @@ class TestHeuristic:
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("$self" in line and "$x" in line for line in result.outline)
 
-    def test_pragmas_and_versions_filtered_from_imports(
-        self, scanner: PerlScanner, force_heuristic
-    ):
+    def test_pragmas_and_versions_filtered_from_imports(self, scanner: PerlScanner, force_heuristic):
         source = (
             "use strict;\nuse warnings;\nuse v5.38;\nuse feature 'say';\n"
             "use 5.038;\nuse Moose;\nuse MyApp::Schema;\n"
@@ -288,23 +282,17 @@ def test_heuristic_mode_forced(scanner: PerlScanner, moose_source: str, monkeypa
 class TestImportResolution:
     def test_resolve_module_name(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "MyApp::Schema", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("MyApp::Schema", "lib/MyApp/Model/User.pm", index)
         assert resolved == "lib/MyApp/Schema.pm"
 
     def test_resolve_in_lib_dir(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "MyApp::Controller::Auth", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("MyApp::Controller::Auth", "lib/MyApp/Model/User.pm", index)
         assert resolved == "lib/MyApp/Controller/Auth.pm"
 
     def test_resolve_unresolvable(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "Some::CPAN::Module", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("Some::CPAN::Module", "lib/MyApp/Model/User.pm", index)
         assert resolved is None
 
     def test_resolve_relative_require(self, scanner: PerlScanner):

@@ -10,7 +10,7 @@ environment-independent.
 from parrot.knowledge.wiki.languages import scanner_for
 from parrot.knowledge.wiki.languages.rust import RustScanner
 
-SAMPLE_RUST = '''
+SAMPLE_RUST = """
 /// A document parser.
 pub struct Parser {
     pub name: String,
@@ -39,7 +39,7 @@ pub trait Serializable {
 
 mod tests;
 use crate::utils::helpers;
-'''
+"""
 
 
 def test_rust_outline_pub_items(force_heuristic):
@@ -80,10 +80,7 @@ def test_rust_doc_survives_attribute_macro(force_heuristic):
     )
     scanner = RustScanner()
     result = scanner.outline(source, "src/config.rs")
-    assert any(
-        "Config" in line and "A configuration value." in line
-        for line in result.outline
-    )
+    assert any("Config" in line and "A configuration value." in line for line in result.outline)
 
 
 def test_rust_doc_comments(force_heuristic):
@@ -117,9 +114,7 @@ def test_rust_use_crate_resolution():
     scanner = RustScanner()
     rel_paths = ["src/lib.rs", "src/parser.rs", "src/utils/helpers.rs"]
     index = scanner.build_reference_index(rel_paths)
-    target = scanner.resolve_import(
-        "crate::utils::helpers", "src/parser.rs", index
-    )
+    target = scanner.resolve_import("crate::utils::helpers", "src/parser.rs", index)
     assert target == "src/utils/helpers.rs"
 
 

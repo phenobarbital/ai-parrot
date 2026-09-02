@@ -61,13 +61,17 @@ class TestRenderRust:
 
     def test_impl_header_and_member_fn_regardless_of_pub(self):
         impl = _sym(kind=SymbolKind.IMPL, name="Foo", start_byte=0)
-        fn = _sym(kind=SymbolKind.FUNCTION, name="new", signature="", doc="", parent="Foo", exported=False, start_byte=5)
+        fn = _sym(
+            kind=SymbolKind.FUNCTION, name="new", signature="", doc="", parent="Foo", exported=False, start_byte=5
+        )
         assert render_outline([impl, fn], "rust") == ["impl Foo:", "    pub fn new()"]
 
     def test_top_level_fn_requires_pub(self):
         fn = _sym(kind=SymbolKind.FUNCTION, name="helper", signature="", doc="", exported=False, start_byte=0)
         assert render_outline([fn], "rust") == []
-        pub_fn = _sym(kind=SymbolKind.FUNCTION, name="helper", signature="a: u32", doc="Doc.", exported=True, start_byte=0)
+        pub_fn = _sym(
+            kind=SymbolKind.FUNCTION, name="helper", signature="a: u32", doc="Doc.", exported=True, start_byte=0
+        )
         assert render_outline([pub_fn], "rust") == ["pub fn helper(a: u32): Doc."]
 
 

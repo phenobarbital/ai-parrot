@@ -16,9 +16,7 @@ def built_project_root(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     (root / "a.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-    (root / "b.py").write_text(
-        "from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8"
-    )
+    (root / "b.py").write_text("from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8")
     result = CliRunner().invoke(wiki, ["build", "--path", str(root), "--no-git", "-q"])
     assert result.exit_code == 0, result.output
     return root

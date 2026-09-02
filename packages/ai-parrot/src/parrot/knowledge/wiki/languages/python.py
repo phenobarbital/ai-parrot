@@ -193,14 +193,26 @@ def _collect_symbols(
             qualname = f"{parent}.{node.name}" if parent else node.name
             symbols.append(
                 _build_symbol(
-                    node, kind=SymbolKind.CLASS, qualname=qualname, parent=parent,
-                    depth=depth, rel_path=rel_path, source=source, offsets=offsets,
+                    node,
+                    kind=SymbolKind.CLASS,
+                    qualname=qualname,
+                    parent=parent,
+                    depth=depth,
+                    rel_path=rel_path,
+                    source=source,
+                    offsets=offsets,
                 )
             )
             symbols.extend(
                 _collect_symbols(
-                    node.body, parent=qualname, in_class=True, depth=depth + 1,
-                    max_depth=max_depth, rel_path=rel_path, source=source, offsets=offsets,
+                    node.body,
+                    parent=qualname,
+                    in_class=True,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    rel_path=rel_path,
+                    source=source,
+                    offsets=offsets,
                 )
             )
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -208,14 +220,26 @@ def _collect_symbols(
             kind = SymbolKind.METHOD if in_class else SymbolKind.FUNCTION
             symbols.append(
                 _build_symbol(
-                    node, kind=kind, qualname=qualname, parent=parent,
-                    depth=depth, rel_path=rel_path, source=source, offsets=offsets,
+                    node,
+                    kind=kind,
+                    qualname=qualname,
+                    parent=parent,
+                    depth=depth,
+                    rel_path=rel_path,
+                    source=source,
+                    offsets=offsets,
                 )
             )
             symbols.extend(
                 _collect_symbols(
-                    node.body, parent=qualname, in_class=False, depth=depth + 1,
-                    max_depth=max_depth, rel_path=rel_path, source=source, offsets=offsets,
+                    node.body,
+                    parent=qualname,
+                    in_class=False,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    rel_path=rel_path,
+                    source=source,
+                    offsets=offsets,
                 )
             )
     return symbols
@@ -264,9 +288,7 @@ class PythonScanner(LanguageScanner):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         idoc = _first_line(ast.get_docstring(item) or "")
-                        outline.append(
-                            f"    def {item.name}{_sig(item)}: {idoc}".rstrip(": ")
-                        )
+                        outline.append(f"    def {item.name}{_sig(item)}: {idoc}".rstrip(": "))
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 doc = _first_line(ast.get_docstring(node) or "")
                 outline.append(f"def {node.name}{_sig(node)}: {doc}".rstrip(": "))
@@ -277,8 +299,14 @@ class PythonScanner(LanguageScanner):
         # this symbol list (resolved decision, spec §2 "Python exception").
         offsets = _byte_offsets(source)
         symbols = _collect_symbols(
-            tree.body, parent=None, in_class=False, depth=1,
-            max_depth=get_symbol_depth(), rel_path=rel_path, source=source, offsets=offsets,
+            tree.body,
+            parent=None,
+            in_class=False,
+            depth=1,
+            max_depth=get_symbol_depth(),
+            rel_path=rel_path,
+            source=source,
+            offsets=offsets,
         )
         refs: list[SymbolRef] = []
         if structural_enabled():
@@ -287,7 +315,11 @@ class PythonScanner(LanguageScanner):
                 refs = structural.refs
 
         return LanguageOutline(
-            summary=summary, outline=outline, imports=imports, symbols=symbols, refs=refs,
+            summary=summary,
+            outline=outline,
+            imports=imports,
+            symbols=symbols,
+            refs=refs,
         )
 
     def build_reference_index(self, rel_paths: Iterable[str]) -> Any:
@@ -310,7 +342,7 @@ class PythonScanner(LanguageScanner):
                 continue
             parts = list(p.parts)
             if "src" in parts:
-                parts = parts[parts.index("src") + 1:]
+                parts = parts[parts.index("src") + 1 :]
             if not parts:
                 continue
             parts[-1] = PurePosixPath(parts[-1]).stem
@@ -320,9 +352,7 @@ class PythonScanner(LanguageScanner):
                 index.setdefault(".".join(parts), rel)
         return index
 
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve a dotted module specifier via dotted-prefix matching.
 
         Args:

@@ -97,9 +97,7 @@ class LanguageScanner(ABC):
         ...
 
     @abstractmethod
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve one raw import specifier to a repository-relative path.
 
         Args:

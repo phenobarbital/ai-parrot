@@ -53,9 +53,7 @@ logger = logging.getLogger(__name__)
 _RULES_DIR = Path(__file__).parent / "rules"
 
 #: Languages ast-grep-py supports out of the box for this feature.
-_BUILTIN_LANGUAGES: frozenset[str] = frozenset(
-    {"python", "javascript", "typescript", "tsx", "php", "rust"}
-)
+_BUILTIN_LANGUAGES: frozenset[str] = frozenset({"python", "javascript", "typescript", "tsx", "php", "rust"})
 
 #: Qualname separator per language; anything absent here joins with ``.``.
 _QUALNAME_JOINER: dict[str, str] = {
@@ -290,7 +288,7 @@ def _strip_comment_markers(text: str) -> str:
     text = text.strip()
     for prefix in ("////", "///", "//!", "//", "/**", "/*!", "/*", "#"):
         if text.startswith(prefix):
-            text = text[len(prefix):]
+            text = text[len(prefix) :]
             break
     text = text.rstrip("*/").strip()
     lines = [ln.strip().lstrip("*").strip() for ln in text.splitlines()]
@@ -383,7 +381,7 @@ def pod_head2(node: SgNode) -> str:
     lines = pod.text().splitlines()
     for i, line in enumerate(lines):
         if line.strip().startswith("=head2"):
-            for later in lines[i + 1:]:
+            for later in lines[i + 1 :]:
                 stripped = later.strip()
                 if stripped and not stripped.startswith("="):
                     return stripped

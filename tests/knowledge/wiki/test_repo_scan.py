@@ -53,21 +53,16 @@ class TestFrontmatterSummary:
     def test_prefers_the_frontmatter_summary_field(self, tmp_path: Path):
         got = self._summary(
             tmp_path,
-            "---\ntitle: query()\nsummary: Scoped question against the KB.\n"
-            "---\n\n# query\n\nBody text.\n",
+            "---\ntitle: query()\nsummary: Scoped question against the KB.\n" "---\n\n# query\n\nBody text.\n",
         )
         assert got == "Scoped question against the KB."
 
     def test_falls_back_to_the_frontmatter_title(self, tmp_path: Path):
-        got = self._summary(
-            tmp_path, "---\ntype: Concept\ntitle: query()\n---\n\n# query\n"
-        )
+        got = self._summary(tmp_path, "---\ntype: Concept\ntitle: query()\n---\n\n# query\n")
         assert got == "query()"
 
     def test_falls_back_to_the_first_heading_after_the_block(self, tmp_path: Path):
-        got = self._summary(
-            tmp_path, "---\ntype: Concept\ntags:\n- a\n---\n\n# Real Heading\n\nText.\n"
-        )
+        got = self._summary(tmp_path, "---\ntype: Concept\ntags:\n- a\n---\n\n# Real Heading\n\nText.\n")
         assert got == "Real Heading"
 
     def test_strips_quotes_from_frontmatter_values(self, tmp_path: Path):
@@ -88,9 +83,7 @@ class TestFrontmatterSummary:
         got = self._summary(tmp_path, "---\ntype: Concept\n---\n\nPlain lead line.\n")
         assert got == "Plain lead line."
 
-    def test_unterminated_frontmatter_does_not_swallow_the_document(
-        self, tmp_path: Path
-    ):
+    def test_unterminated_frontmatter_does_not_swallow_the_document(self, tmp_path: Path):
         got = self._summary(tmp_path, "---\nnot really frontmatter\n\n# Heading\n")
         assert got
         assert got != "---"
@@ -140,9 +133,7 @@ class TestWikiBundleGuardrail:
         assert "docs/guide.md" in found
         assert all(not f.startswith("docs/parrot/") for f in found)
 
-    def test_detects_a_path_inside_a_bundle_without_walking_the_repo(
-        self, tmp_path: Path
-    ):
+    def test_detects_a_path_inside_a_bundle_without_walking_the_repo(self, tmp_path: Path):
         # The incremental path must answer "is this one file inside a
         # bundle?" by looking at its ancestors, not by scanning the tree:
         # the git post-commit hook pays this cost on every commit.
@@ -199,16 +190,15 @@ class TestDiscovery:
     def test_extra_exclude_dirs(self, tmp_path: Path):
         _write(tmp_path, "vendor/lib.py", "x = 1")
         _write(tmp_path, "app.py", "y = 2")
-        found = discover_repo_files(
-            tmp_path, exclude_dirs=["vendor"], use_git=False
-        )
+        found = discover_repo_files(tmp_path, exclude_dirs=["vendor"], use_git=False)
         assert found == ["app.py"]
 
     def test_deterministic_sorted(self, tmp_path: Path):
         _write(tmp_path, "b.py", "x=1")
         _write(tmp_path, "a.py", "x=1")
         assert discover_repo_files(tmp_path, use_git=False) == [
-            "a.py", "b.py",
+            "a.py",
+            "b.py",
         ]
 
 
@@ -271,12 +261,8 @@ class TestDirPagesAndEdges:
         dir_ids = {r.concept_id for r in scan.dir_records}
         assert dir_concept_id("pkg") in dir_ids
         assert dir_concept_id("") in dir_ids  # repo root
-        assert (
-            dir_concept_id("pkg"), file_concept_id("pkg/a.py"), "contains"
-        ) in scan.dir_edges
-        assert (
-            dir_concept_id(""), dir_concept_id("pkg"), "contains"
-        ) in scan.dir_edges
+        assert (dir_concept_id("pkg"), file_concept_id("pkg/a.py"), "contains") in scan.dir_edges
+        assert (dir_concept_id(""), dir_concept_id("pkg"), "contains") in scan.dir_edges
 
     def test_dir_body_lists_children(self, tmp_path: Path):
         _write(tmp_path, "pkg/a.py", PY_A)
@@ -326,9 +312,7 @@ class TestImportEdges:
     def test_partial_scan_resolves_against_full_index(self, tmp_path: Path):
         _write(tmp_path, "pkg/a.py", PY_A)
         _write(tmp_path, "pkg/b.py", PY_B)
-        scan = scan_repository(
-            tmp_path, use_git=False, rel_paths=["pkg/a.py"]
-        )
+        scan = scan_repository(tmp_path, use_git=False, rel_paths=["pkg/a.py"])
         assert [fs.rel_path for fs in scan.files] == ["pkg/a.py"]
         # b.py was not scanned, but the import edge still resolves.
         assert (
@@ -346,9 +330,7 @@ class TestImportEdges:
 class TestIncrementalScanCost:
     """Partial scans avoid the whole-repo discovery when they can."""
 
-    def test_docs_only_upsert_skips_full_discovery(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_docs_only_upsert_skips_full_discovery(self, tmp_path: Path, monkeypatch):
         # A docs/config-only incremental commit cannot produce import
         # edges, so the O(repo) discovery scan must be skipped entirely
         # (the git post-commit hook runs on every commit).
@@ -366,16 +348,12 @@ class TestIncrementalScanCost:
             return real_discover(*args, **kwargs)
 
         monkeypatch.setattr(rs, "discover_repo_files", _spy)
-        scan = scan_repository(
-            tmp_path, use_git=False, rel_paths=["README.md"]
-        )
+        scan = scan_repository(tmp_path, use_git=False, rel_paths=["README.md"])
         assert called is False
         assert [fs.rel_path for fs in scan.files] == ["README.md"]
         assert scan.import_edges == []
 
-    def test_python_upsert_still_runs_full_discovery(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_python_upsert_still_runs_full_discovery(self, tmp_path: Path, monkeypatch):
         _write(tmp_path, "pkg/a.py", PY_A)
         _write(tmp_path, "pkg/b.py", PY_B)
 
@@ -390,9 +368,7 @@ class TestIncrementalScanCost:
             return real_discover(*args, **kwargs)
 
         monkeypatch.setattr(rs, "discover_repo_files", _spy)
-        scan = scan_repository(
-            tmp_path, use_git=False, rel_paths=["pkg/a.py"]
-        )
+        scan = scan_repository(tmp_path, use_git=False, rel_paths=["pkg/a.py"])
         assert called is True
         # Edge to the unscanned b.py still resolves via the full index.
         assert (
@@ -478,14 +454,12 @@ class TestScanRepositorySymbolPlane:
     def test_scan_repository_populates_symbol_plane(self, tmp_path: Path):
         _write(tmp_path, "a.py", "def helper():\n    return 1\n")
         _write(
-            tmp_path, "b.py",
+            tmp_path,
+            "b.py",
             "from a import helper\n\n\ndef run():\n    return helper()\n",
         )
         scan = scan_repository(tmp_path, use_git=False)
         titles = {r.title for r in scan.symbol_records}
         assert titles == {"helper", "run"}
-        calls = {
-            (s, d) for s, d, rel, prov in scan.symbol_edges
-            if rel == "calls" and prov == "extracted"
-        }
+        calls = {(s, d) for s, d, rel, prov in scan.symbol_edges if rel == "calls" and prov == "extracted"}
         assert ("sym:b.py#run", "sym:a.py#helper") in calls

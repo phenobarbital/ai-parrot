@@ -36,17 +36,13 @@ def repo(tmp_path: Path) -> Path:
     """A fake repo with a .git dir (so the git hook installs)."""
     (tmp_path / ".git").mkdir()
     (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "mod.py").write_text(
-        '"""A module."""\nX = 1\n', encoding="utf-8"
-    )
+    (tmp_path / "pkg" / "mod.py").write_text('"""A module."""\nX = 1\n', encoding="utf-8")
     return tmp_path
 
 
 def _built_repo(repo: Path) -> Path:
     """Build the wiki plane inside the fake repo."""
-    result = CliRunner().invoke(
-        wiki, ["build", "--path", str(repo), "--no-git", "-q"]
-    )
+    result = CliRunner().invoke(wiki, ["build", "--path", str(repo), "--no-git", "-q"])
     assert result.exit_code == 0, result.output
     return repo
 
@@ -71,11 +67,9 @@ class TestInstaller:
         assert (repo / ".parrot" / "wiki.json").exists()
         claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")
         assert assets.CLAUDE_MD_BEGIN in claude_md
-        assert 'wikitoolkit query' in claude_md
+        assert "wikitoolkit query" in claude_md
 
-        settings = json.loads(
-            (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
-        )
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
         entry = settings["hooks"]["PreToolUse"][0]
         assert entry["matcher"] == assets.HOOK_MATCHER
         # The command is resolved to an absolute path when the binary is
@@ -86,17 +80,13 @@ class TestInstaller:
         # Permissions live in settings.local.json, not the shared file.
         assert "permissions" not in settings
 
-        local = json.loads(
-            (repo / ".claude" / "settings.local.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        local = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
         for rule in assets.PERMISSION_RULES:
             assert rule in local["permissions"]["allow"]
 
         assert (repo / ".claude" / "commands" / "parrotwiki.md").exists()
 
-        hook = (repo / ".git" / "hooks" / "post-commit")
+        hook = repo / ".git" / "hooks" / "post-commit"
         assert hook.exists()
         assert "wikitoolkit upsert --changed" in hook.read_text()
         assert hook.stat().st_mode & 0o111  # executable
@@ -132,10 +122,7 @@ class TestInstaller:
         actions = install_claude_integration(repo)
 
         upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
-        assert (
-            upgraded["hooks"]["PreToolUse"][0]["matcher"]
-            == assets.HOOK_MATCHER == "Grep|Glob|Read|Bash"
-        )
+        assert upgraded["hooks"]["PreToolUse"][0]["matcher"] == assets.HOOK_MATCHER == "Grep|Glob|Read|Bash"
         assert any("hook updated" in a for a in actions)
 
     def test_reinstall_migrates_nudge_tools(self, repo):
@@ -148,7 +135,10 @@ class TestInstaller:
         actions = install_claude_integration(repo)
 
         assert load_project_config(repo).claude.nudge_tools == [
-            "Grep", "Glob", "Read", "Bash",
+            "Grep",
+            "Glob",
+            "Read",
+            "Bash",
         ]
         assert any("nudge tools upgraded" in a for a in actions)
 
@@ -163,9 +153,7 @@ class TestInstaller:
         assert load_project_config(repo).claude.nudge_tools == ["Grep"]
 
     def test_preserves_existing_claude_md(self, repo):
-        (repo / "CLAUDE.md").write_text(
-            "# My rules\n\nDo good work.\n", encoding="utf-8"
-        )
+        (repo / "CLAUDE.md").write_text("# My rules\n\nDo good work.\n", encoding="utf-8")
         install_claude_integration(repo)
         text = (repo / "CLAUDE.md").read_text(encoding="utf-8")
         assert text.startswith("# My rules")
@@ -175,19 +163,23 @@ class TestInstaller:
         settings_dir = repo / ".claude"
         settings_dir.mkdir()
         (settings_dir / "settings.json").write_text(
-            json.dumps({
-                "permissions": {"allow": ["Bash(ls:*)"]},
-                "hooks": {"PreToolUse": [{
-                    "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": "echo hi"}],
-                }]},
-            }),
+            json.dumps(
+                {
+                    "permissions": {"allow": ["Bash(ls:*)"]},
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Bash",
+                                "hooks": [{"type": "command", "command": "echo hi"}],
+                            }
+                        ]
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         install_claude_integration(repo)
-        settings = json.loads(
-            (settings_dir / "settings.json").read_text(encoding="utf-8")
-        )
+        settings = json.loads((settings_dir / "settings.json").read_text(encoding="utf-8"))
         # User permission stays in shared settings; wiki rules in local.
         assert settings["permissions"]["allow"] == ["Bash(ls:*)"]
         for rule in assets.PERMISSION_RULES:
@@ -196,11 +188,7 @@ class TestInstaller:
         assert len(pre) == 2
         assert pre[0]["hooks"][0]["command"] == "echo hi"
 
-        local = json.loads(
-            (settings_dir / "settings.local.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        local = json.loads((settings_dir / "settings.local.json").read_text(encoding="utf-8"))
         for rule in assets.PERMISSION_RULES:
             assert rule in local["permissions"]["allow"]
 
@@ -214,9 +202,7 @@ class TestInstaller:
     def test_chains_into_existing_git_hook(self, repo):
         hooks_dir = repo / ".git" / "hooks"
         hooks_dir.mkdir(parents=True)
-        (hooks_dir / "post-commit").write_text(
-            "#!/bin/sh\necho existing\n", encoding="utf-8"
-        )
+        (hooks_dir / "post-commit").write_text("#!/bin/sh\necho existing\n", encoding="utf-8")
         install_claude_integration(repo)
         text = (hooks_dir / "post-commit").read_text(encoding="utf-8")
         assert "echo existing" in text
@@ -242,9 +228,7 @@ class TestInstaller:
         # `#!/usr/bin/env bash` resolves to a sh-family interpreter.
         hooks_dir = repo / ".git" / "hooks"
         hooks_dir.mkdir(parents=True)
-        (hooks_dir / "post-commit").write_text(
-            "#!/usr/bin/env bash\necho existing\n", encoding="utf-8"
-        )
+        (hooks_dir / "post-commit").write_text("#!/usr/bin/env bash\necho existing\n", encoding="utf-8")
         install_claude_integration(repo)
         text = (hooks_dir / "post-commit").read_text(encoding="utf-8")
         assert "echo existing" in text
@@ -269,28 +253,24 @@ class TestInstaller:
         settings_dir = repo / ".claude"
         settings_dir.mkdir()
         (settings_dir / "settings.json").write_text(
-            json.dumps({
-                "permissions": {
-                    "allow": list(assets.PERMISSION_RULES) + ["Bash(ls:*)"],
-                },
-            }),
+            json.dumps(
+                {
+                    "permissions": {
+                        "allow": list(assets.PERMISSION_RULES) + ["Bash(ls:*)"],
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         actions = install_claude_integration(repo)
         assert any("migrated" in a for a in actions)
 
-        shared = json.loads(
-            (settings_dir / "settings.json").read_text(encoding="utf-8")
-        )
+        shared = json.loads((settings_dir / "settings.json").read_text(encoding="utf-8"))
         for rule in assets.PERMISSION_RULES:
             assert rule not in shared.get("permissions", {}).get("allow", [])
         assert "Bash(ls:*)" in shared["permissions"]["allow"]
 
-        local = json.loads(
-            (settings_dir / "settings.local.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        local = json.loads((settings_dir / "settings.local.json").read_text(encoding="utf-8"))
         for rule in assets.PERMISSION_RULES:
             assert rule in local["permissions"]["allow"]
 
@@ -298,25 +278,17 @@ class TestInstaller:
         (repo / "CLAUDE.md").write_text("# Mine\n", encoding="utf-8")
         hooks_dir = repo / ".git" / "hooks"
         hooks_dir.mkdir(parents=True)
-        (hooks_dir / "post-commit").write_text(
-            "#!/bin/sh\necho existing\n", encoding="utf-8"
-        )
+        (hooks_dir / "post-commit").write_text("#!/bin/sh\necho existing\n", encoding="utf-8")
         install_claude_integration(repo)
         uninstall_claude_integration(repo)
 
         text = (repo / "CLAUDE.md").read_text(encoding="utf-8")
         assert "# Mine" in text
         assert assets.CLAUDE_MD_BEGIN not in text
-        settings = json.loads(
-            (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
-        )
+        settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
         assert "hooks" not in settings
         # Permissions removed from settings.local.json too.
-        local = json.loads(
-            (repo / ".claude" / "settings.local.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        local = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
         for rule in assets.PERMISSION_RULES:
             assert rule not in local.get("permissions", {}).get("allow", [])
         assert not (repo / ".claude" / "commands" / "parrotwiki.md").exists()
@@ -381,12 +353,12 @@ class TestHookNudge:
         for i, cmd in enumerate(commands):
             out = build_nudge(
                 self._payload(repo, "Bash", {"command": cmd}),
-                root=repo, config=cfg, now=1000.0 + i * 400,
+                root=repo,
+                config=cfg,
+                now=1000.0 + i * 400,
             )
             assert out is not None, cmd
-            assert "wikitoolkit query" in out["hookSpecificOutput"][
-                "additionalContext"
-            ]
+            assert "wikitoolkit query" in out["hookSpecificOutput"]["additionalContext"]
 
     def test_no_nudge_for_non_search_bash(self, repo):
         _built_repo(repo)
@@ -394,7 +366,9 @@ class TestHookNudge:
         for cmd in ("git status", "ls -la", "pytest -q", "uv pip install -e ."):
             out = build_nudge(
                 self._payload(repo, "Bash", {"command": cmd}),
-                root=repo, config=cfg, now=1000.0,
+                root=repo,
+                config=cfg,
+                now=1000.0,
             )
             assert out is None, cmd
 
@@ -412,9 +386,7 @@ class TestHookNudge:
         csv = self._payload(repo, "Read", {"file_path": "/tmp/data.csv"})
         assert build_nudge(csv, root=repo, config=config, now=1000.0) is None
         py = self._payload(repo, "Read", {"file_path": "/src/mod.py"})
-        assert (
-            build_nudge(py, root=repo, config=config, now=1000.0) is not None
-        )
+        assert build_nudge(py, root=repo, config=config, now=1000.0) is not None
 
     def test_throttle_cooldown(self, repo):
         _built_repo(repo)
@@ -442,9 +414,7 @@ class TestHookRuntime:
             "cwd": str(repo),
         }
         stdout = io.StringIO()
-        code = run_pre_tool_use_hook(
-            stdin=io.StringIO(json.dumps(payload)), stdout=stdout
-        )
+        code = run_pre_tool_use_hook(stdin=io.StringIO(json.dumps(payload)), stdout=stdout)
         assert code == 0
         response = json.loads(stdout.getvalue())
         assert response["suppressOutput"] is True
@@ -452,9 +422,7 @@ class TestHookRuntime:
 
     def test_runtime_never_fails_on_garbage(self):
         for garbage in ["", "not json", "[1,2,3]", '"str"']:
-            code = run_pre_tool_use_hook(
-                stdin=io.StringIO(garbage), stdout=io.StringIO()
-            )
+            code = run_pre_tool_use_hook(stdin=io.StringIO(garbage), stdout=io.StringIO())
             assert code == 0
 
     def test_runtime_silent_outside_project(self, tmp_path):
@@ -465,9 +433,7 @@ class TestHookRuntime:
             "cwd": str(tmp_path),
         }
         stdout = io.StringIO()
-        code = run_pre_tool_use_hook(
-            stdin=io.StringIO(json.dumps(payload)), stdout=stdout
-        )
+        code = run_pre_tool_use_hook(stdin=io.StringIO(json.dumps(payload)), stdout=stdout)
         assert code == 0
         assert stdout.getvalue() == ""
 
@@ -477,25 +443,17 @@ class TestClaudeCli:
         from parrot.knowledge.wiki.claude_code.cli import claude
 
         runner = CliRunner()
-        result = runner.invoke(
-            claude, ["install", "--path", str(repo), "--no-build"]
-        )
+        result = runner.invoke(claude, ["install", "--path", str(repo), "--no-build"])
         assert result.exit_code == 0, result.output
         assert "integration installed" in result.output
 
-        status = runner.invoke(
-            claude, ["status", "--path", str(repo), "--json"]
-        )
+        status = runner.invoke(claude, ["status", "--path", str(repo), "--json"])
         info = json.loads(status.output)
         assert info["pre_tool_use_hook"] is True
 
         result = runner.invoke(claude, ["uninstall", "--path", str(repo)])
         assert result.exit_code == 0
-        info = json.loads(
-            runner.invoke(
-                claude, ["status", "--path", str(repo), "--json"]
-            ).output
-        )
+        info = json.loads(runner.invoke(claude, ["status", "--path", str(repo), "--json"]).output)
         assert info["pre_tool_use_hook"] is False
 
     def test_install_builds_plane_by_default(self, repo):

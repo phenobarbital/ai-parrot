@@ -17,10 +17,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "structural"
 def test_typescript_symbol_table():
     src = (FIXTURES / "sample.ts").read_text(encoding="utf-8")
     out = JavaScriptScanner().outline(src, "sample.ts")
-    rows = {
-        (s.kind.value, s.name): (s.parent, s.exported, s.start_line, s.end_line, s.doc)
-        for s in out.symbols
-    }
+    rows = {(s.kind.value, s.name): (s.parent, s.exported, s.start_line, s.end_line, s.doc) for s in out.symbols}
     assert rows[("class", "UserService")] == (None, True, 2, 5, "Main service class.")
     assert rows[("method", "createUser")][0] == "UserService"
     assert rows[("method", "createUser")][1] is False  # never exported

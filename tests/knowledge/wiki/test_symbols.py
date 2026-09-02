@@ -21,9 +21,11 @@ def test_sym_id_plain_and_ordinal():
     assert sym_concept_id("a/b.py", "Cls.m") == "sym:a/b.py#Cls.m"
     assert sym_concept_id("a/b.py", "Cls.m", 2) == "sym:a/b.py#Cls.m~2"
     assert parse_sym_id("sym:a/b.py#Cls.m~3") == ("a/b.py", "Cls.m", 3)
-    assert parse_sym_id(
-        "sym:src/App/User.php#App\\Models\\User::getFullName"
-    ) == ("src/App/User.php", "App\\Models\\User::getFullName", 1)
+    assert parse_sym_id("sym:src/App/User.php#App\\Models\\User::getFullName") == (
+        "src/App/User.php",
+        "App\\Models\\User::getFullName",
+        1,
+    )
 
 
 def test_sym_id_ordinal_one_has_no_tilde():

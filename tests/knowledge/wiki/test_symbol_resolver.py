@@ -30,7 +30,8 @@ class TestSymbolResolverThreeSteps:
     def test_resolver_steps(self, tmp_path: Path):
         _write(tmp_path, "a.py", "def helper():\n    return 1\n")
         _write(
-            tmp_path, "b.py",
+            tmp_path,
+            "b.py",
             "from a import helper\n\n\ndef run():\n    return helper()\n",
         )
         _write(tmp_path, "d.py", "def unique_fn():\n    return 1\n")
@@ -40,11 +41,7 @@ class TestSymbolResolverThreeSteps:
         _write(tmp_path, "g.py", "def call_dup():\n    return dup()\n")
 
         scan = scan_repository(tmp_path, use_git=False)
-        prov = {
-            (src, dst): provenance
-            for src, dst, rel, provenance in scan.symbol_edges
-            if rel == "calls"
-        }
+        prov = {(src, dst): provenance for src, dst, rel, provenance in scan.symbol_edges if rel == "calls"}
 
         assert prov[("sym:b.py#run", "sym:a.py#helper")] == "extracted"
         assert prov[("sym:c.py#go", "sym:d.py#unique_fn")] == "inferred"
@@ -52,7 +49,8 @@ class TestSymbolResolverThreeSteps:
 
     def test_same_file_resolution_is_extracted(self, tmp_path: Path):
         _write(
-            tmp_path, "a.py",
+            tmp_path,
+            "a.py",
             "def helper():\n    return 1\n\n\ndef run():\n    return helper()\n",
         )
         scan = scan_repository(tmp_path, use_git=False)
@@ -61,7 +59,8 @@ class TestSymbolResolverThreeSteps:
 
     def test_extends_resolution(self, tmp_path: Path):
         _write(
-            tmp_path, "a.py",
+            tmp_path,
+            "a.py",
             "class Base:\n    pass\n\n\nclass Sub(Base):\n    pass\n",
         )
         scan = scan_repository(tmp_path, use_git=False)
@@ -73,14 +72,13 @@ class TestSymbolResolverThreeSteps:
         _write(tmp_path, "f.py", "def dup():\n    return 2\n")
         _write(tmp_path, "g.py", "def call_dup():\n    return dup()\n")
         scan = scan_repository(tmp_path, use_git=False)
-        assert not any(
-            d.endswith("#dup") for _s, d, rel, _p in scan.symbol_edges if rel == "calls"
-        )
+        assert not any(d.endswith("#dup") for _s, d, rel, _p in scan.symbol_edges if rel == "calls")
 
     def test_build_symbol_edges_matches_scan_repository(self, tmp_path: Path):
         _write(tmp_path, "a.py", "def helper():\n    return 1\n")
         _write(
-            tmp_path, "b.py",
+            tmp_path,
+            "b.py",
             "from a import helper\n\n\ndef run():\n    return helper()\n",
         )
         scan = scan_repository(tmp_path, use_git=False)

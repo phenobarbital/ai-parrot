@@ -61,13 +61,9 @@ class SymbolLookupInput(BaseModel):
 class CodeOutlineInput(BaseModel):
     """Arguments for ``wiki_code_outline`` / ``code_outline``."""
 
-    target: str = Field(
-        ..., description="A file:<rel>, sym:<rel>#<qualname>, or bare relative path"
-    )
+    target: str = Field(..., description="A file:<rel>, sym:<rel>#<qualname>, or bare relative path")
     depth: int = Field(default=2, ge=1, le=4, description="Maximum symbol nesting depth")
-    include_source: bool = Field(
-        default=False, description="Include a capped source excerpt (sym: targets only)"
-    )
+    include_source: bool = Field(default=False, description="Include a capped source excerpt (sym: targets only)")
     namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
@@ -174,9 +170,7 @@ class WikiCodeOutlineTool(AbstractTool):
             service = self._service_factory(namespace)
         except ValueError as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
-        output: CodeOutlineOutput = await service.outline(
-            target, depth=depth, include_source=include_source
-        )
+        output: CodeOutlineOutput = await service.outline(target, depth=depth, include_source=include_source)
         lines = [_hit_line(hit) for hit in output.symbols]
         payload = output.model_dump(mode="json")
         payload["text"] = _render_text(lines, output, DEFAULT_BUDGET_TOKENS)

@@ -33,9 +33,7 @@ def built_repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     (root / "a.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-    (root / "b.py").write_text(
-        "from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8"
-    )
+    (root / "b.py").write_text("from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8")
     result = CliRunner().invoke(wiki, ["build", "--path", str(root), "--no-git", "-q"])
     assert result.exit_code == 0, result.output
     return root
@@ -92,13 +90,26 @@ class TestCreateStructuralTools:
         store, config = _store_and_config(built_repo)
         tools = {t.name: t for t in create_structural_tools(store, built_repo, config)}
         assert set(tools["wiki_symbol_lookup"].args_schema.model_fields) == {
-            "query", "kind", "language", "path_prefix", "limit", "namespace",
+            "query",
+            "kind",
+            "language",
+            "path_prefix",
+            "limit",
+            "namespace",
         }
         assert set(tools["wiki_code_outline"].args_schema.model_fields) == {
-            "target", "depth", "include_source", "namespace",
+            "target",
+            "depth",
+            "include_source",
+            "namespace",
         }
         assert set(tools["wiki_blast_radius"].args_schema.model_fields) == {
-            "symbol", "relations", "depth", "include_inferred", "include_tests", "namespace",
+            "symbol",
+            "relations",
+            "depth",
+            "include_inferred",
+            "include_tests",
+            "namespace",
         }
 
     def test_read_only_no_writes_to_source_tree(self, built_repo: Path):

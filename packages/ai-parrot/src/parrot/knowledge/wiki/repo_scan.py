@@ -65,14 +65,35 @@ _PYTHON_SCANNER = PythonScanner()
 #:
 #: ``.svelte`` is claimed by the JS/TS scanner (FEAT-396), which analyses
 #: the component's ``<script>`` block — not its markup.
-CODE_SUFFIXES: frozenset[str] = frozenset({
-    ".py", ".pyx", ".pxd", ".pyi",
-    ".rs", ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp",
-    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".svelte",
-    ".php",
-    ".pl", ".pm", ".t",
-    ".sql", ".sh", ".bash",
-})
+CODE_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".py",
+        ".pyx",
+        ".pxd",
+        ".pyi",
+        ".rs",
+        ".go",
+        ".java",
+        ".kt",
+        ".c",
+        ".h",
+        ".cpp",
+        ".hpp",
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".mjs",
+        ".svelte",
+        ".php",
+        ".pl",
+        ".pm",
+        ".t",
+        ".sql",
+        ".sh",
+        ".bash",
+    }
+)
 
 #: File suffixes treated as documentation (category ``document``).
 DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".rst", ".txt", ".html", ".htm"})
@@ -82,28 +103,60 @@ DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".rst", ".txt", ".html", ".htm"
 _HTML_SUFFIXES: frozenset[str] = frozenset({".html", ".htm"})
 
 #: File suffixes treated as configuration (category ``config``).
-CONFIG_SUFFIXES: frozenset[str] = frozenset({
-    ".toml", ".yaml", ".yml", ".ini", ".cfg", ".json",
-})
+CONFIG_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".toml",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".cfg",
+        ".json",
+    }
+)
 
 DEFAULT_SUFFIXES: frozenset[str] = CODE_SUFFIXES | DOC_SUFFIXES | CONFIG_SUFFIXES
 
 #: Directory names never descended into.
-DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset({
-    ".git", ".hg", ".svn", "__pycache__",
-    ".venv", "venv", "node_modules", ".tox", "build", "dist", ".eggs",
-    ".idea", ".vscode", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    ".parrot", ".claude", ".worktrees", ".graphindex",
-    # Obsidian vault internals — never descend into these when a repo
-    # embeds a vault (the vault build mode has its own scanner).
-    ".obsidian", ".trash",
-})
+DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "node_modules",
+        ".tox",
+        "build",
+        "dist",
+        ".eggs",
+        ".idea",
+        ".vscode",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".parrot",
+        ".claude",
+        ".worktrees",
+        ".graphindex",
+        # Obsidian vault internals — never descend into these when a repo
+        # embeds a vault (the vault build mode has its own scanner).
+        ".obsidian",
+        ".trash",
+    }
+)
 
 #: File basenames always skipped (lockfiles and similar noise).
-DEFAULT_EXCLUDE_NAMES: frozenset[str] = frozenset({
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "uv.lock", "poetry.lock", "Cargo.lock",
-})
+DEFAULT_EXCLUDE_NAMES: frozenset[str] = frozenset(
+    {
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "uv.lock",
+        "poetry.lock",
+        "Cargo.lock",
+    }
+)
 
 #: Build-report basename written at the root of every exported wiki
 #: bundle — the marker that identifies a directory as *being* a wiki.
@@ -151,7 +204,7 @@ def _frontmatter_lead(block: list[str]) -> str:
         for line in block:
             if not line.startswith(prefix):  # top-level keys only
                 continue
-            value = line[len(prefix):].strip().strip("\"'").strip()
+            value = line[len(prefix) :].strip().strip("\"'").strip()
             if value and value not in _EMPTY_YAML_SCALARS:
                 return value
             break  # key present but unusable — try the next one
@@ -407,11 +460,7 @@ def discover_repo_files(
     if rel_paths is None:
         rel_paths = _walk_files(root, pruned)
 
-    return sorted({
-        rel
-        for rel in rel_paths
-        if is_wiki_relevant(rel, suffixes=suffixes, exclude_dirs=excluded)
-    })
+    return sorted({rel for rel in rel_paths if is_wiki_relevant(rel, suffixes=suffixes, exclude_dirs=excluded)})
 
 
 def _git_ls_files(root: Path) -> list[str] | None:
@@ -419,8 +468,14 @@ def _git_ls_files(root: Path) -> list[str] | None:
     try:
         proc = subprocess.run(
             [
-                "git", "-C", str(root), "ls-files", "-z",
-                "--cached", "--others", "--exclude-standard",
+                "git",
+                "-C",
+                str(root),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
             ],
             capture_output=True,
             timeout=30,
@@ -560,7 +615,7 @@ def _markdown_summary(content: str) -> str:
             lead = _frontmatter_lead(block)
             if lead:
                 return lead[:_SUMMARY_MAX_CHARS]
-            body = lines[idx + 1:]
+            body = lines[idx + 1 :]
             break
         # No closing delimiter: not a frontmatter block after all. Fall
         # through and read the document, delimiter line skipped below.
@@ -627,20 +682,17 @@ def build_file_slice(
         except Exception as exc:  # noqa: BLE001 - degrade, never raise
             logger.warning(
                 "Scanner %s failed on %s, degrading to shallow page: %s",
-                scanner.name, rel_path, exc,
+                scanner.name,
+                rel_path,
+                exc,
             )
             summary = _first_line(content) or rel_path
         else:
             language = scanner.name
             imports = lang_outline.imports
-            summary = (
-                lang_outline.summary
-                or f"{scanner.name.title()} module {rel_path}"
-            )
+            summary = lang_outline.summary or f"{scanner.name.title()} module {rel_path}"
             if lang_outline.outline:
-                sections.append(
-                    "## API outline\n" + "\n".join(lang_outline.outline)
-                )
+                sections.append("## API outline\n" + "\n".join(lang_outline.outline))
             symbols = [s for s in lang_outline.symbols if s.depth <= symbol_depth]
             refs = lang_outline.refs
     elif suffix in _HTML_SUFFIXES:
@@ -652,9 +704,7 @@ def build_file_slice(
 
     body_head = content[:body_max_chars]
     truncated = len(content) > body_max_chars
-    sections.append(
-        "## Content" + (" (truncated)" if truncated else "") + "\n" + body_head
-    )
+    sections.append("## Content" + (" (truncated)" if truncated else "") + "\n" + body_head)
     body = f"# {rel_path}\n\n" + "\n\n".join(sections)
 
     record = WikiPageRecord(
@@ -695,9 +745,7 @@ def build_dir_pages(
         page to its child directory/file pages.
     """
     children: dict[str, set[tuple[str, str]]] = {}  # dir -> {(kind, rel)}
-    summaries: dict[str, str] = {
-        fs.rel_path: fs.record.summary for fs in files
-    }
+    summaries: dict[str, str] = {fs.rel_path: fs.record.summary for fs in files}
 
     for fs in files:
         p = PurePosixPath(fs.rel_path)
@@ -718,9 +766,7 @@ def build_dir_pages(
         cid = dir_concept_id(dir_rel)
         lines: list[str] = []
         for kind, rel in sorted(kids):
-            child_cid = (
-                file_concept_id(rel) if kind == "file" else dir_concept_id(rel)
-            )
+            child_cid = file_concept_id(rel) if kind == "file" else dir_concept_id(rel)
             edges.append((cid, child_cid, "contains"))
             label = summaries.get(rel, "") if kind == "file" else "directory"
             lines.append(f"- [{child_cid}] {PurePosixPath(rel).name} — {label}")
@@ -732,8 +778,7 @@ def build_dir_pages(
                 node_id=f"dir/{title}",
                 title=f"{title}/",
                 category="overview",
-                summary=f"Directory overview of {title} "
-                        f"({len(kids)} entries)",
+                summary=f"Directory overview of {title} " f"({len(kids)} entries)",
                 body=body,
                 token_count=estimate_tokens(body),
             )
@@ -856,9 +901,7 @@ def _ordinal_concept_ids(rel_path: str, symbols: list[SymbolRecord]) -> list[tup
     return pairs
 
 
-def build_symbol_pages(
-    root: Path, slice: FileSlice
-) -> tuple[list[WikiPageRecord], list[tuple[str, str, str, str]]]:
+def build_symbol_pages(root: Path, slice: FileSlice) -> tuple[list[WikiPageRecord], list[tuple[str, str, str, str]]]:
     """Build ``sym:`` page records and ``defines``/``contains`` edges.
 
     Reads the file's raw bytes itself (rather than requiring the caller
@@ -890,7 +933,7 @@ def build_symbol_pages(
     file_concept = file_concept_id(slice.rel_path)
 
     for sym, concept_id in pairs:
-        excerpt = data[sym.start_byte:sym.end_byte].decode("utf-8", errors="replace")
+        excerpt = data[sym.start_byte : sym.end_byte].decode("utf-8", errors="replace")
         fields = symbol_to_page_fields(sym, source_excerpt=excerpt)
         body = fields["body"]
         records.append(
@@ -950,7 +993,7 @@ class SymbolResolver:
             if rel != "references":
                 continue
             if dst.startswith("file:"):
-                self._reachable.setdefault(src, set()).add(dst[len("file:"):])
+                self._reachable.setdefault(src, set()).add(dst[len("file:") :])
         self._global_by_name: dict[str, list[str]] = {}
         for pairs in self._pairs_by_rel.values():
             for sym, concept_id in pairs:
@@ -1101,9 +1144,7 @@ def scan_repository(
     root = root.resolve()
     set_scan_root(root)
     if rel_paths is None:
-        discovered = discover_repo_files(
-            root, suffixes=suffixes, exclude_dirs=exclude_dirs, use_git=use_git
-        )
+        discovered = discover_repo_files(root, suffixes=suffixes, exclude_dirs=exclude_dirs, use_git=use_git)
         targets = discovered
     else:
         targets = sorted({PurePosixPath(p).as_posix() for p in rel_paths})
@@ -1115,7 +1156,9 @@ def scan_repository(
         # an O(repo) cost on every such commit.
         if any(PurePosixPath(t).suffix in scanned_suffixes() for t in targets):
             discovered = discover_repo_files(
-                root, suffixes=suffixes, exclude_dirs=exclude_dirs,
+                root,
+                suffixes=suffixes,
+                exclude_dirs=exclude_dirs,
                 use_git=use_git,
             )
         else:
@@ -1153,8 +1196,7 @@ def scan_repository(
     scan.symbol_edges = symbol_edges
 
     logger.info(
-        "Scanned %s: %d pages, %d dirs, %d import edges, %d symbols, "
-        "%d symbol edges, %d skipped",
+        "Scanned %s: %d pages, %d dirs, %d import edges, %d symbols, " "%d symbol edges, %d skipped",
         root,
         len(scan.files),
         len(scan.dir_records),

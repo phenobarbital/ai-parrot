@@ -52,26 +52,16 @@ _SUMMARY_MAX_CHARS = 240
 
 _RE_DOCBLOCK = re.compile(r"/\*\*(.*?)\*/", re.DOTALL)
 
-_RE_EXPORT_CLASS = re.compile(
-    r"^\s*export\s+(?:default\s+)?(?:abstract\s+)?class\s+(\w+)", re.MULTILINE
-)
+_RE_EXPORT_CLASS = re.compile(r"^\s*export\s+(?:default\s+)?(?:abstract\s+)?class\s+(\w+)", re.MULTILINE)
 _RE_EXPORT_FUNCTION = re.compile(
     r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)",
     re.MULTILINE,
 )
-_RE_EXPORT_CONST = re.compile(
-    r"^\s*export\s+(?:default\s+)?const\s+(\w+)", re.MULTILINE
-)
-_RE_EXPORT_INTERFACE = re.compile(
-    r"^\s*export\s+(?:default\s+)?interface\s+(\w+)", re.MULTILINE
-)
-_RE_EXPORT_TYPE = re.compile(
-    r"^\s*export\s+(?:default\s+)?type\s+(\w+)\s*=", re.MULTILINE
-)
+_RE_EXPORT_CONST = re.compile(r"^\s*export\s+(?:default\s+)?const\s+(\w+)", re.MULTILINE)
+_RE_EXPORT_INTERFACE = re.compile(r"^\s*export\s+(?:default\s+)?interface\s+(\w+)", re.MULTILINE)
+_RE_EXPORT_TYPE = re.compile(r"^\s*export\s+(?:default\s+)?type\s+(\w+)\s*=", re.MULTILINE)
 _RE_CLASS = re.compile(r"^\s*(?:abstract\s+)?class\s+(\w+)", re.MULTILINE)
-_RE_FUNCTION = re.compile(
-    r"^\s*(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)", re.MULTILINE
-)
+_RE_FUNCTION = re.compile(r"^\s*(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)", re.MULTILINE)
 
 _RE_IMPORT_FROM = re.compile(
     # DOTALL so a multi-line `import {\n  a,\n  b,\n} from './x'` (common
@@ -90,16 +80,12 @@ _SVELTE_SUFFIX = ".svelte"
 #: closing tag. Bounded like the patterns above: ``[^>]*`` cannot cross the
 #: tag boundary and the lazy body is anchored by the required ``</script>``
 #: literal, so there is no nested quantifier to backtrack on.
-_RE_SVELTE_SCRIPT = re.compile(
-    r"<script([^>]*)>(.*?)</script[^>]*>", re.DOTALL | re.IGNORECASE
-)
+_RE_SVELTE_SCRIPT = re.compile(r"<script([^>]*)>(.*?)</script[^>]*>", re.DOTALL | re.IGNORECASE)
 
 #: The ``lang`` attribute within a ``<script>`` open tag, either quoting
 #: style. The leading ``(?:^|\s)`` keeps it from matching a lookalike
 #: attribute such as ``data-lang=``.
-_RE_SCRIPT_LANG = re.compile(
-    r"""(?:^|\s)lang\s*=\s*['"]([^'"]*)['"]""", re.IGNORECASE
-)
+_RE_SCRIPT_LANG = re.compile(r"""(?:^|\s)lang\s*=\s*['"]([^'"]*)['"]""", re.IGNORECASE)
 
 #: ``lang`` values that select the TypeScript grammar.
 _TYPESCRIPT_LANGS: frozenset[str] = frozenset({"ts", "typescript"})
@@ -110,9 +96,7 @@ _TYPESCRIPT_LANGS: frozenset[str] = frozenset({"ts", "typescript"})
 _RE_SVELTE_ALIAS_BLOCK = re.compile(r"\balias\s*:\s*\{(.*?)\}", re.DOTALL)
 
 #: One ``key: 'value'`` entry inside that block, quoted or bare key.
-_RE_ALIAS_ENTRY = re.compile(
-    r"""['"]?([$@\w][$\w./*-]*)['"]?\s*:\s*['"]([^'"]+)['"]"""
-)
+_RE_ALIAS_ENTRY = re.compile(r"""['"]?([$@\w][$\w./*-]*)['"]?\s*:\s*['"]([^'"]+)['"]""")
 
 #: Rendering label + start-of-line pattern for each exported construct
 #: that has no distinct "params" group.
@@ -124,7 +108,11 @@ _EXPORT_SIMPLE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 _EXTENSION_CANDIDATES: tuple[str, ...] = (".ts", ".tsx", ".js", ".jsx", ".mjs")
 _INDEX_CANDIDATES: tuple[str, ...] = (
-    "index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs",
+    "index.ts",
+    "index.tsx",
+    "index.js",
+    "index.jsx",
+    "index.mjs",
 )
 
 
@@ -139,10 +127,7 @@ def _docblock_first_line(doc_body: str) -> str:
 
 def _find_docblocks(source: str) -> list[tuple[int, int, str]]:
     """Every ``/** ... */`` block as ``(start, end, first_line)``, in order."""
-    return [
-        (m.start(), m.end(), _docblock_first_line(m.group(1)))
-        for m in _RE_DOCBLOCK.finditer(source)
-    ]
+    return [(m.start(), m.end(), _docblock_first_line(m.group(1))) for m in _RE_DOCBLOCK.finditer(source)]
 
 
 def _doc_for(docblocks: list[tuple[int, int, str]], decl_start: int) -> str:
@@ -297,9 +282,7 @@ class JsIndex:
     aliases: tuple[tuple[str, str], ...] = ()
 
 
-def _as_prefix_pair(
-    pattern: str, target: str, base_dir: str
-) -> tuple[str, str] | None:
+def _as_prefix_pair(pattern: str, target: str, base_dir: str) -> tuple[str, str] | None:
     """Normalize one ``paths``/``alias`` entry into a prefix pair.
 
     Handles both the wildcard form (``"$lib/*": "src/lib/*"``) and the
@@ -454,10 +437,7 @@ def _discover_aliases(file_set: frozenset[str]) -> tuple[tuple[str, str], ...]:
             return None
 
     pairs: list[tuple[str, str]] = []
-    svelte_configs = [
-        rel for rel in sorted(file_set)
-        if PurePosixPath(rel).name == "svelte.config.js"
-    ]
+    svelte_configs = [rel for rel in sorted(file_set) if PurePosixPath(rel).name == "svelte.config.js"]
 
     for rel in svelte_configs:
         text = _read(rel)
@@ -520,9 +500,7 @@ class JavaScriptScanner(LanguageScanner):
     #: ``.svelte`` rides along (FEAT-396): a component's ``<script>`` block
     #: is JS/TS, so it is extracted and parsed here rather than by a
     #: separate framework scanner. ``_SUFFIX_INDEX`` derives the routing.
-    suffixes: ClassVar[frozenset[str]] = frozenset(
-        {".js", ".jsx", ".mjs", ".ts", ".tsx", ".svelte"}
-    )
+    suffixes: ClassVar[frozenset[str]] = frozenset({".js", ".jsx", ".mjs", ".ts", ".tsx", ".svelte"})
     #: ``"ast-grep"`` after the structural seam served the most recent
     #: file, otherwise ``None`` (see :attr:`mode`). FEAT-498.
     _last_mode: str | None = None
@@ -581,34 +559,32 @@ class JavaScriptScanner(LanguageScanner):
 
         for match in _RE_EXPORT_CLASS.finditer(source):
             doc = _doc_for(docblocks, match.start())
-            entries.append(
-                (match.start(), f"export class {match.group(1)}: {doc}".rstrip(": "))
-            )
+            entries.append((match.start(), f"export class {match.group(1)}: {doc}".rstrip(": ")))
         for match in _RE_CLASS.finditer(source):
             doc = _doc_for(docblocks, match.start())
-            entries.append(
-                (match.start(), f"class {match.group(1)}: {doc}".rstrip(": "))
-            )
+            entries.append((match.start(), f"class {match.group(1)}: {doc}".rstrip(": ")))
         for match in _RE_EXPORT_FUNCTION.finditer(source):
             doc = _doc_for(docblocks, match.start())
             params = match.group(2).strip()
-            entries.append((
-                match.start(),
-                f"export function {match.group(1)}({params}): {doc}".rstrip(": "),
-            ))
+            entries.append(
+                (
+                    match.start(),
+                    f"export function {match.group(1)}({params}): {doc}".rstrip(": "),
+                )
+            )
         for match in _RE_FUNCTION.finditer(source):
             doc = _doc_for(docblocks, match.start())
             params = match.group(2).strip()
-            entries.append((
-                match.start(),
-                f"function {match.group(1)}({params}): {doc}".rstrip(": "),
-            ))
+            entries.append(
+                (
+                    match.start(),
+                    f"function {match.group(1)}({params}): {doc}".rstrip(": "),
+                )
+            )
         for label, pattern in _EXPORT_SIMPLE_PATTERNS:
             for match in pattern.finditer(source):
                 doc = _doc_for(docblocks, match.start())
-                entries.append(
-                    (match.start(), f"{label} {match.group(1)}: {doc}".rstrip(": "))
-                )
+                entries.append((match.start(), f"{label} {match.group(1)}: {doc}".rstrip(": ")))
 
         entries.sort(key=lambda e: e[0])
         lines = [line for _pos, line in entries]
@@ -632,9 +608,7 @@ class JavaScriptScanner(LanguageScanner):
         lines: list[str] = []
 
         def _text(node: Any) -> str:
-            return source_bytes[node.start_byte:node.end_byte].decode(
-                "utf-8", errors="replace"
-            )
+            return source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
         def _name_of(node: Any) -> str:
             name_node = node.child_by_field_name("name")
@@ -665,9 +639,7 @@ class JavaScriptScanner(LanguageScanner):
                 kind = exportable_types.get(child.type)
                 if kind is not None:
                     name = _name_of(child)
-                    doc = _leading_doc(child) or _leading_doc(
-                        child.parent if _is_exported(child) else child
-                    )
+                    doc = _leading_doc(child) or _leading_doc(child.parent if _is_exported(child) else child)
                     prefix = "export " if _is_exported(child) else ""
                     lines.append(f"{prefix}{kind} {name}: {doc}".rstrip(": "))
                 elif child.type == "lexical_declaration":
@@ -739,9 +711,7 @@ class JavaScriptScanner(LanguageScanner):
                 return candidate
         return None
 
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve one import specifier to a repository file.
 
         Relative specifiers (``./x``, ``../x``) resolve against the
@@ -775,10 +745,8 @@ class JavaScriptScanner(LanguageScanner):
         for prefix, target in aliases:
             if not spec.startswith(prefix):
                 continue
-            expanded = target + spec[len(prefix):]
-            resolved = self._guess_target(
-                _normalize_posix(PurePosixPath(expanded)), file_set
-            )
+            expanded = target + spec[len(prefix) :]
+            resolved = self._guess_target(_normalize_posix(PurePosixPath(expanded)), file_set)
             if resolved is not None:
                 return resolved
         return None
@@ -798,9 +766,6 @@ class JavaScriptScanner(LanguageScanner):
         """
         if self._last_mode == "ast-grep":
             return "ast-grep"
-        if (
-            treesitter.get_parser("typescript") is not None
-            and treesitter.get_parser("javascript") is not None
-        ):
+        if treesitter.get_parser("typescript") is not None and treesitter.get_parser("javascript") is not None:
             return "tree-sitter"
         return "heuristic"

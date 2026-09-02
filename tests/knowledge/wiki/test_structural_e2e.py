@@ -121,8 +121,11 @@ class TestPolyglotBuildProducesSymbols:
         astgrep.RuleSet.load.cache_clear()
 
         for rel in (
-            "src/Service.php", "web/index.ts", "native/src/lib.rs",
-            "lib/MyApp/User.pm", "src/app.py",
+            "src/Service.php",
+            "web/index.ts",
+            "native/src/lib.rs",
+            "lib/MyApp/User.pm",
+            "src/app.py",
         ):
             cid = file_concept_id(rel)
             outline_on = _outline_section(pages_on[cid]["body"])
@@ -213,9 +216,7 @@ class TestUpsertChangedRefreshesSymbols:
         root = tmp_path / "repo"
         root.mkdir()
         (root / "a.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-        (root / "b.py").write_text(
-            "from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8"
-        )
+        (root / "b.py").write_text("from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8")
         _git(root, "init", "-q")
         _git(root, "config", "user.email", "t@t.t")
         _git(root, "config", "user.name", "t")
@@ -281,9 +282,7 @@ class TestEndToEndLookupBlastRepair:
         root = tmp_path / "repo"
         root.mkdir()
         (root / "a.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-        (root / "b.py").write_text(
-            "from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8"
-        )
+        (root / "b.py").write_text("from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8")
         build = CliRunner().invoke(wiki, ["build", "--path", str(root), "--no-git", "-q"])
         assert build.exit_code == 0, build.output
 

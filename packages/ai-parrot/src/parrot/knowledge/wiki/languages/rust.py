@@ -39,18 +39,13 @@ _RE_PUB_STRUCT = re.compile(r"^\s*pub(?:\(crate\))?\s+struct\s+(\w+)", re.MULTIL
 _RE_PUB_ENUM = re.compile(r"^\s*pub(?:\(crate\))?\s+enum\s+(\w+)", re.MULTILINE)
 _RE_PUB_TRAIT = re.compile(r"^\s*pub(?:\(crate\))?\s+trait\s+(\w+)", re.MULTILINE)
 _RE_PUB_FN = re.compile(
-    r"^\s*pub(?:\(crate\))?\s+(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)"
-    r"(?:\s*->\s*(\S+))?",
+    r"^\s*pub(?:\(crate\))?\s+(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)" r"(?:\s*->\s*(\S+))?",
     re.MULTILINE,
 )
 _RE_PUB_MOD = re.compile(r"^\s*pub(?:\(crate\))?\s+mod\s+(\w+)\s*;", re.MULTILINE)
 _RE_IMPL = re.compile(r"^\s*impl(?:<[^>]*>)?\s+(\w+)", re.MULTILINE)
-_RE_MOD_DECL = re.compile(
-    r"^\s*(?:pub(?:\(crate\))?\s+)?mod\s+(\w+)\s*;", re.MULTILINE
-)
-_RE_USE_CRATE = re.compile(
-    r"^\s*use\s+(crate|super|self)(::[\w:]+)(?:\s*\{([^}]+)\})?\s*;", re.MULTILINE
-)
+_RE_MOD_DECL = re.compile(r"^\s*(?:pub(?:\(crate\))?\s+)?mod\s+(\w+)\s*;", re.MULTILINE)
+_RE_USE_CRATE = re.compile(r"^\s*use\s+(crate|super|self)(::[\w:]+)(?:\s*\{([^}]+)\})?\s*;", re.MULTILINE)
 _RE_DOC_LINE = re.compile(r"^[ \t]*///[ \t]?(.*)$", re.MULTILINE)
 
 _CONTAINER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -67,10 +62,7 @@ def _find_doc_blocks(source: str) -> list[tuple[int, int, str]]:
     description (matching the ``/// First line`` convention used
     throughout the outline).
     """
-    lines = [
-        (m.start(), m.end(), m.group(1).strip())
-        for m in _RE_DOC_LINE.finditer(source)
-    ]
+    lines = [(m.start(), m.end(), m.group(1).strip()) for m in _RE_DOC_LINE.finditer(source)]
     blocks: list[tuple[int, int, str]] = []
     i = 0
     while i < len(lines):
@@ -182,20 +174,20 @@ class RustScanner(LanguageScanner):
             for match in pattern.finditer(source):
                 containers.append((match.start(), label, match.group(1)))
 
-        impls: list[tuple[int, str]] = [
-            (m.start(), m.group(1)) for m in _RE_IMPL.finditer(source)
-        ]
+        impls: list[tuple[int, str]] = [(m.start(), m.group(1)) for m in _RE_IMPL.finditer(source)]
 
         fns: list[tuple[int, str, str, str]] = []  # pos, name, params, ret
         for match in _RE_PUB_FN.finditer(source):
-            fns.append((
-                match.start(), match.group(1), match.group(2).strip(),
-                match.group(3) or "",
-            ))
+            fns.append(
+                (
+                    match.start(),
+                    match.group(1),
+                    match.group(2).strip(),
+                    match.group(3) or "",
+                )
+            )
 
-        mods: list[tuple[int, str]] = [
-            (m.start(), m.group(1)) for m in _RE_PUB_MOD.finditer(source)
-        ]
+        mods: list[tuple[int, str]] = [(m.start(), m.group(1)) for m in _RE_PUB_MOD.finditer(source)]
 
         owners = sorted(
             [(pos, "container", label, name) for pos, label, name in containers]
@@ -262,9 +254,7 @@ class RustScanner(LanguageScanner):
         lines: list[str] = []
 
         def _text(node: Any) -> str:
-            return source_bytes[node.start_byte:node.end_byte].decode(
-                "utf-8", errors="replace"
-            )
+            return source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
         def _name_of(node: Any) -> str:
             name_node = node.child_by_field_name("name")
@@ -373,9 +363,7 @@ class RustScanner(LanguageScanner):
                 return candidate_dir
         return None
 
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve a ``mod:``-prefixed or ``crate``/``super``/``self``
         specifier via Rust crate-layout conventions.
 
@@ -398,19 +386,19 @@ class RustScanner(LanguageScanner):
             return self._first_match(file_set, from_dir, mod_name)
 
         if spec.startswith("crate::"):
-            parts = spec[len("crate::"):].split("::")
+            parts = spec[len("crate::") :].split("::")
             crate_root_dir = self._find_crate_root(from_file, crate_roots)
             if crate_root_dir is None:
                 return None
             return self._first_match(file_set, crate_root_dir, "/".join(parts[:-1]), parts[-1])
 
         if spec.startswith("self::"):
-            parts = spec[len("self::"):].split("::")
+            parts = spec[len("self::") :].split("::")
             return self._first_match(file_set, from_dir, "/".join(parts[:-1]), parts[-1])
 
         if spec.startswith("super::"):
             parent_dir = PurePosixPath(from_dir).parent.as_posix()
-            parts = spec[len("super::"):].split("::")
+            parts = spec[len("super::") :].split("::")
             return self._first_match(file_set, parent_dir, "/".join(parts[:-1]), parts[-1])
 
         return None

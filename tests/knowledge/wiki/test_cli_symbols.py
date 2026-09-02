@@ -21,9 +21,7 @@ def built_project_root(tmp_path: Path, runner: CliRunner) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     (root / "a.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-    (root / "b.py").write_text(
-        "from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8"
-    )
+    (root / "b.py").write_text("from a import helper\n\n\ndef run():\n    return helper()\n", encoding="utf-8")
     result = runner.invoke(wiki, ["build", "--path", str(root), "--no-git", "-q"])
     assert result.exit_code == 0, result.output
     return root
@@ -31,17 +29,13 @@ def built_project_root(tmp_path: Path, runner: CliRunner) -> Path:
 
 class TestSymbolsLookup:
     def test_symbols_lookup_json(self, runner: CliRunner, built_project_root: Path):
-        result = runner.invoke(
-            wiki, ["symbols", "lookup", "helper", "--path", str(built_project_root), "--json"]
-        )
+        result = runner.invoke(wiki, ["symbols", "lookup", "helper", "--path", str(built_project_root), "--json"])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
         assert payload["hits"][0]["qualname"] == "helper"
 
     def test_symbols_lookup_text(self, runner: CliRunner, built_project_root: Path):
-        result = runner.invoke(
-            wiki, ["symbols", "lookup", "helper", "--path", str(built_project_root)]
-        )
+        result = runner.invoke(wiki, ["symbols", "lookup", "helper", "--path", str(built_project_root)])
         assert result.exit_code == 0, result.output
         assert "sym:a.py#helper" in result.output
 
@@ -49,8 +43,14 @@ class TestSymbolsLookup:
         result = runner.invoke(
             wiki,
             [
-                "symbols", "lookup", "helper",
-                "--path", str(built_project_root), "--language", "python", "--json",
+                "symbols",
+                "lookup",
+                "helper",
+                "--path",
+                str(built_project_root),
+                "--language",
+                "python",
+                "--json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -69,9 +69,7 @@ class TestSymbolsLookup:
 
 class TestSymbolsOutline:
     def test_symbols_outline_json(self, runner: CliRunner, built_project_root: Path):
-        result = runner.invoke(
-            wiki, ["symbols", "outline", "file:a.py", "--path", str(built_project_root), "--json"]
-        )
+        result = runner.invoke(wiki, ["symbols", "outline", "file:a.py", "--path", str(built_project_root), "--json"])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
         assert any(s["qualname"] == "helper" for s in payload["symbols"])
@@ -80,8 +78,13 @@ class TestSymbolsOutline:
         result = runner.invoke(
             wiki,
             [
-                "symbols", "outline", "sym:a.py#helper",
-                "--path", str(built_project_root), "--source", "--json",
+                "symbols",
+                "outline",
+                "sym:a.py#helper",
+                "--path",
+                str(built_project_root),
+                "--source",
+                "--json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -110,8 +113,13 @@ class TestSymbolsBlast:
         result = runner.invoke(
             wiki,
             [
-                "symbols", "blast", "sym:d.py#unique_fn",
-                "--path", str(root), "--no-inferred", "--json",
+                "symbols",
+                "blast",
+                "sym:d.py#unique_fn",
+                "--path",
+                str(root),
+                "--no-inferred",
+                "--json",
             ],
         )
         assert result.exit_code == 0, result.output

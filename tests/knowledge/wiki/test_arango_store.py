@@ -115,11 +115,7 @@ class TestArangoDBWikiStore:
             SOURCES_COLLECTION,
             META_COLLECTION,
         }
-        edge_call = next(
-            c
-            for c in mock_db.create_collection.call_args_list
-            if c.args[0] == EDGES_COLLECTION
-        )
+        edge_call = next(c for c in mock_db.create_collection.call_args_list if c.args[0] == EDGES_COLLECTION)
         assert edge_call.kwargs.get("edge") is True
 
         mock_db._connection.views.assert_awaited_once()
@@ -131,9 +127,7 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_initialize_skips_existing_view(self, store, mock_db):
-        mock_db._connection.views = AsyncMock(
-            return_value=[{"name": "test_pages_view"}]
-        )
+        mock_db._connection.views = AsyncMock(return_value=[{"name": "test_pages_view"}])
         await store.initialize()
         mock_db._connection.create_view.assert_not_awaited()
 
@@ -209,9 +203,7 @@ class TestArangoDBWikiStore:
         bind_vars = mock_db.execute.call_args.kwargs["bind_vars"]
         assert bind_vars["docs"][0]["content_hash"] == "deadbeef"
 
-        mock_db.query = AsyncMock(
-            return_value=([{"concept_id": "intro", "content_hash": "deadbeef"}], None)
-        )
+        mock_db.query = AsyncMock(return_value=([{"concept_id": "intro", "content_hash": "deadbeef"}], None))
         result = await store.get_page("intro", include_body=False)
         assert result["content_hash"] == "deadbeef"
 
@@ -253,9 +245,7 @@ class TestArangoDBWikiStore:
         )
         mock_db.execute = AsyncMock(return_value=([], None))
 
-        result = await store.replace_source_slice(
-            "src-1", [_page("new1")], edges=[("new1", "new1", "self")]
-        )
+        result = await store.replace_source_slice("src-1", [_page("new1")], edges=[("new1", "new1", "self")])
 
         assert result == {
             "pages_deleted": 1,
@@ -301,9 +291,7 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_get_page_found(self, store, mock_db):
-        mock_db.query = AsyncMock(
-            return_value=([{"concept_id": "intro", "title": "Intro"}], None)
-        )
+        mock_db.query = AsyncMock(return_value=([{"concept_id": "intro", "title": "Intro"}], None))
         page = await store.get_page("intro")
         assert page == {"concept_id": "intro", "title": "Intro"}
 
@@ -328,9 +316,7 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_search_fts(self, store, mock_db):
-        mock_db.query = AsyncMock(
-            return_value=([{"concept_id": "intro", "score": 4.2}], None)
-        )
+        mock_db.query = AsyncMock(return_value=([{"concept_id": "intro", "score": 4.2}], None))
         results = await store.search_fts("neural networks", limit=5)
         assert results == [{"concept_id": "intro", "score": 4.2}]
         aql = mock_db.query.call_args.args[0]
@@ -396,12 +382,8 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_dump_edges(self, store, mock_db):
-        mock_db.query = AsyncMock(
-            return_value=([{"src": "a", "dst": "b", "rel": "references"}], None)
-        )
-        assert await store.dump_edges() == [
-            {"src": "a", "dst": "b", "rel": "references"}
-        ]
+        mock_db.query = AsyncMock(return_value=([{"src": "a", "dst": "b", "rel": "references"}], None))
+        assert await store.dump_edges() == [{"src": "a", "dst": "b", "rel": "references"}]
 
     @pytest.mark.asyncio
     async def test_stats(self, store, mock_db):
@@ -438,9 +420,7 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_broken_edges(self, store, mock_db):
-        mock_db.query = AsyncMock(
-            return_value=([{"src": "a", "dst": "ghost", "rel": "references"}], None)
-        )
+        mock_db.query = AsyncMock(return_value=([{"src": "a", "dst": "ghost", "rel": "references"}], None))
         result = await store.broken_edges()
         assert result == [{"src": "a", "dst": "ghost", "rel": "references"}]
 
@@ -456,34 +436,26 @@ class TestReadOnlyMode:
     def test_read_only_flag(self):
         store = ArangoDBWikiStore(arango_params={}, database="wiki_x")
         assert store.read_only is False
-        ro = ArangoDBWikiStore(
-            arango_params={}, database="wiki_x", read_only=True
-        )
+        ro = ArangoDBWikiStore(arango_params={}, database="wiki_x", read_only=True)
         assert ro.read_only is True
 
     @pytest.mark.asyncio
     async def test_writes_are_refused_before_connecting(self):
         """The guard runs before ``_ensure_init`` — no server involved."""
-        ro = ArangoDBWikiStore(
-            arango_params={}, database="wiki_x", read_only=True
-        )
+        ro = ArangoDBWikiStore(arango_params={}, database="wiki_x", read_only=True)
         with pytest.raises(PermissionError):
             await ro.upsert_pages([WikiPageRecord(concept_id="a", title="a")])
         with pytest.raises(PermissionError):
             await ro.add_edges([("a", "b", "references")])
         with pytest.raises(PermissionError):
-            await ro.replace_source_slice(
-                "s", [WikiPageRecord(concept_id="a", title="a")]
-            )
+            await ro.replace_source_slice("s", [WikiPageRecord(concept_id="a", title="a")])
         with pytest.raises(PermissionError):
             await ro.delete_page("a")
         with pytest.raises(PermissionError):
             await ro.upsert_embedding("a", [0.1])
 
     @pytest.mark.asyncio
-    async def test_read_only_initialize_verifies_instead_of_creating(
-        self, monkeypatch
-    ):
+    async def test_read_only_initialize_verifies_instead_of_creating(self, monkeypatch):
         """A missing database is FileNotFoundError, not a new database."""
         import parrot.knowledge.wiki.arango_store as module
 
@@ -508,15 +480,11 @@ class TestReadOnlyMode:
 
         monkeypatch.setattr(module, "AsyncDB", _FakeDB)
 
-        missing = module.ArangoDBWikiStore(
-            arango_params={}, database="wiki_absent", read_only=True
-        )
+        missing = module.ArangoDBWikiStore(arango_params={}, database="wiki_absent", read_only=True)
         with pytest.raises(FileNotFoundError):
             await missing.initialize()
         assert created == []
 
-        present = module.ArangoDBWikiStore(
-            arango_params={}, database="wiki_present", read_only=True
-        )
+        present = module.ArangoDBWikiStore(arango_params={}, database="wiki_present", read_only=True)
         await present.initialize()
         assert created == ["wiki_present"]

@@ -30,15 +30,9 @@ RUST_SRC = (
     "pub fn free_fn() {}\n"
 )
 
-TS_SRC = (
-    "/**\n * Main entry.\n */\nexport function main(): void { ... }\n\n"
-    "export const LABEL = 'x';\n"
-)
+TS_SRC = "/**\n * Main entry.\n */\nexport function main(): void { ... }\n\n" "export const LABEL = 'x';\n"
 
-PERL_SRC = (
-    "package MyApp::Schema;\n\n=head2 connect\n\nConnect to the DB.\n\n=cut\n\n"
-    "sub connect { }\n1;\n"
-)
+PERL_SRC = "package MyApp::Schema;\n\n=head2 connect\n\nConnect to the DB.\n\n=cut\n\n" "sub connect { }\n1;\n"
 
 CASES = [
     ("php", ".php", PHP_SRC),

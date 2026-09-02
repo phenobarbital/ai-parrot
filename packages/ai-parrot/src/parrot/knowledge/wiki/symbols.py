@@ -172,7 +172,7 @@ def parse_sym_id(concept_id: str) -> tuple[str, str, int]:
     """
     if not concept_id.startswith("sym:"):
         raise ValueError(f"Not a sym: id: {concept_id!r}")
-    body = concept_id[len("sym:"):]
+    body = concept_id[len("sym:") :]
     rel_path, sep, rest = body.partition("#")
     if not sep:
         raise ValueError(f"Missing '#' in sym: id: {concept_id!r}")
@@ -180,7 +180,7 @@ def parse_sym_id(concept_id: str) -> tuple[str, str, int]:
     qualname = rest
     tail_sep_idx = rest.rfind("~")
     if tail_sep_idx != -1:
-        candidate_ordinal = rest[tail_sep_idx + 1:]
+        candidate_ordinal = rest[tail_sep_idx + 1 :]
         if candidate_ordinal.isdigit():
             qualname = rest[:tail_sep_idx]
             ordinal = int(candidate_ordinal)

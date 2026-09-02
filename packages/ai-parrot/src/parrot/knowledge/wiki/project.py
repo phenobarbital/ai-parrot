@@ -327,10 +327,7 @@ class ObsidianSyncConfig(BaseModel):
         for folder in candidates:
             clean = str(folder).replace("\\", "/")
             if clean.startswith("/") or ".." in clean.split("/"):
-                raise ValueError(
-                    f"Obsidian sync folder {folder!r} must be vault-relative "
-                    "and must not contain '..'"
-                )
+                raise ValueError(f"Obsidian sync folder {folder!r} must be vault-relative " "and must not contain '..'")
         return value
 
     @field_validator("namespaces")

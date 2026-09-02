@@ -251,11 +251,11 @@ class StructuralService:
         if include_source and target.startswith("sym:"):
             source_text, truncated = self._read_source_excerpt(target, records)
 
-        return CodeOutlineOutput(target=target, language=language, symbols=hits, source=source_text, truncated=truncated)
+        return CodeOutlineOutput(
+            target=target, language=language, symbols=hits, source=source_text, truncated=truncated
+        )
 
-    def _read_source_excerpt(
-        self, sym_id: str, records: list[SymbolRecord]
-    ) -> tuple[str | None, bool]:
+    def _read_source_excerpt(self, sym_id: str, records: list[SymbolRecord]) -> tuple[str | None, bool]:
         """Bounded ``start_byte:end_byte`` read (<= 4 000 chars) for a ``sym:`` target.
 
         Matched against ``records`` (already fetched by ``outline()`` via
@@ -386,7 +386,7 @@ class StructuralService:
     def _resolve_rel_path(self, target: str) -> str | None:
         """Rel path a ``file:``/``sym:``/bare-path outline target names."""
         if target.startswith("file:"):
-            return target[len("file:"):]
+            return target[len("file:") :]
         if target.startswith("sym:"):
             try:
                 rel_path, _qualname, _ordinal = parse_sym_id(target)
