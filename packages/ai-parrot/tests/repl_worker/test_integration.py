@@ -165,11 +165,12 @@ class TestE2E:
         """Infinite loop -> timeout -> LLM gets a loss error with the variable
         list -> the session is still usable afterward.
 
-        `deadline_ms` must cover the freshly-spawned (not prewarmed) worker's
-        own pandas/numpy bootstrap too, since that runs before it
-        can process the first `exec` request — too tight a deadline would
-        time out the FIRST ("z = 5") call on cold start, not the intended
-        infinite loop.
+        Since FEAT-500 `deadline_ms` no longer has to cover the freshly-spawned
+        worker's own pandas/numpy bootstrap: readiness is a separate budget
+        (`WorkerConfig.bootstrap_timeout_ms`), awaited by `_send()` BEFORE the
+        deadline clock starts, so the first ("z = 5") call on a cold start can
+        no longer be mistaken for the intended infinite loop. The 4 s deadline
+        below therefore now only has to cover actual execution.
         """
         config = WorkerConfig(deadline_ms=4_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=0)
         tool = PythonREPLTool(report_dir=str(tmp_path), worker_config=config)
