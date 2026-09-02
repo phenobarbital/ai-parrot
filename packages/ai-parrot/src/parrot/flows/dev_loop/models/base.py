@@ -760,6 +760,54 @@ class DispatchEvent(BaseModel):
     )
 
 
+class DispatchLabels(BaseModel):
+    """Identity of the work a dispatch is doing (FEAT-496).
+
+    Stamped onto every ``DispatchEvent`` payload published during the
+    dispatch, so any single event answers "what task, which seat, which
+    agent". Every field defaults to empty — a dispatch without labels
+    publishes exactly the payloads it publishes today, minus the labels.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str = ""
+    task_title: str = ""
+    task_file: str = ""
+    seat: str = ""
+    agent: str = ""
+    model: str = ""
+    subagent: str = ""
+    judge_id: str = ""
+    attempt: int = 1
+
+    def as_payload(self) -> Dict[str, Any]:
+        """Return only the non-empty fields, never padding a payload with blanks.
+
+        Returns:
+            A dict of non-default field values suitable for merging into a
+            dispatch event payload. ``attempt`` is included only when it is
+            greater than ``1`` (the default first-attempt value).
+        """
+        out: Dict[str, Any] = {}
+        for field_name in (
+            "task_id",
+            "task_title",
+            "task_file",
+            "seat",
+            "agent",
+            "model",
+            "subagent",
+            "judge_id",
+        ):
+            value = getattr(self, field_name, "")
+            if value:
+                out[field_name] = value
+        if self.attempt != 1:
+            out["attempt"] = self.attempt
+        return out
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Feature-mode contracts (FEAT-378) — document-driven planning, judge
 # panel, synthesis and feedback-router outputs, feature handoff.

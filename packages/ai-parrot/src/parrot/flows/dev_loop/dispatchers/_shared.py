@@ -15,7 +15,7 @@ from typing import Optional, Protocol, Type, TypeVar
 
 from pydantic import BaseModel
 
-from parrot.flows.dev_loop.models import DispatchEvent
+from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels
 from parrot.flows.dev_loop.session_state import SessionHost, action_from_dispatch_event
 
 T = TypeVar("T", bound=BaseModel)
@@ -98,6 +98,50 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Dispatch labels (FEAT-496) — identity of the work in flight, stamped once
+# per dispatch() call and read back at the single _publish_event() choke
+# point in each dispatcher.
+#
+# Mirrors _SESSION_HOST_CTX exactly, for the same reason: every dispatcher
+# already funnels ALL of its publishing through one _publish_event method,
+# so a ContextVar read there stamps every event without threading a new
+# parameter through ~40 internal call sites across 5 dispatcher classes.
+# ContextVar values are copied per asyncio.Task, so concurrent seats on a
+# shared dispatcher instance never observe each other's labels.
+# ---------------------------------------------------------------------------
+
+_DISPATCH_LABELS_CTX: "contextvars.ContextVar[Optional[DispatchLabels]]" = (
+    contextvars.ContextVar("dev_loop_dispatch_labels", default=None)
+)
+
+
+def bind_labels(labels: Optional[DispatchLabels]) -> "contextvars.Token":
+    """Bind labels for the duration of one ``dispatch()`` call.
+
+    Callers MUST reset the returned token in a ``finally:`` block, mirroring
+    the ``_SESSION_HOST_CTX.set(...)`` / ``.reset(token)`` discipline already
+    used for the session host.
+
+    Args:
+        labels: The identity of the work this dispatch is doing, or ``None``.
+
+    Returns:
+        A ``contextvars.Token`` to pass to ``_DISPATCH_LABELS_CTX.reset()``.
+    """
+    return _DISPATCH_LABELS_CTX.set(labels)
+
+
+def current_labels() -> Optional[DispatchLabels]:
+    """Return the labels bound by the active ``dispatch()`` call, if any.
+
+    Returns:
+        The bound :class:`DispatchLabels`, or ``None`` when no dispatch has
+        bound one (legacy callers, or callers that omit ``labels=``).
+    """
+    return _DISPATCH_LABELS_CTX.get()
+
+
+# ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
 
@@ -138,5 +182,6 @@ class DevLoopCodeDispatcher(Protocol):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         """Dispatch a code-agent run and return validated structured output."""
