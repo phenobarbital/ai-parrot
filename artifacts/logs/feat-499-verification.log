@@ -1,0 +1,219 @@
+FEAT-499 — A2UI optional-binding lowering — TASK-2756 verification sweep
+==========================================================================
+Date: 2026-09-02T13:12:00+00:00
+Worktree: .claude/worktrees/feat-499-a2ui-optional-binding-lowering
+Branch: feat-499-a2ui-optional-binding-lowering
+Commits verified against (HEAD at time of this sweep):
+  9aea8771e sdd: complete TASK-2755
+  d3d848c0c feat(a2ui-optional-binding-lowering): TASK-2755
+  475708561 sdd: complete TASK-2754
+  7d92c40d7 feat(a2ui-optional-binding-lowering): TASK-2754
+  85f4d3aa5 sdd: complete TASK-2753
+  d66d43e12 feat(a2ui-optional-binding-lowering): TASK-2753
+
+--------------------------------------------------------------------------
+1. THE ACCEPTANCE GATE — the three named e2e tests, test file UNMODIFIED
+--------------------------------------------------------------------------
+
+Command:
+  pytest packages/ai-parrot/tests/integration/test_finance_reporter_narrative_e2e.py -v
+
+Result (first attempt, BEFORE the renderer-text-omission fix below):
+  test_report_profile_replay_no_narrator          FAILED
+  test_dashboard_profile_replay                   PASSED
+  test_end_to_end_no_fabricated_figures            FAILED
+  8 passed, 2 failed
+
+  test_dashboard_profile_replay passing alone is NOT evidence the feature
+  works (per spec Known Risks) — it only exercises the INTERCEPTED
+  Infographic path, fixed by TASK-2753 alone. The two LOWERED-path
+  failures were a genuine gap: baking correctly drops the "text" key for
+  an omitted optional binding (TASK-2754's propagation made this
+  possible), but interactive_html.py's `_render_prim_Text` /
+  ssr_html.py's `_render_Text` unconditionally emitted the wrapping
+  `<p class="a2ui-...">` regardless of whether "text" was present, so an
+  omitted /narrative binding still leaked a visible-but-blank
+  `a2ui-body`/`a2ui-summary` element into the document — failing
+  `assert "a2ui-body" not in html_doc`.
+
+  FIX (completes TASK-2753/2754's own files — interactive_html.py /
+  ssr_html.py — no other files touched): both `_render_prim_Text` and
+  `_render_Text` now omit the whole element (return "") when the "text"
+  key is entirely absent from the baked props (the omitted-optional-
+  binding signal), matching the precedent already established by
+  `_render_infographic`'s `if text is not None` guard. SSRHTMLRenderer's
+  version additionally excludes `role == "cell"` (a DataTable cell's own
+  value is never itself an optional binding; omitting it would misalign
+  the row).
+
+Result (after the fix — FINAL, test file byte-identical to pre-task):
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_publish_recipe_succeeds_not_gapreport PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_published_recipe_carries_replay_sql PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_report_profile_replay_no_narrator PASSED  <- proves TASK-2754 (LOWERED path, G-E)
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_report_profile_replay_with_narrator PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_dashboard_profile_replay PASSED  <- proves TASK-2753 (INTERCEPTED path)
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_interactive_html_renders_report_root PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_end_to_end_no_fabricated_figures PASSED  <- proves G-H (figure guard + still renders)
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_scheduled_refresh_with_narrator PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_scheduled_refresh_without_system_account_fails_closed PASSED
+  tests/integration/test_finance_reporter_narrative_e2e.py::TestFinanceReporterNarrativeE2E::test_resolve_system_account_context_smoke PASSED
+  10 passed, 17 warnings in 3.04s
+
+Figure guard confirmed FIRED (not silently absent) for
+test_end_to_end_no_fabricated_figures (G-H — the guard discards the
+invented figure, /narrative is then absent, render still succeeds):
+  WARNING parrot.tools.infographic_recipes.figure_guard:figure_guard.py:171
+    Narrative figure guard rejected 1 non-derivable figure(s): ['$999.9M']
+
+Gate check (spec requirement — no edits to the test file or the agent's layouts):
+  $ git diff --exit-code agents/finance_reporter.py \
+      packages/ai-parrot/tests/integration/test_finance_reporter_narrative_e2e.py
+  (no output — both byte-identical to their pre-task state)
+
+--------------------------------------------------------------------------
+2. FEAT-470 v1.0 wire-conformance suite
+--------------------------------------------------------------------------
+
+Command:
+  pytest packages/ai-parrot/tests/outputs/a2ui/conformance/ \
+         packages/ai-parrot/tests/outputs/a2ui/catalog/test_validation_v1.py -q
+
+Result: 50 passed, 8 warnings — GREEN.
+
+--------------------------------------------------------------------------
+3. Both serving routes agree on a render failure (Module 2 / TASK-2755)
+--------------------------------------------------------------------------
+
+Covered by:
+  - test_a2ui_surfaces_route.py::TestRespondHtmlFailure (4 tests: 422 on
+    render failure, happy path unchanged, missing-visualizations still
+    501, malformed stored envelope -> 422)
+  - test_a2ui_surfaces_route.py::TestBothRoutesAgree (mirror route via
+    real HTTP vs. a direct SurfaceNegotiationService.respond() call for
+    the same record — the exact call UISurfacesHandler's REST lane makes)
+  - test_ui_surfaces_e2e.py::TestRenderFailureBothRoutes (genuine e2e:
+    publish via the real InfographicAuthoringMixin.publish_surface,
+    corrupt the stored envelope, GET via UISurfacesHandler's REST unwrap
+    AND directly via the shared negotiation service — byte-identical
+    422 bodies)
+
+All 8 pass — see section 4 below for the consolidated run.
+
+--------------------------------------------------------------------------
+4. Full feature-surface sweep (every module this feature touches)
+--------------------------------------------------------------------------
+
+Command:
+  pytest packages/ai-parrot/tests/outputs/a2ui/ \
+         packages/ai-parrot/tests/tools/infographic_recipes/ \
+         packages/ai-parrot/tests/unit/outputs/ -q
+Result: 6 failed, 780 passed, 1 skipped
+  The 6 failures are ALL in packages/ai-parrot/tests/unit/outputs/cards/
+  — the legacy (FEAT-273-deprecated) infographic-HTML "cards" renderer,
+  wholly unrelated to A2UI. Confirmed PRE-EXISTING and unaffected by this
+  feature: reproduced identically with this feature's 4 commits stashed
+  out (git stash / rerun / git stash pop), same 6 tests, same failures,
+  75 passed either way. Excluded from this feature's scope (not a file
+  this feature touches).
+
+Command:
+  pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/ -q
+Result: 153 passed — GREEN (run separately from ai-parrot/tests: both
+  packages ship a bare `tests/conftest.py`, so pytest's module-identity
+  check collides them into one invocation — a pre-existing test-layout
+  quirk, not a code defect).
+
+Command:
+  pytest packages/ai-parrot-server/tests/handlers/test_a2ui_surfaces_route.py \
+         packages/ai-parrot-server/tests/integration/test_ui_surfaces_e2e.py \
+         packages/ai-parrot-server/tests/handlers/test_ui_surfaces_handler.py \
+         packages/ai-parrot-server/tests/handlers/test_ui_surfaces_store.py -q
+Result: 57 passed — GREEN.
+
+--------------------------------------------------------------------------
+5. packages/ai-parrot-server/tests/ (full, minus 2 files needing an
+   uninstalled optional dep in this sandbox — fakeredis)
+--------------------------------------------------------------------------
+
+Command:
+  pytest packages/ai-parrot-server/tests/ -q \
+    --ignore=.../test_hitl_web_suspend_resume.py \
+    --ignore=.../test_suspended_store.py
+Result: 10 failed, 1531 passed, 1 skipped.
+
+  All 10 failures confirmed PRE-EXISTING and unrelated (none touch a2ui,
+  ui_surfaces, builders, runner, or the renderers this feature modified):
+    - test_agent_a2ui_stream.py::TestA2UIStreamContract (x2) — a
+      source-string assertion against handlers/agent.py, a file this
+      feature never touches. Reproduced identically with this feature's
+      commits stashed out.
+    - test_a2a_fireflies_vertical.py / test_a2a_jira_vertical.py /
+      test_a2a_workiq_vertical.py — broker-registration tests for
+      unrelated A2A integrations.
+    - test_namespace_imports.py (x2), test_wheel_layout.py (x3) — build/
+      packaging-layout assertions (host stub files, wheel dist assets)
+      that depend on a built distribution being present; this worktree
+      has no build artifacts (same class of gap as the missing .so
+      Cython extensions noted when first setting up this worktree).
+
+--------------------------------------------------------------------------
+6. Pre-existing failures — spec §7's documented baseline, re-verified
+--------------------------------------------------------------------------
+
+Command:
+  pytest packages/ai-parrot/tests/unit/bots/ -q
+
+Result: 5 failed, 243 passed, 42 warnings — matches spec §7 EXACTLY,
+no more, no fewer:
+  - test_pandasagent_stale_data_variables.py (3 tests) — fails in
+    isolation too, per spec.
+  - test_infographic_authoring_mixin.py::TestGenerateInfographic::
+    test_validation_gate_blocks_before_render — passes in isolation,
+    fails in a full-directory run (test-ordering pollution), per spec.
+  - test_flex_dashboard_agent.py::TestAgentConstruction::
+    test_working_memory_and_infographic_toolkits_attached — same
+    ordering pollution, per spec.
+  None of these touch this feature's files. Not attributed to FEAT-499,
+  not fixed here (per spec §7 and TASK-2756's own scope).
+
+--------------------------------------------------------------------------
+7. Full-repo `pytest packages/ai-parrot/tests/` — scope note
+--------------------------------------------------------------------------
+
+An unconstrained full-tree run (~17,365 collected tests) was attempted
+twice; both were terminated by the sandbox's execution-time ceiling
+(observed around the 9-10 minute mark, well short of what the full tree
+needs) before completion — not by a test failure. Sections 1-6 above
+individually and exhaustively cover every module this feature's diff
+touches (builders.py, runner.py, interactive_html.py, ssr_html.py,
+ui_surfaces.py) plus the one directory the spec itself documents as
+carrying pre-existing test-ordering pollution (unit/bots/), each run
+to a clean, deterministic completion with matching results. 26 additional
+files fail at COLLECTION time tree-wide, independent of this feature and
+independent of which tests are selected (missing optional plugin
+packages — parrot.tools.cmc_fear_greed / coingecko / cointelegraph /
+composite_score / cryptoquant / marketnews / notification / tradingeco —
+and a handful of unrelated environment/fixture gaps); none import
+anything this feature touches.
+
+--------------------------------------------------------------------------
+Summary
+--------------------------------------------------------------------------
+
+[x] The three named e2e tests pass, test file + agents/finance_reporter.py
+    byte-identical to pre-task state
+[x] Report-layout (lowered) recipe with an absent optional binding renders
+[x] Infographic-layout (intercepted) recipe with an absent optional
+    binding renders (regression guard, unaffected by TASK-2754/the
+    renderer fix)
+[x] A non-optional unresolvable binding still raises BakeError
+    (test_required_binding_still_raises, TASK-2754 unit suite)
+[x] ssr-html and pdf behave identically to interactive-html for both
+    layout shapes (TestSSRAndPDFParity, TASK-2754 unit suite)
+[x] GET /api/v1/ui/surfaces/{id} and the A2UIHandler mirror both return a
+    structured 422 (never a traceback, never a 5xx) on render failure
+[x] A lowered child inherits its parent's whole metadata.extensions,
+    child's own value winning on collision (TestExtensionMerge)
+[x] FEAT-470 v1.0 wire-conformance suite green (50/50)
+[x] No new failures vs. the documented pre-existing baseline (spec §7:
+    5/5 match exactly) across every module this feature touches

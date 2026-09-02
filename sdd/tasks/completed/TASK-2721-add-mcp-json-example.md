@@ -152,10 +152,16 @@ git check-ignore -q .mcp.json
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.8 (session_01TjfZ6UfPbX4WyuHHunavQe)
+**Date**: 2026-09-02
+**Notes**: Created `.mcp.json.example` (repo root) with the verified `sh -c` +
+`git rev-parse` resolver copied verbatim from `856faec5a`. Static ACs pass: valid
+JSON, tracked (not matched by the `.gitignore:389` `.mcp.json` rule), no `/home/`
+path, uses the resolver, and the real `.mcp.json` stays gitignored. End-to-end AC
+verified in THIS venv-less worktree: the resolver resolved to the main repo root
+(`/home/thephoenixbird/TROC/projects/ai-parrot`) from both the worktree root and a
+subdirectory (via the `git-common-dir` fallback), and after `cp .mcp.json.example
+.mcp.json`, `claude mcp list` reported `wikitoolkit … ✔ Connected`. Temp `.mcp.json`
+removed after the test.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

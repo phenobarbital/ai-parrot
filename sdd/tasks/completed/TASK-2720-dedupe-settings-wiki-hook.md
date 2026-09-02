@@ -132,10 +132,14 @@ grep -q 'CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit\\?" claude-hook' .claude/setti
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.8 (session_01TjfZ6UfPbX4WyuHHunavQe)
+**Date**: 2026-09-02
+**Notes**: Removed the duplicate `Grep|Glob|Read|Bash` PreToolUse hook object
+(hardcoded `/home/jesuslara/.../wikitoolkit claude-hook`, formerly lines 30–39)
+and fixed the trailing comma so the array stays valid JSON. The portable
+`"$CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit" claude-hook` copy remains. Verified:
+valid JSON, no `/home/` path, exactly one wiki claude-hook (the portable form),
+and all other hooks + the `permissions` block preserved (dangerous-actions-blocker
+×1, sdd-worker-format ×2). Net diff: −10 lines, only `.claude/settings.json`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

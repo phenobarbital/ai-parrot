@@ -225,10 +225,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_016V1ED31jAfAKt2u9qoKZXx)
+**Date**: 2026-09-02
+**Notes**: Wrapped `CreateSurface.model_validate(record.envelope)` +
+`renderer.render(envelope)` in a single try/except inside `_respond_html`,
+returning a structured `{"status": "error", "message": ..., "surface_id":
+...}` JSON body with status 422 on any failure, and `logger.exception`-ing
+the traceback so it never reaches the client. The pre-existing `ImportError`
+-> 501 branch is untouched. Added `TestRespondHtmlFailure` (4 tests: render
+failure, happy path unchanged, missing-visualizations still 501, malformed
+stored envelope) to `test_a2ui_surfaces_route.py`, plus `TestBothRoutesAgree`
+comparing the mirror route's real HTTP response against a direct
+`SurfaceNegotiationService.respond()` call for the same record (the REST
+route itself needs a real `navigator_auth` backend this file's lightweight
+client fixture doesn't stand up). Added a genuine end-to-end
+`TestRenderFailureBothRoutes` test to `test_ui_surfaces_e2e.py` (publish via
+the real mixin -> corrupt the stored envelope -> GET via `UISurfacesHandler`
+REST unwrap AND directly via the shared negotiation service) proving both
+entry points return byte-identical 422 bodies. 8 new/changed tests pass;
+full `test_a2ui_surfaces_route.py` + `test_ui_surfaces_e2e.py` +
+`test_ui_surfaces_handler.py` + `test_ui_surfaces_store.py` (57 tests) green.
+`ruff check` clean (dropped one now-unused `noqa: BLE001` the new except
+clause made redundant). Confirmed 2 pre-existing, unrelated failures in
+`test_agent_a2ui_stream.py` (a source-string assertion against
+`handlers/agent.py`, untouched by this task) exist identically on `dev`
+without this change — excluded from this task's scope.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's own test stub suggested a single
+`negotiation`/`record` fixture pair reused directly for
+`TestBothRoutesAgree`'s HTTP-level "both routes" comparison; in practice the
+REST route requires a real `navigator_auth` backend the existing
+lightweight `client` fixture in `test_a2ui_surfaces_route.py` does not
+configure, so that class compares the mirror route (real HTTP) against a
+direct `SurfaceNegotiationService.respond()` call instead (the exact call
+the REST route itself makes) — full dual-real-dispatch parity is proven
+separately in `test_ui_surfaces_e2e.py::TestRenderFailureBothRoutes`.
