@@ -172,7 +172,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,8 +186,8 @@
       "parallelism_notes": "Caller side: agent_pool.py + nodes/development.py. Needs every dispatcher to accept labels= first. Parallel with TASK-2731 (disjoint files).",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2730-pool-and-resolver-label-wiring.md"
+      "completed_at": "2026-09-02T03:18:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2730-pool-and-resolver-label-wiring.md"
     },
     {
       "id": "TASK-2731",
