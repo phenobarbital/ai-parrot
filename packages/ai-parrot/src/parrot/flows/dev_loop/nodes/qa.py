@@ -466,9 +466,7 @@ class QANode(DevLoopNode):
         # Scope lint/ruff/mypy commands to changed files so pre-existing
         # repo-wide errors don't fail the QA gate for unrelated code.
         changed = await self._get_changed_files(effective_cwd)
-        lint_cmd = self._scope_lint_to_files(
-            self._baseline_aware_lint(self._lint_command, changed), changed
-        )
+        lint_cmd = self._scope_lint_to_files(self._baseline_aware_lint(self._lint_command, changed), changed)
         scoped_criteria = self._scope_criteria(executable, changed)
 
         qa_brief = _QABrief(

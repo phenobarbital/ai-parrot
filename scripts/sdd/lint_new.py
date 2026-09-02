@@ -44,9 +44,7 @@ _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 def _git(*args: str) -> str:
     """Run a git command, returning stdout — or ``""`` on any failure."""
     try:
-        proc = subprocess.run(
-            ["git", *args], capture_output=True, text=True, check=False
-        )
+        proc = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
     except OSError:
         return ""
     return proc.stdout if proc.returncode == 0 else ""
@@ -152,9 +150,7 @@ def _format(finding: dict, repo_root: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Report only the ruff findings this branch introduced."
-    )
+    parser = argparse.ArgumentParser(description="Report only the ruff findings this branch introduced.")
     parser.add_argument("--base", default=None, help="Base ref (default: origin/dev, then origin/main)")
     parser.add_argument("paths", nargs="*", help="Files to check")
     args = parser.parse_args(argv)
@@ -184,10 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(
-        f"lint_new: no new findings ({pre_existing} pre-existing finding(s) "
-        f"in the changed files were ignored)."
-    )
+    print(f"lint_new: no new findings ({pre_existing} pre-existing finding(s) " f"in the changed files were ignored).")
     return 0
 
 

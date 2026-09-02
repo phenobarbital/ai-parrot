@@ -273,9 +273,7 @@ async def test_missing_disposition_fails_closed(ctx):
 
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     dispatcher = MagicMock()
-    dispatcher.dispatch = AsyncMock(
-        side_effect=[qa_report, undispositioned_report, undispositioned_report]
-    )
+    dispatcher.dispatch = AsyncMock(side_effect=[qa_report, undispositioned_report, undispositioned_report])
 
     node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
     report = await node.execute(ctx)
