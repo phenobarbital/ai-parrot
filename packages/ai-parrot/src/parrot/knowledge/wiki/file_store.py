@@ -31,9 +31,9 @@ import json
 import logging
 import math
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -45,9 +45,9 @@ from parrot.knowledge.wiki.export import (
     page_frontmatter,
 )
 from parrot.knowledge.wiki.store import (
+    _FTS_TOKEN_RE,
     BaseWikiStore,
     WikiPageRecord,
-    _FTS_TOKEN_RE,
     estimate_tokens,
     rank_by_cosine,
 )
@@ -60,7 +60,7 @@ _EMBEDDINGS_FILENAME = ".embeddings.json"
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def _tokenize(text: str) -> list[str]:
@@ -191,6 +191,7 @@ class InMemoryWikiStore(BaseWikiStore):
             or estimate_tokens(body),
             "created_at": str(front.get("created_at") or front.get("timestamp") or ""),
             "updated_at": str(front.get("timestamp") or ""),
+            "content_hash": front.get("content_hash"),
         }
         relates = [
             (str(item.get("concept")), str(item.get("rel") or "references"))
@@ -215,7 +216,7 @@ class InMemoryWikiStore(BaseWikiStore):
         # Machine fields appended into the same frontmatter block — OKF
         # consumers tolerate unknown keys.
         machine: dict[str, Any] = {}
-        for key in ("category", "node_id", "source_id", "token_count", "created_at"):
+        for key in ("category", "node_id", "source_id", "token_count", "created_at", "content_hash"):
             if page.get(key) not in (None, ""):
                 machine[key] = page[key]
         if machine:
@@ -349,6 +350,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 "updated_at",
                 "origin",
                 "asserted_by",
+                "content_hash",
             )
         }
 
@@ -378,6 +380,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 "updated_at": now,
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
+                "content_hash": p.content_hash,
             }
             old_path = (
                 self._page_path(existing) if existing else None
@@ -414,7 +417,7 @@ class InMemoryWikiStore(BaseWikiStore):
         self,
         source_id: str,
         pages: list[WikiPageRecord],
-        edges: Optional[list[tuple[str, str, str]]] = None,
+        edges: list[tuple[str, str, str]] | None = None,
     ) -> dict[str, Any]:
         """Atomically replace all pages/edges derived from one source.
 
@@ -488,7 +491,7 @@ class InMemoryWikiStore(BaseWikiStore):
 
     async def get_page(
         self, concept_id: str, include_body: bool = True
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch a page by ``concept_id`` (falls back to ``node_id``)."""
         await self._ensure_loaded()
         page = self._pages.get(concept_id)
@@ -504,9 +507,9 @@ class InMemoryWikiStore(BaseWikiStore):
 
     async def list_pages(
         self,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 100,
-        origin: Optional[list[str]] = None,
+        origin: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List page stubs, optionally filtered by category/origin."""
         await self._ensure_loaded()
@@ -522,7 +525,7 @@ class InMemoryWikiStore(BaseWikiStore):
     async def search_fts(
         self,
         query: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """TF-IDF lexical search over title/summary/body postings.
@@ -577,7 +580,7 @@ class InMemoryWikiStore(BaseWikiStore):
     async def neighbors(
         self,
         concept_id: str,
-        rel: Optional[str] = None,
+        rel: str | None = None,
         direction: str = "both",
     ) -> list[dict[str, Any]]:
         """Return edge-adjacent pages/targets of a concept."""
@@ -639,6 +642,7 @@ class InMemoryWikiStore(BaseWikiStore):
             "edges": sum(len(v) for v in self._out_edges.values()),
             "sources": len(self._load_source_manifest()),
             "embeddings": len(self._embeddings),
+            "symbols": categories.get("symbol", 0),
             "total_tokens": sum(
                 int(p.get("token_count") or 0) for p in self._pages.values()
             ),

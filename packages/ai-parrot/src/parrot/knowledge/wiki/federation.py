@@ -1024,6 +1024,44 @@ class FederatedWikiStore(BaseWikiStore):
         """Store an embedding on the local plane."""
         await self._local.upsert_embedding(self._assert_local(concept_id), vector, model)
 
+    # -- FEAT-498: structural symbol plane — local plane only in v1 ------
+
+    async def upsert_symbols(self, symbols: list[Any], source_id: str | None = None) -> int:
+        """Write symbol rows into the local plane (no cross-namespace writes)."""
+        return await self._local.upsert_symbols(symbols, source_id)
+
+    async def symbols_for(self, rel_path: str) -> list[Any]:
+        """Read symbols from the local plane only — foreign namespaces'
+        files are not on this disk, so there is nothing to fan out to."""
+        return await self._local.symbols_for(rel_path)
+
+    async def find_symbols(
+        self,
+        name: str | None = None,
+        qualname_prefix: str | None = None,
+        kind: str | None = None,
+        language: str | None = None,
+        path_prefix: str | None = None,
+        limit: int = 50,
+    ) -> list[Any]:
+        """Find symbols in the local plane only."""
+        return await self._local.find_symbols(
+            name=name,
+            qualname_prefix=qualname_prefix,
+            kind=kind,
+            language=language,
+            path_prefix=path_prefix,
+            limit=limit,
+        )
+
+    async def search_symbols_fts(self, query: str, limit: int = 20) -> list[Any]:
+        """Lexical symbol search over the local plane only."""
+        return await self._local.search_symbols_fts(query, limit)
+
+    async def page_hashes(self, concept_ids: list[str]) -> dict[str, str | None]:
+        """Look up content hashes on the local plane only."""
+        return await self._local.page_hashes([self._assert_local(cid) for cid in concept_ids])
+
     async def rebuild_from_tree(
         self,
         tree: dict[str, Any],

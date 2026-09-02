@@ -534,6 +534,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 "token_count": p.token_count or estimate_tokens(p.body),
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
+                "content_hash": p.content_hash,
                 "created_at": now,
                 "updated_at": p.updated_at or now,
             }
@@ -547,7 +548,8 @@ class ArangoDBWikiStore(BaseWikiStore):
             "node_id: doc.node_id, title: doc.title, category: doc.category, "
             "summary: doc.summary, body: doc.body, source_id: doc.source_id, "
             "token_count: doc.token_count, updated_at: doc.updated_at, "
-            "origin: doc.origin, asserted_by: doc.asserted_by"
+            "origin: doc.origin, asserted_by: doc.asserted_by, "
+            "content_hash: doc.content_hash"
             "} "
             "IN @@collection"
         )
@@ -745,6 +747,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             "updated_at",
             "origin",
             "asserted_by",
+            "content_hash",
         ]
         if include_body:
             fields.append("body")
@@ -799,7 +802,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             " title: doc.title, category: doc.category, summary: doc.summary,"
             " source_id: doc.source_id, token_count: doc.token_count,"
             " updated_at: doc.updated_at, origin: doc.origin,"
-            " asserted_by: doc.asserted_by}"
+            " asserted_by: doc.asserted_by, content_hash: doc.content_hash}"
         )
         return await self._query(aql, bind_vars)
 
@@ -939,7 +942,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             " title: doc.title, category: doc.category, summary: doc.summary,"
             " body: doc.body, source_id: doc.source_id,"
             " token_count: doc.token_count, created_at: doc.created_at,"
-            " updated_at: doc.updated_at}"
+            " updated_at: doc.updated_at, content_hash: doc.content_hash}"
         )
         return await self._query(aql, {"@collection": PAGES_COLLECTION})
 
@@ -982,6 +985,16 @@ class ArangoDBWikiStore(BaseWikiStore):
             {"@collection": PAGES_COLLECTION},
         )
         out["categories"] = {row["category"]: row["n"] for row in cat_rows}
+
+        # FEAT-498: no native `symbols` collection — sym: pages already
+        # counted via `category`, surfaced here too for parity with the
+        # other two backends' stats() shape.
+        symbol_rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.category == 'symbol'"
+            " COLLECT WITH COUNT INTO length RETURN length",
+            {"@collection": PAGES_COLLECTION},
+        )
+        out["symbols"] = symbol_rows[0] if symbol_rows else 0
         return out
 
     # ------------------------------------------------------------------

@@ -202,6 +202,20 @@ class TestArangoDBWikiStore:
         assert bind_vars["docs"][0]["concept_id"] == "intro"
 
     @pytest.mark.asyncio
+    async def test_upsert_pages_content_hash_round_trip(self, store, mock_db):
+        """FEAT-498: content_hash is written and read back (mocked)."""
+        page = _page("intro", content_hash="deadbeef")
+        await store.upsert_pages([page])
+        bind_vars = mock_db.execute.call_args.kwargs["bind_vars"]
+        assert bind_vars["docs"][0]["content_hash"] == "deadbeef"
+
+        mock_db.query = AsyncMock(
+            return_value=([{"concept_id": "intro", "content_hash": "deadbeef"}], None)
+        )
+        result = await store.get_page("intro", include_body=False)
+        assert result["content_hash"] == "deadbeef"
+
+    @pytest.mark.asyncio
     async def test_add_edges_three_tuple(self, store, mock_db):
         written = await store.add_edges([("a", "b", "references")])
         assert written == 1
@@ -399,6 +413,7 @@ class TestArangoDBWikiStore:
                 ([1], None),  # embeddings
                 ([42], None),  # total_tokens
                 ([{"category": "concept", "n": 3}], None),  # categories
+                ([0], None),  # symbols (FEAT-498)
             ]
         )
         stats = await store.stats()
@@ -409,6 +424,7 @@ class TestArangoDBWikiStore:
             "embeddings": 1,
             "total_tokens": 42,
             "categories": {"concept": 3},
+            "symbols": 0,
         }
 
     # ------------------------------------------------------------------

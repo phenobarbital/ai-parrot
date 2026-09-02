@@ -15,8 +15,17 @@ from __future__ import annotations
 
 import hashlib
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+#: Max length of the source excerpt embedded in a ``sym:`` page body
+#: (spec §7 "sym: page body").
+_SOURCE_EXCERPT_MAX_CHARS = 2000
+
+#: Section header separating the doc from the source excerpt in a
+#: ``sym:`` page body (see :func:`symbol_to_page_fields`).
+_SOURCE_HEADING = "## Source (excerpt)"
 
 
 class SymbolKind(str, Enum):
@@ -176,6 +185,143 @@ def parse_sym_id(concept_id: str) -> tuple[str, str, int]:
             qualname = rest[:tail_sep_idx]
             ordinal = int(candidate_ordinal)
     return rel_path, qualname, ordinal
+
+
+def symbol_to_page_fields(record: SymbolRecord, *, source_excerpt: str = "") -> dict[str, str]:
+    """Build the ``sym:`` page's ``title``/``summary``/``body`` fields.
+
+    Used by the ingest pipeline (``repo_scan.build_symbol_pages``,
+    TASK-2748) to construct the :class:`~parrot.knowledge.wiki.store.WikiPageRecord`
+    for one symbol, and by the page-based default store methods
+    (:func:`symbol_from_page`) to decode it back.
+
+    The body's structure (spec §7 "sym: page body") is a fixed sequence
+    of ``"\\n\\n"``-separated sections in this exact order — kept stable
+    on purpose so :func:`symbol_from_page` can invert it positionally
+    rather than by fragile regex matching of the rendered markdown:
+
+    0. ``# <qualname>``
+    1. ``**kind** <kind> · **language** <language> · **file**
+       <rel>:L<start>-<end> · **exported** <bool>``
+    2. ``<signature>`` (may be empty)
+    3. ``<doc>`` (may be empty)
+    4. ``## Source (excerpt)``
+    5. ``<source excerpt, capped at 2000 chars>``
+
+    Args:
+        record: Symbol to render.
+        source_excerpt: Raw source text of the symbol's node; capped and
+            appended as the trailing "Source (excerpt)" section. Empty
+            when the caller does not have (or want to store) source text.
+
+    Returns:
+        ``{"title": qualname, "summary": doc, "body": <rendered body>}``.
+    """
+    excerpt = source_excerpt[:_SOURCE_EXCERPT_MAX_CHARS]
+    body = "\n\n".join(
+        [
+            f"# {record.qualname}",
+            (
+                f"**kind** {record.kind.value} · **language** {record.language} · "
+                f"**file** {record.rel_path}:L{record.start_line}-{record.end_line} · "
+                f"**exported** {record.exported}"
+            ),
+            record.signature,
+            record.doc,
+            _SOURCE_HEADING,
+            excerpt,
+        ]
+    )
+    return {"title": record.qualname, "summary": record.doc, "body": body}
+
+
+def symbol_from_page(page: dict[str, Any]) -> SymbolRecord | None:
+    """Decode a ``sym:`` page dict back into a :class:`SymbolRecord`.
+
+    Best-effort inverse of :func:`symbol_to_page_fields`, used by the
+    page-based default implementations of ``symbols_for``/
+    ``find_symbols``/``search_symbols_fts`` (ArangoDB, InMemory — SQLite
+    answers from its native ``symbols`` table instead). Fields the
+    rendered markdown does not carry precisely (``start_byte``,
+    ``end_byte``, ``is_async``, ``decorators``, ``node_kind``, ``depth``)
+    degrade to their model defaults rather than raising — this is the
+    intentionally-lossy path; only SQLite's native table is full-fidelity.
+
+    Args:
+        page: A page dict as returned by ``get_page``/``list_pages`` for
+            a ``category == "symbol"`` row (``node_id`` holds ``rel_path``,
+            ``title`` holds ``qualname``, ``summary`` holds ``doc``).
+
+    Returns:
+        A reconstructed :class:`SymbolRecord`, or ``None`` when ``page``
+        is not a well-formed ``sym:`` page (wrong category, or a body
+        that does not match the expected section layout).
+    """
+    if page.get("category") != "symbol":
+        return None
+    concept_id = page.get("concept_id") or ""
+    try:
+        rel_path, qualname, _ordinal = parse_sym_id(concept_id)
+    except ValueError:
+        return None
+    rel_path = page.get("node_id") or rel_path
+    qualname = page.get("title") or qualname
+    doc = page.get("summary") or ""
+
+    body = page.get("body") or ""
+    sections = body.split("\n\n")
+    if len(sections) < 3:
+        return None
+    header = sections[1]
+    signature = sections[2] if len(sections) > 2 else ""
+    kind_value = "function"
+    language = ""
+    start_line = 1
+    end_line = 1
+    exported = False
+    for part in header.split(" · "):
+        part = part.strip()
+        if part.startswith("**kind**"):
+            kind_value = part.removeprefix("**kind**").strip()
+        elif part.startswith("**language**"):
+            language = part.removeprefix("**language**").strip()
+        elif part.startswith("**file**"):
+            location = part.removeprefix("**file**").strip()
+            _path, _, line_range = location.rpartition(":L")
+            start_str, _, end_str = line_range.partition("-")
+            start_line = int(start_str) if start_str.isdigit() else 1
+            end_line = int(end_str) if end_str.isdigit() else start_line
+        elif part.startswith("**exported**"):
+            exported = part.removeprefix("**exported**").strip() == "True"
+
+    try:
+        kind = SymbolKind(kind_value)
+    except ValueError:
+        kind = SymbolKind.FUNCTION
+
+    name = qualname.rsplit(".", 1)[-1].rsplit("::", 1)[-1]
+    parent = None
+    if "." in qualname:
+        parent = qualname.rsplit(".", 1)[0]
+    elif "::" in qualname:
+        parent = qualname.rsplit("::", 1)[0]
+
+    return SymbolRecord(
+        rel_path=rel_path,
+        language=language,
+        kind=kind,
+        name=name,
+        qualname=qualname,
+        parent=parent,
+        signature=signature,
+        doc=doc,
+        exported=exported,
+        start_line=start_line,
+        end_line=end_line,
+        start_byte=0,
+        end_byte=0,
+        content_hash=page.get("content_hash") or "",
+    )
 
 
 def sha1_of_text(text: str) -> str:

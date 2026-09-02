@@ -16,14 +16,13 @@ from unittest import mock
 
 import aiosqlite
 import pytest
-
 from parrot.knowledge.wiki.store import (
     BaseWikiStore,
     SQLiteWikiStore,
     WikiPageRecord,
+    _fts_query,
     create_wiki_store,
     estimate_tokens,
-    _fts_query,
 )
 
 
@@ -319,6 +318,7 @@ class TestLintQueries:
         assert stats["pages"] == 2
         assert stats["categories"] == {"entity": 1, "concept": 1}
         assert stats["total_tokens"] > 0
+        assert "symbols" in stats  # FEAT-498
 
 
 class TestRebuildFromTree:
@@ -717,3 +717,152 @@ class TestReadOnlyConcurrencySafety:
         journal = db.with_name(db.name + "-journal")
         journal.write_bytes(b"\x01")
         assert store._sidecars_quiescent() is False
+
+
+class TestSymbolPlane:
+    """FEAT-498 — content_hash + the five symbol methods, every backend."""
+
+    @pytest.mark.asyncio
+    async def test_content_hash_round_trips(self, store: BaseWikiStore):
+        await store.upsert_pages([_page("a", content_hash="abc123")])
+        page = await store.get_page("a", include_body=False)
+        assert page["content_hash"] == "abc123"
+        stub = (await store.list_pages())[0]
+        assert stub["content_hash"] == "abc123"
+        full = (await store.dump_pages())[0]
+        assert full["content_hash"] == "abc123"
+
+    @pytest.mark.asyncio
+    async def test_page_hashes(self, store: BaseWikiStore):
+        await store.upsert_pages(
+            [_page("a", content_hash="h1"), _page("b", content_hash=None)]
+        )
+        hashes = await store.page_hashes(["a", "b", "missing"])
+        assert hashes["a"] == "h1"
+        assert hashes["b"] is None
+        assert hashes["missing"] is None
+
+    @pytest.mark.asyncio
+    async def test_symbol_methods_every_backend(self, store: BaseWikiStore):
+        from parrot.knowledge.wiki.symbols import (
+            SymbolKind,
+            SymbolRecord,
+            sym_concept_id,
+            symbol_to_page_fields,
+        )
+
+        rec = SymbolRecord(
+            rel_path="a.py",
+            language="python",
+            kind=SymbolKind.FUNCTION,
+            name="helper",
+            qualname="helper",
+            start_line=1,
+            end_line=2,
+            start_byte=0,
+            end_byte=20,
+            content_hash="h",
+        )
+        fields = symbol_to_page_fields(rec)
+        page = WikiPageRecord(
+            concept_id=sym_concept_id("a.py", "helper"),
+            node_id="a.py",
+            title=fields["title"],
+            category="symbol",
+            summary=fields["summary"],
+            body=fields["body"],
+            content_hash="h",
+        )
+        await store.upsert_pages([page])
+        await store.upsert_symbols([rec], source_id="s1")
+
+        assert (await store.page_hashes([page.concept_id]))[page.concept_id] == "h"
+        found = await store.find_symbols(name="helper")
+        assert [s.qualname for s in found] == ["helper"]
+        symbols = await store.symbols_for("a.py")
+        assert len(symbols) == 1
+        assert symbols[0].kind == SymbolKind.FUNCTION
+        assert symbols[0].qualname == "helper"
+
+    @pytest.mark.asyncio
+    async def test_search_symbols_fts(self, store: BaseWikiStore):
+        from parrot.knowledge.wiki.symbols import (
+            SymbolKind,
+            SymbolRecord,
+            sym_concept_id,
+            symbol_to_page_fields,
+        )
+
+        rec = SymbolRecord(
+            rel_path="a.py",
+            language="python",
+            kind=SymbolKind.FUNCTION,
+            name="frobnicate",
+            qualname="frobnicate",
+            start_line=1,
+            end_line=2,
+            start_byte=0,
+            end_byte=20,
+            content_hash="h",
+            doc="Frobnicates the widget.",
+        )
+        fields = symbol_to_page_fields(rec)
+        page = WikiPageRecord(
+            concept_id=sym_concept_id("a.py", "frobnicate"),
+            node_id="a.py",
+            title=fields["title"],
+            category="symbol",
+            summary=fields["summary"],
+            body=fields["body"],
+            content_hash="h",
+        )
+        await store.upsert_pages([page])
+        await store.upsert_symbols([rec], source_id="s1")
+        hits = await store.search_symbols_fts("frobnicate")
+        assert any(h.qualname == "frobnicate" for h in hits)
+
+    @pytest.mark.asyncio
+    async def test_replace_source_slice_clears_symbols(self, store: BaseWikiStore):
+        from parrot.knowledge.wiki.symbols import (
+            SymbolKind,
+            SymbolRecord,
+            sym_concept_id,
+            symbol_to_page_fields,
+        )
+
+        def _sym_page(name: str) -> tuple[SymbolRecord, WikiPageRecord]:
+            rec = SymbolRecord(
+                rel_path="a.py",
+                language="python",
+                kind=SymbolKind.FUNCTION,
+                name=name,
+                qualname=name,
+                start_line=1,
+                end_line=2,
+                start_byte=0,
+                end_byte=20,
+                content_hash="h",
+            )
+            fields = symbol_to_page_fields(rec)
+            page = WikiPageRecord(
+                concept_id=sym_concept_id("a.py", name),
+                node_id="a.py",
+                title=fields["title"],
+                category="symbol",
+                summary=fields["summary"],
+                body=fields["body"],
+                content_hash="h",
+                source_id="src-1",
+            )
+            return rec, page
+
+        rec1, page1 = _sym_page("old_name")
+        await store.replace_source_slice("src-1", [page1])
+        await store.upsert_symbols([rec1], source_id="src-1")
+        assert len(await store.symbols_for("a.py")) == 1
+
+        rec2, page2 = _sym_page("new_name")
+        await store.replace_source_slice("src-1", [page2])
+        await store.upsert_symbols([rec2], source_id="src-1")
+        remaining = await store.symbols_for("a.py")
+        assert [s.name for s in remaining] == ["new_name"]
