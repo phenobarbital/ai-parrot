@@ -634,7 +634,7 @@ class BedrockConverseBase(AbstractClient):
         self,
         messages: List[Dict[str, Any]],
         model: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         system_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -662,6 +662,7 @@ class BedrockConverseBase(AbstractClient):
         """
         await self._ensure_client()
         resolved_model = model or self._translate_model(self.model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
 
         body: Dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -1537,7 +1538,7 @@ class BedrockConverseBase(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1576,6 +1577,7 @@ class BedrockConverseBase(AbstractClient):
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._translate_model(self._resolve_invoke_model(model))
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
 
             if config:
                 resolved_prompt += "\n\n" + config.format_schema_instruction()
@@ -1635,3 +1637,24 @@ class BedrockConverseClient(BedrockConverseBase):
     # FEAT-181: minimum token count for provider-side prompt caching
     # (Bedrock Anthropic models share Anthropic's 1024-token threshold).
     _min_cache_tokens: int = 1024
+
+    # This client fronts several model families at once, and Bedrock REJECTS an
+    # over-cap max_tokens ("The maximum tokens you requested exceeds the model
+    # limit of N") rather than clamping. The class default is therefore the
+    # smallest cap measured across the families in routine use, and the table
+    # below lifts the individual models that accept more.
+    _default_max_tokens: int = 16384
+
+    # Measured 2026-09-03 in us-east-1 by walking max_tokens up per model until
+    # Converse rejected the request. Keyed by fragment, so one entry matches
+    # both the public name and the geo-prefixed Bedrock id
+    # (claude-opus-5 / us.anthropic.claude-opus-5).
+    _model_max_tokens: Dict[str, int] = {
+        "claude-opus-5": 65536,
+        "claude-sonnet-5": 65536,
+        "gpt-oss-120b": 65536,
+        "claude-haiku-4-5": 32768,
+        "deepseek.r1": 32768,
+        "qwen3-coder-30b": 65536,
+        "qwen3-32b": 16384,
+    }

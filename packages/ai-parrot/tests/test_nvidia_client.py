@@ -368,15 +368,63 @@ class TestNvidiaSamplingParams:
         assert "seed" not in second
 
     @pytest.mark.asyncio
-    async def test_stream_rejects_sampling_params(self, client):
-        """Streaming raises rather than silently dropping top_p / seed."""
-        with pytest.raises(NotImplementedError, match="top_p"):
-            async for _ in client.ask_stream("hello", top_p=0.95):
-                pass
+    async def test_stream_applies_sampling_params(self, client):
+        """Streaming now injects top_p / seed instead of raising.
 
-        with pytest.raises(NotImplementedError, match="seed"):
-            async for _ in client.ask_stream("hello", seed=42):
-                pass
+        This test previously asserted a ``NotImplementedError``. That guard
+        existed because ``ask_stream`` did not set ``_sampling_ctx``, so the
+        parameters would have been silently dropped — but once TASK-2298
+        routed streaming through ``_chat_completion`` (the same injection
+        point ``ask`` uses), the limitation was stale plumbing rather than a
+        real constraint. Reasoning models make this matter: streaming is
+        their natural mode, and it was the one mode that could not be tuned.
+        """
+        captured: dict = {}
+        mock_create = _fake_stream_create(["a"])
+
+        async def _capture(**kwargs):
+            captured.update(kwargs)
+            return await mock_create(**kwargs)
+
+        fake_sdk = MagicMock()
+        fake_sdk.chat.completions.create = _capture
+
+        with patch.object(
+            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
+        ):
+            async with client:
+                async for _ in client.ask_stream("hello", top_p=0.95, seed=42):
+                    pass
+
+        assert captured["top_p"] == 0.95
+        assert captured["seed"] == 42
+
+    @pytest.mark.asyncio
+    async def test_stream_applies_reasoning_budget_via_extra_body(self, client):
+        """``reasoning_budget`` is a NIM extension, so it must ride extra_body.
+
+        Passing it as a keyword argument would raise ``TypeError`` from the
+        OpenAI SDK, whose ``create()`` signature does not define it.
+        """
+        captured: dict = {}
+        mock_create = _fake_stream_create(["a"])
+
+        async def _capture(**kwargs):
+            captured.update(kwargs)
+            return await mock_create(**kwargs)
+
+        fake_sdk = MagicMock()
+        fake_sdk.chat.completions.create = _capture
+
+        with patch.object(
+            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
+        ):
+            async with client:
+                async for _ in client.ask_stream("hello", reasoning_budget=512):
+                    pass
+
+        assert "reasoning_budget" not in captured, "must not be a top-level kwarg"
+        assert captured["extra_body"]["reasoning_budget"] == 512
 
     @pytest.mark.asyncio
     async def test_stream_still_works_without_sampling_params(self, client):
@@ -719,6 +767,9 @@ class TestNvidiaModelEnum:
         "LLAMA_3_3_70B_INSTRUCT": "meta/llama-3.3-70b-instruct",
         "GPT_OSS_120B": "openai/gpt-oss-120b",
         "NEMOTRON_3_NANO_30B": "nvidia/nemotron-3-nano-30b-a3b",
+        "NEMOTRON_3_NANO_OMNI_30B_REASONING": (
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        ),
         "GLM_5_2": "z-ai/glm-5.2",
         "STEPFUN_STEP_3_7_FLASH": "stepfun-ai/step-3.7-flash",
     }
@@ -833,10 +884,30 @@ class TestNvidiaIntegration:
         assert response is not None
 
     @pytest.mark.asyncio
-    async def test_streaming_e2e_glm_reasoning(self):
-        """Live streaming + enable_thinking against z-ai/glm-5.2."""
+    async def test_streaming_e2e_reasoning(self):
+        """Live streaming + enable_thinking against a reasoning model.
+
+        Repointed from ``z-ai/glm-5.2``, which reached end of life on
+        2026-08-21 and now answers every request with ``410 Gone`` — the test
+        was failing against the live API regardless of client behavior.
+        """
         chunks = []
-        async with NvidiaClient(model=NvidiaModel.GLM_5_2.value) as c:
+        model = NvidiaModel.NEMOTRON_3_NANO_OMNI_30B_REASONING.value
+        async with NvidiaClient(model=model) as c:
             async for chunk in c.ask_stream("Count to three.", enable_thinking=True):
                 chunks.append(chunk)
         assert len(chunks) > 0
+
+    @pytest.mark.asyncio
+    async def test_reasoning_surfaced_on_aimessage(self):
+        """A reasoning model's thinking lands on ``AIMessage.reasoning``.
+
+        It arrives in ``choices[].message.reasoning_content`` and used to be
+        reachable only by digging through ``raw_response``.
+        """
+        model = NvidiaModel.NEMOTRON_3_NANO_OMNI_30B_REASONING.value
+        async with NvidiaClient(model=model) as c:
+            response = await c.ask("What is 17*23? Think it through.")
+
+        assert response.reasoning, "reasoning_content was not surfaced"
+        assert response.reasoning != response.output, "reasoning leaked into the answer"

@@ -285,6 +285,43 @@ class AbstractClient(EventEmitterMixin, ABC):
     # the value is not a real threshold but a sentinel indicating caching is unsupported here.
     _min_cache_tokens: int = 0
 
+    # Completion-token budget applied when the caller passes no ``max_tokens``
+    # and selects no preset.
+    #
+    # This used to be hardcoded to 4096 in two places in ``__init__``, which
+    # silently truncated every reasoning-capable model: those models spend the
+    # budget on ``reasoning_content`` first, so a 4096 cap can consume the whole
+    # allowance on thinking and return a truncated (or empty) answer. Measured
+    # against NVIDIA NIM's ``nemotron-3-nano-omni-30b-a3b-reasoning``, a single
+    # ordinary word problem burned 7,446 total tokens — well past the old
+    # default — with 11,791 characters of reasoning behind a 3,981-character
+    # answer.
+    #
+    # Subclasses override this with a value appropriate for their provider and
+    # model family (e.g. NvidiaClient raises it for NIM's reasoning models).
+    # Keep a subclass value at or below the smallest per-response output cap the
+    # provider enforces: several providers reject a ``max_tokens`` above the
+    # selected model's limit outright rather than clamping it.
+    _default_max_tokens: int = 16384
+
+    # Per-model output caps, for providers whose models do NOT share one limit.
+    #
+    # The warning on ``_default_max_tokens`` above — "keep it at or below the
+    # smallest cap the provider enforces" — is a real constraint but a costly
+    # one when the caps inside a single client differ by 8x. Measured on AWS
+    # Bedrock (2026-09-03): ``qwen3-32b`` rejects anything over 16,384 while
+    # ``claude-opus-5`` accepts 65,536, so one class-level value either breaks
+    # qwen or starves opus.
+    #
+    # A subclass fills this in with ``{model_fragment: cap}``; the fragment is
+    # matched against the resolved model id, so one entry covers a public name
+    # ("claude-opus-5") and its provider-qualified forms
+    # ("us.anthropic.claude-opus-5"). ``_resolve_max_tokens()`` then CLAMPS the
+    # budget to the matching cap rather than letting the provider reject the
+    # request — the entry is a ceiling, never a floor, so an unlisted model
+    # simply keeps ``_default_max_tokens``.
+    _model_max_tokens: Dict[str, int] = {}
+
     # Default system prompt template used when no system_prompt is passed to invoke().
     BASIC_SYSTEM_PROMPT: str = """Your name is $name Agent.
 <system_instructions>
@@ -326,13 +363,13 @@ $backstory
             self.temperature = preset_config.get('temperature', 0.4)
             self.top_k = preset_config.get('top_k', 30)
             self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens', 4096)
+            self.max_tokens = preset_config.get('max_tokens', self._default_max_tokens)
         else:
             # define default values from preset default:
             self.temperature = kwargs.get('temperature', 0)
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
-            self.max_tokens = kwargs.get('max_tokens', 4096)
+            self.max_tokens = kwargs.get('max_tokens', self._default_max_tokens)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
@@ -1659,7 +1696,7 @@ $backstory
         self,
         prompt: str,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1752,7 +1789,7 @@ $backstory
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1859,6 +1896,84 @@ $backstory
         if self._lightweight_model is not None:
             return self._lightweight_model
         return self.model
+
+    def _model_output_cap(self, model: Optional[str]) -> Optional[int]:
+        """Return the provider's output-token cap for *model*, if one is known.
+
+        Matching is by fragment so a single :attr:`_model_max_tokens` entry
+        covers every spelling of the same model — ``"claude-opus-5"`` also
+        matches ``"us.anthropic.claude-opus-5"`` and
+        ``"global.anthropic.claude-opus-5"``. The longest matching fragment
+        wins, so a specific entry beats a family-wide one.
+
+        Args:
+            model: Resolved model identifier, or ``None``.
+
+        Returns:
+            The cap in tokens, or ``None`` when the model is not listed.
+        """
+        if not model or not self._model_max_tokens:
+            return None
+        name = str(model).lower()
+        best: Optional[int] = None
+        best_len = -1
+        for fragment, cap in self._model_max_tokens.items():
+            if fragment.lower() in name and len(fragment) > best_len:
+                best, best_len = cap, len(fragment)
+        return best
+
+    def _resolve_max_tokens(
+        self,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
+    ) -> int:
+        """Return the completion-token budget to use for a call.
+
+        Fallback chain, highest priority first:
+
+        1. an explicit ``max_tokens`` argument;
+        2. ``self.max_tokens``, but only when the caller actually configured it
+           (i.e. it differs from :attr:`_default_max_tokens`, which
+           :meth:`__init__` would otherwise have put there);
+        3. the model's own limit from :attr:`_model_max_tokens`, when known;
+        4. :attr:`_default_max_tokens`.
+
+        Whatever wins is then clamped to the model's limit.
+
+        Step 3 is deliberate: ``max_tokens`` is a ceiling, not a reservation —
+        nothing is billed for headroom that goes unused — so when we know a
+        model's real limit, handing it the whole thing is strictly better than
+        starving it with a conservative class-wide default. That is what lets
+        ``claude-opus-5`` run at 65,536 while ``qwen3-32b``, behind the same
+        client, stays at the 16,384 it will actually accept.
+
+        The clamp is what makes a raised default safe at all: several providers
+        reject an over-cap ``max_tokens`` outright instead of clamping it
+        themselves, so without it a generous default turns every call to a
+        smaller model into a ``ValidationException``.
+
+        Args:
+            max_tokens: Caller-supplied budget, or ``None``.
+            model: The model the call will run against, used to find its limit.
+
+        Returns:
+            The budget to send to the provider.
+        """
+        cap = self._model_output_cap(model)
+        budget = max_tokens
+        if budget is None:
+            configured = getattr(self, "max_tokens", None)
+            if configured and configured != self._default_max_tokens:
+                budget = configured
+            else:
+                budget = cap or self._default_max_tokens
+        if cap is not None and budget > cap:
+            self.logger.debug(
+                "Clamping max_tokens %s -> %s for model %s (provider cap).",
+                budget, cap, model,
+            )
+            return cap
+        return budget
 
     def _build_invoke_result(
         self,

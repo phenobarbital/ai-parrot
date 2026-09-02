@@ -118,6 +118,16 @@ class AIMessage(BaseModel):
     usage: CompletionUsage = Field(
         description="Token usage and timing information"
     )
+    # Reasoning / chain-of-thought emitted alongside the answer by thinking
+    # models (OpenAI-compatible providers put it in
+    # ``choices[].message.reasoning_content``; some use ``reasoning``).
+    # Kept separate from ``output`` so callers never have to parse the answer
+    # out of the model's thinking, and so it can be inspected or logged
+    # without being fed back into the conversation.
+    reasoning: Optional[str] = Field(
+        default=None,
+        description="Reasoning/thinking trace emitted by reasoning-capable models"
+    )
     # Additional response metadata
     stop_reason: Optional[str] = Field(
         default=None, description="Why the generation stopped"
@@ -407,6 +417,31 @@ class AIMessage(BaseModel):
             }
         )
 
+def extract_reasoning(message: Any) -> Optional[str]:
+    """Pull the reasoning trace off an OpenAI-shaped response message.
+
+    Reasoning-capable models return their thinking beside the answer rather
+    than inside it. There is no single field name for it across the ecosystem:
+    NVIDIA NIM, DeepSeek and vLLM use ``reasoning_content``, while some
+    OpenAI-compatible gateways use ``reasoning``. Both are checked, in that
+    order.
+
+    Args:
+        message: The provider's ``choices[0].message`` object (or any object
+            exposing the attributes above).
+
+    Returns:
+        The reasoning text, or ``None`` when the model emitted none — which is
+        the normal case for non-reasoning models. Empty strings are normalized
+        to ``None`` so callers can rely on a simple truthiness check.
+    """
+    for attribute in ("reasoning_content", "reasoning"):
+        value = getattr(message, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 # Factory functions to create AIMessage from different providers
 class AIMessageFactory:
     """Factory to create AIMessage from different provider responses."""
@@ -483,6 +518,7 @@ class AIMessageFactory:
             model=model,
             provider="openai",
             usage=CompletionUsage.from_openai(response.usage),
+            reasoning=extract_reasoning(message),
             stop_reason=stop_reason or finish_reason,
             finish_reason=finish_reason,
             tool_calls=tool_calls,
@@ -529,6 +565,7 @@ class AIMessageFactory:
             model=model,
             provider="groq",
             usage=CompletionUsage.from_groq(response.usage),
+            reasoning=extract_reasoning(message),
             stop_reason=response.choices[0].finish_reason,
             finish_reason=response.choices[0].finish_reason,
             tool_calls=tool_calls,

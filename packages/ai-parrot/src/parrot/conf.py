@@ -456,6 +456,11 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get("AWS_DEFAULT_CLOUDWATCH_LOG_GROUP"
 #   When unset, boto3 resolves the region via instance-metadata / env chain.
 AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)
 ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)
+# ANTHROPIC_AWS_API_KEY — the Claude-on-AWS workspace API key. This is a
+# DIFFERENT credential from ANTHROPIC_API_KEY (the direct api.anthropic.com
+# key): a workspace is billed and scoped through AWS, and the direct key is
+# not valid against it. AsyncAnthropicAWS takes it as ``api_key``.
+ANTHROPIC_AWS_API_KEY = config.get("ANTHROPIC_AWS_API_KEY", fallback=None)
 BEDROCK_AWS_REGION = config.get("BEDROCK_AWS_REGION", fallback=None)
 # Bedrock API key (bearer token, prefix "ABSK...") for NovaClient/
 # BedrockConverseBase — a dedicated, scoped alternative to the generic

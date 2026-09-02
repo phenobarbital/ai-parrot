@@ -8,7 +8,7 @@ from OpenAIBaseClient unchanged. Two Nvidia-specific affordances are added:
 
 1. The ``enable_thinking`` keyword on ``ask`` / ``ask_stream`` that injects
    ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable models
-   such as ``z-ai/glm-5.2``.
+   such as ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``.
 2. A ``free_tier`` flag (default ``True``) that throttles outbound requests to
    Nvidia's free-endpoint quota of 40 requests per minute.  Set
    ``free_tier=False`` — or ``NVIDIA_FREE_TIER=false`` in the environment — for
@@ -23,6 +23,7 @@ from navconfig import config
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -58,7 +59,21 @@ _sampling_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
 #: ``top_p`` is deliberately NOT defaulted from ``self.top_p``: ``AbstractClient``
 #: assigns it ``0.2`` when the caller says nothing (base.py:319), and silently
 #: sending that would change results for every existing Nvidia call.
+#:
+#: These are all *native* OpenAI parameters, so they are passed straight to
+#: ``client.chat.completions.create()`` as keyword arguments.
 INJECTABLE_SAMPLING_PARAMS: tuple[str, ...] = ("top_p", "seed")
+
+#: NIM-only request parameters, which must travel inside ``extra_body`` rather
+#: than as keyword arguments: the OpenAI SDK's ``create()`` has an explicit
+#: signature and raises ``TypeError`` on any keyword it does not define, so
+#: passing these directly would break the call before it left the process.
+#:
+#: ``reasoning_budget`` caps how many tokens a reasoning model may spend on
+#: ``reasoning_content`` before it must start answering. It is only sent when
+#: explicitly requested — NIM applies its own per-model default otherwise, and
+#: inventing a number here would silently cap every reasoning call.
+INJECTABLE_EXTRA_BODY_PARAMS: tuple[str, ...] = ("reasoning_budget",)
 
 
 class NvidiaRateLimitError(ParrotError):
@@ -219,7 +234,7 @@ class NvidiaClient(OpenAIBaseClient):
 
     **Thinking flags.** The ``enable_thinking`` shortcut on ``ask`` /
     ``ask_stream`` injects ``chat_template_kwargs`` into ``extra_body`` for
-    reasoning-capable models (e.g. ``z-ai/glm-5.2``).  It is propagated to
+    reasoning-capable models (e.g. ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``).  It is propagated to
     ``_chat_completion`` via an async context variable so that no changes to
     the parent's call signatures are required.
 
@@ -246,8 +261,16 @@ class NvidiaClient(OpenAIBaseClient):
             ``None`` (default) waits as long as necessary; a number makes the
             client raise :class:`NvidiaRateLimitError` rather than block past
             that budget.
+        seed: Default sampling seed for reproducibility, overridable per call.
+        reasoning_budget: Default cap on the tokens a reasoning model may
+            spend on ``reasoning_content`` before it must answer, overridable
+            per call. ``None`` (default) sends nothing and lets NIM apply its
+            own per-model default.
         **kwargs: Additional arguments passed to ``OpenAIBaseClient`` /
-            ``AbstractClient``.
+            ``AbstractClient``. Notably ``timeout`` (defaults to
+            :attr:`_default_timeout`, 300s — reasoning calls are slow) and
+            ``max_tokens`` (defaults to :attr:`_default_max_tokens`, 65536 —
+            reasoning shares the answer's budget).
 
     Example::
 
@@ -268,6 +291,19 @@ class NvidiaClient(OpenAIBaseClient):
     client_name: str = "nvidia"
     _default_model: str = NvidiaModel.MINIMAX_M3.value
 
+    # NIM's reasoning models routinely take longer than the 60s
+    # OpenAIBaseClient default: a measured single-turn word problem against
+    # ``nemotron-3-nano-omni-30b-a3b-reasoning`` took 96.8s end to end, which
+    # failed with APITimeoutError against a perfectly healthy endpoint.
+    _default_timeout: float = 300.0
+
+    # NIM accepts 65536 on its current chat models (verified against
+    # nemotron-3-nano-omni-30b-a3b-reasoning, minimax-m3 and gpt-oss-120b).
+    # ``max_tokens`` is a cap, not a reservation — nothing is billed for
+    # headroom that goes unused — and reasoning models need the room because
+    # ``reasoning_content`` is drawn from the same budget as the answer.
+    _default_max_tokens: int = 65536
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -276,6 +312,7 @@ class NvidiaClient(OpenAIBaseClient):
         requests_per_minute: Optional[int] = None,
         rate_limit_max_wait: Optional[float] = None,
         seed: Optional[int] = None,
+        reasoning_budget: Optional[int] = None,
         **kwargs,
     ):
         resolved_key = api_key or config.get("NVIDIA_API_KEY")
@@ -314,12 +351,14 @@ class NvidiaClient(OpenAIBaseClient):
 
         # Per-instance sampling defaults for the parameters the parent drops.
         self.seed: Optional[int] = seed
+        self.reasoning_budget: Optional[int] = reasoning_budget
         self._default_top_p: Optional[float] = explicit_top_p
 
     def _resolve_sampling(
         self,
         top_p: Optional[float],
         seed: Optional[int],
+        reasoning_budget: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Merge per-call sampling overrides over the per-instance defaults.
 
@@ -327,6 +366,8 @@ class NvidiaClient(OpenAIBaseClient):
             top_p: Per-call nucleus-sampling value, or ``None`` to fall back to
                 the value passed to the constructor.
             seed: Per-call seed, or ``None`` to fall back to the constructor's.
+            reasoning_budget: Per-call reasoning-token cap, or ``None`` to fall
+                back to the constructor's.
 
         Returns:
             Only the parameters that resolved to a non-``None`` value, so
@@ -335,6 +376,11 @@ class NvidiaClient(OpenAIBaseClient):
         resolved = {
             "top_p": top_p if top_p is not None else self._default_top_p,
             "seed": seed if seed is not None else self.seed,
+            "reasoning_budget": (
+                reasoning_budget
+                if reasoning_budget is not None
+                else self.reasoning_budget
+            ),
         }
         return {key: value for key, value in resolved.items() if value is not None}
 
@@ -420,7 +466,7 @@ class NvidiaClient(OpenAIBaseClient):
            so we never route through it — even when ``use_tools`` is ``False``.
         2. Reads the thinking flags from the async context variable set by
            ``ask`` / ``ask_stream`` and merges them into ``extra_body`` for
-           reasoning-capable models (e.g. ``z-ai/glm-5.2``).
+           reasoning-capable models (e.g. ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``).
         3. Reserves a free-tier rate-limit slot before *each* attempt when
            ``free_tier`` is active, so retries are counted against the quota
            too.
@@ -438,7 +484,12 @@ class NvidiaClient(OpenAIBaseClient):
             NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
                 free-tier slot became available within that budget.
         """
-        from openai import APIConnectionError, APIError, RateLimitError
+        from openai import (
+            APIConnectionError,
+            APIError,
+            APITimeoutError,
+            RateLimitError,
+        )
         thinking = _thinking_ctx.get()
         if thinking.get("enable_thinking"):
             kwargs["extra_body"] = self._merge_thinking_extra_body(
@@ -450,12 +501,39 @@ class NvidiaClient(OpenAIBaseClient):
         # Inject the sampling parameters the parent's fixed signature drops.
         # An explicit value already in kwargs always wins, so this can never
         # override something a caller managed to set by another route.
-        for name, value in _sampling_ctx.get().items():
+        # Native OpenAI parameters go on as keyword arguments; NIM-only ones
+        # must be nested under extra_body or the SDK rejects the keyword.
+        sampling = _sampling_ctx.get()
+        for name, value in sampling.items():
             if name in INJECTABLE_SAMPLING_PARAMS and kwargs.get(name) is None:
                 kwargs[name] = value
+
+        nim_params = {
+            name: value
+            for name, value in sampling.items()
+            if name in INJECTABLE_EXTRA_BODY_PARAMS
+        }
+        if nim_params:
+            extra_body = dict(kwargs.get("extra_body") or {})
+            # An explicit extra_body entry always wins, mirroring the rule
+            # applied to the keyword parameters above.
+            for name, value in nim_params.items():
+                extra_body.setdefault(name, value)
+            kwargs["extra_body"] = extra_body
+        # APITimeoutError is a *subclass* of APIConnectionError, so it used to
+        # be swept into the retry set. That is the worst possible thing to
+        # retry here: a reasoning request that outran the timeout is not a
+        # transient fault, and each retry pays the full timeout again *and*
+        # makes the endpoint regenerate the whole answer from scratch. Three
+        # attempts at the 300s default would block for 15 minutes before
+        # surfacing the same error. Fail on the first one instead, and tell the
+        # caller which knob actually fixes it.
         retry_policy = AsyncRetrying(
-            retry=retry_if_exception_type(
-                (APIConnectionError, RateLimitError, APIError)
+            retry=(
+                retry_if_exception_type(
+                    (APIConnectionError, RateLimitError, APIError)
+                )
+                & retry_if_not_exception_type(APITimeoutError)
             ),
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(3),
@@ -478,6 +556,7 @@ class NvidiaClient(OpenAIBaseClient):
         clear_thinking: bool = False,
         top_p: Optional[float] = None,
         seed: Optional[int] = None,
+        reasoning_budget: Optional[int] = None,
         **kwargs,
     ) -> AIMessage:
         """Submit a prompt and return the full response.
@@ -486,7 +565,7 @@ class NvidiaClient(OpenAIBaseClient):
 
         1. An ``enable_thinking`` shortcut that injects
            ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable
-           models (e.g. ``z-ai/glm-5.2``).
+           models (e.g. ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``).
         2. ``top_p`` and ``seed`` support. ``OpenAIBaseClient.ask`` has a fixed
            signature with no ``**kwargs``, so passing either to it raises
            ``TypeError``; both are accepted here and merged into the request
@@ -506,18 +585,26 @@ class NvidiaClient(OpenAIBaseClient):
                 endpoint's own default applies.
             seed: Sampling seed for reproducibility. Defaults to the ``seed``
                 passed to the constructor.
+            reasoning_budget: Maximum tokens a reasoning model may spend on
+                ``reasoning_content`` before answering. Defaults to the
+                constructor's value; when neither is given, NIM's own
+                per-model default applies.
             **kwargs: All other keyword arguments delegated to
                 ``OpenAIBaseClient.ask`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
 
         Returns:
-            AIMessage with the model response.
+            AIMessage with the model response. For reasoning models the
+            thinking trace is available on ``AIMessage.reasoning``, kept
+            separate from the answer in ``AIMessage.output``.
         """
         kwargs.setdefault("model", self.model or self._default_model)
         thinking_token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
-        sampling_token = _sampling_ctx.set(self._resolve_sampling(top_p, seed))
+        sampling_token = _sampling_ctx.set(
+            self._resolve_sampling(top_p, seed, reasoning_budget)
+        )
         try:
             return await super().ask(prompt, **kwargs)
         finally:
@@ -532,14 +619,16 @@ class NvidiaClient(OpenAIBaseClient):
         clear_thinking: bool = False,
         top_p: Optional[float] = None,
         seed: Optional[int] = None,
+        reasoning_budget: Optional[int] = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Submit a prompt and stream response chunks.
 
         Identical to ``OpenAIBaseClient.ask_stream`` with the same
         ``enable_thinking`` shortcut as ``ask``.  For reasoning-capable models
-        (e.g. ``z-ai/glm-5.2``) each chunk may carry a
-        ``delta.reasoning_content`` field in addition to ``delta.content``.
+        (e.g. ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``) each chunk may
+        carry a ``delta.reasoning_content`` field in addition to
+        ``delta.content``.
 
         The flags are forwarded to ``_chat_completion`` via an async context
         variable, so the parent's call signature is preserved.
@@ -549,13 +638,14 @@ class NvidiaClient(OpenAIBaseClient):
         free-tier slot is reserved there — no separate reservation is made
         here, which would otherwise double-count against the 40 rpm quota.
 
-        ``top_p`` and ``seed`` are still **not** supported on the streaming
-        path: unlike ``ask()``, this method does not set the
-        ``_sampling_ctx`` context variable ``_chat_completion`` reads to
-        inject them. They are accepted in the signature purely so the
-        limitation raises immediately instead of being silently dropped — a
-        silently ignored sampling parameter is the failure mode this client
-        already suffered from ``AbstractClient.top_p``.
+        ``top_p``, ``seed`` and ``reasoning_budget`` ARE supported here.  They
+        previously raised ``NotImplementedError`` because ``ask_stream`` did
+        not set the ``_sampling_ctx`` context variable that
+        ``_chat_completion`` reads.  Once TASK-2298 routed the streaming path
+        through ``_chat_completion`` as well, that limitation became stale
+        plumbing rather than a real constraint: the injection point is shared,
+        so setting the same context variable here is all it took.  This
+        matters most for reasoning models, whose natural mode is streaming.
 
         Args:
             prompt: User message text.
@@ -563,8 +653,11 @@ class NvidiaClient(OpenAIBaseClient):
                 ``extra_body``.
             clear_thinking: Forwarded to ``clear_thinking`` in the payload
                 when ``enable_thinking`` is ``True``.
-            top_p: Unsupported while streaming; raises if not ``None``.
-            seed: Unsupported while streaming; raises if not ``None``.
+            top_p: Nucleus-sampling value. Defaults to the constructor's.
+            seed: Sampling seed for reproducibility. Defaults to the
+                constructor's.
+            reasoning_budget: Maximum tokens spent on reasoning before
+                answering. Defaults to the constructor's.
             **kwargs: All other keyword arguments delegated to
                 ``OpenAIBaseClient.ask_stream`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
@@ -575,34 +668,22 @@ class NvidiaClient(OpenAIBaseClient):
         Raises:
             NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
                 free-tier slot became available within that budget.
-            NotImplementedError: If ``top_p`` or ``seed`` is supplied.
         """
-        unsupported = [
-            name
-            for name, value in (("top_p", top_p), ("seed", seed))
-            if value is not None
-        ]
-        if unsupported:
-            raise NotImplementedError(
-                f"{', '.join(unsupported)} cannot be applied while streaming: "
-                "ask_stream() does not set the _sampling_ctx context "
-                "variable NvidiaClient._chat_completion reads to inject "
-                "top_p/seed. Use ask() for a non-streamed call, or call "
-                "client.client.chat.completions.create(..., stream=True) "
-                "directly — note that bypasses the free-tier rate limiter."
-            )
-
         kwargs.setdefault("model", self.model or self._default_model)
         # FEAT-438 TASK-2300: no manual _acquire_rate_limit_slot() call here
         # anymore — ask_stream() now routes through _chat_completion (the
         # single completion funnel, TASK-2298), which already reserves a
         # slot per attempt. A second reservation here would double-count
         # every streamed call against the 40 rpm free-tier quota.
-        token = _thinking_ctx.set(
+        thinking_token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
+        )
+        sampling_token = _sampling_ctx.set(
+            self._resolve_sampling(top_p, seed, reasoning_budget)
         )
         try:
             async for chunk in super().ask_stream(prompt, **kwargs):
                 yield chunk
         finally:
-            _thinking_ctx.reset(token)
+            _thinking_ctx.reset(thinking_token)
+            _sampling_ctx.reset(sampling_token)

@@ -20,7 +20,7 @@ design.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, Optional
 
 from ...models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from ..bedrock import BedrockConverseBase
@@ -64,6 +64,19 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
     client_name: str = "nova"
     _default_model: str = "nova-2-lite"
     _fallback_model: str = "nova-lite"
+
+    # Nova's output caps sit far below the rest of Bedrock, and Converse
+    # rejects an over-cap request instead of clamping it, so this client cannot
+    # inherit BedrockConverseBase's larger budget. Measured 2026-09-03 in
+    # us-east-1: nova-pro and nova-lite refuse anything above ~10,000 (8192 is
+    # the largest power of two they take); nova-2-lite accepts 32,768.
+    _default_max_tokens: int = 8192
+    _model_max_tokens: Dict[str, int] = {
+        "nova-2-lite": 32768,
+        "nova-pro": 8192,
+        "nova-lite": 8192,
+        "nova-micro": 8192,
+    }
 
     def __init__(
         self,

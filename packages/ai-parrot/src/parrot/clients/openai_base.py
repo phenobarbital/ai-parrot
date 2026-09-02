@@ -73,6 +73,14 @@ class OpenAIBaseClient(AbstractClient):
     # values here — they stay None (AbstractClient defaults) so the invoke
     # chain (base.py:_resolve_invoke_model) falls through to self.model.
 
+    # SDK request timeout (seconds) used when the caller passes no ``timeout``.
+    # Subclasses override this when their endpoint routinely takes longer than
+    # a normal chat completion — reasoning models are the motivating case: a
+    # single measured NIM reasoning request took 96.8s against this base's 60s
+    # default, so every such call failed with ``APITimeoutError`` even though
+    # the endpoint was healthy and would have answered.
+    _default_timeout: float = 60.0
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -90,7 +98,8 @@ class OpenAIBaseClient(AbstractClient):
             **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
                 May include ``model`` (normalized via :meth:`_normalize_model`
                 before being forwarded) and ``timeout`` (SDK request timeout,
-                defaults to 60 seconds).
+                defaulting to this class's :attr:`_default_timeout`, which
+                subclasses raise for slower endpoints).
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -98,7 +107,7 @@ class OpenAIBaseClient(AbstractClient):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        self._timeout = kwargs.pop("timeout", 60)
+        self._timeout = kwargs.pop("timeout", self._default_timeout)
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
@@ -1169,7 +1178,7 @@ class OpenAIBaseClient(AbstractClient):
         structured_output: StructuredOutputConfig | None = None,
         model: str | None = None,
         system_prompt: str | None = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: list | None = None,
@@ -1208,6 +1217,7 @@ class OpenAIBaseClient(AbstractClient):
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
 
             messages = [
                 {"role": "system", "content": resolved_prompt},

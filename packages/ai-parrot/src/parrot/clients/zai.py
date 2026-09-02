@@ -409,7 +409,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -451,6 +451,7 @@ class ZaiClient(OpenAIBaseClient):
                 ``ClientCallFailedEvent``.
         """
         resolved_model = self._model_value(model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
         messages, conversation_history, resolved_system_prompt = await self._build_messages(
@@ -989,7 +990,7 @@ class ZaiClient(OpenAIBaseClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1028,6 +1029,7 @@ class ZaiClient(OpenAIBaseClient):
             resolved_system = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
 
             if tools:
                 for tool_def in tools:

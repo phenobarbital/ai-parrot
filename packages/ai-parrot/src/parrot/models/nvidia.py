@@ -19,11 +19,45 @@ class NvidiaModel(str, Enum):
     Slugs use NIM's ``vendor/model`` form, where the vendor segment may itself
     contain a dash (``z-ai/glm-5.2``).
 
-    All slugs were re-verified against the live ``GET /v1/models`` catalog on
-    2026-08-05, and all but ``KIMI_K2_6`` additionally confirmed to return HTTP
-    200 from ``POST /v1/chat/completions``. ``KIMI_K2_6`` is present in the
-    catalog but is gated per account: keys without the entitlement get
-    ``404 Not Found`` ("Not found for account") rather than a slug error.
+    .. warning::
+
+       **Most of this enum is stale.** A live probe on 2026-09-02 sent a real
+       ``POST /v1/chat/completions`` for every member. Only two answered:
+
+       ===============================  ======================================
+       Member                           Live status (2026-09-02)
+       ===============================  ======================================
+       ``MINIMAX_M3``                   200 OK
+       ``GPT_OSS_120B``                 200 OK
+       ``NEMOTRON_3_NANO_OMNI_30B_``    200 OK (added 2026-09-02)
+       ``  REASONING``
+       ``KIMI_K2_6``                    404 — gated per account
+       ``DEEPSEEK_V4_PRO``              410 Gone — EOL
+       ``DEEPSEEK_V4_FLASH``            410 Gone — EOL
+       ``LLAMA_3_3_70B_INSTRUCT``       410 Gone — EOL 2026-08-26
+       ``NEMOTRON_3_NANO_30B``          410 Gone — EOL
+       ``GLM_5_2``                      410 Gone — EOL 2026-08-21
+       ``STEPFUN_STEP_3_7_FLASH``       410 Gone — EOL
+       ``MISTRAL_NEMOTRON``             500 / unverified
+       ``LAGUNA_XS_2_1``                503 — endpoint saturated, unverified
+       ===============================  ======================================
+
+       The dead members are deliberately kept rather than deleted, because
+       removing a member breaks any caller that imports it by name; they are
+       documented here so nobody picks one expecting it to work. The catalog
+       lists dated successors for the DeepSeek pair
+       (``deepseek-v4-pro-0813``, ``deepseek-v4-flash-0731``) and renamed
+       ``nemotron-nano-3-30b-a3b`` for ``NEMOTRON_3_NANO_30B``, but none were
+       confirmed with a successful request, so none are added here on
+       speculation. Re-probe before relying on any member other than the three
+       marked 200 OK.
+
+    The previous revision claimed verification against ``GET /v1/models`` on
+    2026-08-05. That is why the drift went unnoticed: presence in the catalog
+    listing is NOT proof a slug still serves traffic — ``GLM_5_2`` and
+    ``LLAMA_3_3_70B_INSTRUCT`` both vanished from the catalog *and* began
+    returning 410, while ``KIMI_K2_6`` is listed but returns 404 per account.
+    Only a real completion request is evidence.
 
     Every member of the previous revision of this enum had reached
     end-of-life and been withdrawn from the catalog — requests returned
@@ -69,6 +103,16 @@ class NvidiaModel(str, Enum):
 
     # Nvidia first-party
     NEMOTRON_3_NANO_30B = "nvidia/nemotron-3-nano-30b-a3b"
+
+    #: Reasoning model: emits ``reasoning_content`` beside ``content``.
+    #: Surfaced on ``AIMessage.reasoning``. Because the thinking is drawn from
+    #: the same token budget as the answer, this model needs a large
+    #: ``max_tokens`` and a generous timeout — both are the NvidiaClient
+    #: defaults (65536 / 300s). Optionally cap the thinking with
+    #: ``reasoning_budget``.
+    NEMOTRON_3_NANO_OMNI_30B_REASONING = (
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    )
 
     # Z-AI (reasoning-capable; emits reasoning_content in streaming deltas)
     GLM_5_2 = "z-ai/glm-5.2"
