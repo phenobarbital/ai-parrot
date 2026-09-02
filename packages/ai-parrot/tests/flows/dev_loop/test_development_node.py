@@ -14,12 +14,15 @@ import pytest
 
 from parrot import conf
 from parrot.flows.dev_loop.models import (
+    CriterionResult,
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
     FeatureBrief,
+    FeedbackDecision,
     FlowtaskCriterion,
     LogSource,
+    QAReport,
     ResearchOutput,
     WorkBrief,
 )
@@ -999,3 +1002,200 @@ class TestSingleAgentTaskManifest:
         note = self._dispatched_brief(dispatcher).log_excerpts[0]
         assert "TASK-1 [pending]" in note
         assert "not recorded in the index" in note
+
+
+def _failing_qa_report() -> QAReport:
+    """The shape QANode publishes when the deterministic gate goes red."""
+    return QAReport(
+        passed=False,
+        lint_passed=False,
+        lint_output="catalog.py:1:1: I001 un-sorted-imports",
+        criterion_results=[
+            CriterionResult(
+                name="pytest (derived: changed scopes)",
+                kind="shell",
+                exit_code=4,
+                passed=False,
+            )
+        ],
+        code_review_passed=False,
+        code_review_findings=["catalog.py: 28 UP-series violations"],
+    )
+
+
+class TestRepairFeedbackBrief:
+    """`_with_repair_feedback` must carry BOTH halves of the re-entry
+    context: the condensed QA failure AND the feedback router's dev_brief.
+    """
+
+    def test_dev_brief_is_appended_after_the_condensed_report(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry",
+                dev_brief="  Fix the I001 import order in catalog.py.  ",
+            ),
+        }
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert shared["qa_attempt"] == 2
+        assert len(out.log_excerpts) == 2
+        # Evidence first, then the instruction derived from it.
+        assert out.log_excerpts[0].startswith("[QA repair-loop feedback — attempt 2]")
+        assert out.log_excerpts[1] == (
+            "[Feedback router — required fixes for attempt 2]\n"
+            "Fix the I001 import order in catalog.py."
+        )
+
+    def test_bug_mode_without_a_feedback_decision_is_unchanged(self, tmp_path):
+        """Bug-mode topology has no feedback_router — one note, as before."""
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {"qa_report": _failing_qa_report()}
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert len(out.log_excerpts) == 1
+        assert out.log_excerpts[0].startswith("[QA repair-loop feedback — attempt 2]")
+
+    def test_blank_dev_brief_appends_nothing(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="   "),
+        }
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert len(out.log_excerpts) == 1
+
+    def test_first_pass_never_stamps_a_brief(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="never read"),
+        }
+
+        research = _research(str(tmp_path))
+        out = node._with_repair_feedback(shared, research)
+
+        assert out is research
+        assert "qa_attempt" not in shared
+
+
+@pytest.mark.asyncio
+class TestRepairReentryDispatch:
+    """A repair-loop re-entry whose task index holds nothing runnable must
+    still dispatch an agent — otherwise QA re-runs on an unchanged tree.
+    """
+
+    @staticmethod
+    def _done_index(tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "done", "depends_on": []},
+                {"id": "TASK-2", "status": "done", "depends_on": ["TASK-1"]},
+                {"id": "TASK-3", "status": "done", "depends_on": ["TASK-2"]},
+            ],
+        )
+
+    async def test_repair_reentry_with_every_task_done_dispatches_one_seat(self, tmp_path):
+        self._done_index(tmp_path)
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry", dev_brief="Fix the I001 import order."
+            ),
+        }
+
+        await node.execute(ctx)
+
+        # Exactly one dispatch, and it is the whole-feature repair seat —
+        # not a per-task pool dispatch (which carries a TaskScopedBrief).
+        assert len(pool_dispatcher.calls) == 1
+        task_id, _node_id, cwd = pool_dispatcher.calls[0]
+        assert task_id is None
+        assert cwd == str(tmp_path)
+
+    async def test_repair_seat_brief_carries_the_dev_brief(self, tmp_path):
+        self._done_index(tmp_path)
+        captured = {}
+
+        class CapturingDispatcher(FakeDispatcher):
+            async def dispatch(self, *, brief, **kwargs):
+                captured["brief"] = brief
+                return await super().dispatch(brief=brief, **kwargs)
+
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([CapturingDispatcher()]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry", dev_brief="Fix the I001 import order."
+            ),
+        }
+
+        await node.execute(ctx)
+
+        excerpts = "\n".join(captured["brief"].log_excerpts)
+        assert "Fix the I001 import order." in excerpts
+
+    async def test_first_pass_with_every_task_done_still_dispatches_nothing(self, tmp_path):
+        """Regression guard: a fresh run over a pre-completed index is a
+        legitimate no-op and must NOT be mistaken for a repair re-entry."""
+        self._done_index(tmp_path)
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {"run_id": "r1", "research_output": _research(str(tmp_path))}
+
+        await node.execute(ctx)
+
+        assert pool_dispatcher.calls == []
+
+    async def test_repair_reentry_with_pending_tasks_still_uses_the_pool(self, tmp_path):
+        """The guard only fires on an EMPTY wave — a retry that still has
+        runnable tasks keeps going through the pool, per task."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "done", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+        }
+
+        await node.execute(ctx)
+
+        assert [c[0] for c in pool_dispatcher.calls] == ["TASK-2"]
