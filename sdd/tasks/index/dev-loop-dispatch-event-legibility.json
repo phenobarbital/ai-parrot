@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-02T01:52:46.646318Z",
-  "completed_at": "2026-09-02T04:15:45+00:00",
+  "completed_at": "2026-09-02T10:58:38+00:00",
   "tasks": [
     {
       "id": "TASK-2722",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:07:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2722-dispatch-labels-model-and-context.md"
+      "file": "sdd/tasks/completed/TASK-2722-dispatch-labels-model-and-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2723",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:12:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2723-normalize-payload-contract.md"
+      "file": "sdd/tasks/completed/TASK-2723-normalize-payload-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2724",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:24:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2724-claude-dispatcher-event-extractor.md"
+      "file": "sdd/tasks/completed/TASK-2724-claude-dispatcher-event-extractor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2725",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:28:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2725-codex-dispatcher-event-extractor.md"
+      "file": "sdd/tasks/completed/TASK-2725-codex-dispatcher-event-extractor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2726",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:32:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2726-gemini-dispatcher-event-extractor.md"
+      "file": "sdd/tasks/completed/TASK-2726-gemini-dispatcher-event-extractor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2727",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:41:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2727-agy-dispatcher-event-extractor.md"
+      "file": "sdd/tasks/completed/TASK-2727-agy-dispatcher-event-extractor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2728",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T02:49:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2728-llm-family-payload-parity.md"
+      "file": "sdd/tasks/completed/TASK-2728-llm-family-payload-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2729",
@@ -163,7 +170,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T03:03:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2729-session-state-seat-projection.md"
+      "file": "sdd/tasks/completed/TASK-2729-session-state-seat-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2730",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T03:18:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2730-pool-and-resolver-label-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2730-pool-and-resolver-label-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2731",
@@ -208,7 +217,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T03:36:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2731-judge-panel-label-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2731-judge-panel-label-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2732",
@@ -230,7 +240,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T03:54:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2732-dev-console-summary-and-seats.md"
+      "file": "sdd/tasks/completed/TASK-2732-dev-console-summary-and-seats.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2733",
@@ -250,7 +261,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T04:00:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2733-index-console-parity.md"
+      "file": "sdd/tasks/completed/TASK-2733-index-console-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2734",
@@ -281,7 +293,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
       "completed_at": "2026-09-02T04:15:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2734-legibility-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2734-legibility-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
