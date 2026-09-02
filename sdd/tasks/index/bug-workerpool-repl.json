@@ -113,7 +113,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Integration tests exercise the full stack (protocol → worker → handle → pool → PythonPandasTool); needs every product task merged first.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2762-cold-start-regression-tests.md"
+      "completed_at": "2026-09-02T15:13:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2762-cold-start-regression-tests.md"
     },
     {
       "id": "TASK-2763",
