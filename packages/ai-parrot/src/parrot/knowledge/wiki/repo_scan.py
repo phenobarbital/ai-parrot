@@ -1023,7 +1023,13 @@ class SymbolResolver:
         reachable = self._reachable.get(file_concept_id(rel_path))
         if not reachable:
             return None
-        for other_rel in reachable:
+        # `reachable` is a set — iterating it directly would make the
+        # chosen file (when more than one reachable file has a unique
+        # match) depend on CPython's per-process string hash order
+        # (PYTHONHASHSEED), i.e. non-deterministic across runs of the
+        # very resolver this class's own docstring promises is
+        # deterministic. Sorted iteration fixes the tie-break.
+        for other_rel in sorted(reachable):
             other_pairs = self._pairs_by_rel.get(other_rel)
             if not other_pairs:
                 continue
