@@ -51,9 +51,7 @@ class TestCodeReviewDispatcherFactory:
 
 class TestCodeReviewFinding:
     def test_valid_finding(self):
-        f = CodeReviewFinding(
-            message="Missing guard", severity="critical", file="sync.py", line=88
-        )
+        f = CodeReviewFinding(message="Missing guard", severity="critical", file="sync.py", line=88)
         assert f.severity == "critical"
         assert f.file == "sync.py"
         assert f.line == 88
@@ -136,7 +134,10 @@ class TestClaudeCodeReviewDispatcher:
         sentinel_host = object()
 
         await d.review(
-            brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp",
+            brief=MagicMock(),
+            run_id="r1",
+            node_id="qa",
+            cwd="/tmp",
             session_host=sentinel_host,
         )
 
@@ -362,9 +363,7 @@ class TestFullQAFlowIntegration:
             side_effect=[
                 CodeReviewVerdict(
                     passed=True,
-                    findings=[
-                        CodeReviewFinding(message="fixed null guard", severity="minor")
-                    ],
+                    findings=[CodeReviewFinding(message="fixed null guard", severity="minor")],
                     files_modified=["sync.py"],
                 ),
                 QAReport(passed=True, criterion_results=[], lint_passed=True),
@@ -381,14 +380,10 @@ class TestFullQAFlowIntegration:
     async def test_codex_review_fix_rerun(self, qa_ctx):
         """Full QA -> Codex review -> fix -> rerun cycle (separate dispatcher)."""
         qa_dispatcher = MagicMock()
-        qa_dispatcher.dispatch = AsyncMock(
-            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
-        )
+        qa_dispatcher.dispatch = AsyncMock(return_value=QAReport(passed=True, criterion_results=[], lint_passed=True))
         codex_dispatcher = MagicMock()
         codex_dispatcher.dispatch = AsyncMock(
-            return_value=CodeReviewVerdict(
-                passed=True, findings=[], files_modified=["sync.py"]
-            )
+            return_value=CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
         )
         reviewer = CodexCodeReviewDispatcher(dispatcher=codex_dispatcher)
         node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
@@ -396,6 +391,7 @@ class TestFullQAFlowIntegration:
         assert report.passed is True
         assert qa_dispatcher.dispatch.await_count == 1
         codex_dispatcher.dispatch.assert_awaited_once()
+
 
 class _FakeApp(dict):
     """Minimal stand-in for ``aiohttp.web.Application``."""
@@ -457,12 +453,8 @@ class TestServerWiringIntegration:
         monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
         monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
         monkeypatch.setattr(server_mod, "_build_git_toolkit", lambda: MagicMock())
-        monkeypatch.setattr(
-            server_mod.aioredis, "from_url", lambda url, **kw: _make_fake_redis()
-        )
-        monkeypatch.setattr(
-            server_mod, "ClaudeCodeDispatcher", MagicMock(return_value=MagicMock())
-        )
+        monkeypatch.setattr(server_mod.aioredis, "from_url", lambda url, **kw: _make_fake_redis())
+        monkeypatch.setattr(server_mod, "ClaudeCodeDispatcher", MagicMock(return_value=MagicMock()))
         monkeypatch.setattr(
             server_mod,
             "DevLoopRunner",
@@ -477,9 +469,7 @@ class TestServerWiringIntegration:
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(
-            server_mod.conf, "config", _CodeReviewAgentConfig("claude-code")
-        )
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("claude-code"))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
@@ -532,9 +522,7 @@ class TestServerWiringIntegration:
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(
-            server_mod.conf, "config", _CodeReviewAgentConfig("not-a-real-agent")
-        )
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("not-a-real-agent"))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
@@ -563,9 +551,7 @@ def _all_review_dispatcher_classes():
     return [AbstractCodeReviewDispatcher, *AbstractCodeReviewDispatcher.__subclasses__()]
 
 
-@pytest.mark.parametrize(
-    "cls", _all_review_dispatcher_classes(), ids=lambda c: c.__name__
-)
+@pytest.mark.parametrize("cls", _all_review_dispatcher_classes(), ids=lambda c: c.__name__)
 def test_every_review_dispatcher_accepts_labels(cls):
     sig = inspect.signature(cls.review)
     assert "labels" in sig.parameters, f"{cls.__name__}.review lacks labels="
