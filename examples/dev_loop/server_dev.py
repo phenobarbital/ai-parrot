@@ -388,6 +388,11 @@ def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = Tr
         # Derived from the catalog's role lists rather than a hardcoded
         # literal, so a new partner backend shows up here automatically.
         "partner_backends": [b.id for b in llm_catalog.backends_for_role("research_partner")],
+        # FEAT-494: Add research_primary_models for ideation seat
+        "research_primary_models": (
+            list(llm_catalog.get_backend("claude-code").models)
+            if llm_catalog.get_backend("claude-code") else []
+        ),
     }
 
 
