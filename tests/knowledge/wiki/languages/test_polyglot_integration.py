@@ -101,7 +101,9 @@ def test_stats_languages_block():
     assert "javascript" in languages
     assert "rust" in languages
     assert "perl" in languages
-    assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic"}
+    # FEAT-498: "ast-grep" joins the set once a scanner's rule file (e.g.
+    # typescript.yaml, TASK-2742) has served at least one file this session.
+    assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic", "ast-grep"}
 
 
 def test_polyglot_svelte_alongside_python(tmp_path):

@@ -1,11 +1,11 @@
 """Byte-parity harness: ``outline()`` with and without the ast-grep seam.
 
-With no rule file installed for any language yet (TASK-2742..2746 add
-them), :func:`parrot.knowledge.wiki.languages.astgrep.extract` returns
-``None`` for every language, so this harness currently proves the wiring
-introduced in TASK-2740 is a no-op. Rule tasks extend ``CASES`` with
-their own fixture and re-run this same harness to prove strict parity
-once a rule file makes the seam actually serve a file.
+Rule tasks (TASK-2742..2746) extend ``CASES`` with their own fixture and
+re-run this same harness to prove strict parity once a rule file makes
+the seam actually serve a file for that language; landing a rule file
+also adds the language's key to ``SERVED_BY_RULE`` so
+``test_seam_service_matches_available_rules`` tracks which languages are
+currently expected to report ``mode == "ast-grep"``.
 """
 
 from __future__ import annotations
@@ -42,6 +42,11 @@ CASES = [
     ("perl", ".pm", PERL_SRC),
 ]
 
+#: Languages with a landed rule file (``languages/rules/<lang>.yaml``).
+#: TASK-2742 lands ``typescript.yaml`` (served under the ``javascript``
+#: scanner name); TASK-2743..2745 add php/rust/perl here as they land.
+SERVED_BY_RULE = {"javascript"}
+
 
 @pytest.mark.parametrize("lang,suffix,src", CASES, ids=[c[0] for c in CASES])
 def test_outline_parity_with_and_without_seam(lang, suffix, src, monkeypatch):
@@ -60,12 +65,15 @@ def test_outline_parity_with_and_without_seam(lang, suffix, src, monkeypatch):
 
 
 @pytest.mark.parametrize("lang,suffix,src", CASES, ids=[c[0] for c in CASES])
-def test_seam_is_currently_a_noop(lang, suffix, src):
-    """No rule files exist yet — every language falls straight through."""
+def test_seam_service_matches_available_rules(lang, suffix, src):
+    """``mode == "ast-grep"`` iff a rule file for ``lang`` has landed."""
     scanner = scanner_for(suffix)
     assert scanner is not None
     scanner.outline(src, f"x{suffix}")
-    assert scanner.mode != "ast-grep"
+    if lang in SERVED_BY_RULE:
+        assert scanner.mode == "ast-grep"
+    else:
+        assert scanner.mode != "ast-grep"
 
 
 def test_polyglot_repo_parity(polyglot_repo, monkeypatch):

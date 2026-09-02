@@ -238,6 +238,37 @@ def _first_comment_before(node: SgNode) -> SgNode | None:
     return None
 
 
+#: Wrapper node kinds whose own leading position is where a doc comment
+#: actually sits for an exported declaration (e.g. TS/JS
+#: ``export class Foo {}`` — the comment precedes ``export_statement``,
+#: not the ``class_declaration`` inside it).
+_COMMENT_PROBE_WRAPPERS = frozenset({"export_statement"})
+
+
+def _first_comment_before_export_aware(node: SgNode) -> SgNode | None:
+    """Like :func:`_first_comment_before`, but probes past an export wrapper.
+
+    TASK-2742: verified against ast-grep-py 0.45.3's typescript grammar —
+    an exported declaration's own ``.prev()`` is the ``export`` keyword
+    token, not the doc comment, which instead precedes the
+    ``export_statement`` wrapper itself.
+
+    Deliberately a SEPARATE extractor from :func:`leading_comment`
+    (used only by ``class``/``function``/``interface``/``type`` rules,
+    not ``const``): the JS/TS walker's own ``_leading_doc`` call for
+    ``lexical_declaration`` (``const``) has no such parent-probing
+    fallback, so an exported const's doc is a byte-parity casualty in
+    the walker too — reproducing that asymmetry, not "fixing" it, is
+    the parity contract (spec §7 "the walkers are the oracle").
+    """
+    parent = node.parent()
+    probe = parent if parent is not None and parent.kind() in _COMMENT_PROBE_WRAPPERS else node
+    prev = probe.prev()
+    if prev is not None and "comment" in prev.kind():
+        return prev
+    return None
+
+
 def _strip_comment_markers(text: str) -> str:
     """Strip common line/block comment markers and doc-comment sigils."""
     text = text.strip()
@@ -285,6 +316,17 @@ def leading_doc_comment(node: SgNode) -> str:
     if text.startswith(("/**", "///", "/*!")):
         return _strip_comment_markers(text)
     return ""
+
+
+def leading_comment_exported(node: SgNode) -> str:
+    """Like :func:`leading_comment`, probing past an ``export_statement``.
+
+    Use for TS/JS declarations the walker itself doc-probes through the
+    export wrapper for (``class``/``function``/``interface``/``type``) —
+    NOT for ``const`` (see :func:`_first_comment_before_export_aware`).
+    """
+    comment = _first_comment_before_export_aware(node)
+    return _strip_comment_markers(comment.text()) if comment is not None else ""
 
 
 def module_docstring(node: SgNode) -> str:
@@ -345,6 +387,7 @@ EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "none": lambda _node: "",
     "first_docstring": first_docstring,
     "leading_comment": leading_comment,
+    "leading_comment_exported": leading_comment_exported,
     "leading_doc_comment": leading_doc_comment,
     "pod_head2": pod_head2,
     "module_docstring": module_docstring,

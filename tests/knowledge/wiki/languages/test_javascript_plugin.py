@@ -147,7 +147,12 @@ def test_jsts_unresolvable_relative_returns_none():
     assert result is None
 
 
-def test_jsts_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_jsts_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that typescript.yaml
+    # (TASK-2742) makes the ast-grep seam a real, working first tier —
+    # without it, the seam would serve this file successfully and
+    # `_outline_heuristic` (the fallback this test breaks) would never
+    # even be called.
     scanner = JavaScriptScanner()
 
     def _boom(source):
