@@ -1,0 +1,46 @@
+{
+  "children": [
+    {
+      "component": "ChoicePicker",
+      "id": "fb-f0",
+      "label": "Month",
+      "metadata": {
+        "extensions": {
+          "parrot_filter_column": "month",
+          "parrot_role": "filter"
+        }
+      },
+      "options": [
+        {
+          "label": "Aug-2026",
+          "value": "2026-08"
+        }
+      ],
+      "value": [
+        "2026-08"
+      ],
+      "variant": "multipleSelection"
+    },
+    {
+      "component": "ChoicePicker",
+      "id": "fb-f1",
+      "label": "Pay Code",
+      "metadata": {
+        "extensions": {
+          "parrot_filter_column": "pay_code",
+          "parrot_role": "filter"
+        }
+      },
+      "options": [],
+      "value": [],
+      "variant": "mutuallyExclusive"
+    }
+  ],
+  "component": "Row",
+  "id": "fb",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "filter-bar"
+    }
+  }
+}

@@ -1,0 +1,2740 @@
+{
+  "info": {
+    "_postman_id": "ae110fac-d100-43db-8bca-99afbf86a981",
+    "name": "ai-parrot A2UI — AgentDashboard surfaces (FEAT-469/470/473/491/492/493)",
+    "description": "All routes used by the navigator-frontend-next AgentDashboard service: AgentTalk chat (A2UI envelopes), A2UIHandler RPC/SSE, persistent ui_surfaces (JSON + interactive HTML via the FEAT-493 renderer), deep links, recipes, artifacts and the legacy infographic lane.\n\nSet collection variables: baseUrl, token (bearer), agentId (default flex_dashboard), sessionId (any uuid you own). Pin requests capture surfaceId / dashboardSurfaceId / refreshableSurfaceId / shareToken automatically.\n\nReference: docs/frontend/agentdashboard-a2ui-reference.md",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "agentId",
+      "value": "flex_dashboard"
+    },
+    {
+      "key": "sessionId",
+      "value": "postman-session-0001"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "surfaceId",
+      "value": ""
+    },
+    {
+      "key": "dashboardSurfaceId",
+      "value": ""
+    },
+    {
+      "key": "refreshableSurfaceId",
+      "value": ""
+    },
+    {
+      "key": "shareToken",
+      "value": ""
+    },
+    {
+      "key": "artifactId",
+      "value": ""
+    },
+    {
+      "key": "artifactSignature",
+      "value": ""
+    },
+    {
+      "key": "recipeName",
+      "value": "flex-program-dashboard"
+    },
+    {
+      "key": "functionName",
+      "value": "refresh_dashboard"
+    },
+    {
+      "key": "functionCallId",
+      "value": ""
+    },
+    {
+      "key": "deeplinkToken",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "lastEnvelope",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Agent chat (AgentTalk)",
+      "description": "POST /api/v1/agents/chat/{agent_id} — the endpoint the AgentDashboard service calls. Send output_mode: \"a2ui\" in the BODY (the ?output_mode= query parameter is dead code). The A2UI response is always JSON: {input, output, output_mode: \"a2ui\", a2ui_envelope}. If no surface was produced the agent degrades to output_mode \"default\" with no a2ui_envelope.",
+      "item": [
+        {
+          "name": "Widget via /widget trigger (output_mode a2ui)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "FlexDashboard widget skill. Expect a2ui_envelope.createSurface with root component Chart (line, x=month).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"/widget worked hours by month\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\",\n  \"use_conversation_history\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);",
+                  "const j = pm.response.json(); pm.test('a2ui envelope present', () => pm.expect(j).to.have.property('a2ui_envelope'));",
+                  "if (j.a2ui_envelope && !Array.isArray(j.a2ui_envelope) && j.a2ui_envelope.createSurface) { pm.collectionVariables.set('lastEnvelope', JSON.stringify(j.a2ui_envelope.createSurface)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Widget: KPI hero card",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "Hero totals map to one KPICard each.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"/widget payroll % to revenue\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Widget: map (proximity staffing)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "Expect root component Map with layers stores/employees and dataModel.layers[i].features.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"/widget proximity staffing radius_miles=25 nearest_n=5\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Infographic via /infographic trigger",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "LLM-authored Infographic surface. Prose caption in `output`, envelope in `a2ui_envelope`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"/infographic an infographic of this month's payroll picture\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dashboard refresh via agent (calls refresh_dashboard)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "Requires the backend to have registered the refresh_dashboard tool (agent.build_refresh_tool(pctx)).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"refresh the dashboard for October 2025\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Structured chart (dual-emit: output+data AND a2ui_envelope)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "FEAT-473: response carries the legacy structured config in `output`/`data` plus `a2ui_envelope` and `artifacts[]` (schemaVersion 2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"show worked hours by month as a chart\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"structured_chart\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Default turn (no output_mode)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "KB-grounded Q&A. Standard envelope {input, output, data, response, output_mode, code, metadata, sources, tool_calls}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"how is Rep Utilization computed?\",\n  \"session_id\": \"{{sessionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Streaming turn (chunked, NOT SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "{{agentId}}"
+              ]
+            },
+            "description": "Response: text/plain chunks, then the separator \\n\\x00, then one JSON object that includes a2ui_envelope. Header X-Parrot-Stream: chunked-aimessage.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"/widget pay code hours for month 2025-10\",\n  \"session_id\": \"{{sessionId}}\",\n  \"output_mode\": \"a2ui\",\n  \"stream\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: unknown agent (raw string body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/chat/does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "chat",
+                "does-not-exist"
+              ]
+            },
+            "description": "404 with a RAW STRING body under Content-Type: application/json — guard JSON.parse.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"hi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. A2UI RPC (A2UIHandler)",
+      "description": "/api/v1/agents/{agent_id}/a2ui — renderer->agent envelopes. Identity (session_id, user_id, agent_name) travels in the QUERY STRING because the body is a protocol-strict envelope. One message back => bare envelope with Content-Type application/a2ui+json; several => {messages:[...]}; sole error => 400 with the error envelope.",
+      "item": [
+        {
+          "name": "GET capabilities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui",
+                "capabilities"
+              ]
+            },
+            "description": "{\"v1.0\": {\"supportedCatalogIds\": [parrot, basic], \"acceptsInlineCatalogs\": false}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);",
+                  "pm.test('v1.0 key', () => pm.expect(pm.response.json()).to.have.property('v1.0'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST action (push surface state / filters)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "Persists SurfaceState (dataModel) for the session; no userMessage => a system turn tagged a2ui_action. The handler then runs the turn on the agent and may append a fresh createSurface.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"action\": {\n    \"name\": \"filters_changed\",\n    \"surfaceId\": \"flex-program-dashboard-infographic\",\n    \"sourceComponentId\": \"filter-bar\",\n    \"timestamp\": \"2026-09-02T10:00:00+00:00\",\n    \"context\": {},\n    \"dataModel\": {\n      \"filters\": {\n        \"month\": \"2025-09\",\n        \"flex_type\": \"Flex\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST action with userMessage (visible user turn)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "userMessage becomes the user turn text verbatim.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"action\": {\n    \"name\": \"submit\",\n    \"userMessage\": \"Show October only\",\n    \"surfaceId\": \"flex-program-dashboard-infographic\",\n    \"sourceComponentId\": \"btn-apply\",\n    \"timestamp\": \"2026-09-02T10:00:00+00:00\",\n    \"context\": {\n      \"month\": \"2025-10\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST callAgentFunction refresh_dashboard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "ALWAYS send callFunction.catalogId. Success => {version, agentFunctionResponse: {functionCallId, value: {filters, filter_source, artifact_id, bytes}}}. Unregistered tool => 400 error INVALID_FUNCTION_CALL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"callAgentFunction\": {\n    \"surfaceId\": \"flex-program-dashboard-infographic\",\n    \"functionCallId\": \"fc-refresh-1\",\n    \"callFunction\": {\n      \"call\": \"refresh_dashboard\",\n      \"args\": {\n        \"month\": \"2025-10\"\n      },\n      \"catalogId\": \"https://parrot.dev/catalogs/v1\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 400 envelope', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "pm.test('has version', () => pm.expect(pm.response.json()).to.have.property('version', 'v1.0'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST callAgentFunction (any tool by name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "Every ToolManager tool is renderer-invocable unless a2ui_hidden. Set {{functionName}} to a tool name from the agent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"callAgentFunction\": {\n    \"surfaceId\": \"kpi\",\n    \"functionCallId\": \"fc-2\",\n    \"callFunction\": {\n      \"call\": \"{{functionName}}\",\n      \"args\": {},\n      \"catalogId\": \"https://parrot.dev/catalogs/v1\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('envelope', () => pm.expect(pm.response.json()).to.have.property('version'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST rendererFunctionResponse (reply to callRendererFunction)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "Unknown/expired functionCallId => 400 error NOT_FOUND.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"rendererFunctionResponse\": {\n    \"functionCallId\": \"{{functionCallId}}\",\n    \"value\": {\n      \"done\": true\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 400', () => pm.expect([200, 400]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST error (surface validation error, two-shape rule)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "Surface errors (no functionCallId) are only logged; returns 200 with no messages (empty body or {messages: []}).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"v1.0\",\n  \"error\": {\n    \"code\": \"UNALLOWED_PARENT\",\n    \"surfaceId\": \"kpi\",\n    \"path\": \"/components/0\",\n    \"message\": \"Renderer rejected the tree.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST batch (JSON array of envelopes)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "Array or JSONL body. Response {messages: [...]} when more than one message results.",
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"version\": \"v1.0\",\n    \"action\": {\n      \"name\": \"filters_changed\",\n      \"surfaceId\": \"flex-program-dashboard-infographic\",\n      \"sourceComponentId\": \"filter-bar\",\n      \"timestamp\": \"2026-09-02T10:00:00+00:00\",\n      \"context\": {},\n      \"dataModel\": {\n        \"filters\": {\n          \"month\": \"2025-10\"\n        }\n      }\n    }\n  },\n  {\n    \"version\": \"v1.0\",\n    \"callAgentFunction\": {\n      \"surfaceId\": \"flex-program-dashboard-infographic\",\n      \"functionCallId\": \"fc-batch-1\",\n      \"callFunction\": {\n        \"call\": \"refresh_dashboard\",\n        \"args\": {},\n        \"catalogId\": \"https://parrot.dev/catalogs/v1\"\n      }\n    }\n  }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST malformed body -> 400 error envelope",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "400 {version:'v1.0', error:{code:'INVALID_FUNCTION_CALL', message:'Malformed JSON body.', functionCallId:'unknown'}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{not json",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('error envelope', () => pm.expect(pm.response.json()).to.have.nested.property('error.code', 'INVALID_FUNCTION_CALL'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET SSE stream of callRendererFunction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui?session_id={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui"
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{sessionId}}"
+                }
+              ]
+            },
+            "description": "text/event-stream; frames `data: {version, callRendererFunction:{functionCallId, callFunction:{call,args,catalogId}}}`; `: keepalive` every 15 s. Postman will hold the connection — cancel manually."
+          },
+          "response": []
+        },
+        {
+          "name": "GET surface mirror (JSON)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui/surfaces/{{surfaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui",
+                "surfaces",
+                "{{surfaceId}}"
+              ]
+            },
+            "description": "Mirror of GET /api/v1/ui/surfaces/{id}; same negotiation and access rules; additionally resolves the agent."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET surface mirror (HTML via ?format=html)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/{{agentId}}/a2ui/surfaces/{{surfaceId}}?format=html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "{{agentId}}",
+                "a2ui",
+                "surfaces",
+                "{{surfaceId}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "html"
+                }
+              ]
+            },
+            "description": "Self-contained interactive HTML (FEAT-493)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('html', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. UI surfaces (FEAT-492 rehydration)",
+      "description": "/api/v1/ui/surfaces — persistent, bookmarkable A2UI surfaces of kind dashboard | infographic | widget. Negotiation: ?format=html|json wins over Accept; default JSON. Errors: {status:'error', message}. Unknown/foreign => 404, bad share token => 410, HTML renderer missing => 501.",
+      "item": [
+        {
+          "name": "List my surfaces",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "Owned first (access: owner), then claimed shares (access: shared)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List by kind=dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces?kind=dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "dashboard"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List by kind=widget",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces?kind=widget",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "widget"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pin/save: widget (inline envelope)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "`envelope` is the createSurface PAYLOAD (inner object), validated as CreateSurface. 201 {surface_id: uuid4}. Saves surface_id into {{surfaceId}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"widget\",\n  \"title\": \"Revenue KPI\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"envelope\": {\n    \"surfaceId\": \"kpi\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"KPICard\",\n        \"label\": \"Revenue\",\n        \"value\": 1200,\n        \"unit\": \"USD\",\n        \"delta\": 5,\n        \"trend\": \"up\"\n      }\n    ],\n    \"dataModel\": {}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json(); if (j.surface_id) pm.collectionVariables.set('surfaceId', j.surface_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pin/save: dashboard (Infographic w/ FilterBar, theme+layout hints)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "Two sections => two tabs in every renderer. metadata.extensions.parrot_theme/parrot_layout select the HTML design-system axes. Saves surface_id into {{dashboardSurfaceId}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"dashboard\",\n  \"title\": \"Demo Dashboard\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"envelope\": {\n    \"surfaceId\": \"demo-dashboard-infographic\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"metadata\": {\n      \"extensions\": {\n        \"parrot_theme\": \"dark\",\n        \"parrot_layout\": \"analytics\"\n      }\n    },\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"Infographic\",\n        \"title\": \"Demo Dashboard\",\n        \"subtitle\": \"Two sections -> two tabs\",\n        \"sections\": [\n          {\n            \"heading\": \"KPIs\",\n            \"components\": [\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Worked Hours\",\n                  \"value\": {\n                    \"path\": \"/hero/worked_hours\"\n                  },\n                  \"unit\": \"h\",\n                  \"trend\": \"up\"\n                }\n              },\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Payroll\",\n                  \"value\": {\n                    \"path\": \"/hero/payroll\"\n                  },\n                  \"unit\": \"USD\",\n                  \"trend\": \"flat\"\n                }\n              }\n            ]\n          },\n          {\n            \"heading\": \"Trend\",\n            \"components\": [\n              {\n                \"component\": \"FilterBar\",\n                \"properties\": {\n                  \"title\": \"Filters\",\n                  \"filters\": [\n                    {\n                      \"column\": \"region\",\n                      \"label\": \"Region\",\n                      \"multiple\": true,\n                      \"options\": [\n                        {\n                          \"label\": \"West\",\n                          \"value\": \"West\"\n                        },\n                        {\n                          \"label\": \"East\",\n                          \"value\": \"East\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              },\n              {\n                \"component\": \"Chart\",\n                \"properties\": {\n                  \"title\": \"Hours by month\",\n                  \"type\": \"line\",\n                  \"x\": \"month\",\n                  \"y\": [\n                    \"hours\"\n                  ],\n                  \"showLegend\": true,\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              },\n              {\n                \"component\": \"DataTable\",\n                \"properties\": {\n                  \"title\": \"Detail\",\n                  \"columns\": [\n                    {\n                      \"name\": \"month\",\n                      \"type\": \"string\",\n                      \"title\": \"Month\"\n                    },\n                    {\n                      \"name\": \"region\",\n                      \"type\": \"string\",\n                      \"title\": \"Region\"\n                    },\n                    {\n                      \"name\": \"hours\",\n                      \"type\": \"number\",\n                      \"title\": \"Hours\"\n                    }\n                  ],\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"dataModel\": {\n      \"hero\": {\n        \"worked_hours\": 18234.5,\n        \"payroll\": 812345.0\n      },\n      \"series\": [\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"West\",\n          \"hours\": 9100\n        },\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"East\",\n          \"hours\": 9134.5\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"West\",\n          \"hours\": 9600\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"East\",\n          \"hours\": 9411\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json(); if (j.surface_id) pm.collectionVariables.set('dashboardSurfaceId', j.surface_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pin/save: refreshable dashboard (recipe-backed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "recipe_name makes the row refreshable (POST .../refresh re-runs the recipe with request params > stored params > defaults).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"dashboard\",\n  \"title\": \"Flex Program Dashboard\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"recipe_name\": \"{{recipeName}}\",\n  \"recipe_params\": {\n    \"month\": \"2025-10\"\n  },\n  \"envelope\": {\n    \"surfaceId\": \"demo-dashboard-infographic\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"metadata\": {\n      \"extensions\": {\n        \"parrot_theme\": \"dark\",\n        \"parrot_layout\": \"analytics\"\n      }\n    },\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"Infographic\",\n        \"title\": \"Demo Dashboard\",\n        \"subtitle\": \"Two sections -> two tabs\",\n        \"sections\": [\n          {\n            \"heading\": \"KPIs\",\n            \"components\": [\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Worked Hours\",\n                  \"value\": {\n                    \"path\": \"/hero/worked_hours\"\n                  },\n                  \"unit\": \"h\",\n                  \"trend\": \"up\"\n                }\n              },\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Payroll\",\n                  \"value\": {\n                    \"path\": \"/hero/payroll\"\n                  },\n                  \"unit\": \"USD\",\n                  \"trend\": \"flat\"\n                }\n              }\n            ]\n          },\n          {\n            \"heading\": \"Trend\",\n            \"components\": [\n              {\n                \"component\": \"FilterBar\",\n                \"properties\": {\n                  \"title\": \"Filters\",\n                  \"filters\": [\n                    {\n                      \"column\": \"region\",\n                      \"label\": \"Region\",\n                      \"multiple\": true,\n                      \"options\": [\n                        {\n                          \"label\": \"West\",\n                          \"value\": \"West\"\n                        },\n                        {\n                          \"label\": \"East\",\n                          \"value\": \"East\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              },\n              {\n                \"component\": \"Chart\",\n                \"properties\": {\n                  \"title\": \"Hours by month\",\n                  \"type\": \"line\",\n                  \"x\": \"month\",\n                  \"y\": [\n                    \"hours\"\n                  ],\n                  \"showLegend\": true,\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              },\n              {\n                \"component\": \"DataTable\",\n                \"properties\": {\n                  \"title\": \"Detail\",\n                  \"columns\": [\n                    {\n                      \"name\": \"month\",\n                      \"type\": \"string\",\n                      \"title\": \"Month\"\n                    },\n                    {\n                      \"name\": \"region\",\n                      \"type\": \"string\",\n                      \"title\": \"Region\"\n                    },\n                    {\n                      \"name\": \"hours\",\n                      \"type\": \"number\",\n                      \"title\": \"Hours\"\n                    }\n                  ],\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"dataModel\": {\n      \"hero\": {\n        \"worked_hours\": 18234.5,\n        \"payroll\": 812345.0\n      },\n      \"series\": [\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"West\",\n          \"hours\": 9100\n        },\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"East\",\n          \"hours\": 9134.5\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"West\",\n          \"hours\": 9600\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"East\",\n          \"hours\": 9411\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json(); if (j.surface_id) pm.collectionVariables.set('refreshableSurfaceId', j.surface_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pin/save: from a thread artifact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "XOR with envelope; needs agent_id + session_id. 404 artifact not found, 503 no artifact store.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"infographic\",\n  \"title\": \"From artifact\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"source_artifact_id\": \"{{artifactId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201/404/503', () => pm.expect([201, 400, 404, 503]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pin/save: invalid (both envelope and source_artifact_id) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"widget\",\n  \"title\": \"bad\",\n  \"envelope\": {\n    \"surfaceId\": \"kpi\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"KPICard\",\n        \"label\": \"Revenue\",\n        \"value\": 1200,\n        \"unit\": \"USD\",\n        \"delta\": 5,\n        \"trend\": \"up\"\n      }\n    ],\n    \"dataModel\": {}\n  },\n  \"source_artifact_id\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get surface (JSON envelope + metadata)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{surfaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{surfaceId}}"
+              ]
+            },
+            "description": "{status, envelope: createSurface, metadata: {surface_id, kind, title, refreshable, created_at, updated_at, catalog_id, agent_id}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);",
+                  "pm.test('envelope', () => pm.expect(pm.response.json()).to.have.nested.property('envelope.surfaceId'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get surface as interactive HTML (?format=html)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{dashboardSurfaceId}}?format=html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{dashboardSurfaceId}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "html"
+                }
+              ]
+            },
+            "description": "Rendered on the fly by InteractiveHTMLRenderer (FEAT-493): single self-contained document, div.ds-page[data-layout][data-theme], inlined Chart.js, FilterBar runtime."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('html', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html'));",
+                  "pm.test('design system shell', () => pm.expect(pm.response.text()).to.include('ds-page'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get surface as HTML (Accept header only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{dashboardSurfaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{dashboardSurfaceId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get surface via share token (?share=)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{surfaceId}}?share={{shareToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{surfaceId}}"
+              ],
+              "query": [
+                {
+                  "key": "share",
+                  "value": "{{shareToken}}"
+                }
+              ]
+            },
+            "description": "First authenticated opener claims the token; then it shows in their list as access: shared. Revoked/expired => 410."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/410', () => pm.expect([200, 410]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh surface (re-run recipe, returns negotiated surface)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{refreshableSurfaceId}}/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{refreshableSurfaceId}}",
+                "refresh"
+              ]
+            },
+            "description": "409 when not refreshable; 422 RecipeRunError (502 when stage == data); 500 when recipe_runner unconfigured. Add ?format=html to get the refreshed HTML directly.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"params\": {\n    \"month\": \"2025-10\",\n    \"pay_code\": \"Field Time\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/409/422/500/502', () => pm.expect([200, 409, 422, 500, 502]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh surface as HTML",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{refreshableSurfaceId}}/refresh?format=html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{refreshableSurfaceId}}",
+                "refresh"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "html"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"params\": {\n    \"month\": \"2025-10\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mint share token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{surfaceId}}/share",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{surfaceId}}",
+                "share"
+              ]
+            },
+            "description": "ttl:true with no expires_at => now + 90 days; default no expiry. 201 {token, expires_at, permissions:'read+refresh'}. Saves token into {{shareToken}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expires_at\": null,\n  \"ttl\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json(); if (j.token) pm.collectionVariables.set('shareToken', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke share token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{surfaceId}}/share/{{shareToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{surfaceId}}",
+                "share",
+                "{{shareToken}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/404', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete surface",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{surfaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{surfaceId}}"
+              ]
+            },
+            "description": "Owner only; cascades share rows."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/404', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: unknown surface -> 404 (no existence oracle)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Deep-link resume",
+      "description": "/api/v1/a2ui/resume/web — single-use, TTL 900 s tokens minted by the backend for actions on static surfaces (PDF/SSR). Mounted only when Redis is available.",
+      "item": [
+        {
+          "name": "GET landing (does NOT consume the token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/a2ui/resume/web?token={{deeplinkToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "a2ui",
+                "resume",
+                "web"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{deeplinkToken}}"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "POST resume (consumes the token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/a2ui/resume/web?token={{deeplinkToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "a2ui",
+                "resume",
+                "web"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{deeplinkToken}}"
+                }
+              ]
+            },
+            "description": "200 {status:'resumed', session_id, result} | 400 missing token | 410 expired/replayed"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/400/410', () => pm.expect([200, 400, 410]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Infographic recipes (deterministic dashboards)",
+      "description": "/api/v1/infographic_recipes — the recipe lane behind refreshable dashboards. /run returns artifact METADATA, never HTML bytes.",
+      "item": [
+        {
+          "name": "List recipes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/infographic_recipes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "infographic_recipes"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get recipe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/infographic_recipes/{{recipeName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "infographic_recipes",
+                "{{recipeName}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/404', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run recipe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/infographic_recipes/{{recipeName}}/run",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "infographic_recipes",
+                "{{recipeName}}",
+                "run"
+              ]
+            },
+            "description": "{status:'success', artifact:{artifact_id, filename, mime_type:'text/html', size, storage_ref}}. Undeclared param => 422 RecipeRunError. Known bug: fails on a cold worker when render.profile is the default 'interactive-html' (see reference §11).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"params\": {\n    \"month\": \"2025-10\",\n    \"radius_miles\": \"25\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/422/500', () => pm.expect([200, 422, 500]).to.include(pm.response.code));",
+                  "const j = pm.response.json(); if (j.artifact && j.artifact.artifact_id) pm.collectionVariables.set('artifactId', j.artifact.artifact_id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Artifacts (rendered HTML by id)",
+      "description": "Session-scoped artifact CRUD and the unauthenticated signed public HTML URL (the html_url on infographic responses).",
+      "item": [
+        {
+          "name": "List thread artifacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/threads/{{sessionId}}/artifacts?agent_id={{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "threads",
+                "{{sessionId}}",
+                "artifacts"
+              ],
+              "query": [
+                {
+                  "key": "agent_id",
+                  "value": "{{agentId}}"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get artifact (JSON)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/threads/{{sessionId}}/artifacts/{{artifactId}}?agent_id={{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "threads",
+                "{{sessionId}}",
+                "artifacts",
+                "{{artifactId}}"
+              ],
+              "query": [
+                {
+                  "key": "agent_id",
+                  "value": "{{agentId}}"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Get artifact as HTML (?format=html)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/threads/{{sessionId}}/artifacts/{{artifactId}}?agent_id={{agentId}}&format=html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "threads",
+                "{{sessionId}}",
+                "artifacts",
+                "{{artifactId}}"
+              ],
+              "query": [
+                {
+                  "key": "agent_id",
+                  "value": "{{agentId}}"
+                },
+                {
+                  "key": "format",
+                  "value": "html"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Download artifact HTML (?download=1)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/threads/{{sessionId}}/artifacts/{{artifactId}}?agent_id={{agentId}}&download=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "threads",
+                "{{sessionId}}",
+                "artifacts",
+                "{{artifactId}}"
+              ],
+              "query": [
+                {
+                  "key": "agent_id",
+                  "value": "{{agentId}}"
+                },
+                {
+                  "key": "download",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Adds Content-Disposition: attachment."
+          },
+          "response": []
+        },
+        {
+          "name": "Public signed HTML (no auth)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/artifacts/public/{{artifactSignature}}/{{artifactId}}.html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "artifacts",
+                "public",
+                "{{artifactSignature}}",
+                "{{artifactId}}.html"
+              ]
+            },
+            "description": "Signature = {expiry}.{base64url(HMAC-SHA256(INFOGRAPHIC_SIGNING_KEY, '{artifact_id}|{expiry}'))}, default TTL 7 days. 403 plain text on bad/expired signature. CSP frame-ancestors defaults to 'self' (set INFOGRAPHIC_FRAME_ANCESTORS to iframe cross-origin)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Infographic lane (pre-A2UI, still live)",
+      "description": "/api/v1/agents/infographic — block-model infographics. Default response is HTML (opposite of ui_surfaces). Registered themes: light, dark, corporate, midnight, petrol.",
+      "item": [
+        {
+          "name": "Generate infographic (HTML)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/{{agentId}}?format=html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "{{agentId}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "html"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Summarize this month's payroll picture\",\n  \"template\": \"basic\",\n  \"theme\": \"corporate\",\n  \"session_id\": \"{{sessionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate infographic (JSON block model)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/{{agentId}}?format=json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "{{agentId}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Summarize this month's payroll picture\",\n  \"template\": \"basic\",\n  \"theme\": \"corporate\",\n  \"session_id\": \"{{sessionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/templates?detailed=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "detailed",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List themes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/themes?detailed=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "themes"
+              ],
+              "query": [
+                {
+                  "key": "detailed",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get theme",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/themes/corporate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "themes",
+                "corporate"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deterministic render (no LLM)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/render?format=json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "render"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json"
+                }
+              ]
+            },
+            "description": "RenderResponse {artifact_id, url, url_note, template, sections_validated, persisted, timings}. async:true => 202 {job_id}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"datasets\": {\n    \"sales\": {\n      \"orient\": \"records\",\n      \"data\": [\n        {\n          \"month\": \"Jan\",\n          \"total\": 10\n        },\n        {\n          \"month\": \"Feb\",\n          \"total\": 12\n        }\n      ]\n    }\n  },\n  \"template\": \"executive\",\n  \"theme\": \"corporate\",\n  \"descriptor\": {\n    \"template\": \"executive\",\n    \"mode\": \"data-splice\",\n    \"sections\": []\n  },\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"persist\": true,\n  \"public\": false,\n  \"async\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Render job status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/infographic/render/jobs/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agents",
+                "infographic",
+                "render",
+                "jobs",
+                "{{jobId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

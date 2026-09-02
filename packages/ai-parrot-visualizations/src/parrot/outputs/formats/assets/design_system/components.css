@@ -1,0 +1,339 @@
+/* ─────────────────────────────────────────────
+ * Design system — components.css (FEAT-493)
+ * Card variants, KPI grid, panels, tabs, callouts, timeline, progress,
+ * filter bar. Class emission stays additive (a2ui-* classes are never
+ * replaced) — TASK-2709/2710/2715/2716 append the classes this file
+ * styles.
+ * ───────────────────────────────────────────── */
+
+/* ---------- Cards ---------- */
+.a2ui-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: var(--density-padding, 1rem);
+}
+
+/* Flat, borderless surface used for chart/table variant Cards. */
+.panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: var(--density-padding, 1rem);
+}
+
+/* Report-variant Card: a denser, document-like presentation. */
+.report-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: var(--density-padding, 1rem);
+}
+.report-card > .ds-title:first-child {
+    margin-top: 0;
+}
+
+/* ---------- KPI hero row ---------- */
+/* A static, print-safe fallback column count. layout-analytics.css
+ * overrides this with a responsive column count for screen surfaces —
+ * kept static here so the print layout's composed sheet never carries a
+ * responsive grid function. */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--density-gap, 1rem);
+    margin-bottom: var(--density-gap, 1rem);
+}
+
+.kpi-card {
+    text-align: left;
+}
+
+.kpi-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--neutral-muted);
+    margin-bottom: 0.35rem;
+}
+
+.kpi-value {
+    font-family: var(--mono-family);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--neutral-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi-unit {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--neutral-muted);
+    margin-left: 0.25rem;
+}
+
+.kpi-delta {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.kpi-delta[data-trend="up"] { color: var(--accent-green); }
+.kpi-delta[data-trend="down"] { color: var(--accent-red); }
+.kpi-delta[data-trend="flat"] { color: var(--neutral-muted); }
+
+/* ---------- Semantic text roles (design-system equivalents) ---------- */
+.ds-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--neutral-text);
+    margin: 0 0 0.5rem;
+}
+.ds-subtitle {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--neutral-muted);
+    margin: 0 0 0.5rem;
+}
+.ds-heading {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--neutral-text);
+    margin: 1rem 0 0.5rem;
+}
+.ds-caption {
+    font-size: 0.8rem;
+    color: var(--neutral-muted);
+}
+.ds-notice {
+    font-size: 0.85rem;
+    color: var(--neutral-muted);
+    background: var(--neutral-bg);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+}
+
+/* ---------- Tabs ---------- */
+.tab-nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+.tab-btn {
+    font-family: var(--font-family);
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.55rem 1.1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    color: var(--neutral-text);
+    cursor: pointer;
+}
+.tab-btn:hover {
+    border-color: var(--primary);
+}
+.tab-btn.active {
+    background: var(--primary);
+    color: var(--on-primary, #fff);
+    border-color: var(--primary-dark);
+}
+.tab-panel {
+    display: none;
+}
+.tab-panel.active {
+    display: block;
+}
+
+/* ---------- Callouts ---------- */
+.callout-block {
+    padding: var(--density-padding, 1rem);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin-bottom: 1rem;
+}
+.callout-block h3 { margin-top: 0; }
+.callout-block.info {
+    background: var(--callout-info-bg, #eff6ff);
+    border-left: 4px solid var(--primary);
+}
+.callout-block.success {
+    background: var(--callout-success-bg, #ecfdf5);
+    border-left: 4px solid var(--accent-green);
+}
+.callout-block.warning {
+    background: var(--callout-warning-bg, #fffbeb);
+    border-left: 4px solid var(--accent-amber);
+}
+.callout-block.error {
+    background: var(--callout-error-bg, #fef2f2);
+    border-left: 4px solid var(--accent-red);
+}
+.callout-block.tip {
+    background: var(--callout-tip-bg, #f0fdfa);
+    border-left: 4px solid var(--accent-teal, #14b8a6);
+}
+
+/* ---------- Timeline ---------- */
+.timeline-block { margin-bottom: 1.5rem; }
+.timeline-event {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    position: relative;
+    padding-left: 1.5rem;
+}
+.timeline-event::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.4rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    background: var(--primary);
+}
+.timeline-event::after {
+    content: '';
+    position: absolute;
+    left: 0.32rem;
+    top: 1.1rem;
+    width: 2px;
+    height: calc(100% + 0.25rem);
+    background: var(--panel-border);
+}
+.timeline-event:last-child::after { display: none; }
+.timeline-date {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--primary);
+    min-width: 5rem;
+}
+.timeline-content { flex: 1; }
+
+/* ---------- Progress ---------- */
+.progress-block { margin-bottom: 1.5rem; }
+.progress-item { margin-bottom: 1rem; }
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+    font-size: 0.9rem;
+}
+.progress-track {
+    background: var(--neutral-bg);
+    border-radius: var(--radius);
+    height: 0.75rem;
+    position: relative;
+    overflow: hidden;
+}
+.progress-fill {
+    height: 100%;
+    border-radius: var(--radius);
+    background: linear-gradient(90deg, var(--primary-light), var(--primary));
+    transition: width 0.3s ease;
+}
+.progress-target {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 2px;
+    background: var(--neutral-text);
+    opacity: 0.4;
+}
+
+/* ---------- Filter bar (markup: TASK-2715/2716) ---------- */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.85rem;
+    margin-bottom: 1rem;
+}
+.filter-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--neutral-muted);
+    text-transform: uppercase;
+    margin-right: 0.15rem;
+}
+.filter-summary {
+    font-size: 0.8rem;
+    color: var(--neutral-muted);
+    background: var(--neutral-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 0.55rem 0.85rem;
+    margin-bottom: 1rem;
+}
+.filter-summary b { color: var(--primary); }
+.msf { position: relative; }
+.msf-btn {
+    font-family: var(--font-family);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--neutral-text);
+    background: var(--neutral-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    min-width: 9rem;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+}
+.msf-btn:hover { border-color: var(--primary); }
+.msf-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    z-index: 200;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-width: 14rem;
+    max-height: 20rem;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+.msf.open .msf-panel { display: block; }
+.msf-opt {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: calc(var(--radius) / 2);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.msf-opt:hover { background: var(--neutral-bg); }
+.reset-btn {
+    margin-left: auto;
+    font-family: var(--font-family);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--neutral-muted);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    cursor: pointer;
+}
+.reset-btn:hover {
+    color: var(--on-primary, #fff);
+    background: var(--neutral-text);
+    border-color: var(--neutral-text);
+}

@@ -43,6 +43,7 @@ from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
     CriterionResult,
+    DispatchLabels,
     ManualCriterion,
     QAReport,
     ResearchOutput,
@@ -50,7 +51,11 @@ from parrot.flows.dev_loop.models import (
     TriageBrief,
     TriageReport,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    condense_qa_failure,
+    register_dev_loop_node,
+)
 from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -63,6 +68,10 @@ _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
 # Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
 # Preceded by whitespace, followed by whitespace, chain operator, or EOL.
 _LINT_TARGET_RE = re.compile(r"(?<=\s)\." r"(?=\s|&&|;|$)")
+
+#: Matches the ``ruff check <targets>`` half of a compound lint command, up to
+#: the next ``&&``/``;`` separator.
+_RUFF_CHECK_RE = re.compile(r"\bruff\s+check\b[^&;]*")
 
 
 class _NoBugBrief(BaseModel):
@@ -458,7 +467,7 @@ class QANode(DevLoopNode):
         # Scope lint/ruff/mypy commands to changed files so pre-existing
         # repo-wide errors don't fail the QA gate for unrelated code.
         changed = await self._get_changed_files(effective_cwd)
-        lint_cmd = self._scope_lint_to_files(self._lint_command, changed)
+        lint_cmd = self._scope_lint_to_files(self._baseline_aware_lint(self._lint_command, changed), changed)
         scoped_criteria = self._scope_criteria(executable, changed)
 
         qa_brief = _QABrief(
@@ -467,18 +476,33 @@ class QANode(DevLoopNode):
             worktree_path=effective_cwd,
             summary=brief.summary,
         )
-        return await self._dispatcher.dispatch(
-            brief=qa_brief,
-            profile=profile,
-            output_model=QAReport,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=effective_cwd,
-            # FEAT-322: fold dispatch-level events into the run's
-            # SessionHost when one is present (see development.py's
-            # dispatch() call for the same pattern/rationale).
-            session_host=shared.get("session_host"),
-        )
+        try:
+            return await self._dispatcher.dispatch(
+                brief=qa_brief,
+                profile=profile,
+                output_model=QAReport,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=effective_cwd,
+                # FEAT-322: fold dispatch-level events into the run's
+                # SessionHost when one is present (see development.py's
+                # dispatch() call for the same pattern/rationale).
+                session_host=shared.get("session_host"),
+                # FEAT-496: label QANode's own dispatch with its subagent.
+                labels=DispatchLabels(subagent=profile.subagent, seat=self.name),
+            )
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await self._dispatcher.dispatch(
+                brief=qa_brief,
+                profile=profile,
+                output_model=QAReport,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=effective_cwd,
+                session_host=shared.get("session_host"),
+            )
 
     # ------------------------------------------------------------------
     # Default criterion derivation (briefless topologies)
@@ -707,6 +731,97 @@ class QANode(DevLoopNode):
                 continue
         return []
 
+    # ------------------------------------------------------------------
+    # Triage evidence — git is the authority, not the worker's claim
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _git_state(worktree_path: str) -> tuple[str, frozenset[str]]:
+        """The worktree's ``(HEAD sha, dirty paths)`` at this instant.
+
+        Both halves degrade to empty on any git failure, which makes
+        :meth:`_paths_touched_since` report "nothing changed" rather than
+        inventing evidence — the fail-closed direction for a gate.
+
+        Args:
+            worktree_path: The feature worktree to inspect.
+
+        Returns:
+            The HEAD commit sha (``""`` when unavailable) and the set of
+            paths with uncommitted modifications, staged or not.
+        """
+
+        async def _run(*args: str) -> str:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git",
+                    *args,
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+            except Exception:  # noqa: BLE001 - a missing worktree is not fatal
+                return ""
+            return stdout.decode() if proc.returncode == 0 else ""
+
+        head = (await _run("rev-parse", "HEAD")).strip()
+        dirty = frozenset(
+            entry
+            for line in (await _run("status", "--porcelain")).splitlines()
+            # Porcelain v1: two status chars, a space, then the path. A
+            # rename reads "R  old -> new"; the post-rename path is what a
+            # later lint/pytest run can actually open, so keep that half.
+            if (entry := line[3:].strip().split(" -> ")[-1])
+        )
+        return head, dirty
+
+    @classmethod
+    async def _paths_touched_since(
+        cls,
+        worktree_path: str,
+        before: tuple[str, frozenset[str]],
+    ) -> list[str]:
+        """Every path that really changed between ``before`` and now.
+
+        A DELTA, deliberately — not an absolute diff against the base
+        branch. By the time triage runs, ``DevelopmentNode`` has already
+        committed the feature's work, so an absolute diff would "verify"
+        any claim naming a file development touched. Only what moved
+        during the triage dispatch is evidence that triage did anything.
+
+        Args:
+            worktree_path: The feature worktree to inspect.
+            before: The :meth:`_git_state` snapshot taken pre-dispatch.
+
+        Returns:
+            Sorted repo-relative paths: newly dirty files, plus everything
+            in commits the triage dispatch added.
+        """
+        before_head, before_dirty = before
+        after_head, after_dirty = await cls._git_state(worktree_path)
+
+        touched: set = set(after_dirty - before_dirty)
+
+        if before_head and after_head and before_head != after_head:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git",
+                    "diff",
+                    "--name-only",
+                    f"{before_head}..{after_head}",
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0:
+                    touched.update(p.strip() for p in stdout.decode().splitlines() if p.strip())
+            except Exception:  # noqa: BLE001, S110 - degrade to the dirty-set delta
+                pass
+
+        return sorted(touched)
+
     @staticmethod
     def _scope_lint_to_files(command: str, files: List[str]) -> str:
         """Replace whole-repo targets (``.``) with explicit file paths.
@@ -728,6 +843,46 @@ class QANode(DevLoopNode):
 
         parts = re.split(r"(&&|;)", command)
         return "".join(_scope_part(p) if i % 2 == 0 else p for i, p in enumerate(parts))
+
+    @classmethod
+    def _baseline_aware_lint(cls, command: str, files: list[str]) -> str:
+        """Swap ``ruff check <targets>`` for the diff-scoped runner.
+
+        Scoping lint to the changed FILES (``_scope_lint_to_files``) stops
+        unrelated modules from failing the gate, but still lints each
+        changed file in full — so a five-line edit to a module carrying
+        pre-existing findings inherits all of them as blockers, and the QA
+        feedback then asks the worker to fix debt the feature never
+        touched. ``scripts/sdd/lint_new.py`` reports only findings whose
+        source range intersects a line this branch changed.
+
+        Only the ``ruff`` half is rewritten: the ``mypy`` half stays on the
+        existing file-scoping path (``_scope_lint_to_files``), and a lint
+        command with no ``ruff check`` in it is returned untouched, so an
+        operator-configured command keeps working.
+
+        Args:
+            command: The configured lint command.
+            files: Changed files, already resolved by the caller.
+
+        Returns:
+            The rewritten command, or ``command`` unchanged when there is
+            nothing to scope or no ``ruff check`` to replace.
+        """
+        if not files:
+            return command
+        file_args = " ".join(shlex.quote(f) for f in files)
+        replacement = f"python -m scripts.sdd.lint_new {file_args}"
+
+        def _sub(match: re.Match[str]) -> str:
+            # `_RUFF_CHECK_RE`'s `[^&;]*` also consumes the trailing
+            # whitespace before a `&&`/`;` separator (or EOL) — preserve it
+            # so a compound command doesn't lose its separating space.
+            span = match.group(0)
+            trailing = span[len(span.rstrip()) :]
+            return replacement + trailing
+
+        return _RUFF_CHECK_RE.sub(_sub, command, count=1)
 
     @classmethod
     def _scope_criteria(
@@ -859,22 +1014,46 @@ class QANode(DevLoopNode):
             qa_criterion_results=qa_results,
             qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
+        reviewer = self._active_reviewer(shared)
         try:
-            verdict = await self._active_reviewer(shared).review(
-                brief=review_brief,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=review_cwd,
-                # FEAT-322: fold dispatch-level events into the run's
-                # SessionHost when one is present.
-                session_host=shared.get("session_host"),
-                # FEAT-378 (code-review finding): the QA-attempt-scoped round
-                # identifier JudgePanelReviewDispatcher stamps onto each
-                # JudgeVerdictRecorded action ("qa-1", "qa-2", ... — same
-                # convention as QaAttemptRecorded's attempt number above).
-                # Ignored by every non-panel dispatcher.
-                round=f"qa-{shared.get('qa_attempt', 1)}",
-            )
+            try:
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    # FEAT-322: fold dispatch-level events into the run's
+                    # SessionHost when one is present.
+                    session_host=shared.get("session_host"),
+                    # FEAT-378 (code-review finding): the QA-attempt-scoped
+                    # round identifier JudgePanelReviewDispatcher stamps onto
+                    # each JudgeVerdictRecorded action ("qa-1", "qa-2", ... —
+                    # same convention as QaAttemptRecorded's attempt number
+                    # above). Ignored by every non-panel dispatcher.
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                    # FEAT-496: label QANode's own code-review dispatch. A
+                    # panel reviewer stamps its own per-judge labels and only
+                    # reads `.attempt` off this one; a single reviewer
+                    # forwards it straight through to `dispatch()`.
+                    labels=DispatchLabels(subagent="sdd-codereview", seat=self.name),
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a reviewer that fully
+                # overrides review() without a labels= parameter (e.g.
+                # NovaAdversarialReviewDispatcher, which has no underlying
+                # dispatcher to delegate to and so cannot inherit the ABC's
+                # own labels fallback) must still actually run, not silently
+                # skip via the degrade-on-infra-error path below.
+                if "labels" not in str(exc):
+                    raise
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    session_host=shared.get("session_host"),
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)
             shared["_code_review_verdict"] = None
@@ -961,15 +1140,30 @@ class QANode(DevLoopNode):
         )
 
         async def _dispatch_once() -> TriageReport:
-            return await self._dispatcher.dispatch(
-                brief=triage_brief,
-                profile=profile,
-                output_model=TriageReport,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=worktree_path,
-                session_host=shared.get("session_host"),
-            )
+            try:
+                return await self._dispatcher.dispatch(
+                    brief=triage_brief,
+                    profile=profile,
+                    output_model=TriageReport,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=worktree_path,
+                    session_host=shared.get("session_host"),
+                    # FEAT-496: label the triage worker's own dispatch.
+                    labels=DispatchLabels(subagent=profile.subagent, seat=self.name),
+                )
+            except TypeError as exc:
+                if "labels" not in str(exc):
+                    raise
+                return await self._dispatcher.dispatch(
+                    brief=triage_brief,
+                    profile=profile,
+                    output_model=TriageReport,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=worktree_path,
+                    session_host=shared.get("session_host"),
+                )
 
         def _index(report: TriageReport) -> Dict[str, AdversarialFinding]:
             # FEAT-375 code-review fix: match on the stable `finding_id`
@@ -983,6 +1177,7 @@ class QANode(DevLoopNode):
                 f for f in findings if indexed.get(f.finding_id) is None or indexed[f.finding_id].disposition is None
             ]
 
+        before_state = await self._git_state(worktree_path)
         report = await _dispatch_once()
         indexed = _index(report)
         if _missing(indexed):
@@ -998,7 +1193,21 @@ class QANode(DevLoopNode):
         ttl_seconds = conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION
         escalated_gate_ids: List[str] = []
 
-        files_modified_set = set(report.files_modified)
+        # The worker's `files_modified` is a claim, not evidence. Git is the
+        # authority — both for triggering the (expensive) deterministic
+        # re-run and for `_confirm_has_evidence`, which would otherwise be
+        # validating the worker's claim against the worker's own claim.
+        actual_modified = await self._paths_touched_since(worktree_path, before_state)
+        unverified = [p for p in report.files_modified if p not in set(actual_modified)]
+        if unverified:
+            self.logger.warning(
+                "Triage worker claimed %d modified file(s) git cannot see; "
+                "dropping the claim and using git's %d instead. Unverified: %s",
+                len(unverified),
+                len(actual_modified),
+                unverified[:20],
+            )
+        files_modified_set = set(actual_modified)
         for finding in findings:
             resolved = indexed.get(finding.finding_id)
             if resolved is None or resolved.disposition is None:
@@ -1042,15 +1251,15 @@ class QANode(DevLoopNode):
                     )
                     escalated_gate_ids.append(gate_id)
             # CONFIRM (with verified evidence): no note of its own — its fix
-            # surfaces via `report.files_modified`, which triggers the
-            # existing deterministic-QA rerun.
+            # surfaces via the git-observed `actual_modified` set, which
+            # triggers the existing deterministic-QA rerun.
 
         escalation_passed = True
         if escalated_gate_ids and session_host is not None:
             resolved_gates = await asyncio.gather(*(session_host.wait_gate(gate_id) for gate_id in escalated_gate_ids))
             escalation_passed = all(gate.status == "approved" for gate in resolved_gates)
 
-        return notes, list(report.files_modified), escalation_passed
+        return notes, list(actual_modified), escalation_passed
 
     @staticmethod
     def _confirm_has_evidence(resolved: AdversarialFinding, files_modified: set) -> bool:

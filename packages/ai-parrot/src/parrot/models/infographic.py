@@ -22,6 +22,7 @@ Block Types:
     - ChecklistBlock: Visual checkbox-style list
     - TabViewBlock: Tabbed navigation with nested content panes
 """
+
 from typing import (
     List,
     Optional,
@@ -45,15 +46,14 @@ from pydantic import (
     model_validator,
 )
 
-
 # ──────────────────────────────────────────────
 # CSS color validator (reusable)
 # ──────────────────────────────────────────────
 
 _CSS_COLOR_RE = re.compile(
-    r'^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+(?:\s*,\s*[\d.]+)?\s*\)'
-    r'|hsla?\(\s*[\d.]+\s*,\s*[\d.%]+\s*,\s*[\d.%]+(?:\s*,\s*[\d.]+)?\s*\)'
-    r'|[a-zA-Z][-a-zA-Z]*|var\(--[-\w]+\))$'
+    r"^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+(?:\s*,\s*[\d.]+)?\s*\)"
+    r"|hsla?\(\s*[\d.]+\s*,\s*[\d.%]+\s*,\s*[\d.%]+(?:\s*,\s*[\d.]+)?\s*\)"
+    r"|[a-zA-Z][-a-zA-Z]*|var\(--[-\w]+\))$"
 )
 
 
@@ -75,8 +75,10 @@ def _validate_css_color(v: Any) -> Any:
 # Enums
 # ──────────────────────────────────────────────
 
+
 class BlockType(str, Enum):
     """Available infographic block types."""
+
     TITLE = "title"
     HERO_CARD = "hero_card"
     SUMMARY = "summary"
@@ -100,6 +102,7 @@ class BlockType(str, Enum):
 
 class ChartType(str, Enum):
     """Supported chart types for ChartBlock."""
+
     BAR = "bar"
     LINE = "line"
     PIE = "pie"
@@ -116,6 +119,7 @@ class ChartType(str, Enum):
 
 class TrendDirection(str, Enum):
     """Trend direction for hero card metrics."""
+
     UP = "up"
     DOWN = "down"
     FLAT = "flat"
@@ -123,6 +127,7 @@ class TrendDirection(str, Enum):
 
 class CalloutLevel(str, Enum):
     """Severity/type for callout blocks."""
+
     INFO = "info"
     SUCCESS = "success"
     WARNING = "warning"
@@ -132,6 +137,7 @@ class CalloutLevel(str, Enum):
 
 class TableStyle(str, Enum):
     """Visual style variants for TableBlock."""
+
     DEFAULT = "default"
     STRIPED = "striped"
     BORDERED = "bordered"
@@ -141,6 +147,7 @@ class TableStyle(str, Enum):
 
 class BulletListStyle(str, Enum):
     """Visual style variants for BulletListBlock."""
+
     DEFAULT = "default"
     TITLED = "titled"
     COMPACT = "compact"
@@ -149,6 +156,7 @@ class BulletListStyle(str, Enum):
 # ──────────────────────────────────────────────
 # I18n text
 # ──────────────────────────────────────────────
+
 
 def _validate_i18n_text(value: Any) -> Any:
     """Validate an ``I18nText`` value's dict form (code review hardening).
@@ -172,10 +180,7 @@ def _validate_i18n_text(value: Any) -> Any:
             raise ValueError("I18nText mapping must not be empty")
         for locale, text in value.items():
             if not isinstance(text, str) or not text:
-                raise ValueError(
-                    f"I18nText mapping value for locale {locale!r} must be "
-                    "a non-empty string"
-                )
+                raise ValueError(f"I18nText mapping value for locale {locale!r} must be " "a non-empty string")
     return value
 
 
@@ -195,16 +200,14 @@ string values (see :func:`_validate_i18n_text`).
 # so forward references can be resolved)
 # ──────────────────────────────────────────────
 
+
 class ColumnDef(BaseModel):
     """Column definition for TableBlock with optional styling."""
+
     header: str = Field(..., description="Column header text")
     width: Optional[str] = Field(None, description="CSS width (e.g., '200px', '30%')")
-    align: Optional[Literal["left", "center", "right"]] = Field(
-        None, description="Text alignment for this column"
-    )
-    color: Optional[str] = Field(
-        None, description="Accent color for the column header"
-    )
+    align: Optional[Literal["left", "center", "right"]] = Field(None, description="Text alignment for this column")
+    color: Optional[str] = Field(None, description="Accent color for the column header")
 
     @field_validator("color", mode="before")
     @classmethod
@@ -215,6 +218,7 @@ class ColumnDef(BaseModel):
 
 class AccordionItem(BaseModel):
     """A single collapsible item within an AccordionBlock."""
+
     id: Optional[str] = Field(None, description="Unique ID; auto-generated if None")
     title: str = Field(..., description="Accordion section title")
     subtitle: Optional[str] = Field(None, description="Optional subtitle below title")
@@ -241,20 +245,18 @@ class AccordionItem(BaseModel):
 
 class ChecklistItem(BaseModel):
     """A single item in a ChecklistBlock."""
+
     text: str = Field(..., description="Checklist item text")
     checked: bool = Field(False, description="Whether the item is checked")
-    description: Optional[str] = Field(
-        None, description="Optional description below the item text"
-    )
+    description: Optional[str] = Field(None, description="Optional description below the item text")
 
 
 class TabPane(BaseModel):
     """A single tab pane within a TabViewBlock."""
+
     id: str = Field(..., description="Unique slug identifier for this tab")
     label: str = Field(..., description="Tab button label text")
-    icon: Optional[str] = Field(
-        None, description="Emoji or CSS icon class for the tab button"
-    )
+    icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the tab button")
     blocks: List[Any] = Field(
         default_factory=list,
         description="InfographicBlock items inside this tab pane.",
@@ -263,10 +265,9 @@ class TabPane(BaseModel):
 
 class ChainNode(BaseModel):
     """A single node within a ChainBlock flow/chain diagram."""
+
     label: I18nText = Field(..., description="Node label text")
-    description: Optional[I18nText] = Field(
-        None, description="Optional supporting text for the node"
-    )
+    description: Optional[I18nText] = Field(None, description="Optional supporting text for the node")
     icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the node")
     color: Optional[str] = Field(None, description="Node accent color")
 
@@ -279,10 +280,9 @@ class ChainNode(BaseModel):
 
 class StepItem(BaseModel):
     """A single step within a StepsBlock step-by-step guide."""
+
     label: I18nText = Field(..., description="Step label text")
-    description: Optional[I18nText] = Field(
-        None, description="Optional supporting text for the step"
-    )
+    description: Optional[I18nText] = Field(None, description="Optional supporting text for the step")
     icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the step")
     color: Optional[str] = Field(None, description="Step accent color")
 
@@ -295,6 +295,7 @@ class StepItem(BaseModel):
 
 class GridCard(BaseModel):
     """A single card within a CardGridBlock."""
+
     title: I18nText = Field(..., description="Card title text")
     body: Optional[I18nText] = Field(None, description="Card body text")
     icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the card")
@@ -311,8 +312,10 @@ class GridCard(BaseModel):
 # Block Models
 # ──────────────────────────────────────────────
 
+
 class TitleBlock(BaseModel):
     """Main title/subtitle header block."""
+
     type: Literal["title"] = "title"
     title: str = Field(..., max_length=200, description="Main heading text")
     subtitle: Optional[str] = Field(None, description="Secondary heading or tagline")
@@ -323,6 +326,7 @@ class TitleBlock(BaseModel):
 
 class HeroCardBlock(BaseModel):
     """Key metric card with value, label, and optional trend indicator."""
+
     type: Literal["hero_card"] = "hero_card"
     label: str = Field(
         "",
@@ -332,23 +336,11 @@ class HeroCardBlock(BaseModel):
         "",
         description="Formatted metric value (e.g., '$1.2M', '98%')",
     )
-    icon: Optional[str] = Field(
-        None,
-        description="Icon identifier (e.g., 'money', 'users', 'chart', 'time', 'target')"
-    )
+    icon: Optional[str] = Field(None, description="Icon identifier (e.g., 'money', 'users', 'chart', 'time', 'target')")
     trend: Optional[TrendDirection] = Field(None, description="Trend direction")
-    trend_value: Optional[str] = Field(
-        None,
-        description="Trend change text (e.g., '+12.5%', '-3 pts')"
-    )
-    comparison_period: Optional[str] = Field(
-        None,
-        description="Period for comparison (e.g., 'vs last month')"
-    )
-    color: Optional[str] = Field(
-        None,
-        description="Accent color for this card (CSS color value)"
-    )
+    trend_value: Optional[str] = Field(None, description="Trend change text (e.g., '+12.5%', '-3 pts')")
+    comparison_period: Optional[str] = Field(None, description="Period for comparison (e.g., 'vs last month')")
+    color: Optional[str] = Field(None, description="Accent color for this card (CSS color value)")
 
     @field_validator("color", mode="before")
     @classmethod
@@ -378,16 +370,38 @@ class HeroCardBlock(BaseModel):
         return None
 
     _LABEL_ALIASES: ClassVar[Tuple[str, ...]] = (
-        "label", "title", "name", "metric", "metric_name",
-        "caption", "heading", "header", "key",
+        "label",
+        "title",
+        "name",
+        "metric",
+        "metric_name",
+        "caption",
+        "heading",
+        "header",
+        "key",
     )
     _VALUE_ALIASES: ClassVar[Tuple[str, ...]] = (
-        "value", "number", "text", "content", "figure",
-        "count", "total", "amount", "kpi_value", "metric_value",
+        "value",
+        "number",
+        "text",
+        "content",
+        "figure",
+        "count",
+        "total",
+        "amount",
+        "kpi_value",
+        "metric_value",
     )
     _NESTED_WRAPPERS: ClassVar[Tuple[str, ...]] = (
-        "card", "card_data", "data", "metric", "kpi",
-        "content", "callout", "hero_card", "details",
+        "card",
+        "card_data",
+        "data",
+        "metric",
+        "kpi",
+        "content",
+        "callout",
+        "hero_card",
+        "details",
     )
 
     @model_validator(mode="before")
@@ -465,17 +479,11 @@ class HeroCardBlock(BaseModel):
 
 class SummaryBlock(BaseModel):
     """Rich text summary paragraph."""
+
     type: Literal["summary"] = "summary"
     title: Optional[str] = Field(None, description="Section heading")
-    content: str = Field(
-        ...,
-        max_length=2000,
-        description="Summary text content. Supports markdown formatting."
-    )
-    highlight: Optional[bool] = Field(
-        False,
-        description="Whether to visually emphasize this block"
-    )
+    content: str = Field(..., max_length=2000, description="Summary text content. Supports markdown formatting.")
+    highlight: Optional[bool] = Field(False, description="Whether to visually emphasize this block")
 
     @model_validator(mode="before")
     @classmethod
@@ -488,11 +496,9 @@ class SummaryBlock(BaseModel):
 
 class ChartDataSeries(BaseModel):
     """A single data series for chart rendering."""
+
     name: str = Field(..., description="Series name/label")
-    values: List[Union[int, float, None]] = Field(
-        ...,
-        description="Data values corresponding to labels"
-    )
+    values: List[Union[int, float, None]] = Field(..., description="Data values corresponding to labels")
     color: Optional[str] = Field(None, description="Series color")
 
     @field_validator("color", mode="before")
@@ -504,18 +510,13 @@ class ChartDataSeries(BaseModel):
 
 class ChartBlock(BaseModel):
     """Chart specification block. Frontend renders using its preferred library."""
+
     type: Literal["chart"] = "chart"
     chart_type: ChartType = Field(..., description="Type of chart to render")
     title: Optional[str] = Field(None, description="Chart title")
     description: Optional[str] = Field(None, description="Caption or description")
-    labels: List[str] = Field(
-        ...,
-        description="Category/axis labels (x-axis for bar/line, slices for pie)"
-    )
-    series: List[ChartDataSeries] = Field(
-        ...,
-        description="One or more data series"
-    )
+    labels: List[str] = Field(..., description="Category/axis labels (x-axis for bar/line, slices for pie)")
+    series: List[ChartDataSeries] = Field(..., description="One or more data series")
     x_axis_label: Optional[str] = Field(None, description="X-axis label")
     y_axis_label: Optional[str] = Field(None, description="Y-axis label")
     stacked: Optional[bool] = Field(False, description="Whether series are stacked")
@@ -623,9 +624,7 @@ class ChartBlock(BaseModel):
             return values
 
         values["labels"] = [str(row.get(x_key, "")) for row in records]
-        values["series"] = [
-            {"name": col, "values": [row.get(col) for row in records]} for col in y_keys
-        ]
+        values["series"] = [{"name": col, "values": [row.get(col) for row in records]} for col in y_keys]
         values.pop("data", None)
         values.pop("rows", None)
         return values
@@ -645,10 +644,7 @@ class ChartBlock(BaseModel):
         x_col: str = self.x_axis_label or "category"
         y_cols: List[str] = [s.name for s in self.series]
         rows: List[dict] = [
-            {x_col: label, **{
-                s.name: s.values[i] if i < len(s.values) else None
-                for s in self.series
-            }}
+            {x_col: label, **{s.name: s.values[i] if i < len(s.values) else None for s in self.series}}
             for i, label in enumerate(self.labels)
         ]
 
@@ -686,8 +682,7 @@ class ChartBlock(BaseModel):
         rows: List[dict] = cfg.data or []
         labels: List[str] = [str(row.get(cfg.x, "")) for row in rows]
         series: List[ChartDataSeries] = [
-            ChartDataSeries(name=col, values=[row.get(col) for row in rows])
-            for col in cfg.y
+            ChartDataSeries(name=col, values=[row.get(col) for row in rows]) for col in cfg.y
         ]
 
         try:
@@ -714,32 +709,18 @@ class ChartBlock(BaseModel):
 
 class BulletListBlock(BaseModel):
     """Ordered or unordered list of items."""
+
     type: Literal["bullet_list"] = "bullet_list"
     title: Optional[str] = Field(None, description="List heading")
     items: List[Annotated[str, Field(max_length=500)]] = Field(
-        ...,
-        description="List items (max 500 chars each). Each item supports markdown formatting."
+        ..., description="List items (max 500 chars each). Each item supports markdown formatting."
     )
     ordered: Optional[bool] = Field(False, description="Numbered list if True")
-    icon: Optional[str] = Field(
-        None,
-        description="Custom icon for list items (e.g., 'check', 'arrow', 'star')"
-    )
+    icon: Optional[str] = Field(None, description="Custom icon for list items (e.g., 'check', 'arrow', 'star')")
     # New styling fields (backward compatible — all default to None)
-    color: Optional[str] = Field(
-        None,
-        description="Dot indicator color as CSS hex value (e.g., '#534AB7')"
-    )
-    columns: Optional[int] = Field(
-        None,
-        ge=1,
-        le=4,
-        description="Number of grid columns for multi-column layout (1-4)"
-    )
-    style: Optional[BulletListStyle] = Field(
-        None,
-        description="Visual style variant for the list"
-    )
+    color: Optional[str] = Field(None, description="Dot indicator color as CSS hex value (e.g., '#534AB7')")
+    columns: Optional[int] = Field(None, ge=1, le=4, description="Number of grid columns for multi-column layout (1-4)")
+    style: Optional[BulletListStyle] = Field(None, description="Visual style variant for the list")
 
     @field_validator("color", mode="before")
     @classmethod
@@ -750,37 +731,21 @@ class BulletListBlock(BaseModel):
 
 class TableBlock(BaseModel):
     """Tabular data block."""
+
     type: Literal["table"] = "table"
     title: Optional[str] = Field(None, description="Table caption/title")
     columns: Union[List[str], List[ColumnDef]] = Field(
-        ...,
-        description="Column header names (str) or ColumnDef objects with styling"
+        ..., description="Column header names (str) or ColumnDef objects with styling"
     )
-    rows: List[List[Any]] = Field(
-        ...,
-        description="Row data, each row is a list of cell values"
-    )
+    rows: List[List[Any]] = Field(..., description="Row data, each row is a list of cell values")
     highlight_first_column: Optional[bool] = Field(
-        False,
-        description="Visually emphasize the first column as row headers"
+        False, description="Visually emphasize the first column as row headers"
     )
-    sortable: Optional[bool] = Field(
-        False,
-        description="Whether the frontend should allow column sorting"
-    )
+    sortable: Optional[bool] = Field(False, description="Whether the frontend should allow column sorting")
     # New styling fields (backward compatible — all default to None/True)
-    style: Optional[TableStyle] = Field(
-        None,
-        description="Visual style variant for the table"
-    )
-    responsive: Optional[bool] = Field(
-        True,
-        description="Wrap table in a responsive scroll container"
-    )
-    caption: Optional[str] = Field(
-        None,
-        description="HTML caption element text"
-    )
+    style: Optional[TableStyle] = Field(None, description="Visual style variant for the table")
+    responsive: Optional[bool] = Field(True, description="Wrap table in a responsive scroll container")
+    caption: Optional[str] = Field(None, description="HTML caption element text")
 
     @model_validator(mode="before")
     @classmethod
@@ -822,32 +787,25 @@ class TableBlock(BaseModel):
                 # ColumnDef format — leave columns as-is, normalize rows only if needed
                 if rows and isinstance(rows[0], dict):
                     col_keys = [c.get("header", "") for c in cols]
-                    values["rows"] = [
-                        [row.get(k, "") for k in col_keys] for row in rows
-                    ]
+                    values["rows"] = [[row.get(k, "") for k in col_keys] for row in rows]
             else:
                 # Legacy format: {"key": ..., "label": ...}
                 col_keys = [c.get("key", "") for c in cols]
-                values["columns"] = [
-                    c.get("label", c.get("key", str(c))) for c in cols
-                ]
+                values["columns"] = [c.get("label", c.get("key", str(c))) for c in cols]
                 if rows and isinstance(rows[0], dict):
                     if not col_keys:
                         col_keys = list(cols) if cols else list(rows[0].keys())
-                    values["rows"] = [
-                        [row.get(k, "") for k in col_keys] for row in rows
-                    ]
+                    values["rows"] = [[row.get(k, "") for k in col_keys] for row in rows]
         elif rows and isinstance(rows[0], dict):
             if not col_keys:
                 col_keys = list(cols) if cols else list(rows[0].keys())
-            values["rows"] = [
-                [row.get(k, "") for k in col_keys] for row in rows
-            ]
+            values["rows"] = [[row.get(k, "") for k in col_keys] for row in rows]
         return values
 
 
 class ImageBlock(BaseModel):
     """Image reference block."""
+
     type: Literal["image"] = "image"
     url: Optional[str] = Field(None, description="Image URL")
     base64: Optional[str] = Field(None, description="Base64-encoded image data")
@@ -858,6 +816,7 @@ class ImageBlock(BaseModel):
 
 class QuoteBlock(BaseModel):
     """Highlighted quote or testimonial."""
+
     type: Literal["quote"] = "quote"
     text: str = Field(..., description="Quote text")
     author: Optional[str] = Field(None, description="Attribution")
@@ -866,11 +825,9 @@ class QuoteBlock(BaseModel):
 
 class CalloutBlock(BaseModel):
     """Alert/info/warning box."""
+
     type: Literal["callout"] = "callout"
-    level: CalloutLevel = Field(
-        CalloutLevel.INFO,
-        description="Callout type: info, success, warning, error, tip"
-    )
+    level: CalloutLevel = Field(CalloutLevel.INFO, description="Callout type: info, success, warning, error, tip")
     title: Optional[str] = Field(None, description="Callout heading")
     content: str = Field(..., description="Callout body text")
 
@@ -893,15 +850,16 @@ class CalloutBlock(BaseModel):
 
 class DividerBlock(BaseModel):
     """Visual separator between sections."""
+
     type: Literal["divider"] = "divider"
     style: Optional[Literal["solid", "dashed", "dotted", "gradient"]] = Field(
-        "solid",
-        description="Divider visual style"
+        "solid", description="Divider visual style"
     )
 
 
 class TimelineEvent(BaseModel):
     """A single event in a timeline."""
+
     date: str = Field(..., description="Date or time label")
     title: str = Field(..., description="Event title")
     description: Optional[str] = Field(None, description="Event details")
@@ -917,30 +875,19 @@ class TimelineEvent(BaseModel):
 
 class TimelineBlock(BaseModel):
     """Chronological sequence of events."""
+
     type: Literal["timeline"] = "timeline"
     title: Optional[str] = Field(None, description="Timeline heading")
-    events: List[TimelineEvent] = Field(
-        ...,
-        description="Ordered list of timeline events"
-    )
+    events: List[TimelineEvent] = Field(..., description="Ordered list of timeline events")
 
 
 class ProgressItem(BaseModel):
     """A single progress indicator."""
+
     label: str = Field(..., description="Progress item label")
-    value: float = Field(
-        ...,
-        ge=0.0,
-        le=100.0,
-        description="Completion percentage (0-100)"
-    )
+    value: float = Field(..., ge=0.0, le=100.0, description="Completion percentage (0-100)")
     color: Optional[str] = Field(None, description="Progress bar color")
-    target: Optional[float] = Field(
-        None,
-        ge=0.0,
-        le=100.0,
-        description="Target value to display as reference"
-    )
+    target: Optional[float] = Field(None, ge=0.0, le=100.0, description="Target value to display as reference")
 
     @field_validator("color", mode="before")
     @classmethod
@@ -951,101 +898,76 @@ class ProgressItem(BaseModel):
 
 class ProgressBlock(BaseModel):
     """Progress/completion indicators."""
+
     type: Literal["progress"] = "progress"
     title: Optional[str] = Field(None, description="Section heading")
-    items: List[ProgressItem] = Field(
-        ...,
-        description="List of progress indicators"
-    )
+    items: List[ProgressItem] = Field(..., description="List of progress indicators")
 
 
 class AccordionBlock(BaseModel):
     """Collapsible accordion sections with optional nested block content."""
+
     type: Literal["accordion"] = "accordion"
     title: Optional[str] = Field(None, description="Accordion group title")
-    items: List[AccordionItem] = Field(
-        ...,
-        description="List of collapsible accordion sections"
-    )
-    allow_multiple: bool = Field(
-        True,
-        description="Whether multiple sections can be expanded simultaneously"
-    )
+    items: List[AccordionItem] = Field(..., description="List of collapsible accordion sections")
+    allow_multiple: bool = Field(True, description="Whether multiple sections can be expanded simultaneously")
 
 
 class ChecklistBlock(BaseModel):
     """Visual checkbox-style list with optional checked/unchecked state."""
+
     type: Literal["checklist"] = "checklist"
     title: Optional[str] = Field(None, description="Checklist heading")
-    items: List[ChecklistItem] = Field(
-        ...,
-        description="List of checklist items with checked state"
-    )
+    items: List[ChecklistItem] = Field(..., description="List of checklist items with checked state")
     style: Optional[Literal["default", "acceptance", "todo", "compact"]] = Field(
-        "default",
-        description="Visual style variant"
+        "default", description="Visual style variant"
     )
 
 
 class TabViewBlock(BaseModel):
     """Tabbed navigation block containing multiple content panes."""
+
     type: Literal["tab_view"] = "tab_view"
-    tabs: List[TabPane] = Field(
-        ...,
-        min_length=2,
-        description="List of tab panes (minimum 2 required)"
-    )
-    active_tab: Optional[str] = Field(
-        None,
-        description="ID of the default active tab (defaults to first tab)"
-    )
-    style: Optional[Literal["pills", "underline", "boxed"]] = Field(
-        "pills",
-        description="Tab navigation visual style"
-    )
+    tabs: List[TabPane] = Field(..., min_length=2, description="List of tab panes (minimum 2 required)")
+    active_tab: Optional[str] = Field(None, description="ID of the default active tab (defaults to first tab)")
+    style: Optional[Literal["pills", "underline", "boxed"]] = Field("pills", description="Tab navigation visual style")
 
 
 class ChainBlock(BaseModel):
     """Flow/chain diagram block — sequential process with labeled nodes."""
+
     type: Literal["chain"] = "chain"
     title: Optional[I18nText] = Field(None, description="Chain diagram heading")
     nodes: List[ChainNode] = Field(..., description="Ordered list of chain nodes")
-    direction: Literal["horizontal", "vertical"] = Field(
-        "horizontal", description="Layout direction of the chain"
-    )
+    direction: Literal["horizontal", "vertical"] = Field("horizontal", description="Layout direction of the chain")
 
 
 class StepsBlock(BaseModel):
     """Step-by-step guide with numbered/labeled stages."""
+
     type: Literal["steps"] = "steps"
     title: Optional[I18nText] = Field(None, description="Steps guide heading")
     steps: List[StepItem] = Field(..., description="Ordered list of steps")
-    style: Literal["numbered", "icon"] = Field(
-        "numbered", description="Visual style for step markers"
-    )
+    style: Literal["numbered", "icon"] = Field("numbered", description="Visual style for step markers")
 
 
 class CodeBlock(BaseModel):
     """Code snippet block with optional language hint and line highlights."""
+
     type: Literal["code"] = "code"
     title: Optional[I18nText] = Field(None, description="Code block heading")
     code: str = Field(..., description="Raw source text, rendered verbatim")
-    language: Optional[str] = Field(
-        None, description="Language hint, e.g. 'python'"
-    )
-    highlight_lines: Optional[List[int]] = Field(
-        None, description="1-based line numbers to highlight"
-    )
+    language: Optional[str] = Field(None, description="Language hint, e.g. 'python'")
+    highlight_lines: Optional[List[int]] = Field(None, description="1-based line numbers to highlight")
 
 
 class CardGridBlock(BaseModel):
     """Grid of cards (e.g., feature comparison, team roster)."""
+
     type: Literal["card_grid"] = "card_grid"
     title: Optional[I18nText] = Field(None, description="Card grid heading")
     cards: List[GridCard] = Field(..., description="List of cards in the grid")
-    columns: int = Field(
-        default=3, ge=1, le=6, description="Number of grid columns"
-    )
+    columns: int = Field(default=3, ge=1, le=6, description="Number of grid columns")
 
 
 # ──────────────────────────────────────────────
@@ -1079,8 +1001,10 @@ InfographicBlock = Union[
 # Document Chrome (version bar, changelog, authorship)
 # ──────────────────────────────────────────────
 
+
 class ChangelogEntry(BaseModel):
     """A single changelog entry for document chrome rendering."""
+
     version: str = Field(..., description="Version label, e.g. '1.0'")
     date: str = Field(..., description="Date or time label for this entry")
     summary: I18nText = Field(..., description="Summary of the change")
@@ -1088,17 +1012,17 @@ class ChangelogEntry(BaseModel):
 
 class DocumentMeta(BaseModel):
     """Top-level document metadata for chrome rendering."""
+
     version: Optional[str] = Field(None, description="Document version label")
     status: Optional[str] = Field(None, description="Document status, e.g. 'approved'")
     author: Optional[str] = Field(None, description="Document author name")
-    changelog: Optional[List[ChangelogEntry]] = Field(
-        None, description="Ordered list of changelog entries"
-    )
+    changelog: Optional[List[ChangelogEntry]] = Field(None, description="Ordered list of changelog entries")
 
 
 # ──────────────────────────────────────────────
 # Infographic Response
 # ──────────────────────────────────────────────
+
 
 class InfographicResponse(BaseModel):
     """Structured infographic output returned by get_infographic().
@@ -1106,25 +1030,17 @@ class InfographicResponse(BaseModel):
     Contains an ordered list of typed blocks that the frontend
     renders according to its own design system.
     """
-    template: Optional[str] = Field(
-        None,
-        description="Template name used to generate this infographic"
-    )
-    theme: Optional[str] = Field(
-        None,
-        description="Color theme hint (e.g., 'light', 'dark', 'corporate', 'vibrant')"
-    )
+
+    template: Optional[str] = Field(None, description="Template name used to generate this infographic")
+    theme: Optional[str] = Field(None, description="Color theme hint (e.g., 'light', 'dark', 'corporate', 'vibrant')")
     blocks: List[Annotated[InfographicBlock, Discriminator("type")]] = Field(
-        ...,
-        description="Ordered list of content blocks forming the infographic"
+        ..., description="Ordered list of content blocks forming the infographic"
     )
     metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Extra metadata (data sources, generation params, etc.)"
+        default_factory=dict, description="Extra metadata (data sources, generation params, etc.)"
     )
     document_meta: Optional[DocumentMeta] = Field(
-        None,
-        description="Optional document chrome metadata (version, status, changelog)"
+        None, description="Optional document chrome metadata (version, status, changelog)"
     )
 
     @model_validator(mode="before")
@@ -1225,9 +1141,7 @@ class JSBundle(BaseModel):
         JSBundle(name="sparkline", scope="inline", inline="/* sparkline js */")
     """
 
-    name: str = Field(
-        ..., description="Stable bundle identifier (e.g. 'echarts')."
-    )
+    name: str = Field(..., description="Stable bundle identifier (e.g. 'echarts').")
     url: Optional[str] = Field(
         default=None,
         description="CDN URL — required when scope='cdn'.",
@@ -1259,10 +1173,8 @@ class JSBundle(BaseModel):
         Raises:
             ValueError: When the value is present but not a valid SRI hash.
         """
-        if v is not None and not re.match(r'^sha(256|384|512)-[A-Za-z0-9+/]+=*$', str(v)):
-            raise ValueError(
-                f"sri_hash must be a valid SRI hash (sha256/384/512-<base64>), got: {v!r}"
-            )
+        if v is not None and not re.match(r"^sha(256|384|512)-[A-Za-z0-9+/]+=*$", str(v)):
+            raise ValueError(f"sri_hash must be a valid SRI hash (sha256/384/512-<base64>), got: {v!r}")
         return v
 
     @model_validator(mode="after")
@@ -1270,18 +1182,14 @@ class JSBundle(BaseModel):
         """Enforce cross-field consistency based on ``scope``."""
         if self.scope == "cdn":
             if not self.url or not self.sri_hash:
-                raise ValueError(
-                    "scope='cdn' requires both 'url' and 'sri_hash'"
-                )
+                raise ValueError("scope='cdn' requires both 'url' and 'sri_hash'")
             if self.inline is not None:
                 raise ValueError("scope='cdn' must not set 'inline'")
         else:  # inline
             if self.inline is None:
                 raise ValueError("scope='inline' requires 'inline' source")
             if self.url is not None or self.sri_hash is not None:
-                raise ValueError(
-                    "scope='inline' must not set 'url' or 'sri_hash'"
-                )
+                raise ValueError("scope='inline' must not set 'url' or 'sri_hash'")
         return self
 
 
@@ -1289,8 +1197,10 @@ class JSBundle(BaseModel):
 # Theme System
 # ──────────────────────────────────────────────
 
+
 class CodePalette(BaseModel):
     """Syntax-highlight token colors for CodeBlock rendering."""
+
     keyword: str = Field("#c678dd", description="Keyword token color")
     string: str = Field("#98c379", description="String literal token color")
     comment: str = Field("#5c6370", description="Comment token color")
@@ -1300,7 +1210,13 @@ class CodePalette(BaseModel):
     text: str = Field("#abb2bf", description="Default code text color")
 
     @field_validator(
-        "keyword", "string", "comment", "number", "function", "background", "text",
+        "keyword",
+        "string",
+        "comment",
+        "number",
+        "function",
+        "background",
+        "text",
         mode="before",
     )
     @classmethod
@@ -1308,14 +1224,14 @@ class CodePalette(BaseModel):
         """Validate CSS color values — raises ValueError on invalid input."""
         if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
             raise ValueError(
-                f"Invalid CSS color value: {v!r}. "
-                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+                f"Invalid CSS color value: {v!r}. " "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
             )
         return v
 
 
 class MethodBadgePalette(BaseModel):
     """Color tokens for HTTP method badges in micro-syntax."""
+
     get: str = Field("#10b981", description="GET method badge color")
     post: str = Field("#6366f1", description="POST method badge color")
     put: str = Field("#f59e0b", description="PUT method badge color")
@@ -1328,8 +1244,7 @@ class MethodBadgePalette(BaseModel):
         """Validate CSS color values — raises ValueError on invalid input."""
         if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
             raise ValueError(
-                f"Invalid CSS color value: {v!r}. "
-                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+                f"Invalid CSS color value: {v!r}. " "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
             )
         return v
 
@@ -1379,6 +1294,7 @@ class ThemeConfig(BaseModel):
     CSS custom properties on :root. The ``to_css_variables()`` method
     generates the CSS block consumed by ``InfographicHTMLRenderer``.
     """
+
     name: str = Field(..., description="Theme identifier")
     primary: str = Field("#6366f1", description="Primary brand color")
     primary_dark: str = Field("#4f46e5", description="Darker primary shade")
@@ -1392,8 +1308,7 @@ class ThemeConfig(BaseModel):
     neutral_text: str = Field("#0f172a", description="Primary text color")
     body_bg: str = Field("#f1f5f9", description="Page background color")
     font_family: str = Field(
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, '
-        'Helvetica, Arial, sans-serif',
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ' "Helvetica, Arial, sans-serif",
         description="CSS font-family stack",
     )
     code_palette: Optional[CodePalette] = Field(
@@ -1402,12 +1317,8 @@ class ThemeConfig(BaseModel):
     method_badge_palette: Optional[MethodBadgePalette] = Field(
         None, description="Color tokens for HTTP method badges in micro-syntax"
     )
-    surface_bg: Optional[str] = Field(
-        None, description="Card/surface background (derives from neutral_bg if unset)"
-    )
-    soft_primary: Optional[str] = Field(
-        None, description="Pill/chip tinted background (derives from primary if unset)"
-    )
+    surface_bg: Optional[str] = Field(None, description="Card/surface background (derives from neutral_bg if unset)")
+    soft_primary: Optional[str] = Field(None, description="Pill/chip tinted background (derives from primary if unset)")
     callout_info_bg: Optional[str] = Field(None, description="Info callout background")
     callout_success_bg: Optional[str] = Field(None, description="Success callout background")
     callout_warning_bg: Optional[str] = Field(None, description="Warning callout background")
@@ -1416,32 +1327,66 @@ class ThemeConfig(BaseModel):
     on_primary: Optional[str] = Field(
         None, description="Text/ink color on top of a primary/accent background (FEAT-301)"
     )
-    callout_success_text: Optional[str] = Field(
-        None, description="Success callout heading text color (FEAT-301)"
+    callout_success_text: Optional[str] = Field(None, description="Success callout heading text color (FEAT-301)")
+    callout_warning_text: Optional[str] = Field(None, description="Warning callout heading text color (FEAT-301)")
+    callout_error_text: Optional[str] = Field(None, description="Error callout heading text color (FEAT-301)")
+    callout_tip_text: Optional[str] = Field(None, description="Tip callout heading text color (FEAT-301)")
+    accent_teal: Optional[str] = Field(None, description="Teal accent used by the tip callout's border (FEAT-301)")
+    content_width: Optional[str] = Field(
+        None, description="Max content width, e.g. '1400px' (derives to '1200px' if unset)"
     )
-    callout_warning_text: Optional[str] = Field(
-        None, description="Warning callout heading text color (FEAT-301)"
+    radius: Optional[str] = Field(None, description="Base border-radius, e.g. '10px' (derives to '8px' if unset)")
+    density: Optional[str] = Field(
+        None,
+        description=("Layout density — 'comfortable' or 'compact' " "(derives to 'comfortable' if unset)"),
     )
-    callout_error_text: Optional[str] = Field(
-        None, description="Error callout heading text color (FEAT-301)"
+    shadow: Optional[str] = Field(
+        None,
+        description=("Base box-shadow; 'none' for print " "(derives to a soft default shadow if unset)"),
     )
-    callout_tip_text: Optional[str] = Field(
-        None, description="Tip callout heading text color (FEAT-301)"
+    mono_family: Optional[str] = Field(
+        None,
+        description=("Monospace stack for numerics " "(derives to a system monospace stack if unset)"),
     )
-    accent_teal: Optional[str] = Field(
-        None, description="Teal accent used by the tip callout's border (FEAT-301)"
+    panel_bg: Optional[str] = Field(
+        None,
+        description="Panel/section surface (derives from surface_bg, then neutral_bg, if unset)",
+    )
+    panel_border: Optional[str] = Field(None, description="Panel border (derives from neutral_border if unset)")
+    header_bg: Optional[str] = Field(None, description="Table header fill (derives from primary if unset)")
+    header_text: Optional[str] = Field(
+        None, description="Table header ink (derives from on_primary, then '#ffffff', if unset)"
     )
 
     @field_validator(
-        "primary", "primary_dark", "primary_light",
-        "accent_green", "accent_amber", "accent_red",
-        "neutral_bg", "neutral_border", "neutral_muted",
-        "neutral_text", "body_bg",
-        "surface_bg", "soft_primary",
-        "callout_info_bg", "callout_success_bg", "callout_warning_bg",
-        "callout_error_bg", "callout_tip_bg",
-        "on_primary", "callout_success_text", "callout_warning_text",
-        "callout_error_text", "callout_tip_text", "accent_teal",
+        "primary",
+        "primary_dark",
+        "primary_light",
+        "accent_green",
+        "accent_amber",
+        "accent_red",
+        "neutral_bg",
+        "neutral_border",
+        "neutral_muted",
+        "neutral_text",
+        "body_bg",
+        "surface_bg",
+        "soft_primary",
+        "callout_info_bg",
+        "callout_success_bg",
+        "callout_warning_bg",
+        "callout_error_bg",
+        "callout_tip_bg",
+        "on_primary",
+        "callout_success_text",
+        "callout_warning_text",
+        "callout_error_text",
+        "callout_tip_text",
+        "accent_teal",
+        "panel_bg",
+        "panel_border",
+        "header_bg",
+        "header_text",
         mode="before",
     )
     @classmethod
@@ -1449,9 +1394,20 @@ class ThemeConfig(BaseModel):
         """Validate CSS color values — raises ValueError on invalid input."""
         if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
             raise ValueError(
-                f"Invalid CSS color value: {v!r}. "
-                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+                f"Invalid CSS color value: {v!r}. " "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
             )
+        return v
+
+    @field_validator("density", mode="before")
+    @classmethod
+    def _validate_density(cls, v: Any) -> Any:
+        """Validate the density enum-like string.
+
+        Raises:
+            ValueError: If the value is not 'comfortable' or 'compact'.
+        """
+        if v is not None and v not in ("comfortable", "compact"):
+            raise ValueError(f"Invalid density value: {v!r}. " "Expected 'comfortable' or 'compact'.")
         return v
 
     def to_css_variables(self) -> str:
@@ -1504,6 +1460,41 @@ class ThemeConfig(BaseModel):
             props.append(f"    --badge-put: {self.method_badge_palette.put};")
             props.append(f"    --badge-delete: {self.method_badge_palette.delete};")
             props.append(f"    --badge-patch: {self.method_badge_palette.patch};")
+
+        # Layout tokens (FEAT-493) — every field is optional with a
+        # documented derivation from an existing colour/font token, so
+        # the five registered themes keep working unchanged.
+        content_width = self.content_width or "1200px"
+        props.append(f"    --content-width: {content_width};")
+
+        radius = self.radius or "8px"
+        props.append(f"    --radius: {radius};")
+
+        density = self.density or "comfortable"
+        props.append(f"    --density: {density};")
+        props.append(f"    --density-gap: {'0.5rem' if density == 'compact' else '1rem'};")
+        props.append(f"    --density-padding: {'0.5rem' if density == 'compact' else '1rem'};")
+
+        shadow = self.shadow if self.shadow is not None else ("0 1px 3px rgba(0, 0, 0, 0.1)")
+        props.append(f"    --shadow: {shadow};")
+
+        mono_family = self.mono_family or (
+            'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, ' '"Liberation Mono", monospace'
+        )
+        props.append(f"    --mono-family: {mono_family};")
+
+        panel_bg = self.panel_bg or self.surface_bg or self.neutral_bg
+        props.append(f"    --panel-bg: {panel_bg};")
+
+        panel_border = self.panel_border or self.neutral_border
+        props.append(f"    --panel-border: {panel_border};")
+
+        header_bg = self.header_bg or self.primary
+        props.append(f"    --header-bg: {header_bg};")
+
+        header_text = self.header_text or self.on_primary or "#ffffff"
+        props.append(f"    --header-text: {header_text};")
+
         return ":root {\n" + "\n".join(props) + "\n}"
 
 
@@ -1540,9 +1531,7 @@ class ThemeRegistry:
         try:
             return self._themes[name]
         except KeyError:
-            raise KeyError(
-                f"Theme '{name}' not found. Available: {self.list_themes()}"
-            )
+            raise KeyError(f"Theme '{name}' not found. Available: {self.list_themes()}")
 
     def list_themes(self) -> List[str]:
         """Return names of all registered themes.
@@ -1575,85 +1564,92 @@ theme_registry = ThemeRegistry()
 
 # ── Built-in themes ──────────────────────────
 
-theme_registry.register(ThemeConfig(
-    name="light",
-    primary="#6366f1",
-    primary_dark="#4f46e5",
-    primary_light="#818cf8",
-    accent_green="#10b981",
-    accent_amber="#f59e0b",
-    accent_red="#ef4444",
-    neutral_bg="#f8fafc",
-    neutral_border="#e2e8f0",
-    neutral_muted="#64748b",
-    neutral_text="#0f172a",
-    body_bg="#f1f5f9",
-))
+theme_registry.register(
+    ThemeConfig(
+        name="light",
+        primary="#6366f1",
+        primary_dark="#4f46e5",
+        primary_light="#818cf8",
+        accent_green="#10b981",
+        accent_amber="#f59e0b",
+        accent_red="#ef4444",
+        neutral_bg="#f8fafc",
+        neutral_border="#e2e8f0",
+        neutral_muted="#64748b",
+        neutral_text="#0f172a",
+        body_bg="#f1f5f9",
+    )
+)
 
-theme_registry.register(ThemeConfig(
-    name="dark",
-    primary="#818cf8",
-    primary_dark="#6366f1",
-    primary_light="#a5b4fc",
-    accent_green="#34d399",
-    accent_amber="#fbbf24",
-    accent_red="#f87171",
-    neutral_bg="#1e293b",
-    neutral_border="#334155",
-    neutral_muted="#94a3b8",
-    neutral_text="#f1f5f9",
-    body_bg="#0f172a",
-))
+theme_registry.register(
+    ThemeConfig(
+        name="dark",
+        primary="#818cf8",
+        primary_dark="#6366f1",
+        primary_light="#a5b4fc",
+        accent_green="#34d399",
+        accent_amber="#fbbf24",
+        accent_red="#f87171",
+        neutral_bg="#1e293b",
+        neutral_border="#334155",
+        neutral_muted="#94a3b8",
+        neutral_text="#f1f5f9",
+        body_bg="#0f172a",
+    )
+)
 
-theme_registry.register(ThemeConfig(
-    name="corporate",
-    primary="#1e40af",
-    primary_dark="#1e3a8a",
-    primary_light="#3b82f6",
-    accent_green="#059669",
-    accent_amber="#d97706",
-    accent_red="#dc2626",
-    neutral_bg="#f9fafb",
-    neutral_border="#d1d5db",
-    neutral_muted="#6b7280",
-    neutral_text="#111827",
-    body_bg="#f3f4f6",
-))
+theme_registry.register(
+    ThemeConfig(
+        name="corporate",
+        primary="#1e40af",
+        primary_dark="#1e3a8a",
+        primary_light="#3b82f6",
+        accent_green="#059669",
+        accent_amber="#d97706",
+        accent_red="#dc2626",
+        neutral_bg="#f9fafb",
+        neutral_border="#d1d5db",
+        neutral_muted="#6b7280",
+        neutral_text="#111827",
+        body_bg="#f3f4f6",
+    )
+)
 
-theme_registry.register(ThemeConfig(
-    name="midnight",
-    primary="#60a5fa",        # blue-400 — links, KPIs, accents
-    primary_dark="#3b82f6",   # blue-500 — hover states, borders
-    primary_light="#93c5fd",  # blue-300 — subtle highlights
-    accent_green="#4ade80",   # green-400 — success, running, in-progress
-    accent_amber="#f59e0b",   # amber-500 — warnings, notices
-    accent_red="#f87171",     # red-400 — errors, blockers, critical
-    neutral_bg="#1e293b",     # slate-800 — cards, sections
-    neutral_border="#334155",  # slate-700 — borders, dividers
-    neutral_muted="#64748b",  # slate-500 — labels, secondary text
-    neutral_text="#e2e8f0",   # slate-200 — primary text
-    body_bg="#0f172a",        # slate-900 — page background
-    font_family=(
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", '
-        'sans-serif'
-    ),
-))
+theme_registry.register(
+    ThemeConfig(
+        name="midnight",
+        primary="#60a5fa",  # blue-400 — links, KPIs, accents
+        primary_dark="#3b82f6",  # blue-500 — hover states, borders
+        primary_light="#93c5fd",  # blue-300 — subtle highlights
+        accent_green="#4ade80",  # green-400 — success, running, in-progress
+        accent_amber="#f59e0b",  # amber-500 — warnings, notices
+        accent_red="#f87171",  # red-400 — errors, blockers, critical
+        neutral_bg="#1e293b",  # slate-800 — cards, sections
+        neutral_border="#334155",  # slate-700 — borders, dividers
+        neutral_muted="#64748b",  # slate-500 — labels, secondary text
+        neutral_text="#e2e8f0",  # slate-200 — primary text
+        body_bg="#0f172a",  # slate-900 — page background
+        font_family=('-apple-system, BlinkMacSystemFont, "Segoe UI", ' "sans-serif"),
+    )
+)
 
-theme_registry.register(ThemeConfig(
-    name="petrol",
-    primary="#0e7490",        # cyan-700 — links, KPIs, accents
-    primary_dark="#155e75",   # cyan-800 — hover states, borders
-    primary_light="#22d3ee",  # cyan-400 — subtle highlights
-    accent_green="#0d9488",   # teal-600 — success, in-progress
-    accent_amber="#d97706",   # amber-600 — warnings, notices
-    accent_red="#b91c1c",     # red-700 — errors, blockers
-    neutral_bg="#ffffff",     # card / section surface
-    neutral_border="#cbd5e1",  # slate-300 — borders, dividers
-    neutral_muted="#475569",  # slate-600 — labels, secondary text
-    neutral_text="#0f172a",   # slate-900 — primary text
-    body_bg="#ecfeff",        # cyan-50 — page background
-    surface_bg="#ffffff",
-    soft_primary=derive_soft("#0e7490", 0.10),
-    code_palette=CodePalette(),          # editor-dark defaults are intentional
-    method_badge_palette=MethodBadgePalette(),
-))
+theme_registry.register(
+    ThemeConfig(
+        name="petrol",
+        primary="#0e7490",  # cyan-700 — links, KPIs, accents
+        primary_dark="#155e75",  # cyan-800 — hover states, borders
+        primary_light="#22d3ee",  # cyan-400 — subtle highlights
+        accent_green="#0d9488",  # teal-600 — success, in-progress
+        accent_amber="#d97706",  # amber-600 — warnings, notices
+        accent_red="#b91c1c",  # red-700 — errors, blockers
+        neutral_bg="#ffffff",  # card / section surface
+        neutral_border="#cbd5e1",  # slate-300 — borders, dividers
+        neutral_muted="#475569",  # slate-600 — labels, secondary text
+        neutral_text="#0f172a",  # slate-900 — primary text
+        body_bg="#ecfeff",  # cyan-50 — page background
+        surface_bg="#ffffff",
+        soft_primary=derive_soft("#0e7490", 0.10),
+        code_palette=CodePalette(),  # editor-dark defaults are intentional
+        method_badge_palette=MethodBadgePalette(),
+    )
+)

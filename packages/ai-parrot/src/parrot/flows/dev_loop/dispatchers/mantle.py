@@ -51,6 +51,7 @@ from parrot.flows.dev_loop.models import (
     AdversarialFinding,
     CodeReviewFinding,
     CodeReviewVerdict,
+    DispatchLabels,
 )
 from parrot.flows.dev_loop.models.nova import effective_max_tokens
 from parrot.flows.dev_loop.session_state import SessionHost
@@ -193,6 +194,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: SessionHost | None = None,
         round: str = "",
+        labels: DispatchLabels | None = None,
     ) -> CodeReviewVerdict:
         """Run the advisory review against ``BedrockMantleClient.ask()``.
 
@@ -204,6 +206,10 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             session_host: Unused — this seat opens no gates and publishes
                 no envelopes; accepted for protocol parity.
             round: Unused — accepted for protocol parity.
+            labels: FEAT-496 — this seat has no development dispatch to
+                stamp, so `labels` is accepted for protocol parity only;
+                its `judge_id` (when present) enriches the usage-ledger
+                seat below rather than any published event payload.
 
         Returns:
             The verdict, always with ``files_modified=[]`` and every
@@ -217,7 +223,11 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             self._bind_event_registry(run_id)
             # FEAT-479: seat-scoped attribution so this reviewer's tokens
             # land under `node_id` in the run ledger rather than unlabelled.
-            with usage_attribution(run_id, seat=node_id):
+            # FEAT-496: fold in judge_id when a panel dispatch labelled us.
+            ledger_seat = node_id
+            if labels is not None and labels.judge_id:
+                ledger_seat = f"{node_id}:{labels.judge_id}"
+            with usage_attribution(run_id, seat=ledger_seat):
                 ai_message = await self._client.ask(
                     prompt,
                     model=profile.model,

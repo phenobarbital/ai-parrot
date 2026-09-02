@@ -26,7 +26,7 @@ from parrot.outputs.a2ui.catalog import (
     ProducerOrigin,
     validate_envelope,
 )
-from parrot.outputs.a2ui.models import Component, CreateSurface
+from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 
 __all__ = [
     "build_card",
@@ -55,6 +55,7 @@ def build_surface(
     component_id: str = _ROOT_COMPONENT_ID,
     data_model: dict[str, Any] | None = None,
     origin: ProducerOrigin = ProducerOrigin.LLM,
+    metadata: ComponentMetadata | None = None,
 ) -> CreateSurface:
     """Build and validate a single-component display ``CreateSurface``.
 
@@ -67,14 +68,26 @@ def build_surface(
     directly. ``component_id`` defaults to ``"root"`` so the envelope
     satisfies the v1.0 wire's root requirement (spec G6) out of the box.
 
+    Args:
+        metadata: Optional component-level metadata (e.g. carrying
+            ``extensions.parrot_optional``) to attach to the root component
+            (FEAT-499). Wins over any ``"metadata"`` key inside
+            ``properties``. Omitted entirely (no key emitted) when ``None``.
+
     Raises:
         CatalogValidationError: If the component is unknown, action-bearing
             (LLM origin), or inlines rows on a structured component (LLM origin).
     """
+    component_kwargs: dict[str, Any] = {"id": component_id, "component": component}
+    remaining_properties = properties
+    if metadata is not None:
+        remaining_properties = dict(properties)
+        remaining_properties.pop("metadata", None)
+        component_kwargs["metadata"] = metadata
     envelope = CreateSurface(
         surfaceId=surface_id,
         catalogId=DEFAULT_CATALOG_ID,
-        components=[Component(id=component_id, component=component, **properties)],
+        components=[Component(**component_kwargs, **remaining_properties)],
         dataModel=data_model or {},
     )
     validate_envelope(envelope, origin=origin)
@@ -208,15 +221,22 @@ def build_infographic(
     theme: str | None = None,
     surface_id: str = "infographic",
     data_model: dict[str, Any] | None = None,
+    metadata: ComponentMetadata | None = None,
 ) -> CreateSurface:
     """Build a display envelope carrying a single Infographic composite component.
 
     ``sections`` is a list of ``{"heading": ..., "text"?: ..., "components"?: [...]}``
     dicts (nested ``components`` are ``{"component": name, "properties": {...}}``).
+
+    Args:
+        metadata: Optional component-level metadata (e.g. carrying
+            ``extensions.parrot_optional``) forwarded to the underlying
+            ``build_surface`` call and attached to the root component
+            (FEAT-499).
     """
     props: dict[str, Any] = {"title": title, "sections": [dict(s) for s in sections]}
     if subtitle is not None:
         props["subtitle"] = subtitle
     if theme is not None:
         props["theme"] = theme
-    return build_surface("Infographic", props, surface_id=surface_id, data_model=data_model)
+    return build_surface("Infographic", props, surface_id=surface_id, data_model=data_model, metadata=metadata)

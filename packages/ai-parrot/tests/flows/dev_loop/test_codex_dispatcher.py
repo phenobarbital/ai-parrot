@@ -230,3 +230,76 @@ class TestCodexFailures:
                 node_id="development",
                 cwd="/etc",
             )
+
+
+def _cmd_started(cmd="pytest -q"):
+    return {"type": "item.started", "item": {"type": "command_execution", "command": cmd}}
+
+
+def _cmd_completed(cmd="pytest -q", exit_code=0):
+    return {
+        "type": "item.completed",
+        "item": {
+            "type": "command_execution",
+            "command": cmd,
+            "exit_code": exit_code,
+            "status": "completed",
+        },
+    }
+
+
+class TestCodexEventExtraction:
+    """FEAT-496 TASK-2725 — display extraction from codex_event."""
+
+    def test_command_started_yields_tool_name_and_input(self):
+        d = CodexCodeDispatcher(max_concurrent=1, redis_url="redis://localhost", stream_ttl_seconds=300)
+        out = d._extract_codex_display(_cmd_started())
+        assert out["tool_name"]
+        assert "pytest" in out["tool_input"]
+
+    def test_command_completed_carries_exit_detail(self):
+        d = CodexCodeDispatcher(max_concurrent=1, redis_url="redis://localhost", stream_ttl_seconds=300)
+        out = d._extract_codex_display(_cmd_completed(exit_code=1))
+        assert out.get("exit_code") == 1
+
+    @pytest.mark.asyncio
+    async def test_raw_event_is_preserved(self, dispatcher):
+        """AC9: the expanded JSON view still shows the provider event."""
+        await dispatcher._publish_codex_event("flow:r1:dispatch:development", _cmd_started(), "r1", "development")
+        events = _published_events(dispatcher)
+        assert events[-1]["payload"]["codex_event"] == _cmd_started()
+
+    @pytest.mark.parametrize("bad", [{}, {"type": "x"}, {"item": None}, {"item": {"type": "unknown"}}])
+    def test_malformed_event_never_raises(self, bad):
+        d = CodexCodeDispatcher(max_concurrent=1, redis_url="redis://localhost", stream_ttl_seconds=300)
+        assert isinstance(d._extract_codex_display(bad), dict)
+
+    @pytest.mark.asyncio
+    async def test_every_payload_has_a_summary(self, dispatcher):
+        for event in (_cmd_started(), _cmd_completed()):
+            await dispatcher._publish_codex_event("flow:r1:dispatch:development", event, "r1", "development")
+        for evt in _published_events(dispatcher):
+            assert evt["payload"]["summary"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_accepts_labels(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        from parrot.flows.dev_loop.models import DispatchLabels
+
+        async def _fake_create(command: Sequence[str]):
+            _write_output(command, _development_payload())
+            return _FakeCodexProcess(stdout_lines=[])
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=CodexCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development.w1",
+            cwd=str(_patch_worktree_base),
+            labels=DispatchLabels(task_id="TASK-1", seat="development.w1"),
+        )
+        events = _published_events(dispatcher)
+        queued = next(e for e in events if e["kind"] == "dispatch.queued")
+        assert queued["payload"]["task_id"] == "TASK-1"

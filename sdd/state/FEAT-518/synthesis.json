@@ -1,0 +1,436 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-518",
+  "mode": "investigation",
+  "summary_oneline": "PythonREPL WorkerPool death spiral: PythonPandasTool seeds each fresh worker through the hard-coded 5 s namespace API, which SIGKILLs a worker that is still bootstrapping, so every call kills the next spare before it is ready",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+      "symbol": "WorkerHandle._send",
+      "lines": "240-263",
+      "role": "single request/response gate; on asyncio.wait_for timeout it SIGKILLs the worker and re-raises a bare TimeoutError",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+      "symbol": "WorkerHandle.get_var / set_var / list_vars",
+      "lines": "405-419",
+      "role": "namespace API with a hard-coded 5.0 s timeout and no error handling (vs 60.25 s for execute, 30 s for inject_dataframe, 10 s for ping)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+      "symbol": "WorkerHandle.start",
+      "lines": "154-197",
+      "role": "spawns the child and returns immediately \u2014 no readiness handshake",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+      "symbol": "WorkerHandle.ping",
+      "lines": "431-449",
+      "role": "existing 10 s health check whose docstring acknowledges multi-second bootstrap; never called anywhere",
+      "evidence": [
+        "F004",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/pool.py",
+      "symbol": "WorkerPool._top_up_prewarmed",
+      "lines": "166-187",
+      "role": "appends a spare and logs 'prewarmed worker ready' right after Popen; the spare is not warm",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/pool.py",
+      "symbol": "WorkerPool.acquire",
+      "lines": "231-268",
+      "role": "crash-restart: replaces a dead session worker with the OLDEST spare (pop(0)) using is_alive as the only health signal",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/worker.py",
+      "symbol": "WorkerNamespace.__init__ / serve",
+      "lines": "138-157, 250-287",
+      "role": "child cannot answer any frame until the full parrot + pandas import and PythonREPLTool bootstrap finish; no 'ready' frame is sent",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/pythonpandas.py",
+      "symbol": "PythonPandasTool._get_worker_handle",
+      "lines": "137-181",
+      "role": "re-seeds df_locals into every new WorkerHandle: DataFrames via inject_dataframe (30 s), scalars via set_var (5 s), in set-iteration order",
+      "evidence": [
+        "F009",
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/pythonpandas.py",
+      "symbol": "PythonPandasTool._process_dataframes",
+      "lines": "505-522",
+      "role": "adds four scalar metadata entries per DataFrame name and per alias to df_locals \u2014 the set_var seeding load",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/pythonpandas.py",
+      "symbol": "PythonPandasTool._execute",
+      "lines": "939-995",
+      "role": "calls list_vars before and list_vars/get_var after every execution inside try/except \u2014 failures are swallowed but each timeout has already killed the worker",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py",
+      "symbol": "PythonREPLTool._execute",
+      "lines": "944-962",
+      "role": "log sites :945/:960; converts any escaping exception into {status:'error', error:str(e)} \u2014 blank for TimeoutError",
+      "evidence": [
+        "F006",
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "AbstractClient tool wrapper",
+      "lines": "1495-1506",
+      "role": "raise ValueError(result.error) \u2014 produces the reported empty ValueError",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/protocol.py",
+      "symbol": "WorkerConfig",
+      "lines": "326-341",
+      "role": "deadline_ms=60000, prewarm_pool_size=2; no field for namespace-API timeout or bootstrap grace",
+      "evidence": [
+        "F011"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Namespace-API timeouts are hard-coded 5.0 s in handle.py and not exposed through WorkerConfig",
+      "evidence": [
+        "F004",
+        "F011"
+      ],
+      "implication": "no deployment-side knob exists to mitigate; the fix must change code, not config"
+    },
+    {
+      "statement": "_send() kills the worker on ANY timeout, including namespace calls, and re-raises a bare TimeoutError whose str() is empty",
+      "evidence": [
+        "F004",
+        "F017"
+      ],
+      "implication": "a fix must decide whether a namespace timeout should still be lethal, and must give the error a message either way"
+    },
+    {
+      "statement": "PythonPandasTool re-seeds all df_locals on every new handle identity, before the caller's own request",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "any readiness fix must cover the seeding path, not only execute(); seeding order is hash-dependent and must not be relied upon"
+    },
+    {
+      "statement": "The G5 error contract for execute() returns a dict, never raises; the loss-error path assumes the worker died DURING an exec",
+      "evidence": [
+        "F004",
+        "F003"
+      ],
+      "implication": "a worker killed by a namespace timeout currently produces an exception path with no lost-variables message \u2014 the fix should route it into the same G5 contract"
+    },
+    {
+      "statement": "WorkerHandle.ping() already exists (10 s) but is dead code; test_integration.py documents the cold-start hazard for deadline_ms only",
+      "evidence": [
+        "F014"
+      ],
+      "implication": "a readiness handshake can reuse ping(); a cold-start regression test is missing and must be added"
+    },
+    {
+      "statement": "Worker bootstrap costs \u22482.4 s idle (1.74 s of it is importing parrot.tools.pythonrepl) and 12-14 s under 3\u00d7 CPU oversubscription; 3 workers boot concurrently by default",
+      "evidence": [
+        "F015",
+        "F016"
+      ],
+      "implication": "5 s is inside the normal variance of production hosts; the spare pool itself adds boot contention"
+    },
+    {
+      "statement": "origin/main and dev are identical on all affected files; last change 2026-08-20, core logic from 2026-07-28",
+      "evidence": [
+        "F012",
+        "F013"
+      ],
+      "implication": "not a regression; a hotfix based on main is viable and propagates via sync-down"
+    },
+    {
+      "statement": "Other callers share the same 5 s namespace API: PandasAgent get_var/snapshot, working-memory snapshot wiring, tools/agent.py set_var",
+      "evidence": [
+        "F008"
+      ],
+      "implication": "the fix belongs in handle.py/pool.py (shared layer), not in PythonPandasTool alone"
+    },
+    {
+      "statement": "Worker bootstrap import is dominated by the parrot framework init (navconfig/vault/documentdb/events/navigator auth \u224880 %), not by pandas (\u224816 %)",
+      "evidence": [
+        "F018"
+      ],
+      "implication": "a readiness handshake fixes the spiral; trimming the worker's import surface is a valid, separate follow-up that also shrinks prewarm cost"
+    }
+  ],
+  "investigation": {
+    "hypotheses": [
+      {
+        "rank": 1,
+        "statement": "A fresh worker is handed out before it finishes bootstrapping; PythonPandasTool's first message to it is a set_var with a 5 s timeout, the timeout SIGKILLs the still-booting worker and raises a blank TimeoutError, and the pool then binds the next spare \u2014 which was spawned only 5 s earlier \u2014 so the cycle repeats indefinitely while bootstrap stays above 5 s.",
+        "supporting": [
+          "F003",
+          "F004",
+          "F005",
+          "F009",
+          "F010",
+          "F016",
+          "F017"
+        ],
+        "contradicting": [],
+        "confidence": "high",
+        "reasoning": "Reproduced on dev with the report's exact log lines, 5 s cadence, blank error text and error dict (F016). Every element is directly cited: no readiness check (F003/F004), 5 s hard-coded timeouts (F004), kill-on-timeout (F004), seeding on the new-handle path (F009), and blank str(TimeoutError) (F017).",
+        "next_probe": "On the affected host, capture the worker's own stdout via the drain logger (`repl_worker[pid=\u2026 stdout]`) and measure spawn\u2192`repl_worker: ready`; confirm it exceeds 5 s. Also confirm the initial trigger of the first death (TTL eviction, deadline kill, or the same cold-start timeout on first use)."
+      },
+      {
+        "rank": 2,
+        "statement": "The very first worker death in the reported session had a different cause (idle-TTL eviction after 30 min, a 60 s exec deadline kill, or a memory/rlimit crash), and the cold-start spiral is only the failure to RECOVER from it.",
+        "supporting": [
+          "F003",
+          "F011"
+        ],
+        "contradicting": [],
+        "confidence": "medium",
+        "reasoning": "The report starts mid-spiral ('worker is dead, restarting' is the first line), so the initial trigger is unobserved. It does not change the fix: recovery is broken regardless of what killed the first worker, and on a slow host the first-ever use also enters the spiral (F016 Probe B).",
+        "next_probe": "Search the full server log for the first `worker is dead` / `evicting idle session` / `REPL worker terminated (` line for that session id."
+      },
+      {
+        "rank": 3,
+        "statement": "Production bootstrap is slower than the idle baseline because the worker re-runs the full parrot package init (navconfig env/vault load, logstash handler, tool-registry import) on every spawn, and 3 workers boot concurrently per tool instance.",
+        "supporting": [
+          "F005",
+          "F015",
+          "F016",
+          "F018"
+        ],
+        "contradicting": [],
+        "confidence": "medium",
+        "reasoning": "Measured: 1.95 s to reach the parrot package init and 2.4 s to ready on an idle 12-core box, 12-14 s under contention. Production specifics (vault, logstash, container CPU quota) are unmeasured.",
+        "next_probe": "Run `python -X importtime -c 'from parrot.tools.pythonrepl import PythonREPLTool'` on the affected host and inspect the top offenders."
+      }
+    ]
+  },
+  "enrichment": null,
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "WorkerHandle.start() and WorkerPool._top_up_prewarmed() perform no readiness check; a spare is marked ready in the same millisecond it is spawned",
+      "evidence": [
+        "F003",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of both functions; matches the report's same-millisecond spawn/ready log pair"
+    },
+    {
+      "id": "C2",
+      "statement": "get_var/set_var/list_vars use a hard-coded 5.0 s timeout and _send() SIGKILLs the worker on timeout",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of handle.py:255-263 and :407/:412/:417"
+    },
+    {
+      "id": "C3",
+      "statement": "PythonPandasTool re-seeds df_locals via set_var/inject_dataframe on every new WorkerHandle identity, before the caller's request",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of pythonpandas.py:169-181"
+    },
+    {
+      "id": "C4",
+      "statement": "The blank error text and ValueError type are str(TimeoutError()) == '' propagated through pythonrepl.py:960 \u2192 ToolResult.error \u2192 base.py raise ValueError(result.error)",
+      "evidence": [
+        "F006",
+        "F007",
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "each hop read directly; verified empty str on Python 3.12"
+    },
+    {
+      "id": "C5",
+      "statement": "The report's log signature is reproducible on dev by seeding one scalar into a cold worker under CPU load",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "Probe B output matches line numbers, cadence, blank text and the returned error dict"
+    },
+    {
+      "id": "C6",
+      "statement": "Whether a call survives depends on set-iteration order of df_locals (DataFrame first \u2192 30 s budget, scalar first \u2192 5 s)",
+      "evidence": [
+        "F009",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "Probe A vs Probe B differ only in which value type is seeded first"
+    },
+    {
+      "id": "C7",
+      "statement": "Worker bootstrap takes \u22482.4 s idle and 12-14 s under 3\u00d7 CPU oversubscription on the dev machine",
+      "evidence": [
+        "F015",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "measured from the worker's own ready log via the drain task"
+    },
+    {
+      "id": "C8",
+      "statement": "Production bootstrap on the flex_dashboard host exceeded 5 s at the time of the report",
+      "evidence": [
+        "F016",
+        "F017"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred: the 5 s cadence + blank text admit no other in-repo explanation, but the host was not measured"
+    },
+    {
+      "id": "C9",
+      "statement": "This is not a code regression; affected code is unchanged since 2026-08-20 and identical on main",
+      "evidence": [
+        "F012",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "git log and diff --stat read directly"
+    },
+    {
+      "id": "C10",
+      "statement": "ping() is unused and no test covers the namespace API against a cold worker",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over src and tests"
+    },
+    {
+      "id": "C11",
+      "statement": "The initial death of the reported session's first worker was caused by the same cold-start timeout",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "low",
+      "reasoning": "the report begins mid-spiral; TTL eviction or a deadline kill are equally plausible first triggers"
+    },
+    {
+      "id": "C12",
+      "statement": "On the dev box, ~80 % of the worker's 1.41 s import is parrot framework init (navconfig, vault utils, documentdb, events, navigator auth); pandas is ~16 %",
+      "evidence": [
+        "F018"
+      ],
+      "confidence": "high",
+      "reasoning": "measured with python -X importtime; host-side share (network-bound navconfig) still unmeasured"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should this ship as a hotfix based on main (the bug is in the released code, F013) or as a feature-flow fix on dev?",
+      "blocks_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "hotfix \u2014 base main, propagate via sync-down (recommended: production agents are unusable)",
+        "feature on dev \u2014 ride the next release"
+      ],
+      "ask_user": false,
+      "user_answer": "feature flow on dev \u2014 the bug is on dev (and main); ship in the next release, not as a hotfix"
+    },
+    {
+      "id": "U2",
+      "question": "When a namespace-API call (set_var/get_var/list_vars) times out on an otherwise-alive worker, should the worker still be SIGKILLed (current behaviour) or left alive with the call failing softly?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "plausible_answers": [
+        "keep lethal, but only after readiness is confirmed (timeouts then mean a real hang)",
+        "make namespace timeouts non-lethal; only execute() deadline kills",
+        "raise the namespace timeout to deadline_ms and keep lethal"
+      ],
+      "ask_user": false,
+      "user_answer": "execute deadline kill only \u2014 namespace-API timeouts must not SIGKILL the worker"
+    },
+    {
+      "id": "U3",
+      "question": "On the affected host, how long does a worker take from spawn to `repl_worker: ready`, and what dominates (navconfig/vault/logstash init vs pandas import vs CPU quota)?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "> 5 s mostly from parrot package init (navconfig/vault/logstash) \u2014 worth trimming the worker's import surface",
+        "> 5 s from CPU contention (many agents / spares booting at once) \u2014 readiness handshake alone suffices",
+        "< 5 s normally; the incident coincided with a load spike"
+      ],
+      "ask_user": false,
+      "user_answer": "unknown to the user; research required. Local importtime profile added as F018 (parrot framework init \u224880 % of bootstrap, pandas \u224816 %); the affected host still needs measuring \u2014 carry a probe task into the spec"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Root cause is reproduced and localized to handle.py/pool.py with high confidence; the remaining choices (readiness handshake via ping vs. timeout budget, lethal vs. soft namespace timeouts, hotfix base) are bounded design decisions best captured in a spec, not an open architectural fork."
+  },
+  "overall_confidence": "high",
+  "meta": {
+    "findings_used": [
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018"
+    ],
+    "findings_unused": [
+      "F001",
+      "F002"
+    ],
+    "notes": "F001/F002 were orientation only (page ids feed the reads). Probe scripts are in the session scratchpad and not committed; the spec should convert Probe B into a deterministic regression test. U1-U3 answered by the user on 2026-09-02; type flipped to feature/dev, U2 fixes the timeout policy (non-lethal namespace timeouts)."
+  }
+}

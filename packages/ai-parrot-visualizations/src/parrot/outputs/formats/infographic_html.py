@@ -7,6 +7,7 @@ document with inline CSS and (optionally) inline ECharts JS for charts.
 This renderer is a sibling to InfographicRenderer (JSON); content
 negotiation in get_infographic() decides which one to use.
 """
+
 import logging
 import re
 import uuid
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 try:
     import nh3 as _nh3
+
     _NH3_AVAILABLE = True
 except ImportError:
     _nh3 = None
@@ -68,6 +70,7 @@ from ...models.infographic import (
     DocumentMeta,
     ChangelogEntry,
 )
+from .assets.design_system import DesignSystem
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +123,8 @@ _DEFAULT_NEGATIVE_COLOR = "#ef4444"
 _BAR_BORDER_RADIUS = 4
 
 # Fallbacks when the active theme is unavailable.
-_DEFAULT_PRIMARY_COLOR = "#6366f1"      # line / gradient base
-_DEFAULT_SPLITLINE_COLOR = "#e2e8f0"    # subtle Y-axis gridline
+_DEFAULT_PRIMARY_COLOR = "#6366f1"  # line / gradient base
+_DEFAULT_SPLITLINE_COLOR = "#e2e8f0"  # subtle Y-axis gridline
 
 # Opacity stops for the gradient fill under line / area charts (top → bottom).
 _AREA_GRADIENT_TOP_ALPHA = 0.28
@@ -167,639 +170,6 @@ def _load_echarts_js() -> str:
             )
             _echarts_js_cache = "/* ECharts JS not available */"
     return _echarts_js_cache
-
-
-# ──────────────────────────────────────────────
-# Base CSS (extracted from reference HTML)
-# ──────────────────────────────────────────────
-
-BASE_CSS = """\
-body {
-    font-family: var(--font-family);
-    background-color: var(--body-bg);
-    color: var(--neutral-text);
-    line-height: 1.5;
-    margin: 0;
-    padding: 20px;
-}
-.container {
-    max-width: 900px;
-    margin: 0 auto;
-    background: var(--surface-bg, white);
-    padding: 32px;
-    border-radius: 24px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-}
-.hero {
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: var(--on-primary, #fff);
-    padding: 40px 32px;
-    border-radius: 16px;
-    margin-bottom: 32px;
-    text-align: center;
-}
-.hero h1 {
-    margin: 0;
-    font-size: 2.5rem;
-    font-weight: 800;
-    letter-spacing: -0.025em;
-}
-.hero p {
-    margin: 12px 0 0;
-    opacity: 0.9;
-    font-size: 1.1rem;
-}
-.hero .meta {
-    margin-top: 8px;
-    opacity: 0.75;
-    font-size: 0.9rem;
-}
-.section-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 40px 0 20px;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--neutral-text);
-}
-.section-title::after {
-    content: '';
-    flex: 1;
-    height: 2px;
-    background: var(--neutral-border);
-}
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 32px;
-}
-.kpi-card {
-    background: var(--surface-bg, #fff);
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    border: 1px solid var(--neutral-border);
-}
-.kpi-value {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--primary);
-    display: block;
-}
-.kpi-label {
-    font-size: 0.875rem;
-    color: var(--neutral-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-.kpi-trend {
-    font-size: 0.85rem;
-    margin-top: 4px;
-}
-.kpi-trend.up { color: var(--accent-green); }
-.kpi-trend.down { color: var(--accent-red); }
-.kpi-trend.flat { color: var(--neutral-muted); }
-.chart-container {
-    background: var(--surface-bg, #fff);
-    padding: 24px;
-    border-radius: 16px;
-    border: 1px solid var(--neutral-border);
-    margin-bottom: 32px;
-}
-.chart-container h3 {
-    margin: 0 0 16px;
-    font-size: 1.1rem;
-    color: var(--neutral-text);
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 32px;
-}
-th {
-    background: var(--primary);
-    color: var(--on-primary, #fff);
-    padding: 12px 16px;
-    text-align: left;
-    font-size: 0.9rem;
-}
-td {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--neutral-border);
-    font-size: 0.95rem;
-}
-tr:nth-child(even) { background: var(--neutral-bg); }
-tr:hover { background: var(--body-bg); }
-.table-container { margin-bottom: 32px; }
-.table-container h3 {
-    margin: 0 0 12px;
-    font-size: 1.1rem;
-}
-.summary-block {
-    margin-bottom: 24px;
-    line-height: 1.7;
-}
-.summary-block.highlight {
-    background: var(--neutral-bg);
-    border-left: 4px solid var(--primary);
-    padding: 16px 20px;
-    border-radius: 0 12px 12px 0;
-}
-.summary-block h3 {
-    margin: 0 0 8px;
-    font-size: 1.1rem;
-    color: var(--primary-dark);
-}
-.bullet-list-block {
-    margin-bottom: 24px;
-}
-.bullet-list-block h3 {
-    margin: 0 0 12px;
-    font-size: 1.1rem;
-}
-.bullet-list-block ul, .bullet-list-block ol {
-    margin: 0;
-    padding-left: 24px;
-}
-.bullet-list-block li {
-    margin-bottom: 8px;
-    line-height: 1.6;
-}
-.image-block {
-    margin-bottom: 24px;
-    text-align: center;
-}
-.image-block img {
-    max-width: 100%;
-    border-radius: 12px;
-}
-.image-block .caption {
-    margin-top: 8px;
-    font-size: 0.875rem;
-    color: var(--neutral-muted);
-}
-blockquote.quote-block {
-    border-left: 4px solid var(--primary);
-    margin: 0 0 24px;
-    padding: 16px 24px;
-    background: var(--neutral-bg);
-    border-radius: 0 12px 12px 0;
-    font-style: italic;
-    font-size: 1.05rem;
-    color: var(--neutral-text);
-}
-blockquote.quote-block .attribution {
-    margin-top: 8px;
-    font-style: normal;
-    font-size: 0.875rem;
-    color: var(--neutral-muted);
-}
-.callout-block {
-    padding: 20px;
-    border-radius: 0 12px 12px 0;
-    margin-bottom: 24px;
-}
-.callout-block h3 { margin-top: 0; }
-.callout-block.info {
-    background: var(--callout-info-bg, #eff6ff);
-    border-left: 4px solid var(--primary);
-}
-.callout-block.info h3 { color: var(--primary-dark); }
-.callout-block.success {
-    background: var(--callout-success-bg, #ecfdf5);
-    border-left: 4px solid var(--accent-green);
-}
-.callout-block.success h3 { color: var(--callout-success-text, #065f46); }
-.callout-block.warning {
-    background: var(--callout-warning-bg, #fffbeb);
-    border-left: 4px solid var(--accent-amber);
-}
-.callout-block.warning h3 { color: var(--callout-warning-text, #92400e); }
-.callout-block.error {
-    background: var(--callout-error-bg, #fef2f2);
-    border-left: 4px solid var(--accent-red);
-}
-.callout-block.error h3 { color: var(--callout-error-text, #991b1b); }
-.callout-block.tip {
-    background: var(--callout-tip-bg, #f0fdfa);
-    border-left: 4px solid var(--accent-teal, #14b8a6);
-}
-.callout-block.tip h3 { color: var(--callout-tip-text, #115e59); }
-hr.divider {
-    border: none;
-    margin: 32px 0;
-}
-hr.divider.solid { border-top: 2px solid var(--neutral-border); }
-hr.divider.dashed { border-top: 2px dashed var(--neutral-border); }
-hr.divider.dotted { border-top: 2px dotted var(--neutral-border); }
-hr.divider.gradient {
-    height: 2px;
-    background: linear-gradient(90deg, var(--primary-light), var(--primary), var(--primary-light));
-}
-.timeline-block { margin-bottom: 32px; }
-.timeline-block h3 {
-    margin: 0 0 16px;
-    font-size: 1.1rem;
-}
-.timeline-event {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 16px;
-    position: relative;
-    padding-left: 24px;
-}
-.timeline-event::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 6px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--primary);
-}
-.timeline-event::after {
-    content: '';
-    position: absolute;
-    left: 5px;
-    top: 18px;
-    width: 2px;
-    height: calc(100% + 4px);
-    background: var(--neutral-border);
-}
-.timeline-event:last-child::after { display: none; }
-.timeline-date {
-    font-weight: 700;
-    font-size: 0.875rem;
-    color: var(--primary);
-    min-width: 80px;
-}
-.timeline-content { flex: 1; }
-.timeline-content .title {
-    font-weight: 600;
-    margin-bottom: 2px;
-}
-.timeline-content .desc {
-    font-size: 0.9rem;
-    color: var(--neutral-muted);
-}
-.progress-block { margin-bottom: 32px; }
-.progress-block h3 {
-    margin: 0 0 16px;
-    font-size: 1.1rem;
-}
-.progress-item {
-    margin-bottom: 16px;
-}
-.progress-header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 4px;
-    font-size: 0.9rem;
-}
-.progress-label { font-weight: 600; }
-.progress-value { color: var(--neutral-muted); }
-.progress-track {
-    background: var(--neutral-bg);
-    border-radius: 6px;
-    height: 12px;
-    position: relative;
-    overflow: hidden;
-}
-.progress-fill {
-    height: 100%;
-    border-radius: 6px;
-    background: linear-gradient(90deg, var(--primary-light), var(--primary));
-    transition: width 0.3s ease;
-}
-.progress-target {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    width: 2px;
-    background: var(--neutral-text);
-    opacity: 0.4;
-}
-.empty-message {
-    text-align: center;
-    padding: 48px 24px;
-    color: var(--neutral-muted);
-    font-size: 1.1rem;
-}
-footer.infographic-footer {
-    text-align: center;
-    margin-top: 40px;
-    color: var(--neutral-muted);
-    font-size: 0.85rem;
-    border-top: 1px solid var(--neutral-border);
-    padding-top: 20px;
-}
-@media (max-width: 600px) {
-    .container { padding: 16px; }
-    .hero { padding: 24px 16px; }
-    .hero h1 { font-size: 1.75rem; }
-    .kpi-grid { grid-template-columns: 1fr; }
-}
-@media print {
-    body { background: white; padding: 0; }
-    .container { box-shadow: none; max-width: 100%; }
-    .hero { background: #eee !important; color: black !important; border: 1px solid #ccc; }
-    .progress-fill { background: #6366f1 !important; -webkit-print-color-adjust: exact; }
-    .accordion__body { display: block !important; }
-    .accordion__arrow { display: none; }
-    .tab-view__nav { display: none; }
-    .tab-view__pane { display: block !important; page-break-before: always; }
-}
-
-/* ── Bullet List Style Extensions ─────────────── */
-.bullet-list--grid { display: grid; gap: 8px; }
-.bullet-list--grid-2 { grid-template-columns: repeat(2, 1fr); }
-.bullet-list--grid-3 { grid-template-columns: repeat(3, 1fr); }
-.bullet-list--grid-4 { grid-template-columns: repeat(4, 1fr); }
-.bullet-list__item-dot {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-}
-.bullet-list__dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    margin-top: 6px;
-}
-.bullet-list--titled .bullet-list__header {
-    font-size: 13px;
-    font-weight: 500;
-    padding-bottom: 8px;
-    border-bottom: 0.5px solid var(--neutral-border);
-    margin-bottom: 10px;
-    color: var(--neutral-text);
-}
-.bullet-list--compact li { margin-bottom: 2px; font-size: 12px; }
-
-@media (max-width: 600px) {
-    .bullet-list--grid { grid-template-columns: 1fr !important; }
-}
-
-/* ── Table Style Extensions ────────────────────── */
-.data-table--striped tbody tr:nth-child(even) { background: var(--neutral-bg); }
-.data-table--bordered { border: 0.5px solid var(--neutral-border); border-radius: 8px; }
-.data-table--bordered td, .data-table--bordered th { border: 0.5px solid var(--neutral-border); }
-.data-table--compact td, .data-table--compact th { padding: 4px 8px; font-size: 11px; }
-.data-table--comparison td:first-child { font-weight: 500; color: var(--primary); }
-.data-table--responsive { overflow-x: auto; }
-.data-table caption {
-    caption-side: bottom;
-    font-size: 11px;
-    color: var(--neutral-muted);
-    padding: 6px 0;
-    text-align: left;
-}
-
-/* ── Checklist Block ───────────────────────────── */
-.checklist { margin-bottom: 1rem; }
-.checklist__title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--neutral-text); }
-.checklist__items { display: flex; flex-direction: column; gap: 6px; }
-.checklist__item { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--neutral-text); }
-.checklist__checkbox {
-    width: 16px; height: 16px; border-radius: 3px;
-    border: 1px solid var(--neutral-border);
-    flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px;
-}
-.checklist__item--checked .checklist__checkbox {
-    background: var(--accent-green); border-color: var(--accent-green); color: var(--on-primary, #fff);
-}
-.checklist__desc { font-size: 11px; color: var(--neutral-muted); margin-left: 24px; }
-.checklist--acceptance .checklist__title { color: var(--primary); }
-.checklist--compact .checklist__item { gap: 4px; font-size: 11px; }
-.checklist--compact .checklist__checkbox { width: 12px; height: 12px; font-size: 8px; }
-
-/* ── Accordion Block ───────────────────────────── */
-.accordion { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
-.accordion__title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--neutral-text); }
-.accordion__item { border: 0.5px solid var(--neutral-border); border-radius: 12px; overflow: hidden; }
-.accordion__header {
-    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-    cursor: pointer; background: transparent; border: none; width: 100%; text-align: left;
-}
-.accordion__header:hover { background: var(--neutral-bg); }
-.accordion__arrow { transition: transform 0.2s; font-size: 10px; color: var(--neutral-muted); }
-.accordion__item.open .accordion__arrow { transform: rotate(90deg); }
-.accordion__number {
-    width: 28px; height: 28px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600; color: var(--on-primary, #fff); flex-shrink: 0;
-}
-.accordion__item-title { font-size: 13px; font-weight: 500; color: var(--neutral-text); flex: 1; }
-.accordion__subtitle { font-size: 11px; color: var(--neutral-muted); }
-.accordion__badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
-.accordion__body { display: none; padding: 16px; border-top: 0.5px solid var(--neutral-border); }
-.accordion__item.open .accordion__body { display: block; }
-
-/* ── Tab View Block ────────────────────────────── */
-.tab-view { margin-bottom: 1.5rem; }
-.tab-view__nav {
-    display: flex; gap: 6px; flex-wrap: wrap;
-    padding-bottom: 1.25rem; border-bottom: 0.5px solid var(--neutral-border);
-    margin-bottom: 1.25rem;
-}
-.tab-view__btn {
-    padding: 6px 14px; border-radius: 20px;
-    border: 0.5px solid var(--neutral-border);
-    background: transparent; color: var(--neutral-muted);
-    font-size: 13px; cursor: pointer; transition: all 0.2s;
-}
-.tab-view__btn:hover { background: var(--neutral-bg); color: var(--neutral-text); }
-.tab-view__btn.active {
-    background: var(--neutral-bg);
-    border-color: var(--primary);
-    color: var(--neutral-text); font-weight: 500;
-}
-.tab-view__nav--underline { border-bottom: 2px solid var(--neutral-border); gap: 0; }
-.tab-view__nav--underline .tab-view__btn {
-    border: none; border-radius: 0;
-    border-bottom: 2px solid transparent; margin-bottom: -2px;
-}
-.tab-view__nav--underline .tab-view__btn.active {
-    border-bottom-color: var(--primary); background: transparent;
-}
-.tab-view__nav--boxed .tab-view__btn { border-radius: 8px; }
-.tab-view__pane { display: none; }
-.tab-view__pane.active { display: block; }
-
-@media (max-width: 600px) {
-    .tab-view__nav { gap: 4px; }
-    .tab-view__btn { font-size: 11px; padding: 4px 10px; }
-}
-
-/* ── I18n & Micro-syntax (FEAT-301) ────────────── */
-.chip {
-    display: inline-block;
-    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
-    color: var(--primary, #6366f1);
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.85em;
-    font-weight: 500;
-}
-.method-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    font-weight: 700;
-    color: var(--on-primary, #fff);
-    text-transform: uppercase;
-}
-.method-badge--get { background: var(--badge-get, #10b981); }
-.method-badge--post { background: var(--badge-post, #6366f1); }
-.method-badge--put { background: var(--badge-put, #f59e0b); }
-.method-badge--delete { background: var(--badge-delete, #ef4444); }
-.method-badge--patch { background: var(--badge-patch, #8b5cf6); }
-.method-badge--head { background: var(--badge-get, #10b981); }
-.method-badge--options { background: var(--badge-get, #10b981); }
-.component-ref {
-    display: inline-block;
-    font-family: monospace;
-    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
-    color: var(--primary, #6366f1);
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 0.9em;
-}
-.i18n { display: none; }
-.i18n--default { display: inline; }
-
-/* ── Chain Block (FEAT-301) ─────────────────────── */
-.chain {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 1rem;
-}
-.chain--vertical { flex-direction: column; align-items: stretch; }
-.chain__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
-.chain__node {
-    background: var(--surface-bg, var(--neutral-bg));
-    border: 1px solid var(--neutral-border);
-    border-radius: 10px;
-    padding: 10px 16px;
-    color: var(--neutral-text);
-}
-.chain__label { font-weight: 600; }
-.chain__desc { font-size: 0.85em; color: var(--neutral-muted); margin-top: 4px; }
-.chain__connector { color: var(--neutral-muted); font-size: 1.2rem; }
-.chain--vertical .chain__connector { text-align: center; transform: rotate(90deg); }
-
-/* ── Steps Block (FEAT-301) ─────────────────────── */
-.steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 1rem; }
-.steps__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
-.steps__item { display: flex; gap: 12px; align-items: flex-start; }
-.steps__marker {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
-    color: var(--primary, #6366f1);
-    font-weight: 700;
-    flex-shrink: 0;
-}
-.steps--icon .steps__marker { border-radius: 8px; background: transparent; }
-.steps__label { font-weight: 600; color: var(--neutral-text); }
-.steps__desc { font-size: 0.9em; color: var(--neutral-muted); margin-top: 2px; }
-
-/* ── Code Block (FEAT-301) ──────────────────────── */
-.code-block-wrapper { margin-bottom: 1rem; }
-.code-block__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
-.code-block {
-    background: var(--code-bg, #282c34);
-    color: var(--code-text, #abb2bf);
-    padding: 16px;
-    border-radius: 10px;
-    overflow-x: auto;
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-    font-size: 0.9em;
-    line-height: 1.5;
-}
-.code-block__line--highlight {
-    display: inline-block;
-    width: 100%;
-    background: var(--soft-primary, rgba(99, 102, 241, 0.18));
-}
-
-/* ── Card Grid Block (FEAT-301) ─────────────────── */
-.card-grid-wrapper { margin-bottom: 1rem; }
-.card-grid__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
-.card-grid { display: grid; gap: 16px; }
-.card-grid__card {
-    background: var(--surface-bg, var(--neutral-bg));
-    border: 1px solid var(--neutral-border);
-    border-radius: 12px;
-    padding: 16px;
-}
-.card-grid__card-title { font-weight: 700; color: var(--neutral-text); }
-.card-grid__body { font-size: 0.9em; color: var(--neutral-muted); margin-top: 6px; }
-
-@media (max-width: 600px) {
-    .card-grid { grid-template-columns: 1fr !important; }
-}
-
-/* ── Document Chrome (FEAT-301) ─────────────────── */
-.doc-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 20px;
-}
-.doc-pill {
-    display: inline-block;
-    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
-    color: var(--primary, #6366f1);
-    padding: 3px 12px;
-    border-radius: 14px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-.doc-pill--status { background: var(--surface-bg, var(--neutral-bg)); border: 1px solid var(--neutral-border); }
-.doc-changelog {
-    background: var(--surface-bg, var(--neutral-bg));
-    border: 1px solid var(--neutral-border);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 24px;
-}
-.doc-changelog__title { margin: 0 0 10px; font-size: 1rem; color: var(--neutral-text); }
-.doc-changelog__entry {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    font-size: 0.9em;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--neutral-border);
-}
-.doc-changelog__entry:last-child { border-bottom: none; }
-.doc-changelog__version { font-weight: 700; color: var(--primary, #6366f1); }
-.doc-changelog__date { color: var(--neutral-muted); font-size: 0.85em; }
-.doc-changelog__summary { color: var(--neutral-text); }
-.doc-footer {
-    margin-top: 32px;
-    padding-top: 16px;
-    border-top: 1px solid var(--neutral-border);
-    color: var(--neutral-muted);
-    font-size: 0.85rem;
-    text-align: center;
-}
-"""
 
 
 # ──────────────────────────────────────────────
@@ -902,8 +272,8 @@ class InfographicHTMLRenderer(BaseRenderer):
     async def render(
         self,
         response: Any,
-        environment: str = 'terminal',
-        export_format: str = 'html',
+        environment: str = "terminal",
+        export_format: str = "html",
         include_code: bool = False,
         **kwargs,
     ) -> Tuple[str, Optional[Any]]:
@@ -914,7 +284,8 @@ class InfographicHTMLRenderer(BaseRenderer):
             environment: Ignored (always produces HTML).
             export_format: Ignored.
             include_code: Ignored.
-            **kwargs: May include ``theme`` (str).
+            **kwargs: May include ``theme`` (str) and ``layout`` (str,
+                ``"analytics"`` | ``"report"`` | ``"print"``).
 
         Returns:
             Tuple of (html_string, html_string).
@@ -923,7 +294,8 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         data = extract_infographic_data(response)
         theme = kwargs.get("theme")
-        html = self.render_to_html(data, theme=theme)
+        layout = kwargs.get("layout", "analytics")
+        html = self.render_to_html(data, theme=theme, layout=layout)
         return html, html
 
     # ── Public standalone method ────────────────
@@ -932,6 +304,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         self,
         data: Union[InfographicResponse, dict],
         theme: Optional[str] = None,
+        layout: str = "analytics",
     ) -> str:
         """Convert InfographicResponse to a complete HTML document.
 
@@ -941,6 +314,12 @@ class InfographicHTMLRenderer(BaseRenderer):
         Args:
             data: An ``InfographicResponse`` model or a raw dict.
             theme: Theme name (falls back to response.theme, then ``"light"``).
+            layout: Design-system layout name (FEAT-493 TASK-2712) — one of
+                :attr:`~parrot.outputs.formats.assets.design_system.DesignSystem.LAYOUTS`.
+                Defaults to ``"analytics"`` (the new default look-and-feel);
+                pass ``"report"`` to reproduce this renderer's previous
+                appearance (the legacy ``BASE_CSS``, now
+                ``layout-report.css``).
 
         Returns:
             Complete HTML5 string with inline CSS.
@@ -948,12 +327,11 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Normalise to InfographicResponse
         if isinstance(data, str):
             import json as _json
+
             try:
                 data = _json.loads(data)
             except (ValueError, TypeError):
-                raise ValueError(
-                    "render_to_html received a plain string that is not valid JSON"
-                )
+                raise ValueError("render_to_html received a plain string that is not valid JSON")
         if isinstance(data, dict):
             data = InfographicResponse.model_validate(data)
 
@@ -981,9 +359,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 break
 
         # Check if charts exist (ECharts JS needed)
-        has_charts = any(
-            getattr(b, "type", None) == "chart" for b in data.blocks
-        )
+        has_charts = any(getattr(b, "type", None) == "chart" for b in data.blocks)
         echarts_script = self._get_echarts_script() if has_charts else ""
 
         # Determine which interactive JS to inject
@@ -998,10 +374,25 @@ class InfographicHTMLRenderer(BaseRenderer):
             chrome_html = self._render_document_chrome(data.document_meta)
             footer_html = self._render_document_footer(data.document_meta)
 
+        # DesignSystem.stylesheet() accepts the already-resolved ThemeConfig
+        # directly — the warn-and-fallback theme resolution above already ran
+        # once; a second try/except inside the composer call would duplicate it.
+        # Resolve `layout` the same way (unknown -> DEFAULT_LAYOUT) so the
+        # `data-layout` attribute always matches the CSS that was actually
+        # composed.
+        if layout in DesignSystem.LAYOUTS:
+            layout_name = layout
+        else:
+            logger.warning("Unknown layout '%s', falling back to '%s'", layout, DesignSystem.DEFAULT_LAYOUT)
+            layout_name = DesignSystem.DEFAULT_LAYOUT
+        style = DesignSystem.stylesheet(theme_cfg, layout_name)
+
         return self._assemble_document(
             page_title=page_title,
-            theme_css=theme_cfg.to_css_variables(),
+            style=style,
             blocks_html=blocks_html,
+            theme_name=theme_cfg.name,
+            layout=layout_name,
             echarts_script=echarts_script + interaction_js,
             chrome_html=chrome_html,
             footer_html=footer_html,
@@ -1012,13 +403,36 @@ class InfographicHTMLRenderer(BaseRenderer):
     def _assemble_document(
         self,
         page_title: str,
-        theme_css: str,
+        style: str,
         blocks_html: str,
+        theme_name: str,
+        layout: str,
         echarts_script: str = "",
         chrome_html: str = "",
         footer_html: str = "",
     ) -> str:
-        """Assemble the full HTML5 document."""
+        """Assemble the full HTML5 document.
+
+        Args:
+            page_title: Document ``<title>``.
+            style: The composed design-system stylesheet (FEAT-493
+                TASK-2712) — replaces the legacy ``theme_css`` +
+                module-level ``BASE_CSS`` interpolation.
+            blocks_html: Already-rendered block markup.
+            theme_name: The resolved theme name, exposed as ``data-theme``.
+            layout: The resolved layout name, exposed as ``data-layout``.
+            echarts_script: Inline chart/interaction ``<script>`` markup.
+            chrome_html: Document chrome (version/status bar), if any.
+            footer_html: Document footer (authorship/changelog), if any.
+
+        Returns:
+            The complete HTML5 document string.
+        """
+        # Both classes are ALWAYS emitted: "container" is the exact legacy
+        # hook `layout-report.css`'s migrated `.container` rule selects on
+        # (a no-op for any other layout, which loads no such rule), while
+        # "ds-page" is what every OTHER design-system layout (analytics,
+        # print) styles via `.ds-page[data-layout="..."]`.
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1026,13 +440,12 @@ class InfographicHTMLRenderer(BaseRenderer):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{page_title}</title>
     <style>
-{theme_css}
-{BASE_CSS}
+{style}
     </style>
 {echarts_script}
 </head>
 <body>
-    <div class="container">
+    <div class="ds-page container" data-layout="{layout}" data-theme="{theme_name}">
 {chrome_html}{blocks_html}
 {footer_html}    </div>
 </body>
@@ -1053,15 +466,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         if meta.version or meta.status:
             parts.append('        <div class="doc-bar">')
             if meta.version:
-                parts.append(
-                    f'          <span class="doc-pill doc-pill--version">'
-                    f"{escape(meta.version)}</span>"
-                )
+                parts.append(f'          <span class="doc-pill doc-pill--version">' f"{escape(meta.version)}</span>")
             if meta.status:
-                parts.append(
-                    f'          <span class="doc-pill doc-pill--status">'
-                    f"{escape(meta.status)}</span>"
-                )
+                parts.append(f'          <span class="doc-pill doc-pill--status">' f"{escape(meta.status)}</span>")
             parts.append("        </div>")
         if meta.changelog:
             parts.append('        <aside class="doc-changelog">')
@@ -1069,21 +476,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             parts.append("          <ul>")
             for entry in meta.changelog:
                 parts.append('            <li class="doc-changelog__entry">')
-                parts.append(
-                    f'              <span class="doc-changelog__version">'
-                    f"{escape(entry.version)}</span>"
-                )
-                parts.append(
-                    f'              <span class="doc-changelog__date">'
-                    f"{escape(entry.date)}</span>"
-                )
-                summary_html = self._expand_microsyntax(
-                    self._render_i18n_span(entry.summary)
-                )
-                parts.append(
-                    f'              <span class="doc-changelog__summary">'
-                    f"{summary_html}</span>"
-                )
+                parts.append(f'              <span class="doc-changelog__version">' f"{escape(entry.version)}</span>")
+                parts.append(f'              <span class="doc-changelog__date">' f"{escape(entry.date)}</span>")
+                summary_html = self._expand_microsyntax(self._render_i18n_span(entry.summary))
+                parts.append(f'              <span class="doc-changelog__summary">' f"{summary_html}</span>")
                 parts.append("            </li>")
             parts.append("          </ul>")
             parts.append("        </aside>")
@@ -1124,11 +520,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 while i < len(blocks) and getattr(blocks[i], "type", None) == "hero_card":
                     cards.append(self._render_hero_card(blocks[i]))
                     i += 1
-                parts.append(
-                    '        <div class="kpi-grid">\n'
-                    + "\n".join(cards)
-                    + "\n        </div>"
-                )
+                parts.append('        <div class="kpi-grid">\n' + "\n".join(cards) + "\n        </div>")
                 continue
 
             parts.append(self._render_single_block(block, depth=0))
@@ -1170,9 +562,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         if isinstance(block, dict):
             model_cls = _BLOCK_MODEL_MAP.get(block_type)
             if model_cls is None:
-                logger.warning(
-                    "No model for block type '%s' — skipping.", block_type
-                )
+                logger.warning("No model for block type '%s' — skipping.", block_type)
                 return ""
             try:
                 block = model_cls.model_validate(block)
@@ -1272,10 +662,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             spans = []
             for index, (locale, value) in enumerate(text.items()):
                 css_cls = "i18n i18n--default" if index == 0 else "i18n"
-                spans.append(
-                    f'<span lang="{escape(str(locale))}" class="{css_cls}">'
-                    f"{escape(str(value))}</span>"
-                )
+                spans.append(f'<span lang="{escape(str(locale))}" class="{css_cls}">' f"{escape(str(value))}</span>")
             return "".join(spans)
         return str(escape(text))
 
@@ -1324,8 +711,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         html = _MICRO_CHIP_RE.sub(r'<span class="chip">\1</span>', html)
         html = _MICRO_METHOD_RE.sub(
             lambda m: (
-                f'<span class="method-badge method-badge--{m.group(1).lower()}">'
-                f"{m.group(1).upper()}</span>"
+                f'<span class="method-badge method-badge--{m.group(1).lower()}">' f"{m.group(1).upper()}</span>"
             ),
             html,
         )
@@ -1365,13 +751,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             color_style = f' style="color: {escape(block.color)}"'
         trend_html = ""
         if block.trend:
-            arrow = {"up": "&#9650;", "down": "&#9660;", "flat": "&#9654;"}.get(
-                block.trend.value, ""
-            )
+            arrow = {"up": "&#9650;", "down": "&#9660;", "flat": "&#9654;"}.get(block.trend.value, "")
             trend_val = escape(block.trend_value) if block.trend_value else ""
             trend_html = (
-                f'\n            <div class="kpi-trend {escape(block.trend.value)}">'
-                f"{arrow} {trend_val}</div>"
+                f'\n            <div class="kpi-trend {escape(block.trend.value)}">' f"{arrow} {trend_val}</div>"
             )
         return (
             f'            <div class="kpi-card">\n'
@@ -1386,7 +769,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         highlight_cls = " highlight" if block.highlight else ""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         # markdown_it renders safe HTML (html=False by default)
         content_html = self._expand_microsyntax(self._md.render(block.content))
         return (
@@ -1409,9 +792,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         # cannot carry functions, so the option dict holds a quoted token that
         # we replace with the unquoted function source here.
         if _CURRENCY_FORMATTER_TOKEN in option_json:
-            option_json = option_json.replace(
-                f'"{_CURRENCY_FORMATTER_TOKEN}"', _CURRENCY_FORMATTER_JS
-            )
+            option_json = option_json.replace(f'"{_CURRENCY_FORMATTER_TOKEN}"', _CURRENCY_FORMATTER_JS)
 
         return (
             f'        <div class="chart-container">\n'
@@ -1473,7 +854,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             return {
                 "color": {
                     "type": "linear",
-                    "x": 0, "y": 0, "x2": 0, "y2": 1,
+                    "x": 0,
+                    "y": 0,
+                    "x2": 0,
+                    "y2": 1,
                     "colorStops": [
                         {"offset": 0, "color": top},
                         {"offset": 1, "color": bottom},
@@ -1518,13 +902,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                 data.append({"value": None})
                 continue
             is_pos = v >= 0
-            data.append({
-                "value": v,
-                "itemStyle": {
-                    "color": pos if is_pos else neg,
-                    "borderRadius": self._bar_border_radius(is_pos),
-                },
-            })
+            data.append(
+                {
+                    "value": v,
+                    "itemStyle": {
+                        "color": pos if is_pos else neg,
+                        "borderRadius": self._bar_border_radius(is_pos),
+                    },
+                }
+            )
         return data
 
     def _build_echarts_option(self, block: ChartBlock) -> dict:
@@ -1568,9 +954,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             if block.x_axis_label:
                 option["xAxis"]["name"] = str(escape(block.x_axis_label))
             # Subtle horizontal gridlines on the value axis (PowerBI-style).
-            split_color = getattr(
-                self._theme_cfg, "neutral_border", None
-            ) or _DEFAULT_SPLITLINE_COLOR
+            split_color = getattr(self._theme_cfg, "neutral_border", None) or _DEFAULT_SPLITLINE_COLOR
             option["yAxis"] = {
                 "type": "value",
                 "splitLine": {"show": True, "lineStyle": {"color": split_color}},
@@ -1584,9 +968,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 option["yAxis"]["axisLabel"] = {"formatter": _CURRENCY_FORMATTER_TOKEN}
                 option["tooltip"]["valueFormatter"] = _CURRENCY_FORMATTER_TOKEN
             top_round = [_BAR_BORDER_RADIUS, _BAR_BORDER_RADIUS, 0, 0]
-            primary = getattr(
-                self._theme_cfg, "primary", None
-            ) or _DEFAULT_PRIMARY_COLOR
+            primary = getattr(self._theme_cfg, "primary", None) or _DEFAULT_PRIMARY_COLOR
             # Single-series lines get a gradient fill (the cumulative-line look);
             # multi-series lines stay unfilled to avoid muddy overlaps. Area
             # charts always get the gradient.
@@ -1668,28 +1050,26 @@ class InfographicHTMLRenderer(BaseRenderer):
                 for v in s.values:
                     if v is not None and v > max_val:
                         max_val = v
-            indicator = [
-                {"name": label, "max": max_val * 1.2 or 100}
-                for label in block.labels
-            ]
+            indicator = [{"name": label, "max": max_val * 1.2 or 100} for label in block.labels]
             option["radar"] = {"indicator": indicator}
-            option["series"] = [{
-                "type": "radar",
-                "data": [
-                    {"name": s.name, "value": s.values}
-                    for s in block.series
-                ],
-            }]
+            option["series"] = [
+                {
+                    "type": "radar",
+                    "data": [{"name": s.name, "value": s.values} for s in block.series],
+                }
+            ]
 
         # ── Gauge ───────────────────────────────
         elif ct == ChartType.GAUGE:
             gauge_val = 0
             if block.series and block.series[0].values:
                 gauge_val = block.series[0].values[0]
-            option["series"] = [{
-                "type": "gauge",
-                "data": [{"value": gauge_val, "name": block.series[0].name if block.series else ""}],
-            }]
+            option["series"] = [
+                {
+                    "type": "gauge",
+                    "data": [{"value": gauge_val, "name": block.series[0].name if block.series else ""}],
+                }
+            ]
 
         # ── Funnel ──────────────────────────────
         elif ct == ChartType.FUNNEL:
@@ -1772,12 +1152,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         title_html = ""
         if block.title:
             if block.style and str(block.style) in ("titled", "BulletListStyle.TITLED"):
-                title_html = (
-                    f'\n            <div class="bullet-list__header">'
-                    f'{escape(block.title)}</div>'
-                )
+                title_html = f'\n            <div class="bullet-list__header">' f"{escape(block.title)}</div>"
             else:
-                title_html = f'\n            <h3>{escape(block.title)}</h3>'
+                title_html = f"\n            <h3>{escape(block.title)}</h3>"
 
         # Build list items
         tag = "ol" if block.ordered else "ul"
@@ -1789,13 +1166,12 @@ class InfographicHTMLRenderer(BaseRenderer):
                 items_parts.append(
                     f'                <li class="bullet-list__item-dot">'
                     f'<span class="bullet-list__dot" style="background:{escape(block.color)}"></span>'
-                    f'<span>{item_text}</span></li>'
+                    f"<span>{item_text}</span></li>"
                 )
             items = "\n".join(items_parts)
         else:
             items = "\n".join(
-                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>"
-                for item in block.items
+                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>" for item in block.items
             )
 
         # Wrap in grid if columns specified
@@ -1809,18 +1185,13 @@ class InfographicHTMLRenderer(BaseRenderer):
         else:
             list_html = f"            <{tag}>\n{items}\n            </{tag}>\n"
 
-        return (
-            f'        <div class="{escape(container_cls)}">'
-            f"{title_html}\n"
-            f"{list_html}"
-            f"        </div>"
-        )
+        return f'        <div class="{escape(container_cls)}">' f"{title_html}\n" f"{list_html}" f"        </div>"
 
     def _render_table(self, block: TableBlock) -> str:
         """Render TableBlock as HTML table with optional styling."""
         title_html = ""
         if block.title:
-            title_html = f'            <h3>{escape(block.title)}</h3>\n'
+            title_html = f"            <h3>{escape(block.title)}</h3>\n"
 
         # Build table CSS classes
         table_classes = ["data-table"]
@@ -1845,22 +1216,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                     th_style_parts.append(f"background:{escape(col.color)}")
                 if th_style_parts:
                     th_attrs.append(f' style="{"; ".join(th_style_parts)}"')
-                header_cells.append(
-                    f"                    <th{''.join(th_attrs)}>{escape(col.header)}</th>"
-                )
+                header_cells.append(f"                    <th{''.join(th_attrs)}>{escape(col.header)}</th>")
             else:
-                header_cells.append(
-                    f"                    <th>{escape(str(col))}</th>"
-                )
+                header_cells.append(f"                    <th>{escape(str(col))}</th>")
         headers = "\n".join(header_cells)
 
         # Build body rows
         rows_html = ""
         for row in block.rows:
-            cells = "\n".join(
-                f"                    <td>{escape(str(cell))}</td>"
-                for cell in row
-            )
+            cells = "\n".join(f"                    <td>{escape(str(cell))}</td>" for cell in row)
             rows_html += f"                <tr>\n{cells}\n                </tr>\n"
 
         # Build caption
@@ -1878,18 +1242,9 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         # Wrap in responsive container if requested
         if block.responsive:
-            table_inner = (
-                f'            <div class="data-table--responsive">\n'
-                f"{table_inner}"
-                f"            </div>\n"
-            )
+            table_inner = f'            <div class="data-table--responsive">\n' f"{table_inner}" f"            </div>\n"
 
-        return (
-            f'        <div class="table-container">\n'
-            f"{title_html}"
-            f"{table_inner}"
-            f"        </div>"
-        )
+        return f'        <div class="table-container">\n' f"{title_html}" f"{table_inner}" f"        </div>"
 
     def _render_image(self, block: ImageBlock) -> str:
         """Render ImageBlock as img tag."""
@@ -1920,10 +1275,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             attr_parts.append(str(escape(block.source)))
         attr_html = ""
         if attr_parts:
-            attr_html = (
-                f'\n            <div class="attribution">'
-                f'&mdash; {", ".join(attr_parts)}</div>'
-            )
+            attr_html = f'\n            <div class="attribution">' f'&mdash; {", ".join(attr_parts)}</div>'
         return (
             f'        <blockquote class="quote-block">\n'
             f"            {text}"
@@ -1954,7 +1306,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         """Render TimelineBlock as chronological event list."""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         events_html = ""
         for evt in block.events:
             desc_html = ""
@@ -1972,17 +1324,13 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f"                </div>\n"
                 f"            </div>\n"
             )
-        return (
-            f'        <div class="timeline-block">'
-            f"{title_html}\n{events_html}"
-            f"        </div>"
-        )
+        return f'        <div class="timeline-block">' f"{title_html}\n{events_html}" f"        </div>"
 
     def _render_progress(self, block: ProgressBlock) -> str:
         """Render ProgressBlock as progress bars."""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         items_html = ""
         for item in block.items:
             fill_style = f"width: {item.value}%"
@@ -1990,10 +1338,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 fill_style += f"; background: linear-gradient(90deg, {item.color}, {item.color})"
             target_html = ""
             if item.target is not None:
-                target_html = (
-                    f'\n                <div class="progress-target"'
-                    f' style="left: {item.target}%"></div>'
-                )
+                target_html = f'\n                <div class="progress-target"' f' style="left: {item.target}%"></div>'
             items_html += (
                 f'            <div class="progress-item">\n'
                 f'                <div class="progress-header">\n'
@@ -2007,11 +1352,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f"                </div>\n"
                 f"            </div>\n"
             )
-        return (
-            f'        <div class="progress-block">'
-            f"{title_html}\n{items_html}"
-            f"        </div>"
-        )
+        return f'        <div class="progress-block">' f"{title_html}\n{items_html}" f"        </div>"
 
     # ── New block renderers ─────────────────────
 
@@ -2030,23 +1371,16 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="checklist{style_cls}">']
         if block.title:
-            parts.append(
-                f'          <div class="checklist__title">{escape(block.title)}</div>'
-            )
+            parts.append(f'          <div class="checklist__title">{escape(block.title)}</div>')
         parts.append('          <div class="checklist__items">')
         for item in block.items:
             checked_cls = " checklist__item--checked" if item.checked else ""
             check_mark = "&#10003;" if item.checked else ""
             parts.append(f'            <div class="checklist__item{checked_cls}">')
-            parts.append(
-                f'              <div class="checklist__checkbox">{check_mark}</div>'
-            )
+            parts.append(f'              <div class="checklist__checkbox">{check_mark}</div>')
             parts.append(f"              <span>{escape(item.text)}</span>")
             if item.description:
-                parts.append(
-                    f'              <div class="checklist__desc">'
-                    f"{escape(item.description)}</div>"
-                )
+                parts.append(f'              <div class="checklist__desc">' f"{escape(item.description)}</div>")
             parts.append("            </div>")
         parts.append("          </div>")
         parts.append("        </div>")
@@ -2067,22 +1401,34 @@ class InfographicHTMLRenderer(BaseRenderer):
             HTML string with accordion structure and JS-togglable sections.
         """
         _ALLOWED_TAGS = {
-            "p", "br", "strong", "em", "ul", "ol", "li", "a", "span",
-            "div", "h3", "h4", "code", "pre", "table", "tr", "td", "th",
-            "thead", "tbody",
+            "p",
+            "br",
+            "strong",
+            "em",
+            "ul",
+            "ol",
+            "li",
+            "a",
+            "span",
+            "div",
+            "h3",
+            "h4",
+            "code",
+            "pre",
+            "table",
+            "tr",
+            "td",
+            "th",
+            "thead",
+            "tbody",
         }
 
         allow_multiple = "true" if block.allow_multiple else "false"
         title_html = ""
         if block.title:
-            title_html = (
-                f'        <div class="accordion__title">'
-                f"{escape(block.title)}</div>\n"
-            )
+            title_html = f'        <div class="accordion__title">' f"{escape(block.title)}</div>\n"
 
-        parts = [
-            f'        <div class="accordion" data-allow-multiple="{allow_multiple}">'
-        ]
+        parts = [f'        <div class="accordion" data-allow-multiple="{allow_multiple}">']
         if title_html:
             parts.append(f"        {title_html.strip()}")
 
@@ -2097,24 +1443,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                 num_style = ""
                 if item.number_color:
                     num_style = f' style="background:{escape(item.number_color)}"'
-                header_parts.append(
-                    f'<div class="accordion__number"{num_style}>{item.number}</div>'
-                )
-            header_parts.append(
-                f'<div class="accordion__item-title">{escape(item.title)}</div>'
-            )
+                header_parts.append(f'<div class="accordion__number"{num_style}>{item.number}</div>')
+            header_parts.append(f'<div class="accordion__item-title">{escape(item.title)}</div>')
             if item.subtitle:
-                header_parts.append(
-                    f'<div class="accordion__subtitle">{escape(item.subtitle)}</div>'
-                )
+                header_parts.append(f'<div class="accordion__subtitle">{escape(item.subtitle)}</div>')
             if item.badge:
                 badge_style = ""
                 if item.badge_color:
                     badge_style = f' style="background:{escape(item.badge_color)}"'
-                header_parts.append(
-                    f'<div class="accordion__badge"{badge_style}>'
-                    f"{escape(item.badge)}</div>"
-                )
+                header_parts.append(f'<div class="accordion__badge"{badge_style}>' f"{escape(item.badge)}</div>")
             header_parts.append('<div class="accordion__arrow">&#9654;</div>')
 
             # Build body content
@@ -2136,13 +1473,8 @@ class InfographicHTMLRenderer(BaseRenderer):
                     safe_html = str(escape(item.html_content))
                 body_html = f"            {safe_html}"
 
-            parts.append(
-                f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">'
-            )
-            parts.append(
-                '            <button class="accordion__header"'
-                ' onclick="toggleAccordion(this)">'
-            )
+            parts.append(f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">')
+            parts.append('            <button class="accordion__header"' ' onclick="toggleAccordion(this)">')
             for hp in header_parts:
                 parts.append(f"              {hp}")
             parts.append("            </button>")
@@ -2193,7 +1525,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 icon_html = f'<span class="tab-icon">{escape(tab.icon)}</span> '
             parts.append(
                 f'            <button class="tab-view__btn{active_cls}"'
-                f' onclick="showTab(\'{prefix}\', \'{escape(tab.id)}\', this)">'
+                f" onclick=\"showTab('{prefix}', '{escape(tab.id)}', this)\">"
                 f"{icon_html}{escape(tab.label)}</button>"
             )
         parts.append("          </div>")
@@ -2204,10 +1536,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             active_cls = " active" if is_active else ""
             pane_id = f"{prefix}-{tab.id}"
 
-            parts.append(
-                f'          <div class="tab-view__pane{active_cls}"'
-                f' id="{escape(pane_id)}">'
-            )
+            parts.append(f'          <div class="tab-view__pane{active_cls}"' f' id="{escape(pane_id)}">')
 
             # Render each block inside the pane
             for inner_block in tab.blocks:
@@ -2239,10 +1568,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="chain{direction_cls}">']
         if block.title:
-            parts.append(
-                f'          <h3 class="chain__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            parts.append(f'          <h3 class="chain__title">' f"{self._render_i18n_span(block.title)}</h3>")
         node_count = len(block.nodes)
         for index, node in enumerate(block.nodes):
             color_style = ""
@@ -2288,10 +1614,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="steps{style_cls}">']
         if block.title:
-            parts.append(
-                f'          <h3 class="steps__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            parts.append(f'          <h3 class="steps__title">' f"{self._render_i18n_span(block.title)}</h3>")
         for index, step in enumerate(block.steps, start=1):
             if block.style == "icon" and step.icon:
                 marker = escape(step.icon)
@@ -2334,10 +1657,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         """
         title_html = ""
         if block.title:
-            title_html = (
-                f'\n            <h3 class="code-block__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            title_html = f'\n            <h3 class="code-block__title">' f"{self._render_i18n_span(block.title)}</h3>"
 
         # Only the bare "language-{lang}" class lands on <code>, matching
         # the plain highlight.js-style convention consumers expect. The
@@ -2354,9 +1674,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         rendered_lines = []
         for line_no, line in enumerate(lines, start=1):
             if line_no in highlight_set:
-                rendered_lines.append(
-                    f'<span class="code-block__line--highlight">{line}</span>'
-                )
+                rendered_lines.append(f'<span class="code-block__line--highlight">{line}</span>')
             else:
                 rendered_lines.append(line)
         code_html = "\n".join(rendered_lines)
@@ -2385,15 +1703,11 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         title_html = ""
         if block.title:
-            title_html = (
-                f'\n          <h3 class="card-grid__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            title_html = f'\n          <h3 class="card-grid__title">' f"{self._render_i18n_span(block.title)}</h3>"
 
         parts = [
             '        <div class="card-grid-wrapper">' + title_html,
-            f'          <div class="card-grid" '
-            f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
+            f'          <div class="card-grid" ' f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
         ]
         for card in block.cards:
             color_style = ""
