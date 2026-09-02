@@ -24,7 +24,7 @@ import os
 import re
 import shlex
 from pathlib import PurePosixPath
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -50,7 +50,11 @@ from parrot.flows.dev_loop.models import (
     TriageBrief,
     TriageReport,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    condense_qa_failure,
+    register_dev_loop_node,
+)
 from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -63,6 +67,10 @@ _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
 # Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
 # Preceded by whitespace, followed by whitespace, chain operator, or EOL.
 _LINT_TARGET_RE = re.compile(r"(?<=\s)\." r"(?=\s|&&|;|$)")
+
+#: Matches the ``ruff check <targets>`` half of a compound lint command, up to
+#: the next ``&&``/``;`` separator.
+_RUFF_CHECK_RE = re.compile(r"\bruff\s+check\b[^&;]*")
 
 
 class _NoBugBrief(BaseModel):
@@ -458,7 +466,9 @@ class QANode(DevLoopNode):
         # Scope lint/ruff/mypy commands to changed files so pre-existing
         # repo-wide errors don't fail the QA gate for unrelated code.
         changed = await self._get_changed_files(effective_cwd)
-        lint_cmd = self._scope_lint_to_files(self._lint_command, changed)
+        lint_cmd = self._scope_lint_to_files(
+            self._baseline_aware_lint(self._lint_command, changed), changed
+        )
         scoped_criteria = self._scope_criteria(executable, changed)
 
         qa_brief = _QABrief(
@@ -712,7 +722,7 @@ class QANode(DevLoopNode):
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _git_state(worktree_path: str) -> Tuple[str, FrozenSet[str]]:
+    async def _git_state(worktree_path: str) -> tuple[str, frozenset[str]]:
         """The worktree's ``(HEAD sha, dirty paths)`` at this instant.
 
         Both halves degrade to empty on any git failure, which makes
@@ -756,8 +766,8 @@ class QANode(DevLoopNode):
     async def _paths_touched_since(
         cls,
         worktree_path: str,
-        before: Tuple[str, FrozenSet[str]],
-    ) -> List[str]:
+        before: tuple[str, frozenset[str]],
+    ) -> list[str]:
         """Every path that really changed between ``before`` and now.
 
         A DELTA, deliberately — not an absolute diff against the base
@@ -793,7 +803,7 @@ class QANode(DevLoopNode):
                 stdout, _ = await proc.communicate()
                 if proc.returncode == 0:
                     touched.update(p.strip() for p in stdout.decode().splitlines() if p.strip())
-            except Exception:  # noqa: BLE001 - degrade to the dirty-set delta
+            except Exception:  # noqa: BLE001, S110 - degrade to the dirty-set delta
                 pass
 
         return sorted(touched)
@@ -819,6 +829,46 @@ class QANode(DevLoopNode):
 
         parts = re.split(r"(&&|;)", command)
         return "".join(_scope_part(p) if i % 2 == 0 else p for i, p in enumerate(parts))
+
+    @classmethod
+    def _baseline_aware_lint(cls, command: str, files: list[str]) -> str:
+        """Swap ``ruff check <targets>`` for the diff-scoped runner.
+
+        Scoping lint to the changed FILES (``_scope_lint_to_files``) stops
+        unrelated modules from failing the gate, but still lints each
+        changed file in full — so a five-line edit to a module carrying
+        pre-existing findings inherits all of them as blockers, and the QA
+        feedback then asks the worker to fix debt the feature never
+        touched. ``scripts/sdd/lint_new.py`` reports only findings whose
+        source range intersects a line this branch changed.
+
+        Only the ``ruff`` half is rewritten: the ``mypy`` half stays on the
+        existing file-scoping path (``_scope_lint_to_files``), and a lint
+        command with no ``ruff check`` in it is returned untouched, so an
+        operator-configured command keeps working.
+
+        Args:
+            command: The configured lint command.
+            files: Changed files, already resolved by the caller.
+
+        Returns:
+            The rewritten command, or ``command`` unchanged when there is
+            nothing to scope or no ``ruff check`` to replace.
+        """
+        if not files:
+            return command
+        file_args = " ".join(shlex.quote(f) for f in files)
+        replacement = f"python -m scripts.sdd.lint_new {file_args}"
+
+        def _sub(match: re.Match[str]) -> str:
+            # `_RUFF_CHECK_RE`'s `[^&;]*` also consumes the trailing
+            # whitespace before a `&&`/`;` separator (or EOL) — preserve it
+            # so a compound command doesn't lose its separating space.
+            span = match.group(0)
+            trailing = span[len(span.rstrip()) :]
+            return replacement + trailing
+
+        return _RUFF_CHECK_RE.sub(_sub, command, count=1)
 
     @classmethod
     def _scope_criteria(
