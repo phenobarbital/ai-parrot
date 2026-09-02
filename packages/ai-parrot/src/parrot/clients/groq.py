@@ -652,16 +652,21 @@ class GroqClient(OpenAIBaseClient):
             ) else structured_response.choices[0].message
 
             parsed_config = structured_output_for_later
+            _final_response = structured_response
         else:
             parsed_config = request_output_config
+            _final_response = response
 
         response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         if parsed_config:
             try:
                 final_output = await self._parse_structured_output(
                     response_text,
-                    parsed_config
+                    parsed_config,
+                    finish_reason=self._extract_finish_reason(_final_response),
                 )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
         else:
@@ -1201,8 +1206,11 @@ Format your response clearly with these sections.
             try:
                 final_output = await self._parse_structured_output(
                     result.content,
-                    output_config
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = result.content
 
@@ -1327,8 +1335,11 @@ Format your response clearly with these sections.
         try:
             final_output = await self._parse_structured_output(
                 result.content,
-                output_config
+                output_config,
+                finish_reason=self._extract_finish_reason(response),
             )
+        except InvokeError:
+            raise
         except Exception:
             final_output = result.content
 
@@ -1467,7 +1478,12 @@ Format your response clearly with these sections.
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_groq(final_response.usage)
             return self._build_invoke_result(

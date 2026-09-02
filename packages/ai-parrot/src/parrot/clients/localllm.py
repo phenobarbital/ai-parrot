@@ -289,7 +289,12 @@ class LocalLLMClient(OpenAIBaseClient):
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_openai(response.usage)
             return self._build_invoke_result(
@@ -363,7 +368,12 @@ class LocalLLMClient(OpenAIBaseClient):
             if config.custom_parser:
                 output = config.custom_parser(raw_text)
             else:
-                output = await self._parse_structured_output(raw_text, config)
+                output = await self._parse_structured_output(
+                    raw_text,
+                    config,
+                    finish_reason=self._extract_finish_reason(response),
+                    model=model,
+                )
 
             usage = CompletionUsage.from_openai(response.usage)
             return self._build_invoke_result(output, output_type, model, usage, response)

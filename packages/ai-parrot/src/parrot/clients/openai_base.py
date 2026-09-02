@@ -698,7 +698,14 @@ class OpenAIBaseClient(AbstractClient):
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=model_str,
+                    )
+            except InvokeError:
+                raise
             except Exception:  # noqa: BLE001 pylint: disable=broad-except
                 final_output = response_text
 
@@ -1242,7 +1249,12 @@ class OpenAIBaseClient(AbstractClient):
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_openai(response.usage)
             return self._build_invoke_result(output, output_type, resolved_model, usage, response)

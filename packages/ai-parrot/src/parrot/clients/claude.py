@@ -676,8 +676,11 @@ class AnthropicClient(AbstractClient):
                     )
                 final_output = await self._parse_structured_output(
                     text_content,
-                    output_config
+                    output_config,
+                    finish_reason=result.get("stop_reason"),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = text_content
 
@@ -1486,8 +1489,11 @@ class AnthropicClient(AbstractClient):
             try:
                 final_output = await self._parse_structured_output(
                     text_content,
-                    output_config
+                    output_config,
+                    finish_reason=result.get("stop_reason"),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = text_content
         else:
@@ -2015,7 +2021,12 @@ Provide your final answer with:
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage_dict = {}
             if hasattr(response, 'usage') and response.usage:

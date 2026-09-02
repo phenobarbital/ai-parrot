@@ -1000,7 +1000,14 @@ class BedrockConverseBase(AbstractClient):
                 if output_config.custom_parser:
                     final_output = await output_config.custom_parser(assistant_response_text)
                 else:
-                    final_output = await self._parse_structured_output(assistant_response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        assistant_response_text,
+                        output_config,
+                        finish_reason=result.get("stopReason"),
+                        model=resolved_model,
+                    )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = assistant_response_text
         elif output_schema:
@@ -1605,7 +1612,12 @@ class BedrockConverseBase(AbstractClient):
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(result),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_bedrock(result.get("usage", {}))
 

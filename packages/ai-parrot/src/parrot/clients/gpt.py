@@ -941,7 +941,14 @@ class OpenAIClient(OpenAIBaseClient):
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=model_str,
+                    )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 

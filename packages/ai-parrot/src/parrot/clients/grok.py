@@ -370,7 +370,13 @@ class GrokClient(AbstractClient):
                 if output_config.custom_parser:
                     structured_payload = output_config.custom_parser(text_content)
                 else:
-                    structured_payload = await self._parse_structured_output(text_content, output_config)
+                    structured_payload = await self._parse_structured_output(
+                        text_content,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                    )
+            except InvokeError:
+                raise
             except Exception:
                 pass
 
@@ -762,7 +768,12 @@ class GrokClient(AbstractClient):
                     if config.custom_parser:
                         output = config.custom_parser(raw_text)
                     else:
-                        output = await self._parse_structured_output(raw_text, config)
+                        output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
             return self._build_invoke_result(
