@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-500
 **Date**: 2026-09-02
 **Author**: Jesus Lara (jlara@trocglobal.com) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (ships with the next release from `dev` — U1)
 **Proposal**: `sdd/proposals/bug-workerpool-repl.proposal.md` (research id FEAT-518 → audit trail at `sdd/state/FEAT-518/`)
 
