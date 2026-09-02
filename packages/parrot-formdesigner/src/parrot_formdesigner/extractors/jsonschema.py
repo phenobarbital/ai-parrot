@@ -308,6 +308,38 @@ class JsonSchemaExtractor:
                         logger.warning("Could not reconstruct a post_depends entry for field '%s'", name)
             post_depends = parsed_posts or None
 
+        # Handle x-content-type / x-accept-content-types / x-answer-envelope
+        # (FEAT-488). JsonSchemaRenderer emits these, so without reading them
+        # back an export -> import round trip silently dropped the
+        # content-type annotations.
+        content_type = prop.get("x-content-type")
+        if content_type is not None and not isinstance(content_type, str):
+            logger.warning(
+                "Ignoring non-string x-content-type on field '%s': %r", name, content_type
+            )
+            content_type = None
+
+        accept_content_types = prop.get("x-accept-content-types")
+        if accept_content_types is not None:
+            if isinstance(accept_content_types, list) and all(
+                isinstance(v, str) for v in accept_content_types
+            ):
+                accept_content_types = accept_content_types or None
+            else:
+                logger.warning(
+                    "Ignoring malformed x-accept-content-types on field '%s': %r",
+                    name,
+                    accept_content_types,
+                )
+                accept_content_types = None
+
+        answer_envelope = prop.get("x-answer-envelope")
+        if answer_envelope is not None and answer_envelope != "voice":
+            logger.warning(
+                "Ignoring unknown x-answer-envelope %r on field '%s'", answer_envelope, name
+            )
+            answer_envelope = None
+
         return FormField(
             field_id=name,
             field_type=field_type,
@@ -323,6 +355,9 @@ class JsonSchemaExtractor:
             item_template=item_template,
             depends_on=depends_on,
             post_depends=post_depends,
+            content_type=content_type,
+            accept_content_types=accept_content_types,
+            answer_envelope=answer_envelope,
         )
 
     def _parse_relation(self, x_relation: dict[str, Any], field_id: str) -> RelationSpec:

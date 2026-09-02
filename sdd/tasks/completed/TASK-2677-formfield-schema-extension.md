@@ -203,9 +203,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: —
-**Date**: —
-**Notes**: —
+**Completed by**: sdd-worker
+**Date**: 2025-01-20
+**Notes**: Implemented content_type and accept_content_types fields in FormField schema. All acceptance criteria passed. model_rebuild() runs without error. 33/34 tests pass (1 pre-existing failure unrelated to this change).
 **Deviations from spec**: none
