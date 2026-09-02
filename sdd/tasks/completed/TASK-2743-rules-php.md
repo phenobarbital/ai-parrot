@@ -121,7 +121,57 @@ def test_php_qualnames_namespaced():
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `php.yaml` reproduces the design §4.4 PHP table exactly
+(verified live): `class User L5-8 doc='Represents an application
+user.'`, `method getFullName parent=App\Models\User doc='Get the full
+name.'`, interface/trait/enum/function rows, namespace `PACKAGE` symbol
+present in `symbols` and absent from `outline`. `extends`/`implements`
+refs verified; all three PHP call-expression kinds
+(`function_call_expression`/`member_call_expression`/
+`scoped_call_expression`) verified to produce `calls` refs despite
+exposing the callee under two different field names (`function` vs
+`name`) — three ref specs, not one `any` rule. Parity holds for
+`sample.php` including group-use imports (still read from raw source by
+`PhpScanner`, unaffected by the seam).
+`pytest tests/knowledge/wiki/languages/test_rules_php.py
+tests/knowledge/wiki/languages/test_outline_parity.py
+tests/knowledge/wiki/languages/test_php_plugin.py -v` → 31 passed. Full
+`tests/knowledge/wiki/languages`: 242 passed. Full `tests/knowledge/wiki`:
+1306 passed (same single pre-existing unrelated failure). `ruff check` /
+`mypy --ignore-missing-imports` clean.
+**Deviations from spec**: PHP's namespace qualname requirement
+(`App\Models\User` / `App\Models\User::getFullName`, i.e. two different
+separators — `\` namespace→class, `::` class→method — in the same
+symbol tree) is not expressible by TASK-2739's original single
+per-language `_QUALNAME_JOINER` + ancestor-only `parent` resolution, so
+`astgrep.py` (owned by TASK-2739) gained three small, additive pieces,
+all verified necessary by running the actual grammar (PHP's block-less
+`namespace Foo\Bar;` is a *preceding sibling*, like Perl's `package`, not
+an ancestor of what it scopes — confirmed live):
+1. `SymbolSpec.qualname_joiner: str | None = None` — per-spec override
+   of the qualname separator, defaulting to the existing per-language map
+   when unset (zero behavior change for every already-shipped rule).
+2. `preceding_package` generalized to also match `namespace_definition`
+   (previously Perl-only, `package_statement`).
+3. New extractor `php_qualified_container` (registered in `EXTRACTORS`,
+   used only by `php.yaml`'s `method` rule's `parent`) — combines the
+   preceding-namespace lookup with the immediate class/interface/trait/
+   enum ancestor's own name into one `Ns\Class` string, since a method's
+   `parent` needs the class's *already-namespace-qualified* name, which
+   the generic ancestor-based `parent: {ancestor: ..., name: {...}}` form
+   cannot produce (it only reads the ancestor's bare `name` field).
+Also added `_strip_enclosing_parens()` inside `_resolve_value_spec`
+(field/path branches): `signature: {field: parameters}` returns the
+parameter list's `.text()` **including** its own surrounding parens in
+PHP's grammar, which combined with `render.py`'s
+`f"({sym.signature})"` produced doubled parens — verified live,
+confirmed a parity break, not present in TypeScript (TASK-2742 never
+set `signature` on any rule). Stripping one layer of enclosing parens
+matches every walker's own `params_node.text().strip("()")` convention
+(render.py's documented contract) and is a no-op for non-parenthesized
+fields (names, paths) — verified via the full regression suite.
+None of these four changes alter TASK-2739/2742's existing behavior
+(regression-tested: 242/242 `tests/knowledge/wiki/languages` pass,
+including every TASK-2742 TypeScript test unchanged).

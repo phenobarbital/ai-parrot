@@ -184,7 +184,47 @@ TASK-2738 completed. 3. Verify contract lines. 4. Index → `in-progress`.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `SCHEMA_VERSION="2"`; `pages.content_hash` via `_MIGRATION_COLUMNS`
+(+ a new `UPDATE meta SET value=... WHERE key='schema_version'` step in
+`_migrate()` — needed since `INSERT OR IGNORE` never touches an existing
+row, so a v1 plane would otherwise keep reporting `"1"` forever);
+`symbols`/`symbols_fts` DDL + `_SCHEMA_TABLES` probe entries. Five
+concrete (non-abstract) `BaseWikiStore` defaults added right before
+`class SQLiteWikiStore`, built on `list_pages(category="symbol")`/
+`search_fts(category="symbol")`/`get_page` + the new `symbols.py` decoder
+pair `symbol_to_page_fields()`/`symbol_from_page()` (fixed-order
+`"\n\n"`-joined body sections, inverted positionally — documented as
+intentionally lossy for `start_byte`/`end_byte`/`is_async`/`decorators`/
+`node_kind`/`depth`, full fidelity is SQLite-only). SQLite native
+overrides query the `symbols`/`symbols_fts` tables directly.
+`replace_source_slice()` now also clears `symbols`/`symbols_fts` rows by
+`source_id` in the same transaction. ArangoDB/InMemory/Federated: added
+`content_hash` field/frontmatter key + `stats()["symbols"]` (Arango
+counts `category=='symbol'` docs; InMemory reads its `categories`
+Counter); `_EmptyStore` needed no changes (inherits the new defaults
+unchanged, exactly as intended). Generated `tests/knowledge/wiki/fixtures/
+wiki_v1.db` with a standalone script reproducing the pre-FEAT-498 schema
+literally (not by reusing `WIKI_SCHEMA_SQL`, which already has the v2
+additions) — 3 pages, 2 edges, `meta.schema_version=='1'`, no
+`content_hash`/`symbols`/`symbols_fts` — then committed the binary
+artefact per the task's Files table.
+`pytest tests/knowledge/wiki/test_store.py tests/knowledge/wiki/
+test_store_migration_v2.py tests/knowledge/wiki/test_arango_store.py
+tests/knowledge/wiki/test_file_store.py tests/knowledge/wiki/
+test_federation.py -v` → 191 passed. Full `tests/knowledge/wiki`: 1293
+passed (same single pre-existing unrelated failure in
+`test_claude_code.py`, verified present before this task too). `ruff
+check` clean on new code (removed two `noqa: S608` comments I'd copied
+from existing precedent that ruff flags as unused in this repo's config —
+`RUF100` — since `S608` isn't enabled here); pre-existing UP045/SIM117/
+TRY004 findings throughout `store.py`/`file_store.py`/`test_store.py`
+left untouched (verified identical against the pre-task file, out of
+scope). `mypy --ignore-missing-imports`: zero new findings on any of the
+five touched source files — every reported error verified present
+byte-for-byte in the pre-task version too.
+**Deviations from spec**: none — the `symbol_from_page` lossy-decode
+trade-off and the `_migrate()` schema_version bump are both explicitly
+anticipated by the spec's "abstract-with-default" design and the
+migration acceptance criterion, not scope changes.

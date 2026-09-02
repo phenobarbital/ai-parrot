@@ -183,7 +183,43 @@ contract lines (especially `neighbors` provenance). 4. Index → `in-progress`.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-02
+**Notes**: Implemented `StructuralService` (`lookup`/`outline`/`blast_radius`/
+`_ensure_fresh`) and its five Pydantic output models exactly as scoped.
+`neighbors()` was widened to return `provenance` on all three backends
+(sqlite `store.py`, `arango_store.py`, `file_store.py`) as pre-authorized
+by the task's own "Does NOT Exist" section, covered by a new
+`test_neighbors_includes_provenance` in `test_store.py`.
+`outline(..., include_source=True)` reads the byte-accurate excerpt from
+the already-fetched `symbols_for()` records (full-fidelity on SQLite's
+native `symbols` table) rather than round-tripping through
+`get_page`/`symbol_from_page`, whose `start_byte`/`end_byte` are
+intentionally zeroed for the page-based decode (documented lossy path in
+`symbols.py`) — using the lossy path here would always yield an empty
+excerpt. 21 tests added, all pass; `ruff`/`mypy` clean; full
+`tests/knowledge/wiki/` suite run — 1369 passed (1 pre-existing,
+unrelated failure in `test_claude_code.py::test_fresh_install_writes_all_artifacts`,
+confirmed via `git stash` to predate this task).
+
+**Deviations from spec**:
+1. `_read_source_excerpt` resolves byte offsets from the `outline()`-local
+   `symbols_for()` result list instead of a fresh `get_page()` round trip
+   (see Notes) — required for `include_source` to return non-empty text
+   on the SQLite backend the tests exercise; no file outside the task's
+   scope was touched.
+2. The task's own literal Test Specification block queries a brand-new
+   symbol name (`"helper_two"`) directly after editing the file and
+   expects `repaired_files == ["a.py"]` on that same call. This is
+   internally inconsistent with the Scope's own "Key Constraints"
+   ("Only hit files are hashed... never the repo"): `_ensure_fresh` only
+   hashes files that were already *hits* of the query, and a name
+   introduced by the very edit that made the file stale can never be a
+   pre-repair hit (exact-match and FTS both search the still-stale
+   index — verified empirically against SQLite FTS5's `unicode61`
+   tokenizer). Implemented `test_read_repair_on_edit` against a
+   corrected, self-consistent sequence instead: query an *existing*
+   symbol (`"helper"`, still present after the edit) to trigger and
+   observe the repair, then show the new symbol is queryable on the
+   very next call. The literal `test_lock_busy_serves_stale` from the
+   spec was reproduced verbatim and passes as written.

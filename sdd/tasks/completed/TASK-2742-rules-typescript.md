@@ -134,7 +134,62 @@ def test_typescript_symbol_table():
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `typescript.yaml` matches the design §4.4 table exactly (verified
+live against ast-grep-py 0.45.3): `class UserService exp=True L2-5 doc=
+'Main service class.'`, `method createUser parent=UserService exp=False
+depth=2`, `function createUser exp=True`, `function internalHelper
+exp=False`, `interface UserRecord`, `const DEFAULT_TIMEOUT`, `type Id`.
+Refs verified: `calls`/`extends`/`implements`. Parity holds for `.ts`,
+`.tsx`, `.js`, `.svelte` fixtures (methods never rendered, matching the
+walker). `is_async` for TS/JS methods is left at its default `False`
+rather than the scoped `async: {has: async}` (see Deviations) — render.py
+never consumes `is_async` for JS/TS, so this has no effect on the
+rendered outline or any acceptance criterion.
+`pytest tests/knowledge/wiki/languages/test_rules_typescript.py
+tests/knowledge/wiki/languages/test_outline_parity.py
+tests/knowledge/wiki/languages/test_javascript_plugin.py -v` → 101
+passed. Full `tests/knowledge/wiki/languages`: 236 passed. Full
+`tests/knowledge/wiki`: 1299 passed (same single pre-existing unrelated
+failure in `test_claude_code.py`). `ruff check` / `mypy
+--ignore-missing-imports` clean.
+**Deviations from spec**: Three corrections outside this task's own
+Files table, all verified necessary (not guessed) by running the actual
+grammar and the actual pre-existing tests, documented here rather than
+shipping a broken rule or a false-red suite:
+1. **`languages/astgrep.py`** (owned by TASK-2739): `node.find(kind=
+   "async")` raises `RuntimeError: Kind async is invalid` — "async" is
+   an anonymous keyword token, not a matchable kind in ast-grep-py
+   0.45.3's typescript grammar, and this error is NOT caught anywhere
+   between `_resolve_bool_spec` and the scanner's outer
+   `except Exception`, so keeping `async: {has: async}` in the YAML
+   would silently degrade the *entire* file to the tree-sitter fallback
+   (defeating the whole rule), not just drop the `is_async` field —
+   hence dropping it from the YAML instead of fixing the resolver (out
+   of this task's file scope). Separately, `leading_comment`/
+   `leading_doc_comment`'s `_first_comment_before` didn't look past an
+   `export_statement` wrapper, so NO exported TS declaration ever got
+   its doc comment; added a new, separate extractor
+   `leading_comment_exported` (registered in `EXTRACTORS`) used only by
+   `class`/`function`/`interface`/`type` — matching the walker's own
+   asymmetric behavior, which does the same parent-probing for those
+   four kinds via `javascript.py`'s `_leading_doc(child) or
+   _leading_doc(child.parent if _is_exported(child) else child)` but
+   NOT for `lexical_declaration` (`const`, which keeps plain
+   `leading_comment` and is a documented parity casualty in the walker
+   itself, verified live).
+2. **`tests/knowledge/wiki/languages/test_javascript_plugin.py`**:
+   `test_jsts_parse_failure_degrades_empty` used only `force_heuristic`,
+   which no longer forces the fallback path now that a real TS rule
+   exists — added `force_no_astgrep` too.
+3. **`tests/knowledge/wiki/languages/test_outline_parity.py`** /
+   **`test_polyglot_integration.py`**: both pre-existing tests asserted
+   a closed set of `mode` values that excluded `"ast-grep"` — the exact,
+   anticipated consequence flagged by `test_outline_parity.py`'s own
+   module docstring ("Rule tasks extend CASES … once a rule file makes
+   the seam actually serve a file"). Renamed
+   `test_seam_is_currently_a_noop` → `test_seam_service_matches_available_rules`
+   (tracks per-language expectation via a new `SERVED_BY_RULE` set) and
+   widened the `test_stats_languages_block` mode set to include
+   `"ast-grep"`.

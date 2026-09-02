@@ -161,7 +161,27 @@ def test_python_symbols_without_extra(force_no_astgrep):
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `PythonScanner.outline()` now always builds `SymbolRecord`s from
+`ast` (class/method/function, recursive nested-def support gated by
+`get_symbol_depth()`/`set_symbol_depth()` — same module-level kill-switch
+pattern as `render.py`'s `structural_enabled()`), and optionally merges
+`astgrep.extract(source, "python", rel_path).refs` (gated by the same
+`structural_enabled()` from TASK-2740) without ever touching the symbol
+list. Byte offsets via a cumulative UTF-8 line-offset table + `col_offset`
+(already byte-based in CPython). `signature` = `f"({ast.unparse(node.args)})"`
++ optional `" -> " + unparse(returns)`, matching the task's own test spec
+literal (`"(self, x: int)..."`) — distinct from `render.py`'s
+paren-less convention used by the other four languages, which Python
+never goes through. Existing outline emission (`class X: doc`, `    def
+m(...)`, `def f(...)`) untouched — verified byte-identical against the
+`_python_outline` oracle with symbols now attached.
+`pytest tests/knowledge/wiki/languages/test_python_plugin.py
+tests/knowledge/wiki/languages/test_repo_scan_integration.py -v` → 31
+passed (7 pre-existing + 8 new symbol tests + 16 repo_scan_integration,
+unaffected). Full `tests/knowledge/wiki/languages` suite: 236 passed (up
+from 229). Full `tests/knowledge/wiki`: 1278 passed (same single
+pre-existing unrelated failure in `test_claude_code.py`). `ruff check` /
+`mypy --ignore-missing-imports` clean.
+**Deviations from spec**: none.

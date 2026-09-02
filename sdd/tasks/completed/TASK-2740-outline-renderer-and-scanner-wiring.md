@@ -182,7 +182,34 @@ def test_outline_parity(lang, suffix, src, monkeypatch):
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Read all four emit sites (php.py:291/299/301, rust.py:293/295/
+300/304/308, javascript.py:632/642, perl.py:380/389/396/406/412/416/421)
+before writing `render.py`; strings copied verbatim, not normalised.
+Wired `astgrep.extract()` as the first tier in all four scanners' `outline()`
+(imports still extracted from raw source first, matching each scanner's
+existing comment about byte-identical import behaviour), with a
+`_last_mode` instance attribute feeding `mode` → `"ast-grep"`. `.tsx` gets
+its own ast-grep language name (`_astgrep_lang_for`) distinct from the
+tree-sitter walker's `_grammar_for` (which never distinguishes `.tsx` from
+`.ts`), since `typescript.yaml`'s planned `aliases: [tsx, javascript]`
+will serve all three from one rule file (TASK-2742). `structural_enabled()`
+/ `set_structural_enabled()` — the kill-switch helper the task scope asked
+for — was placed in the new `render.py` (a CREATE file for this task)
+rather than `astgrep.py`, which is **not** in this task's Files table;
+first draft put it in `astgrep.py` and was reverted to respect File
+Fidelity. With no rule YAML files yet, `astgrep.extract()` still returns
+`None` everywhere, so the parity harness (`test_outline_parity.py`)
+currently proves the wiring is a no-op — exactly per scope ("the harness
+must already pass"). `pytest tests/knowledge/wiki/languages -v` → 229
+passed (up from 197 pre-task). Full `tests/knowledge/wiki` suite: 1271
+passed (same single pre-existing unrelated failure in `test_claude_code.py`
+as before this task). `ruff check` / `mypy --ignore-missing-imports` clean
+on all touched/created files.
+**Deviations from spec**: `structural_enabled()`/`set_structural_enabled()`
+live in `languages/render.py`, not a location the spec/task named
+explicitly (the task only said "a module-level `structural_enabled()`
+helper", not which file) — documented above so TASK-2748/2749 (which read
+`WikiProjectConfig.structural_backend` at the scan entry point) know to
+call `parrot.knowledge.wiki.languages.render.set_structural_enabled(...)`.

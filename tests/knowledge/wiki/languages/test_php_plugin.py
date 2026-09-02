@@ -12,7 +12,7 @@ from parrot.knowledge.wiki import languages as languages_module
 from parrot.knowledge.wiki.languages import scanner_for
 from parrot.knowledge.wiki.languages.php import PhpScanner
 
-SAMPLE_PHP = '''<?php
+SAMPLE_PHP = """<?php
 namespace App\\Models;
 
 use App\\Base\\Model;
@@ -29,7 +29,7 @@ class User extends Model {
 }
 
 function helper_function(string $x): void { ... }
-'''
+"""
 
 
 def test_php_outline_heuristic(force_heuristic):
@@ -88,9 +88,7 @@ def test_php_psr4_resolution_uses_scan_root_not_cwd(tmp_path, monkeypatch):
     (tmp_path / "src" / "Base").mkdir(parents=True)
     (tmp_path / "src" / "Models" / "User.php").write_text("<?php\n")
     (tmp_path / "src" / "Base" / "Model.php").write_text("<?php\n")
-    (tmp_path / "composer.json").write_text(
-        '{"autoload": {"psr-4": {"App\\\\": "src/"}}}'
-    )
+    (tmp_path / "composer.json").write_text('{"autoload": {"psr-4": {"App\\\\": "src/"}}}')
     # CWD is genuinely different from the scanned root.
     monkeypatch.chdir(tmp_path.parent)
     monkeypatch.setattr(languages_module, "_scan_root", tmp_path)
@@ -134,9 +132,7 @@ def test_php_unresolvable_import_returns_none():
     scanner = PhpScanner()
     rel_paths = ["src/Models/User.php"]
     index = scanner.build_reference_index(rel_paths)
-    result = scanner.resolve_import(
-        "Totally\\Unknown\\Thing", "src/Models/User.php", index
-    )
+    result = scanner.resolve_import("Totally\\Unknown\\Thing", "src/Models/User.php", index)
     assert result is None
 
 
@@ -147,7 +143,9 @@ def test_php_tolerates_html_prefix(force_heuristic):
     assert any("Foo" in line for line in result.outline)
 
 
-def test_php_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_php_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that php.yaml
+    # (TASK-2743) makes the ast-grep seam a real, working first tier.
     scanner = PhpScanner()
 
     def _boom(source):

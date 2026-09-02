@@ -50,6 +50,11 @@ PERMISSION_RULES: tuple[str, ...] = (
     "Bash(parrot wiki:*)",
     "Bash(source .venv/bin/activate && wikitoolkit:*)",
     "Bash(source .venv/bin/activate && parrot wiki:*)",
+    # FEAT-498: structural-plane MCP tools (read-only, same trust level
+    # as the other wikitoolkit MCP tools).
+    "mcp__wikitoolkit__wiki_symbol_lookup",
+    "mcp__wikitoolkit__wiki_code_outline",
+    "mcp__wikitoolkit__wiki_blast_radius",
 )
 
 #: Filename of the slash command (under .claude/commands/).
@@ -209,6 +214,16 @@ These same operations are also exposed as native MCP tools —
 this repo's `.mcp.json` (FEAT-403). If they appear in your tool list,
 prefer calling them directly; they have equal standing with Grep/Read
 at tool-selection time instead of competing via a Bash-invoked CLI.
+
+**Symbol lookup and blast radius (FEAT-498).** For a specific
+function/class/method — not a general question — prefer the structural
+tools over `wiki_query`: `wikitoolkit symbols lookup <name>`
+(`wiki_symbol_lookup` MCP tool) finds it by name/qualname directly;
+`wikitoolkit symbols outline <file>` (`wiki_code_outline`) lists a
+file's symbols before you read the whole thing; `wikitoolkit symbols
+blast <symbol>` (`wiki_blast_radius`) shows every symbol that
+transitively calls/extends/implements it — run this BEFORE editing a
+widely-used function or class to see what you might break.
 
 **Query discipline** (avoids the two most common ways the wiki
 "fails" — which are usually caller error, not missing coverage):

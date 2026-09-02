@@ -327,10 +327,7 @@ class ObsidianSyncConfig(BaseModel):
         for folder in candidates:
             clean = str(folder).replace("\\", "/")
             if clean.startswith("/") or ".." in clean.split("/"):
-                raise ValueError(
-                    f"Obsidian sync folder {folder!r} must be vault-relative "
-                    "and must not contain '..'"
-                )
+                raise ValueError(f"Obsidian sync folder {folder!r} must be vault-relative " "and must not contain '..'")
         return value
 
     @field_validator("namespaces")
@@ -439,6 +436,24 @@ class WikiProjectConfig(BaseModel):
         description=(
             "Settings for `wikitoolkit sync obsidian`: which categories "
             "sync into the vault and which folder each one maps onto."
+        ),
+    )
+    symbol_depth: int = Field(
+        default=2,
+        ge=1,
+        le=6,
+        description=(
+            "Maximum symbol nesting depth persisted as sym: pages "
+            "(FEAT-498) — 1 = top-level declarations only, 2 = top-level "
+            "plus direct members."
+        ),
+    )
+    structural_backend: bool = Field(
+        default=True,
+        description=(
+            "Kill switch for the optional ast-grep structural extraction "
+            "seam (FEAT-498). When False, scanners always use their "
+            "tree-sitter/heuristic tiers even if ast-grep-py is installed."
         ),
     )
 

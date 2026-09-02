@@ -35,16 +35,16 @@ NS_SEPARATOR = "::"
 _NS_PREFIX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 #: Page id kinds recognised as the leading ``<kind>:`` of an id.
-_ID_KINDS = "file|dir|mod|pkg|doc|func|class|concept|page"
+#: ``sym`` (FEAT-498) is the structural symbol-page kind, e.g.
+#: ``sym:a/b.py#Cls.method``.
+_ID_KINDS = "file|dir|mod|pkg|doc|func|class|concept|page|sym"
 
 #: Leading ``<kind>:`` namespace of a page id, optionally preceded by a
 #: federated ``<ns>::`` prefix.  Matched non-greedily and only at the
 #: start, so a path that itself contains a colon (e.g.
 #: ``file:docs/summaries/mod:parrot.skills.md``) keeps its inner one and
 #: a qualified id (``asyncdb::file:README.md``) still elides its title.
-_ID_PREFIX_RE = re.compile(
-    rf"^(?:[A-Za-z0-9][A-Za-z0-9_.:-]*?{NS_SEPARATOR})?(?:{_ID_KINDS}):"
-)
+_ID_PREFIX_RE = re.compile(rf"^(?:[A-Za-z0-9][A-Za-z0-9_.:-]*?{NS_SEPARATOR})?(?:{_ID_KINDS}):")
 
 #: The bare ``<kind>:`` prefix, used to tell a namespace apart from an id
 #: whose own path happens to contain ``::``.
@@ -100,6 +100,7 @@ def qualify_id(namespace: str | None, page_id: str) -> str:
     if existing == namespace:
         return page_id
     return f"{namespace}{NS_SEPARATOR}{page_id}"
+
 
 #: Leads carrying no information — typically a frontmatter delimiter
 #: captured as a page summary at ingest time.
@@ -175,9 +176,7 @@ def stub_line(result: dict[str, Any]) -> str:
     Returns:
         The rendered stub line.
     """
-    rid = str(
-        result.get("concept_id") or result.get("node_id") or result.get("page_id") or "?"
-    )
+    rid = str(result.get("concept_id") or result.get("node_id") or result.get("page_id") or "?")
     title = str(result.get("title") or "").strip()
     lead = first_sentence(str(result.get("snippet") or result.get("summary") or ""))
     if lead in _NOISE_LEADS:
@@ -229,9 +228,7 @@ def pack_results(
     truncated = False
 
     for item in items:
-        rid = str(
-            item.get("concept_id") or item.get("node_id") or item.get("page_id") or ""
-        )
+        rid = str(item.get("concept_id") or item.get("node_id") or item.get("page_id") or "")
         if not rid or rid in seen:
             continue
         line = stub_line(item)
@@ -250,9 +247,7 @@ def pack_results(
             {
                 "id": rid,
                 "title": item.get("title") or "",
-                "lead": first_sentence(
-                    str(item.get("snippet") or item.get("summary") or "")
-                ),
+                "lead": first_sentence(str(item.get("snippet") or item.get("summary") or "")),
                 "score": item.get("score"),
                 "token_count": item.get("token_count"),
                 "category": item.get("category"),
