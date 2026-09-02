@@ -266,7 +266,12 @@ class OpenAICodexClient(AbstractClient):
             )
             parsed: Any = result.output
             if structured_config is not None:
-                parsed = await self._parse_structured_output(result.output, structured_config)
+                parsed = await self._parse_structured_output(
+                    result.output,
+                    structured_config,
+                    finish_reason=result.finish_reason,
+                    model=resolved_model,
+                )
             return InvokeResult(
                 output=parsed,
                 output_type=output_type,
