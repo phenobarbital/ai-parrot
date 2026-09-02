@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-495
 **Date**: 2026-09-01
 **Author**: Arturo Martinez
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (config / developer-tooling change)
 
 > Input: `sdd/proposals/portable-wikitoolkit-config-paths.brainstorm.md`.
