@@ -3,7 +3,7 @@
   "feat_id": "FEAT-518",
   "feature_slug": "bug-workerpool-repl",
   "started_at": "2026-09-02T13:36:00+02:00",
-  "updated_at": "2026-09-02T14:08:00+02:00",
+  "updated_at": "2026-09-02T14:30:00+02:00",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -90,7 +90,8 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "Run /sdd-spec FEAT-518 (type feature, base dev)."
-  }
+    "next_phase": "done",
+    "next_action": "Spec FEAT-500 created (sdd/specs/bug-workerpool-repl.spec.md); run /sdd-task on it after approval."
+  },
+  "spec_feature_id": "FEAT-500"
 }

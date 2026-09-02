@@ -4,7 +4,7 @@ title: PythonREPL WorkerPool death spiral — cold workers SIGKILLed by the 5 s 
 slug: bug-workerpool-repl
 type: feature
 mode: investigation
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -14,6 +14,8 @@ source:
 overall_confidence: high
 base_branch: dev
 research_state: sdd/state/FEAT-518/
+spec_feature_id: FEAT-500
+spec: sdd/specs/bug-workerpool-repl.spec.md
 created: 2026-09-02
 updated: 2026-09-02
 ---
