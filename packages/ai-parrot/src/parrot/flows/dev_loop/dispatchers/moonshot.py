@@ -10,7 +10,7 @@ from parrot.clients.factory import LLMFactory
 from parrot.clients.moonshot import _thinking_ctx as _moonshot_thinking_ctx
 from parrot.flows.dev_loop.dispatchers._shared import DispatchExecutionError, T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
-from parrot.flows.dev_loop.models import MoonshotCodeDispatchProfile
+from parrot.flows.dev_loop.models import DispatchLabels, MoonshotCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.moonshot import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
 
@@ -118,6 +118,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -127,5 +128,6 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
 

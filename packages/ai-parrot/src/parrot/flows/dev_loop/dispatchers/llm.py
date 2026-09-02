@@ -30,13 +30,16 @@ from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
     _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
-from parrot.flows.dev_loop.models import DispatchEvent, LLMCodeDispatchProfile
+from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.basic import CompletionUsage
 from parrot.observability.context import usage_attribution
@@ -117,6 +120,7 @@ class LLMCodeDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring —
@@ -125,6 +129,8 @@ class LLMCodeDispatcher:
         # inside the semaphore block below resets it on every OTHER exit
         # path (the success return or one of the re-raising excepts).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
         try:
             self._enforce_cwd_under_worktree_base(cwd)
 
@@ -145,6 +151,7 @@ class LLMCodeDispatcher:
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
             raise
 
         async with self._semaphore:
@@ -221,6 +228,7 @@ class LLMCodeDispatcher:
                 raise DispatchExecutionError(f"LLM code dispatch failed: {exc}") from exc
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
 
     @staticmethod
     def _log_id(node_id: str, brief: BaseModel) -> str:
@@ -2406,7 +2414,7 @@ class LLMCodeDispatcher:
             ts=time.time(),
             run_id=run_id,
             node_id=node_id,
-            payload=payload,
+            payload=normalize_payload(kind, payload),
         )
         # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
         _apply_to_session_host(event)

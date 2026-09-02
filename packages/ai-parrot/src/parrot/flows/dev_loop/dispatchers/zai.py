@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatchers._shared import T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
-from parrot.flows.dev_loop.models import ZaiCodeDispatchProfile
+from parrot.flows.dev_loop.models import DispatchLabels, ZaiCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
 
@@ -103,6 +103,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -112,5 +113,6 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
 

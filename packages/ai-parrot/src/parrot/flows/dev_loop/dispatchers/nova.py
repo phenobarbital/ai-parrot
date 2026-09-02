@@ -50,6 +50,7 @@ from parrot.flows.dev_loop.models import (
     AdversarialFinding,
     CodeReviewFinding,
     CodeReviewVerdict,
+    DispatchLabels,
     NovaAdversarialReviewProfile,
     NovaCodeDispatchProfile,
     NovaMechanicalProfile,
@@ -226,6 +227,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -235,6 +237,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
 
 
