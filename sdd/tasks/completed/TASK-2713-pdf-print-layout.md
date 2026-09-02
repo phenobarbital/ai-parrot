@@ -179,12 +179,63 @@ class TestPdfPrintLayout:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `PDFRenderer.__init__(self, *, theme: str = "light")` now always
+calls `super().__init__(theme=theme, layout="print")` — `layout` is not a
+parameter of `PDFRenderer`'s own constructor at all, so
+`PDFRenderer(layout="analytics")` raises `TypeError` (verified by a new
+test), satisfying "forced in the class, not left to a constructor default
+a caller could override... by accident" literally rather than just by
+convention. `_build_intermediate_html`'s `tuple[str, list[dict]]` contract
+and the `a2ui-pdf` extra's actionable `ImportError` path are untouched
+(`test_pdf.py:64` re-verified passing unmodified).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Tests: this task's new
+`packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_pdf_print_layout.py`
+(6 tests) passes; the full `packages/ai-parrot-visualizations/tests/`
+suite (205 tests) passes, including the pre-existing
+`test_design_system_layouts.py::TestPrintLayout` (TASK-2708) which
+specifically asserts `"auto-fit" not in css` and `"minmax" not in css` for
+the print stylesheet — this meant `layout-print.css`'s new descriptive
+comments had to avoid those exact literal tokens (rephrased to avoid
+`auto-fit`/`auto-fill`/`minmax` verbatim; the precise CSS syntax lives
+only in `docs/weasyprint-css-support.md`, which isn't asset-tested).
+`ruff check` and `mypy` clean on `pdf.py` and the new test file.
 
-**WeasyPrint 69.0 findings**:
+**WeasyPrint 69.0 findings** (full detail in
+`docs/weasyprint-css-support.md`, empirically verified via probe documents
++ captured WeasyPrint CSS-validation warnings + a cross-check of the
+installed `weasyprint/css/validation/properties.py` and
+`weasyprint/layout/grid.py`):
+- ✅ CSS Grid (fixed track counts), `minmax()` with a fixed repeat count,
+  Flexbox, `break-inside: avoid` (+ `break-before`/`break-after`), and
+  `@page` (`size`/`margin`) all work as expected — zero WeasyPrint warnings,
+  and real layout-implementation modules exist for grid/flex (not stubs).
+  An 80-row/2-column probe table with `tbody tr { break-inside: avoid }` +
+  `thead { display: table-header-group }` produced a clean 3-page PDF.
+- ❌ The auto-fit/auto-fill repeat-track keyword is UNSUPPORTED —
+  WeasyPrint logs a warning and silently substitutes a repeat count of 1,
+  **collapsing a responsive grid to a single stacked column** (a real
+  regression, not a harmless no-op). Confirms TASK-2708's fixed
+  `repeat(4, 1fr)` / `repeat(2, 1fr)` choice was necessary, not merely
+  cautious.
+- ❌ `position: sticky` is rejected outright — WeasyPrint's `position`
+  property validator only accepts `static | relative | absolute | fixed |
+  running(...)`; `sticky` isn't in that set at all. Irrelevant for print
+  regardless, since the repeating-table-header idiom already in use
+  (`thead { display: table-header-group }`) is the CSS-correct choice.
+- ❌ `box-shadow` is **not implemented at all** — zero occurrences of
+  "shadow" anywhere in the installed `weasyprint` 69.0 package. Stronger
+  than "avoided for aesthetics": the existing `box-shadow: none` /
+  `--shadow: none` in `layout-print.css` is inert for WeasyPrint itself,
+  kept only as explicit, harmless intent (a real browser opening the same
+  HTML, or a future WeasyPrint version implementing shadows, would still
+  see the correct "no shadow" declaration).
 
-**Deviations from spec**: none | describe if any
+Net result: `layout-print.css` needed NO functional changes — every
+TASK-2708 choice was already the empirically-correct one. This task only
+annotated the file with the findings and forced `PDFRenderer`'s layout.
+
+**Deviations from spec**: none. (The `docs/` note is at
+`docs/weasyprint-css-support.md` per the task's own file list.)
