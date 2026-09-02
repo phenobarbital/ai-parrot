@@ -52,7 +52,7 @@
       "feature_id": "FEAT-494",
       "feature": "select-model-dev-flow-ideation-model",
       "spec": "sdd/specs/select-model-dev-flow-ideation-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on both TASK-2717 and TASK-2718; tests the combined output.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
+      "completed_at": "2026-09-02T02:26:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2719-tests-fable-research-primary.md"
     }
   ]
 }
