@@ -439,6 +439,35 @@ def php_qualified_container(node: SgNode) -> str:
     return f"{namespace}\\{container_name}" if namespace else container_name
 
 
+def python_call_scope(node: SgNode) -> str:
+    """Dotted ``Class.method`` qualname of ``node``'s enclosing scope.
+
+    TASK-2746: a ``ref``'s generic ``scope: {"ancestor": [...]}`` form
+    stops at the *nearest* matching ancestor's own bare ``name`` field —
+    for a Python ref that is just the method name (``"get_user"``), not
+    the class-qualified name (``"UserService.get_user"``) TASK-2741's
+    ``ast``-derived symbols use. This walks outward once, joining the
+    nearest enclosing ``function_definition``'s name with its enclosing
+    ``class_definition``'s name (if any). Module-level code (no
+    enclosing function) returns ``""``.
+    """
+    parts: list[str] = []
+    found_function = False
+    for ancestor in node.ancestors():
+        if not found_function and ancestor.kind() == "function_definition":
+            name_field = ancestor.field("name")
+            parts.append(name_field.text() if name_field is not None else "")
+            found_function = True
+        elif found_function and ancestor.kind() == "class_definition":
+            name_field = ancestor.field("name")
+            parts.append(name_field.text() if name_field is not None else "")
+            break
+    if not found_function:
+        return ""
+    parts.reverse()
+    return ".".join(p for p in parts if p)
+
+
 def _pod_paragraph(pod_text: str, heading: str) -> str:
     """First paragraph following ``=head1 <heading>`` inside ``pod_text``.
 
@@ -522,6 +551,7 @@ EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "first_heading_comment": first_heading_comment,
     "preceding_package": preceding_package,
     "php_qualified_container": php_qualified_container,
+    "python_call_scope": python_call_scope,
     "perl_sub_parent": perl_sub_parent,
 }
 
@@ -598,14 +628,18 @@ class RefSpec(BaseModel):
         target: How to extract the reference target text — ``{"field":
             ...}`` or ``{"each": <kind>}`` (one ref per descendant of
             that kind).
-        scope: Optional ``{"ancestor": [<kind>, ...]}`` — the nearest
-            enclosing symbol whose qualname becomes ``src_qualname``.
+        scope: Optional ``{"ancestor": [<kind>, ...]}`` (the nearest
+            matching ancestor's bare ``name`` field becomes
+            ``src_qualname``) or the name of an :data:`EXTRACTORS` entry
+            that computes ``src_qualname`` directly (e.g.
+            ``"python_call_scope"``, for a dotted ``Class.method`` name
+            the ancestor-dict form cannot produce in one hop).
     """
 
     rel: str = Field(pattern=r"^(calls|extends|implements|uses)$")
     rule: dict[str, Any]
     target: dict[str, Any]
-    scope: dict[str, Any] | None = None
+    scope: dict[str, Any] | str | None = None
 
 
 class ImportSpec(BaseModel):
@@ -867,7 +901,10 @@ def extract(src: str, lang: str, rel_path: str, *, max_depth: int = 2) -> Struct
     for ref_spec in ruleset.refs:
         for node in _find_all_isolated(root, ref_spec.rule, language=lang, rule_id=ref_spec.rel):
             src_qualname = ""
-            if ref_spec.scope:
+            if isinstance(ref_spec.scope, str):
+                extractor = EXTRACTORS.get(ref_spec.scope)
+                src_qualname = extractor(node) if extractor else ""
+            elif ref_spec.scope:
                 ancestor_kinds = ref_spec.scope.get("ancestor") or []
                 for ancestor in node.ancestors():
                     if ancestor.kind() in ancestor_kinds:
