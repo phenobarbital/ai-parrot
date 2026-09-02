@@ -1,0 +1,78 @@
+# FEAT-498 TASK-2744 — Rust structural rules.
+#
+# Kind names verified against ast-grep-py 0.45.3's built-in rust grammar
+# (design §4.3). The walker only ever renders `pub` struct/enum/trait/mod
+# and fns (either top-level `pub fn` or ANY fn inside an `impl` block,
+# `pub` or not) — render.py's `_render_rust` applies that same exported
+# filter; this file only needs to extract accurate `exported`/`parent`.
+language: rust
+summary: first_heading_comment
+
+symbols:
+  - id: struct
+    rule: { kind: struct_item }
+    name: { field: name }
+    doc: leading_doc_comment
+    exported: { has: visibility_modifier }
+    depth: 1
+
+  - id: enum
+    rule: { kind: enum_item }
+    name: { field: name }
+    doc: leading_doc_comment
+    exported: { has: visibility_modifier }
+    depth: 1
+
+  - id: trait
+    rule: { kind: trait_item }
+    name: { field: name }
+    doc: leading_doc_comment
+    exported: { has: visibility_modifier }
+    depth: 1
+
+  - id: mod
+    rule: { kind: mod_item }
+    name: { field: name }
+    exported: { has: visibility_modifier }
+    depth: 1
+
+  - id: impl
+    rule: { kind: impl_item }
+    name: { field: type }
+    depth: 1
+
+  # Every fn inside an impl_item (pub or not) OR any top-level pub fn.
+  # `parent` only resolves for the impl case (ancestor lookup finds
+  # nothing for a top-level fn, leaving it at depth 1 as scoped).
+  - id: function
+    rule:
+      kind: function_item
+      any:
+        - has: { kind: visibility_modifier }
+        - inside: { kind: impl_item, stopBy: end }
+    name: { field: name }
+    signature: { field: parameters }
+    doc: leading_doc_comment
+    parent: { ancestor: impl_item, name: { field: type } }
+    exported: { has: visibility_modifier }
+
+refs:
+  - rel: calls
+    rule: { kind: call_expression }
+    target: { field: function }
+    scope: { ancestor: [function_item, impl_item] }
+
+  # `impl Trait for Type` — the trait name is the impl_item's own `trait`
+  # field, whose node kind is `type_identifier` for a bare name (`Debug`)
+  # or `scoped_type_identifier` for a path (`std::fmt::Display`) —
+  # verified against the grammar, hence the nested `any`. Scoped to the
+  # impl's own type name (the ref is emitted once per impl_item match).
+  - rel: implements
+    rule:
+      kind: impl_item
+      has: { field: trait, any: [{ kind: type_identifier }, { kind: scoped_type_identifier }] }
+    target: { field: trait }
+
+imports:
+  - rule: { kind: use_declaration }
+  - rule: { kind: mod_item }

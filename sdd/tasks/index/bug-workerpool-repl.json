@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-02T14:50:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-09-02T17:12:49+00:00",
   "tasks": [
     {
       "id": "TASK-2757",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation: protocol.py + __init__ exports consumed by every later task. Must land first.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2757-protocol-ready-frame-and-config.md"
+      "completed_at": "2026-09-02T14:40:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2757-protocol-ready-frame-and-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2758",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports ReadyResponse from TASK-2757; TASK-2759's host reader expects this frame, so it must precede it.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2758-worker-emit-ready-frame.md"
+      "completed_at": "2026-09-02T14:45:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2758-worker-emit-ready-frame.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2759",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +65,9 @@
       "parallelism_notes": "Core of the fix; edits handle.py which TASK-2760/2761 import from (wait_ready, NamespaceTimeoutError, WorkerBootstrapError).",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2759-handle-readiness-and-nonlethal-timeouts.md"
+      "completed_at": "2026-09-02T14:57:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2759-handle-readiness-and-nonlethal-timeouts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2760",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +86,9 @@
       "parallelism_notes": "Awaits WorkerHandle.wait_ready() from TASK-2759. Shares no files with TASK-2761 but both must precede TASK-2762.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2760-pool-readiness-gated-spares.md"
+      "completed_at": "2026-09-02T15:02:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2760-pool-readiness-gated-spares.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2761",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Touches pythonrepl.py, pythonpandas.py, clients/base.py — disjoint from TASK-2760's pool.py, so it could run alongside TASK-2760 in a second worktree; kept sequential (per-spec isolation) because the whole feature is small and a single worktree avoids a merge.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2761-tool-client-error-legibility.md"
+      "completed_at": "2026-09-02T15:06:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2761-tool-client-error-legibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2762",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Integration tests exercise the full stack (protocol → worker → handle → pool → PythonPandasTool); needs every product task merged first.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2762-cold-start-regression-tests.md"
+      "completed_at": "2026-09-02T15:13:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2762-cold-start-regression-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2763",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Docs + artifacts only, no source files shared with any other task; can run in a separate worktree alongside TASK-2761/2762 once TASK-2760 has landed (message strings must match the implementation).",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2763-docs-and-bootstrap-profile.md"
+      "completed_at": "2026-09-02T15:16:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2763-docs-and-bootstrap-profile.md",
+      "verification": "verified"
     }
   ]
 }

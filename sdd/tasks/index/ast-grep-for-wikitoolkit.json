@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-02T04:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-02T19:30:31+00:00",
   "tasks": [
     {
       "id": "TASK-2738",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation contract every other task imports; must land first.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2738-symbol-models-and-id-grammar.md"
+      "completed_at": "2026-09-02T11:12:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2738-symbol-models-and-id-grammar.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2739",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Shares no files with TASK-2747 (store); the two can run side by side after TASK-2738.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2739-astgrep-seam-and-rule-loader.md"
+      "completed_at": "2026-09-02T11:24:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2739-astgrep-seam-and-rule-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2740",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Independent of TASK-2741 (python.py only) and TASK-2747 (store).",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2740-outline-renderer-and-scanner-wiring.md"
+      "completed_at": "2026-09-02T11:40:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2740-outline-renderer-and-scanner-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2741",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Touches only languages/python.py and its test; no overlap with TASK-2740 or TASK-2747.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2741-python-ast-symbols.md"
+      "completed_at": "2026-09-02T11:50:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2741-python-ast-symbols.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2742",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Owns one YAML + one fixture + one test module; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2742-rules-typescript.md"
+      "completed_at": "2026-09-02T13:25:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2742-rules-typescript.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2743",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Owns php.yaml + fixture + test; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2743-rules-php.md"
+      "completed_at": "2026-09-02T13:36:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2743-rules-php.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2744",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +148,9 @@
       "parallelism_notes": "Owns rust.yaml + fixture + test; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2744-rules-rust.md"
+      "completed_at": "2026-09-02T13:51:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2744-rules-rust.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2745",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +169,9 @@
       "parallelism_notes": "Owns perl.yaml + fixture + test; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2745-rules-perl.md"
+      "completed_at": "2026-09-02T14:09:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2745-rules-perl.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2746",
@@ -172,7 +180,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -182,8 +190,9 @@
       "parallelism_notes": "Owns python.yaml + fixture + test; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2746-rules-python-refs.md"
+      "completed_at": "2026-09-02T14:16:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2746-rules-python-refs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2747",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,8 +211,9 @@
       "parallelism_notes": "Store-only (store.py, arango_store.py, file_store.py, federation.py, symbols.py decoder); no overlap with the extraction tasks TASK-2739..2746.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2747-store-schema-v2-and-symbol-methods.md"
+      "completed_at": "2026-09-02T12:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2747-store-schema-v2-and-symbol-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2748",
@@ -212,7 +222,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,8 +234,9 @@
       "parallelism_notes": "Joins extraction and store; edits repo_scan.py and cli.py which later tasks build on.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2748-symbol-pages-resolver-and-ingest.md"
+      "completed_at": "2026-09-02T14:42:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2748-symbol-pages-resolver-and-ingest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2749",
@@ -234,7 +245,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -244,8 +255,9 @@
       "parallelism_notes": "Sequential: consumes the persisted symbol plane.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2749-structural-service-read-repair.md"
+      "completed_at": "2026-09-02T15:23:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2749-structural-service-read-repair.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2750",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -264,8 +276,9 @@
       "parallelism_notes": "Sequential: wraps the service. Shares claude_code/assets.py with in-flight FEAT-495 (additive hunk).",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2750-structural-tools-toolkit-mcp.md"
+      "completed_at": "2026-09-02T15:37:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2750-structural-tools-toolkit-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2751",
@@ -274,7 +287,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -284,8 +297,9 @@
       "parallelism_notes": "Sequential: CLI over the same service; edits cli.py after TASK-2748.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2751-cli-symbols-stats-docs.md"
+      "completed_at": "2026-09-02T15:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2751-cli-symbols-stats-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2752",
@@ -294,7 +308,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -309,8 +323,9 @@
       "parallelism_notes": "Closing task; needs every rule file and every surface in place.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2752-e2e-integration-and-parity-suite.md"
+      "completed_at": "2026-09-02T16:11:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2752-e2e-integration-and-parity-suite.md",
+      "verification": "verified"
     }
   ]
 }

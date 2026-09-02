@@ -11,7 +11,7 @@ from here to acquire its per-instance persistent worker lazily on first use.
 Arrow DataFrame transport (``inject_dataframe``) lands in TASK-1945.
 """
 
-from .handle import WorkerHandle
+from .handle import NamespaceTimeoutError, WorkerBootstrapError, WorkerHandle
 from .pool import WorkerPool, WorkerPoolExhaustedError
 from .protocol import (
     ErrorResponse,
@@ -25,6 +25,7 @@ from .protocol import (
     OkResponse,
     PingRequest,
     PongResponse,
+    ReadyResponse,
     ResetRequest,
     SetVarRequest,
     SnapshotRequest,
@@ -46,14 +47,17 @@ __all__ = [
     "ListNsRequest",
     "ListNsResponse",
     "NamespaceLossError",
+    "NamespaceTimeoutError",
     "OkResponse",
     "PingRequest",
     "PongResponse",
+    "ReadyResponse",
     "ResetRequest",
     "SetVarRequest",
     "SnapshotRequest",
     "SnapshotResponse",
     "ValueResponse",
+    "WorkerBootstrapError",
     "WorkerConfig",
     "WorkerHandle",
     "WorkerPool",

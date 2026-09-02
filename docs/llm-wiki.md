@@ -102,6 +102,18 @@ pytest examples/knowledge_wiki/ -v
   semantic similarity.
 - PageIndex auto-persists to `examples/knowledge_wiki/store/` (git-ignored); the
   GraphIndex graph is in-memory in the demo.
+- The **codebase**-focused sibling of this pattern —
+  `wikitoolkit build` over the current repository, not this example's
+  seed documents — additionally extracts a **structural symbol plane**:
+  every class/function/method becomes a `sym:<rel>#<qualname>` page
+  (FEAT-498). Install `ai-parrot[wiki-structural]` for the
+  `ast-grep-py`-backed extraction seam on TypeScript/PHP/Rust/Perl
+  (Python needs no extra); a repo without the extra loses nothing
+  except that seam — its existing tree-sitter/heuristic scanners still
+  run, and the first `wikitoolkit build` after upgrading simply
+  populates symbols alongside the untouched `file:`/`dir:` pages. See
+  [WikiToolkit as Claude Code infrastructure](./wiki-claude-code.md#symbols--the-structural-plane-feat-498)
+  for the three lookup/outline/blast-radius tools and CLI commands.
 
 ## Read next
 

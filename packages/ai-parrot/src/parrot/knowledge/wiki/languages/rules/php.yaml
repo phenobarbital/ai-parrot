@@ -1,0 +1,106 @@
+# FEAT-498 TASK-2743 — PHP structural rules.
+#
+# Kind names verified against ast-grep-py 0.45.3's built-in php grammar
+# (design §4.3). PHP's block-less `namespace Foo\Bar;` form is a
+# *preceding sibling* of everything it scopes, not an ancestor (like
+# Perl's `package Foo;`) — `preceding_package` (generalized in
+# astgrep.py for both kinds) and the PHP-specific `php_qualified_container`
+# extractor resolve the namespace prefix. `namespace_definition` itself is
+# extracted as a PACKAGE symbol (depth 1) but never rendered — the walker
+# never emitted a namespace outline line.
+language: php
+summary: first_heading_comment
+
+symbols:
+  - id: package
+    rule: { kind: namespace_definition }
+    name: { field: name }
+    depth: 1
+
+  - id: class
+    rule: { kind: class_declaration }
+    name: { field: name }
+    doc: leading_comment
+    parent: preceding_package
+    qualname_joiner: "\\"
+    depth: 1
+
+  - id: interface
+    rule: { kind: interface_declaration }
+    name: { field: name }
+    doc: leading_comment
+    parent: preceding_package
+    qualname_joiner: "\\"
+    depth: 1
+
+  - id: trait
+    rule: { kind: trait_declaration }
+    name: { field: name }
+    doc: leading_comment
+    parent: preceding_package
+    qualname_joiner: "\\"
+    depth: 1
+
+  - id: enum
+    rule: { kind: enum_declaration }
+    name: { field: name }
+    doc: leading_comment
+    parent: preceding_package
+    qualname_joiner: "\\"
+    depth: 1
+
+  # method_declaration's `parent` is namespace-qualified (`App\Models\User`)
+  # via `php_qualified_container`, so qualname_joiner stays the language
+  # default ("::") for the parent -> name hop.
+  - id: method
+    rule: { kind: method_declaration }
+    name: { field: name }
+    signature: { field: parameters }
+    doc: leading_comment
+    parent: php_qualified_container
+    depth: 2
+
+  - id: function
+    rule: { kind: function_definition }
+    name: { field: name }
+    signature: { field: parameters }
+    doc: leading_comment
+    depth: 1
+
+refs:
+  # Three call kinds, two different target-field names (verified against
+  # the grammar: function_call_expression exposes `function`;
+  # member_call_expression / scoped_call_expression expose `name`
+  # instead) — hence three ref specs rather than one `any` rule.
+  - rel: calls
+    rule: { kind: function_call_expression }
+    target: { field: function }
+    scope: { ancestor: [function_definition, method_declaration, class_declaration] }
+
+  - rel: calls
+    rule: { kind: member_call_expression }
+    target: { field: name }
+    scope: { ancestor: [function_definition, method_declaration, class_declaration] }
+
+  - rel: calls
+    rule: { kind: scoped_call_expression }
+    target: { field: name }
+    scope: { ancestor: [function_definition, method_declaration, class_declaration] }
+
+  - rel: extends
+    rule: { kind: base_clause }
+    target: { each: name }
+    scope: { ancestor: [class_declaration] }
+
+  - rel: implements
+    rule: { kind: class_interface_clause }
+    target: { each: name }
+    scope: { ancestor: [class_declaration] }
+
+# Group `use A\{B, C}` is expanded to two flat import strings, matching
+# the walker's `_extract_php_imports` behaviour — handled by the astgrep
+# seam's caller (PhpScanner.outline still reads imports from the raw
+# source via `_extract_php_imports`, per spec: import parity is a
+# scanner-level concern, not a rule-level one).
+imports:
+  - rule: { kind: namespace_use_declaration }
