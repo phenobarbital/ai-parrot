@@ -14,6 +14,30 @@ import importlib
 import sys
 
 
+def _restore(saved: dict) -> None:
+    """Put purged modules back in ``sys.modules`` AND on their parents.
+
+    Re-importing a purged package rebinds it as an attribute of its
+    parent (``parrot.flows.dev_loop`` is set on ``parrot.flows`` by the
+    import system), so restoring ``sys.modules`` alone leaves the parent
+    pointing at the short-lived module object created here. Later tests
+    then see two live copies of the same package: ``monkeypatch.setattr(
+    "parrot.flows.dev_loop.X", ...)`` resolves by walking attributes from
+    the root and patches the stale one, while the code under test does
+    ``from parrot.flows.dev_loop import X`` and reads the restored one —
+    so the patch silently does nothing. That is exactly what broke
+    ``test_dev_recovery_integration.py::
+    test_runtime_entrypoints_build_per_run_flows`` in a full-suite run
+    while it passed in isolation.
+    """
+    sys.modules.update(saved)
+    for name, module in saved.items():
+        parent_name, _, child = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None:
+            setattr(parent, child, module)
+
+
 def test_import_does_not_pull_in_claude_agent_sdk():
     """``import parrot.flows.dev_loop`` MUST NOT load claude_agent_sdk."""
     # Save originals so we can restore them after the test — purging
@@ -52,7 +76,7 @@ def test_import_does_not_pull_in_claude_agent_sdk():
                 "claude_agent_sdk"
             ):
                 del sys.modules[mod]
-        sys.modules.update(saved)
+        _restore(saved)
 
 
 def test_models_module_is_pure():
@@ -90,4 +114,4 @@ def test_models_module_is_pure():
         for mod in list(sys.modules):
             if mod.startswith("parrot.flows.dev_loop.models"):
                 del sys.modules[mod]
-        sys.modules.update(saved)
+        _restore(saved)

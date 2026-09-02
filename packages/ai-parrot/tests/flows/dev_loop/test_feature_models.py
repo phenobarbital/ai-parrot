@@ -98,7 +98,11 @@ def test_judge_panel_defaults():
     assert len(panel.judges) == 3
     assert panel.decision == "majority"
     backends = [j.agent for j in panel.judges]
-    assert backends == ["claude-code", "codex", "gemini"]
+    # The third seat was "gemini" until it was barred from every reviewer
+    # role; the panel deliberately stays at THREE rather than dropping to
+    # two, because review() is fail-closed on a single judge erroring when
+    # panel_size == 2.
+    assert backends == ["claude-code", "codex", "mantle"]
 
 
 def test_judge_panel_config_requires_at_least_one_judge():
@@ -107,7 +111,7 @@ def test_judge_panel_config_requires_at_least_one_judge():
 
 
 def test_judge_spec_defaults_empty_model():
-    spec = JudgeSpec(agent="gemini")
+    spec = JudgeSpec(agent="mantle")
     assert spec.model == ""
 
 

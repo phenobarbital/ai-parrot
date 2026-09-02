@@ -380,16 +380,24 @@ class BedrockResearchPartner(AbstractResearchPartner):
             repo_root=Path(cwd),
             enable_web_search=conf.DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH,
         )
-        client.register_tools(toolkit.get_tools())
-
         prompt = self._build_prompt(brief=brief, question=question, cwd=cwd)
-        message = await client.ask(
-            prompt,
-            use_tools=True,
-            structured_output=ResearchFindings,
-            max_tokens=conf.DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS,
-            **self._reasoning_kwargs(),
-        )
+
+        # The client MUST be entered: AbstractClient.__aenter__ is what
+        # builds the per-loop SDK client (and the aiohttp session), and
+        # OpenAIBaseClient.ask() goes straight to `self.client.chat...`.
+        # Calling ask() on an unopened client raised "'NoneType' object has
+        # no attribute 'chat'" — swallowed by the coordinator's degradation
+        # boundary, so complementary research degraded on EVERY run and
+        # looked like a flaky backend instead of a missing `async with`.
+        async with client:
+            client.register_tools(toolkit.get_tools())
+            message = await client.ask(
+                prompt,
+                use_tools=True,
+                structured_output=ResearchFindings,
+                max_tokens=conf.DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS,
+                **self._reasoning_kwargs(),
+            )
 
         findings = message.structured_output
         if isinstance(findings, ResearchFindings):

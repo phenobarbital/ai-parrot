@@ -20,8 +20,10 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shlex
+from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -213,25 +215,46 @@ class QANode(DevLoopNode):
         executable: List[AcceptanceCriterion] = [
             c for c in brief.acceptance_criteria if not isinstance(c, ManualCriterion)
         ]
+        if not brief.acceptance_criteria:
+            # Briefless topologies (feature-mode / dev-flow, see _NoBugBrief)
+            # declare no criteria anywhere, which used to make this gate a
+            # no-op: `_run_deterministic_qa` returns a synthetic pass when
+            # `executable` is empty, so the run's ONLY test execution was
+            # whatever SynthesisNode happened to run. Derive a real one.
+            # Note the condition is "nobody declared anything", not "nothing
+            # executable": a brief that declares only manual criteria said
+            # so deliberately, and is left alone.
+            executable = await self._default_criteria(shared, research)
 
-        is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
+        is_advisory = getattr(self._active_reviewer(shared), "advisory", False)
 
         # FEAT-250 G4 / FEAT-270, optimised pipeline:
         #
-        # - Advisory reviewers (read-only): run deterministic QA and code
-        #   review CONCURRENTLY — the reviewer never modifies files, so
-        #   there is no race with the QA subagent reading the worktree.
+        # - Advisory reviewers (read-only): run deterministic QA FIRST,
+        #   then hand its recorded results to the review as evidence. An
+        #   advisory reviewer runs in a sandbox where nothing is writable
+        #   — not even /tmp — so it cannot execute a single acceptance
+        #   criterion itself; denied the recorded exit codes it attempts
+        #   them anyway and retry-spirals for ~10 minutes (df9f21053).
+        #   Running the two concurrently (bf2693e20) saved 3-5 minutes of
+        #   wall clock by structurally withholding that evidence, which
+        #   costs more than it saves and silently regressed df9f21053's
+        #   fix — the reviewer never modifies files, so ordering it after
+        #   QA needs no re-run either way.
         #
         # - Write-enabled reviewers: run code review FIRST so its fixes
         #   are committed before the single deterministic QA pass. This
         #   replaces the old QA → review → re-run-QA three-step with a
         #   two-step (review → QA), eliminating the redundant re-run.
+        #   There are no QA results to hand it yet by construction, and it
+        #   needs none: it can run the criteria itself.
         if is_advisory:
-            self.logger.info("Advisory reviewer — running deterministic QA and code review concurrently")
-            qa_coro = self._run_deterministic_qa(shared, research, brief, executable)
-            cr_coro = self._run_code_review(shared, research, brief)
-            report, (cr_passed, cr_findings, files_modified) = await asyncio.gather(qa_coro, cr_coro)
+            self.logger.info("Advisory reviewer — running deterministic QA first, then review on its evidence")
+            report = await self._run_deterministic_qa(shared, research, brief, executable)
             deterministic_passed = report.passed
+            cr_passed, cr_findings, files_modified = await self._run_code_review(
+                shared, research, brief, qa_report=report
+            )
         else:
             cr_passed, cr_findings, files_modified = await self._run_code_review(shared, research, brief)
 
@@ -458,6 +481,200 @@ class QANode(DevLoopNode):
         )
 
     # ------------------------------------------------------------------
+    # Default criterion derivation (briefless topologies)
+    # ------------------------------------------------------------------
+
+    async def _default_criteria(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+    ) -> List[AcceptanceCriterion]:
+        """Derive one executable criterion for a run that declared none.
+
+        Runs pytest scoped to the narrowest existing test directory that
+        mirrors each changed file (see :meth:`_pytest_targets`) — the
+        whole-monorepo suite is minutes of wall clock, and so is the full
+        test tree of ``ai-parrot`` itself (1250+ test modules), for a
+        change that usually lands in one subsystem.
+
+        Changed files are the UNION of ``DevelopmentOutput.files_changed``
+        and a ``git diff`` against the merge base (the same helper the
+        lint scoping uses). The union is deliberate: the development node
+        routinely reports the source files it edited but omits the test
+        modules it created, and the diff routinely misses work that is
+        not committed yet — either source alone under-scopes the gate.
+        A change that touched no Python file at all yields NO criterion —
+        a docs-only run has nothing to verify with pytest, and inventing
+        a whole-repo run for it is exactly the waste this method exists
+        to avoid.
+
+        The command bypasses ``ACCEPTANCE_CRITERION_ALLOWLIST`` for the
+        same reason the runner's revision path does (runner.py, the
+        ``ruff check .`` injection): it is composed here from internal
+        state and run via exec, never assembled from user input.
+
+        Args:
+            shared: The run's shared state (read-only here).
+            research: Upstream research output, for the worktree path.
+
+        Returns:
+            A single-element list holding the derived ``ShellCriterion``,
+            or an empty list when nothing pytest-shaped changed.
+        """
+        worktree = research.worktree_path
+        development = shared.get("development_output")
+        reported = [f for f in (getattr(development, "files_changed", None) or []) if f.endswith(".py")]
+        diffed = await self._get_changed_files(worktree)
+        files = list(dict.fromkeys([*reported, *diffed]))
+        if not files:
+            self.logger.info(
+                "No changed Python files for %s — deriving no default QA criterion.",
+                research.feat_id or research.jira_issue_key,
+            )
+            return []
+
+        targets = self._pytest_targets(files, worktree)
+        command = "pytest " + " ".join(shlex.quote(t) for t in targets) if targets else "pytest"
+        self.logger.info(
+            "No acceptance criteria declared for %s — derived deterministic criterion: %s",
+            research.feat_id or research.jira_issue_key,
+            command,
+        )
+        return [ShellCriterion(name="pytest (derived: changed scopes)", command=command)]
+
+    @classmethod
+    def _pytest_targets(cls, files: List[str], worktree_path: str) -> List[str]:
+        """Map changed files to the narrowest test targets that cover them.
+
+        Mapping a change to ``packages/<dist>/tests`` is correct but far
+        too coarse: for ``ai-parrot`` that is the entire 1250-module core
+        suite (~9 minutes), which is what the derived gate used to run for
+        a three-file change. The repo mirrors its source tree under
+        ``tests/`` (``src/parrot/flows/dev_loop/`` ->
+        ``tests/flows/dev_loop/``), so each changed file resolves instead
+        to the deepest mirrored directory that actually exists, walking up
+        towards ``packages/<dist>/tests`` until one does.
+
+        Per changed path:
+
+        * ``packages/<dist>/tests/...`` — a changed/created test module is
+          its own narrowest target, pointed at directly.
+        * ``packages/<dist>/src/<top_pkg>/<dirs>/<file>.py`` — mirrored to
+          the deepest existing ``packages/<dist>/tests/<dirs>``.
+        * anything else under ``packages/<dist>/`` — the package test root.
+        * ``tests/...`` — the repo-root suite, targeted directly.
+        * anything else (``scripts/``, ``docs/``…) — dropped (nothing maps).
+
+        A distribution with no ``tests`` directory at all contributes no
+        target: pytest exits 4 ("file or directory not found") on a
+        missing path, which would fail the gate for a package that simply
+        ships no tests.
+
+        Args:
+            files: Changed file paths, repo-relative.
+            worktree_path: Root the paths are relative to, for existence
+                checks.
+
+        Returns:
+            Existing test paths, sorted, with any target already covered
+            by an ancestor target removed; empty when nothing mapped (the
+            caller then falls back to an unscoped ``pytest``).
+        """
+        targets: set = set()
+        for path in files:
+            target = cls._pytest_target_for(path, worktree_path)
+            if target:
+                targets.add(target)
+        return cls._prune_nested(targets)
+
+    @classmethod
+    def _pytest_target_for(cls, path: str, worktree_path: str) -> Optional[str]:
+        """Resolve one changed path to its narrowest existing test target.
+
+        Args:
+            path: A repo-relative changed file path.
+            worktree_path: Root the path is relative to.
+
+        Returns:
+            The test path to hand pytest, or ``None`` when the file maps
+            to nothing that exists on disk.
+        """
+        parts = PurePosixPath(path).parts
+        if parts and parts[0] == "tests":
+            # The repo-root ``tests/`` tree (pytest's configured
+            # ``testpaths``, ~400 modules) lives outside ``packages/`` and
+            # mirrors nothing, so a change there has no package to map to.
+            # Left unmapped it produced NO target at all, which the caller
+            # turns into a bare ``pytest`` — the entire root suite. The
+            # changed module is its own target.
+            if os.path.exists(os.path.join(worktree_path, path)):
+                return path
+            # Deleted module — fall back to the root tree, but only if it
+            # exists (pytest exits 4 on a missing path).
+            return "tests" if os.path.isdir(os.path.join(worktree_path, "tests")) else None
+        if len(parts) < 3 or parts[0] != "packages":
+            return None
+        tests_root = f"packages/{parts[1]}/tests"
+        if not os.path.isdir(os.path.join(worktree_path, tests_root)):
+            return None
+
+        rest = parts[2:]
+        if rest[0] == "tests":
+            # The changed test module itself is the tightest possible
+            # target. Fall back to the package root if it was deleted.
+            candidate = "/".join(parts)
+            if os.path.exists(os.path.join(worktree_path, candidate)):
+                return candidate
+            return tests_root
+        if rest[0] == "src":
+            # packages/<dist>/src/<top_pkg>/<dirs...>/<file> -> <dirs...>
+            inner = rest[1:]
+            subdirs = inner[1:-1] if len(inner) >= 2 else ()
+            return cls._deepest_existing_dir(tests_root, subdirs, worktree_path)
+        return tests_root
+
+    @staticmethod
+    def _deepest_existing_dir(
+        tests_root: str,
+        subdirs: Tuple[str, ...],
+        worktree_path: str,
+    ) -> str:
+        """Walk ``tests_root/subdirs`` upwards to the first directory that exists.
+
+        Args:
+            tests_root: ``packages/<dist>/tests`` — verified to exist by
+                the caller, so this always terminates with a real path.
+            subdirs: The source-relative directory chain to mirror.
+            worktree_path: Root the paths are relative to.
+
+        Returns:
+            The deepest existing mirrored directory, at worst
+            ``tests_root`` itself.
+        """
+        for depth in range(len(subdirs), 0, -1):
+            candidate = "/".join((tests_root, *subdirs[:depth]))
+            if os.path.isdir(os.path.join(worktree_path, candidate)):
+                return candidate
+        return tests_root
+
+    @staticmethod
+    def _prune_nested(targets: set) -> List[str]:
+        """Drop targets already covered by another, broader target.
+
+        Without this, a change touching both ``.../dev_loop/nodes/qa.py``
+        and ``.../tests/flows/dev_loop/test_qa.py`` would hand pytest both
+        the directory and a module inside it, collecting that module (and
+        reporting its failures) twice.
+
+        Args:
+            targets: Candidate test paths.
+
+        Returns:
+            The surviving paths, sorted.
+        """
+        return sorted(t for t in targets if not any(t.startswith(f"{other}/") for other in targets))
+
+    # ------------------------------------------------------------------
     # Lint scoping helpers
     # ------------------------------------------------------------------
 
@@ -537,6 +754,63 @@ class QANode(DevLoopNode):
     # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)
     # ------------------------------------------------------------------
 
+    def _active_reviewer(self, shared: Dict[str, Any]) -> AbstractCodeReviewDispatcher:
+        """Return the reviewer for THIS run, honouring a per-run judge panel.
+
+        ``FeatureBrief.judge_panel`` is what the console's "Review &
+        judges" tab writes, and it was dead weight: the field existed, the
+        server parsed it into the brief, and nothing ever read it. The QA
+        reviewer came exclusively from the dispatcher injected at
+        construction time — built once at server start from
+        ``DEV_LOOP_JUDGE_PANEL`` / ``default_judge_panel()`` — so editing
+        the panel in the UI changed nothing about the run, which is how a
+        Gemini judge kept being dispatched after it had been removed
+        there.
+
+        The override applies only when the injected reviewer is itself a
+        judge panel (it exposes ``with_judges``). A deployment that
+        deliberately swapped the panel for something else — e.g.
+        ``DEV_FLOW_USE_REVIEW_PAIR=true``, which installs the model plan's
+        primary+counter pair — keeps its reviewer, and the ignored
+        override is logged rather than silently dropped.
+
+        Args:
+            shared: The flow's shared dict; ``feature_brief`` is read from
+                it when present (bug-mode runs have none).
+
+        Returns:
+            The configured reviewer, or a run-scoped copy of the panel.
+        """
+        cached = shared.get("_active_reviewer")
+        if cached is not None:
+            return cached
+        dispatcher = self._codereview_dispatcher
+        panel = getattr(shared.get("feature_brief"), "judge_panel", None)
+        judges = list(getattr(panel, "judges", None) or [])
+        if not judges:
+            return dispatcher
+        with_judges = getattr(dispatcher, "with_judges", None)
+        if with_judges is None:
+            self.logger.warning(
+                "Run requested a %d-judge panel (%s) but the active reviewer "
+                "is %r, which is not a judge panel — override ignored",
+                len(judges),
+                ", ".join(j.agent for j in judges),
+                getattr(dispatcher, "agent_name", type(dispatcher).__name__),
+            )
+            return dispatcher
+        self.logger.info(
+            "Using this run's judge panel: %s",
+            ", ".join(f"{j.agent}:{j.model or 'default'}" for j in judges),
+        )
+        # Cached on `shared` (run-scoped), never on `self`: QANode is a
+        # flow node reused across runs, and `execute()` calls this both
+        # for the `advisory` branch decision and for the review itself —
+        # they must agree, and must not rebuild the panel per QA attempt.
+        reviewer = with_judges(judges)
+        shared["_active_reviewer"] = reviewer
+        return reviewer
+
     async def _run_code_review(
         self,
         shared: Dict[str, Any],
@@ -586,7 +860,7 @@ class QANode(DevLoopNode):
             qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
         try:
-            verdict = await self._codereview_dispatcher.review(
+            verdict = await self._active_reviewer(shared).review(
                 brief=review_brief,
                 run_id=shared["run_id"],
                 node_id=self.name,

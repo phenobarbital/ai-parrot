@@ -206,12 +206,23 @@ class ComplementaryResearchCoordinator:
             )
         except Exception as exc:  # noqa: BLE001 — this IS the degradation boundary
             duration_ms = (time.perf_counter() - start) * 1000
-            self.logger.warning(
-                "Complementary research degraded (run_id=%s node_id=%s " "slug=%s): %s",
+            # Degrading is correct — complementary research is optional —
+            # but a bug on OUR side must not read like a Bedrock outage.
+            # A missing `async with` around the partner's client degraded
+            # every single run for months, and the one-line warning below
+            # (no traceback) is why nobody could tell. Programming errors
+            # get ERROR + a stack trace; a genuinely flaky backend keeps
+            # the quiet warning it deserves.
+            internal = isinstance(exc, (TypeError, AttributeError, NameError, ImportError))
+            self.logger.log(
+                logging.ERROR if internal else logging.WARNING,
+                "Complementary research degraded (run_id=%s node_id=%s slug=%s): %s%s",
                 run_id,
                 node_id,
                 slug,
                 exc,
+                " [internal error — this is a bug, not a backend failure]" if internal else "",
+                exc_info=internal,
             )
             self._emit(
                 "partner.degraded",

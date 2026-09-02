@@ -41,7 +41,15 @@ class DepCheckingGitDispatcher:
         self.seen: Optional[dict] = None
 
     async def dispatch(
-        self, *, brief: Any, profile: Any, output_model: Any, run_id: str, node_id: str, cwd: str
+        self,
+        *,
+        brief: Any,
+        profile: Any,
+        output_model: Any,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Any = None,
     ) -> DevelopmentOutput:
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
@@ -141,7 +149,14 @@ class TestIsolatedMode:
         ctx = {"run_id": "run-isolated", "research_output": research}
         result: DevelopmentOutput = await node.execute(ctx)
 
-        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        # The pool's own aggregation contributes the two task files; the
+        # node then reconciles against git, which also sees the per-spec
+        # index this run left modified in the base worktree. Both are
+        # genuine changes of this run, so both belong in the list.
+        assert {"TASK-1.py", "TASK-2.py"} <= set(result.files_changed)
+        assert set(result.files_changed) - {"TASK-1.py", "TASK-2.py"} == {
+            "sdd/tasks/index/my-feature.json"
+        }
         assert result.incomplete_tasks == []
         # Disjoint files -> clean sequential merges, nothing to resolve.
         # Both files must now exist in the BASE worktree (merged back).

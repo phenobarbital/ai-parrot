@@ -109,7 +109,15 @@ class FakeDispatcher:
         self._fail_counts: Dict[str, int] = dict(fail_counts or {})
 
     async def dispatch(
-        self, *, brief: Any, profile: Any, output_model: Any, run_id: str, node_id: str, cwd: str
+        self,
+        *,
+        brief: Any,
+        profile: Any,
+        output_model: Any,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Any = None,
     ) -> DevelopmentOutput:
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
@@ -148,7 +156,15 @@ class GitCommittingFakeDispatcher:
         self._fail_counts: Dict[str, int] = dict(fail_counts or {})
 
     async def dispatch(
-        self, *, brief: Any, profile: Any, output_model: Any, run_id: str, node_id: str, cwd: str
+        self,
+        *,
+        brief: Any,
+        profile: Any,
+        output_model: Any,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Any = None,
     ) -> DevelopmentOutput:
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))

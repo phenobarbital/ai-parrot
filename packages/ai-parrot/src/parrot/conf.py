@@ -851,10 +851,16 @@ DEV_LOOP_REVISION_TRIGGER: str = config.get("DEV_LOOP_REVISION_TRIGGER", fallbac
 # Model used by the additive sdd-codereview QA gate (FEAT-250).
 DEV_LOOP_CODEREVIEW_MODEL: str = config.get("DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6")
 # Which code-review dispatcher backs the QA node's code-review gate
-# (FEAT-270, extended FEAT-375): "claude-code" (default), "codex", "gemini",
-# "codex-adversarial" (read-only advisory second opinion), or "parallel"
-# (primary + codex-adversarial composite). Selected via
-# ``CodeReviewDispatcherFactory.create()`` at server startup.
+# (FEAT-270, extended FEAT-375): "claude-code" (default), "codex",
+# "codex-adversarial" / "nova-adversarial" / "mantle-adversarial"
+# (read-only advisory second opinions), or "parallel" (primary +
+# codex-adversarial composite). Selected via
+# ``CodeReviewDispatcherFactory.create()`` at server startup — an
+# unregistered name raises there and names the available set.
+# "gemini" and "google_coding" were removed: the Gemini/agy family is
+# barred from every reviewer role (see ``JudgeBackend`` in
+# ``flows/dev_loop/models/base.py`` and CLAUDE.md). Both remain
+# supported DEVELOPMENT backends via DEV_LOOP_DEVELOPMENT_AGENT.
 DEV_LOOP_CODEREVIEW_AGENT: str = config.get("DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code")
 
 # Default Jira workflow status chain for `jira_transition_to`'s multi-step
@@ -931,6 +937,19 @@ DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean("DEV_LOOP_REQUIRE_PLAN_
 # False (default) preserves the full QA gate.
 DEV_LOOP_SKIP_QA: bool = config.getboolean("DEV_LOOP_SKIP_QA", fallback=False)
 
+# Global default cap on reasoning turns for a Claude Code dispatch whose
+# profile leaves ``ClaudeCodeDispatchProfile.max_turns`` unset. 0 (default)
+# means no global cap — byte-identical to the pre-cap behavior. Hitting the
+# cap fails the dispatch loudly rather than truncating its output silently,
+# so raise it rather than leaving a legitimate long dispatch to die on it.
+DEV_LOOP_CLAUDE_MAX_TURNS: int = config.getint("DEV_LOOP_CLAUDE_MAX_TURNS", fallback=0)
+
+# Turn cap for the post-merge synthesis reconciliation dispatch specifically.
+# Reconciliation is bounded work (inspect the seams, run the suite, commit
+# the fixes); an unbounded session is how a 40-turn seam hunt happens. 0
+# disables the per-node cap and falls back to DEV_LOOP_CLAUDE_MAX_TURNS.
+DEV_LOOP_SYNTHESIS_MAX_TURNS: int = config.getint("DEV_LOOP_SYNTHESIS_MAX_TURNS", fallback=30)
+
 # FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
 # it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
 # re-acquiring it once the gate resolves. True (default) per spec §2 —
@@ -1004,11 +1023,17 @@ DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get("DEV_LOOP_ADVERSARIAL_BASE_REF",
 # FEAT-378: JSON spec of the feature-mode QA judge panel used by
 # ``JudgePanelReviewDispatcher`` (registered as "judge-panel"), e.g.
 # '{"judges": [{"agent": "claude-code", "model": "claude-sonnet-4-6"},
-# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini"}],
+# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "mantle"}],
 # "decision": "majority"}' — matches ``JudgePanelConfig``'s shape. Empty
 # (default) falls back to ``default_judge_panel()`` (3 judges: claude-code,
-# codex via the adversarial ``sdd-secondopinion`` profile, gemini; simple
-# majority, tie/majority-breaking abstention → escalate, fail-closed).
+# codex via the adversarial ``sdd-secondopinion`` profile, and mantle
+# (``gpt-5.6-sol``, read-only by construction); simple majority,
+# tie/majority-breaking abstention → escalate, fail-closed).
+# ``agent`` accepts only ``JudgeBackend`` values — claude-code, codex,
+# mantle. The third seat was "gemini" until it was barred from every
+# reviewer role; keeping the panel at THREE (rather than dropping to two)
+# is deliberate — see ``default_judge_panel()``'s docstring for why a
+# two-judge panel is fail-closed on any single judge erroring.
 DEV_LOOP_JUDGE_PANEL: str = config.get("DEV_LOOP_JUDGE_PANEL", fallback="")
 
 # FEAT-378: directory (relative to the feature worktree root) where

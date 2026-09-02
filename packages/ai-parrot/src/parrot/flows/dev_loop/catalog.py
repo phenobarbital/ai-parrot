@@ -37,9 +37,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from parrot import conf
 
 # Backends that ``JudgePanelReviewDispatcher._build_judge`` can map to a
-# review dispatcher. Every other backend raises ValueError there — see
-# ``code_review.py`` ("supported: claude-code, codex, gemini").
-JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
+# review dispatcher. Kept equal to ``models.base.JudgeBackend`` by test.
+# "gemini"/"google_coding" were removed with their review dispatchers:
+# the Gemini/agy family is banned from every reviewer role (see
+# ``JudgeBackend``'s own comment and CLAUDE.md). Both remain fully
+# supported DEVELOPMENT backends.
+JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "mantle")
 
 # The adversarial seat's static, no-behaviour-change default (FEAT-405
 # [R3]): unset config resolves here. ``CodexAdversarialReviewDispatcher``
@@ -93,8 +96,10 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
 
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
-# that can serve as the *primary* reviewer of a bug-mode run.
-PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
+# that can serve as the *primary* reviewer of a bug-mode run. Same removal
+# as ``JUDGE_BACKENDS`` above — a banned reviewer is banned in every
+# review role, not just on the panel.
+PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex")
 
 # Valid values for the config-resolved research-partner backend selector
 # (FEAT-482 Module 1). Both reach Bedrock on the SAME ``AWS_NOVA_API_KEY``
@@ -264,8 +269,9 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         default_model="auto",
         models=("auto",),
         requires="`gemini` CLI on $PATH, authenticated",
-        roles=("development", "judge", "primary_review"),
-        notes="`auto` lets the CLI pick the model.",
+        roles=("development",),
+        notes="`auto` lets the CLI pick the model. Development only — "
+        "barred from every reviewer role (see JudgeBackend).",
     ),
     BackendInfo(
         id="google_coding",
@@ -275,8 +281,10 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         default_model="auto",
         models=("auto", "gemini-3.6-flash", "gemini-3.0-pro"),
         requires="`agy` CLI on $PATH, authenticated",
-        roles=("development", "judge", "primary_review"),
-        notes="Headless Google Antigravity CLI console dispatcher.",
+        roles=("development",),
+        notes="Headless Google Antigravity CLI console dispatcher. "
+        "Development only — barred from every reviewer role after it "
+        "returned a fabricated review (see JudgeBackend / CLAUDE.md).",
     ),
     BackendInfo(
         id="nvidia",
@@ -403,6 +411,34 @@ RESEARCH_PARTNER_BACKENDS: Tuple[BackendInfo, ...] = (
 # build_dispatcher branch" tuple.
 _BY_ID.update({b.id: b for b in RESEARCH_PARTNER_BACKENDS})
 
+
+# Review-only backends: reviewers that are NOT dev-loop coding backends.
+# Same reasoning as ``RESEARCH_PARTNER_BACKENDS`` above — ``BACKENDS``'
+# documented contract is "one entry per ``build_dispatcher`` branch", and
+# every existing test asserts each ``BACKENDS`` entry is development-
+# capable. "mantle" has no ``build_dispatcher`` branch at all: it is a
+# read-only counter-reviewer driving ``BedrockMantleClient`` directly, so
+# it lives here and is merged into the id lookup only.
+REVIEW_ONLY_BACKENDS: Tuple[BackendInfo, ...] = (
+    BackendInfo(
+        id="mantle",
+        label="Mantle (Bedrock counter-reviewer)",
+        transport="api",
+        model_env="DEV_LOOP_MANTLE_REVIEW_MODEL",
+        default_model="gpt-5.6-sol",
+        models=("gpt-5.6-sol",),
+        requires="AWS credentials with a Bedrock API key (bedrock-mantle); "
+        "reuses AWS_NOVA_API_KEY",
+        roles=("judge", "adversarial"),
+        notes="Read-only BY CONSTRUCTION — its profile has no tools/"
+        "sandbox field to set. Holds the third default judge seat that "
+        "Gemini used to hold; a three-judge panel is what keeps a real "
+        "2-of-3 majority and survives one judge being down.",
+    ),
+)
+
+_BY_ID.update({b.id: b for b in REVIEW_ONLY_BACKENDS})
+
 ConfigGetter = Callable[..., Any]
 
 
@@ -500,7 +536,7 @@ def default_judge_panel_payload(config_getter: Optional[ConfigGetter] = None) ->
         return [
             {"agent": "claude-code", "model": ""},
             {"agent": "codex", "model": ""},
-            {"agent": "gemini", "model": ""},
+            {"agent": "mantle", "model": ""},
         ]
 
 
@@ -548,6 +584,7 @@ __all__ = [
     "JUDGE_BACKENDS",
     "PRIMARY_REVIEW_BACKENDS",
     "RESEARCH_PARTNER_BACKENDS",
+    "REVIEW_ONLY_BACKENDS",
     "backends_for_role",
     "catalog_payload",
     "default_judge_panel_payload",

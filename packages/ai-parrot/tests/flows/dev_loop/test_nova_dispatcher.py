@@ -44,6 +44,13 @@ class TestNovaCodeDispatcher:
         args = dispatcher._completion_args(NovaCodeDispatchProfile(), tools=tools)
         assert args["tools"] == tools
         assert args["tool_choice"] == "auto"
+        # Multi-call turns are ON by default: one tool per turn was
+        # spending the `max_turns` budget on file reads.
+        assert args["parallel_tool_calls"] is True
+
+    def test_completion_args_honour_profile_parallel_tool_calls(self, dispatcher):
+        profile = NovaCodeDispatchProfile(parallel_tool_calls=False)
+        args = dispatcher._completion_args(profile, tools=[])
         assert args["parallel_tool_calls"] is False
 
     @pytest.mark.asyncio

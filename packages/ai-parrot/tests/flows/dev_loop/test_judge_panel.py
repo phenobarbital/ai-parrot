@@ -7,6 +7,8 @@ this decouples the majority-decision logic under test from
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from parrot.flows.dev_loop.code_review import (
@@ -55,7 +57,7 @@ async def test_majority_pass():
     panel = _panel({
         "claude-code": _StubJudge(_v(True)),
         "codex": _StubJudge(_v(True)),
-        "gemini": _StubJudge(_v(False)),
+        "mantle": _StubJudge(_v(False)),
     })
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     assert verdict.passed is True
@@ -65,18 +67,18 @@ async def test_majority_fail():
     panel = _panel({
         "claude-code": _StubJudge(_v(False)),
         "codex": _StubJudge(_v(True)),
-        "gemini": _StubJudge(_v(False)),
+        "mantle": _StubJudge(_v(False)),
     })
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     assert verdict.passed is False
 
 
 async def test_tie_escalates():
-    specs = [JudgeSpec(agent="claude-code"), JudgeSpec(agent="gemini")]
+    specs = [JudgeSpec(agent="claude-code"), JudgeSpec(agent="mantle")]
     panel = _panel(
         {
             "claude-code": _StubJudge(_v(True)),
-            "gemini": _StubJudge(_v(False)),
+            "mantle": _StubJudge(_v(False)),
         },
         judges=specs,
     )
@@ -88,7 +90,7 @@ async def test_judge_down_degrades_to_remaining():
     panel = _panel({
         "claude-code": _StubJudge(_v(True)),
         "codex": _StubJudge(None, raises=RuntimeError("infra boom")),
-        "gemini": _StubJudge(_v(True)),
+        "mantle": _StubJudge(_v(True)),
     })
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     # Both active (non-errored) judges passed -> majority pass.
@@ -97,12 +99,12 @@ async def test_judge_down_degrades_to_remaining():
 
 
 async def test_majority_down_escalates():
-    specs = [JudgeSpec(agent="claude-code"), JudgeSpec(agent="codex"), JudgeSpec(agent="gemini")]
+    specs = [JudgeSpec(agent="claude-code"), JudgeSpec(agent="codex"), JudgeSpec(agent="mantle")]
     panel = _panel(
         {
             "claude-code": _StubJudge(None, raises=RuntimeError("boom 1")),
             "codex": _StubJudge(None, raises=RuntimeError("boom 2")),
-            "gemini": _StubJudge(_v(True)),
+            "mantle": _StubJudge(_v(True)),
         },
         judges=specs,
     )
@@ -118,13 +120,13 @@ async def test_findings_source_tagged():
             _v(True, findings=[CodeReviewFinding(message="nit here", severity="nit", file="a.py")])
         ),
         "codex": _StubJudge(_v(True)),
-        "gemini": _StubJudge(
+        "mantle": _StubJudge(
             _v(True, findings=[CodeReviewFinding(message="another nit", severity="nit", file="b.py")])
         ),
     })
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     sources = {f.source for f in verdict.findings}
-    assert sources == {"claude-code", "gemini"}
+    assert sources == {"claude-code", "mantle"}
 
 
 def test_factory_registration():
@@ -149,14 +151,14 @@ def test_default_panel_from_conf_unset(monkeypatch):
 def test_panel_from_conf_json(monkeypatch):
     raw = (
         '{"judges": [{"agent": "claude-code", "model": "x"}, '
-        '{"agent": "gemini"}], "decision": "majority"}'
+        '{"agent": "mantle"}], "decision": "majority"}'
     )
 
     def fake_getter(key, fallback=None):
         return raw if key == "DEV_LOOP_JUDGE_PANEL" else fallback
 
     dispatcher = JudgePanelReviewDispatcher(redis_url="redis://fake", config_getter=fake_getter)
-    assert [j.agent for j in dispatcher._judge_specs] == ["claude-code", "gemini"]
+    assert [j.agent for j in dispatcher._judge_specs] == ["claude-code", "mantle"]
     assert dispatcher._judge_specs[0].model == "x"
 
 
@@ -255,3 +257,83 @@ async def test_review_without_round_still_records():
 
     assert "" in host.state.judge_verdicts
     assert host.state.judge_verdicts[""][0].judge_id == "claude-code"
+
+
+class TestJudgeBackendPinning:
+    """The judge backend set has three copies; they must not drift.
+
+    ``JudgeBackend`` (the model) is authoritative. ``catalog.JUDGE_BACKENDS``
+    and ``console._JUDGE_REVIEW_CAPABLE_BACKENDS`` restate it — the console
+    one deliberately, because that module keeps the dev-loop models behind
+    ``TYPE_CHECKING`` to avoid a heavy runtime import. Drift is not
+    hypothetical: the console constant previously offered "google_coding"
+    (and later "gemini") rows that ``JudgeSpec`` rejects outright with a
+    ``ValidationError``, i.e. a guaranteed dead-end choice in the wizard.
+    """
+
+    def test_catalog_matches_the_model(self):
+        from parrot.flows.dev_loop import catalog
+        from parrot.flows.dev_loop.models.base import JudgeBackend
+
+        assert catalog.JUDGE_BACKENDS == get_args(JudgeBackend)
+
+    def test_console_constant_matches_the_model(self):
+        from parrot.cli.devloop.console import _JUDGE_REVIEW_CAPABLE_BACKENDS
+        from parrot.flows.dev_loop.models.base import JudgeBackend
+
+        assert _JUDGE_REVIEW_CAPABLE_BACKENDS == get_args(JudgeBackend)
+
+    def test_every_judge_backend_builds_a_reviewer(self):
+        """``_build_judge`` must map every declared backend, or it raises.
+
+        Guards the split introduced when "mantle" joined the panel: it is
+        the one judge with no ``build_dispatcher`` branch, so it has to be
+        handled BEFORE the ``DevAgentSpec`` round-trip.
+        """
+        from parrot.flows.dev_loop.models.base import JudgeBackend
+
+        dispatcher = JudgePanelReviewDispatcher(redis_url="redis://fake")
+        for backend in get_args(JudgeBackend):
+            judge_id, reviewer = dispatcher._build_judge(JudgeSpec(agent=backend))
+            assert judge_id == backend
+            assert hasattr(reviewer, "review")
+
+
+class TestPerRunPanelOverride:
+    """``with_judges`` — the seam that makes the console's judge rows real."""
+
+    def test_returns_a_new_instance_leaving_the_original_alone(self):
+        original = JudgePanelReviewDispatcher(redis_url="redis://fake")
+        before = [j.agent for j in original._judge_specs]
+
+        override = original.with_judges([JudgeSpec(agent="claude-code")])
+
+        assert override is not original
+        assert [j.agent for j in original._judge_specs] == before
+
+    def test_carries_transport_settings_across(self):
+        original = JudgePanelReviewDispatcher(
+            redis_url="redis://fake", max_concurrent=7, stream_ttl_seconds=99
+        )
+        override = original.with_judges([JudgeSpec(agent="claude-code")])
+
+        assert override._redis_url == "redis://fake"
+        assert override._max_concurrent == 7
+        assert override._stream_ttl_seconds == 99
+
+    def test_appends_the_adversarial_seat_when_missing(self):
+        """Adversarial review is not optional — not even via a form."""
+        override = JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges(
+            [JudgeSpec(agent="claude-code")]
+        )
+        assert [j.agent for j in override._judge_specs] == ["claude-code", "codex"]
+
+    @pytest.mark.parametrize("adversary", ["codex", "mantle"])
+    def test_keeps_a_panel_that_already_has_an_adversary(self, adversary):
+        judges = [JudgeSpec(agent="claude-code"), JudgeSpec(agent=adversary)]
+        override = JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges(judges)
+        assert [j.agent for j in override._judge_specs] == ["claude-code", adversary]
+
+    def test_rejects_an_empty_panel(self):
+        with pytest.raises(ValueError, match="at least one judge"):
+            JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges([])

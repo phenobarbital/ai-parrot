@@ -268,17 +268,13 @@ class TestCatalogAdditivity:
         """Spec-resolved: the Codex CLI cannot run gpt-5.6-sol."""
         assert "gpt-5.6-sol" not in llm_catalog.get_backend("codex").models
 
-    def test_judge_and_primary_review_backends_unchanged(self):
-        """JudgeSpec / judge panel are explicitly untouched by FEAT-486."""
-        assert llm_catalog.JUDGE_BACKENDS == (
-            "claude-code",
-            "codex",
-            "gemini",
-            "google_coding",
-        )
-        assert llm_catalog.PRIMARY_REVIEW_BACKENDS == (
-            "claude-code",
-            "codex",
-            "gemini",
-            "google_coding",
-        )
+    def test_judge_and_primary_review_backends(self):
+        """The review-capable sets after the Gemini/agy reviewer ban.
+
+        FEAT-486 left these untouched; the later ban did not. "gemini"
+        and "google_coding" are gone from BOTH sets — a reviewer barred
+        from the panel is barred from the primary seat too — and "mantle"
+        joined JUDGE_BACKENDS as the panel's third seat.
+        """
+        assert llm_catalog.JUDGE_BACKENDS == ("claude-code", "codex", "mantle")
+        assert llm_catalog.PRIMARY_REVIEW_BACKENDS == ("claude-code", "codex")
