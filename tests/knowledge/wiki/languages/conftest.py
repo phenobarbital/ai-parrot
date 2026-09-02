@@ -5,7 +5,33 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from parrot.knowledge.wiki.languages import treesitter
+from parrot.knowledge.wiki.languages import astgrep, treesitter
+
+
+def _has_astgrep() -> bool:
+    """Whether ``ast-grep-py`` is importable (module-load-time probe)."""
+    return astgrep.is_available()
+
+
+#: Marker for tests that require the optional ``ast-grep-py`` extra —
+#: skipped (not failed) when the ``wiki-structural`` extra is absent.
+requires_astgrep = pytest.mark.skipif(not _has_astgrep(), reason="ast-grep-py not installed")
+
+
+@pytest.fixture
+def force_no_astgrep(monkeypatch):
+    """Pretend ``ast-grep-py`` is not installed for this test.
+
+    Monkeypatches :func:`parrot.knowledge.wiki.languages.astgrep.is_available`
+    to always return ``False`` and clears the ``RuleSet.load`` cache, so
+    scanners exercise their tree-sitter/heuristic tiers unconditionally
+    regardless of whether the optional ``ai-parrot[wiki-structural]``
+    extra happens to be installed in the environment running the suite.
+    """
+    monkeypatch.setattr(astgrep, "is_available", lambda: False)
+    astgrep.RuleSet.load.cache_clear()
+    yield
+    astgrep.RuleSet.load.cache_clear()
 
 
 @pytest.fixture
