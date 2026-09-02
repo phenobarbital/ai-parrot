@@ -8,6 +8,7 @@ pandas/numpy/matplotlib), so they need a generous `RLIMIT_AS` to boot — see
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import sys
 import time
 
@@ -465,3 +466,35 @@ class TestConcurrencyRegressions:
             assert await handle.get_var("x") == 1
         finally:
             await handle.kill()
+
+    async def test_deadline_kill_survives_a_saturated_executor(self, tmp_path):
+        """AC4/AC12: the SIGKILL path must not queue behind the reads it interrupts.
+
+        `_kill_process()` runs on a dedicated `_lifecycle_executor`. If it
+        shared `self._executor` with `_roundtrip()`/`_await_ready()`, then once
+        every thread there is parked on a blocking `read_frame()` the timed-out
+        `execute()` could never get a thread to run the kill — while freeing a
+        thread required that kill. Reproduced as a hard hang (execute() never
+        returning and `kill()` hanging too) with the one-thread executor below.
+        """
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="saturated"
+        )
+        config = WorkerConfig(
+            deadline_ms=1_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0
+        )
+        handle = WorkerHandle(config, output_dir=str(tmp_path), executor=executor)
+        await handle.start()
+        await handle.wait_ready()
+        try:
+            # Generous ceiling: the point is that it returns AT ALL.
+            result = await asyncio.wait_for(
+                handle.execute("while True:\n    pass"), timeout=20.0
+            )
+            assert isinstance(result, dict)
+            assert result["status"] == "error"
+            assert "timeout" in result["result"].lower()
+            assert handle.is_alive is False
+        finally:
+            await asyncio.wait_for(handle.kill(), timeout=10.0)
+            executor.shutdown(wait=False, cancel_futures=True)

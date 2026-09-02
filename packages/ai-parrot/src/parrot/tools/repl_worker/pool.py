@@ -203,12 +203,32 @@ class WorkerPool:
                     logger.exception("WorkerPool: failed to spawn a prewarmed worker")
                     return
                 async with self._lock:
-                    if not self._started:
-                        # shutdown() ran while we were spawning — this
-                        # worker would otherwise be appended into a pool
-                        # that already believes it holds zero live workers
-                        # (an orphan `shutdown()` never sees). Kill it
-                        # instead of resurrecting it (code-review fix, AC12).
+                    # FEAT-500 (code review): the ceiling must be re-checked
+                    # HERE, not only before the spawn. The lock was released
+                    # for `_spawn_handle()` + `wait_ready()` — a window this
+                    # feature widened from a sub-second spawn to up to
+                    # `bootstrap_timeout_ms` — and a concurrent `acquire()`
+                    # can spawn its own fresh worker off the same stale count
+                    # during it. Appending unconditionally then pushes the
+                    # pool past `max_workers` (reproduced 3/3 with
+                    # `max_workers=1, prewarm_pool_size=1`), breaking the
+                    # "never queues past the ceiling" contract that
+                    # `WorkerPoolExhaustedError` documents.
+                    over_ceiling = len(self._sessions) + len(self._prewarmed) >= self._ceiling
+                    if not self._started or over_ceiling:
+                        # Either shutdown() ran while we were spawning — this
+                        # worker would otherwise be appended into a pool that
+                        # already believes it holds zero live workers (an
+                        # orphan `shutdown()` never sees) — or the spare
+                        # became surplus to the ceiling while it booted.
+                        # Either way, kill it instead of adopting it
+                        # (code-review fix, AC12).
+                        if over_ceiling and self._started:
+                            logger.debug(
+                                "WorkerPool: discarding a now-ready spare — the ceiling "
+                                "(%d) was reached while it was bootstrapping",
+                                self._ceiling,
+                            )
                         stale_handle = handle
                         handle = None
                     else:

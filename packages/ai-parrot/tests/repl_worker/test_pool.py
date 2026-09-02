@@ -256,3 +256,37 @@ class TestShutdownDuringBootstrap:
         assert all(
             not handle.is_alive for handle in spawned
         ), "a worker spawned but not yet prewarmed outlived shutdown()"
+
+class TestCeilingUnderBootstrap:
+    """Code-review finding (FEAT-500): the ceiling must hold across the readiness wait."""
+
+    async def test_ceiling_not_exceeded_while_a_spare_is_booting(self, tmp_path):
+        """A spare that becomes surplus while booting is discarded, not adopted.
+
+        `_top_up_prewarmed()` releases the lock for `_spawn_handle()` +
+        `wait_ready()` (up to `bootstrap_timeout_ms`). A concurrent `acquire()`
+        spawning off that stale count used to push the pool to
+        `max_workers + 1`.
+        """
+        config = WorkerConfig(
+            deadline_ms=5_000, max_workers=1, idle_ttl_seconds=30, prewarm_pool_size=1
+        )
+        pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        try:
+            await pool._ensure_started()
+            await asyncio.sleep(0.3)  # spare is spawned but still bootstrapping
+            assert pool._prewarmed == []
+
+            await pool.acquire("session-a")  # spawns fresh off the stale count
+
+            for _ in range(60):  # let the top-up finish and decide
+                await asyncio.sleep(0.1)
+                if pool._prewarmed:
+                    break
+
+            total = len(pool._sessions) + len(pool._prewarmed)
+            assert total <= pool._ceiling, (
+                f"pool holds {total} workers, ceiling is {pool._ceiling}"
+            )
+        finally:
+            await pool.shutdown()

@@ -165,6 +165,21 @@ class WorkerHandle:
         self._stdio_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="repl-worker-stdio"
         )
+        # FEAT-500 (code review): the SIGKILL path must NEVER queue behind the
+        # very blocking reads it exists to interrupt. `_kill_process()` used to
+        # dispatch `proc.kill`/`proc.wait` to `self._executor` — the same pool
+        # that `_roundtrip()` and `_await_ready()` occupy with blocking
+        # `read_frame()` calls. Once every thread there is parked on a read,
+        # a timed-out `execute()` could never obtain a thread to run the kill,
+        # and freeing a thread required that kill to run first: a hard
+        # deadlock in which the `deadline_ms` guarantee (AC4) silently stops
+        # working and `kill()` itself hangs (reproduced with a 1-thread
+        # executor). This tiny, always-self-owned pool keeps process teardown
+        # independent of request traffic — the same split, for the same
+        # reason, as `_stdio_executor` above.
+        self._lifecycle_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="repl-worker-lifecycle"
+        )
         self._stdio_task: Optional[asyncio.Task] = None
         #: Bounded ring buffer of recent stderr lines, fed by the continuous
         #: drain task (`_drain_stdio`) — `_classify_death()` reads from this
@@ -513,19 +528,24 @@ class WorkerHandle:
         """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16).
 
         Idempotent and safe to call after the process is already reaped —
-        deliberately touches ``self._executor`` ONLY when there's actually
-        something to kill/wait for (code-review fix): a self-owned executor
-        is shut down at the end of :meth:`kill`, so an unconditional
-        post-kill ``wait()`` dispatch here would raise
-        ``RuntimeError: cannot schedule new futures after shutdown`` on a
-        second call (e.g. `_classify_death()` reached after an external
-        `kill()`, or `kill()` called twice).
+        deliberately touches its executor ONLY when there's actually
+        something to kill/wait for (code-review fix): the executor is shut
+        down at the end of :meth:`kill`, so an unconditional post-kill
+        ``wait()`` dispatch here would raise ``RuntimeError: cannot schedule
+        new futures after shutdown`` on a second call (e.g.
+        `_classify_death()` reached after an external `kill()`, or `kill()`
+        called twice).
+
+        Runs on ``self._lifecycle_executor``, never on ``self._executor``
+        (FEAT-500 code review): dispatching the kill to the same pool whose
+        threads are parked on blocking pipe reads deadlocks — see the comment
+        on that attribute in :meth:`__init__`.
         """
         if self._proc is None or self._proc.poll() is not None:
             return  # nothing alive to kill, or already reaped
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._proc.kill)
-        await loop.run_in_executor(self._executor, self._proc.wait)
+        await loop.run_in_executor(self._lifecycle_executor, self._proc.kill)
+        await loop.run_in_executor(self._lifecycle_executor, self._proc.wait)
 
     async def _classify_death(self) -> str:
         """Best-effort classification of an unexpected worker death.
@@ -767,6 +787,8 @@ class WorkerHandle:
         self._from_worker = None
         if self._owns_executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
-        # `_stdio_executor` is always self-owned (see `__init__`) — always
-        # shut it down here, regardless of `_owns_executor`.
+        # `_stdio_executor` and `_lifecycle_executor` are always self-owned
+        # (see `__init__`) — always shut them down here, regardless of
+        # `_owns_executor`.
         self._stdio_executor.shutdown(wait=False, cancel_futures=True)
+        self._lifecycle_executor.shutdown(wait=False, cancel_futures=True)
