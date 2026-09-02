@@ -134,7 +134,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Docs + artifacts only, no source files shared with any other task; can run in a separate worktree alongside TASK-2761/2762 once TASK-2760 has landed (message strings must match the implementation).",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2763-docs-and-bootstrap-profile.md"
+      "completed_at": "2026-09-02T15:16:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2763-docs-and-bootstrap-profile.md"
     }
   ]
 }
