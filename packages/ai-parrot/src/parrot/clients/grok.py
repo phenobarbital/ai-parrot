@@ -367,6 +367,8 @@ class GrokClient(AbstractClient):
         structured_payload = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response))
                 if output_config.custom_parser:
                     structured_payload = output_config.custom_parser(text_content)
                 else:
@@ -765,6 +767,8 @@ class GrokClient(AbstractClient):
                 raw_text = response.content or ""
                 output = raw_text
                 if config:
+                    # Known-truncated output must not reach a custom parser either.
+                    self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                     if config.custom_parser:
                         output = config.custom_parser(raw_text)
                     else:

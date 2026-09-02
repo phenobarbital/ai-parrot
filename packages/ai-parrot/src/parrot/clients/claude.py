@@ -670,6 +670,8 @@ class AnthropicClient(AbstractClient):
                 if content_block["type"] == "text"
             )
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(result.get("stop_reason"))
                 if output_config.custom_parser:
                     final_output = await output_config.custom_parser(
                         text_content
@@ -2018,6 +2020,8 @@ Provide your final answer with:
             # Parse structured output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:

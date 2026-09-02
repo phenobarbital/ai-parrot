@@ -997,6 +997,8 @@ class BedrockConverseBase(AbstractClient):
         assistant_response_text = "".join(block.get("text", "") for block in content_blocks if "text" in block)
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(result.get("stopReason"), model=resolved_model)
                 if output_config.custom_parser:
                     final_output = await output_config.custom_parser(assistant_response_text)
                 else:
@@ -1609,6 +1611,8 @@ class BedrockConverseBase(AbstractClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(result), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:

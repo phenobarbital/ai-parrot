@@ -259,6 +259,89 @@ class TestGoogleInvokeTruncation:
         assert isinstance(result.output, str)
 
 
+def _make_openai_client():
+    from parrot.clients.gpt import OpenAIClient
+
+    client = OpenAIClient.__new__(OpenAIClient)
+    client.model = "gpt-4o"
+    client._lightweight_model = "gpt-4.1"
+    client._fallback_model = None
+    client.logger = MagicMock()
+    client._tool_manager = MagicMock()
+    client._tool_manager.get_tool_schemas.return_value = []
+    client._tool_manager.tools = {}
+    from datamodel.parsers.json import JSONContent
+
+    client._json = JSONContent()
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    return client
+
+
+class TestOpenAIResponsesShimTruncation:
+    """Responses API reports truncation top-level (status/incomplete_details)."""
+
+    async def test_incomplete_max_output_tokens_maps_to_finish_reason(self):
+        client = _make_openai_client()
+        item = SimpleNamespace(content=[{"type": "output_text", "text": '{"value": "ab'}])
+        resp = SimpleNamespace(
+            output=[item],
+            output_text=None,
+            status="incomplete",
+            incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            usage=None,
+        )
+        client._prepare_responses_args = MagicMock(return_value={})
+        client._call_responses_create = AsyncMock(return_value=resp)
+
+        compat = await client._responses_completion(
+            model="gpt-5", messages=[{"role": "user", "content": "x"}]
+        )
+
+        assert compat.choices[0].finish_reason == "max_output_tokens"
+        assert client._extract_finish_reason(compat) == "max_output_tokens"
+        with pytest.raises(TruncatedResponseError):
+            client._raise_if_truncated(client._extract_finish_reason(compat))
+
+    async def test_completed_status_leaves_finish_reason_none(self):
+        client = _make_openai_client()
+        item = SimpleNamespace(content=[{"type": "output_text", "text": "ok"}])
+        resp = SimpleNamespace(
+            output=[item], output_text=None, status="completed", incomplete_details=None, usage=None
+        )
+        client._prepare_responses_args = MagicMock(return_value={})
+        client._call_responses_create = AsyncMock(return_value=resp)
+
+        compat = await client._responses_completion(model="gpt-5", messages=[])
+        assert compat.choices[0].finish_reason is None
+        client._raise_if_truncated(client._extract_finish_reason(compat))  # no raise
+
+
+class TestCustomParserGuard:
+    """A custom_parser must not receive known-truncated text either."""
+
+    async def test_openai_invoke_custom_parser_raises_on_length(self, bind_sdk_client):
+        client = _make_openai_client()
+        message = SimpleNamespace(content='{"value": "ab', tool_calls=None)
+        choice = SimpleNamespace(message=message, finish_reason="length")
+        usage = SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        sdk = MagicMock()
+        sdk.chat = MagicMock()
+        sdk.chat.completions = MagicMock()
+        sdk.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(choices=[choice], usage=usage)
+        )
+        bind_sdk_client(client, sdk)
+
+        parser = MagicMock(return_value=Payload(value="should-not-run"))
+        cfg = StructuredOutputConfig(
+            output_type=Payload, format=OutputFormat.CUSTOM, custom_parser=parser
+        )
+        with pytest.raises(TruncatedResponseError):
+            await client.invoke("extract", structured_output=cfg)
+        parser.assert_not_called()
+
+
 class TestOpenAIInvokeTruncation:
     async def test_length_raises_invoke_error(self, bind_sdk_client):
         from parrot.clients.gpt import OpenAIClient

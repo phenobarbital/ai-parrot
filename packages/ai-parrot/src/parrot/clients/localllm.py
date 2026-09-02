@@ -286,6 +286,8 @@ class LocalLLMClient(OpenAIBaseClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
@@ -365,6 +367,8 @@ class LocalLLMClient(OpenAIBaseClient):
             raw_text = response.choices[0].message.content or ""
 
             output: Any = raw_text
+            # Known-truncated output must not reach a custom parser either.
+            self._raise_if_truncated(self._extract_finish_reason(response), model=model)
             if config.custom_parser:
                 output = config.custom_parser(raw_text)
             else:

@@ -3536,6 +3536,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     else:
                         self.logger.warning("No structured text received, falling back to original response")
                         final_output = assistant_response_text
+            except InvokeError:
+                # A truncated reformat response is a real error, not a fallback case.
+                raise
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails
@@ -5603,6 +5606,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Parse output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
