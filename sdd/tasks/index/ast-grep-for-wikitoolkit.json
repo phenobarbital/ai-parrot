@@ -52,7 +52,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of TASK-2741 (python.py only) and TASK-2747 (store).",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2740-outline-renderer-and-scanner-wiring.md"
+      "completed_at": "2026-09-02T11:40:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2740-outline-renderer-and-scanner-wiring.md"
     },
     {
       "id": "TASK-2741",
