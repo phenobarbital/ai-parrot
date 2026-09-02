@@ -10,6 +10,7 @@ illustrative 512 MiB "fast tests" fixture.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import time
 
@@ -287,3 +288,40 @@ class TestCeilingUnderBootstrap:
             assert total <= pool._ceiling, f"pool holds {total} workers, ceiling is {pool._ceiling}"
         finally:
             await pool.shutdown()
+
+class TestExecutorSizingWarning:
+    """Code-review suggestion (FEAT-500): surface an undersized shared executor."""
+
+    def test_warns_when_executor_cannot_serve_every_worker(self, tmp_path, caplog):
+        caplog.set_level(logging.WARNING, logger="parrot.tools.repl_worker.pool")
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            config = WorkerConfig(
+                deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=2
+            )
+            WorkerPool(config, output_dir=str(tmp_path), executor=executor)
+            assert "shared executor has 1 thread(s)" in caplog.text
+            assert "up to 4 live worker(s)" in caplog.text
+        finally:
+            executor.shutdown(wait=False)
+
+    def test_no_warning_when_executor_is_large_enough(self, tmp_path, caplog):
+        caplog.set_level(logging.WARNING, logger="parrot.tools.repl_worker.pool")
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        try:
+            config = WorkerConfig(
+                deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=2
+            )
+            WorkerPool(config, output_dir=str(tmp_path), executor=executor)
+            assert "shared executor has" not in caplog.text
+        finally:
+            executor.shutdown(wait=False)
+
+    def test_no_warning_without_an_executor(self, tmp_path, caplog):
+        """The default (no executor passed) must stay silent."""
+        caplog.set_level(logging.WARNING, logger="parrot.tools.repl_worker.pool")
+        config = WorkerConfig(
+            deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=2
+        )
+        WorkerPool(config, output_dir=str(tmp_path))
+        assert "shared executor has" not in caplog.text

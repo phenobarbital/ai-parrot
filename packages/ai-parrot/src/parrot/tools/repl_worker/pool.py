@@ -94,6 +94,7 @@ class WorkerPool:
         self._repl_kwargs = repl_kwargs or {}
         self._executor = executor
         self._ceiling = self._effective_ceiling(self._config)
+        self._warn_if_executor_undersized()
 
         self._sessions: dict[str, WorkerHandle] = {}
         self._last_active: dict[str, float] = {}
@@ -118,6 +119,45 @@ class WorkerPool:
         #: such instead of silently consuming spares on a 5 s grid. Pruned to
         #: `_RESTART_WINDOW_S` on every read/write.
         self._restarts: dict[str, list[float]] = {}
+
+    def _warn_if_executor_undersized(self) -> None:
+        """Warn when the shared executor cannot serve every live worker.
+
+        Each live worker can occupy one thread of the shared executor for the
+        whole duration of a blocking pipe read — a request round-trip, or (as
+        of FEAT-500) its readiness read, which lasts until the worker
+        bootstraps. If the executor has fewer threads than the pool can have
+        live workers, requests queue behind each other for no reason, and a
+        saturated pool degrades in ways that look like worker slowness rather
+        than thread starvation (code-review finding). Process teardown is
+        deliberately NOT affected — `WorkerHandle._kill_process()` runs on its
+        own dedicated executor precisely so the deadline kill can never queue
+        behind these reads.
+
+        Advisory only: nothing is clamped, since a caller may knowingly
+        oversubscribe. Uses ``ThreadPoolExecutor``'s ``_max_workers`` (no
+        public accessor exists) and stays silent for any executor that does
+        not expose it.
+        """
+        threads = getattr(self._executor, "_max_workers", None)
+        if not isinstance(threads, int):
+            return  # no executor passed, or one that doesn't report its size
+        needed = self._ceiling + self._config.prewarm_pool_size
+        if threads >= needed:
+            return
+        logger.warning(
+            "WorkerPool: the shared executor has %d thread(s) but this pool can hold "
+            "up to %d live worker(s) (max_workers=%d + prewarm_pool_size=%d), each of "
+            "which can occupy one thread for an entire blocking pipe read. Requests "
+            "will queue once %d worker(s) are busy — consider "
+            "PythonREPLTool(executor_max_workers=%d) or a smaller prewarm_pool_size.",
+            threads,
+            needed,
+            self._ceiling,
+            self._config.prewarm_pool_size,
+            threads,
+            needed,
+        )
 
     @staticmethod
     def _effective_ceiling(config: WorkerConfig) -> int:
@@ -293,8 +333,7 @@ class WorkerPool:
         self._restarts[session_id] = recent
         if len(recent) < _RESTART_LOOP_THRESHOLD:
             return
-        exit_code = dead._proc.returncode if dead._proc is not None else None
-        stderr_tail = dead._stderr_tail[-1] if dead._stderr_tail else ""
+        exit_code, stderr_tail = dead.death_summary()
         logger.warning(
             "WorkerPool: session %r restarted %d times in the last %ds — possible "
             "restart loop (last worker exit code=%s, stderr tail=%r)",

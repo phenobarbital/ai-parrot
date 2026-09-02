@@ -140,6 +140,17 @@ class WorkerHandle:
         self._to_worker: Optional[BinaryIO] = None
         self._from_worker: Optional[BinaryIO] = None
         self._lock = asyncio.Lock()
+        #: Serializes process teardown. `_kill_process()` can be reached from
+        #: several independent paths (a lethal `execute()` deadline,
+        #: `_await_ready()`'s bootstrap-timeout branch, `_classify_death()`,
+        #: and an explicit `kill()`), and its `poll()` guard is not atomic —
+        #: two of them could observe `poll() is None` and both dispatch
+        #: `Popen.kill()`/`.wait()`, which are not documented as safe to call
+        #: concurrently from multiple threads (code-review finding). Kept
+        #: separate from `self._lock` on purpose: `kill()` must never wait on
+        #: the request lock (see its docstring), and nothing ever acquires
+        #: `self._lock` while holding this one, so the two cannot deadlock.
+        self._kill_lock = asyncio.Lock()
         self._owns_executor = executor is None
         self._executor: concurrent.futures.Executor = executor or concurrent.futures.ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="repl-worker-handle"
@@ -543,9 +554,30 @@ class WorkerHandle:
         """
         if self._proc is None or self._proc.poll() is not None:
             return  # nothing alive to kill, or already reaped
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._lifecycle_executor, self._proc.kill)
-        await loop.run_in_executor(self._lifecycle_executor, self._proc.wait)
+        async with self._kill_lock:
+            # Re-check under the lock: another path may have killed and reaped
+            # the process while we waited for it.
+            if self._proc is None or self._proc.poll() is not None:
+                return
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._lifecycle_executor, self._proc.kill)
+            await loop.run_in_executor(self._lifecycle_executor, self._proc.wait)
+
+    def death_summary(self) -> tuple[int | None, str]:
+        """Why this worker is (or might be) dead, for logs and diagnostics.
+
+        Public accessor added so callers — notably ``WorkerPool``'s
+        restart-loop warning — do not have to reach into ``_proc`` /
+        ``_stderr_tail`` across the module boundary (code-review finding).
+
+        Returns:
+            ``(exit_code, stderr_tail)``: the process' exit code (``None`` if
+            it was never spawned or is still running) and the most recent
+            stderr line the drain task captured (``""`` if there is none).
+        """
+        exit_code = self._proc.returncode if self._proc is not None else None
+        stderr_tail = self._stderr_tail[-1] if self._stderr_tail else ""
+        return exit_code, stderr_tail
 
     async def _classify_death(self) -> str:
         """Best-effort classification of an unexpected worker death.

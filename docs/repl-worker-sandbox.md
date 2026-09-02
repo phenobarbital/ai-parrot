@@ -125,7 +125,14 @@ always had:
 | Concurrency ceiling reached | `WorkerPool.acquire()` raises immediately — no queueing | `error` (wraps `WorkerPoolExhaustedError`) | States the current ceiling and suggests raising `WorkerConfig.max_workers` |
 | Worker idle past `idle_ttl_seconds` | Killed and unmapped by the pool's background sweep; next use spawns fresh | *(not an error — the session's next call just gets a fresh, empty namespace)* | — |
 | **Bootstrap timeout** (FEAT-500) | `bootstrap_timeout_ms` expired without a `ReadyResponse` → the worker is killed (it never became a live worker) and every waiter gets a `WorkerBootstrapError` | `error` on the `execute()` path (folded into the usual namespace-loss dict); a raised `WorkerBootstrapError` on the namespace API | `REPL worker pid=<pid> did not become ready within <N> ms (<cause>); stderr tail: <...>` |
-| **Namespace-API timeout** (FEAT-500) | `namespace_timeout_ms` expired on a non-`exec` request → **`NamespaceTimeoutError`, worker left ALIVE**, namespace preserved; the late reply is parked and drained before the next request | *(raises — no dict; `execute()` is unaffected)* | `repl_worker[pid=<pid>]: '<op>' request did not answer within <N>s; the worker is still alive and the late reply will be drained on the next call` |
+| **Namespace-API timeout** (FEAT-500) | `namespace_timeout_ms` expired on a non-`exec` request → **`NamespaceTimeoutError`, worker left ALIVE**, namespace preserved; the late reply is parked and drained before the next request | *(raises on the namespace API — no dict)* | `repl_worker[pid=<pid>]: '<op>' request did not answer within <N>s; the worker is still alive and the late reply will be drained on the next call` |
+| **Undrained straggler on the `execute()` path** (FEAT-500) | A reply parked by an earlier non-lethal timeout had still not arrived when `execute()`'s drain step ran. The worker is **alive** and its namespace is **intact**, so this is deliberately *not* reported as a namespace loss | `error` | `repl_worker[pid=<pid>]: a reply from a previously timed-out request has still not arrived after <N>s; the worker is still alive and the reply stays queued for the next call` — note the absence of the "ALL variables were lost" wording, which would be false here |
+
+Every request is preceded by a **drain step**: if an earlier non-lethal
+timeout left a reply in flight, the next request waits for that straggler
+(bounded by its own budget) before writing, so a late reply can never be
+handed to the wrong caller. `execute()` performs this drain too — which is
+why it has its own row above — but its drain expiring never kills the worker.
 
 ### Which timeouts kill the worker?
 
@@ -297,7 +304,8 @@ possible restart loop (last worker exit code=-9, stderr tail='...')
 The per-session count is also readable programmatically:
 
 ```python
-pool.restart_count(session_id)   # restarts in the last 60 s; observability only
+pool.restart_count(session_id)          # restarts in the last 60 s; observability only
+exit_code, stderr_tail = handle.death_summary()   # what the warning reports
 ```
 
 Nothing branches on this value — it exists so the *cause* is visible. When you
@@ -316,6 +324,28 @@ see it, check, in order:
 4. **The code being run** — a genuine runaway loop hitting `deadline_ms` on
    every call is a *correct* restart loop; the warning is then telling you the
    LLM keeps submitting non-terminating code.
+
+### A related warning: an undersized shared executor
+
+```
+WorkerPool: the shared executor has 4 thread(s) but this pool can hold up to 6
+live worker(s) (max_workers=4 + prewarm_pool_size=2), each of which can occupy
+one thread for an entire blocking pipe read. ...
+```
+
+Each live worker can hold one thread of the shared executor for a whole
+blocking pipe read — a request round-trip, or its readiness read while it
+bootstraps. When there are fewer threads than possible live workers, requests
+queue behind one another and the pool looks "slow" for reasons that have
+nothing to do with the workers. Raise `PythonREPLTool(executor_max_workers=…)`
+or lower `prewarm_pool_size`. The warning is advisory — nothing is clamped.
+
+**Process teardown is deliberately immune to this.** `WorkerHandle` kills
+workers on its own small, always-self-owned executor, never the shared one:
+dispatching the SIGKILL to the same pool whose threads are parked on blocking
+reads would mean the `deadline_ms` kill could never obtain a thread, while
+freeing a thread required that kill to run — a deadlock in which the deadline
+guarantee silently stops working. Keep that split if you refactor this class.
 
 ## 4c. Measuring worker bootstrap on your host (U3b)
 
