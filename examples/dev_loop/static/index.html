@@ -446,6 +446,7 @@ function fmtNum(n) {
 /** One-line gist of an event payload, for the collapsed event row. */
 function briefOf(kind, p) {
   if (!p || typeof p !== "object") return "";
+  if (p.summary) return String(p.summary).slice(0, 160);
   if (p.decision) return String(p.decision);
   if (p.command || p.cmd) {
     const c = p.command || p.cmd;
@@ -495,6 +496,41 @@ function node(id) {
   return app.s.nodes[id];
 }
 
+/** Additively fold per-seat detail from a dispatch action onto its owning
+ * node (FEAT-496) — the browser-side twin of session_state.py's
+ * `_fold_seat_from_action`. No-op when the action carries no `seat`
+ * (every pre-FEAT-496 action and every single-agent dispatch). */
+function foldSeat(n, a) {
+  const seat = a.seat;
+  if (!seat) return;
+  n.dispatch = n.dispatch || { status: "queued", message_count: 0, tool_use_count: 0 };
+  const seats = n.dispatch.seats = n.dispatch.seats || {};
+  const prior = seats[seat] || {
+    seat, task_id: "", task_title: "", agent: "", model: "",
+    status: "queued", message_count: 0, tool_use_count: 0,
+    last_tool: "", last_summary: "", last_error: "",
+  };
+  const next = { ...prior };
+  if (a.task_id) next.task_id = a.task_id;
+  if (a.task_title) next.task_title = a.task_title;
+  if (a.agent) next.agent = a.agent;
+  if (a.model) next.model = a.model;
+  if (a.summary) next.last_summary = String(a.summary).slice(0, 160);
+  if (a.tool_name) next.last_tool = a.tool_name;
+  if (a.error) next.last_error = String(a.error).slice(0, 500);
+  switch (a.type) {
+    case "dispatch/queued":  next.status = "queued"; break;
+    case "dispatch/started": next.status = "running"; next.started_at = a.ts; break;
+    case "dispatch/failed":  next.status = "failed"; next.finished_at = a.ts; break;
+    case "dispatch/output_invalid": next.status = "output_invalid"; break;
+    case "dispatch/completed": next.status = "completed"; next.finished_at = a.ts; break;
+    case "dispatch/delta": next.message_count = (prior.message_count || 0) + 1; break;
+    case "dispatch/tool_use": next.tool_use_count = (prior.tool_use_count || 0) + 1; break;
+    default: break;
+  }
+  seats[seat] = next;
+}
+
 function foldAction(a) {
   const s = app.s;
   switch (a.type) {
@@ -519,20 +555,28 @@ function foldAction(a) {
                              n.error = a.error || ""; break; }
     case "node/skipped":   { node(a.node_id).status = "skipped"; break; }
 
-    case "dispatch/queued":  node(a.node_id).dispatch =
-      { status: "queued", dispatcher: a.dispatcher || "", message_count: 0, tool_use_count: 0 }; break;
+    case "dispatch/queued":  { node(a.node_id).dispatch =
+      { status: "queued", dispatcher: a.dispatcher || "", message_count: 0, tool_use_count: 0 };
+      foldSeat(node(a.node_id), a); break; }
     case "dispatch/started": { const n = node(a.node_id); n.dispatch = n.dispatch || {};
-                               n.dispatch.status = "running"; n.dispatch.started_at = a.ts; break; }
-    case "dispatch/delta":   { const d = node(a.node_id).dispatch;
-                               if (d) d.message_count = (d.message_count || 0) + 1; break; }
-    case "dispatch/tool_use":{ const d = node(a.node_id).dispatch;
-                               if (d) d.tool_use_count = (d.tool_use_count || 0) + 1; break; }
-    case "dispatch/failed":  { const d = node(a.node_id).dispatch;
-                               if (d) { d.status = "failed"; d.last_error = a.error || ""; } break; }
-    case "dispatch/output_invalid": { const d = node(a.node_id).dispatch;
-                               if (d) { d.status = "output_invalid"; d.last_error = a.error || ""; } break; }
+                               n.dispatch.status = "running"; n.dispatch.started_at = a.ts;
+                               foldSeat(n, a); break; }
+    case "dispatch/delta":   { const n = node(a.node_id); const d = n.dispatch;
+                               if (d) d.message_count = (d.message_count || 0) + 1;
+                               foldSeat(n, a); break; }
+    case "dispatch/tool_use":{ const n = node(a.node_id); const d = n.dispatch;
+                               if (d) d.tool_use_count = (d.tool_use_count || 0) + 1;
+                               foldSeat(n, a); break; }
+    case "dispatch/tool_result": { foldSeat(node(a.node_id), a); break; }
+    case "dispatch/failed":  { const n = node(a.node_id); const d = n.dispatch;
+                               if (d) { d.status = "failed"; d.last_error = a.error || ""; }
+                               foldSeat(n, a); break; }
+    case "dispatch/output_invalid": { const n = node(a.node_id); const d = n.dispatch;
+                               if (d) { d.status = "output_invalid"; d.last_error = a.error || ""; }
+                               foldSeat(n, a); break; }
     case "dispatch/completed": {
-      const d = node(a.node_id).dispatch;
+      const n = node(a.node_id);
+      const d = n.dispatch;
       if (d) {
         d.status = "completed"; d.finished_at = a.ts;
         // FEAT-378 TASK-1927 telemetry — every field optional.
@@ -540,6 +584,7 @@ function foldAction(a) {
         d.total_cost_usd = a.total_cost_usd; d.num_turns = a.num_turns;
         d.duration_ms = a.duration_ms;
       }
+      foldSeat(n, a);
       if (a.input_tokens != null || a.output_tokens != null || a.total_cost_usd != null) {
         const t = app.telemetry;
         t.reported += 1;
@@ -771,11 +816,23 @@ function renderReady() {
 }
 
 /* ── 02 Execution ─────────────────────────────────────────────────── */
+/** All events belonging to `id` OR a pool seat under it ("id.w1", ...),
+ * merged chronologically. Node ids never contain a dot (the same
+ * invariant `_owning_node_id` relies on server-side), so the prefix test
+ * is exact — mirrors `_owning_node_id` (dispatchers/_shared.py). */
+function ownEvents(id) {
+  const out = [];
+  for (const [nid, list] of app.events) {
+    if (nid === id || nid.startsWith(id + ".")) out.push(...list);
+  }
+  return out.sort((a, b) => a.ts - b.ts);
+}
+
 function nodesForRender() {
   const spec = TOPOLOGY[app.mode] || TOPOLOGY.bug;
   return spec.map((n, i) => {
     const st = app.s.nodes[n.id] || { status: "idle" };
-    const events = app.events.get(n.id) || [];
+    const events = ownEvents(n.id);
     const elapsed = st.started_at
       ? ((st.finished_at || Date.now() / 1000) - st.started_at) : null;
     return {
@@ -787,18 +844,37 @@ function nodesForRender() {
   });
 }
 
+/** Short seat suffix ("development.w1" -> "w1") for the row badge. */
+const shortSeat = (seat) => String(seat || "").split(".").pop();
+
 function eventRowsHtml(nodeId, events) {
+  const hasSeats = !!(app.s.nodes[nodeId] && app.s.nodes[nodeId].dispatch &&
+                      app.s.nodes[nodeId].dispatch.seats &&
+                      Object.keys(app.s.nodes[nodeId].dispatch.seats).length);
   if (!events.length) {
+    if (hasSeats) return "";  // seat table above already shows activity
     return `<p class="muted" style="font-size:12.5px;padding:10px 0 2px">This node has not been dispatched yet.</p>`;
   }
   return events.slice().reverse().map((e, j) => {
     const key = `${nodeId}:${events.length - 1 - j}`;
     const open = app.openEvents.has(key);
+    const p = e.payload || {};
+    // FEAT-496: seat + task badge for pooled dev-agent rows, judge_id
+    // badge for the QA panel (same node_id="qa" for every judge — identity
+    // rides in the label, not the node id).
+    const badgeParts = [];
+    if (p.seat) badgeParts.push(shortSeat(p.seat));
+    if (p.task_id) badgeParts.push(p.task_id);
+    if (p.judge_id) badgeParts.push(p.judge_id);
+    const badge = badgeParts.length
+      ? `<span class="mono muted" style="font-size:11px">[${esc(badgeParts.join(" · "))}]</span>`
+      : "";
     return `<div class="ev-row">
       <div class="ev-head" data-ev="${esc(key)}">
         <span class="caret muted">${open ? "▾" : "▸"}</span>
         <span class="muted">${esc(fmtClock(e.ts))}</span>
         <span style="color:var(--color-accent-700)">${esc(e.kind)}</span>
+        ${badge}
         <span class="rule"></span>
         <span class="muted">${esc(briefOf(e.kind, e.payload))}</span>
       </div>
@@ -807,6 +883,9 @@ function eventRowsHtml(nodeId, events) {
   }).join("");
 }
 
+/** Compact "dispatcher · N msgs · N tools" line — plain text, HTML-escaped
+ * by every caller. Unchanged shape; seat detail is a separate block
+ * (`nodeSeatsHtml`) so this stays safe to interpolate inside `esc(...)`. */
 function nodeMetaHtml(n) {
   const d = n.dispatch;
   if (!d) return "";
@@ -815,6 +894,35 @@ function nodeMetaHtml(n) {
   if (d.message_count) bits.push(`${d.message_count} msgs`);
   if (d.tool_use_count) bits.push(`${d.tool_use_count} tools`);
   return bits.join(" · ");
+}
+
+/** Seat table for a pooled node's `dispatch.seats` (FEAT-496) — one row
+ * per active seat, naming its task, agent/model, status and counters.
+ * Returns raw HTML (every value individually escaped); "" when the node
+ * has no seats, so a single-agent run renders exactly as before. */
+function nodeSeatsHtml(n) {
+  const seats = (n.dispatch && n.dispatch.seats) || {};
+  const seatIds = Object.keys(seats).sort();
+  if (!seatIds.length) return "";
+  const rows = seatIds.map((seatId) => {
+    const s = seats[seatId];
+    const task = s.task_id
+      ? `${esc(s.task_id)}${s.task_title ? ` — ${esc(s.task_title)}` : ""}`
+      : "—";
+    const agentModel = [s.agent, s.model].filter(Boolean).map(esc).join(" / ") || "—";
+    return `<tr>
+      <td class="mono">${esc(shortSeat(s.seat))}</td>
+      <td>${task}</td>
+      <td class="muted">${agentModel}</td>
+      <td><span class="pill ${esc(s.status || "queued")}">${esc(s.status || "queued")}</span></td>
+      <td class="mono muted">${s.message_count || 0}m/${s.tool_use_count || 0}t</td>
+      <td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.last_summary || s.last_error || "")}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="seat-table" style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">
+    <thead><tr class="muted" style="text-align:left"><th>seat</th><th>task</th><th>agent/model</th><th>status</th><th>counts</th><th>last</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function renderExecution() {
@@ -842,6 +950,7 @@ function renderExecution() {
             <span class="mono" style="font-size:12px;min-width:56px;text-align:right">${esc(fmtDuration(n.elapsed))}</span>
           </div>
           ${n.error ? `<div class="err-box" style="margin:10px 14px">${esc(n.error)}</div>` : ""}
+          ${nodeSeatsHtml(n) ? `<div style="padding:0 14px">${nodeSeatsHtml(n)}</div>` : ""}
           <div class="scroll" style="max-height:200px;padding:6px 14px 10px">${eventRowsHtml(n.id, n.events)}</div>
         </div>`).join("")
     }</div>`;
@@ -910,6 +1019,7 @@ function renderExecution() {
         <span class="mono" style="font-size:12.5px">${esc(sel ? fmtDuration(sel.elapsed) : "—")}</span>
       </div>
       ${sel && sel.error ? `<div class="err-box" style="margin:12px 16px">${esc(sel.error)}</div>` : ""}
+      ${sel && nodeSeatsHtml(sel) ? `<div style="padding:0 16px">${nodeSeatsHtml(sel)}</div>` : ""}
       <div class="scroll" style="max-height:520px;padding:8px 16px 14px">${sel ? eventRowsHtml(sel.id, sel.events) : ""}</div>
     </div>
   </div>`;
