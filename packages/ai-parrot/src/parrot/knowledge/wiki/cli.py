@@ -87,7 +87,7 @@ from parrot.knowledge.wiki.repo_scan import (
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
-from parrot.knowledge.wiki.symbols import parse_sym_id
+from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -1820,6 +1820,10 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         "sources": len(entries),
         "stale_sources": len(stale),
         "languages": {name: s.mode for name, s in all_scanners().items()},
+        # FEAT-498: same per-language mode mapping as "languages" above,
+        # named for the structural symbol plane specifically — additive,
+        # "languages" itself is unchanged for backward compatibility.
+        "structural": {name: s.mode for name, s in all_scanners().items()},
     }
     if scoped_to is not None:
         name, handle_cfg, storage_dir = scoped_to
@@ -1844,10 +1848,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     click.echo(
         f"Plane     : {stats.get('pages', 0)} pages, "
         f"{stats.get('edges', 0)} edges, "
+        f"{stats.get('symbols', 0)} symbols, "
         f"~{stats.get('total_tokens', 0)} tokens"
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
+    click.echo(f"Structural: {payload['structural']}")
     if scoped_to is None:
         click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if namespaces:
@@ -1867,6 +1873,135 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+
+
+# --------------------------------------------------------------------------
+# Structural symbol plane (FEAT-498)
+# --------------------------------------------------------------------------
+
+
+def _structural_tool(name: str, path_: str | None) -> Any:
+    """Open the named structural tool (``wiki_symbol_lookup``/etc.) for one call.
+
+    Reuses :func:`create_structural_tools` so the CLI's human-readable
+    output is byte-identical to the MCP tools' own text rendering — the
+    only difference is ``--json`` prints the Pydantic dict directly
+    instead of going through an MCP client.
+
+    Imported lazily: ``structural.service`` imports ``_ingest_files``/
+    ``_open_sources`` from this module (TASK-2749), so a module-level
+    import here would be circular.
+    """
+    from parrot.knowledge.wiki.structural.tools import create_structural_tools
+
+    root, config = _resolve_project(path_)
+    store = _require_built(root, config)
+    tools = {tool.name: tool for tool in create_structural_tools(store, root, config)}
+    return tools[name]
+
+
+def _echo_structural_result(result: Any, as_json: bool) -> None:
+    """Print a structural tool's ``ToolResult`` — text by default, dict for ``--json``."""
+    payload = dict(result.result)
+    text = payload.pop("text", "")
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(text)
+
+
+@wiki.group(name="symbols")
+def symbols() -> None:
+    """Query the codebase's structural symbol plane (FEAT-498)."""
+
+
+@symbols.command("lookup")
+@path_option
+@click.argument("query")
+@click.option("--kind", default=None, help="Exact symbol kind filter (e.g. function, class).")
+@click.option("--language", default=None, help="Exact scanner-name filter (e.g. python).")
+@click.option("--path-prefix", "path_prefix", default=None, help="rel_path must start with this prefix.")
+@click.option("--limit", default=20, type=int, help="Maximum results.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+def symbols_lookup(
+    path_: str | None,
+    query: str,
+    kind: str | None,
+    language: str | None,
+    path_prefix: str | None,
+    limit: int,
+    as_json: bool,
+) -> None:
+    """Find a symbol (function/class/method) by name or qualname."""
+    tool = _structural_tool("wiki_symbol_lookup", path_)
+    kind_enum = SymbolKind(kind) if kind else None
+    result = _run(
+        tool._execute(
+            query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit
+        )
+    )
+    _echo_structural_result(result, as_json)
+
+
+@symbols.command("outline")
+@path_option
+@click.argument("target")
+@click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
+@click.option(
+    "--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only)."
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+def symbols_outline(
+    path_: str | None,
+    target: str,
+    depth: int,
+    include_source: bool,
+    as_json: bool,
+) -> None:
+    """Get the symbol outline of a file: file:<rel>, sym:<rel>#<q>, or a relative path."""
+    tool = _structural_tool("wiki_code_outline", path_)
+    result = _run(tool._execute(target=target, depth=depth, include_source=include_source))
+    _echo_structural_result(result, as_json)
+
+
+@symbols.command("blast")
+@path_option
+@click.argument("symbol")
+@click.option(
+    "--rel", "relations", multiple=True,
+    help="Edge relation to follow (repeatable); default: calls, extends, implements.",
+)
+@click.option("--depth", default=2, type=int, help="Maximum BFS depth.")
+@click.option(
+    "--inferred/--no-inferred", "include_inferred", default=True,
+    help="Follow provenance='inferred' edges (globally-unique-name resolutions).",
+)
+@click.option(
+    "--tests/--no-tests", "include_tests", default=True,
+    help="Include symbols under a tests/ path.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+def symbols_blast(
+    path_: str | None,
+    symbol: str,
+    relations: tuple[str, ...],
+    depth: int,
+    include_inferred: bool,
+    include_tests: bool,
+    as_json: bool,
+) -> None:
+    """Find every symbol that transitively depends on (calls/extends/implements) SYMBOL."""
+    tool = _structural_tool("wiki_blast_radius", path_)
+    result = _run(
+        tool._execute(
+            symbol=symbol,
+            relations=list(relations) or None,
+            depth=depth,
+            include_inferred=include_inferred,
+            include_tests=include_tests,
+        )
+    )
+    _echo_structural_result(result, as_json)
 
 
 # --------------------------------------------------------------------------

@@ -50,6 +50,9 @@ unchanged files are skipped and deleted files are pruned.
 | `wikitoolkit status` | Plane statistics + source staleness. |
 | `wikitoolkit export -o docs/wiki` | Export a human-readable markdown wiki (OKF bundle + index). |
 | `wikitoolkit ns list\|add\|remove` | Manage federated namespaces — other wikis this one can read (FEAT-450). |
+| `wikitoolkit symbols lookup <query>` | Find a symbol (function/class/method) by name or qualname (`--kind`, `--language`, `--path-prefix`, `--limit`, `--json`). |
+| `wikitoolkit symbols outline <target>` | Symbol outline of a file — `file:<rel>`, `sym:<rel>#<q>`, or a relative path (`--depth`, `--source`, `--json`). |
+| `wikitoolkit symbols blast <symbol>` | Every symbol that transitively calls/extends/implements `<symbol>` (`--rel`, `--depth`, `--no-inferred`, `--no-tests`, `--json`). |
 
 The repo config lives at `.parrot/wiki.json`
 (`parrot.knowledge.wiki.project.WikiProjectConfig`): wiki name,
@@ -74,6 +77,33 @@ See [Namespaces — Multi-Wiki Federation](guides/llm-wiki-guide.md#namespaces-m
 for the registries, the four namespace kinds, and write routing. The full
 command-by-command reference lives in
 [`documentation/parrot-wiki-cli.md`](https://github.com/phenobarbital/ai-parrot/blob/main/documentation/parrot-wiki-cli.md).
+
+### Symbols — the structural plane (FEAT-498)
+
+`wikitoolkit build`/`upsert` also extract a **symbol** for every
+class/function/method (Python via the stdlib `ast`; TypeScript/PHP/
+Rust/Perl via an optional `ast-grep-py` seam, falling back to the
+existing tree-sitter/heuristic scanners when the extra isn't
+installed — install `ai-parrot[wiki-structural]` to enable it).
+Each symbol becomes a `sym:<rel>#<qualname>` page with `defines`/
+`contains`/`calls`/`extends`/`implements` edges, queryable three ways:
+
+- `wikitoolkit symbols lookup|outline|blast` (CLI, above);
+- `wiki_symbol_lookup` / `wiki_code_outline` / `wiki_blast_radius`
+  (MCP tools — prefer these over `wiki_query` when you already know
+  the symbol's name, or need its outline/blast radius specifically;
+  `wiki_query` itself hides `sym:` stubs by default, pass
+  `include_symbols=true` to mix them back in);
+- `code_symbol_lookup` / `code_outline` / `code_blast_radius`
+  (`CodeStructuralToolkit`, for building agents that need the symbol
+  plane as a first-class tool set rather than going through MCP).
+
+**Migration note**: nothing changes for a repo that never installs the
+`wiki-structural` extra beyond Python `sym:` pages (always extracted,
+no extra needed) and the new `content_hash` field on every page (used
+for read-repair). The first `wikitoolkit build` after upgrading
+populates symbols for every scanned file; existing `file:`/`dir:`
+pages are untouched.
 
 ## `parrot claude install`
 
