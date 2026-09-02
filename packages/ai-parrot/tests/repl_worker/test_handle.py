@@ -493,9 +493,7 @@ class TestConcurrencyRegressions:
             await asyncio.wait_for(handle.kill(), timeout=10.0)
             executor.shutdown(wait=False, cancel_futures=True)
 
-    async def test_death_summary_reports_exit_code_and_stderr(
-        self, real_worker_config, tmp_path
-    ):
+    async def test_death_summary_reports_exit_code_and_stderr(self, real_worker_config, tmp_path):
         """The public accessor the pool uses instead of reading private attrs."""
         handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
         exit_code, stderr_tail = handle.death_summary()
@@ -522,9 +520,7 @@ class TestConcurrencyRegressions:
         await handle.start()
         await handle.wait_ready()
         try:
-            results = await asyncio.gather(
-                *(handle._kill_process() for _ in range(5)), return_exceptions=True
-            )
+            results = await asyncio.gather(*(handle._kill_process() for _ in range(5)), return_exceptions=True)
             assert all(not isinstance(r, BaseException) for r in results), results
             assert handle.is_alive is False
         finally:
