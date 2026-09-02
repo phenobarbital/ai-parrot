@@ -14,12 +14,15 @@ import pytest
 
 from parrot import conf
 from parrot.flows.dev_loop.models import (
+    CriterionResult,
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
     FeatureBrief,
+    FeedbackDecision,
     FlowtaskCriterion,
     LogSource,
+    QAReport,
     ResearchOutput,
     WorkBrief,
 )
@@ -80,13 +83,19 @@ class FakeDispatcher:
 
     def __init__(self, fail_ids=()):
         self.calls = []
+        self.session_hosts = []
         self.fail_ids = set(fail_ids)
+        self.resolver = None
+
+    def set_event_registry_resolver(self, resolver):
+        self.resolver = resolver
 
     async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kwargs):
-        # **_kwargs tolerates the single-agent path's ``session_host=``
-        # (FEAT-466 TASK-2506); the pool path never passes it.
+        # **_kwargs tolerates ``session_host=``, which BOTH the
+        # single-agent path (FEAT-466 TASK-2506) and the pool path pass.
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
+        self.session_hosts.append(_kwargs.get("session_host"))
         if task_id in self.fail_ids:
             self.fail_ids.discard(task_id)
             raise RuntimeError("boom")
@@ -97,7 +106,7 @@ class AlwaysFailDispatcher:
     def __init__(self):
         self.calls = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         self.calls.append((getattr(brief, "task_id", None), node_id, cwd))
         raise RuntimeError("always fails")
 
@@ -678,6 +687,71 @@ class TestPoolPath:
         assert result.incomplete_tasks == []
         assert ctx["development_output"] is result
 
+    async def test_pool_dispatch_carries_the_session_host_and_run_registry(self, tmp_path):
+        """Both usage seams the pool path used to drop on the floor.
+
+        Without ``session_host`` the run bundle showed a pooled
+        ``development`` node with 0 messages / 0 tool uses; without the
+        per-run EventRegistry resolver its seats never reached the run's
+        usage ledger, so the whole node was missing from the Usage table
+        while planner/synthesis (which use the runner-wired dispatcher)
+        reported normally.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        resolver = MagicMock(name="run_id -> EventRegistry")
+        shared_dispatcher = MagicMock()
+        shared_dispatcher.event_registry_resolver = resolver
+        host = object()
+        node = DevelopmentNode(
+            dispatcher=shared_dispatcher,
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        await node.execute({"run_id": "r1", "research_output": research, "session_host": host})
+
+        assert d1.session_hosts and all(h is host for h in d1.session_hosts)
+        assert d2.session_hosts and all(h is host for h in d2.session_hosts)
+        assert d1.resolver is resolver
+        assert d2.resolver is resolver
+
+    async def test_pool_wiring_is_optional(self, tmp_path):
+        """No host and no wired resolver stays exactly as before."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        shared_dispatcher = MagicMock()
+        shared_dispatcher.event_registry_resolver = None
+        node = DevelopmentNode(
+            dispatcher=shared_dispatcher,
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        result = await node.execute({"run_id": "r1", "research_output": research})
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert d1.resolver is None
+        assert d1.session_hosts == [None]
+
     async def test_all_incomplete_raises(self, tmp_path):
         # FEAT-377 TASK-1913: 2 independent tasks + count=2 to satisfy
         # should_fan_out and actually reach the pool path.
@@ -780,3 +854,348 @@ class TestPoolPath:
             await node.execute(ctx)
 
         assert created_managers[0].cleanup_calls == [True]
+
+    async def test_merge_performed_stamped_only_when_a_merge_ran(self, tmp_path, monkeypatch):
+        """DevelopmentOutput must record whether sub-worktrees were merged.
+
+        SynthesisNode reads this to decide whether post-merge
+        reconciliation has any subject matter at all — inferring it from
+        the worker count alone cannot distinguish "two workers, shared
+        tree" (nothing merged) from "two workers, isolated trees".
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+        monkeypatch.setattr(development_module, "SubWorktreeManager", lambda **kw: FakeManager(**kw))
+
+        def _node(isolation: str) -> DevelopmentNode:
+            return DevelopmentNode(
+                dispatcher=MagicMock(),
+                pool_config=DevAgentPoolConfig(
+                    agents=[DevAgentSpec(agent="claude-code", count=2)],
+                    isolation_mode=isolation,
+                ),
+                dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher(), FakeDispatcher()]),
+            )
+
+        isolated_out = await _node("isolated").execute({"run_id": "r1", "research_output": research})
+        assert isolated_out.merge_performed is True
+
+        shared_out = await _node("shared").execute({"run_id": "r2", "research_output": research})
+        assert shared_out.merge_performed is False
+
+
+@pytest.mark.asyncio
+class TestSingleAgentTaskManifest:
+    """A single agent implements the WHOLE spec — every task in it.
+
+    So it needs the same index-resolved artifact paths a pooled seat gets
+    via ``TaskScopedBrief.task_file``, once per task. Without them it
+    reconstructs `TASK-<NNN>-<slug>.md` and reaches for the FEATURE slug.
+    """
+
+    @staticmethod
+    def _dispatched_brief(dispatcher) -> ResearchOutput:
+        return dispatcher.dispatch.await_args.kwargs["brief"]
+
+    async def test_manifest_carries_the_real_paths(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "select-model-dev-flow-ideation-model",
+            [
+                {
+                    "id": "TASK-2717",
+                    "title": "catalog.py — Add Fable models",
+                    "status": "done",
+                    "depends_on": [],
+                    "file": "sdd/tasks/completed/TASK-2717-catalog-add-fable-and-research-primary-role.md",
+                },
+                {
+                    "id": "TASK-2719",
+                    "title": "Tests — Assert Fable in catalog",
+                    "status": "pending",
+                    "depends_on": ["TASK-2717"],
+                    "file": "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md",
+                },
+            ],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        note = self._dispatched_brief(dispatcher).log_excerpts[0]
+        assert "TASK INVENTORY" in note
+        assert "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md" in note
+        assert "sdd/tasks/completed/TASK-2717-catalog-add-fable-and-research-primary-role.md" in note
+        # The status is what lets the agent skip work already banked.
+        assert "TASK-2717 [done]" in note
+        assert "TASK-2719 [pending]" in note
+        assert "depends_on: TASK-2717" in note
+        # The feature slug must never appear as a filename.
+        assert "TASK-2719-select-model-dev-flow-ideation-model.md" not in note
+
+    async def test_manifest_is_prepended_not_replacing_prior_excerpts(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "my-feature",
+            [{"id": "TASK-1", "status": "pending", "depends_on": [], "file": "sdd/tasks/active/TASK-1-a.md"}],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494").model_copy(
+            update={"log_excerpts": ["pre-existing excerpt"]}
+        )
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        excerpts = self._dispatched_brief(dispatcher).log_excerpts
+        assert "TASK INVENTORY" in excerpts[0]
+        assert excerpts[1] == "pre-existing excerpt"
+
+    async def test_no_index_dispatches_unchanged(self, tmp_path):
+        """A hotfix reserves no ids and has no index — no manifest, no crash."""
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        assert self._dispatched_brief(dispatcher).log_excerpts == []
+
+    async def test_task_without_a_file_is_listed_but_not_invented(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "my-feature",
+            [{"id": "TASK-1", "title": "no file recorded", "status": "pending", "depends_on": []}],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        note = self._dispatched_brief(dispatcher).log_excerpts[0]
+        assert "TASK-1 [pending]" in note
+        assert "not recorded in the index" in note
+
+
+def _failing_qa_report() -> QAReport:
+    """The shape QANode publishes when the deterministic gate goes red."""
+    return QAReport(
+        passed=False,
+        lint_passed=False,
+        lint_output="catalog.py:1:1: I001 un-sorted-imports",
+        criterion_results=[
+            CriterionResult(
+                name="pytest (derived: changed scopes)",
+                kind="shell",
+                exit_code=4,
+                passed=False,
+            )
+        ],
+        code_review_passed=False,
+        code_review_findings=["catalog.py: 28 UP-series violations"],
+    )
+
+
+class TestRepairFeedbackBrief:
+    """`_with_repair_feedback` must carry BOTH halves of the re-entry
+    context: the condensed QA failure AND the feedback router's dev_brief.
+    """
+
+    def test_dev_brief_is_appended_after_the_condensed_report(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry",
+                dev_brief="  Fix the I001 import order in catalog.py.  ",
+            ),
+        }
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert shared["qa_attempt"] == 2
+        assert len(out.log_excerpts) == 2
+        # Evidence first, then the instruction derived from it.
+        assert out.log_excerpts[0].startswith("[QA repair-loop feedback — attempt 2]")
+        assert out.log_excerpts[1] == (
+            "[Feedback router — required fixes for attempt 2]\n"
+            "Fix the I001 import order in catalog.py."
+        )
+
+    def test_bug_mode_without_a_feedback_decision_is_unchanged(self, tmp_path):
+        """Bug-mode topology has no feedback_router — one note, as before."""
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {"qa_report": _failing_qa_report()}
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert len(out.log_excerpts) == 1
+        assert out.log_excerpts[0].startswith("[QA repair-loop feedback — attempt 2]")
+
+    def test_blank_dev_brief_appends_nothing(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="   "),
+        }
+
+        out = node._with_repair_feedback(shared, _research(str(tmp_path)))
+
+        assert len(out.log_excerpts) == 1
+
+    def test_first_pass_never_stamps_a_brief(self, tmp_path):
+        node = DevelopmentNode(dispatcher=MagicMock())
+        shared = {
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="never read"),
+        }
+
+        research = _research(str(tmp_path))
+        out = node._with_repair_feedback(shared, research)
+
+        assert out is research
+        assert "qa_attempt" not in shared
+
+
+@pytest.mark.asyncio
+class TestRepairReentryDispatch:
+    """A repair-loop re-entry whose task index holds nothing runnable must
+    still dispatch an agent — otherwise QA re-runs on an unchanged tree.
+    """
+
+    @staticmethod
+    def _done_index(tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "done", "depends_on": []},
+                {"id": "TASK-2", "status": "done", "depends_on": ["TASK-1"]},
+                {"id": "TASK-3", "status": "done", "depends_on": ["TASK-2"]},
+            ],
+        )
+
+    async def test_repair_reentry_with_every_task_done_dispatches_one_seat(self, tmp_path):
+        self._done_index(tmp_path)
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry", dev_brief="Fix the I001 import order."
+            ),
+        }
+
+        await node.execute(ctx)
+
+        # Exactly one dispatch, and it is the whole-feature repair seat —
+        # not a per-task pool dispatch (which carries a TaskScopedBrief).
+        assert len(pool_dispatcher.calls) == 1
+        task_id, _node_id, cwd = pool_dispatcher.calls[0]
+        assert task_id is None
+        assert cwd == str(tmp_path)
+
+    async def test_repair_seat_brief_carries_the_dev_brief(self, tmp_path):
+        self._done_index(tmp_path)
+        captured = {}
+
+        class CapturingDispatcher(FakeDispatcher):
+            async def dispatch(self, *, brief, **kwargs):
+                captured["brief"] = brief
+                return await super().dispatch(brief=brief, **kwargs)
+
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([CapturingDispatcher()]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+            "feedback_decision": FeedbackDecision(
+                decision="retry", dev_brief="Fix the I001 import order."
+            ),
+        }
+
+        await node.execute(ctx)
+
+        excerpts = "\n".join(captured["brief"].log_excerpts)
+        assert "Fix the I001 import order." in excerpts
+
+    async def test_first_pass_with_every_task_done_still_dispatches_nothing(self, tmp_path):
+        """Regression guard: a fresh run over a pre-completed index is a
+        legitimate no-op and must NOT be mistaken for a repair re-entry."""
+        self._done_index(tmp_path)
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {"run_id": "r1", "research_output": _research(str(tmp_path))}
+
+        await node.execute(ctx)
+
+        assert pool_dispatcher.calls == []
+
+    async def test_repair_reentry_with_pending_tasks_still_uses_the_pool(self, tmp_path):
+        """The guard only fires on an EMPTY wave — a retry that still has
+        runnable tasks keeps going through the pool, per task."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "done", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        pool_dispatcher = FakeDispatcher()
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", count=2)]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+        ctx = {
+            "run_id": "r1",
+            "research_output": _research(str(tmp_path)),
+            "qa_report": _failing_qa_report(),
+        }
+
+        await node.execute(ctx)
+
+        assert [c[0] for c in pool_dispatcher.calls] == ["TASK-2"]

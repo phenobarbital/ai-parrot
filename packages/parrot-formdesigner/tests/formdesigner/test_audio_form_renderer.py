@@ -220,6 +220,21 @@ class TestRender:
         assert str(simple_form.form_uid) in result.content["ws_endpoint"]
 
     @pytest.mark.asyncio
+    async def test_manifest_ws_endpoint_is_tenant_qualified(
+        self, renderer: AudioFormRenderer, simple_form: FormSchema
+    ) -> None:
+        """FEAT-421: ws_endpoint carries the tenant segment the route is mounted under.
+
+        Pins the full path, not just a substring — a manifest that advertises
+        an unqualified /api/v1/forms/... route sends clients to a 404.
+        """
+        tenant_form = simple_form.model_copy(update={"tenant": "navigator"})
+        result = await renderer.render(tenant_form)
+        assert result.content["ws_endpoint"] == (
+            f"/api/v1/navigator/forms/{tenant_form.form_uid}/audio/ws"
+        )
+
+    @pytest.mark.asyncio
     async def test_manifest_locale(
         self, renderer: AudioFormRenderer, simple_form: FormSchema
     ) -> None:

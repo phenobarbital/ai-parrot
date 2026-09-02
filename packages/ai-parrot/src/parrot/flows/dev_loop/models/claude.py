@@ -57,6 +57,24 @@ class ClaudeCodeDispatchProfile(BaseModel):
         ),
     )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    max_turns: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Hard cap on the dispatched session's reasoning turns, "
+            "forwarded to ``ClaudeAgentRunOptions.max_turns``. "
+            "``timeout_seconds`` bounds a session that HANGS; this bounds "
+            "one that keeps working productively-looking forever on a task "
+            "with no natural stopping point (the synthesis seam hunt of "
+            "run-459dd2f8: 40 turns, $1.30, nothing to find). ``None`` "
+            "(default) means no per-profile cap — "
+            "``conf.DEV_LOOP_CLAUDE_MAX_TURNS`` then applies if non-zero. "
+            "Hitting the cap fails the dispatch with a "
+            "``DispatchExecutionError`` naming it; it is a guard rail, not "
+            "a budget to be spent, so set it well above the turn count a "
+            "healthy run of that dispatch needs."
+        ),
+    )
     model: str = "claude-sonnet-4-6"
     mcp_servers: Optional[Dict[str, Any]] = Field(
         default=None,

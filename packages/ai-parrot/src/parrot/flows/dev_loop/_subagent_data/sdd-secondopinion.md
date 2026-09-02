@@ -16,7 +16,7 @@ description: |
 
   Examples:
 
-  Context: QANode dispatches the codex-adversarial reviewer after the
+  Context: QANode dispatches the adversarial reviewer after the
   primary review passes, using the same acceptance criteria.
   user: "Review brief: diff=<uncommitted changes>, criteria=[...],
   question=Does this change fully satisfy the acceptance criteria and

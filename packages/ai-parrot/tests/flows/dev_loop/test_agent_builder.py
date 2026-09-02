@@ -146,7 +146,14 @@ class TestLLMTurnBudget:
 
     @pytest.mark.parametrize("backend", ["claude-code", "codex", "gemini"])
     def test_agentic_cli_backends_have_no_turn_budget(self, backend):
-        """Those run their own loop — there is nothing here to set."""
+        """Those run their own loop — there is nothing here to set.
+
+        ``ClaudeCodeDispatchProfile`` now carries its own ``max_turns``
+        (a cost guard set per dispatch by the node, e.g. SynthesisNode),
+        so absence of the *field* is no longer the guarantee — absence of
+        a *value derived from the LLM turn budget* is. This env key must
+        stay confined to the LLM dispatcher's own loop.
+        """
         _dispatcher, profile = build_dispatcher(
             DevAgentSpec(agent=backend, model="m"),
             redis_url="redis://x",
@@ -154,7 +161,7 @@ class TestLLMTurnBudget:
             stream_ttl_seconds=60,
             config_getter=fake_getter({ENV_LLM_MAX_TURNS: "80"}),
         )
-        assert not hasattr(profile, "max_turns")
+        assert getattr(profile, "max_turns", None) is None
 
 
 class TestEnvParsing:

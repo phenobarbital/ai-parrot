@@ -37,8 +37,6 @@ async def test_default_backend_is_documentdb(monkeypatch, mock_documentdb):
         "parrot.bots.flows.core.storage.backends.factory.CREW_RESULT_STORAGE",
         "documentdb",
     )
-    from parrot.bots.orchestration.crew import AgentCrew
-
     docdb_cls, instance = mock_documentdb
     crew = AgentCrew(name="default-test")
     await crew._save_result(MagicMock(to_dict=lambda: {"x": 1}), "run_flow")
@@ -61,8 +59,6 @@ async def test_global_env_var_routes_to_postgres(
         "parrot.bots.flows.core.storage.backends.factory.CREW_RESULT_STORAGE",
         "postgres",
     )
-    from parrot.bots.orchestration.crew import AgentCrew
-
     pg_cls, conn = mock_asyncdb_pg
     docdb_cls, _ = mock_documentdb
 
@@ -84,8 +80,6 @@ async def test_persist_results_false_opens_no_connection(
     monkeypatch, mock_documentdb, mock_asyncdb_pg, mock_asyncdb_redis
 ):
     """persist_results=False → no driver constructor ever invoked."""
-    from parrot.bots.orchestration.crew import AgentCrew
-
     docdb_cls, _ = mock_documentdb
     pg_cls, _ = mock_asyncdb_pg
     redis_cls, _ = mock_asyncdb_redis
@@ -106,8 +100,6 @@ async def test_persist_results_false_opens_no_connection(
 @pytest.mark.asyncio
 async def test_async_with_releases_connection(mock_asyncdb_pg):
     """Exiting async with block triggers exactly one close() on the backend."""
-    from parrot.bots.orchestration.crew import AgentCrew
-
     _, conn = mock_asyncdb_pg
 
     async with AgentCrew(name="lifecycle-test", result_storage="postgres") as crew:
@@ -124,8 +116,6 @@ async def test_async_with_releases_connection(mock_asyncdb_pg):
 @pytest.mark.asyncio
 async def test_pending_persist_tasks_complete_before_close():
     """aclose() awaits all in-flight slow saves before invoking storage.close()."""
-    from parrot.bots.orchestration.crew import AgentCrew
-
     completed: list = []
 
     class _SlowStorage(ResultStorage):
@@ -159,7 +149,7 @@ async def test_pending_persist_tasks_complete_before_close():
 @pytest.mark.asyncio
 async def test_agentsflow_redis_backend_writes_key(mock_asyncdb_redis):
     """AgentsFlow(result_storage='redis')._save_result() issues one Redis SET."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     _, conn = mock_asyncdb_redis
 

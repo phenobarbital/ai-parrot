@@ -23,6 +23,7 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
         "field_id": "comments",
         "field_type": "text_area",
         "label": "Comments",
+        "content_type": "text/markdown",
     },
     FieldType.NUMBER.value: {
         "field_id": "amount",

@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import logging
+
 import pytest
 from parrot import conf
 from parrot.flows.dev_flow.complementary_research import (
@@ -124,6 +126,68 @@ class TestComplementaryResearchCoordinator:
                 node_id="n",
             )
         assert result is None
+
+    async def test_an_internal_error_degrades_loudly_with_a_traceback(
+        self,
+        tmp_path,
+        caplog,
+    ):
+        """A bug on our side must not read like a Bedrock outage.
+
+        The real one — calling ask() on a client nobody opened — surfaced
+        as a single warning line saying "'NoneType' object has no
+        attribute 'chat'", so complementary research degraded on every run
+        and looked like a flaky backend for as long as nobody looked.
+        """
+        partner = _FakePartner(
+            error=AttributeError("'NoneType' object has no attribute 'chat'")
+        )
+        coordinator = ComplementaryResearchCoordinator()
+        with (
+            patch(f"{MODULE}.resolve_research_partner_backend", return_value="gpt"),
+            patch(f"{MODULE}.ResearchPartnerFactory.create", return_value=partner),
+            caplog.at_level(logging.ERROR),
+        ):
+            result = await coordinator.research(
+                brief=_FakeBrief(),
+                question="q",
+                cwd=str(tmp_path),
+                slug="my-feature",
+                run_id="r",
+                node_id="n",
+            )
+
+        # Still degrades — complementary research stays optional.
+        assert result is None
+        records = [r for r in caplog.records if "degraded" in r.getMessage()]
+        assert records, "an internal error must reach ERROR level"
+        assert records[0].levelno == logging.ERROR
+        assert records[0].exc_info is not None
+        assert "internal error" in records[0].getMessage()
+
+    async def test_a_backend_failure_stays_a_quiet_warning(self, tmp_path, caplog):
+        """Contrast: a real outage keeps the warning it deserves."""
+        partner = _FakePartner(error=RuntimeError("Bedrock outage"))
+        coordinator = ComplementaryResearchCoordinator()
+        with (
+            patch(f"{MODULE}.resolve_research_partner_backend", return_value="gpt"),
+            patch(f"{MODULE}.ResearchPartnerFactory.create", return_value=partner),
+            caplog.at_level(logging.WARNING),
+        ):
+            await coordinator.research(
+                brief=_FakeBrief(),
+                question="q",
+                cwd=str(tmp_path),
+                slug="my-feature",
+                run_id="r",
+                node_id="n",
+            )
+
+        records = [r for r in caplog.records if "degraded" in r.getMessage()]
+        assert records and records[0].levelno == logging.WARNING
+        # `exc_info=False` is stored verbatim, so assert falsy, not None.
+        assert not records[0].exc_info
+        assert "internal error" not in records[0].getMessage()
 
     async def test_soft_degrades_on_credential_error(self, tmp_path):
         """Any infra exception (auth, outage) also degrades to None."""

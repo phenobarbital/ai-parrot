@@ -135,7 +135,7 @@ from parrot.flows.dev_loop import (
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     CodexCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
-    GeminiCodeDispatcher,
+    GeminiCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     GeminiCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     LLMCodeDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     LLMCodeDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
@@ -474,7 +474,12 @@ def _build_primary_reviewer(
     """Build the write-enabled primary reviewer for ``agent`` (FEAT-270).
 
     Args:
-        agent: ``"claude-code"``, ``"codex"`` or ``"gemini"``.
+        agent: ``"claude-code"`` or ``"codex"`` — see
+            ``llm_catalog.PRIMARY_REVIEW_BACKENDS``. ``"gemini"`` and
+            ``"google_coding"`` were removed with their review
+            dispatchers (barred from every reviewer role); both now hit
+            the ``RuntimeError`` below instead of silently building a
+            reviewer this repo does not trust.
         dispatcher: The shared ``ClaudeCodeDispatcher``.
         development_dispatcher: DevelopmentNode's dispatcher, reused when
             its backend matches ``agent``.
@@ -493,34 +498,6 @@ def _build_primary_reviewer(
             "codex",
             dispatcher=_codex_dispatcher_for(development_dispatcher, redis_url),
         )
-    if agent == "gemini":
-        underlying = (
-            development_dispatcher
-            if isinstance(development_dispatcher, GeminiCodeDispatcher)
-            else GeminiCodeDispatcher(
-                max_concurrent=conf.config.getint(
-                    "GEMINI_CODE_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-        return CodeReviewDispatcherFactory.create("gemini", dispatcher=underlying)
-    if agent == "google_coding":
-        underlying = (
-            development_dispatcher
-            if isinstance(development_dispatcher, GoogleCodingDispatcher)
-            else GoogleCodingDispatcher(
-                max_concurrent=conf.config.getint(
-                    "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
-                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-                ),
-                redis_url=redis_url,
-                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-            )
-        )
-        return CodeReviewDispatcherFactory.create("google_coding", dispatcher=underlying)
     raise RuntimeError(
         f"DEV_LOOP_CODEREVIEW_AGENT must be one of "
         f"{', '.join(repr(b) for b in llm_catalog.PRIMARY_REVIEW_BACKENDS)}, "
@@ -533,11 +510,11 @@ def _resolve_codereview_dispatcher(
 ) -> tuple[object, str]:
     """Build the QA node's code-review dispatcher, adversary included.
 
-    **Adversarial review is not optional in this server.** Of the five
-    registered reviewers only ``codex-adversarial`` and ``parallel``
-    involve an adversarial seat; the three single-agent reviewers
-    (``claude-code``/``codex``/``gemini``) do not. Rather than reject
-    those three — which would make the common default
+    **Adversarial review is not optional in this server.** Of the
+    registered reviewers only the ``*-adversarial`` ones and ``parallel``
+    involve an adversarial seat; the single-agent reviewers
+    (``claude-code``/``codex``) do not. Rather than reject
+    those — which would make the common default
     (``DEV_LOOP_CODEREVIEW_AGENT=claude-code``) un-runnable — this
     function *upgrades* them: the configured agent stays the write-enabled
     primary, and a ``parallel`` reviewer pairs it with the adversary.

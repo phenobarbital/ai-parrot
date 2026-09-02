@@ -11,6 +11,22 @@ Resolved design decision (spec §2): a separate node — own telemetry, own
 ``on_error`` edge, explicit owner of the merge point — rather than a phase
 bolted onto ``DevelopmentNode``.
 
+**Skip guard.** Reconciliation only has subject matter when at least two
+workers' sub-worktrees were actually merged. A single-agent run, a pool
+collapsed to one seat by ``_collapse_for_single_task``, or any run with
+``isolation_mode="shared"`` (no sub-worktrees are created, so
+``SubWorktreeManager.merge_sequential`` never runs) reaches this node with
+nothing to reconcile — and the dispatch below is not cheap when it has
+nothing to find: run-459dd2f8 burned 9m06s / 40 turns / $1.30 hunting for
+inter-worker seams that could not exist, because the prompt asserted a merge
+that never happened. :meth:`SynthesisNode.execute` now short-circuits that
+case with a synthetic report, which also makes the prompt's "multiple
+workers ... already merged" premise true by construction on every path that
+still dispatches.
+
+Note this node is NOT the run's test gate — ``QANode`` is. The pytest step
+below verifies the *merge*, not the feature.
+
 No dedicated subagent prompt file: unlike ``sdd-research``/``sdd-qa``/
 ``sdd-planner``, the reconciliation brief is short and fully described by
 ``system_prompt_override`` (``ClaudeCodeDispatchProfile.subagent=None``
@@ -26,6 +42,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
@@ -89,6 +106,7 @@ class _SynthesisBrief(BaseModel):
     commit_shas: List[str] = Field(default_factory=list)
     summary: str = ""
     worker_count: int = 0
+    merge_performed: bool = False
 
 
 @register_dev_loop_node("dev_loop.synthesis")
@@ -128,6 +146,13 @@ class SynthesisNode(DevLoopNode):
         ``development_output`` from shared state; writes
         ``synthesis_report``.
 
+        When no sub-worktree merge happened — a single-agent run, a pool
+        collapsed to one seat, or ``isolation_mode="shared"`` — the
+        dispatch is skipped entirely and a synthetic
+        ``SynthesisReport(consistent=True)`` is published instead. See
+        the module docstring for why an unconditional dispatch is
+        expensive precisely when it has nothing to do.
+
         Raises:
             Exception: Any dispatch/parse failure from the underlying
                 dispatcher propagates unmodified — this node never
@@ -141,19 +166,29 @@ class SynthesisNode(DevLoopNode):
         research: ResearchOutput = shared["research_output"]
         development: DevelopmentOutput = shared["development_output"]
 
+        worker_count = len(development.worker_summaries)
+        if not development.merge_performed or worker_count <= 1:
+            return self._skip(shared, research, development, worker_count)
+
         profile = ClaudeCodeDispatchProfile(
             subagent=None,
             system_prompt_override=_SYNTHESIS_SYSTEM_PROMPT,
             permission_mode="acceptEdits",
             allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit"],
             setting_sources=["project"],
+            # Cost guard: reconciliation is a bounded task, and an
+            # unbounded session is how a 40-turn seam hunt happens. The
+            # cap surfaces as a DispatchExecutionError naming it, which
+            # routes to failure_handler like any other dispatch failure.
+            max_turns=conf.DEV_LOOP_SYNTHESIS_MAX_TURNS or None,
         )
         brief = _SynthesisBrief(
             worktree_path=research.worktree_path,
             files_changed=development.files_changed,
             commit_shas=development.commit_shas,
             summary=development.summary,
-            worker_count=len(development.worker_summaries),
+            worker_count=worker_count,
+            merge_performed=development.merge_performed,
         )
 
         self.logger.info(
@@ -188,6 +223,61 @@ class SynthesisNode(DevLoopNode):
                 f"inconsistent — {report.summary}"
             )
 
+        return report
+
+    # ------------------------------------------------------------------
+    # Skip path
+    # ------------------------------------------------------------------
+
+    def _skip(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        development: DevelopmentOutput,
+        worker_count: int,
+    ) -> SynthesisReport:
+        """Publish a synthetic report for a run with no merge to reconcile.
+
+        ``consistent=True`` here is not a claim that the code is good — it
+        is the accurate statement that there were no inter-worker seams to
+        reconcile, which is what this node measures. Verification of the
+        change itself belongs to ``QANode``.
+
+        Args:
+            shared: The run's shared state (``synthesis_report`` is written).
+            research: Upstream research output (worktree path, for logs).
+            development: The merged development output being skipped over.
+            worker_count: Number of worker summaries on ``development``.
+
+        Returns:
+            A ``SynthesisReport`` with ``consistent=True`` and a summary
+            naming the reason the dispatch was skipped.
+        """
+        reason = (
+            f"no sub-worktree merge happened "
+            f"(merge_performed={development.merge_performed}, "
+            f"worker_count={worker_count})"
+        )
+        self.logger.info(
+            "Skipping synthesis reconciliation for %s: %s — nothing to reconcile.",
+            research.worktree_path,
+            reason,
+        )
+        if shared.get("skip_qa"):
+            # Synthesis used to be the de-facto (and, with skip_qa on, the
+            # only) test run. Skipping it while QA is bypassed means this
+            # run executes no tests at all — say so instead of letting the
+            # bundle read green.
+            self.logger.warning(
+                "Synthesis skipped while skip_qa is enabled — this run "
+                "executes no test suite at all."
+            )
+        report = SynthesisReport(
+            consistent=True,
+            adjustments=[],
+            summary=f"Synthesis skipped: {reason}.",
+        )
+        shared["synthesis_report"] = report
         return report
 
 
