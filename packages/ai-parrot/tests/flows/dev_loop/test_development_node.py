@@ -888,3 +888,114 @@ class TestPoolPath:
 
         shared_out = await _node("shared").execute({"run_id": "r2", "research_output": research})
         assert shared_out.merge_performed is False
+
+
+@pytest.mark.asyncio
+class TestSingleAgentTaskManifest:
+    """A single agent implements the WHOLE spec — every task in it.
+
+    So it needs the same index-resolved artifact paths a pooled seat gets
+    via ``TaskScopedBrief.task_file``, once per task. Without them it
+    reconstructs `TASK-<NNN>-<slug>.md` and reaches for the FEATURE slug.
+    """
+
+    @staticmethod
+    def _dispatched_brief(dispatcher) -> ResearchOutput:
+        return dispatcher.dispatch.await_args.kwargs["brief"]
+
+    async def test_manifest_carries_the_real_paths(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "select-model-dev-flow-ideation-model",
+            [
+                {
+                    "id": "TASK-2717",
+                    "title": "catalog.py — Add Fable models",
+                    "status": "done",
+                    "depends_on": [],
+                    "file": "sdd/tasks/completed/TASK-2717-catalog-add-fable-and-research-primary-role.md",
+                },
+                {
+                    "id": "TASK-2719",
+                    "title": "Tests — Assert Fable in catalog",
+                    "status": "pending",
+                    "depends_on": ["TASK-2717"],
+                    "file": "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md",
+                },
+            ],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        note = self._dispatched_brief(dispatcher).log_excerpts[0]
+        assert "TASK INVENTORY" in note
+        assert "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md" in note
+        assert "sdd/tasks/completed/TASK-2717-catalog-add-fable-and-research-primary-role.md" in note
+        # The status is what lets the agent skip work already banked.
+        assert "TASK-2717 [done]" in note
+        assert "TASK-2719 [pending]" in note
+        assert "depends_on: TASK-2717" in note
+        # The feature slug must never appear as a filename.
+        assert "TASK-2719-select-model-dev-flow-ideation-model.md" not in note
+
+    async def test_manifest_is_prepended_not_replacing_prior_excerpts(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "my-feature",
+            [{"id": "TASK-1", "status": "pending", "depends_on": [], "file": "sdd/tasks/active/TASK-1-a.md"}],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494").model_copy(
+            update={"log_excerpts": ["pre-existing excerpt"]}
+        )
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        excerpts = self._dispatched_brief(dispatcher).log_excerpts
+        assert "TASK INVENTORY" in excerpts[0]
+        assert excerpts[1] == "pre-existing excerpt"
+
+    async def test_no_index_dispatches_unchanged(self, tmp_path):
+        """A hotfix reserves no ids and has no index — no manifest, no crash."""
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        assert self._dispatched_brief(dispatcher).log_excerpts == []
+
+    async def test_task_without_a_file_is_listed_but_not_invented(self, tmp_path):
+        _write_index(
+            tmp_path,
+            "FEAT-494",
+            "my-feature",
+            [{"id": "TASK-1", "title": "no file recorded", "status": "pending", "depends_on": []}],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-494")
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
+        )
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        await node.execute({"run_id": "r1", "research_output": research})
+
+        note = self._dispatched_brief(dispatcher).log_excerpts[0]
+        assert "TASK-1 [pending]" in note
+        assert "not recorded in the index" in note

@@ -826,6 +826,87 @@ class DevelopmentNode(DevLoopNode):
     # Single-agent path (byte-identical to the pre-FEAT-323 behaviour)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _task_manifest_note(scheduler: TaskScheduler) -> str:
+        """Render the per-spec index as a path-bearing task inventory.
+
+        Args:
+            scheduler: The scheduler built from the feature's per-spec index.
+
+        Returns:
+            A prompt-ready block, one line per task, ordered as the index
+            lists them. Tasks whose index entry carries no ``file`` are
+            still listed (the id and title are useful on their own) with
+            the path column left explicitly unknown, so the agent never
+            reads a blank as a filename it may invent.
+        """
+        lines = [
+            "[TASK INVENTORY — from the per-spec index; these paths are "
+            "authoritative]",
+            "Implement every task below that is not already 'done', in "
+            "depends_on order. Read each task's artifact at the path given "
+            "here — do NOT reconstruct a filename from the task id: the "
+            "<slug> in TASK-<NNN>-<slug>.md is per-task and is NOT the "
+            "feature slug.",
+        ]
+        for task in scheduler.all_tasks():
+            deps = ", ".join(task.depends_on) or "none"
+            path = task.file or "<not recorded in the index — locate it with a search>"
+            lines.append(f"  {task.id} [{task.status}] depends_on: {deps}")
+            if task.title:
+                lines.append(f"    title: {task.title}")
+            lines.append(f"    file:  {path}")
+        return "\n".join(lines)
+
+    async def _with_task_manifest(self, research: ResearchOutput) -> ResearchOutput:
+        """Name every task artifact by its real path for a single dev agent.
+
+        The pool path hands each seat a ``TaskScopedBrief.task_file``, so a
+        pooled worker never has to guess. A single agent gets no per-task
+        brief and implements the WHOLE spec — every task in it, in
+        sequence, the way ``sdd-worker`` does — so it has the same problem
+        once per task: the ``<slug>`` in ``TASK-<NNN>-<slug>.md`` is
+        per-task and is NOT the feature slug, and an agent reconstructing
+        the name reaches for the feature slug and reads a path that does
+        not exist.
+
+        The per-spec index knows every path. This folds the whole
+        inventory into ``log_excerpts`` — the same prompt channel
+        :meth:`_with_prior_work_context` uses — so the agent never
+        reconstructs a filename at all.
+
+        Args:
+            research: The upstream research output.
+
+        Returns:
+            A copy carrying the manifest, or ``research`` unchanged when no
+            per-spec index is readable (the normal case for a hotfix, which
+            reserves no FEAT/TASK ids and therefore has no index).
+        """
+        try:
+            scheduler = await self._build_scheduler(research)
+        except ValueError:
+            # A depends_on cycle is the pool path's problem to raise, not a
+            # reason to fail a single-agent run that never consults the graph.
+            self.logger.warning(
+                "Per-spec index for %s has a depends_on cycle; dispatching "
+                "the single agent without a task manifest.",
+                research.feat_id,
+                exc_info=True,
+            )
+            return research
+        if scheduler is None or not scheduler.all_tasks():
+            return research
+
+        note = self._task_manifest_note(scheduler)
+        self.logger.info(
+            "%s single-agent dispatch: injecting a %d-task manifest with "
+            "index-resolved artifact paths.",
+            research.feat_id,
+            len(scheduler.all_tasks()),
+        )
+        return research.model_copy(update={"log_excerpts": [note, *research.log_excerpts]})
+
     async def _execute_single(
         self,
         shared: Dict[str, Any],
@@ -852,6 +933,7 @@ class DevelopmentNode(DevLoopNode):
             The validated :class:`DevelopmentOutput`, carrying one
             ``WorkerSummary`` describing the backend/model actually used.
         """
+        research = await self._with_task_manifest(research)
         dispatcher = self._dispatcher
         profile = self._dispatch_profile
         spec: Optional[DevAgentSpec] = None
