@@ -438,8 +438,42 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     # -- layout/containers --------------------------------------------------
 
     def _render_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        if node_extensions(node).get("parrot_variant") == "filter-bar":
+            return self._render_filterbar_summary(node, degradations)
         cls = "a2ui-row kpi-grid" if is_kpi_row(node) else "a2ui-row"
         return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
+
+    def _render_filterbar_summary(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        """Degrade a ``FilterBar`` (``parrot_variant: "filter-bar"`` Row) to a
+        static summary line — never a ``<select>``/dropdown a reader could
+        click and that would do nothing on a JS-less surface (this renderer,
+        and :class:`~parrot.outputs.a2ui_renderers.pdf.PDFRenderer`, which
+        inherits this dispatch wholesale). Names EVERY declared filter,
+        using "all" for one with no currently-selected value — a summary
+        that omitted unset filters would read as though they were applied.
+        """
+        parts: list[str] = []
+        children = node.children if isinstance(node.children, list) else []
+        for child in children:
+            if not isinstance(child, BasicNode):
+                continue
+            props = child.model_extra or {}
+            label = props.get("label") or node_extensions(child).get("parrot_filter_column", "")
+            value = props.get("value")
+            options = props.get("options") or []
+            if isinstance(value, list) and value:
+                labels_by_value = {
+                    o.get("value"): o.get("label", o.get("value")) for o in options if isinstance(o, dict)
+                }
+                display = ", ".join(str(labels_by_value.get(v, v)) for v in value)
+            else:
+                display = "all"
+            parts.append(f"{_esc(label)} = {_esc(display)}")
+        degradations.append(
+            degradation_record(node, f"{_SURFACE_NAME} renders FilterBar as a static summary (no client-side filtering)")
+        )
+        summary = "Filters: " + "; ".join(parts)
+        return f'<p class="a2ui-text a2ui-filter-summary">{summary}</p>'
 
     def _render_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         inner = self._render_children(node, degradations)

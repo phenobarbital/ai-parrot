@@ -13,6 +13,7 @@ a composition helper over Basic Catalog primitives.
 from parrot.outputs.a2ui.catalog.parrot import (
     chart,  # noqa: F401
     datatable,  # noqa: F401
+    filterbar,  # noqa: F401
     infocard,  # noqa: F401
     infographic,  # noqa: F401
     kpicard,  # noqa: F401
