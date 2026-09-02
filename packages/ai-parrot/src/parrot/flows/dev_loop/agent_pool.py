@@ -90,6 +90,7 @@ def _profile_model(profile: Any) -> str:
         pass
     return ""
 
+
 logger = logging.getLogger(__name__)
 
 # ``(task_id, worker_id, output_or_None, error_message_or_None)``.
@@ -134,9 +135,7 @@ class WaveResult:
 class DevAgentPool:
     """Materializes a dev-agent pool and dispatches waves of tasks across it."""
 
-    def __init__(
-        self, *, config: DevAgentPoolConfig, workers: List[PoolWorker], pool_max: int
-    ) -> None:
+    def __init__(self, *, config: DevAgentPoolConfig, workers: List[PoolWorker], pool_max: int) -> None:
         """Initialise the pool from an already-materialized worker list.
 
         Prefer :meth:`build` to construct a pool from a
@@ -181,8 +180,7 @@ class DevAgentPool:
         total = len(expanded)
         if total > pool_max:
             logger.warning(
-                "DevAgentPoolConfig requests %d total worker(s); capping to "
-                "pool_max=%d (dropping %d).",
+                "DevAgentPoolConfig requests %d total worker(s); capping to " "pool_max=%d (dropping %d).",
                 total,
                 pool_max,
                 total - pool_max,
@@ -193,11 +191,7 @@ class DevAgentPool:
         for i, spec in enumerate(expanded, start=1):
             worker_id = f"development.w{i}"
             dispatcher, profile = dispatcher_builder(spec)
-            workers.append(
-                PoolWorker(
-                    worker_id=worker_id, spec=spec, dispatcher=dispatcher, profile=profile
-                )
-            )
+            workers.append(PoolWorker(worker_id=worker_id, spec=spec, dispatcher=dispatcher, profile=profile))
 
         return cls(config=config, workers=workers, pool_max=pool_max)
 
@@ -244,9 +238,7 @@ class DevAgentPool:
         if hasattr(profile, "model"):
             return profile.model_copy(update={"model": escalation})
         if hasattr(profile, "llm"):
-            return profile.model_copy(
-                update={"llm": f"{worker.spec.agent}:{escalation}"}
-            )
+            return profile.model_copy(update={"llm": f"{worker.spec.agent}:{escalation}"})
         return profile  # pragma: no cover - defensive, no known profile lacks both
 
     async def _dispatch_one(
@@ -481,9 +473,7 @@ class DevAgentPool:
         if not tasks:
             return WaveResult()
 
-        assignments: Dict[str, PoolWorker] = {
-            t.id: self.workers[i % len(self.workers)] for i, t in enumerate(tasks)
-        }
+        assignments: Dict[str, PoolWorker] = {t.id: self.workers[i % len(self.workers)] for i, t in enumerate(tasks)}
         self.logger.info(
             "Wave assignment (%d task(s) over %d worker(s)): %s",
             len(tasks),
@@ -499,9 +489,14 @@ class DevAgentPool:
         first_attempts = await asyncio.gather(
             *(
                 self._dispatch_one(
-                    t, assignments[t.id], research=research, run_id=run_id,
-                    cwd_for=cwd_for, escalate=escalate,
-                    session_host=session_host, attempt=1,
+                    t,
+                    assignments[t.id],
+                    research=research,
+                    run_id=run_id,
+                    cwd_for=cwd_for,
+                    escalate=escalate,
+                    session_host=session_host,
+                    attempt=1,
                 )
                 for t in tasks
             )
@@ -576,9 +571,7 @@ class DevAgentPool:
         return WaveResult(completed=completed, failed=failed, worker_summaries=worker_summaries)
 
 
-def aggregate_outputs(
-    results: List[WaveResult], incomplete: List[str]
-) -> DevelopmentOutput:
+def aggregate_outputs(results: List[WaveResult], incomplete: List[str]) -> DevelopmentOutput:
     """Merge every wave's outputs into a single :class:`DevelopmentOutput`.
 
     Args:
@@ -620,14 +613,10 @@ def aggregate_outputs(
                 existing.tasks_completed.extend(ws.tasks_completed)
                 existing.tasks_failed.extend(ws.tasks_failed)
                 if ws.summary:
-                    existing.summary = (
-                        f"{existing.summary}; {ws.summary}" if existing.summary else ws.summary
-                    )
+                    existing.summary = f"{existing.summary}; {ws.summary}" if existing.summary else ws.summary
 
     worker_summaries = list(merged.values())
-    summary = "\n".join(
-        f"[{ws.worker_id}/{ws.agent}] {ws.summary}" for ws in worker_summaries if ws.summary
-    )
+    summary = "\n".join(f"[{ws.worker_id}/{ws.agent}] {ws.summary}" for ws in worker_summaries if ws.summary)
 
     return DevelopmentOutput(
         files_changed=files_changed,

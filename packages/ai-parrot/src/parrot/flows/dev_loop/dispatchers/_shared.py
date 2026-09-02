@@ -107,7 +107,10 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
         # node without widening NodeId. action_from_dispatch_event prefers
         # payload["seat"] (stamped by DispatchLabels) over this fallback.
         action = action_from_dispatch_event(
-            event.kind, _owning_node_id(event.node_id), event.ts, event.payload,
+            event.kind,
+            _owning_node_id(event.node_id),
+            event.ts,
+            event.payload,
             seat=event.node_id if "." in event.node_id else "",
         )
         if action is not None:
@@ -115,7 +118,9 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
     except Exception:  # noqa: BLE001 - shim must never break a dispatch
         _logger.debug(
             "dev-loop session-state shim failed for dispatch event %s (node=%s)",
-            event.kind, event.node_id, exc_info=True,
+            event.kind,
+            event.node_id,
+            exc_info=True,
         )
 
 
@@ -132,8 +137,8 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
 # shared dispatcher instance never observe each other's labels.
 # ---------------------------------------------------------------------------
 
-_DISPATCH_LABELS_CTX: "contextvars.ContextVar[Optional[DispatchLabels]]" = (
-    contextvars.ContextVar("dev_loop_dispatch_labels", default=None)
+_DISPATCH_LABELS_CTX: "contextvars.ContextVar[Optional[DispatchLabels]]" = contextvars.ContextVar(
+    "dev_loop_dispatch_labels", default=None
 )
 
 
@@ -194,12 +199,10 @@ def _clamp(value: str, max_chars: int, *, head: bool = True) -> str:
         return value[:1]
     if head:
         return value[: max_chars - 1] + "…"
-    return "…" + value[-(max_chars - 1):]
+    return "…" + value[-(max_chars - 1) :]
 
 
-def summarize_tool_input(
-    tool_name: str, tool_input: Any, *, max_chars: int = TOOL_INPUT_MAX_CHARS
-) -> str:
+def summarize_tool_input(tool_name: str, tool_input: Any, *, max_chars: int = TOOL_INPUT_MAX_CHARS) -> str:
     """Compact one-line digest of a tool's arguments.
 
     Recognises the common shapes (a Grep-style ``pattern``[+``path``], a
@@ -393,8 +396,7 @@ def normalize_payload(kind: str, payload: Any) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             fallback = {}
         fallback["summary"] = _clamp(
-            (kind.split(".", 1)[-1] if isinstance(kind, str) and "." in kind else str(kind))
-            or "event",
+            (kind.split(".", 1)[-1] if isinstance(kind, str) and "." in kind else str(kind)) or "event",
             SUMMARY_MAX_CHARS,
         )
         return fallback

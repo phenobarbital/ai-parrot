@@ -168,9 +168,7 @@ class AbstractCodeReviewDispatcher(ABC):
                     session_host=session_host,
                 )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
-            self.logger.warning(
-                "%s code-review dispatch failed: %s", self.agent_name, exc
-            )
+            self.logger.warning("%s code-review dispatch failed: %s", self.agent_name, exc)
             return CodeReviewVerdict(
                 passed=True,
                 findings=[
@@ -205,10 +203,7 @@ class CodeReviewDispatcherFactory:
     def create(cls, name: str, **kwargs) -> AbstractCodeReviewDispatcher:
         """Create a code review dispatcher by name."""
         if name not in cls._registry:
-            raise ValueError(
-                f"Unknown code review dispatcher: {name!r}. "
-                f"Available: {sorted(cls._registry)}"
-            )
+            raise ValueError(f"Unknown code review dispatcher: {name!r}. " f"Available: {sorted(cls._registry)}")
         return cls._registry[name](**kwargs)
 
 
@@ -332,9 +327,11 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             labels=labels,
         )
         tagged_findings = [
-            finding
-            if isinstance(finding, AdversarialFinding)
-            else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            (
+                finding
+                if isinstance(finding, AdversarialFinding)
+                else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            )
             for finding in verdict.findings
         ]
         return verdict.model_copy(update={"files_modified": [], "findings": tagged_findings})
@@ -403,8 +400,12 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         help — that exception happens before any coroutine is scheduled).
         """
         kwargs = {
-            "brief": brief, "run_id": run_id, "node_id": node_id, "cwd": cwd,
-            "session_host": session_host, "round": round,
+            "brief": brief,
+            "run_id": run_id,
+            "node_id": node_id,
+            "cwd": cwd,
+            "session_host": session_host,
+            "round": round,
         }
         try:
             return await reviewer.review(**kwargs, labels=side_labels)
@@ -427,14 +428,24 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         base_labels = labels.model_dump() if labels is not None else {}
         primary_result, adversary_result = await asyncio.gather(
             self._review_side(
-                self._primary, DispatchLabels(**{**base_labels, "judge_id": "primary"}),
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
-                session_host=session_host, round=round,
+                self._primary,
+                DispatchLabels(**{**base_labels, "judge_id": "primary"}),
+                brief=brief,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+                session_host=session_host,
+                round=round,
             ),
             self._review_side(
-                self._adversary, DispatchLabels(**{**base_labels, "judge_id": "codex-adversarial"}),
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
-                session_host=session_host, round=round,
+                self._adversary,
+                DispatchLabels(**{**base_labels, "judge_id": "codex-adversarial"}),
+                brief=brief,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+                session_host=session_host,
+                round=round,
             ),
             return_exceptions=True,
         )
@@ -461,9 +472,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
                     session_host=session_host,
                 )
             except Exception as exc:  # noqa: BLE001 - judge is best-effort, never blocking
-                self.logger.warning(
-                    "parallel judge dispatch failed, degrading to deterministic merge: %s", exc
-                )
+                self.logger.warning("parallel judge dispatch failed, degrading to deterministic merge: %s", exc)
                 judge_summary = ""
             if judge_summary:
                 combined_summary = f"{merged.summary}\n\n{judge_summary}".strip()
@@ -497,9 +506,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         """Casefold + collapse whitespace for agreement-key comparison."""
         return " ".join(message.casefold().split())
 
-    def _merge_verdicts(
-        self, primary: CodeReviewVerdict, adversary: CodeReviewVerdict
-    ) -> CodeReviewVerdict:
+    def _merge_verdicts(self, primary: CodeReviewVerdict, adversary: CodeReviewVerdict) -> CodeReviewVerdict:
         """Deterministically merge two verdicts (spec §2 `PerspectiveSynthesis`).
 
         Agreement key: ``(file, normalized message)``. Agreements are
@@ -524,9 +531,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
             key = _key(finding)
             if key in merged_by_key:
                 existing = merged_by_key[key]
-                merged_by_key[key] = existing.model_copy(
-                    update={"source": f"{existing.source},codex-adversarial"}
-                )
+                merged_by_key[key] = existing.model_copy(update={"source": f"{existing.source},codex-adversarial"})
             else:
                 merged_by_key[key] = AdversarialFinding(
                     message=finding.message,
@@ -624,9 +629,7 @@ def _judges_from_conf(config_getter: ConfigGetter) -> List[JudgeSpec]:
         data = json.loads(raw)
         return JudgePanelConfig(**data).judges
     except (json.JSONDecodeError, TypeError, ValidationError, ValueError) as exc:
-        logging.getLogger(__name__).warning(
-            "DEV_LOOP_JUDGE_PANEL is malformed (%s); using default panel.", exc
-        )
+        logging.getLogger(__name__).warning("DEV_LOOP_JUDGE_PANEL is malformed (%s); using default panel.", exc)
         return default_judge_panel().judges
 
 
@@ -856,8 +859,12 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         because the exception happens before any coroutine is scheduled.
         """
         kwargs = {
-            "brief": brief, "run_id": run_id, "node_id": node_id, "cwd": cwd,
-            "session_host": session_host, "round": round,
+            "brief": brief,
+            "run_id": run_id,
+            "node_id": node_id,
+            "cwd": cwd,
+            "session_host": session_host,
+            "round": round,
         }
         judge_labels = DispatchLabels(
             judge_id=judge_id,
@@ -889,9 +896,16 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         results = await asyncio.gather(
             *(
                 self._review_one_judge(
-                    judge, judge_id, spec,
-                    brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
-                    session_host=session_host, round=round, outer_labels=labels,
+                    judge,
+                    judge_id,
+                    spec,
+                    brief=brief,
+                    run_id=run_id,
+                    node_id=node_id,
+                    cwd=cwd,
+                    session_host=session_host,
+                    round=round,
+                    outer_labels=labels,
                 )
                 for (judge_id, judge), spec in zip(judges, self._judge_specs)
             ),
@@ -901,9 +915,7 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         verdicts: List[Tuple[str, Optional[CodeReviewVerdict]]] = []
         for (judge_id, _judge), result in zip(judges, results):
             if isinstance(result, BaseException):
-                self.logger.warning(
-                    "judge %s errored during panel review: %s", judge_id, result
-                )
+                self.logger.warning("judge %s errored during panel review: %s", judge_id, result)
                 verdicts.append((judge_id, None))
             else:
                 verdicts.append((judge_id, result))
@@ -916,22 +928,31 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         # per QA round (spec §2 item 5); a round-less caller (round="")
         # still records, just without per-attempt partitioning.
         if session_host is not None:
-            for (judge_id, _judge), spec, (_jid, verdict) in zip(
-                judges, self._judge_specs, verdicts
-            ):
+            for (judge_id, _judge), spec, (_jid, verdict) in zip(judges, self._judge_specs, verdicts):
                 if verdict is None:
-                    session_host.apply(JudgeVerdictRecorded(
-                        round=round, judge_id=judge_id, backend=judge_id,
-                        model=spec.model, passed=False, findings_count=0,
-                        summary="judge review could not run (infra error)",
-                    ))
+                    session_host.apply(
+                        JudgeVerdictRecorded(
+                            round=round,
+                            judge_id=judge_id,
+                            backend=judge_id,
+                            model=spec.model,
+                            passed=False,
+                            findings_count=0,
+                            summary="judge review could not run (infra error)",
+                        )
+                    )
                 else:
-                    session_host.apply(JudgeVerdictRecorded(
-                        round=round, judge_id=judge_id, backend=judge_id,
-                        model=spec.model, passed=verdict.passed,
-                        findings_count=len(verdict.findings),
-                        summary=verdict.summary,
-                    ))
+                    session_host.apply(
+                        JudgeVerdictRecorded(
+                            round=round,
+                            judge_id=judge_id,
+                            backend=judge_id,
+                            model=spec.model,
+                            passed=verdict.passed,
+                            findings_count=len(verdict.findings),
+                            summary=verdict.summary,
+                        )
+                    )
 
         panel_size = len(verdicts)
         errored_count = sum(1 for _judge_id, v in verdicts if v is None)

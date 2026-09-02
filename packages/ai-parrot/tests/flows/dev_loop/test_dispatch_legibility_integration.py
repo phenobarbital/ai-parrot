@@ -143,9 +143,9 @@ class TestClaudeStreamLegibility:
             for key, value in payload.items():
                 if key == "tool_use_id":
                     continue
-                assert not (isinstance(value, str) and value.startswith("toolu_")), (
-                    f"an opaque tool id leaked into display field {key!r}: {value!r}"
-                )
+                assert not (
+                    isinstance(value, str) and value.startswith("toolu_")
+                ), f"an opaque tool id leaked into display field {key!r}: {value!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +163,7 @@ class _LabelledRecordingDispatcher:
     def __init__(self):
         self.published = []
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd,
-                       session_host=None, labels=None):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None, labels=None):
         token = bind_labels(labels)
         try:
             payload = normalize_payload("dispatch.tool_use", {"tool_name": "Read"})
@@ -176,8 +175,11 @@ class _LabelledRecordingDispatcher:
 
 def _research():
     return ResearchOutput(
-        jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md", feat_id="FEAT-496",
-        branch_name="feat-496-fix", worktree_path="/tmp/wt",
+        jira_issue_key="OPS-1",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-496",
+        branch_name="feat-496-fix",
+        worktree_path="/tmp/wt",
     )
 
 
@@ -202,9 +204,7 @@ class TestPoolTaskIdentity:
             TaskRef(id="TASK-1", status="pending", depends_on=[]),
             TaskRef(id="TASK-2", status="pending", depends_on=[]),
         ]
-        await pool.run_wave(
-            tasks, research=_research(), run_id="r1", cwd_for=lambda w: f"/tmp/wt/{w}"
-        )
+        await pool.run_wave(tasks, research=_research(), run_id="r1", cwd_for=lambda w: f"/tmp/wt/{w}")
 
         by_seat = {}
         for disp in (d1, d2):
@@ -234,8 +234,9 @@ class TestMultiplexerPassthrough:
             "dispatch.tool_use",
             {"tool_name": "Read", "task_id": "TASK-1857", "seat": "development.w1"},
         )
-        event = DispatchEvent(kind="dispatch.tool_use", ts=time.time(), run_id="r1",
-                              node_id="development.w1", payload=payload)
+        event = DispatchEvent(
+            kind="dispatch.tool_use", ts=time.time(), run_id="r1", node_id="development.w1", payload=payload
+        )
         fields = {"event": event.model_dump_json()}
 
         mux = FlowStreamMultiplexer(object(), run_id="r1")
@@ -254,8 +255,9 @@ class TestMultiplexerPassthrough:
         from parrot.flows.dev_loop.models import DispatchEvent
 
         payload = normalize_payload("dispatch.tool_use", {"agy_event": {}, "tool_name": "read_file"})
-        event = DispatchEvent(kind="dispatch.tool_use", ts=time.time(), run_id="r1",
-                              node_id="development", payload=payload)
+        event = DispatchEvent(
+            kind="dispatch.tool_use", ts=time.time(), run_id="r1", node_id="development", payload=payload
+        )
         fields = {"event": event.model_dump_json()}
 
         mux = FlowStreamMultiplexer(object(), run_id="r1")
@@ -281,12 +283,17 @@ async def test_normalized_contract_holds(dispatcher_cls, kind, monkeypatch):
     # Each dispatcher names its lazy-redis getter differently.
     for attr in ("_ensure_redis", "_get_redis"):
         if hasattr(d, attr):
+
             async def _get(_fr=fake_redis):
                 return _fr
+
             monkeypatch.setattr(d, attr, _get)
 
     await d._publish_event(
-        "flow:r1:dispatch:development", kind=kind, run_id="r1", node_id="development",
+        "flow:r1:dispatch:development",
+        kind=kind,
+        run_id="r1",
+        node_id="development",
         payload={"some_backend_key": "value"},
     )
 
@@ -295,6 +302,7 @@ async def test_normalized_contract_holds(dispatcher_cls, kind, monkeypatch):
     fields = args.args[1] if len(args.args) > 1 else args.kwargs.get("fields") or args.args[-1]
     assert "event" in fields
     import json as _json
+
     decoded = _json.loads(fields["event"])
     payload = decoded["payload"]
     assert payload["summary"]
@@ -310,7 +318,9 @@ async def test_normalized_contract_holds(dispatcher_cls, kind, monkeypatch):
 
 def test_pre_feat496_envelope_still_validates():
     envelope = ActionEnvelope(
-        channel=session_channel("run-1"), server_seq=1, action=RunCreated(run_id="run-1"),
+        channel=session_channel("run-1"),
+        server_seq=1,
+        action=RunCreated(run_id="run-1"),
     )
     dumped = envelope.model_dump()
     restored = ActionEnvelope.model_validate(dumped)

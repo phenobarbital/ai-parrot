@@ -316,24 +316,18 @@ class TestAgyEventExtraction:
         assert "a.py" in out["tool_input"]
 
     def test_text_delta_yields_text(self):
-        out = GoogleCodingDispatcher._extract_agy_display(
-            {"type": "step_update", "step_update": {"text_delta": "hi"}}
-        )
+        out = GoogleCodingDispatcher._extract_agy_display({"type": "step_update", "step_update": {"text_delta": "hi"}})
         assert out["text"] == "hi"
 
     def test_result_as_json_string_does_not_raise(self):
-        out = GoogleCodingDispatcher._extract_agy_display(
-            {"type": "result", "result": '{"turns": 3}'}
-        )
+        out = GoogleCodingDispatcher._extract_agy_display({"type": "result", "result": '{"turns": 3}'})
         assert isinstance(out, dict)
 
     @pytest.mark.asyncio
     async def test_raw_event_preserved(self, dispatcher):
         """AC9."""
         event = _tool_call_step_update()
-        await dispatcher._publish_agy_event(
-            "flow:r1:dispatch:development", event, "r1", "development"
-        )
+        await dispatcher._publish_agy_event("flow:r1:dispatch:development", event, "r1", "development")
         args, _kwargs = dispatcher._fake_redis.xadd.call_args
         fields = args[1]
         decoded = json.loads(fields["event"])
@@ -342,9 +336,7 @@ class TestAgyEventExtraction:
     @pytest.mark.asyncio
     async def test_every_payload_has_a_summary(self, dispatcher):
         for event in (_tool_call_step_update(), {"type": "init", "model": "gemini-3.6"}):
-            await dispatcher._publish_agy_event(
-                "flow:r1:dispatch:development", event, "r1", "development"
-            )
+            await dispatcher._publish_agy_event("flow:r1:dispatch:development", event, "r1", "development")
         for call in dispatcher._fake_redis.xadd.call_args_list:
             fields = call.args[1]
             decoded = json.loads(fields["event"])

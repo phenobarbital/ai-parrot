@@ -627,4 +627,3 @@ class CodexCodeDispatcher:
             await redis_client.xadd(stream_key, fields, maxlen=maxlen, approximate=True)
         except Exception as exc:  # pragma: no cover - best-effort publish
             self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
-

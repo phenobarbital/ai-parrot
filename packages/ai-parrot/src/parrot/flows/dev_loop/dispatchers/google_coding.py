@@ -78,6 +78,7 @@ class GoogleCodingDispatcher:
     async def _get_redis(self) -> Any:
         if self._redis is None:
             import redis.asyncio as aioredis
+
             self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._redis
 
@@ -209,9 +210,7 @@ class GoogleCodingDispatcher:
                             "error_message": f"agy CLI executable {self.resolved_bin!r} was not found on PATH",
                         },
                     )
-                    raise DispatchExecutionError(
-                        f"agy CLI executable {self.resolved_bin!r} was not found"
-                    ) from exc
+                    raise DispatchExecutionError(f"agy CLI executable {self.resolved_bin!r} was not found") from exc
                 except TimeoutError as exc:
                     if process is not None:
                         process.kill()
@@ -577,4 +576,3 @@ class GoogleCodingDispatcher:
                 f"Output failed {output_model.__name__} validation: {exc}",
                 raw_payload=json_text,
             ) from exc
-

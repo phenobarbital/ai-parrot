@@ -12,9 +12,7 @@ from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 
 
 def _dispatcher() -> ClaudeCodeDispatcher:
-    return ClaudeCodeDispatcher(
-        max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300
-    )
+    return ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300)
 
 
 class ToolUseBlock:
@@ -97,9 +95,7 @@ class TestClaudeEventExtraction:
         await d._publish_message_event(
             "k", AssistantMessage([ToolUseBlock("Read", "toolu_x", {})]), "run-1", "development.w1"
         )
-        await d._publish_message_event(
-            "k", UserMessage([ToolResultBlock("toolu_x")]), "run-1", "development.w1"
-        )
+        await d._publish_message_event("k", UserMessage([ToolResultBlock("toolu_x")]), "run-1", "development.w1")
         kind, p = captured[-1]
         assert kind == "dispatch.tool_result"
         assert p["tool_name"] == "Read"
@@ -107,9 +103,7 @@ class TestClaudeEventExtraction:
 
     async def test_unknown_tool_use_id_degrades(self, captured):
         d = _dispatcher()
-        await d._publish_message_event(
-            "k", UserMessage([ToolResultBlock("toolu_missing")]), "run-1", "n"
-        )
+        await d._publish_message_event("k", UserMessage([ToolResultBlock("toolu_missing")]), "run-1", "n")
         _, p = captured[-1]
         assert p["summary"]
 
@@ -166,9 +160,7 @@ class TestClaudeEventExtraction:
                     node_id,
                 )
                 await asyncio.sleep(0)
-                await d._publish_message_event(
-                    "k", UserMessage([ToolResultBlock(tool_id)]), "run-1", node_id
-                )
+                await d._publish_message_event("k", UserMessage([ToolResultBlock(tool_id)]), "run-1", node_id)
             finally:
                 _TOOL_NAMES_CTX.reset(token)
 

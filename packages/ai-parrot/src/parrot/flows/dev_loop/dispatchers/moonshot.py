@@ -73,8 +73,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
             args["temperature"] = profile.temperature
         if not profile.enable_thinking and model in ALWAYS_THINKING_MODELS:
             self.logger.warning(
-                "Moonshot model %s reasons unconditionally; "
-                "enable_thinking=False has no effect.",
+                "Moonshot model %s reasons unconditionally; " "enable_thinking=False has no effect.",
                 model,
             )
         args["thinking"] = profile.enable_thinking
@@ -130,4 +129,3 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
             session_host=session_host,
             labels=labels,
         )
-

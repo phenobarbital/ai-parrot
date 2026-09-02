@@ -170,9 +170,7 @@ class TestGeminiCommandAndEvents:
         assert "dispatch.completed" in kinds
 
     @pytest.mark.asyncio
-    async def test_dispatch_transparent_profile_conversion(
-        self, dispatcher, brief, _patch_worktree_base, monkeypatch
-    ):
+    async def test_dispatch_transparent_profile_conversion(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
         captured: dict[str, Sequence[str]] = {}
 
         async def _fake_create(command: Sequence[str], cwd: str):
@@ -255,11 +253,7 @@ class TestGeminiFailures:
                 "content": '{"files_changed": []}',
                 "delta": True,
             }
-            return _FakeGeminiProcess(
-                stdout_lines=[
-                    json.dumps(assistant_event) + "\n"
-                ]
-            )
+            return _FakeGeminiProcess(stdout_lines=[json.dumps(assistant_event) + "\n"])
 
         monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
 
@@ -303,18 +297,14 @@ class TestGeminiEventExtraction:
         assert out.get("tool_name") == "read_file"
 
     def test_assistant_message_yields_text(self):
-        out = GeminiCodeDispatcher._extract_gemini_display(
-            {"type": "message", "role": "assistant", "content": "hello"}
-        )
+        out = GeminiCodeDispatcher._extract_gemini_display({"type": "message", "role": "assistant", "content": "hello"})
         assert out["text"] == "hello"
 
     @pytest.mark.asyncio
     async def test_raw_event_preserved(self, dispatcher):
         """AC9."""
         event = {"type": "tool_call", "name": "read_file", "args": {}}
-        await dispatcher._publish_gemini_event(
-            "flow:r1:dispatch:development", event, "r1", "development"
-        )
+        await dispatcher._publish_gemini_event("flow:r1:dispatch:development", event, "r1", "development")
         events = _published_events(dispatcher)
         assert events[-1]["payload"]["gemini_event"] == event
 
@@ -328,9 +318,7 @@ class TestGeminiEventExtraction:
             {"type": "tool_call", "name": "read_file", "args": {}},
             {"type": "tool_response", "name": "read_file", "response": "ok"},
         ):
-            await dispatcher._publish_gemini_event(
-                "flow:r1:dispatch:development", event, "r1", "development"
-            )
+            await dispatcher._publish_gemini_event("flow:r1:dispatch:development", event, "r1", "development")
         for evt in _published_events(dispatcher):
             assert evt["payload"]["summary"]
 

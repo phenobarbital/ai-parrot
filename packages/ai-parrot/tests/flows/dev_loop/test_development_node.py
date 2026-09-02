@@ -933,9 +933,7 @@ class TestSingleAgentTaskManifest:
         )
         research = _research(str(tmp_path), feat_id="FEAT-494")
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(
-            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
-        )
+        dispatcher.dispatch = AsyncMock(return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s"))
         node = DevelopmentNode(dispatcher=dispatcher)
 
         await node.execute({"run_id": "r1", "research_output": research})
@@ -962,9 +960,7 @@ class TestSingleAgentTaskManifest:
             update={"log_excerpts": ["pre-existing excerpt"]}
         )
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(
-            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
-        )
+        dispatcher.dispatch = AsyncMock(return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s"))
         node = DevelopmentNode(dispatcher=dispatcher)
 
         await node.execute({"run_id": "r1", "research_output": research})
@@ -977,9 +973,7 @@ class TestSingleAgentTaskManifest:
         """A hotfix reserves no ids and has no index — no manifest, no crash."""
         research = _research(str(tmp_path), feat_id="FEAT-494")
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(
-            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
-        )
+        dispatcher.dispatch = AsyncMock(return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s"))
         node = DevelopmentNode(dispatcher=dispatcher)
 
         await node.execute({"run_id": "r1", "research_output": research})
@@ -995,9 +989,7 @@ class TestSingleAgentTaskManifest:
         )
         research = _research(str(tmp_path), feat_id="FEAT-494")
         dispatcher = MagicMock()
-        dispatcher.dispatch = AsyncMock(
-            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s")
-        )
+        dispatcher.dispatch = AsyncMock(return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="s"))
         node = DevelopmentNode(dispatcher=dispatcher)
 
         await node.execute({"run_id": "r1", "research_output": research})
@@ -1048,8 +1040,7 @@ class TestRepairFeedbackBrief:
         # Evidence first, then the instruction derived from it.
         assert out.log_excerpts[0].startswith("[QA repair-loop feedback — attempt 2]")
         assert out.log_excerpts[1] == (
-            "[Feedback router — required fixes for attempt 2]\n"
-            "Fix the I001 import order in catalog.py."
+            "[Feedback router — required fixes for attempt 2]\n" "Fix the I001 import order in catalog.py."
         )
 
     def test_bug_mode_without_a_feedback_decision_is_unchanged(self, tmp_path):
@@ -1117,9 +1108,7 @@ class TestRepairReentryDispatch:
             "run_id": "r1",
             "research_output": _research(str(tmp_path)),
             "qa_report": _failing_qa_report(),
-            "feedback_decision": FeedbackDecision(
-                decision="retry", dev_brief="Fix the I001 import order."
-            ),
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="Fix the I001 import order."),
         }
 
         await node.execute(ctx)
@@ -1149,9 +1138,7 @@ class TestRepairReentryDispatch:
             "run_id": "r1",
             "research_output": _research(str(tmp_path)),
             "qa_report": _failing_qa_report(),
-            "feedback_decision": FeedbackDecision(
-                decision="retry", dev_brief="Fix the I001 import order."
-            ),
+            "feedback_decision": FeedbackDecision(decision="retry", dev_brief="Fix the I001 import order."),
         }
 
         await node.execute(ctx)
@@ -1229,7 +1216,11 @@ class TestResolverLabels:
         research = _research(str(tmp_path))
 
         ok = await node._resolve_conflict(
-            str(tmp_path), "conflict in x.py", pool=pool, research=research, run_id="r1",
+            str(tmp_path),
+            "conflict in x.py",
+            pool=pool,
+            research=research,
+            run_id="r1",
         )
 
         assert ok is True

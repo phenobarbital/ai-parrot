@@ -359,9 +359,7 @@ def test_envelope_origin_rejection_roundtrip():
 
 
 def test_envelope_defaults_origin_none_rejection_empty():
-    envelope = ActionEnvelope(
-        channel=session_channel(RUN_ID), server_seq=1, action=RunCreated(run_id=RUN_ID)
-    )
+    envelope = ActionEnvelope(channel=session_channel(RUN_ID), server_seq=1, action=RunCreated(run_id=RUN_ID))
     assert envelope.origin is None
     assert envelope.rejection_reason == ""
 
@@ -445,9 +443,7 @@ def test_on_envelope_sink_exception_swallowed():
 
 
 def test_open_gate_returns_id_and_envelope(host: SessionHost):
-    gate_id, envelope = host.open_gate(
-        kind="manual_criterion", node_id="qa", title="Review this"
-    )
+    gate_id, envelope = host.open_gate(kind="manual_criterion", node_id="qa", title="Review this")
     assert gate_id in host.state.gates
     assert host.state.gates[gate_id].status == "pending"
     assert envelope.action.type == "gate/opened"
@@ -460,9 +456,7 @@ def test_first_writer_wins_second_raises(host: SessionHost):
     with pytest.raises(GateAlreadyResolvedError, match="alice"):
         host.resolve_gate(gate_id, "rejected", resolved_by="bob")
     # Exactly one gate/resolved envelope in the log.
-    resolved_envelopes = [
-        e for e in host.replay_since(0) if e.action.type == "gate/resolved"
-    ]
+    resolved_envelopes = [e for e in host.replay_since(0) if e.action.type == "gate/resolved"]
     assert len(resolved_envelopes) == 1
     assert host.state.gates[gate_id].resolved_by == "alice"
 
@@ -479,8 +473,11 @@ def test_resolve_gate_unknown_raises_not_found(host: SessionHost):
 
 def test_expiry_fail_closed_emits_gate_expired(host: SessionHost):
     gate_id, _ = host.open_gate(
-        kind="deployment_approval", node_id="deployment_handoff", title="x",
-        ttl_seconds=10, on_expiry="fail",
+        kind="deployment_approval",
+        node_id="deployment_handoff",
+        title="x",
+        ttl_seconds=10,
+        on_expiry="fail",
     )
     envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
     assert len(envelopes) == 1
@@ -490,8 +487,11 @@ def test_expiry_fail_closed_emits_gate_expired(host: SessionHost):
 
 def test_expiry_fail_open_auto_approve_audited(host: SessionHost):
     gate_id, _ = host.open_gate(
-        kind="plan_approval", node_id="research", title="x",
-        ttl_seconds=10, on_expiry="approve",
+        kind="plan_approval",
+        node_id="research",
+        title="x",
+        ttl_seconds=10,
+        on_expiry="approve",
     )
     envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
     assert len(envelopes) == 1
@@ -510,7 +510,10 @@ def test_expiry_sweep_ignores_gates_without_ttl(host: SessionHost):
 
 def test_expiry_sweep_ignores_gates_not_yet_due(host: SessionHost):
     gate_id, _ = host.open_gate(
-        kind="manual_criterion", node_id="qa", title="x", ttl_seconds=10_000,
+        kind="manual_criterion",
+        node_id="qa",
+        title="x",
+        ttl_seconds=10_000,
     )
     envelopes = host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 1)
     assert envelopes == []
@@ -549,8 +552,11 @@ async def test_wait_gate_await_then_resolve(host: SessionHost):
 @pytest.mark.asyncio
 async def test_wait_gate_resolves_on_expiry(host: SessionHost):
     gate_id, _ = host.open_gate(
-        kind="plan_approval", node_id="research", title="x",
-        ttl_seconds=10, on_expiry="approve",
+        kind="plan_approval",
+        node_id="research",
+        title="x",
+        ttl_seconds=10,
+        on_expiry="approve",
     )
 
     async def expirer():
@@ -595,8 +601,10 @@ def test_shim_flow_event_error_truncated_to_500_chars():
 
 
 def test_shim_dispatch_event_mappings():
-    assert action_from_dispatch_event("dispatch.queued", "development", 1.0,
-                                       {"dispatcher": "claude-code"}).dispatcher == "claude-code"
+    assert (
+        action_from_dispatch_event("dispatch.queued", "development", 1.0, {"dispatcher": "claude-code"}).dispatcher
+        == "claude-code"
+    )
     assert action_from_dispatch_event("dispatch.started", "development", 1.0).type == "dispatch/started"
     assert action_from_dispatch_event("dispatch.message", "development", 1.0).type == "dispatch/delta"
     tool_use = action_from_dispatch_event("dispatch.tool_use", "development", 1.0, {"tool_name": "Read"})
@@ -614,9 +622,7 @@ def test_shim_dispatch_event_unknown_returns_none():
 
 
 def test_shim_dispatch_event_error_truncated_to_500_chars():
-    action = action_from_dispatch_event(
-        "dispatch.failed", "qa", 1.0, {"error": "x" * 1000}
-    )
+    action = action_from_dispatch_event("dispatch.failed", "qa", 1.0, {"error": "x" * 1000})
     assert len(action.error) == 500
 
 
@@ -629,8 +635,8 @@ class TestToolNameRegression:
     def test_tool_name_is_populated(self):
         """Root cause 3: tool_name was always '' for Claude dispatches."""
         a = action_from_dispatch_event(
-            "dispatch.tool_use", "development", 1.0,
-            {"tool_name": "Read", "tools": ["Read"]})
+            "dispatch.tool_use", "development", 1.0, {"tool_name": "Read", "tools": ["Read"]}
+        )
         assert a.tool_name == "Read"
 
 
@@ -638,38 +644,39 @@ class TestSeatProjection:
     def test_seat_event_updates_rollup_and_seat(self):
         state = _fresh_state()
         a = action_from_dispatch_event(
-            "dispatch.tool_use", "development", 1.0,
-            {"tool_name": "Bash", "seat": "development.w1",
-             "task_id": "TASK-1857", "agent": "claude-code"},
-            seat="development.w1")
+            "dispatch.tool_use",
+            "development",
+            1.0,
+            {"tool_name": "Bash", "seat": "development.w1", "task_id": "TASK-1857", "agent": "claude-code"},
+            seat="development.w1",
+        )
         s = reduce(state, a)
         d = s.nodes["development"].dispatch
-        assert d.tool_use_count == 1                     # roll-up preserved
+        assert d.tool_use_count == 1  # roll-up preserved
         assert d.seats["development.w1"].task_id == "TASK-1857"
         assert d.seats["development.w1"].last_tool == "Bash"
         assert d.seats["development.w1"].agent == "claude-code"
 
     def test_single_agent_dispatch_has_no_seats(self):
         state = _fresh_state()
-        a = action_from_dispatch_event("dispatch.tool_use", "qa", 1.0,
-                                       {"tool_name": "Read"})
+        a = action_from_dispatch_event("dispatch.tool_use", "qa", 1.0, {"tool_name": "Read"})
         s = reduce(state, a)
         assert s.nodes["qa"].dispatch.seats == {}
 
     def test_seat_before_queued_does_not_raise(self):
         """reduce() must stay total."""
         state = _fresh_state()
-        a = action_from_dispatch_event("dispatch.tool_use", "development", 1.0,
-                                       {"seat": "development.w9"},
-                                       seat="development.w9")
+        a = action_from_dispatch_event(
+            "dispatch.tool_use", "development", 1.0, {"seat": "development.w9"}, seat="development.w9"
+        )
         assert reduce(state, a) is not None
 
     def test_two_seats_roll_up_independently(self):
         state = _fresh_state()
         for seat, tool in (("development.w1", "Read"), ("development.w2", "Bash")):
             a = action_from_dispatch_event(
-                "dispatch.tool_use", "development", 1.0,
-                {"tool_name": tool, "seat": seat}, seat=seat)
+                "dispatch.tool_use", "development", 1.0, {"tool_name": tool, "seat": seat}, seat=seat
+            )
             state = reduce(state, a)
         d = state.nodes["development"].dispatch
         assert d.tool_use_count == 2
@@ -679,9 +686,11 @@ class TestSeatProjection:
     def test_action_from_dispatch_event_tool_name_from_claude_shaped_payload(self):
         """A realistic Claude-shaped tool_use payload populates tool_name."""
         a = action_from_dispatch_event(
-            "dispatch.tool_use", "development", 1.0,
-            {"tool_name": "Read", "tool_input": "foo.py", "tools": ["Read"],
-             "summary": "Read foo.py"})
+            "dispatch.tool_use",
+            "development",
+            1.0,
+            {"tool_name": "Read", "tool_input": "foo.py", "tools": ["Read"], "summary": "Read foo.py"},
+        )
         assert a.tool_name == "Read"
 
 
@@ -697,8 +706,7 @@ class TestBackwardCompatibility:
     def test_pre_feat496_envelope_replays(self):
         """A persisted envelope with no seat fields must still validate."""
         state = _fresh_state()
-        action = action_from_dispatch_event(
-            "dispatch.tool_use", "development", 1.0, {"tool_name": ""})
+        action = action_from_dispatch_event("dispatch.tool_use", "development", 1.0, {"tool_name": ""})
         s = reduce(state, action)
         assert s.nodes["development"].dispatch.seats == {}
         assert s.nodes["development"].dispatch.tool_use_count == 1

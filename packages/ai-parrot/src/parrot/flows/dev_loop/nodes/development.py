@@ -335,8 +335,7 @@ class DevelopmentNode(DevLoopNode):
             actual = await self._git_changed_files(research.worktree_path, research.base_branch)
         except Exception:  # noqa: BLE001
             self.logger.warning(
-                "Could not reconcile files_changed against git for %s; "
-                "keeping the agent's self-reported list.",
+                "Could not reconcile files_changed against git for %s; " "keeping the agent's self-reported list.",
                 research.feat_id or research.jira_issue_key,
                 exc_info=True,
             )
@@ -747,10 +746,7 @@ class DevelopmentNode(DevLoopNode):
         notes = [f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"]
         dev_brief = self._repair_dev_brief(shared)
         if dev_brief:
-            notes.append(
-                f"[Feedback router — required fixes for attempt "
-                f"{shared['qa_attempt']}]\n{dev_brief}"
-            )
+            notes.append(f"[Feedback router — required fixes for attempt " f"{shared['qa_attempt']}]\n{dev_brief}")
         return research.model_copy(update={"log_excerpts": [*research.log_excerpts, *notes]})
 
     @staticmethod
@@ -927,8 +923,7 @@ class DevelopmentNode(DevLoopNode):
             reads a blank as a filename it may invent.
         """
         lines = [
-            "[TASK INVENTORY — from the per-spec index; these paths are "
-            "authoritative]",
+            "[TASK INVENTORY — from the per-spec index; these paths are " "authoritative]",
             "Implement every task below that is not already 'done', in "
             "depends_on order. Read each task's artifact at the path given "
             "here — do NOT reconstruct a filename from the task id: the "
@@ -986,8 +981,7 @@ class DevelopmentNode(DevLoopNode):
 
         note = self._task_manifest_note(scheduler)
         self.logger.info(
-            "%s single-agent dispatch: injecting a %d-task manifest with "
-            "index-resolved artifact paths.",
+            "%s single-agent dispatch: injecting a %d-task manifest with " "index-resolved artifact paths.",
             research.feat_id,
             len(scheduler.all_tasks()),
         )
@@ -1299,8 +1293,7 @@ class DevelopmentNode(DevLoopNode):
         done_ids = {t.id for t in scheduler.done()}
         todo = [t for t in all_tasks if t.id not in done_ids]
         self.logger.info(
-            "%s task plan: %d task(s) in the per-spec index — %d already done, "
-            "%d to run: %s",
+            "%s task plan: %d task(s) in the per-spec index — %d already done, " "%d to run: %s",
             research.feat_id,
             len(all_tasks),
             len(done_ids),
@@ -1381,8 +1374,7 @@ class DevelopmentNode(DevLoopNode):
                     scheduler.mark_failed(task_id)
 
                 self.logger.info(
-                    "%s wave %d complete: %d completed (%s), %d failed (%s); "
-                    "%d task(s) still pending, %d skipped",
+                    "%s wave %d complete: %d completed (%s), %d failed (%s); " "%d task(s) still pending, %d skipped",
                     research.feat_id,
                     wave_number,
                     len(result.completed),

@@ -265,15 +265,11 @@ class TestCodexEventExtraction:
     @pytest.mark.asyncio
     async def test_raw_event_is_preserved(self, dispatcher):
         """AC9: the expanded JSON view still shows the provider event."""
-        await dispatcher._publish_codex_event(
-            "flow:r1:dispatch:development", _cmd_started(), "r1", "development"
-        )
+        await dispatcher._publish_codex_event("flow:r1:dispatch:development", _cmd_started(), "r1", "development")
         events = _published_events(dispatcher)
         assert events[-1]["payload"]["codex_event"] == _cmd_started()
 
-    @pytest.mark.parametrize(
-        "bad", [{}, {"type": "x"}, {"item": None}, {"item": {"type": "unknown"}}]
-    )
+    @pytest.mark.parametrize("bad", [{}, {"type": "x"}, {"item": None}, {"item": {"type": "unknown"}}])
     def test_malformed_event_never_raises(self, bad):
         d = CodexCodeDispatcher(max_concurrent=1, redis_url="redis://localhost", stream_ttl_seconds=300)
         assert isinstance(d._extract_codex_display(bad), dict)
@@ -281,9 +277,7 @@ class TestCodexEventExtraction:
     @pytest.mark.asyncio
     async def test_every_payload_has_a_summary(self, dispatcher):
         for event in (_cmd_started(), _cmd_completed()):
-            await dispatcher._publish_codex_event(
-                "flow:r1:dispatch:development", event, "r1", "development"
-            )
+            await dispatcher._publish_codex_event("flow:r1:dispatch:development", event, "r1", "development")
         for evt in _published_events(dispatcher):
             assert evt["payload"]["summary"]
 

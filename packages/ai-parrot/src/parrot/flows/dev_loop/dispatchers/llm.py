@@ -323,8 +323,7 @@ class LLMCodeDispatcher:
                         # so once, here, so the operator does not have to
                         # infer it from a downstream JSON parse error.
                         self.logger.warning(
-                            "%s turn %d: response hit the output-token limit "
-                            "(max_tokens=%d) and was truncated",
+                            "%s turn %d: response hit the output-token limit " "(max_tokens=%d) and was truncated",
                             log_id,
                             turn_index + 1,
                             profile.max_tokens,
@@ -503,11 +502,7 @@ class LLMCodeDispatcher:
                                 log_id,
                                 turn_index + 1,
                                 tool_name,
-                                str(
-                                    tool_result.get("error")
-                                    or tool_result.get("stderr")
-                                    or ""
-                                ).strip()[:200],
+                                str(tool_result.get("error") or tool_result.get("stderr") or "").strip()[:200],
                             )
                         await self._publish_event(
                             stream_key,
@@ -939,8 +934,8 @@ class LLMCodeDispatcher:
                         else "- Every path is relative to the worktree you "
                         "are in; absolute paths into another checkout are "
                         "not visible to your tools.\n"
-                    ) +
-                    f"- `run_command` only runs: "
+                    )
+                    + f"- `run_command` only runs: "
                     f"{', '.join(profile.allowed_commands)}.\n\n"
                     f"Subagent instructions:\n{body}"
                 ),
@@ -1263,8 +1258,7 @@ class LLMCodeDispatcher:
                         "cwd": {
                             "type": "string",
                             "description": (
-                                "Directory to run in, relative to the "
-                                "repository root. Replaces `cd <dir> && ...`."
+                                "Directory to run in, relative to the " "repository root. Replaces `cd <dir> && ...`."
                             ),
                         },
                         "timeout_seconds": {
@@ -1384,10 +1378,7 @@ class LLMCodeDispatcher:
         # threshold would return every `TASK-*.md` in the directory, which
         # is noise, not an answer. `TASK-2684-<wrong-slug>.md` scores 10
         # against its real sibling and 6 against any other task.
-        scored = [
-            (len(os.path.commonprefix([entry, wanted])), entry)
-            for entry in entries
-        ]
+        scored = [(len(os.path.commonprefix([entry, wanted])), entry) for entry in entries]
         best = max((score for score, _ in scored), default=0)
         if best >= 5:
             return [entry for score, entry in scored if score == best][:limit]
@@ -1883,14 +1874,11 @@ class LLMCodeDispatcher:
                 continue
             for candidate in self._path_candidates(token, previous):
                 resolved = os.path.abspath(
-                    os.path.expanduser(candidate)
-                    if candidate.startswith("~")
-                    else os.path.join(base, candidate)
+                    os.path.expanduser(candidate) if candidate.startswith("~") else os.path.join(base, candidate)
                 )
                 if not self._is_within(base, resolved):
                     return (
-                        f"argument {candidate!r} points outside the worktree "
-                        f"({base}); commands may only touch it"
+                        f"argument {candidate!r} points outside the worktree " f"({base}); commands may only touch it"
                     )
             previous = token
         return None
@@ -2058,8 +2046,7 @@ class LLMCodeDispatcher:
             remapped = self._reanchor_into_cwd(base, target)
             if remapped is not None:
                 self.logger.warning(
-                    "re-anchored %r onto the worktree as %r — the brief's "
-                    "repo_path is NOT what the tools see",
+                    "re-anchored %r onto the worktree as %r — the brief's " "repo_path is NOT what the tools see",
                     path,
                     os.path.relpath(remapped, base),
                 )
@@ -2221,10 +2208,7 @@ class LLMCodeDispatcher:
         try:
             parsed = json.loads(raw_args)
         except ValueError as exc:
-            return None, (
-                f"arguments are not valid JSON ({exc}); "
-                f"{len(raw_args)} characters were received"
-            )
+            return None, (f"arguments are not valid JSON ({exc}); " f"{len(raw_args)} characters were received")
         if not isinstance(parsed, dict):
             return None, "tool arguments JSON must be an object"
         return parsed, ""
@@ -2326,8 +2310,7 @@ class LLMCodeDispatcher:
         parts = [
             f"{tool_name}: {reason}.",
             (
-                f"Your reply hit the output-token limit (max_tokens={max_tokens}) "
-                "and was cut off mid-call."
+                f"Your reply hit the output-token limit (max_tokens={max_tokens}) " "and was cut off mid-call."
                 if cut_off
                 else f"The call arrived incomplete (max_tokens={max_tokens})."
             ),

@@ -54,21 +54,25 @@ def _v(passed: bool, *, findings=None) -> CodeReviewVerdict:
 
 
 async def test_majority_pass():
-    panel = _panel({
-        "claude-code": _StubJudge(_v(True)),
-        "codex": _StubJudge(_v(True)),
-        "mantle": _StubJudge(_v(False)),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(_v(True)),
+            "codex": _StubJudge(_v(True)),
+            "mantle": _StubJudge(_v(False)),
+        }
+    )
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     assert verdict.passed is True
 
 
 async def test_majority_fail():
-    panel = _panel({
-        "claude-code": _StubJudge(_v(False)),
-        "codex": _StubJudge(_v(True)),
-        "mantle": _StubJudge(_v(False)),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(_v(False)),
+            "codex": _StubJudge(_v(True)),
+            "mantle": _StubJudge(_v(False)),
+        }
+    )
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     assert verdict.passed is False
 
@@ -87,11 +91,13 @@ async def test_tie_escalates():
 
 
 async def test_judge_down_degrades_to_remaining():
-    panel = _panel({
-        "claude-code": _StubJudge(_v(True)),
-        "codex": _StubJudge(None, raises=RuntimeError("infra boom")),
-        "mantle": _StubJudge(_v(True)),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(_v(True)),
+            "codex": _StubJudge(None, raises=RuntimeError("infra boom")),
+            "mantle": _StubJudge(_v(True)),
+        }
+    )
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     # Both active (non-errored) judges passed -> majority pass.
     assert verdict.passed is True
@@ -115,15 +121,17 @@ async def test_majority_down_escalates():
 
 
 async def test_findings_source_tagged():
-    panel = _panel({
-        "claude-code": _StubJudge(
-            _v(True, findings=[CodeReviewFinding(message="nit here", severity="nit", file="a.py")])
-        ),
-        "codex": _StubJudge(_v(True)),
-        "mantle": _StubJudge(
-            _v(True, findings=[CodeReviewFinding(message="another nit", severity="nit", file="b.py")])
-        ),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(
+                _v(True, findings=[CodeReviewFinding(message="nit here", severity="nit", file="a.py")])
+            ),
+            "codex": _StubJudge(_v(True)),
+            "mantle": _StubJudge(
+                _v(True, findings=[CodeReviewFinding(message="another nit", severity="nit", file="b.py")])
+            ),
+        }
+    )
     verdict = await panel.review(brief=None, run_id="r", node_id="n", cwd="/wt")
     sources = {f.source for f in verdict.findings}
     assert sources == {"claude-code", "mantle"}
@@ -149,10 +157,7 @@ def test_default_panel_from_conf_unset(monkeypatch):
 
 
 def test_panel_from_conf_json(monkeypatch):
-    raw = (
-        '{"judges": [{"agent": "claude-code", "model": "x"}, '
-        '{"agent": "mantle"}], "decision": "majority"}'
-    )
+    raw = '{"judges": [{"agent": "claude-code", "model": "x"}, ' '{"agent": "mantle"}], "decision": "majority"}'
 
     def fake_getter(key, fallback=None):
         return raw if key == "DEV_LOOP_JUDGE_PANEL" else fallback
@@ -186,9 +191,7 @@ def test_build_judge_raises_for_unsupported_backend():
     """Belt-and-suspenders: _build_judge itself still rejects an
     unsupported backend even if a JudgeSpec is constructed via
     model_construct() (bypassing validation)."""
-    dispatcher = JudgePanelReviewDispatcher(
-        judges=[JudgeSpec(agent="claude-code")], redis_url="redis://fake"
-    )
+    dispatcher = JudgePanelReviewDispatcher(judges=[JudgeSpec(agent="claude-code")], redis_url="redis://fake")
     bypassed_spec = JudgeSpec.model_construct(agent="grok", model="")
     with pytest.raises(ValueError, match="grok"):
         dispatcher._build_judge(bypassed_spec)
@@ -201,15 +204,21 @@ def test_build_judge_raises_for_unsupported_backend():
 
 
 async def test_review_records_judge_verdicts_when_session_host_present():
-    panel = _panel({
-        "claude-code": _StubJudge(_v(True, findings=[CodeReviewFinding(message="ok", severity="nit")])),
-        "codex": _StubJudge(_v(False)),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(_v(True, findings=[CodeReviewFinding(message="ok", severity="nit")])),
+            "codex": _StubJudge(_v(False)),
+        }
+    )
     host = SessionHost(run_id="r1")
 
     await panel.review(
-        brief=None, run_id="r1", node_id="qa", cwd="/wt",
-        session_host=host, round="qa-1",
+        brief=None,
+        run_id="r1",
+        node_id="qa",
+        cwd="/wt",
+        session_host=host,
+        round="qa-1",
     )
 
     recorded = host.state.judge_verdicts["qa-1"]
@@ -222,20 +231,24 @@ async def test_review_records_judge_verdicts_when_session_host_present():
 
 
 async def test_review_records_errored_judge_as_failed_verdict():
-    panel = _panel({
-        "claude-code": _StubJudge(_v(True)),
-        "codex": _StubJudge(None, raises=RuntimeError("boom")),
-    })
+    panel = _panel(
+        {
+            "claude-code": _StubJudge(_v(True)),
+            "codex": _StubJudge(None, raises=RuntimeError("boom")),
+        }
+    )
     host = SessionHost(run_id="r1")
 
     await panel.review(
-        brief=None, run_id="r1", node_id="qa", cwd="/wt",
-        session_host=host, round="qa-1",
+        brief=None,
+        run_id="r1",
+        node_id="qa",
+        cwd="/wt",
+        session_host=host,
+        round="qa-1",
     )
 
-    codex_verdict = next(
-        v for v in host.state.judge_verdicts["qa-1"] if v.judge_id == "codex"
-    )
+    codex_verdict = next(v for v in host.state.judge_verdicts["qa-1"] if v.judge_id == "codex")
     assert codex_verdict.passed is False
     assert "infra error" in codex_verdict.summary
 
@@ -312,9 +325,7 @@ class TestPerRunPanelOverride:
         assert [j.agent for j in original._judge_specs] == before
 
     def test_carries_transport_settings_across(self):
-        original = JudgePanelReviewDispatcher(
-            redis_url="redis://fake", max_concurrent=7, stream_ttl_seconds=99
-        )
+        original = JudgePanelReviewDispatcher(redis_url="redis://fake", max_concurrent=7, stream_ttl_seconds=99)
         override = original.with_judges([JudgeSpec(agent="claude-code")])
 
         assert override._redis_url == "redis://fake"
@@ -323,9 +334,7 @@ class TestPerRunPanelOverride:
 
     def test_appends_the_adversarial_seat_when_missing(self):
         """Adversarial review is not optional — not even via a form."""
-        override = JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges(
-            [JudgeSpec(agent="claude-code")]
-        )
+        override = JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges([JudgeSpec(agent="claude-code")])
         assert [j.agent for j in override._judge_specs] == ["claude-code", "codex"]
 
     @pytest.mark.parametrize("adversary", ["codex", "mantle"])
