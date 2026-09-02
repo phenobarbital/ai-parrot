@@ -1701,7 +1701,7 @@ class SQLiteWikiStore(BaseWikiStore):
         async with self._connect() as conn:
             for anchor, other in clauses:
                 sql = (
-                    f"SELECT e.{other} AS concept_id, e.rel,"  # noqa: S608
+                    f"SELECT e.{other} AS concept_id, e.rel, e.provenance,"  # noqa: S608
                     " p.title, p.category, p.summary, p.token_count"
                     f" FROM edges e LEFT JOIN pages p ON p.concept_id = e.{other}"
                     f" WHERE e.{anchor} = ?"

@@ -601,11 +601,18 @@ class InMemoryWikiStore(BaseWikiStore):
     def _neighbor_item(
         self, concept_id: str, rel: str, direction: str
     ) -> dict[str, Any]:
-        """Build one neighbors() result row (page stub when known)."""
+        """Build one neighbors() result row (page stub when known).
+
+        ``provenance`` is always ``None`` here: ``_index_edge`` keeps
+        only the typed ``(dst, rel)``/``(src, rel)`` triple (see
+        ``add_edges``'s own docstring) — this backend never tracked
+        edge provenance, before or after FEAT-498.
+        """
         page = self._pages.get(concept_id)
         return {
             "concept_id": concept_id,
             "rel": rel,
+            "provenance": None,
             "title": page.get("title") if page else None,
             "category": page.get("category") if page else None,
             "summary": page.get("summary") if page else None,

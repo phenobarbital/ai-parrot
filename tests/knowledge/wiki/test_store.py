@@ -218,6 +218,15 @@ class TestEdgesAndNeighbors:
         assert [h["concept_id"] for h in hits] == ["c"]
 
     @pytest.mark.asyncio
+    async def test_neighbors_includes_provenance(self, store: BaseWikiStore):
+        """FEAT-498: blast_radius needs provenance from neighbors()."""
+        await store.upsert_pages([_page("a"), _page("b")])
+        await store.add_edges([("a", "b", "calls", "inferred")])
+        hits = await store.neighbors("a", direction="out")
+        assert hits[0]["rel"] == "calls"
+        assert "provenance" in hits[0]
+
+    @pytest.mark.asyncio
     async def test_open_string_relation(self, store: BaseWikiStore):
         """rel is an open string — no enum gate in the machine plane."""
         await store.upsert_pages([_page("a"), _page("b")])

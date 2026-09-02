@@ -923,7 +923,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 "FOR e IN @@edges "
                 f"FILTER {filter_clause} "
                 f"LET p = DOCUMENT(@@pages, e.{other}) "
-                "RETURN {concept_id: e." + other + ", rel: e.rel,"
+                "RETURN {concept_id: e." + other + ", rel: e.rel, provenance: e.provenance,"
                 " title: p.title, category: p.category, summary: p.summary,"
                 " token_count: p.token_count}"
             )
