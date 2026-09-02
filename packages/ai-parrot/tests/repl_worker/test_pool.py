@@ -257,6 +257,7 @@ class TestShutdownDuringBootstrap:
             not handle.is_alive for handle in spawned
         ), "a worker spawned but not yet prewarmed outlived shutdown()"
 
+
 class TestCeilingUnderBootstrap:
     """Code-review finding (FEAT-500): the ceiling must hold across the readiness wait."""
 
@@ -268,9 +269,7 @@ class TestCeilingUnderBootstrap:
         spawning off that stale count used to push the pool to
         `max_workers + 1`.
         """
-        config = WorkerConfig(
-            deadline_ms=5_000, max_workers=1, idle_ttl_seconds=30, prewarm_pool_size=1
-        )
+        config = WorkerConfig(deadline_ms=5_000, max_workers=1, idle_ttl_seconds=30, prewarm_pool_size=1)
         pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
         try:
             await pool._ensure_started()
@@ -285,8 +284,6 @@ class TestCeilingUnderBootstrap:
                     break
 
             total = len(pool._sessions) + len(pool._prewarmed)
-            assert total <= pool._ceiling, (
-                f"pool holds {total} workers, ceiling is {pool._ceiling}"
-            )
+            assert total <= pool._ceiling, f"pool holds {total} workers, ceiling is {pool._ceiling}"
         finally:
             await pool.shutdown()

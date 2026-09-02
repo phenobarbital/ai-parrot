@@ -477,20 +477,14 @@ class TestConcurrencyRegressions:
         thread required that kill. Reproduced as a hard hang (execute() never
         returning and `kill()` hanging too) with the one-thread executor below.
         """
-        executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="saturated"
-        )
-        config = WorkerConfig(
-            deadline_ms=1_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0
-        )
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="saturated")
+        config = WorkerConfig(deadline_ms=1_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0)
         handle = WorkerHandle(config, output_dir=str(tmp_path), executor=executor)
         await handle.start()
         await handle.wait_ready()
         try:
             # Generous ceiling: the point is that it returns AT ALL.
-            result = await asyncio.wait_for(
-                handle.execute("while True:\n    pass"), timeout=20.0
-            )
+            result = await asyncio.wait_for(handle.execute("while True:\n    pass"), timeout=20.0)
             assert isinstance(result, dict)
             assert result["status"] == "error"
             assert "timeout" in result["result"].lower()
