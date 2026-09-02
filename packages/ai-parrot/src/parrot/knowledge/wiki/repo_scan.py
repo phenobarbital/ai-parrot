@@ -27,6 +27,7 @@ auto-upsert installed by ``parrot claude install``.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import subprocess
@@ -43,7 +44,12 @@ from parrot.knowledge.wiki.languages import (
 )
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
-from parrot.knowledge.wiki.symbols import SymbolRecord, SymbolRef
+from parrot.knowledge.wiki.symbols import (
+    SymbolRecord,
+    SymbolRef,
+    sym_concept_id,
+    symbol_to_page_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +577,7 @@ def build_file_slice(
     rel_path: str,
     body_max_chars: int = DEFAULT_BODY_MAX_CHARS,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+    symbol_depth: int = 2,
 ) -> FileSlice | None:
     """Build the wiki page record for a single repository file.
 
@@ -579,6 +586,12 @@ def build_file_slice(
         rel_path: POSIX relative path of the file.
         body_max_chars: Cap on the stored page body length.
         max_file_bytes: Files larger than this are skipped.
+        symbol_depth: Maximum symbol nesting depth kept in
+            :attr:`FileSlice.symbols` (FEAT-498) — ``1`` = top-level
+            declarations only, ``2`` (default) = direct members too.
+            Symbols the language scanner already emits above this depth
+            are dropped here too, so a caller-supplied depth is always
+            honoured regardless of what the scanner's own default did.
 
     Returns:
         A :class:`FileSlice`, or ``None`` when the file is missing,
@@ -594,12 +607,18 @@ def build_file_slice(
     if b"\0" in data[:1024]:
         return None
     content = data.decode("utf-8", errors="replace")
+    # FEAT-498: hash the raw bytes, not the decoded (and possibly
+    # lossily re-encodable) text, so this equals
+    # SourceCollectionManager._compute_hash for the same file.
+    content_hash = hashlib.sha1(data).hexdigest()
 
     category = _category_for(rel_path)
     suffix = PurePosixPath(rel_path).suffix.lower()
     imports: list[str] = []
     sections: list[str] = []
     language: str | None = None
+    symbols: list[SymbolRecord] = []
+    refs: list[SymbolRef] = []
 
     scanner = scanner_for(suffix)
     if scanner is not None:
@@ -622,6 +641,8 @@ def build_file_slice(
                 sections.append(
                     "## API outline\n" + "\n".join(lang_outline.outline)
                 )
+            symbols = [s for s in lang_outline.symbols if s.depth <= symbol_depth]
+            refs = lang_outline.refs
     elif suffix in _HTML_SUFFIXES:
         summary = _html_title_summary(content) or rel_path
     elif suffix in DOC_SUFFIXES:
@@ -644,9 +665,15 @@ def build_file_slice(
         summary=summary,
         body=body,
         token_count=estimate_tokens(body),
+        content_hash=content_hash,
     )
     return FileSlice(
-        rel_path=rel_path, record=record, imports=imports, language=language
+        rel_path=rel_path,
+        record=record,
+        imports=imports,
+        language=language,
+        symbols=symbols,
+        refs=refs,
     )
 
 
@@ -782,6 +809,257 @@ def build_import_edges(
 
 
 # --------------------------------------------------------------------------
+# Symbol plane (FEAT-498)
+# --------------------------------------------------------------------------
+
+#: Node text separators a `SymbolRef.target_text` may use to qualify a
+#: name (``self.repo.get``, ``Foo::bar``, ``App\Models\User``,
+#: ``obj->method``) — the resolver also tries the last segment after
+#: any of these, alongside the raw text (spec §3 Module 6).
+_TARGET_SEP_RE = re.compile(r"->|::|\.|\\")
+
+
+def _normalize_ref_target(target_text: str) -> str:
+    """Last identifier segment of a dotted/``::``/``\\``/``->`` ref target.
+
+    Args:
+        target_text: Raw reference target text, as written.
+
+    Returns:
+        The text after the last separator, or the text unchanged when it
+        carries none.
+    """
+    parts = _TARGET_SEP_RE.split(target_text)
+    return parts[-1] if parts else target_text
+
+
+def _ordinal_concept_ids(rel_path: str, symbols: list[SymbolRecord]) -> list[tuple[SymbolRecord, str]]:
+    """Pair each symbol with its ``sym:`` concept id, ordinal-suffixed
+    for a repeated ``qualname`` in source (``start_byte``) order.
+
+    Shared by :func:`build_symbol_pages` and :class:`SymbolResolver` so
+    both agree on the same ids for the same symbols.
+
+    Args:
+        rel_path: POSIX path relative to the repository root.
+        symbols: Symbols extracted from that file, in any order.
+
+    Returns:
+        ``(symbol, concept_id)`` pairs in source order.
+    """
+    ordered = sorted(symbols, key=lambda s: s.start_byte)
+    counts: dict[str, int] = {}
+    pairs: list[tuple[SymbolRecord, str]] = []
+    for sym in ordered:
+        counts[sym.qualname] = counts.get(sym.qualname, 0) + 1
+        pairs.append((sym, sym_concept_id(rel_path, sym.qualname, counts[sym.qualname])))
+    return pairs
+
+
+def build_symbol_pages(
+    root: Path, slice: FileSlice
+) -> tuple[list[WikiPageRecord], list[tuple[str, str, str, str]]]:
+    """Build ``sym:`` page records and ``defines``/``contains`` edges.
+
+    Reads the file's raw bytes itself (rather than requiring the caller
+    to thread them through) so the ``sym:`` page body can embed a
+    ``start_byte:end_byte`` source excerpt (spec §7 "sym: page body").
+
+    Args:
+        root: Repository root (used to re-read the file's bytes).
+        slice: A scanned file's :class:`FileSlice` (``.symbols`` already
+            depth-filtered by :func:`build_file_slice`).
+
+    Returns:
+        ``(records, edges)`` — one :class:`WikiPageRecord` per symbol
+        (``category="symbol"``) and ``(src, dst, rel, provenance)``
+        edges: ``defines`` (file → symbol) and ``contains`` (parent
+        symbol → member symbol), both ``provenance="extracted"``.
+    """
+    if not slice.symbols:
+        return [], []
+    try:
+        data = (root / slice.rel_path).read_bytes()
+    except OSError:
+        data = b""
+
+    pairs = _ordinal_concept_ids(slice.rel_path, slice.symbols)
+    records: list[WikiPageRecord] = []
+    edges: list[tuple[str, str, str, str]] = []
+    qualname_to_concept: dict[str, str] = {}
+    file_concept = file_concept_id(slice.rel_path)
+
+    for sym, concept_id in pairs:
+        excerpt = data[sym.start_byte:sym.end_byte].decode("utf-8", errors="replace")
+        fields = symbol_to_page_fields(sym, source_excerpt=excerpt)
+        body = fields["body"]
+        records.append(
+            WikiPageRecord(
+                concept_id=concept_id,
+                node_id=slice.rel_path,
+                title=fields["title"],
+                category="symbol",
+                summary=fields["summary"],
+                body=body,
+                token_count=estimate_tokens(body),
+                content_hash=sym.content_hash,
+            )
+        )
+        qualname_to_concept.setdefault(sym.qualname, concept_id)
+        edges.append((file_concept, concept_id, "defines", "extracted"))
+        if sym.parent:
+            parent_concept = qualname_to_concept.get(sym.parent)
+            if parent_concept is not None:
+                edges.append((parent_concept, concept_id, "contains", "extracted"))
+
+    return records, edges
+
+
+class SymbolResolver:
+    """Resolves :class:`SymbolRef` targets to ``calls``/``extends``/
+    ``implements`` edges, deterministically, in three steps (spec §3
+    Module 6, §9 "no LLM anywhere in extraction or resolution"):
+
+    1. Same file, by qualname or (if unique in-file) bare name.
+    2. A file reachable from the ref's file via a ``references`` edge,
+       by (if unique in that file) bare name.
+    3. Globally unique bare name across the whole scan.
+
+    An ambiguous or unmatched target produces no edge.
+    """
+
+    def __init__(
+        self,
+        files: list[FileSlice],
+        reference_edges: list[tuple[str, str, str]],
+    ) -> None:
+        """Args:
+        files: Every scanned file's slice (source of both symbols and
+            refs).
+        reference_edges: ``(src_concept, dst_concept, rel)`` file-level
+            edges, as returned by :func:`build_import_edges` — only
+            ``rel == "references"`` entries are used, to find files
+            reachable from a ref's own file (step 2).
+        """
+        self._files_by_rel = {f.rel_path: f for f in files}
+        self._pairs_by_rel: dict[str, list[tuple[SymbolRecord, str]]] = {
+            f.rel_path: _ordinal_concept_ids(f.rel_path, f.symbols) for f in files
+        }
+        self._reachable: dict[str, set[str]] = {}
+        for src, dst, rel in reference_edges:
+            if rel != "references":
+                continue
+            if dst.startswith("file:"):
+                self._reachable.setdefault(src, set()).add(dst[len("file:"):])
+        self._global_by_name: dict[str, list[str]] = {}
+        for pairs in self._pairs_by_rel.values():
+            for sym, concept_id in pairs:
+                self._global_by_name.setdefault(sym.name, []).append(concept_id)
+
+    @staticmethod
+    def _index_by_name(pairs: list[tuple[SymbolRecord, str]]) -> dict[str, list[str]]:
+        index: dict[str, list[str]] = {}
+        for sym, concept_id in pairs:
+            index.setdefault(sym.name, []).append(concept_id)
+        return index
+
+    def resolve(self) -> list[tuple[str, str, str, str]]:
+        """Resolve every file's refs into edges.
+
+        Returns:
+            ``(src_concept, dst_concept, rel, provenance)`` edges —
+            ``provenance`` is ``"extracted"`` for steps 1-2, ``"inferred"``
+            for step 3.
+        """
+        edges: list[tuple[str, str, str, str]] = []
+        for file_slice in self._files_by_rel.values():
+            if not file_slice.refs:
+                continue
+            pairs = self._pairs_by_rel[file_slice.rel_path]
+            qualname_to_concept: dict[str, str] = {}
+            for sym, concept_id in pairs:
+                qualname_to_concept.setdefault(sym.qualname, concept_id)
+            name_to_concepts = self._index_by_name(pairs)
+
+            for ref in file_slice.refs:
+                src_concept = qualname_to_concept.get(ref.src_qualname)
+                if src_concept is None:
+                    continue
+                candidates = [ref.target_text, _normalize_ref_target(ref.target_text)]
+
+                dst_concept = self._resolve_candidates(candidates, qualname_to_concept, name_to_concepts)
+                if dst_concept is not None:
+                    edges.append((src_concept, dst_concept, ref.rel, "extracted"))
+                    continue
+
+                dst_concept = self._resolve_in_reachable_files(file_slice.rel_path, candidates)
+                if dst_concept is not None:
+                    edges.append((src_concept, dst_concept, ref.rel, "extracted"))
+                    continue
+
+                dst_concept = self._resolve_globally_unique(candidates)
+                if dst_concept is not None:
+                    edges.append((src_concept, dst_concept, ref.rel, "inferred"))
+                # else: ambiguous or unknown target -> no edge (resolved).
+
+        return edges
+
+    @staticmethod
+    def _resolve_candidates(
+        candidates: list[str],
+        qualname_to_concept: dict[str, str],
+        name_to_concepts: dict[str, list[str]],
+    ) -> str | None:
+        for candidate in candidates:
+            if candidate in qualname_to_concept:
+                return qualname_to_concept[candidate]
+        for candidate in candidates:
+            matches = name_to_concepts.get(candidate)
+            if matches and len(matches) == 1:
+                return matches[0]
+        return None
+
+    def _resolve_in_reachable_files(self, rel_path: str, candidates: list[str]) -> str | None:
+        reachable = self._reachable.get(file_concept_id(rel_path))
+        if not reachable:
+            return None
+        for other_rel in reachable:
+            other_pairs = self._pairs_by_rel.get(other_rel)
+            if not other_pairs:
+                continue
+            other_index = self._index_by_name(other_pairs)
+            for candidate in candidates:
+                matches = other_index.get(candidate)
+                if matches and len(matches) == 1:
+                    return matches[0]
+        return None
+
+    def _resolve_globally_unique(self, candidates: list[str]) -> str | None:
+        for candidate in candidates:
+            matches = self._global_by_name.get(candidate)
+            if matches and len(matches) == 1:
+                return matches[0]
+        return None
+
+
+def build_symbol_edges(
+    files: list[FileSlice],
+    import_edges: list[tuple[str, str, str]],
+) -> list[tuple[str, str, str, str]]:
+    """Resolve ``calls``/``extends``/``implements`` edges via :class:`SymbolResolver`.
+
+    Args:
+        files: Every scanned file's slice.
+        import_edges: File-level ``references`` edges (see
+            :func:`build_import_edges`), used for step 2 resolution.
+
+    Returns:
+        ``(src_concept, dst_concept, rel, provenance)`` edges.
+    """
+    return SymbolResolver(files, import_edges).resolve()
+
+
+# --------------------------------------------------------------------------
 # Top-level scan
 # --------------------------------------------------------------------------
 
@@ -794,6 +1072,7 @@ def scan_repository(
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
     use_git: bool = True,
     rel_paths: Iterable[str] | None = None,
+    symbol_depth: int = 2,
 ) -> RepoScan:
     """Scan a repository into wiki page records and edges.
 
@@ -807,6 +1086,8 @@ def scan_repository(
         use_git: Prefer ``git ls-files`` for discovery.
         rel_paths: Explicit relative paths to scan instead of running
             discovery (used for incremental upserts).
+        symbol_depth: Maximum symbol nesting depth kept per file
+            (FEAT-498), forwarded to :func:`build_file_slice`.
 
     Returns:
         A fully populated :class:`RepoScan`.
@@ -841,6 +1122,7 @@ def scan_repository(
             rel,
             body_max_chars=body_max_chars,
             max_file_bytes=max_file_bytes,
+            symbol_depth=symbol_depth,
         )
         if fs is None:
             scan.skipped.append(rel)
@@ -849,12 +1131,30 @@ def scan_repository(
 
     scan.dir_records, scan.dir_edges = build_dir_pages(scan.files)
     scan.import_edges = build_import_edges(scan.files, index_paths=discovered)
+
+    # FEAT-498: symbol pages/edges — defines/contains from each file's own
+    # symbols, calls/extends/implements resolved deterministically across
+    # the whole scan via SymbolResolver (consumes the references edges
+    # just built above).
+    symbol_records: list[WikiPageRecord] = []
+    symbol_edges: list[tuple[str, str, str, str]] = []
+    for fs in scan.files:
+        recs, edges = build_symbol_pages(root, fs)
+        symbol_records.extend(recs)
+        symbol_edges.extend(edges)
+    symbol_edges.extend(build_symbol_edges(scan.files, scan.import_edges))
+    scan.symbol_records = symbol_records
+    scan.symbol_edges = symbol_edges
+
     logger.info(
-        "Scanned %s: %d pages, %d dirs, %d import edges, %d skipped",
+        "Scanned %s: %d pages, %d dirs, %d import edges, %d symbols, "
+        "%d symbol edges, %d skipped",
         root,
         len(scan.files),
         len(scan.dir_records),
         len(scan.import_edges),
+        len(scan.symbol_records),
+        len(scan.symbol_edges),
         len(scan.skipped),
     )
     return scan

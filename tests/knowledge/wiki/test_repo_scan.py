@@ -6,6 +6,7 @@ outline, markdown summary), directory overview pages, and import-edge
 derivation including src-layout resolution.
 """
 
+import hashlib
 from pathlib import Path
 
 from parrot.knowledge.wiki.repo_scan import (
@@ -13,6 +14,7 @@ from parrot.knowledge.wiki.repo_scan import (
     WIKI_BUNDLE_MARKER,
     build_dir_pages,
     build_file_slice,
+    build_symbol_pages,
     dir_concept_id,
     discover_repo_files,
     file_concept_id,
@@ -20,6 +22,7 @@ from parrot.knowledge.wiki.repo_scan import (
     is_inside_wiki_bundle,
     scan_repository,
 )
+from parrot.knowledge.wiki.sources import SourceCollectionManager
 
 
 def _write(root: Path, rel: str, content: str) -> Path:
@@ -397,3 +400,92 @@ class TestIncrementalScanCost:
             file_concept_id("pkg/b.py"),
             "references",
         ) in scan.import_edges
+
+
+class TestSymbolPlaneContentHash:
+    """FEAT-498 — content_hash equals SourceCollectionManager's file hash."""
+
+    def test_build_file_slice_sets_content_hash(self, tmp_path: Path):
+        path = _write(tmp_path, "a.py", PY_A)
+        fs = build_file_slice(tmp_path, "a.py")
+        assert fs is not None
+        assert fs.record.content_hash == hashlib.sha1(path.read_bytes()).hexdigest()
+
+    def test_content_hash_matches_source_collection_manager(self, tmp_path: Path):
+        path = _write(tmp_path, "a.py", PY_A)
+        fs = build_file_slice(tmp_path, "a.py")
+        mgr = SourceCollectionManager.__new__(SourceCollectionManager)
+        assert fs.record.content_hash == mgr._compute_hash(path)
+
+
+class TestSymbolPagesAndEdges:
+    """FEAT-498 — sym: pages, defines/contains edges, depth, ordinals."""
+
+    def test_symbol_pages_and_defines_contains_edges(self, tmp_path: Path):
+        _write(tmp_path, "a.py", PY_A)
+        fs = build_file_slice(tmp_path, "a.py")
+        assert fs is not None
+        records, edges = build_symbol_pages(tmp_path, fs)
+        titles = {r.title for r in records}
+        assert {"Alpha", "Alpha.run", "helper"} <= titles
+        for record in records:
+            assert record.category == "symbol"
+            assert record.node_id == "a.py"
+        defines = {(s, d) for s, d, rel, _p in edges if rel == "defines"}
+        assert (file_concept_id("a.py"), "sym:a.py#Alpha") in defines
+        assert (file_concept_id("a.py"), "sym:a.py#helper") in defines
+        contains = {(s, d) for s, d, rel, _p in edges if rel == "contains"}
+        assert ("sym:a.py#Alpha", "sym:a.py#Alpha.run") in contains
+
+    def test_symbol_depth_1_drops_methods(self, tmp_path: Path):
+        _write(tmp_path, "a.py", PY_A)
+        fs = build_file_slice(tmp_path, "a.py", symbol_depth=1)
+        assert fs is not None
+        assert {s.qualname for s in fs.symbols} == {"Alpha", "helper"}
+        records, _edges = build_symbol_pages(tmp_path, fs)
+        assert {r.title for r in records} == {"Alpha", "helper"}
+
+    def test_duplicate_qualname_ordinals_stable(self, tmp_path: Path):
+        # Two top-level defs sharing a name (valid Python — the second
+        # simply shadows the first at runtime) are two distinct
+        # ClassDef nodes with the identical qualname "Parser".
+        src = "class Parser:\n    pass\n\n\nclass Parser:\n    pass\n"
+        _write(tmp_path, "dup.py", src)
+        fs = build_file_slice(tmp_path, "dup.py", symbol_depth=6)
+        assert fs is not None
+        records, _edges = build_symbol_pages(tmp_path, fs)
+        ids = sorted(r.concept_id for r in records if r.title == "Parser")
+        assert ids == ["sym:dup.py#Parser", "sym:dup.py#Parser~2"]
+        # Re-scanning the unchanged file yields the same ids.
+        fs2 = build_file_slice(tmp_path, "dup.py", symbol_depth=6)
+        assert fs2 is not None
+        records2, _edges2 = build_symbol_pages(tmp_path, fs2)
+        ids2 = sorted(r.concept_id for r in records2 if r.title == "Parser")
+        assert ids2 == ids
+
+    def test_no_symbols_yields_empty(self, tmp_path: Path):
+        _write(tmp_path, "empty.py", "")
+        fs = build_file_slice(tmp_path, "empty.py")
+        assert fs is not None
+        records, edges = build_symbol_pages(tmp_path, fs)
+        assert records == []
+        assert edges == []
+
+
+class TestScanRepositorySymbolPlane:
+    """FEAT-498 — RepoScan.symbol_records / symbol_edges end to end."""
+
+    def test_scan_repository_populates_symbol_plane(self, tmp_path: Path):
+        _write(tmp_path, "a.py", "def helper():\n    return 1\n")
+        _write(
+            tmp_path, "b.py",
+            "from a import helper\n\n\ndef run():\n    return helper()\n",
+        )
+        scan = scan_repository(tmp_path, use_git=False)
+        titles = {r.title for r in scan.symbol_records}
+        assert titles == {"helper", "run"}
+        calls = {
+            (s, d) for s, d, rel, prov in scan.symbol_edges
+            if rel == "calls" and prov == "extracted"
+        }
+        assert ("sym:b.py#run", "sym:a.py#helper") in calls

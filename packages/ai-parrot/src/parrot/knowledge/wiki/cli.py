@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 import click
 from pydantic import ValidationError
@@ -87,6 +87,7 @@ from parrot.knowledge.wiki.repo_scan import (
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
+from parrot.knowledge.wiki.symbols import parse_sym_id
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -619,6 +620,31 @@ def _render_results_table(rows: list[dict[str, Any]], question: str, show_body: 
 # --------------------------------------------------------------------------
 
 
+def _owning_rel_path(concept_id: str) -> str | None:
+    """Rel path of the file a symbol-plane edge's ``src`` concept belongs to.
+
+    FEAT-498: ``defines`` edges are sourced at ``file:<rel>``; every
+    other symbol edge (``contains``/``calls``/``extends``/``implements``)
+    is sourced at ``sym:<rel>#<qualname>[~n]`` — both resolve to the same
+    rel path the edge should travel with in ``replace_source_slice``.
+
+    Args:
+        concept_id: A ``file:`` or ``sym:`` concept id.
+
+    Returns:
+        The rel path, or ``None`` for any other id shape.
+    """
+    if concept_id.startswith("file:"):
+        return concept_id[len("file:"):]
+    if concept_id.startswith("sym:"):
+        try:
+            rel_path, _qualname, _ordinal = parse_sym_id(concept_id)
+        except ValueError:
+            return None
+        return rel_path
+    return None
+
+
 async def _ingest_files(
     store: BaseWikiStore,
     sources: SourceCollectionManager,
@@ -644,10 +670,24 @@ async def _ingest_files(
     for edge in scan.import_edges:
         edges_by_src.setdefault(edge[0], []).append(edge)
 
+    # FEAT-498: sym: pages + defines/contains/calls/extends/implements
+    # edges, grouped by the rel_path that "owns" them, so each file's
+    # slice carries its own symbols atomically. An edge's src concept
+    # (file:<rel> for `defines`, sym:<rel>#... for everything else) is
+    # always inside the same file the ref/symbol was extracted from.
+    sym_records_by_rel: dict[str, list[Any]] = {}
+    for sym_record in scan.symbol_records:
+        sym_records_by_rel.setdefault(sym_record.node_id or "", []).append(sym_record)
+    symbol_edges_by_rel: dict[str, list[tuple[str, str, str, str]]] = {}
+    for edge in scan.symbol_edges:
+        rel = _owning_rel_path(edge[0])
+        if rel is not None:
+            symbol_edges_by_rel.setdefault(rel, []).append(edge)
+
     stats = await store.stats()
     fresh = int(stats.get("pages", 0)) == 0
     bulk_records = []
-    bulk_edges: list[tuple[str, str, str]] = []
+    bulk_edges: list[tuple[str, ...]] = []
 
     # The manifest is read and written in BATCHES, not per file. The
     # per-file API costs one round trip per call — invisible on a local
@@ -679,14 +719,36 @@ async def _ingest_files(
         source_id = id_by_uri[str(abs_path)]
         file_slice.record.source_id = source_id
         slice_edges = edges_by_src.get(file_slice.record.concept_id, [])
+
+        # FEAT-498: this file's sym: records + defines/contains/calls/
+        # extends/implements edges travel in the SAME replace_source_slice
+        # call as the file: page (atomic per source) — never upserted
+        # separately on the per-slice path.
+        sym_records = sym_records_by_rel.get(file_slice.rel_path, [])
+        for sym_record in sym_records:
+            sym_record.source_id = source_id
+        symbol_edges = symbol_edges_by_rel.get(file_slice.rel_path, [])
+
         if fresh:
             bulk_records.append(file_slice.record)
+            bulk_records.extend(sym_records)
             bulk_edges.extend(slice_edges)
+            bulk_edges.extend(symbol_edges)
         else:
             # Incremental path: each slice is replaced atomically, so it
             # stays one call per changed file — a re-build touches a
             # handful of files, not the whole corpus.
-            await store.replace_source_slice(source_id, [file_slice.record], slice_edges)
+            # FEAT-498: symbol_edges are 4-tuples (with provenance);
+            # BaseWikiStore.replace_source_slice's declared type is
+            # 3-tuples only even though every backend's own edge-insert
+            # helper already accepts a 4th provenance element (mirrors
+            # add_edges) — a type-annotation gap, not a runtime one.
+            combined_edges = cast("list[tuple[str, str, str]]", [*slice_edges, *symbol_edges])
+            await store.replace_source_slice(
+                source_id, [file_slice.record, *sym_records], combined_edges
+            )
+        if file_slice.symbols:
+            await store.upsert_symbols(file_slice.symbols, source_id=source_id)
         ingested_pages.setdefault(source_id, []).append(file_slice.record.concept_id)
         written += 1
 
