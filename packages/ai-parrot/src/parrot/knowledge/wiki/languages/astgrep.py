@@ -367,20 +367,53 @@ def pod_head2(node: SgNode) -> str:
     return ""
 
 
-def preceding_package(node: SgNode) -> str:
-    """Qualname of the last ``package_statement`` preceding ``node``.
+#: Node kinds whose block-less form scopes everything until the next
+#: occurrence (or EOF) as a *preceding sibling*, not an ancestor — Perl's
+#: ``package Foo;`` and PHP's ``namespace Foo\Bar;`` (TASK-2743).
+_PRECEDING_CONTAINER_KINDS = frozenset({"package_statement", "namespace_definition"})
 
-    Perl's block-less ``package Foo;`` form scopes everything until the
-    next ``package`` statement (or EOF) — the *last preceding* one, not
-    an ancestor, is the container (matches ``perl.py``'s existing walker).
+
+def preceding_package(node: SgNode) -> str:
+    """Qualname of the last package/namespace statement preceding ``node``.
+
+    Perl's block-less ``package Foo;`` form (and PHP's equivalent
+    block-less ``namespace Foo\\Bar;``) scopes everything until the next
+    such statement (or EOF) — the *last preceding* one, not an ancestor,
+    is the container (matches ``perl.py``'s existing walker).
     """
     current = node.prev()
     while current is not None:
-        if current.kind() == "package_statement":
+        if current.kind() in _PRECEDING_CONTAINER_KINDS:
             name_node = current.field("name") or current.child(1)
             return name_node.text() if name_node is not None else ""
         current = current.prev()
     return ""
+
+
+#: Container kinds a PHP method/function can be nested in.
+_PHP_CONTAINER_KINDS = frozenset(
+    {"class_declaration", "interface_declaration", "trait_declaration", "enum_declaration"}
+)
+
+
+def php_qualified_container(node: SgNode) -> str:
+    """Namespace-qualified name of ``node``'s enclosing PHP container.
+
+    PHP's block-less ``namespace Foo\\Bar;`` form is a preceding sibling
+    of the class it scopes, not an ancestor (see :func:`preceding_package`)
+    — this combines that namespace lookup with the immediate
+    class/interface/trait/enum ancestor's own name, joined by ``\\``, so
+    a method's ``parent`` can carry the full ``Ns\\Class`` qualname (spec
+    §2 ``SymbolRecord.qualname`` example
+    ``"App\\Models\\User::getFullName"``).
+    """
+    container = next((a for a in node.ancestors() if a.kind() in _PHP_CONTAINER_KINDS), None)
+    if container is None:
+        return ""
+    name_field = container.field("name")
+    container_name = name_field.text() if name_field is not None else ""
+    namespace = preceding_package(container)
+    return f"{namespace}\\{container_name}" if namespace else container_name
 
 
 EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
@@ -393,6 +426,7 @@ EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "module_docstring": module_docstring,
     "first_heading_comment": first_heading_comment,
     "preceding_package": preceding_package,
+    "php_qualified_container": php_qualified_container,
 }
 
 
@@ -422,6 +456,13 @@ class SymbolSpec(BaseModel):
         is_async: Same shape family as ``exported``.
         depth: Explicit nesting depth; when omitted, defaults to ``2``
             when ``parent`` is set, else ``1``.
+        qualname_joiner: Separator between ``parent`` and ``name`` in the
+            computed qualname; when omitted, falls back to the
+            language's entry in ``_QUALNAME_JOINER`` (``.`` by default).
+            TASK-2743: PHP needs two different separators in the same
+            file — ``\\`` between a namespace and its class, ``::``
+            between a class and its method — which a single per-language
+            joiner cannot express.
     """
 
     id: str
@@ -433,6 +474,7 @@ class SymbolSpec(BaseModel):
     exported: dict[str, Any] | str | None = None
     is_async: dict[str, Any] | str | None = Field(default=None, alias="async")
     depth: int | None = None
+    qualname_joiner: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -566,6 +608,16 @@ class RuleSet(BaseModel):
 # ---------------------------------------------------------------------
 
 
+def _strip_enclosing_parens(text: str) -> str:
+    """Strip one layer of surrounding ``(...)``, matching every walker's
+    own ``params_node_text.strip("()")`` convention for a parameter list
+    (render.py's documented ``SymbolRecord.signature`` contract). A no-op
+    for any other field (names/paths never carry surrounding parens)."""
+    if text.startswith("(") and text.endswith(")"):
+        return text[1:-1]
+    return text
+
+
 def _resolve_value_spec(node: SgNode, spec: dict[str, Any] | None) -> str:
     """Resolve a ``name``/``signature``-shaped spec against ``node``."""
     if not spec:
@@ -573,13 +625,13 @@ def _resolve_value_spec(node: SgNode, spec: dict[str, Any] | None) -> str:
     field_name = spec.get("field")
     if field_name:
         target = node.field(field_name)
-        return target.text() if target is not None else ""
+        return _strip_enclosing_parens(target.text()) if target is not None else ""
     path = spec.get("path")
     if path:
         current: SgNode | None = node
         for kind in path:
             current = current.find(kind=kind) if current is not None else None
-        return current.text() if current is not None else ""
+        return _strip_enclosing_parens(current.text()) if current is not None else ""
     if spec.get("text"):
         return node.text()
     return ""
@@ -637,7 +689,7 @@ def _build_symbol_record(
     if not name:
         return None
     parent = _resolve_parent(node, spec.parent)
-    joiner = _QUALNAME_JOINER.get(language, ".")
+    joiner = spec.qualname_joiner if spec.qualname_joiner is not None else _QUALNAME_JOINER.get(language, ".")
     qualname = f"{parent}{joiner}{name}" if parent else name
     depth = spec.depth if spec.depth is not None else (2 if parent else 1)
     node_range = node.range()

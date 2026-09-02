@@ -44,8 +44,9 @@ CASES = [
 
 #: Languages with a landed rule file (``languages/rules/<lang>.yaml``).
 #: TASK-2742 lands ``typescript.yaml`` (served under the ``javascript``
-#: scanner name); TASK-2743..2745 add php/rust/perl here as they land.
-SERVED_BY_RULE = {"javascript"}
+#: scanner name); TASK-2743 lands ``php.yaml``; TASK-2744/2745 add
+#: rust/perl here as they land.
+SERVED_BY_RULE = {"javascript", "php"}
 
 
 @pytest.mark.parametrize("lang,suffix,src", CASES, ids=[c[0] for c in CASES])

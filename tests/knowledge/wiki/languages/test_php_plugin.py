@@ -147,7 +147,9 @@ def test_php_tolerates_html_prefix(force_heuristic):
     assert any("Foo" in line for line in result.outline)
 
 
-def test_php_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_php_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that php.yaml
+    # (TASK-2743) makes the ast-grep seam a real, working first tier.
     scanner = PhpScanner()
 
     def _boom(source):
