@@ -286,6 +286,29 @@ def _chart_envelope(surface_id: str) -> dict:
     ).model_dump(by_alias=True, mode="json")
 
 
+def _broken_chart_envelope(surface_id: str) -> dict:
+    """A ``Chart`` envelope whose ``data`` binding points to a data-model key
+    that is absent, and NO ``parrot_optional`` marker — deterministically
+    raises ``BakeError`` at render time (FEAT-499 TASK-2755 guard-rail: a
+    stored surface that can no longer be baked must come back as a
+    structured 422, not an uncaught 500)."""
+    return CreateSurface(
+        surfaceId=surface_id,
+        components=[
+            Component(
+                id="root",
+                component="Chart",
+                title="Broken",
+                type="bar",
+                x="day",
+                y=["actual"],
+                data={"path": "/rows"},
+            ),
+        ],
+        dataModel={"filters": {"window": "all", "plan": "All"}},  # "rows" deliberately absent
+    ).model_dump(by_alias=True, mode="json")
+
+
 class _MiniBot(InfographicAuthoringMixin):
     """Lightweight REAL instance of the mixin — publish_surface only needs
     ``self.logger``/``self.name`` (+ optional ``self.user_id``), so this
@@ -541,3 +564,46 @@ class TestE2E:
         for method, path in cases:
             match_info = await router.resolve(make_mocked_request(method, path))
             assert not isinstance(match_info, MatchInfoError), f"{method} {path} did not resolve"
+
+
+class TestRenderFailureBothRoutes:
+    """FEAT-499 TASK-2755: a stored surface that cannot be re-baked returns a
+    structured 422 (never an uncaught 500) — via BOTH the ``UISurfacesHandler``
+    REST lane AND the ``SurfaceNegotiationService.respond()`` call the
+    ``A2UIHandler`` mirror route delegates to for the SAME record (FEAT-492
+    G6: the two routes share one negotiation service instance by design, so
+    a call into it directly IS the mirror route's own behaviour — the
+    full-HTTP-both-URL-shapes parity check lives in
+    ``test_a2ui_surfaces_route.py::TestBothRoutesAgree``)."""
+
+    async def test_get_html_render_failure_returns_422(self, store):
+        pytest.importorskip(
+            "parrot.outputs.a2ui_renderers.interactive_html",
+            reason="ai-parrot-visualizations not installed — HTML leg skipped",
+        )
+        surface_id = await _publish(
+            store,
+            surface_id="surface-e2e-broken",
+            user_id="owner-broken",
+        )
+        # Overwrite with a genuinely unbakeable envelope (a required binding
+        # with no parrot_optional marker and an absent data-model key).
+        broken = _broken_chart_envelope("surface-e2e-broken")
+        record = await store.get(surface_id)
+        await store.update_envelope(surface_id, broken, record.recipe_params)
+
+        app = {"ui_surfaces_store": store}
+        h_html = _handler(
+            app, match_info={"surface_id": surface_id}, user_id="owner-broken", query={"format": "html"}
+        )
+        resp_rest = await _get(h_html)
+        assert resp_rest.status == 422
+        body_rest = await _decode(resp_rest)
+        assert body_rest["status"] == "error"
+
+        record = await store.get(surface_id)
+        negotiation = SurfaceNegotiationService()
+        resp_mirror = await negotiation.respond(record, "text/html")
+        assert resp_mirror.status == 422
+        body_mirror = json.loads(resp_mirror.body)
+        assert body_mirror == body_rest
