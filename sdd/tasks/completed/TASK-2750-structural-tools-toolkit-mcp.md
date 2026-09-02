@@ -174,7 +174,62 @@ the `StdioMCPServer` tool accessor. 4. Index → `in-progress`. 5. Implement too
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-02
+**Notes**: Implemented `structural/tools.py` (three `AbstractTool`s +
+`create_structural_tools`), `structural/toolkit.py` (`CodeStructuralToolkit`,
+`tool_prefix="code"`, methods `symbol_lookup`/`outline`/`blast_radius`),
+registered the three tools in `create_wiki_mcp_server` (nine tools total),
+added `WikiQueryInput.include_symbols` (default `False`, over-fetches
+`limit*3` and drops `category=="symbol"` unless set), and added the three
+`mcp__wikitoolkit__wiki_*` entries to `PERMISSION_RULES`. Each tool's
+`_execute` returns `ToolResult(result=<model dict> + {"text": <rendered
+stub-line body + JSON tail, capped via truncate_to_tokens>})` — the model
+dict IS `.result` (per Scope) and the compact text lives alongside it
+under a `"text"` key, since no existing precedent (`WikiPageTool`/
+`WikiRelatedTool` return a bare dict; `WikiQueryTool` returns a bare str)
+combines both in one `ToolResult`, and no test in this task's own Test
+Specification pins an exact key layout for it. All 3 tools take a single
+`service_factory: Callable[[str | None], StructuralService]` constructor
+arg (matching Scope's `__init__(self, service_factory)` literally):
+namespace resolution + the "unknown namespace" error message are built
+into the factory closure (raises `ValueError` with the pre-rendered
+message, caught by `_execute`), since a bare callable has no separate
+channel to surface `_scoped_store`'s `KeyError` with the base store's
+namespace listing. 30 new/updated tests added across
+`tests/knowledge/wiki/structural/test_tools.py`,
+`tests/knowledge/wiki/test_mcp_server_structural.py`, and
+`tests/knowledge/wiki/test_claude_code.py` (one new
+`TestStructuralPermissionRules` class); all pass. `ruff` clean. `mypy`:
+the three new tools' `_execute` overrides trigger the SAME
+"[override]" note as all 6 pre-existing `AbstractTool` subclasses in
+`tools.py` (verified via `git stash` against the pre-task baseline —
+identical pre-existing pattern, not a regression; `AbstractTool._execute`
+itself is typed `**kwargs: Any`, out of scope to change here).
+
+**Deviations from spec**:
+1. `service_factory`'s "skip read-repair for a foreign namespace" is
+   implemented by constructing a plain `StructuralService(scoped_store,
+   root, config)` for the foreign case rather than a flag, because
+   `StructuralService.__init__` (TASK-2749, not in this task's Files
+   table) has no `allow_repair` parameter to add one without touching an
+   out-of-scope file. In practice this is inert: `_ensure_fresh`'s disk
+   hash check for a foreign store's `rel_path`s almost always misses
+   against the LOCAL `root`'s filesystem (or, in the pathological case
+   of an identical rel_path colliding across two federated repos, the
+   local `_sources` manifest lookup by resolved URI still won't match a
+   foreign entry), so no write is ever actually attempted — verified by
+   reasoning through `_ensure_fresh`/`_drop_slice`'s code paths; not
+   covered by a dedicated federation test since none is required by this
+   task's Acceptance Criteria or Test Specification.
+2. `BlastRadiusInput.relations` defaults to `None` (forwarded as-is to
+   `StructuralService.blast_radius`, which defaults to
+   `calls/extends/implements`) rather than being a required field with
+   no default, since the spec's terse pseudocode
+   (`relations: list[Literal[...]]`) does not actually state
+   requiredness and a required-with-no-default field would make the
+   simplest call (\"just blast-radius this symbol\") impossible.
+3. Found and fixed a bug from TASK-2749's own completion commit: the
+   `active/` → `completed/` move only staged the new file, never the
+   deletion, leaving `TASK-2749-...md` tracked in both directories.
+   Fixed in a small standalone commit before this task's commit.

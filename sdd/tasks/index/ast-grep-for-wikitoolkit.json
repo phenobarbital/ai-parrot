@@ -254,7 +254,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -264,8 +264,8 @@
       "parallelism_notes": "Sequential: wraps the service. Shares claude_code/assets.py with in-flight FEAT-495 (additive hunk).",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2750-structural-tools-toolkit-mcp.md"
+      "completed_at": "2026-09-02T15:37:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2750-structural-tools-toolkit-mcp.md"
     },
     {
       "id": "TASK-2751",
