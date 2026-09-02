@@ -31,9 +31,9 @@ import json
 import logging
 import math
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -45,9 +45,9 @@ from parrot.knowledge.wiki.export import (
     page_frontmatter,
 )
 from parrot.knowledge.wiki.store import (
+    _FTS_TOKEN_RE,
     BaseWikiStore,
     WikiPageRecord,
-    _FTS_TOKEN_RE,
     estimate_tokens,
     rank_by_cosine,
 )
@@ -60,7 +60,7 @@ _EMBEDDINGS_FILENAME = ".embeddings.json"
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def _tokenize(text: str) -> list[str]:
@@ -130,9 +130,7 @@ class InMemoryWikiStore(BaseWikiStore):
             try:
                 page, relates = self._parse_page_file(md_file)
             except Exception as exc:  # noqa: BLE001 — skip bad files
-                self.logger.warning(
-                    "Skipping unparseable bundle file %s: %s", md_file, exc
-                )
+                self.logger.warning("Skipping unparseable bundle file %s: %s", md_file, exc)
                 continue
             self._index_page(page)
             for target, rel in relates:
@@ -147,9 +145,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 self.logger.warning("Could not load embeddings sidecar: %s", exc)
                 self._embeddings = {}
 
-        self.logger.debug(
-            "InMemoryWikiStore loaded %d page(s) from %s", count, self._bundle_dir
-        )
+        self.logger.debug("InMemoryWikiStore loaded %d page(s) from %s", count, self._bundle_dir)
 
     @staticmethod
     def _parse_page_file(
@@ -187,10 +183,10 @@ class InMemoryWikiStore(BaseWikiStore):
             "summary": str(front.get("summary") or ""),
             "body": body,
             "source_id": front.get("source_id"),
-            "token_count": int(front.get("token_count") or 0)
-            or estimate_tokens(body),
+            "token_count": int(front.get("token_count") or 0) or estimate_tokens(body),
             "created_at": str(front.get("created_at") or front.get("timestamp") or ""),
             "updated_at": str(front.get("timestamp") or ""),
+            "content_hash": front.get("content_hash"),
         }
         relates = [
             (str(item.get("concept")), str(item.get("rel") or "references"))
@@ -207,20 +203,19 @@ class InMemoryWikiStore(BaseWikiStore):
 
     def _write_page_file(self, page: dict[str, Any]) -> None:
         """Render + write one page's OKF markdown file (sync, threaded)."""
-        relates = [
-            {"concept": dst, "rel": rel}
-            for dst, rel in self._out_edges.get(page["concept_id"], [])
-        ]
+        relates = [{"concept": dst, "rel": rel} for dst, rel in self._out_edges.get(page["concept_id"], [])]
         front = page_frontmatter(page, relates)
         # Machine fields appended into the same frontmatter block — OKF
         # consumers tolerate unknown keys.
         machine: dict[str, Any] = {}
-        for key in ("category", "node_id", "source_id", "token_count", "created_at"):
+        for key in ("category", "node_id", "source_id", "token_count", "created_at", "content_hash"):
             if page.get(key) not in (None, ""):
                 machine[key] = page[key]
         if machine:
             extra = yaml.dump(
-                machine, sort_keys=False, allow_unicode=True,
+                machine,
+                sort_keys=False,
+                allow_unicode=True,
                 default_flow_style=False,
             )
             front = front[: -len("---\n")] + extra + "---\n"
@@ -247,9 +242,7 @@ class InMemoryWikiStore(BaseWikiStore):
 
     def _write_embeddings(self) -> None:
         """Persist the embeddings sidecar (sync, threaded)."""
-        (self._bundle_dir / _EMBEDDINGS_FILENAME).write_text(
-            json.dumps(self._embeddings), encoding="utf-8"
-        )
+        (self._bundle_dir / _EMBEDDINGS_FILENAME).write_text(json.dumps(self._embeddings), encoding="utf-8")
 
     async def _persist_pages(self, pages: list[dict[str, Any]]) -> None:
         """Write the given pages' files + refresh index.md."""
@@ -277,9 +270,7 @@ class InMemoryWikiStore(BaseWikiStore):
         counts: Counter[str] = Counter()
         for token in _tokenize(str(page.get("title") or "")):
             counts[token] += _TITLE_BOOST
-        for token in _tokenize(
-            f"{page.get('summary') or ''} {page.get('body') or ''}"
-        ):
+        for token in _tokenize(f"{page.get('summary') or ''} {page.get('body') or ''}"):
             counts[token] += 1
         self._doc_len[cid] = sum(counts.values())
         for term, tf in counts.items():
@@ -326,13 +317,9 @@ class InMemoryWikiStore(BaseWikiStore):
     def _remove_edges_touching(self, concept_id: str) -> None:
         """Drop every edge where ``concept_id`` is src or dst."""
         for dst, rel in self._out_edges.pop(concept_id, []):
-            self._in_edges[dst] = [
-                e for e in self._in_edges.get(dst, []) if e[0] != concept_id
-            ]
+            self._in_edges[dst] = [e for e in self._in_edges.get(dst, []) if e[0] != concept_id]
         for src, rel in self._in_edges.pop(concept_id, []):
-            self._out_edges[src] = [
-                e for e in self._out_edges.get(src, []) if e[0] != concept_id
-            ]
+            self._out_edges[src] = [e for e in self._out_edges.get(src, []) if e[0] != concept_id]
 
     def _stub(self, page: dict[str, Any]) -> dict[str, Any]:
         """Stub view of a page row (no body)."""
@@ -349,6 +336,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 "updated_at",
                 "origin",
                 "asserted_by",
+                "content_hash",
             )
         }
 
@@ -378,10 +366,9 @@ class InMemoryWikiStore(BaseWikiStore):
                 "updated_at": now,
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
+                "content_hash": p.content_hash,
             }
-            old_path = (
-                self._page_path(existing) if existing else None
-            )
+            old_path = self._page_path(existing) if existing else None
             self._index_page(row)
             new_path = self._page_path(row)
             if old_path and old_path != new_path and old_path.exists():
@@ -405,16 +392,14 @@ class InMemoryWikiStore(BaseWikiStore):
             self._index_edge(src, dst, rel)
             touched.add(src)
         # relates_to lives in the source page's frontmatter
-        await self._persist_pages(
-            [self._pages[cid] for cid in touched if cid in self._pages]
-        )
+        await self._persist_pages([self._pages[cid] for cid in touched if cid in self._pages])
         return len(edges)
 
     async def replace_source_slice(
         self,
         source_id: str,
         pages: list[WikiPageRecord],
-        edges: Optional[list[tuple[str, str, str]]] = None,
+        edges: list[tuple[str, str, str]] | None = None,
     ) -> dict[str, Any]:
         """Atomically replace all pages/edges derived from one source.
 
@@ -423,11 +408,7 @@ class InMemoryWikiStore(BaseWikiStore):
         the SQLite backend's contract).
         """
         await self._ensure_loaded()
-        old_ids = [
-            cid
-            for cid, page in self._pages.items()
-            if page.get("source_id") == source_id
-        ]
+        old_ids = [cid for cid, page in self._pages.items() if page.get("source_id") == source_id]
         old_set = set(old_ids)
         new_ids = {page.concept_id for page in pages}
         preserved = [
@@ -486,9 +467,7 @@ class InMemoryWikiStore(BaseWikiStore):
     # Read API
     # ------------------------------------------------------------------
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> Optional[dict[str, Any]]:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
         """Fetch a page by ``concept_id`` (falls back to ``node_id``)."""
         await self._ensure_loaded()
         page = self._pages.get(concept_id)
@@ -504,9 +483,9 @@ class InMemoryWikiStore(BaseWikiStore):
 
     async def list_pages(
         self,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 100,
-        origin: Optional[list[str]] = None,
+        origin: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List page stubs, optionally filtered by category/origin."""
         await self._ensure_loaded()
@@ -522,7 +501,7 @@ class InMemoryWikiStore(BaseWikiStore):
     async def search_fts(
         self,
         query: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """TF-IDF lexical search over title/summary/body postings.
@@ -577,7 +556,7 @@ class InMemoryWikiStore(BaseWikiStore):
     async def neighbors(
         self,
         concept_id: str,
-        rel: Optional[str] = None,
+        rel: str | None = None,
         direction: str = "both",
     ) -> list[dict[str, Any]]:
         """Return edge-adjacent pages/targets of a concept."""
@@ -595,14 +574,19 @@ class InMemoryWikiStore(BaseWikiStore):
                 results.append(self._neighbor_item(src, edge_rel, "in"))
         return results
 
-    def _neighbor_item(
-        self, concept_id: str, rel: str, direction: str
-    ) -> dict[str, Any]:
-        """Build one neighbors() result row (page stub when known)."""
+    def _neighbor_item(self, concept_id: str, rel: str, direction: str) -> dict[str, Any]:
+        """Build one neighbors() result row (page stub when known).
+
+        ``provenance`` is always ``None`` here: ``_index_edge`` keeps
+        only the typed ``(dst, rel)``/``(src, rel)`` triple (see
+        ``add_edges``'s own docstring) — this backend never tracked
+        edge provenance, before or after FEAT-498.
+        """
         page = self._pages.get(concept_id)
         return {
             "concept_id": concept_id,
             "rel": rel,
+            "provenance": None,
             "title": page.get("title") if page else None,
             "category": page.get("category") if page else None,
             "summary": page.get("summary") if page else None,
@@ -613,17 +597,13 @@ class InMemoryWikiStore(BaseWikiStore):
     async def dump_pages(self) -> list[dict[str, Any]]:
         """Return every page row WITH bodies (bulk export path)."""
         await self._ensure_loaded()
-        return [
-            dict(self._pages[cid]) for cid in sorted(self._pages)
-        ]
+        return [dict(self._pages[cid]) for cid in sorted(self._pages)]
 
     async def dump_edges(self) -> list[dict[str, Any]]:
         """Return every edge row (bulk export path)."""
         await self._ensure_loaded()
         rows = [
-            {"src": src, "dst": dst, "rel": rel}
-            for src, targets in self._out_edges.items()
-            for dst, rel in targets
+            {"src": src, "dst": dst, "rel": rel} for src, targets in self._out_edges.items() for dst, rel in targets
         ]
         rows.sort(key=lambda r: (r["src"], r["dst"], r["rel"]))
         return rows
@@ -631,17 +611,14 @@ class InMemoryWikiStore(BaseWikiStore):
     async def stats(self) -> dict[str, Any]:
         """Aggregate counters for the wiki."""
         await self._ensure_loaded()
-        categories: Counter[str] = Counter(
-            str(p.get("category") or "") for p in self._pages.values()
-        )
+        categories: Counter[str] = Counter(str(p.get("category") or "") for p in self._pages.values())
         return {
             "pages": len(self._pages),
             "edges": sum(len(v) for v in self._out_edges.values()),
             "sources": len(self._load_source_manifest()),
             "embeddings": len(self._embeddings),
-            "total_tokens": sum(
-                int(p.get("token_count") or 0) for p in self._pages.values()
-            ),
+            "symbols": categories.get("symbol", 0),
+            "total_tokens": sum(int(p.get("token_count") or 0) for p in self._pages.values()),
             "categories": dict(categories),
         }
 
@@ -663,12 +640,8 @@ class InMemoryWikiStore(BaseWikiStore):
     async def orphan_sources(self) -> list[str]:
         """Sources (from the JSON manifest) that produced no pages."""
         await self._ensure_loaded()
-        covered = {
-            p.get("source_id") for p in self._pages.values() if p.get("source_id")
-        }
-        return [
-            sid for sid in self._load_source_manifest() if sid not in covered
-        ]
+        covered = {p.get("source_id") for p in self._pages.values() if p.get("source_id")}
+        return [sid for sid in self._load_source_manifest() if sid not in covered]
 
     async def broken_edges(self) -> list[dict[str, Any]]:
         """Edges whose destination is neither a page nor a source."""
@@ -684,6 +657,4 @@ class InMemoryWikiStore(BaseWikiStore):
     async def missing_bodies(self) -> list[str]:
         """Pages with an empty body."""
         await self._ensure_loaded()
-        return [
-            cid for cid, p in sorted(self._pages.items()) if not p.get("body")
-        ]
+        return [cid for cid, p in sorted(self._pages.items()) if not p.get("body")]

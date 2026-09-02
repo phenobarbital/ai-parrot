@@ -1,0 +1,70 @@
+{
+  "feature": "qa-gate-evidence-and-diff-scoped-lint",
+  "feature_id": "FEAT-497",
+  "spec": "sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-02T01:52:22Z",
+  "completed_at": "2026-09-02T09:53:03+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2735",
+      "slug": "git-verified-triage-evidence",
+      "title": "Git-verified triage evidence in QANode._run_finding_triage",
+      "feature_id": "FEAT-497",
+      "feature": "qa-gate-evidence-and-diff-scoped-lint",
+      "spec": "sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Edits nodes/qa.py, which TASK-2737 also edits (different regions, but the same file) — keep sequential in one worktree to avoid a merge conflict. Shares no symbol with TASK-2736.",
+      "assigned_to": null,
+      "started_at": "2026-09-02T01:55:42+00:00",
+      "completed_at": "2026-09-02T02:07:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2735-git-verified-triage-evidence.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2736",
+      "slug": "lint-new-diff-scoped-ruff",
+      "title": "scripts/sdd/lint_new.py — ruff findings the branch introduced",
+      "feature_id": "FEAT-497",
+      "feature": "qa-gate-evidence-and-diff-scoped-lint",
+      "spec": "sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New standalone files only (scripts/sdd/lint_new.py + tests/sdd_scripts/test_lint_new.py); shares no file or import with TASK-2735. Could run in a separate worktree, but the spec's Worktree Strategy recommends sequential execution in one worktree for three small tasks.",
+      "assigned_to": null,
+      "started_at": "2026-09-02T01:55:42+00:00",
+      "completed_at": "2026-09-02T02:11:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2736-lint-new-diff-scoped-ruff.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2737",
+      "slug": "wire-diff-scoped-lint-into-qa",
+      "title": "Wire the diff-scoped ruff runner into QANode's lint command",
+      "feature_id": "FEAT-497",
+      "feature": "qa-gate-evidence-and-diff-scoped-lint",
+      "spec": "sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2736"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-2736 (the script it invokes) and edits nodes/qa.py alongside TASK-2735. Run last.",
+      "assigned_to": null,
+      "started_at": "2026-09-02T01:55:42+00:00",
+      "completed_at": "2026-09-02T02:21:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2737-wire-diff-scoped-lint-into-qa.md",
+      "verification": "verified"
+    }
+  ]
+}

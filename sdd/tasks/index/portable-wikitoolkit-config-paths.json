@@ -1,0 +1,49 @@
+{
+  "feature": "portable-wikitoolkit-config-paths",
+  "feature_id": "FEAT-495",
+  "spec": "sdd/specs/portable-wikitoolkit-config-paths.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-02T01:20:12Z",
+  "completed_at": "2026-09-02T02:34:35+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2720",
+      "slug": "dedupe-settings-wiki-hook",
+      "title": "Remove the duplicate hardcoded wiki hook from .claude/settings.json",
+      "feature_id": "FEAT-495",
+      "feature": "portable-wikitoolkit-config-paths",
+      "spec": "sdd/specs/portable-wikitoolkit-config-paths.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only .claude/settings.json; shares no files with TASK-2721 (.mcp.json.example). Technically parallelizable, but both are one-line config edits — running them sequentially in a single per-spec worktree is recommended; separate worktrees are overkill.",
+      "assigned_to": null,
+      "started_at": "2026-09-02T02:29:38+00:00",
+      "completed_at": "2026-09-02T02:30:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2720-dedupe-settings-wiki-hook.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2721",
+      "slug": "add-mcp-json-example",
+      "title": "Add a tracked .mcp.json.example with the portable sh -c resolver",
+      "feature_id": "FEAT-495",
+      "feature": "portable-wikitoolkit-config-paths",
+      "spec": "sdd/specs/portable-wikitoolkit-config-paths.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Creates only .mcp.json.example; shares no files with TASK-2720 (.claude/settings.json). Technically parallelizable, but trivial — recommend sequential in one per-spec worktree.",
+      "assigned_to": null,
+      "started_at": "2026-09-02T02:31:42+00:00",
+      "completed_at": "2026-09-02T02:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2721-add-mcp-json-example.md",
+      "verification": "verified"
+    }
+  ]
+}

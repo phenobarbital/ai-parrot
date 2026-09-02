@@ -1,20 +1,22 @@
 """``A2UIHandler`` surfaces mirror route tests (FEAT-492, TASK-2703).
 
-Real aiohttp ``TestClient`` end-to-end (``A2UIHandler`` does not use
-``@is_authenticated()`` — see ``handlers/a2ui.py`` module docstring — so the
-``test_a2ui_handler.py`` client-fixture idiom applies directly). The
-``PgUISurfaceStore`` is stubbed via ``app["ui_surfaces_store"]`` (the same
+Real aiohttp ``TestClient`` end-to-end.  ``A2UIHandler`` is decorated with
+``@is_authenticated()``/``@user_session()`` — the test middleware stubs both.
+The ``PgUISurfaceStore`` is stubbed via ``app["ui_surfaces_store"]`` (the same
 app-context slot ``UISurfacesHandler``/``A2UIHandler`` both lazily populate),
 so no live Postgres is required.
 """
 
 from __future__ import annotations
 
+import builtins
+import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
+from navigator_session.data import SessionData
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.agent import AgentTalk
 from parrot.handlers.models.ui_surfaces import (
@@ -26,6 +28,7 @@ from parrot.handlers.ui_surfaces import SurfaceNegotiationService, UISurfacesHan
 from parrot.memory.file import FileConversationMemory
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.outputs.a2ui.models import CreateSurface
+from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer
 from parrot.tools import tool
 from parrot.tools.manager import ToolManager
 
@@ -92,10 +95,19 @@ def fake_store():
     return store
 
 
+@web.middleware
+async def _stub_auth_middleware(request, handler):
+    """Mark every test request as pre-authenticated and attach a minimal
+    session so ``@is_authenticated()``/``@user_session()`` pass through."""
+    request["authenticated"] = True
+    request["NAV_SESSION"] = SessionData(data={"user_id": "u-test"})
+    return await handler(request)
+
+
 @pytest.fixture
 async def client(aiohttp_client, tmp_path, fake_store):
     agent = _make_agent(tmp_path)
-    app = web.Application()
+    app = web.Application(middlewares=[_stub_auth_middleware])
     app["bot_manager"] = _bot_manager(agent)
     app["_test_agent"] = agent
     app["ui_surfaces_store"] = fake_store
@@ -235,3 +247,100 @@ class TestRouteOrdering:
         # checking headers via a short-lived connection).
         async with client.session.get(client.make_url("/api/v1/agents/demo/a2ui"), params=_auth_params()) as resp:
             assert resp.headers.get("Content-Type", "").startswith("text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# FEAT-499 TASK-2755: _respond_html returns a structured 422 instead of
+# leaking a traceback on a render failure.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def negotiation():
+    return SurfaceNegotiationService()
+
+
+class TestRespondHtmlFailure:
+    async def test_render_failure_returns_422_json(self, negotiation, monkeypatch):
+        record = _make_record()
+
+        async def _boom(self, envelope, *, bake=True):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(InteractiveHTMLRenderer, "render", _boom)
+
+        resp = await negotiation.respond(record, "text/html")
+
+        assert resp.status == 422
+        body = json.loads(resp.body)
+        assert body["status"] == "error"
+        assert "traceback" not in json.dumps(body).lower()
+        assert "boom" in body["message"]
+
+    async def test_render_success_unchanged(self, negotiation):
+        record = _make_record()
+
+        resp = await negotiation.respond(record, "text/html")
+
+        assert resp.status == 200
+        assert resp.content_type == "text/html"
+
+    async def test_missing_visualizations_still_501(self, negotiation, monkeypatch):
+        """The pre-existing ImportError branch must not be swallowed by the new guard."""
+        record = _make_record()
+        real_import = builtins.__import__
+
+        def _raise_for_interactive_html(name, *args, **kwargs):
+            if name == "parrot.outputs.a2ui_renderers.interactive_html":
+                raise ImportError("simulated missing ai-parrot-visualizations")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _raise_for_interactive_html)
+
+        resp = await negotiation.respond(record, "text/html")
+
+        assert resp.status == 501
+        body = json.loads(resp.body)
+        assert "ai-parrot-visualizations" in body["message"]
+
+    async def test_malformed_stored_envelope(self, negotiation):
+        """A row whose envelope no longer validates is also a 422, not a 500."""
+        record = _make_record(envelope={"not": "a valid envelope"})
+
+        resp = await negotiation.respond(record, "text/html")
+
+        assert resp.status == 422
+        body = json.loads(resp.body)
+        assert body["status"] == "error"
+
+
+class TestBothRoutesAgree:
+    async def test_rest_and_mirror_return_identical_error(self, client, fake_store, monkeypatch):
+        """FEAT-492 G6: the mirror is not protocol-strict; both share ONE
+        ``SurfaceNegotiationService`` instance, so a call through the
+        mirror's real HTTP route and a direct call to that shared service
+        for the same record (what ``UISurfacesHandler``'s REST lane itself
+        does — see ``ui_surfaces.py::UISurfacesHandler.get``) MUST agree.
+        (The REST route itself requires a real ``navigator_auth`` backend
+        this file's lightweight ``client`` fixture does not stand up — see
+        ``test_ui_surfaces_e2e.py::TestRenderFailureBothRoutes`` for the
+        same parity proved end-to-end via BOTH real dispatch paths.)
+        """
+        record = _make_record()
+        fake_store.get.return_value = record
+
+        async def _boom(self, envelope, *, bake=True):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(InteractiveHTMLRenderer, "render", _boom)
+
+        params_html = {**_auth_params(), "format": "html"}
+        r_mirror = await client.get("/api/v1/agents/demo/a2ui/surfaces/surface-1", params=params_html)
+        assert r_mirror.status == 422
+        body_mirror = await r_mirror.json()
+
+        resp_rest_equivalent = await SurfaceNegotiationService().respond(record, "text/html")
+        assert resp_rest_equivalent.status == 422
+        body_rest_equivalent = json.loads(resp_rest_equivalent.body)
+
+        assert body_mirror == body_rest_equivalent

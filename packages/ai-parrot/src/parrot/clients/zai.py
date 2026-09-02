@@ -514,7 +514,12 @@ class ZaiClient(OpenAIBaseClient):
             content = getattr(response.choices[0].message, "content", None) or ""
             parsed_output = None
             if output_config:
-                parsed_output = await self._parse_structured_output(content, output_config)
+                parsed_output = await self._parse_structured_output(
+                    content,
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
+                    model=resolved_model,
+                )
 
             response_time = time.perf_counter() - started
             ai_message = self._create_ai_message(
@@ -989,7 +994,7 @@ class ZaiClient(OpenAIBaseClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1024,6 +1029,7 @@ class ZaiClient(OpenAIBaseClient):
         Raises:
             :class:`~parrot.exceptions.InvokeError`: On any provider error.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_system = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
@@ -1064,10 +1070,17 @@ class ZaiClient(OpenAIBaseClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = self._usage_from_response(response)
             return self._build_invoke_result(output, output_type, resolved_model, usage, response)

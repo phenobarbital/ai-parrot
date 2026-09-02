@@ -1,6 +1,9 @@
 """Lifecycle tests for AgentsFlow constructor wiring (FEAT-147 TASK-1018).
 
-Mirrors test_agentcrew_lifecycle.py but targets parrot.bots.flow.fsm.AgentsFlow.
+Mirrors test_agentcrew_lifecycle.py but targets
+``parrot.bots.flows.flow.flow.AgentsFlow`` — the legacy ``parrot.bots.flow``
+package these tests were written against was removed by FEAT-196, and the
+surviving class inherits the same ``PersistenceMixin`` they exercise.
 """
 import pytest
 from unittest.mock import MagicMock
@@ -23,14 +26,14 @@ class _RecordingStorage(ResultStorage):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tests against parrot.bots.flow.fsm.AgentsFlow
+# Tests against parrot.bots.flows.flow.flow.AgentsFlow
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_agentsflow_persist_false_opens_no_connection(monkeypatch):
     """AgentsFlow(persist_results=False) must never call get_result_storage."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     factory = MagicMock(side_effect=AssertionError("must not be called"))
     monkeypatch.setattr(
@@ -45,7 +48,7 @@ async def test_agentsflow_persist_false_opens_no_connection(monkeypatch):
 @pytest.mark.asyncio
 async def test_agentsflow_explicit_storage_instance_is_used():
     """AgentsFlow(result_storage=<instance>) uses that instance directly."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     storage = _RecordingStorage()
     flow = AgentsFlow(name="X", result_storage=storage)
@@ -56,7 +59,7 @@ async def test_agentsflow_explicit_storage_instance_is_used():
 @pytest.mark.asyncio
 async def test_agentsflow_aclose_releases_storage():
     """async with AgentsFlow(...) as flow: releases storage on exit."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     storage = _RecordingStorage()
     async with AgentsFlow(name="X", result_storage=storage) as flow:
@@ -67,7 +70,7 @@ async def test_agentsflow_aclose_releases_storage():
 @pytest.mark.asyncio
 async def test_agentsflow_constructor_sets_mixin_attrs():
     """All four mixin attributes are initialised on AgentsFlow."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     flow = AgentsFlow(name="Y", persist_results=False)
     assert flow._persist_results is False
@@ -79,7 +82,7 @@ async def test_agentsflow_constructor_sets_mixin_attrs():
 @pytest.mark.asyncio
 async def test_agentsflow_constructor_persist_true_default():
     """AgentsFlow defaults to persist_results=True."""
-    from parrot.bots.flow.fsm import AgentsFlow
+    from parrot.bots.flows.flow.flow import AgentsFlow
 
     flow = AgentsFlow(name="Z")
     assert flow._persist_results is True

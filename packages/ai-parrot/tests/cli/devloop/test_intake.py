@@ -184,7 +184,7 @@ def test_build_brief_passes_through_pool_and_judges(tmp_path: Path):
     draft = _draft()
     document_path = intake.write_document(draft)
     dev_agents = [DevAgentSpec(agent="codex", model="gpt-5.5", count=2)]
-    judge_panel = JudgePanelConfig(judges=[JudgeSpec(agent="gemini", model="")])
+    judge_panel = JudgePanelConfig(judges=[JudgeSpec(agent="mantle", model="")])
 
     brief = intake.build_brief(
         draft, document_path, dev_agents=dev_agents, judge_panel=judge_panel

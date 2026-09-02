@@ -97,9 +97,7 @@ def _cwd_for(worker_id: str) -> str:
 
 def _build_pool(dispatchers, *, pool_max=99):
     """Build a DevAgentPool with one worker per fake dispatcher."""
-    config = DevAgentPoolConfig(
-        agents=[DevAgentSpec(agent="claude-code") for _ in dispatchers]
-    )
+    config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code") for _ in dispatchers])
 
     def _builder(spec):
         idx = len(_builder.built)
@@ -137,9 +135,7 @@ class TestPool:
         pool = _build_pool([d1, d2])
         tasks = _tasks("TASK-1", "TASK-2", "TASK-3", "TASK-4")
 
-        result = await pool.run_wave(
-            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert set(result.completed) == {"TASK-1", "TASK-2", "TASK-3", "TASK-4"}
         assert result.failed == []
@@ -154,9 +150,7 @@ class TestPool:
         pool = _build_pool([d1, d2])
         tasks = _tasks("TASK-1", "TASK-2")
 
-        result = await pool.run_wave(
-            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         # TASK-1 assigned to w1 (fails), retried on w2 (succeeds).
         assert "TASK-1" in result.completed
@@ -168,9 +162,7 @@ class TestPool:
         pool = _build_pool([d1])  # single worker: retry lands on itself
         tasks = _tasks("TASK-1")
 
-        result = await pool.run_wave(
-            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert result.completed == {}
         assert result.failed == ["TASK-1"]
@@ -187,9 +179,7 @@ class TestPool:
         pool = _build_pool([d1])  # single worker: retry lands on itself
         tasks = _tasks("TASK-1")
 
-        result = await pool.run_wave(
-            tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(tasks, research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert result.completed == {}
         assert result.failed == ["TASK-1"]
@@ -211,9 +201,7 @@ class TestPool:
         d1 = _OtherTaskIncomplete()
         pool = _build_pool([d1])
 
-        result = await pool.run_wave(
-            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert list(result.completed) == ["TASK-1"]
         assert result.failed == []
@@ -230,18 +218,14 @@ class TestPool:
 
     async def test_empty_tasks_returns_empty_result(self):
         pool = _build_pool([FakeDispatcher()])
-        result = await pool.run_wave(
-            [], research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave([], research=_research(), run_id="run-1", cwd_for=_cwd_for)
         assert result.completed == {} and result.failed == [] and result.worker_summaries == []
 
     async def test_no_workers_raises(self):
         config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
         pool = DevAgentPool.build(config, lambda spec: (FakeDispatcher(), object()), pool_max=0)
         with pytest.raises(ValueError):
-            await pool.run_wave(
-                _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-            )
+            await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
 
 @pytest.mark.asyncio
@@ -251,14 +235,13 @@ class TestEscalationModel:
     async def test_retry_uses_escalation_model(self):
         d1 = FakeDispatcher(fail_ids={"TASK-1"})  # single worker: retries itself
         spec = DevAgentSpec(
-            agent="claude-code", model="claude-sonnet-4-6",
+            agent="claude-code",
+            model="claude-sonnet-4-6",
             escalation_model="claude-opus-4-6",
         )
         pool = _build_pool_with_specs([d1], [spec])
 
-        result = await pool.run_wave(
-            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert "TASK-1" in result.completed
         assert len(d1.calls) == 2
@@ -272,9 +255,7 @@ class TestEscalationModel:
         spec = DevAgentSpec(agent="claude-code", model="claude-sonnet-4-6")
         pool = _build_pool_with_specs([d1], [spec])
 
-        result = await pool.run_wave(
-            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
         assert "TASK-1" in result.completed
         assert len(d1.calls) == 2
@@ -285,18 +266,22 @@ class TestEscalationModel:
         d1, d2 = FakeDispatcher(), FakeDispatcher()
         specs = [
             DevAgentSpec(
-                agent="claude-code", model="claude-sonnet-4-6",
+                agent="claude-code",
+                model="claude-sonnet-4-6",
                 escalation_model="claude-opus-4-6",
             ),
             DevAgentSpec(
-                agent="claude-code", model="claude-sonnet-4-6",
+                agent="claude-code",
+                model="claude-sonnet-4-6",
                 escalation_model="claude-opus-4-6",
             ),
         ]
         pool = _build_pool_with_specs([d1, d2], specs)
 
         result = await pool.run_wave(
-            _tasks("TASK-1", "TASK-2"), research=_research(), run_id="run-1",
+            _tasks("TASK-1", "TASK-2"),
+            research=_research(),
+            run_id="run-1",
             cwd_for=_cwd_for,
         )
 
@@ -317,7 +302,9 @@ class TestEscalationModel:
         pool = _build_pool_with_specs([d1, d2], specs)
 
         result = await pool.run_wave(
-            _tasks("TASK-1", "TASK-2"), research=_research(), run_id="run-1",
+            _tasks("TASK-1", "TASK-2"),
+            research=_research(),
+            run_id="run-1",
             cwd_for=_cwd_for,
         )
 
@@ -334,10 +321,13 @@ class TestEscalationModel:
         from parrot.flows.dev_loop.models import LLMCodeDispatchProfile
 
         spec = DevAgentSpec(
-            agent="nvidia", model="kimi-k2", escalation_model="kimi-k3-strong",
+            agent="nvidia",
+            model="kimi-k2",
+            escalation_model="kimi-k3-strong",
         )
         worker = PoolWorker(
-            worker_id="development.w1", spec=spec,
+            worker_id="development.w1",
+            spec=spec,
             dispatcher=FakeDispatcher(),
             profile=LLMCodeDispatchProfile(llm="nvidia:kimi-k2"),
         )
@@ -352,9 +342,7 @@ class TestAggregate:
         from parrot.flows.dev_loop.agent_pool import WaveResult
         from parrot.flows.dev_loop.models import WorkerSummary
 
-        output = DevelopmentOutput(
-            files_changed=["a.py"], commit_shas=["sha1"], summary="TASK-1"
-        )
+        output = DevelopmentOutput(files_changed=["a.py"], commit_shas=["sha1"], summary="TASK-1")
         wave = WaveResult(
             completed={"TASK-1": output},
             failed=[],
@@ -453,9 +441,7 @@ class BrokenSignatureDispatcher:
 
     async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kw):
         self.calls.append((brief.task_id, node_id))
-        raise TypeError(
-            "dispatch() got an unexpected keyword argument 'session_host'"
-        )
+        raise TypeError("dispatch() got an unexpected keyword argument 'session_host'")
 
 
 @pytest.mark.asyncio
@@ -463,9 +449,7 @@ async def test_internal_error_is_not_retried_on_another_worker():
     d1, d2 = BrokenSignatureDispatcher(), BrokenSignatureDispatcher()
     pool = _build_pool([d1, d2])
 
-    result = await pool.run_wave(
-        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-    )
+    result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
     assert result.failed == ["TASK-1"]
     # ONE attempt in total: a retry would re-run the same bad call.
@@ -477,9 +461,7 @@ async def test_internal_error_is_logged_at_error_with_a_traceback(caplog):
     pool = _build_pool([BrokenSignatureDispatcher()])
 
     with caplog.at_level(logging.ERROR):
-        await pool.run_wave(
-            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-        )
+        await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
     records = [r for r in caplog.records if "internal error" in r.getMessage()]
     assert records, "the internal error must be logged at ERROR"
@@ -510,9 +492,163 @@ async def test_a_failed_dispatch_is_still_retried():
     d1, d2 = AlwaysFailDispatcher(), AlwaysFailDispatcher()
     pool = _build_pool([d1, d2])
 
-    result = await pool.run_wave(
-        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
-    )
+    result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for)
 
     assert result.failed == ["TASK-1"]
     assert len(d1.calls) + len(d2.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_brief_carries_the_task_file_from_the_index():
+    """Without it the seat guesses the slug — and it guesses the FEATURE slug.
+
+    Regression: a worker's first turn was `read_file
+    sdd/tasks/active/TASK-2719-<feature-slug>.md`, which does not exist;
+    the real artifact is `TASK-2719-tests-fable-research-primary.md`.
+    """
+    briefs = []
+
+    class RecordingDispatcher:
+        async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+            briefs.append(brief)
+            return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+    pool = DevAgentPool.build(
+        DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex")]),
+        lambda spec: (RecordingDispatcher(), object()),
+        4,
+    )
+    task = TaskRef(
+        id="TASK-2719",
+        status="pending",
+        depends_on=[],
+        file="sdd/tasks/active/TASK-2719-tests-fable-research-primary.md",
+    )
+
+    await pool.run_wave([task], research=_research(), run_id="r1", cwd_for=lambda _w: "/tmp/wt")
+
+    assert briefs[0].task_file == "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
+    # The prompt is built from the serialized brief, so the path must
+    # survive `model_dump_json()` — that is what the seat actually reads.
+    assert "TASK-2719-tests-fable-research-primary.md" in briefs[0].model_dump_json()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2730 — DispatchLabels wiring from the pool
+# ---------------------------------------------------------------------------
+
+
+class RecordingLabelsDispatcher:
+    """Accepts labels= and records (node_id, labels) per call."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None, labels=None):
+        self.calls.append((node_id, labels))
+        return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+
+class LegacyDispatcherNoLabels:
+    """Fulfils the pre-FEAT-496 Protocol shape — no labels= parameter."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+        self.calls.append((brief.task_id, node_id))
+        return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+
+@pytest.mark.asyncio
+class TestPoolLabelWiring:
+    async def test_labels_carry_task_identity(self):
+        d = RecordingLabelsDispatcher()
+        pool = _build_pool([d])
+        await pool.run_wave(_tasks("TASK-1857"), research=_research(), run_id="r1", cwd_for=_cwd_for)
+        node_id, labels = d.calls[-1]
+        assert node_id == "development.w1"
+        assert labels.task_id == "TASK-1857"
+        assert labels.seat == "development.w1"
+        assert labels.agent == "claude-code"
+
+    async def test_task_title_and_file_reach_the_labels(self):
+        d = RecordingLabelsDispatcher()
+        pool = _build_pool([d])
+        task = TaskRef(
+            id="TASK-1857",
+            title="Wire the shim",
+            status="pending",
+            depends_on=[],
+            file="sdd/tasks/active/TASK-1857-x.md",
+        )
+        await pool.run_wave([task], research=_research(), run_id="r1", cwd_for=_cwd_for)
+        _node_id, labels = d.calls[-1]
+        assert labels.task_title == "Wire the shim"
+        assert labels.task_file == "sdd/tasks/active/TASK-1857-x.md"
+
+    async def test_two_seats_get_their_own_task(self):
+        """No cross-talk: w1 must never be told it is running w2's task."""
+        d1, d2 = RecordingLabelsDispatcher(), RecordingLabelsDispatcher()
+        pool = _build_pool([d1, d2])
+        await pool.run_wave(_tasks("TASK-1", "TASK-2"), research=_research(), run_id="r1", cwd_for=_cwd_for)
+        _node1, labels1 = d1.calls[-1]
+        _node2, labels2 = d2.calls[-1]
+        assert labels1.task_id != labels2.task_id
+        assert labels1.seat == "development.w1"
+        assert labels2.seat == "development.w2"
+
+    async def test_retry_reports_attempt_two(self):
+        d1 = RecordingLabelsDispatcher()
+        pool = _build_pool([d1])  # single worker: retry lands on itself
+
+        # Force a failure on the first attempt only.
+        state = {"first": True}
+
+        async def flaky_dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None, labels=None):
+            d1.calls.append((node_id, labels))
+            if state["first"]:
+                state["first"] = False
+                raise RuntimeError("boom")
+            return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+        d1.dispatch = flaky_dispatch
+        result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for)
+        assert "TASK-1" in result.completed
+        assert d1.calls[0][1].attempt == 1
+        assert d1.calls[-1][1].attempt == 2
+
+    async def test_escalated_dispatch_reports_escalation_model(self):
+        d1 = RecordingLabelsDispatcher()
+        spec = DevAgentSpec(
+            agent="claude-code",
+            model="claude-sonnet-4-6",
+            escalation_model="claude-opus-4-6",
+        )
+
+        state = {"first": True}
+
+        async def flaky_dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None, labels=None):
+            d1.calls.append((node_id, labels))
+            if state["first"]:
+                state["first"] = False
+                raise RuntimeError("boom")
+            return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+        d1.dispatch = flaky_dispatch
+        pool = _build_pool_with_specs([d1], [spec])
+        await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for)
+        assert d1.calls[-1][1].model == "claude-opus-4-6"
+
+    async def test_dispatcher_without_labels_kwarg_still_works(self):
+        """Labels are best-effort — a duck-typed double must not break."""
+        d = LegacyDispatcherNoLabels()
+        pool = _build_pool([d])
+        result = await pool.run_wave(_tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for)
+        assert "TASK-1" in result.completed
+        assert d.calls == [("TASK-1", "development.w1")]
+
+
+# NOTE: the merge-conflict resolver seat and the single-agent (non-pool)
+# development path are covered by test_development_node.py — agent_pool.py
+# owns no resolver logic (FEAT-496 TASK-2730).

@@ -1,0 +1,117 @@
+# Ruff configuration for the ai-parrot workspace.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Until now the repo had no ruff configuration of any kind: no `ruff.toml`, no
+# `[tool.ruff]` in any `pyproject.toml`, and no CI job invoking ruff. That made
+# "ruff check is clean" an unusable acceptance criterion — results depended on
+# the ruff version and on whatever preset the developer's shell happened to
+# inject, and ruff's own default `line-length` of 88 disagrees with this repo's
+# black setting of 120, so correctly-formatted files were reported as
+# violations.
+#
+# Raised by code review during FEAT-500; see
+# `sdd/specs/bug-workerpool-repl.spec.md` §8 Q4.
+#
+# HOW THIS IS ENFORCED
+# --------------------
+# This repo carries a pre-existing backlog even under ruff's own default rule
+# set: **807 findings** across `packages/` + `scripts/` with the per-file
+# ignores below applied (2008 without them). A whole-repo `ruff check` does
+# NOT pass today, and no acceptance criterion should claim otherwise.
+#
+# The workable gate is:
+#
+#     new and modified files must be clean; the backlog must not grow
+#
+# i.e. compare `ruff check` on the changed files against the same files on the
+# base branch, rather than demanding a clean tree. With this file committed,
+# both sides of that comparison finally use identical settings — which is the
+# whole point.
+#
+# Worked example: FEAT-500 touched 15 files. Under this config they report 11
+# findings, and all 11 are byte-identical to the same files on `dev`
+# (`pythonrepl.py`: F541, F841, 2x E721; `pythonpandas.py`: F401, 6x F541) —
+# on lines that feature never touched. Zero new findings, mechanically shown.
+#
+# GRADUATION PATH
+# ---------------
+# The families below are deliberately NOT in `select` yet. Each is a
+# worthwhile cleanup, and each is large enough to deserve its own PR rather
+# than being smuggled in as a side effect of unrelated work. Counts measured
+# over `packages/` + `scripts/` with ruff 0.16.3:
+#
+#     UP   26005   pyupgrade — dominated by `Optional[X]` / `Dict[...]`
+#                  -> PEP 604 / PEP 585 rewrites
+#     RUF   3759   ruff-specific (unused `noqa`, mutable class defaults, ...)
+#     I     3154   import sorting — only meaningful once `src` (below) is set,
+#                  since `parrot*` are local workspace packages
+#     SIM   1041   flake8-simplify
+#     B      474   flake8-bugbear — smallest, and the best first candidate
+#
+# To graduate one: add the family, fix its findings in a dedicated PR, done.
+
+# Match black (`[tool.black] line-length = 120` in pyproject.toml). Ruff's
+# default of 88 would flag correctly-formatted code repo-wide.
+line-length = 120
+
+# `requires-python = ">=3.11"` in both the workspace root and ai-parrot.
+target-version = "py311"
+
+# First-party roots of this uv workspace, so first-party detection knows that
+# `parrot`, `parrot_tools`, `parrot_loaders` and `parrot_pipelines` are local
+# packages rather than third-party dependencies. This is what makes the repo's
+# existing convention — a blank line between third-party imports and
+# `parrot.*` imports — the *correct* layout instead of an `I001` violation,
+# and it is why `I` can be graduated later without churning every module.
+src = [
+    "packages/ai-parrot/src",
+    "packages/ai-parrot-advisors/src",
+    "packages/ai-parrot-embeddings/src",
+    "packages/ai-parrot-integrations/src",
+    "packages/ai-parrot-loaders/src",
+    "packages/ai-parrot-openlit-bridge/src",
+    "packages/ai-parrot-pipelines/src",
+    "packages/ai-parrot-server/src",
+    "packages/ai-parrot-tools/src",
+    "packages/ai-parrot-visualizations/src",
+    "packages/navrules/src",
+    "packages/parrot-formdesigner/src",
+]
+
+extend-exclude = [
+    # Throwaway measurement/calibration scripts kept as evidence, not shipped
+    # code (e.g. artifacts/logs/*.md reference them).
+    "artifacts",
+    # 312 notebooks live in this repo; linting them is a separate decision.
+    "*.ipynb",
+    # Feature worktrees are second checkouts of the same files — linting them
+    # double-reports everything. Already covered by `.gitignore` +
+    # `respect-gitignore` (on by default); listed explicitly so the guarantee
+    # survives anyone turning that off.
+    ".claude/worktrees",
+]
+
+[lint]
+# Ruff's default selection, pinned explicitly so it cannot drift with the
+# tool's version: pycodestyle import/statement/runtime errors plus all of
+# pyflakes (undefined names, unused imports, redefinitions, f-string
+# mistakes). These catch real defects rather than style opinions — the value
+# of pinning is that a NEW finding in changed code is now unambiguous.
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# PEP 420 namespace packages and deliberate re-export surfaces: these
+# `__init__.py` files exist precisely to re-export names (see
+# `parrot/tools/repl_worker/__init__.py`, which re-exports the whole control
+# protocol). Flagging those as unused imports is a false positive.
+"**/__init__.py" = ["F401", "F403", "F405"]
+
+# Test modules import fixtures/helpers for their side effects, shadow names
+# between parametrised cases, and bind values purely to keep an assertion
+# readable.
+"**/tests/**/*.py" = ["F401", "F811", "F841"]
+"**/conftest.py" = ["F401", "F403"]
+
+# Examples are illustrative snippets, not shipped code.
+"examples/**/*.py" = ["F401", "F841", "E402"]

@@ -105,19 +105,13 @@ class TestPackResults:
         assert packed.tokens_used <= 100
 
     def test_accepts_models(self):
-        results = [
-            WikiSearchResult(
-                node_id="n1", title="T", score=0.9, source="lexical", snippet="S."
-            )
-        ]
+        results = [WikiSearchResult(node_id="n1", title="T", score=0.9, source="lexical", snippet="S.")]
         packed = pack_results(results, budget_tokens=200)
         assert packed.results_packed == 1
         assert "[n1]" in packed.text
 
     def test_dedupes_ids(self):
-        packed = pack_results(
-            [_result(1), _result(1)], budget_tokens=1000
-        )
+        packed = pack_results([_result(1), _result(1)], budget_tokens=1000)
         assert packed.results_packed == 1
 
     def test_single_oversized_stub_still_included(self):
@@ -159,9 +153,7 @@ class TestToolkitProgressiveDisclosure:
             "Neural Networks",
             "A neural network is a computational model. " * 30,
         )
-        result = await wiki_toolkit.search_compact(
-            "test-wiki", "neural networks", budget_tokens=300
-        )
+        result = await wiki_toolkit.search_compact("test-wiki", "neural networks", budget_tokens=300)
         assert result["results_packed"] >= 1
         assert result["tokens_used"] <= 300
         assert "[m1]" in result["context"]
@@ -170,9 +162,7 @@ class TestToolkitProgressiveDisclosure:
 
     @pytest.mark.asyncio
     async def test_read_page_max_tokens_truncates(self, wiki_toolkit):
-        await wiki_toolkit.create_page(
-            "test-wiki", "Big Page", "Lots of content here. " * 500
-        )
+        await wiki_toolkit.create_page("test-wiki", "Big Page", "Lots of content here. " * 500)
         full = await wiki_toolkit.read_page("test-wiki", "m1")
         assert full["truncated"] is False
         capped = await wiki_toolkit.read_page("test-wiki", "m1", max_tokens=50)
@@ -185,11 +175,7 @@ class TestToolkitProgressiveDisclosure:
         # second insert would reuse mock id m1 → give the related page
         # its own id directly in the store
         await wiki_toolkit._store.upsert_pages(  # noqa: SLF001 — test shortcut
-            [
-                WikiPageRecord(
-                    concept_id="rel-1", title="Related", summary="Related page."
-                )
-            ]
+            [WikiPageRecord(concept_id="rel-1", title="Related", summary="Related page.")]
         )
         await wiki_toolkit._store.add_edges([("m1", "rel-1", "references")])
         result = await wiki_toolkit.expand("test-wiki", "m1", rel="references")
@@ -214,6 +200,9 @@ class TestNamespacedIds:
             ("file:x", (None, "file:x")),
             # ``::`` inside a local path is not a namespace prefix.
             ("file:a::b.py", (None, "file:a::b.py")),
+            # FEAT-498 — ``sym:`` symbol ids are accepted as a page-id kind.
+            ("ns::sym:a.py#X", ("ns", "sym:a.py#X")),
+            ("sym:a.py#X", (None, "sym:a.py#X")),
         ],
     )
     def test_split_namespaced_id(self, page_id, expected):

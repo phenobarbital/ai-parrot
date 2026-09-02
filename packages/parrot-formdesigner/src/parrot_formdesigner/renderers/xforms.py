@@ -31,7 +31,13 @@ from ..core.constraints import (
     FieldConstraints,
 )
 from ..core.options import FieldOption
-from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
+from ..core.schema import (
+    FormField,
+    FormSchema,
+    FormSection,
+    FormSubsection,
+    RenderedForm,
+)
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -201,7 +207,7 @@ class XFormsRenderer(AbstractFormRenderer):
         class _XFormsFieldRenderer:
             """Async FieldRenderer stub for XForms field dispatch."""
 
-            def __init__(self_, renderer: "XFormsRenderer") -> None:
+            def __init__(self_, renderer: XFormsRenderer) -> None:
                 self_._r = renderer
 
             async def render(
@@ -329,6 +335,18 @@ class XFormsRenderer(AbstractFormRenderer):
         relevant = _relevant_xpath(field.depends_on)
         if relevant is not None:
             attrs["relevant"] = relevant
+
+        # FEAT-488: emit content-type metadata as plain attributes on
+        # <xf:bind>. An empty accept list would serialize to x-accept-
+        # content-types="", which a client cannot tell apart from "the empty
+        # MIME type is accepted" — so emit only when non-empty, matching how
+        # every other optional attribute here is gated.
+        if field.content_type is not None:
+            attrs["x-content-type"] = field.content_type
+        if field.accept_content_types:
+            attrs["x-accept-content-types"] = ",".join(field.accept_content_types)
+        if field.answer_envelope is not None:
+            attrs["x-answer-envelope"] = field.answer_envelope
 
         bind = etree.Element(_qn("bind"), attrib=attrs)
         binds.append(bind)

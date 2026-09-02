@@ -24,6 +24,39 @@ from parrot.cli.renderer import ResponseRenderer
 from parrot.models.outputs import OutputMode
 from parrot.models.responses import AIMessage
 
+# Minimum level enforced on console handlers while streaming tokens, so
+# that DEBUG/INFO messages from the LLM client don't interleave with the
+# streamed text the user is reading.
+_STREAM_LOG_FLOOR = logging.WARNING
+
+
+def _mute_stream_loggers() -> dict[int, int]:
+    """Raise every console (StreamHandler) handler to WARNING.
+
+    Returns a ``{handler_id: original_level}`` map so that
+    :func:`_restore_stream_loggers` can undo the change.
+    """
+    saved: dict[int, int] = {}
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(
+            handler, logging.FileHandler
+        ):
+            hid = id(handler)
+            saved[hid] = handler.level
+            if handler.level < _STREAM_LOG_FLOOR:
+                handler.setLevel(_STREAM_LOG_FLOOR)
+    return saved
+
+
+def _restore_stream_loggers(saved: dict[int, int]) -> None:
+    """Restore handler levels saved by :func:`_mute_stream_loggers`."""
+    root = logging.getLogger()
+    for handler in root.handlers:
+        original = saved.get(id(handler))
+        if original is not None:
+            handler.setLevel(original)
+
 
 class REPLConfig(BaseModel):
     """Configuration for an agent REPL session.
@@ -199,12 +232,19 @@ class AgentREPL:
         streaming API.  Records a summary turn in ``self.history`` after
         the stream completes.
 
+        While chunks are being written to stdout, console log handlers
+        are temporarily raised to WARNING so that DEBUG/INFO messages
+        from the LLM client do not interleave with the streamed text.
+
         Args:
             query: The user's input string.
         """
         self.renderer.render_stream_start()
         accumulated = ""
         final_response = None
+
+        # Mute noisy loggers while tokens stream to the terminal.
+        saved_levels = _mute_stream_loggers()
         try:
             stream: AsyncIterator = self.bot.ask_stream(
                 question=query,
@@ -235,6 +275,8 @@ class AgentREPL:
         except Exception as exc:
             self.renderer.render_stream_end(None)
             raise exc
+        finally:
+            _restore_stream_loggers(saved_levels)
 
         self.renderer.render_stream_end(final_response)
 

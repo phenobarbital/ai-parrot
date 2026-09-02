@@ -22,7 +22,6 @@ from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.base import AbstractFormRenderer
 from parrot_formdesigner.renderers.xforms import XFormsRenderer
 
-
 XF = "{http://www.w3.org/2002/xforms}"
 
 
@@ -94,11 +93,7 @@ async def test_required_field_has_bind(simple_form):
 async def test_constraint_min_max(simple_form):
     out = await XFormsRenderer().render(simple_form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("age")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("age"))
     constraint = bind.get("constraint", "")
     assert ">= 0" in constraint
     assert "<= 120" in constraint
@@ -125,11 +120,7 @@ async def test_max_length_constraint():
     )
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("comment")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("comment"))
     assert "string-length(.) <= 10" in bind.get("constraint", "")
 
 
@@ -247,11 +238,7 @@ async def test_relevant_xpath_for_simple_dependency():
     )
     out = await XFormsRenderer().render(form)
     root = etree.fromstring(out.content)
-    bind = next(
-        b
-        for b in root.findall(f".//{XF}bind")
-        if b.get("nodeset", "").endswith("child")
-    )
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("child"))
     rel = bind.get("relevant", "")
     assert "parent" in rel
     assert "show" in rel
@@ -271,3 +258,106 @@ async def test_passes_lxml_parse(simple_form):
     out = await XFormsRenderer().render(simple_form)
     parsed = etree.fromstring(out.content)
     assert parsed is not None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-488 — content_type / accept_content_types on <xf:bind>
+# ---------------------------------------------------------------------------
+
+
+def _make_single_field_form(field: FormField) -> FormSchema:
+    """Return a minimal FormSchema wrapping *field* in one section."""
+    return FormSchema(
+        form_id="feat488",
+        title={"en": "Feat 488 test"},
+        sections=[
+            FormSection(
+                section_id="s",
+                fields=[field],
+            )
+        ],
+    )
+
+
+async def test_xforms_bind_has_x_content_type():
+    """xf:bind carries x-content-type when field.content_type is set."""
+    field = FormField(
+        field_id="notes",
+        field_type=FieldType.TEXT_AREA,
+        label={"en": "Notes"},
+        content_type="text/markdown",
+    )
+    form = _make_single_field_form(field)
+    out = await XFormsRenderer().render(form)
+    root = etree.fromstring(out.content)
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("notes"))
+    assert bind.get("x-content-type") == "text/markdown"
+
+
+async def test_xforms_bind_no_x_content_type_when_none():
+    """xf:bind omits x-content-type when field.content_type is None."""
+    field = FormField(
+        field_id="notes",
+        field_type=FieldType.TEXT_AREA,
+        label={"en": "Notes"},
+    )
+    form = _make_single_field_form(field)
+    out = await XFormsRenderer().render(form)
+    root = etree.fromstring(out.content)
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("notes"))
+    assert bind.get("x-content-type") is None
+
+
+async def test_xforms_bind_x_accept_content_types_comma_joined():
+    """xf:bind emits accept_content_types as comma-joined string."""
+    field = FormField(
+        field_id="answer",
+        field_type=FieldType.TEXT_AREA,
+        label={"en": "Answer"},
+        accept_content_types=["text/plain", "application/json"],
+    )
+    form = _make_single_field_form(field)
+    out = await XFormsRenderer().render(form)
+    root = etree.fromstring(out.content)
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("answer"))
+    assert bind.get("x-accept-content-types") == "text/plain,application/json"
+
+
+async def test_xforms_bind_no_x_accept_content_types_when_none():
+    """xf:bind omits x-accept-content-types when field.accept_content_types is None."""
+    field = FormField(
+        field_id="answer",
+        field_type=FieldType.TEXT_AREA,
+        label={"en": "Answer"},
+    )
+    form = _make_single_field_form(field)
+    out = await XFormsRenderer().render(form)
+    root = etree.fromstring(out.content)
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("answer"))
+    assert bind.get("x-accept-content-types") is None
+
+
+async def test_xforms_bind_both_content_type_attrs():
+    """xf:bind emits both x-content-type and x-accept-content-types when both are set."""
+    field = FormField(
+        field_id="doc",
+        field_type=FieldType.TEXT_AREA,
+        label={"en": "Document"},
+        content_type="text/html",
+        accept_content_types=["text/html", "text/markdown", "text/plain"],
+    )
+    form = _make_single_field_form(field)
+    out = await XFormsRenderer().render(form)
+    root = etree.fromstring(out.content)
+    bind = next(b for b in root.findall(f".//{XF}bind") if b.get("nodeset", "").endswith("doc"))
+    assert bind.get("x-content-type") == "text/html"
+    assert bind.get("x-accept-content-types") == "text/html,text/markdown,text/plain"
+
+
+async def test_xforms_existing_fields_unaffected(simple_form):
+    """Fields without content_type metadata produce unchanged xf:bind output."""
+    out = await XFormsRenderer().render(simple_form)
+    root = etree.fromstring(out.content)
+    for bind in root.findall(f".//{XF}bind"):
+        assert bind.get("x-content-type") is None
+        assert bind.get("x-accept-content-types") is None

@@ -1,0 +1,242 @@
+{
+  "feature": "html-renderer-design-system",
+  "feature_id": "FEAT-493",
+  "spec": "sdd/specs/html-renderer-design-system.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-01T18:54:41.162401+00:00",
+  "completed_at": "2026-09-02T09:54:14+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2706",
+      "slug": "themeconfig-layout-tokens",
+      "title": "ThemeConfig layout tokens + CSS-variable emission",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root of the graph: every other task composes CSS from these tokens.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T20:49:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2706-themeconfig-layout-tokens.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2707",
+      "slug": "design-system-composer",
+      "title": "Design-system package — composer, base CSS, analytics layout, packaging",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2706"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates the assets and DesignSystem; everything downstream imports it.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T20:57:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2707-design-system-composer.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2708",
+      "slug": "layout-report-print-css",
+      "title": "layout-report.css (1:1 legacy migration) + layout-print.css",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2707"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only new .css files + the composer's asset table — disjoint from TASK-2709's renderer edits, so the two can run concurrently after 2707.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T21:04:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2708-layout-report-print-css.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2709",
+      "slug": "shared-document-shell",
+      "title": "Shared document shell + composer wiring in both A2UI HTML renderers",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2707"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches the two renderer modules only — disjoint from TASK-2708's CSS files.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T21:19:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2709-shared-document-shell.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2710",
+      "slug": "variant-role-class-mapping",
+      "title": "Honour parrot_variant/parrot_role/unit/trend + KPI grid + (theme, layout) resolution",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2709"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the same two renderer modules as 2709 and must land after it.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T22:21:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2710-variant-role-class-mapping.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2711",
+      "slug": "rich-datatable",
+      "title": "Rich DataTable — typed numerics, formatting, sticky header, totals, truncation, search/pagination",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2710"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares interactive_html.py/ssr_html.py with TASK-2715; sequencing avoids conflicts in _render_datatable and _BEHAVIOR_JS.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T23:06:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2711-rich-datatable.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2712",
+      "slug": "infographic-html-migration",
+      "title": "Migrate the infographic HTML lane onto the composer",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2708"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sole owner of formats/infographic_html.py — no file overlap with 2713/2714.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-01T23:45:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2712-infographic-html-migration.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2713",
+      "slug": "pdf-print-layout",
+      "title": "PDFRenderer forces the print layout + empirical WeasyPrint verification",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2708",
+        "TASK-2709"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sole owner of pdf.py + layout-print.css — no overlap with 2712/2714.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-02T00:16:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2713-pdf-print-layout.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2714",
+      "slug": "recipe-runner-theme-layout",
+      "title": "RenderSpec.layout + RecipeRunner passes the (theme, layout) pair to the renderer",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2709"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sole owner of runner.py + recipes/models.py (core) — no overlap with 2712/2713.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-02T00:46:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2714-recipe-runner-theme-layout.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2715",
+      "slug": "filterbar-composite",
+      "title": "FilterBar composite + lowering golden + honest degradation on JS-less surfaces",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2710"
+      ],
+      "parallel": false,
+      "parallelism_notes": "The only task permitted to add a catalog/ file and a golden fixture; also edits ssr_html.py, so it is sequenced against TASK-2711.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-02T01:32:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2715-filterbar-composite.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2716",
+      "slug": "filterbar-client-filtering",
+      "title": "Interactive multiselect UI + client-side dataModel filtering",
+      "feature_id": "FEAT-493",
+      "feature": "html-renderer-design-system",
+      "spec": "sdd/specs/html-renderer-design-system.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2715",
+        "TASK-2711"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Last in the graph and the spec's designated cut line: the only non-presentational module, and nothing depends on it.",
+      "assigned_to": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
+      "completed_at": "2026-09-02T02:05:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2716-filterbar-client-filtering.md",
+      "verification": "verified"
+    }
+  ]
+}

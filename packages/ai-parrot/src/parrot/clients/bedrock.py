@@ -997,10 +997,19 @@ class BedrockConverseBase(AbstractClient):
         assistant_response_text = "".join(block.get("text", "") for block in content_blocks if "text" in block)
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(result.get("stopReason"), model=resolved_model)
                 if output_config.custom_parser:
                     final_output = await output_config.custom_parser(assistant_response_text)
                 else:
-                    final_output = await self._parse_structured_output(assistant_response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        assistant_response_text,
+                        output_config,
+                        finish_reason=result.get("stopReason"),
+                        model=resolved_model,
+                    )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = assistant_response_text
         elif output_schema:
@@ -1067,21 +1076,33 @@ class BedrockConverseBase(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: bool = True,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
         thinking_budget: Optional[int] = None,
         guardrail_id: Optional[str] = None,
         guardrail_version: Optional[str] = None,
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
-        """Stream a Bedrock Converse response.
+        """Stream a Bedrock Converse response with tool-use support.
 
         Yields successive ``str`` chunks (mapped from ``contentBlockDelta``
         events), then a single final :class:`AIMessage` sentinel — the same
         streaming convention followed by every other client
         (:meth:`AnthropicClient.ask_stream`, etc.).
 
+        When the model requests a tool during streaming, the tool is executed
+        between streaming rounds: text from the current round is yielded as
+        it arrives, then the tool executes (a brief pause the caller sees as
+        a gap between chunks), and a new streaming round begins with the
+        tool result injected into the conversation. This mirrors the
+        ``while True`` tool loop in :meth:`ask` and the existing streaming
+        tool support in the Google client.
+
         Args:
+            use_tools: Whether to include tool definitions and run the
+                streaming tool-call loop.  Defaults to ``True``.
             thinking_budget: See :meth:`ask` — enables extended thinking via
                 ``additionalModelRequestFields.thinking`` (Module 5),
                 including the FEAT-482 Module 3 adaptive-shape selection
@@ -1090,15 +1111,6 @@ class BedrockConverseBase(AbstractClient):
                 to the identifier passed to ``__init__``.
             guardrail_version: Per-call guardrail version override. Falls
                 back to the version passed to ``__init__``.
-
-        Note:
-            Tool-use is not resumed mid-stream in this Core implementation —
-            if the model requests a tool during streaming, the tool-use
-            content block is still yielded as text-less, and the final
-            ``AIMessage`` carries ``stop_reason="tool_use"`` with no
-            tool_calls populated. Full streaming tool-use loops are deferred
-            to a future iteration; ``ask()`` should be used when tool-use is
-            required.
         """
         await self._ensure_client()
 
@@ -1148,28 +1160,132 @@ class BedrockConverseBase(AbstractClient):
             for tool in tools:
                 self.register_tool(tool)
 
-        if self.enable_tools:
+        if use_tools and self.enable_tools:
             tool_specs = self._prepare_tools()
             if tool_specs:
                 payload["toolConfig"] = {"tools": tool_specs}
 
+        # ── Streaming tool-call loop ──────────────────────────────────
+        # Mirrors the while-True loop in ask() (line ~870). Each round
+        # streams text chunks to the caller; when the model stops with
+        # stopReason="tool_use", tools are executed between rounds and
+        # the conversation continues.
+        all_tool_calls: List[ToolCall] = []
         accumulated_text = ""
         stop_reason: Optional[str] = None
         usage_dict: Dict[str, Any] = {}
+        _max_tool_rounds = 25  # safety cap, same depth as ask()
 
-        stream = await self._sdk_stream(payload)
-        async for event in stream:
-            delta = event.get("contentBlockDelta", {}).get("delta", {})
-            text_chunk = delta.get("text")
-            if text_chunk:
-                accumulated_text += text_chunk
-                yield text_chunk
-            if "messageStop" in event:
-                stop_reason = event["messageStop"].get("stopReason")
-            if "metadata" in event:
-                usage_dict = event["metadata"].get("usage", {})
+        for _round in range(_max_tool_rounds):
+            # ── Stream one round ──────────────────────────────────────
+            round_text = ""
+            round_content_blocks: List[Dict[str, Any]] = []
+            # Collect tool-use blocks from stream events.
+            _current_tool_block: Optional[Dict[str, str]] = None
+            _tool_use_blocks: List[Dict[str, Any]] = []
 
-        bedrock_messages.append({"role": "assistant", "content": [{"text": accumulated_text}]})
+            stream = await self._sdk_stream(payload)
+            async for event in stream:
+                # --- Text chunks: yield immediately ---
+                delta = event.get("contentBlockDelta", {}).get("delta", {})
+                text_chunk = delta.get("text")
+                if text_chunk:
+                    round_text += text_chunk
+                    accumulated_text += text_chunk
+                    yield text_chunk
+
+                # --- Tool-use block collection ---
+                if "contentBlockStart" in event:
+                    start_body = event["contentBlockStart"].get("start", {})
+                    if "toolUse" in start_body:
+                        _current_tool_block = {
+                            "toolUseId": start_body["toolUse"].get("toolUseId", ""),
+                            "name": start_body["toolUse"].get("name", ""),
+                            "input_json": "",
+                        }
+                # Accumulate streamed tool-input JSON fragments.
+                tool_use_delta = delta.get("toolUse")
+                if tool_use_delta and _current_tool_block is not None:
+                    _current_tool_block["input_json"] += tool_use_delta.get("input", "")
+                if "contentBlockStop" in event and _current_tool_block is not None:
+                    _tool_use_blocks.append(_current_tool_block)
+                    _current_tool_block = None
+
+                if "messageStop" in event:
+                    stop_reason = event["messageStop"].get("stopReason")
+                if "metadata" in event:
+                    usage_dict = event["metadata"].get("usage", {})
+
+            # ── Build the assistant content blocks for this round ─────
+            if round_text:
+                round_content_blocks.append({"text": round_text})
+            for tb in _tool_use_blocks:
+                try:
+                    tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
+                except (json.JSONDecodeError, TypeError):
+                    tool_input = {}
+                round_content_blocks.append({
+                    "toolUse": {
+                        "toolUseId": tb["toolUseId"],
+                        "name": tb["name"],
+                        "input": tool_input,
+                    }
+                })
+
+            bedrock_messages.append({"role": "assistant", "content": round_content_blocks})
+
+            # ── Tool-use round: execute tools, loop ───────────────────
+            if stop_reason == "tool_use" and _tool_use_blocks:
+                tool_result_blocks: List[Dict[str, Any]] = []
+                for tb in _tool_use_blocks:
+                    try:
+                        tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
+                    except (json.JSONDecodeError, TypeError):
+                        tool_input = {}
+                    tc = ToolCall(
+                        id=tb["toolUseId"],
+                        name=tb["name"],
+                        arguments=tool_input,
+                    )
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tb["name"], tool_input)
+                        tc.result = tool_result
+                        tc.execution_time = time.time() - start_time
+                        tool_result_blocks.append({
+                            "toolResult": {
+                                "toolUseId": tb["toolUseId"],
+                                "content": [{"text": str(tool_result)}],
+                            }
+                        })
+                    except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = bedrock_messages
+                            e.tool_call_id = tb["toolUseId"]
+                            e.agent_name = resolved_model
+                            raise
+                        tc.error = str(e)
+                        tool_result_blocks.append({
+                            "toolResult": {
+                                "toolUseId": tb["toolUseId"],
+                                "content": [{"text": str(e)}],
+                                "status": "error",
+                            }
+                        })
+                    all_tool_calls.append(tc)
+
+                bedrock_messages.append({"role": "user", "content": tool_result_blocks})
+                payload["messages"] = bedrock_messages
+                # Reset for next round — stop_reason will be overwritten.
+                stop_reason = None
+            else:
+                # No tool call (or tools disabled) — done.
+                break
+
+        tools_used = [tc.name for tc in all_tool_calls]
         await self._update_conversation_memory(
             user_id,
             session_id,
@@ -1179,7 +1295,7 @@ class BedrockConverseBase(AbstractClient):
             turn_id,
             original_prompt,
             accumulated_text,
-            [],
+            tools_used,
         )
 
         synthetic_response = {
@@ -1194,6 +1310,7 @@ class BedrockConverseBase(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
+            tool_calls=all_tool_calls,
         )
 
     async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
@@ -1429,7 +1546,7 @@ class BedrockConverseBase(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1462,6 +1579,7 @@ class BedrockConverseBase(AbstractClient):
         Raises:
             InvokeError: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             await self._ensure_client()
 
@@ -1494,10 +1612,17 @@ class BedrockConverseBase(AbstractClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(result), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(result),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_bedrock(result.get("usage", {}))
 

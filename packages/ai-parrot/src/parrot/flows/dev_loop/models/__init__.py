@@ -31,9 +31,11 @@ from parrot.flows.dev_loop.models.base import (
     DevAgentSpec,
     DevelopmentOutput,
     DispatchEvent,
+    DispatchLabels,
     FeatureBrief,
     FeedbackDecision,
     FlowtaskCriterion,
+    JudgeBackend,
     JudgePanelConfig,
     JudgeSpec,
     LogSource,
@@ -66,10 +68,8 @@ from parrot.flows.dev_loop.models.codex import (
 )
 from parrot.flows.dev_loop.models.gemini import (
     GeminiCodeDispatchProfile,
-    GeminiCodeReviewProfile,
 )
 from parrot.flows.dev_loop.models.google_coding import (
-    GoogleCodingCodeReviewProfile,
     GoogleCodingDispatchProfile,
 )
 from parrot.flows.dev_loop.models.grok import GrokCodeDispatchProfile
@@ -100,14 +100,14 @@ __all__ = [
     "DevAgentSpec",
     "DevelopmentOutput",
     "DispatchEvent",
+    "DispatchLabels",
     "FeatureBrief",
     "FeedbackDecision",
     "FlowtaskCriterion",
     "GeminiCodeDispatchProfile",
-    "GeminiCodeReviewProfile",
-    "GoogleCodingCodeReviewProfile",
     "GoogleCodingDispatchProfile",
     "GrokCodeDispatchProfile",
+    "JudgeBackend",
     "JudgePanelConfig",
     "JudgeSpec",
     "LLMCodeDispatchProfile",

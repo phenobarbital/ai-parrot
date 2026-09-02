@@ -60,6 +60,10 @@ class TransformersClient(AbstractClient):
 
     client_type: str = "transformers"
     client_name: str = "transformers"
+    # Local transformer generation is wall-clock expensive and these models
+    # have small context windows, so keep invoke()'s budget conservative.
+    # Raise per-instance with ``invoke_max_tokens=``.
+    _invoke_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -594,7 +598,7 @@ class TransformersClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -605,6 +609,7 @@ class TransformersClient(AbstractClient):
         so this falls back to schema-in-system-prompt when output_type
         or structured_output is provided.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         config = self._build_invoke_structured_config(output_type, structured_output)
         resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
 

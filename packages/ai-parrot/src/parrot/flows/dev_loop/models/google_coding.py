@@ -1,4 +1,9 @@
-"""Google Antigravity (agy) dispatch/review profiles for the dev-loop flow."""
+"""Google Antigravity (agy) dispatch profile for the dev-loop flow.
+
+Development seat only. ``agy`` remains a supported CODING agent; its
+review profile was removed with ``GoogleCodingCodeReviewDispatcher``
+after the reviewer ban (see ``models/base.py``'s ``JudgeBackend``).
+"""
 
 from __future__ import annotations
 
@@ -20,18 +25,4 @@ class GoogleCodingDispatchProfile(BaseModel):
     mode: Literal["accept-edits", "plan"] = "accept-edits"
     dangerously_skip_permissions: bool = True
     sandbox: bool = True
-    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
-
-
-
-class GoogleCodingCodeReviewProfile(GoogleCodingDispatchProfile):
-    """Review profile for the GoogleCoding code review dispatcher.
-
-    Inherits ``GoogleCodingDispatchProfile`` for write-enabled review use case.
-    """
-
-    subagent: Literal["sdd-worker"] = "sdd-worker"
-    model: str = "auto"
-    sandbox: bool = False
-    dangerously_skip_permissions: bool = True
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)

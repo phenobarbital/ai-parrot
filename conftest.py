@@ -22,10 +22,44 @@ import os
 import re
 import types
 
+import importlib.util
+
 import pytest
 
 # Worktree root — the directory that contains THIS file.
 _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_fspath_guard(repo_root: str):
+    """Import ``tests/mock_fspath_guard.py`` by path, not by module name.
+
+    It cannot be imported as ``tests.mock_fspath_guard``: nine directories
+    in this workspace are ``tests`` packages, and which one the name
+    resolves to depends on pytest's rootdir and sys.path order — so the
+    import would be ambiguous, and silently wrong rather than loudly
+    broken. Loading by absolute path removes the question. The fixed
+    ``sys.modules`` key means every conftest that calls this shares ONE
+    module instance instead of registering the guard twice.
+
+    Args:
+        repo_root: Absolute path of the repository/worktree root.
+
+    Returns:
+        The loaded guard module.
+    """
+    name = "parrot_mock_fspath_guard"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    path = os.path.join(repo_root, "tests", "mock_fspath_guard.py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise ImportError(f"cannot load the MagicMock/ guard from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
 
 
 # ---------------------------------------------------------------------------
@@ -34,14 +68,13 @@ _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
 # A MagicMock reaching a filesystem path materialises a ``MagicMock/<mock
 # name>/<id>`` tree under the CWD (``MagicMock.__fspath__()``).  Importing
 # these two names registers the autouse cleanup fixture and the session-level
-# sweep that delete it; see mock_fspath_guard.py for the full rationale.
+# sweep that delete it; see tests/mock_fspath_guard.py for the full rationale.
 if _WORKTREE_ROOT not in sys.path:
     sys.path.insert(0, _WORKTREE_ROOT)
 
-from mock_fspath_guard import (
-    _cleanup_mock_fspath_artifacts,  # noqa: F401 - registers the fixture
-    pytest_sessionfinish,  # noqa: F401 - registers the session hook
-)
+_guard = _load_fspath_guard(_WORKTREE_ROOT)
+_cleanup_mock_fspath_artifacts = _guard._cleanup_mock_fspath_artifacts  # noqa: F401 - registers the fixture
+pytest_sessionfinish = _guard.pytest_sessionfinish  # noqa: F401 - registers the session hook
 
 # Prepend the worktree package src directories so they shadow the main-repo
 # editable-install .pth entries.

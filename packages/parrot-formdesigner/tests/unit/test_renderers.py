@@ -985,3 +985,51 @@ async def test_remote_response_validator_propagates_failure():
     assert result.is_valid is False
     assert "summary" in result.errors
     assert any("remote response" in e.lower() for e in result.errors["summary"])
+
+
+# ---------------------------------------------------------------------------
+# FEAT-488: JSON Schema renderer content_type tests
+# ---------------------------------------------------------------------------
+
+class TestJsonSchemaRendererContentType:
+    """Tests for JSON Schema renderer's x-content-type and x-accept-content-types (FEAT-488)."""
+
+    @pytest.mark.asyncio
+    async def test_jsonschema_emits_content_type(self):
+        """x-content-type present when field declares it."""
+        from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+
+        renderer = JsonSchemaRenderer()
+        field = FormField(
+            field_id="notes",
+            field_type=FieldType.TEXT_AREA,
+            label="Notes",
+            content_type="text/markdown",
+        )
+        form = FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="s", fields=[field])]
+        )
+        result = await renderer.render(form)
+        prop = result.content["properties"]["notes"]
+        assert prop.get("x-content-type") == "text/markdown"
+
+    @pytest.mark.asyncio
+    async def test_jsonschema_omits_content_type_when_none(self):
+        """Key absent when content_type is None."""
+        from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+
+        renderer = JsonSchemaRenderer()
+        field = FormField(
+            field_id="notes",
+            field_type=FieldType.TEXT_AREA,
+            label="Notes",
+        )
+        form = FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="s", fields=[field])]
+        )
+        result = await renderer.render(form)
+        prop = result.content["properties"]["notes"]
+        assert "x-content-type" not in prop
+

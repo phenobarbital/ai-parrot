@@ -53,6 +53,7 @@ from ..core.checkpoint.store.base import CheckpointStore
 from ..core.checkpoint.recovery import get_recovery_service
 from ..core.checkpoint.store.factory import get_checkpoint_store
 from ..core.storage import PersistenceMixin
+from ..core.storage.backends import ResultStorage
 from ..core.storage.synthesis import synthesize_results
 from ..core.types import DependencyResults
 from parrot.conf import FLOW_CHECKPOINT_HISTORY, FLOW_CHECKPOINT_REDIS_TTL
@@ -222,6 +223,9 @@ class AgentsFlow(PersistenceMixin):
 
     Args:
         name: Human-readable name for this flow instance (used in logs).
+        persist_results: Opt-out for result persistence (FEAT-147).
+        result_storage: Backend name/instance for ``ResultStorage``
+            resolution; ignored when ``persist_results`` is ``False``.
         definition: Optional ``FlowDefinition`` captured for reference.
         agent_registry: Optional ``AgentRegistry`` bound to the flow's
             execution context. Used by ``from_definition`` (TASK-1068) for
@@ -313,9 +317,25 @@ class AgentsFlow(PersistenceMixin):
         checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
         flow_id: Optional[str] = None,
+        persist_results: bool = True,
+        result_storage: Union[str, "ResultStorage", None] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        # Result persistence (FEAT-147). PersistenceMixin deliberately has no
+        # __init__ — every attribute it reads is owned by the host class — so
+        # inheriting it is not enough, and this class only inherited it. The
+        # cost was invisible: the mixin reads through getattr defaults, so
+        # `_persist_results` silently fell back to True (persistence always
+        # on, impossible to opt out) while `persist_results=False` landed in
+        # **kwargs and reached object.__init__, raising "object.__init__()
+        # takes exactly one argument". Mirrors AgentCrew.__init__ exactly.
+        self._persist_results: bool = persist_results
+        self._result_storage_arg: Union[str, "ResultStorage", None] = result_storage
+        self._result_storage: Optional["ResultStorage"] = (
+            result_storage if isinstance(result_storage, ResultStorage) else None
+        )
+        self._persist_tasks: Set[asyncio.Task] = set()
         self.name = name
         self._definition = definition
         self._agent_registry = agent_registry

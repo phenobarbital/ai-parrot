@@ -35,14 +35,25 @@ See ``examples/budget_variance_infographic.py`` for the end-to-end runner and
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, List, Optional, Union
+from typing import Any, ClassVar, List, Literal, Optional, Union
 
 from aiohttp import web
 from parrot.bots.data import PandasAgent
 from parrot.bots.mixins import InfographicAuthoringMixin, NarrativeMixin
-from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec
+from parrot.outputs.a2ui.recipes.models import (
+    InfographicRecipe,
+    LayoutSpec,
+    NarrativeSpec,
+)
 from parrot.registry import register_agent
-from parrot.tools.infographic_sections import SectionDescriptor, SectionSpec
+from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema
+from parrot.tools.infographic_recipes.runner import RecipeRunner
+from parrot.tools.infographic_sections import (
+    GapReport,
+    SectionDescriptor,
+    SectionSpec,
+)
+from pydantic import Field
 
 # Retained for documentation only — the A2UI profiles below no longer use a
 # data-splice/jinja template; kept as the reference dashboard's fixed
@@ -80,6 +91,33 @@ FINANCE_COLUMNS = [
     "ebitda_actual",
     "ebitda_budget",
 ]
+
+
+def _build_default_artifact_store() -> Any:
+    """Build an offline-safe default ``ArtifactStore`` (no network/DB).
+
+    Mirrors ``agents/flex_dashboard.py``'s helper of the same name
+    (FEAT-491). Without a default, an instance created through the real
+    discovery path — ``AgentRegistry._load_modules_from_directory`` or an
+    ``agents.yaml`` entry, neither of which passes ``artifact_store=`` —
+    leaves ``InfographicAuthoringMixin._infographic_toolkit`` as ``None``,
+    and every tier-2 call (``publish_recipe``, ``publish_report_recipe``,
+    ``build_refresh_tool``) raises ``RuntimeError: no InfographicToolkit is
+    wired``. Only the hand-wired example/test path worked before this.
+
+    Construction is cheap (no I/O): ``ConversationSQLiteBackend.__init__``
+    only stores the path; the schema is created lazily by its async
+    ``initialize()``.
+
+    Returns:
+        A ready-to-use :class:`~parrot.storage.artifacts.ArtifactStore`.
+    """
+    from parrot.storage.artifacts import ArtifactStore
+    from parrot.storage.backends import build_overflow_store
+    from parrot.storage.backends.sqlite import ConversationSQLiteBackend
+
+    backend = ConversationSQLiteBackend(path=":memory:")
+    return ArtifactStore(backend, build_overflow_store())
 
 
 @register_agent(name="finance_reporter")
@@ -129,8 +167,25 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         ),
     }
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Configure the agent's LLM default.
+    def __init__(
+        self,
+        *args: Any,
+        artifact_store: Optional[Any] = None,
+        recipe_store: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Configure the agent's LLM default and its authoring stores.
+
+        Args:
+            artifact_store: Optional pre-built ``ArtifactStore`` forwarded to
+                ``InfographicAuthoringMixin`` (which builds the
+                ``InfographicToolkit`` from it). Defaults to an offline-safe
+                local store — see :func:`_build_default_artifact_store` for
+                why the default is required rather than merely convenient.
+            recipe_store: Optional recipe store forwarded to
+                ``InfographicAuthoringMixin`` (enables tier-2
+                ``publish_recipe`` and the toolkit's recipe tools).
+            **kwargs: Forwarded to the cooperative ``__init__`` chain.
 
         FEAT-420: no longer defaults ``template_dirs`` to
         ``DEFAULT_TEMPLATE_DIR`` — ``InfographicToolkit``'s ``TemplateEngine``
@@ -146,6 +201,8 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         """
         super().__init__(
             *args,
+            artifact_store=artifact_store or _build_default_artifact_store(),
+            recipe_store=recipe_store,
             llm=kwargs.pop("llm", None) or self.llm,
             **kwargs,
         )
@@ -324,3 +381,213 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             ),
             narrative=cls._narrative_spec(),
         )
+
+    # ── Recipe publication (tier 2) ─────────────────────────────────────
+
+    @classmethod
+    def _profile(cls, profile: str) -> tuple[str, SectionDescriptor, str, str]:
+        """Resolve a profile name to its (recipe_name, descriptor, kind, title).
+
+        Args:
+            profile: ``"report"`` or ``"dashboard"``.
+
+        Returns:
+            A 4-tuple of recipe name, section descriptor, ``UISurfaceKind``
+            value, and human-readable surface title.
+
+        Raises:
+            ValueError: On an unknown profile name.
+        """
+        if profile == "report":
+            return (
+                cls.REPORT_RECIPE_NAME,
+                cls.report_descriptor(),
+                "infographic",
+                "Daily Budget Variance — Executive Summary",
+            )
+        if profile == "dashboard":
+            return (
+                cls.DASHBOARD_RECIPE_NAME,
+                cls.dashboard_descriptor(),
+                "dashboard",
+                "Daily Budget Variance Dashboard",
+            )
+        raise ValueError(f"Unknown profile {profile!r}; expected 'report' or 'dashboard'.")
+
+    async def publish_report_recipe(self, overwrite: bool = False) -> Union[InfographicRecipe, GapReport]:
+        """Publish the ``Report`` profile under :attr:`REPORT_RECIPE_NAME`."""
+        return await self.publish_recipe(self.REPORT_RECIPE_NAME, self.report_descriptor(), overwrite=overwrite)
+
+    async def publish_dashboard_recipe(self, overwrite: bool = False) -> Union[InfographicRecipe, GapReport]:
+        """Publish the ``Infographic`` profile under :attr:`DASHBOARD_RECIPE_NAME`."""
+        return await self.publish_recipe(self.DASHBOARD_RECIPE_NAME, self.dashboard_descriptor(), overwrite=overwrite)
+
+    # ── Surface publication (FEAT-492 rehydration plane) ────────────────
+
+    async def publish_profile_surface(
+        self,
+        profile: Literal["report", "dashboard"] = "dashboard",
+        *,
+        pctx: Any,
+        params: Optional[dict] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        surface_store: Optional[Any] = None,
+        overwrite: bool = False,
+    ) -> str:
+        """Replay a published recipe and persist the result as a UI surface.
+
+        Closes the gap between this agent's tier-2 recipes and the FEAT-492
+        rehydration plane: without this, nothing ever writes a
+        ``navigator.ui_surfaces`` row for a finance profile, so no finance
+        dashboard is bookmarkable via ``GET /api/v1/ui/surfaces/{id}``, the
+        ``A2UIHandler`` mirror ``GET /api/v1/agents/{agent_id}/a2ui/surfaces/
+        {id}``, or refreshable via ``POST .../refresh``.
+
+        Uses the bridge FEAT-492 G8 added for exactly this path —
+        ``RecipeRunner.run(include_envelope=True)`` exposes the assembled
+        ``CreateSurface`` at ``RenderedArtifact.metadata["source_envelope"]``,
+        so no second ArtifactStore round-trip is needed. ``recipe_name`` is
+        always threaded through, which is what makes the persisted row
+        ``refreshable`` (``UISurfaceRecord.refreshable``).
+
+        .. warning::
+
+           Blocked on a core A2UI bug until the ``parrot_optional`` lowering
+           fix lands: ``build_infographic``/``build_surface`` never propagate
+           ``LayoutSpec.metadata.extensions.parrot_optional`` onto the wire
+           ``Component``, so ``baking._optional_paths`` returns an empty set
+           and BOTH profiles raise ``BakeError: Unresolvable data-model path
+           '/narrative'`` at render time whenever the narrative is absent
+           (no narrator configured, or the figure guard discarded it). This
+           method is correct as written and starts working the moment that
+           fix lands; see ``sdd/specs/a2ui-optional-binding-lowering.spec.md``.
+
+        Args:
+            profile: Which published recipe to replay.
+            pctx: The invoker's ``PermissionContext``. Never pass ``None`` —
+                ``RecipeRunner.run`` fails OPEN on a falsy ``pctx`` (its own
+                docstring warning), disabling DatasetManager's PBAC guards.
+            params: Optional param overrides recorded on the row as the
+                refresh lane's "stored" precedence tier.
+            user_id: Attributed owner of the row; falls back to the agent.
+            session_id: Optional originating session, attached verbatim.
+            surface_store: Injection seam forwarded to ``publish_surface``.
+            overwrite: Forwarded to ``publish_surface``.
+
+        Returns:
+            The persisted ``surface_id``.
+
+        Raises:
+            RecipeRunException: On any replay abort (stage-tagged).
+            RuntimeError: When no recipe store is wired.
+        """
+        recipe_name, _descriptor, kind, title = self._profile(profile)
+        runner = RecipeRunner(self._require_recipe_store(), self._dataset_manager)
+        artifact = await runner.run(
+            recipe_name,
+            params=params,
+            pctx=pctx,
+            include_envelope=True,
+        )
+        envelope = artifact.metadata.get("source_envelope")
+        if envelope is None:
+            raise RuntimeError(
+                f"Replay of recipe {recipe_name!r} produced no 'source_envelope' — "
+                "RecipeRunner.run(include_envelope=True) contract broken."
+            )
+        return await self.publish_surface(
+            kind=kind,
+            title=title,
+            envelope=envelope,
+            recipe_name=recipe_name,
+            recipe_params=params or {},
+            overwrite=overwrite,
+            surface_store=surface_store,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+    # ── Refresh lane (FEAT-469/492 pattern) ─────────────────────────────
+
+    def build_refresh_tool(self, pctx: Any) -> RefreshFinanceSurfaceTool:
+        """Build and register the ``refresh_dashboard`` agent function.
+
+        Gives the renderer's ``callAgentFunction -> refresh_dashboard`` lane
+        (FEAT-492 G3) something to call on this agent — the same wiring
+        ``agents/flex_dashboard.py`` exposes. Requires a recipe store to
+        already be wired; raises via ``_require_recipe_store()`` otherwise.
+
+        Args:
+            pctx: A real ``PermissionContext`` (e.g. from
+                ``build_principal_context``). ``RecipeRunner.run`` fails OPEN
+                on a falsy ``pctx`` — never pass ``None`` here.
+
+        Returns:
+            The registered :class:`RefreshFinanceSurfaceTool` instance.
+        """
+        runner = RecipeRunner(self._require_recipe_store(), self._dataset_manager)
+        tool = RefreshFinanceSurfaceTool(runner=runner, pctx=pctx)
+        self.tool_manager.add_tool(tool)
+        return tool
+
+
+class RefreshFinanceSurfaceArgs(AbstractToolArgsSchema):
+    """Arguments the renderer may pass on ``callAgentFunction``."""
+
+    profile: Literal["report", "dashboard"] = Field(
+        default="dashboard",
+        description="Which published budget-variance profile to re-render.",
+    )
+
+
+class RefreshFinanceSurfaceTool(AbstractTool):
+    """Deterministically re-render a budget-variance profile from its recipe.
+
+    Takes no filter arguments by design: unlike the Flex dashboard, neither
+    finance recipe declares any ``RecipeParam`` (``descriptor.params`` feeds
+    ``TransformStep.params``, not the recipe's declared parameters), so there
+    is nothing to filter on. A bare re-run is still meaningful — every
+    ``DataSourceSpec`` defaults to ``force_refresh=True``, so the replay
+    pulls fresh rows from ``troc.finance_projection``.
+
+    Permission-context precedence mirrors ``flex_dashboard``'s tool (adopted
+    from its code review): the PER-CALL ``PermissionContext`` injected by
+    ``AbstractTool.execute()`` onto ``self._current_pctx`` always wins over
+    the ``pctx`` captured at construction, so on a shared/pooled agent one
+    user's data-plane scope cannot leak into another user's refresh. The
+    constructor ``pctx`` is the fallback for direct calls that never go
+    through ``ToolManager.execute_tool``.
+
+    Note: this re-renders and returns artifact metadata. Updating a persisted
+    surface row IN PLACE is the REST lane's job —
+    ``POST /api/v1/ui/surfaces/{surface_id}/refresh`` already replays the
+    stored ``recipe_ref`` under the owner's context and calls
+    ``store.update_envelope``.
+    """
+
+    name = "refresh_dashboard"
+    description = (
+        "Re-render a budget-variance profile deterministically via its "
+        "published recipe, pulling fresh snapshots. profile: 'report' "
+        "(narrative-first executive summary) or 'dashboard' (visual KPIs)."
+    )
+    args_schema = RefreshFinanceSurfaceArgs
+
+    def __init__(self, runner: RecipeRunner, pctx: Any, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._runner = runner
+        self._pctx = pctx
+
+    async def _execute(self, profile: str = "dashboard", **kwargs: Any) -> dict[str, Any]:
+        recipe_name, _descriptor, _kind, _title = FinanceReporter._profile(profile)
+        # Per-call pctx (set by AbstractTool.execute() from the
+        # `_permission_context` kwarg) wins over the constructor-captured one.
+        effective_pctx = getattr(self, "_current_pctx", None) or self._pctx
+        artifact = await self._runner.run(recipe_name, pctx=effective_pctx)
+        return {
+            "profile": profile,
+            "recipe": recipe_name,
+            "artifact_id": artifact.artifact_id,
+            "bytes": len(artifact.content or b""),
+        }

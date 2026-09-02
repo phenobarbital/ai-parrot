@@ -245,9 +245,20 @@ class SurfaceNegotiationService:
                 },
                 status=501,
             )
-        envelope = CreateSurface.model_validate(record.envelope)
-        renderer = InteractiveHTMLRenderer()
-        artifact = await renderer.render(envelope)
+        try:
+            envelope = CreateSurface.model_validate(record.envelope)
+            renderer = InteractiveHTMLRenderer()
+            artifact = await renderer.render(envelope)
+        except Exception as exc:  # any render failure is a client-visible 422
+            logger.exception("UISurfaces HTML render failed for surface %s", record.surface_id)
+            return web.json_response(
+                {
+                    "status": "error",
+                    "message": f"Stored surface could not be rendered: {exc}",
+                    "surface_id": record.surface_id,
+                },
+                status=422,
+            )
         return web.Response(body=artifact.content, content_type="text/html")
 
 

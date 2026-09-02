@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
+from navigator_session.data import SessionData
 from parrot.a2a.models import A2UI_MEDIA_TYPE
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.agent import AgentTalk
@@ -13,6 +14,15 @@ from parrot.memory.file import FileConversationMemory
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.tools import tool
 from parrot.tools.manager import ToolManager
+
+
+@web.middleware
+async def _stub_auth_middleware(request, handler):
+    """Mark every test request as pre-authenticated and attach a minimal
+    session so ``@is_authenticated()``/``@user_session()`` pass through."""
+    request["authenticated"] = True
+    request["NAV_SESSION"] = SessionData(data={"user_id": "u-test"})
+    return await handler(request)
 
 
 @tool
@@ -44,7 +54,7 @@ def _bot_manager(agent):
 @pytest.fixture
 async def client(aiohttp_client, tmp_path):
     agent = _make_agent(tmp_path)
-    app = web.Application()
+    app = web.Application(middlewares=[_stub_auth_middleware])
     app["bot_manager"] = _bot_manager(agent)
     app["_test_agent"] = agent
     router = app.router
@@ -83,9 +93,44 @@ class TestPost:
         body = await r.json()
         assert body["error"]["code"] == "INVALID_FUNCTION_CALL"
 
-    async def test_requires_auth(self, client):
-        r = await client.post("/api/v1/agents/demo/a2ui", json=_call_agent_function())
+    async def test_secondary_gate_rejects_missing_user_id(self, aiohttp_client, tmp_path):
+        """Even when ``@is_authenticated()`` passes, the secondary
+        ``_authenticate()`` gate returns 401 if no ``user_id`` can be resolved
+        from query params OR the session."""
+
+        @web.middleware
+        async def _auth_no_user(request, handler):
+            request["authenticated"] = True
+            request["NAV_SESSION"] = SessionData(data={})  # no user_id
+            return await handler(request)
+
+        agent = _make_agent(tmp_path)
+        app = web.Application(middlewares=[_auth_no_user])
+        app["bot_manager"] = _bot_manager(agent)
+        app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
+        raw = await aiohttp_client(app)
+        r = await raw.post("/api/v1/agents/demo/a2ui", json=_call_agent_function())
         assert r.status == 401
+
+    async def test_decorator_rejects_unauthenticated(self, aiohttp_client, tmp_path):
+        """Without authentication, ``@is_authenticated()`` rejects before the
+        handler code runs — the fix for the auth-bypass CVE.
+
+        The exact status depends on ``navigator_auth``'s backend configuration
+        (401 when backends are configured but reject; 400 when no backend is
+        installed at all) — either way the request must not succeed.
+        """
+        agent = _make_agent(tmp_path)
+        app = web.Application()  # no auth middleware
+        app["bot_manager"] = _bot_manager(agent)
+        app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
+        raw = await aiohttp_client(app)
+        r = await raw.post(
+            "/api/v1/agents/demo/a2ui",
+            json=_call_agent_function(),
+            params=_auth_params(),
+        )
+        assert r.status in (400, 401), f"Expected 400/401, got {r.status}"
 
     async def test_action_injects_turn(self, client):
         action_env = {

@@ -47,6 +47,40 @@ upload fields via a typed envelope — but no equivalent exists for text-like fi
 - Update `_FIELD_SCHEMA_SNIPPETS` examples for `TEXT_AREA` with a `content_type`
   example.
 
+### Amendment (post-review, 2026-09-02): `FormField.answer_envelope`
+
+Code review found that `VoiceAnswerEnvelope` as originally specified was
+unreachable: nothing in production ever validated against it, so the
+"canonical value shape" was never enforced. The cause is that this spec gives
+`"application/json"` in `accept_content_types` two different meanings —
+
+- §Goals line 151 uses `["text/plain", "application/json"]` to declare a
+  **voice-note field**, whose dict answer should be a `VoiceAnswerEnvelope`;
+- §Goals line 36 uses `content_type="application/json"` to declare a field
+  that simply **holds arbitrary JSON**.
+
+`FormField` carried no signal to tell them apart, so enforcing the envelope
+would have broken the arbitrary-JSON case and not enforcing it left the model
+dead. Resolved by adding a third, explicit annotation:
+
+- `answer_envelope: Literal["voice"] | None` on `FormField`. `"voice"` means
+  a submitted `dict` MUST validate as a `VoiceAnswerEnvelope` — the validator
+  enforces the shape and returns the canonical `model_dump()`. `None` (the
+  default) keeps the v1 pass-through: a submitted `dict` is arbitrary JSON and
+  is not inspected.
+
+This preserves both use cases and leaves the Non-Goals below intact — MIME
+mismatch is still advisory-only, and the audio storage pipeline is still out
+of scope (`blob_ref` remains client-populated). The annotation is emitted by
+all three renderers as `x-answer-envelope` and read back by
+`JsonSchemaExtractor`.
+
+Related review findings fixed alongside it: dict answers no longer bypass the
+required check or the `min_length`/`max_length`/`pattern` constraints (those
+now apply to the envelope's transcript); the renderers no longer emit an
+empty `x-accept-content-types`; and `JsonSchemaExtractor` now round-trips all
+three annotations, which it previously dropped.
+
 ### Non-Goals (explicitly out of scope)
 
 - `FileEnvelope` and the `UPLOAD_FIELD_TYPES` blob pipeline — they already have

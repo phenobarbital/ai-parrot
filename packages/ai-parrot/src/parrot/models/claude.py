@@ -9,8 +9,10 @@ class ClaudeModel(Enum):
     variants are pinned and will never change behaviour.
     """
 
-    # ── Claude Fable 5 (2026) ────────────────────────────────────────────────
-    FABLE_5 = "claude-fable-5"             # most powerful tier, above Opus
+    # ── Claude 5 family (2026) ───────────────────────────────────────────────
+    FABLE_5_1 = "claude-fable-5-1"         # latest Fable (5.1)
+    FABLE_5 = "claude-fable-5"             # Fable 5.0
+    SONNET_5 = "claude-sonnet-5"           # Sonnet 5
 
     # ── Claude Opus 4.7 / 4.8 (2026) ─────────────────────────────────────────
     OPUS_4_8 = "claude-opus-4-8"           # alias → latest Opus 4.8 (current Opus)

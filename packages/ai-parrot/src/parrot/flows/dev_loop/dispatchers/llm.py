@@ -30,13 +30,16 @@ from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
     _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
-from parrot.flows.dev_loop.models import DispatchEvent, LLMCodeDispatchProfile
+from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.basic import CompletionUsage
 from parrot.observability.context import usage_attribution
@@ -117,6 +120,7 @@ class LLMCodeDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring —
@@ -125,6 +129,8 @@ class LLMCodeDispatcher:
         # inside the semaphore block below resets it on every OTHER exit
         # path (the success return or one of the re-raising excepts).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
         try:
             self._enforce_cwd_under_worktree_base(cwd)
 
@@ -145,6 +151,7 @@ class LLMCodeDispatcher:
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
             raise
 
         async with self._semaphore:
@@ -221,6 +228,7 @@ class LLMCodeDispatcher:
                 raise DispatchExecutionError(f"LLM code dispatch failed: {exc}") from exc
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
 
     @staticmethod
     def _log_id(node_id: str, brief: BaseModel) -> str:
@@ -315,8 +323,7 @@ class LLMCodeDispatcher:
                         # so once, here, so the operator does not have to
                         # infer it from a downstream JSON parse error.
                         self.logger.warning(
-                            "%s turn %d: response hit the output-token limit "
-                            "(max_tokens=%d) and was truncated",
+                            "%s turn %d: response hit the output-token limit " "(max_tokens=%d) and was truncated",
                             log_id,
                             turn_index + 1,
                             profile.max_tokens,
@@ -495,11 +502,7 @@ class LLMCodeDispatcher:
                                 log_id,
                                 turn_index + 1,
                                 tool_name,
-                                str(
-                                    tool_result.get("error")
-                                    or tool_result.get("stderr")
-                                    or ""
-                                ).strip()[:200],
+                                str(tool_result.get("error") or tool_result.get("stderr") or "").strip()[:200],
                             )
                         await self._publish_event(
                             stream_key,
@@ -914,7 +917,10 @@ class LLMCodeDispatcher:
                     "in ONE message. Reading five files one per turn spends "
                     "five turns for nothing.\n"
                     "- `run_command` execs a bare argv: there is NO shell, so "
-                    "no pipes, no `>` redirection, no `&&`, no `cd` — to run "
+                    "no pipes, no `>` redirection, no `&&`, no `cd`, and NO "
+                    "glob expansion — `ls sdd/tasks/*.md` passes the literal "
+                    "`*` to `ls` and fails; use `list_files` or "
+                    "`search_files` to match by pattern. To run "
                     "in a subdirectory pass its `cwd` argument. Create "
                     "files with `write_file` and change them with "
                     "`edit_file` — not `cat >`, `sed -i` or `python -c`, and "
@@ -928,8 +934,8 @@ class LLMCodeDispatcher:
                         else "- Every path is relative to the worktree you "
                         "are in; absolute paths into another checkout are "
                         "not visible to your tools.\n"
-                    ) +
-                    f"- `run_command` only runs: "
+                    )
+                    + f"- `run_command` only runs: "
                     f"{', '.join(profile.allowed_commands)}.\n\n"
                     f"Subagent instructions:\n{body}"
                 ),
@@ -1252,8 +1258,7 @@ class LLMCodeDispatcher:
                         "cwd": {
                             "type": "string",
                             "description": (
-                                "Directory to run in, relative to the "
-                                "repository root. Replaces `cd <dir> && ...`."
+                                "Directory to run in, relative to the " "repository root. Replaces `cd <dir> && ...`."
                             ),
                         },
                         "timeout_seconds": {
@@ -1373,10 +1378,7 @@ class LLMCodeDispatcher:
         # threshold would return every `TASK-*.md` in the directory, which
         # is noise, not an answer. `TASK-2684-<wrong-slug>.md` scores 10
         # against its real sibling and 6 against any other task.
-        scored = [
-            (len(os.path.commonprefix([entry, wanted])), entry)
-            for entry in entries
-        ]
+        scored = [(len(os.path.commonprefix([entry, wanted])), entry) for entry in entries]
         best = max((score for score, _ in scored), default=0)
         if best >= 5:
             return [entry for score, entry in scored if score == best][:limit]
@@ -1760,7 +1762,63 @@ class LLMCodeDispatcher:
             profile.command_timeout_seconds,
         )
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
-        return {**result, "ok": result["exit_code"] == 0}
+        payload = {**result, "ok": result["exit_code"] == 0}
+        if not payload["ok"]:
+            # An unexpanded glob is the one failure whose stderr actively
+            # misleads: `ls sdd/tasks/completed/TASK-2717*` reports "no
+            # such file or directory" for a path that DOES exist, and a
+            # seat reads that as a missing file (or a wrong worktree) and
+            # goes hunting. There is no shell here, so the `*` reached
+            # the command verbatim — say so.
+            globbed = self._unexpanded_glob_tokens(argv)
+            if globbed:
+                payload["hint"] = (
+                    f"`run_command` execs a bare argv — there is NO shell, so "
+                    f"the wildcard(s) in {globbed} were passed literally and "
+                    f"matched nothing. The path may well exist. Use "
+                    f"`list_files` on the directory (or `search_files`) to "
+                    f"get the real names, then pass them in full."
+                )
+        return payload
+
+    #: Shell glob metacharacters. `~` is deliberately excluded: it is a
+    #: shell expansion too, but `_validate_command_paths` already treats
+    #: `~/` as an out-of-worktree path and rejects it earlier.
+    _GLOB_METACHARS: Tuple[str, ...] = ("*", "?", "[")
+
+    @classmethod
+    def _unexpanded_glob_tokens(cls, argv: Sequence[str]) -> List[str]:
+        """Name the argv tokens that carry an unexpanded shell wildcard.
+
+        Only path-shaped tokens count: a `-k 'test_foo or test_bar[1]'`
+        pytest expression or a `--grep` regex legitimately contains these
+        characters and is not a failed glob. A token qualifies when it
+        holds a metacharacter AND looks like a path (has a `/`, or ends in
+        a `.<ext>` suffix) AND is not an option flag or the value of an
+        inline-code flag.
+
+        Args:
+            argv: The command as the model wrote it.
+
+        Returns:
+            The offending tokens, in argv order; empty when none qualify.
+        """
+        tokens: List[str] = []
+        skip_next = False
+        for token in argv[1:]:
+            if skip_next:
+                skip_next = False
+                continue
+            if token in cls._INLINE_CODE_FLAGS:
+                skip_next = True
+                continue
+            if token.startswith("-"):
+                continue
+            if not any(char in token for char in cls._GLOB_METACHARS):
+                continue
+            if "/" in token or re.search(r"\.[A-Za-z0-9]+$", token):
+                tokens.append(token)
+        return tokens
 
     #: A token is treated as a path when it starts one of these ways.
     #: Anything else (a `-k` expression, a module name, a git ref) is left
@@ -1816,14 +1874,11 @@ class LLMCodeDispatcher:
                 continue
             for candidate in self._path_candidates(token, previous):
                 resolved = os.path.abspath(
-                    os.path.expanduser(candidate)
-                    if candidate.startswith("~")
-                    else os.path.join(base, candidate)
+                    os.path.expanduser(candidate) if candidate.startswith("~") else os.path.join(base, candidate)
                 )
                 if not self._is_within(base, resolved):
                     return (
-                        f"argument {candidate!r} points outside the worktree "
-                        f"({base}); commands may only touch it"
+                        f"argument {candidate!r} points outside the worktree " f"({base}); commands may only touch it"
                     )
             previous = token
         return None
@@ -1991,8 +2046,7 @@ class LLMCodeDispatcher:
             remapped = self._reanchor_into_cwd(base, target)
             if remapped is not None:
                 self.logger.warning(
-                    "re-anchored %r onto the worktree as %r — the brief's "
-                    "repo_path is NOT what the tools see",
+                    "re-anchored %r onto the worktree as %r — the brief's " "repo_path is NOT what the tools see",
                     path,
                     os.path.relpath(remapped, base),
                 )
@@ -2154,10 +2208,7 @@ class LLMCodeDispatcher:
         try:
             parsed = json.loads(raw_args)
         except ValueError as exc:
-            return None, (
-                f"arguments are not valid JSON ({exc}); "
-                f"{len(raw_args)} characters were received"
-            )
+            return None, (f"arguments are not valid JSON ({exc}); " f"{len(raw_args)} characters were received")
         if not isinstance(parsed, dict):
             return None, "tool arguments JSON must be an object"
         return parsed, ""
@@ -2259,8 +2310,7 @@ class LLMCodeDispatcher:
         parts = [
             f"{tool_name}: {reason}.",
             (
-                f"Your reply hit the output-token limit (max_tokens={max_tokens}) "
-                "and was cut off mid-call."
+                f"Your reply hit the output-token limit (max_tokens={max_tokens}) " "and was cut off mid-call."
                 if cut_off
                 else f"The call arrived incomplete (max_tokens={max_tokens})."
             ),
@@ -2347,7 +2397,7 @@ class LLMCodeDispatcher:
             ts=time.time(),
             run_id=run_id,
             node_id=node_id,
-            payload=payload,
+            payload=normalize_payload(kind, payload),
         )
         # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
         _apply_to_session_host(event)

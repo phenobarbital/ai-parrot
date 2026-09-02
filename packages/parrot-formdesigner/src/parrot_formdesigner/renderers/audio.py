@@ -360,6 +360,12 @@ class AudioFormRenderer(AbstractFormRenderer):
         render_mode = _RENDER_MODE_BY_VOICE[voice_mode]
         sensitive = field.field_type == FieldType.PASSWORD
 
+        # FEAT-488: Propagate accept_content_types from FormField to AudioQuestion.
+        # When set, the client may submit a VoiceAnswerEnvelope dict instead of
+        # a plain string.
+        accept_content_types = field.accept_content_types
+        answer_envelope = field.answer_envelope
+
         return [
             AudioQuestion(
                 index=0,  # re-indexed by caller
@@ -375,6 +381,8 @@ class AudioFormRenderer(AbstractFormRenderer):
                 voice_mode=voice_mode,
                 render_mode=render_mode,
                 sensitive=sensitive,
+                accept_content_types=accept_content_types,
+                answer_envelope=answer_envelope,
             )
         ]
 

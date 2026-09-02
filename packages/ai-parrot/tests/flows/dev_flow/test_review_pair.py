@@ -134,9 +134,20 @@ class TestJudgePanelUntouched:
         pair = _qa_node(model_plan=DevFlowModelPlan())._codereview_dispatcher
         assert not isinstance(pair, JudgePanelReviewDispatcher)
 
-    def test_judge_spec_backends_unchanged(self):
+    def test_judge_spec_backends(self):
+        """FEAT-486 kept "mantle" off the panel; the reviewer ban put it on.
+
+        This assertion is deliberately inverted from its original form.
+        When FEAT-486 landed, "mantle" was a review-PAIR backend only and
+        ``JudgeSpec`` rejecting it proved the panel was untouched. The
+        Gemini/agy reviewer ban then removed the panel's third seat, and
+        "mantle" took it — so it must now validate. What still holds is
+        the point the original test was making: the panel accepts exactly
+        the backends with a review dispatcher, and nothing else.
+        """
         from parrot.flows.dev_loop.models.base import JudgeSpec
 
-        with pytest.raises(ValueError):
-            JudgeSpec(agent="mantle")
+        assert JudgeSpec(agent="mantle").agent == "mantle"
         assert JudgeSpec(agent="claude-code").agent == "claude-code"
+        with pytest.raises(ValueError):
+            JudgeSpec(agent="gemini")

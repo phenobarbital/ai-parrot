@@ -231,7 +231,7 @@ class OpenAICodexClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list[Any]] = None,
@@ -263,7 +263,12 @@ class OpenAICodexClient(AbstractClient):
             )
             parsed: Any = result.output
             if structured_config is not None:
-                parsed = await self._parse_structured_output(result.output, structured_config)
+                parsed = await self._parse_structured_output(
+                    result.output,
+                    structured_config,
+                    finish_reason=result.finish_reason,
+                    model=resolved_model,
+                )
             return InvokeResult(
                 output=parsed,
                 output_type=output_type,

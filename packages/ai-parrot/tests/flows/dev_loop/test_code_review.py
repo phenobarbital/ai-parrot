@@ -13,7 +13,6 @@ from parrot.flows.dev_loop.code_review import (
     ClaudeCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
     CodexCodeReviewDispatcher,
-    GeminiCodeReviewDispatcher,
     ParallelPerspectiveReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
@@ -21,7 +20,6 @@ from parrot.flows.dev_loop.models import (
     CodeReviewFinding,
     CodeReviewVerdict,
     CodexCodeReviewProfile,
-    GeminiCodeReviewProfile,
 )
 from parrot.flows.dev_loop.nodes.qa import QANode
 
@@ -29,7 +27,7 @@ from parrot.flows.dev_loop.nodes.qa import QANode
 class _DummyReviewer(AbstractCodeReviewDispatcher):
     agent_name = "dummy"
 
-    async def review(self, *, brief, run_id, node_id, cwd):
+    async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round="", labels=None):
         return None  # placeholder
 
     def build_review_profile(self):
@@ -53,9 +51,7 @@ class TestCodeReviewDispatcherFactory:
 
 class TestCodeReviewFinding:
     def test_valid_finding(self):
-        f = CodeReviewFinding(
-            message="Missing guard", severity="critical", file="sync.py", line=88
-        )
+        f = CodeReviewFinding(message="Missing guard", severity="critical", file="sync.py", line=88)
         assert f.severity == "critical"
         assert f.file == "sync.py"
         assert f.line == 88
@@ -96,10 +92,12 @@ class TestReviewProfiles:
         assert p.sandbox == "workspace-write"
         assert p.approval_policy == "on-request"
 
-    def test_gemini_profile_no_sandbox(self):
-        p = GeminiCodeReviewProfile()
-        assert p.sandbox is False
-        assert p.approval_mode == "auto_edit"
+    def test_no_review_profile_for_banned_backends(self):
+        """Gemini/agy review profiles are gone, not merely unregistered."""
+        import parrot.flows.dev_loop.models as models
+
+        assert not hasattr(models, "GeminiCodeReviewProfile")
+        assert not hasattr(models, "GoogleCodingCodeReviewProfile")
 
 
 class TestClaudeCodeReviewDispatcher:
@@ -136,7 +134,10 @@ class TestClaudeCodeReviewDispatcher:
         sentinel_host = object()
 
         await d.review(
-            brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp",
+            brief=MagicMock(),
+            run_id="r1",
+            node_id="qa",
+            cwd="/tmp",
             session_host=sentinel_host,
         )
 
@@ -196,38 +197,40 @@ class TestCodexCodeReviewDispatcher:
         assert any("code-review could not run" in f.message for f in result.findings)
 
 
-class TestGeminiCodeReviewDispatcher:
-    def test_agent_name(self):
-        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
-        assert d.agent_name == "gemini"
+class TestBannedReviewBackends:
+    """Gemini and google_coding (agy) are barred from every review role.
 
-    def test_registered_in_factory(self):
-        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
-        assert isinstance(d, GeminiCodeReviewDispatcher)
+    See ``JudgeBackend`` in ``models/base.py`` and CLAUDE.md: ``agy``
+    returned a fabricated review (an invented 188-test pytest run naming
+    tests that do not exist), and a reviewer that hallucinates passing
+    evidence reads like corroboration. These assert the door stays shut —
+    a re-registration would make QA silently dispatch them again.
+    """
 
-    def test_build_review_profile(self):
-        d = GeminiCodeReviewDispatcher(dispatcher=MagicMock())
-        p = d.build_review_profile()
-        assert isinstance(p, GeminiCodeReviewProfile)
-        assert p.sandbox is False
-        assert p.approval_mode == "auto_edit"
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_not_registered_as_a_review_dispatcher(self, banned):
+        with pytest.raises(ValueError, match="Unknown code review dispatcher"):
+            CodeReviewDispatcherFactory.create(banned, dispatcher=MagicMock())
 
-    @pytest.mark.asyncio
-    async def test_review_delegates(self):
-        mock_disp = MagicMock()
-        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
-        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
-        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
-        assert result.passed is True
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_not_accepted_as_a_judge(self, banned):
+        from pydantic import ValidationError
 
-    @pytest.mark.asyncio
-    async def test_review_degrades_on_error(self):
-        mock_disp = MagicMock()
-        mock_disp.dispatch = AsyncMock(side_effect=RuntimeError("boom"))
-        d = GeminiCodeReviewDispatcher(dispatcher=mock_disp)
-        result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
-        assert result.passed is True
-        assert any("code-review could not run" in f.message for f in result.findings)
+        from parrot.flows.dev_loop.models import JudgeSpec
+
+        with pytest.raises(ValidationError):
+            JudgeSpec(agent=banned)
+
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    def test_still_a_development_backend(self, banned):
+        """The ban is reviewer-only — both remain coding agents."""
+        from parrot.flows.dev_loop.catalog import get_backend
+
+        info = get_backend(banned)
+        assert info is not None
+        assert "development" in info.roles
+        assert "judge" not in info.roles
+        assert "primary_review" not in info.roles
 
 
 class TestServerWiring:
@@ -241,9 +244,10 @@ class TestServerWiring:
         d = CodeReviewDispatcherFactory.create("codex", dispatcher=MagicMock())
         assert d.agent_name == "codex"
 
-    def test_factory_creates_gemini(self):
-        d = CodeReviewDispatcherFactory.create("gemini", dispatcher=MagicMock())
-        assert d.agent_name == "gemini"
+    def test_factory_creates_mantle_adversarial(self):
+        d = CodeReviewDispatcherFactory.create("mantle-adversarial")
+        assert d.agent_name == "mantle-adversarial"
+        assert d.advisory is True
 
 
 class TestBuildDevLoopNodeFactoriesWiring:
@@ -359,9 +363,7 @@ class TestFullQAFlowIntegration:
             side_effect=[
                 CodeReviewVerdict(
                     passed=True,
-                    findings=[
-                        CodeReviewFinding(message="fixed null guard", severity="minor")
-                    ],
+                    findings=[CodeReviewFinding(message="fixed null guard", severity="minor")],
                     files_modified=["sync.py"],
                 ),
                 QAReport(passed=True, criterion_results=[], lint_passed=True),
@@ -378,14 +380,10 @@ class TestFullQAFlowIntegration:
     async def test_codex_review_fix_rerun(self, qa_ctx):
         """Full QA -> Codex review -> fix -> rerun cycle (separate dispatcher)."""
         qa_dispatcher = MagicMock()
-        qa_dispatcher.dispatch = AsyncMock(
-            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
-        )
+        qa_dispatcher.dispatch = AsyncMock(return_value=QAReport(passed=True, criterion_results=[], lint_passed=True))
         codex_dispatcher = MagicMock()
         codex_dispatcher.dispatch = AsyncMock(
-            return_value=CodeReviewVerdict(
-                passed=True, findings=[], files_modified=["sync.py"]
-            )
+            return_value=CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
         )
         reviewer = CodexCodeReviewDispatcher(dispatcher=codex_dispatcher)
         node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
@@ -393,24 +391,6 @@ class TestFullQAFlowIntegration:
         assert report.passed is True
         assert qa_dispatcher.dispatch.await_count == 1
         codex_dispatcher.dispatch.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_gemini_review_pass_no_fix(self, qa_ctx):
-        """Full QA -> Gemini review passes -> no rerun needed."""
-        qa_dispatcher = MagicMock()
-        qa_dispatcher.dispatch = AsyncMock(
-            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
-        )
-        gemini_dispatcher = MagicMock()
-        gemini_dispatcher.dispatch = AsyncMock(
-            return_value=CodeReviewVerdict(passed=True, findings=[], files_modified=[])
-        )
-        reviewer = GeminiCodeReviewDispatcher(dispatcher=gemini_dispatcher)
-        node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
-        report = await node.execute(qa_ctx)
-        assert report.passed is True
-        qa_dispatcher.dispatch.assert_awaited_once()
-        gemini_dispatcher.dispatch.assert_awaited_once()
 
 
 class _FakeApp(dict):
@@ -473,12 +453,8 @@ class TestServerWiringIntegration:
         monkeypatch.setattr(server_mod, "_build_log_toolkits", lambda: {})
         monkeypatch.setattr(server_mod, "_build_jira_toolkit", lambda: MagicMock())
         monkeypatch.setattr(server_mod, "_build_git_toolkit", lambda: MagicMock())
-        monkeypatch.setattr(
-            server_mod.aioredis, "from_url", lambda url, **kw: _make_fake_redis()
-        )
-        monkeypatch.setattr(
-            server_mod, "ClaudeCodeDispatcher", MagicMock(return_value=MagicMock())
-        )
+        monkeypatch.setattr(server_mod.aioredis, "from_url", lambda url, **kw: _make_fake_redis())
+        monkeypatch.setattr(server_mod, "ClaudeCodeDispatcher", MagicMock(return_value=MagicMock()))
         monkeypatch.setattr(
             server_mod,
             "DevLoopRunner",
@@ -493,9 +469,7 @@ class TestServerWiringIntegration:
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(
-            server_mod.conf, "config", _CodeReviewAgentConfig("claude-code")
-        )
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("claude-code"))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
@@ -523,21 +497,24 @@ class TestServerWiringIntegration:
         assert isinstance(dispatcher._primary, CodexCodeReviewDispatcher)
 
     @pytest.mark.asyncio
-    async def test_server_wiring_gemini(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini primary, upgraded to
-        'parallel' (mandatory adversarial review)."""
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    async def test_server_wiring_rejects_banned_reviewer(self, monkeypatch, banned):
+        """A banned reviewer fails startup loudly instead of being built.
+
+        Previously DEV_LOOP_CODEREVIEW_AGENT=gemini wired a Gemini primary
+        into the 'parallel' reviewer. Both backends are now barred from
+        every review role, so the server must refuse rather than quietly
+        substitute something else.
+        """
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("gemini"))
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig(banned))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
-        await server_mod._on_startup(app)
-
-        dispatcher = captured["codereview_dispatcher"]
-        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
-        assert isinstance(dispatcher._primary, GeminiCodeReviewDispatcher)
+        with pytest.raises(RuntimeError, match="DEV_LOOP_CODEREVIEW_AGENT"):
+            await server_mod._on_startup(app)
 
     @pytest.mark.asyncio
     async def test_server_wiring_invalid(self, monkeypatch):
@@ -545,11 +522,51 @@ class TestServerWiringIntegration:
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(
-            server_mod.conf, "config", _CodeReviewAgentConfig("not-a-real-agent")
-        )
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("not-a-real-agent"))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
         with pytest.raises(RuntimeError):
             await server_mod._on_startup(app)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 (code-review finding) — labels= parity sweep across every
+# AbstractCodeReviewDispatcher subclass, mirroring
+# test_llm_family_parity.py's dynamic LLMCodeDispatcher.__subclasses__()
+# sweep. Discovers subclasses dynamically so a future reviewer that forgets
+# labels= fails this test instead of silently drifting from the ABC's
+# contract (the gap this test closes: NovaAdversarialReviewDispatcher was
+# missed by the original TASK-2731 implementation and only caught by an
+# adversarial code review).
+# ---------------------------------------------------------------------------
+
+import inspect
+
+import parrot.flows.dev_loop.dispatchers.mantle
+import parrot.flows.dev_loop.dispatchers.nova  # noqa: F401
+
+
+def _all_review_dispatcher_classes():
+    return [AbstractCodeReviewDispatcher, *AbstractCodeReviewDispatcher.__subclasses__()]
+
+
+@pytest.mark.parametrize("cls", _all_review_dispatcher_classes(), ids=lambda c: c.__name__)
+def test_every_review_dispatcher_accepts_labels(cls):
+    sig = inspect.signature(cls.review)
+    assert "labels" in sig.parameters, f"{cls.__name__}.review lacks labels="
+    assert sig.parameters["labels"].default is None
+
+
+def test_at_least_the_known_review_subclasses_are_covered():
+    """Guards against an import regression silently shrinking the sweep."""
+    names = {c.__name__ for c in AbstractCodeReviewDispatcher.__subclasses__()}
+    assert {
+        "ClaudeCodeReviewDispatcher",
+        "CodexCodeReviewDispatcher",
+        "CodexAdversarialReviewDispatcher",
+        "ParallelPerspectiveReviewDispatcher",
+        "JudgePanelReviewDispatcher",
+        "MantleAdversarialReviewDispatcher",
+        "NovaAdversarialReviewDispatcher",
+    } <= names

@@ -38,6 +38,16 @@ class TaskRef(BaseModel):
     depends_on: List[str] = Field(
         default_factory=list, description="TASK-NNN ids this task depends on."
     )
+    file: str = Field(
+        default="",
+        description=(
+            "Repo-relative path of the task's markdown artifact, e.g. "
+            "'sdd/tasks/active/TASK-1857-<slug>.md'. The index is the only "
+            "place this is knowable: <slug> is per-task and cannot be "
+            "derived from the id or the feature slug. Empty when the index "
+            "entry omits it."
+        ),
+    )
 
 
 class TaskScheduler:

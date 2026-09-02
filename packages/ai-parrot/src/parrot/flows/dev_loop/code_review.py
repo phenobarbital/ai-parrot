@@ -1,7 +1,7 @@
 """AbstractCodeReviewDispatcher ABC + factory (FEAT-270).
 
 Decouples the QA node's code-review gate from any specific development
-dispatcher. Concrete review dispatchers wrap the existing Claude/Codex/Gemini
+dispatcher. Concrete review dispatchers wrap the existing Claude/Codex
 development dispatchers with a write-enabled review profile, allowing the
 reviewer to fix issues it discovers and commit fixes to the worktree branch.
 
@@ -14,27 +14,25 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, get_args
 
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
 from parrot.flows.dev_loop.dispatchers import (
-    GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
-    GeminiCodeDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
-    GoogleCodingCodeReviewProfile,
     ClaudeCodeDispatchProfile,
     ClaudeCodeReviewProfile,
     CodeReviewFinding,
     CodeReviewVerdict,
     CodexAdversarialReviewProfile,
     CodexCodeReviewProfile,
-    GeminiCodeReviewProfile,
+    DispatchLabels,
+    JudgeBackend,
     JudgePanelConfig,
     JudgeSpec,
     default_judge_panel,
@@ -47,6 +45,11 @@ from parrot.flows.dev_loop.session_state import JudgeVerdictRecorded, SessionHos
 # ``JudgePanelReviewDispatcher._build_judge`` for why: this module is on the
 # transitive import path of the package's own ``__init__.py``).
 ConfigGetter = Callable[..., Any]
+
+#: The :data:`JudgeBackend` values whose review dispatchers are read-only
+#: (they force ``files_modified=[]``) — i.e. the seats that can satisfy
+#: the "every panel carries an adversarial perspective" invariant.
+_ADVERSARIAL_JUDGE_BACKENDS: Tuple[str, ...] = ("codex", "mantle")
 
 
 def _default_config_getter(key: str, fallback: Any = None) -> Any:
@@ -85,7 +88,7 @@ class _JudgeSynthesisOutput(BaseModel):
 class AbstractCodeReviewDispatcher(ABC):
     """ABC for all code review dispatchers.
 
-    Wraps an underlying development dispatcher (Claude/Codex/Gemini) and
+    Wraps an underlying development dispatcher (Claude/Codex) and
     adds review-specific behavior: building the review prompt/profile,
     enforcing the ``CodeReviewVerdict`` output contract (see
     ``parrot.flows.dev_loop.models``), and allowing the reviewer to fix +
@@ -112,6 +115,7 @@ class AbstractCodeReviewDispatcher(ABC):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run code review, optionally fix issues, return a verdict.
 
@@ -131,21 +135,40 @@ class AbstractCodeReviewDispatcher(ABC):
                 threaded through so :class:`JudgePanelReviewDispatcher` can
                 stamp ``JudgeVerdictRecorded.round``. Unused by this base
                 implementation and every non-panel dispatcher.
+            labels: FEAT-496 — identity of the work this review is doing
+                (e.g. ``judge_id`` for a panel judge). Display metadata
+                only; forwarded to the underlying dispatcher's ``dispatch()``
+                and never affects the decision made here.
         """
         try:
-            return await self._dispatcher.dispatch(
-                brief=brief,
-                profile=self.build_review_profile(),
-                output_model=CodeReviewVerdict,
-                run_id=run_id,
-                node_id=node_id,
-                cwd=cwd,
-                session_host=session_host,
-            )
+            try:
+                return await self._dispatcher.dispatch(
+                    brief=brief,
+                    profile=self.build_review_profile(),
+                    output_model=CodeReviewVerdict,
+                    run_id=run_id,
+                    node_id=node_id,
+                    cwd=cwd,
+                    session_host=session_host,
+                    labels=labels,
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a dispatcher that does
+                # not declare labels= must still actually run the review,
+                # not silently degrade to a fabricated pass.
+                if "labels" not in str(exc):
+                    raise
+                return await self._dispatcher.dispatch(
+                    brief=brief,
+                    profile=self.build_review_profile(),
+                    output_model=CodeReviewVerdict,
+                    run_id=run_id,
+                    node_id=node_id,
+                    cwd=cwd,
+                    session_host=session_host,
+                )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
-            self.logger.warning(
-                "%s code-review dispatch failed: %s", self.agent_name, exc
-            )
+            self.logger.warning("%s code-review dispatch failed: %s", self.agent_name, exc)
             return CodeReviewVerdict(
                 passed=True,
                 findings=[
@@ -180,10 +203,7 @@ class CodeReviewDispatcherFactory:
     def create(cls, name: str, **kwargs) -> AbstractCodeReviewDispatcher:
         """Create a code review dispatcher by name."""
         if name not in cls._registry:
-            raise ValueError(
-                f"Unknown code review dispatcher: {name!r}. "
-                f"Available: {sorted(cls._registry)}"
-            )
+            raise ValueError(f"Unknown code review dispatcher: {name!r}. " f"Available: {sorted(cls._registry)}")
         return cls._registry[name](**kwargs)
 
 
@@ -228,39 +248,15 @@ class CodexCodeReviewDispatcher(AbstractCodeReviewDispatcher):
         return CodexCodeReviewProfile(model=self._model)
 
 
-@CodeReviewDispatcherFactory.register("gemini")
-class GeminiCodeReviewDispatcher(AbstractCodeReviewDispatcher):
-    """Wraps :class:`GeminiCodeDispatcher` with sandbox disabled + auto-edit.
-
-    Uses ``sandbox=False`` and ``approval_mode="auto_edit"`` so the reviewer
-    can fix issues it finds and commit the fixes to the worktree branch,
-    mirroring the Claude and Codex reviewers' write-enabled behavior.
-    """
-
-    agent_name = "gemini"
-
-    def __init__(self, *, dispatcher: GeminiCodeDispatcher, model: str | None = None) -> None:
-        self._dispatcher = dispatcher
-        self._model = model or "auto"
-        self.logger = logging.getLogger(__name__)
-
-    def build_review_profile(self) -> GeminiCodeReviewProfile:
-        return GeminiCodeReviewProfile(model=self._model)
-
-
-@CodeReviewDispatcherFactory.register("google_coding")
-class GoogleCodingCodeReviewDispatcher(AbstractCodeReviewDispatcher):
-    """Wraps :class:`GoogleCodingDispatcher` for code review tasks."""
-
-    agent_name = "google_coding"
-
-    def __init__(self, *, dispatcher: GoogleCodingDispatcher, model: str | None = None) -> None:
-        self._dispatcher = dispatcher
-        self._model = model or "auto"
-        self.logger = logging.getLogger(__name__)
-
-    def build_review_profile(self) -> GoogleCodingCodeReviewProfile:
-        return GoogleCodingCodeReviewProfile(model=self._model)
+# NOTE: there is deliberately no "gemini" or "google_coding" review
+# dispatcher. Both were registered here until the Gemini seat started
+# failing every dispatch with ``IneligibleTierError`` — but the reason
+# they are gone rather than fixed is the reviewer ban recorded in
+# ``CLAUDE.md`` ("Adversarial Second Opinion") and in ``JudgeBackend``
+# (``models/base.py``): ``agy`` fabricated a review, and a reviewer that
+# invents passing evidence is worse than no reviewer. Both CLIs remain
+# fully supported DEVELOPMENT backends — ``GeminiCodeDispatcher`` and
+# ``GoogleCodingDispatcher`` are untouched. Do not re-register them here.
 
 
 @CodeReviewDispatcherFactory.register("codex-adversarial")
@@ -310,6 +306,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run the advisory review, then enforce the no-writes contract.
 
@@ -327,11 +324,14 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             cwd=cwd,
             session_host=session_host,
             round=round,
+            labels=labels,
         )
         tagged_findings = [
-            finding
-            if isinstance(finding, AdversarialFinding)
-            else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            (
+                finding
+                if isinstance(finding, AdversarialFinding)
+                else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            )
             for finding in verdict.findings
         ]
         return verdict.model_copy(update={"files_modified": [], "findings": tagged_findings})
@@ -379,6 +379,41 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
             "and does not delegate to a single dispatch profile."
         )
 
+    @staticmethod
+    async def _review_side(
+        reviewer: AbstractCodeReviewDispatcher,
+        side_labels: DispatchLabels,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost],
+        round: str,
+    ) -> CodeReviewVerdict:
+        """Dispatch one side with its own labels, best-effort.
+
+        Wrapped in its own coroutine so a duck-typed reviewer whose
+        ``review`` does not accept ``labels=`` raises its ``TypeError``
+        INSIDE this coroutine's try/except, not while ``gather``'s argument
+        list is being constructed (where ``return_exceptions=True`` cannot
+        help — that exception happens before any coroutine is scheduled).
+        """
+        kwargs = {
+            "brief": brief,
+            "run_id": run_id,
+            "node_id": node_id,
+            "cwd": cwd,
+            "session_host": session_host,
+            "round": round,
+        }
+        try:
+            return await reviewer.review(**kwargs, labels=side_labels)
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await reviewer.review(**kwargs)
+
     async def review(
         self,
         *,
@@ -388,15 +423,29 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
+        base_labels = labels.model_dump() if labels is not None else {}
         primary_result, adversary_result = await asyncio.gather(
-            self._primary.review(
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
-                session_host=session_host, round=round,
+            self._review_side(
+                self._primary,
+                DispatchLabels(**{**base_labels, "judge_id": "primary"}),
+                brief=brief,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+                session_host=session_host,
+                round=round,
             ),
-            self._adversary.review(
-                brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
-                session_host=session_host, round=round,
+            self._review_side(
+                self._adversary,
+                DispatchLabels(**{**base_labels, "judge_id": "codex-adversarial"}),
+                brief=brief,
+                run_id=run_id,
+                node_id=node_id,
+                cwd=cwd,
+                session_host=session_host,
+                round=round,
             ),
             return_exceptions=True,
         )
@@ -423,9 +472,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
                     session_host=session_host,
                 )
             except Exception as exc:  # noqa: BLE001 - judge is best-effort, never blocking
-                self.logger.warning(
-                    "parallel judge dispatch failed, degrading to deterministic merge: %s", exc
-                )
+                self.logger.warning("parallel judge dispatch failed, degrading to deterministic merge: %s", exc)
                 judge_summary = ""
             if judge_summary:
                 combined_summary = f"{merged.summary}\n\n{judge_summary}".strip()
@@ -459,9 +506,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         """Casefold + collapse whitespace for agreement-key comparison."""
         return " ".join(message.casefold().split())
 
-    def _merge_verdicts(
-        self, primary: CodeReviewVerdict, adversary: CodeReviewVerdict
-    ) -> CodeReviewVerdict:
+    def _merge_verdicts(self, primary: CodeReviewVerdict, adversary: CodeReviewVerdict) -> CodeReviewVerdict:
         """Deterministically merge two verdicts (spec §2 `PerspectiveSynthesis`).
 
         Agreement key: ``(file, normalized message)``. Agreements are
@@ -486,9 +531,7 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
             key = _key(finding)
             if key in merged_by_key:
                 existing = merged_by_key[key]
-                merged_by_key[key] = existing.model_copy(
-                    update={"source": f"{existing.source},codex-adversarial"}
-                )
+                merged_by_key[key] = existing.model_copy(update={"source": f"{existing.source},codex-adversarial"})
             else:
                 merged_by_key[key] = AdversarialFinding(
                     message=finding.message,
@@ -586,9 +629,7 @@ def _judges_from_conf(config_getter: ConfigGetter) -> List[JudgeSpec]:
         data = json.loads(raw)
         return JudgePanelConfig(**data).judges
     except (json.JSONDecodeError, TypeError, ValidationError, ValueError) as exc:
-        logging.getLogger(__name__).warning(
-            "DEV_LOOP_JUDGE_PANEL is malformed (%s); using default panel.", exc
-        )
+        logging.getLogger(__name__).warning("DEV_LOOP_JUDGE_PANEL is malformed (%s); using default panel.", exc)
         return default_judge_panel().judges
 
 
@@ -604,13 +645,13 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
     ``DevAgentSpec``), then verdicts are combined by simple majority.
 
     Judge → review-dispatcher mapping: ``"claude-code"`` uses the
-    write-enabled :class:`ClaudeCodeReviewDispatcher`, ``"gemini"`` uses
-    :class:`GeminiCodeReviewDispatcher`, and ``"codex"`` uses
+    write-enabled :class:`ClaudeCodeReviewDispatcher`; ``"codex"`` uses
     :class:`CodexAdversarialReviewDispatcher` — the adversarial,
     ``sdd-secondopinion``-profiled reviewer (spec §2: "adversarial =
-    sdd-secondopinion as a judge"), preserving the existing advisory/
-    read-only conventions for the Codex seat. Other ``DevAgentBackend``
-    values have no review profile defined yet and raise ``ValueError``.
+    sdd-secondopinion as a judge"); ``"mantle"`` uses
+    :class:`~parrot.flows.dev_loop.dispatchers.mantle.MantleAdversarialReviewDispatcher`,
+    read-only by construction over ``gpt-5.6-sol``. Any other value is
+    rejected by :data:`JudgeBackend` before it reaches here.
 
     Decision rule (spec §2, fail-closed): ``passed`` = strict majority of
     the NON-errored judges. A tie among active judges, OR an
@@ -623,16 +664,13 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
     ``files_modified`` on the merged verdict is the deduplicated union of
     every judge's own reported edits.
 
-    Concurrency note: unlike ``ParallelPerspectiveReviewDispatcher`` (at
-    most one write-enabled side), this panel may run MULTIPLE
-    write-enabled judges (claude-code + gemini) concurrently against the
-    SAME ``cwd`` via ``asyncio.gather`` — each dispatch is independent and
-    none is synchronized against the others' edits. This mirrors the
-    scope this task generalizes (single hardcoded judge → N judges) and is
-    flagged, not solved, here; callers wanting a fix-free panel should
-    configure judges via a future read-only profile once one exists for
-    claude-code/gemini (only "codex" has one today: the adversarial
-    profile used for its seat).
+    Concurrency note: this panel runs every judge concurrently against
+    the SAME ``cwd`` via ``asyncio.gather``, with no synchronization
+    between their edits. With the current :data:`JudgeBackend` set that
+    is no longer reachable in practice — ``"claude-code"`` is the only
+    write-enabled backend left, and ``"codex"``/``"mantle"`` are both
+    read-only adversarial seats — but a panel configured with two
+    ``claude-code`` judges still hits it. Flagged, not solved.
     """
 
     agent_name = "judge-panel"
@@ -663,15 +701,91 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             "not delegate to a single dispatch profile."
         )
 
+    def with_judges(self, judges: List[JudgeSpec]) -> JudgePanelReviewDispatcher:
+        """Return a copy of this panel that votes with ``judges`` instead.
+
+        The panel dispatcher is built ONCE — at server start, or lazily by
+        ``DevLoopRunner._feature_codereview_dispatcher`` — and then baked
+        into a flow topology that is itself cached and reused across runs.
+        A per-run judge override (``FeatureBrief.judge_panel``, which the
+        console's "Review & judges" tab populates) therefore cannot mutate
+        the shared instance without leaking into every other run sharing
+        it. This returns a new dispatcher carrying the same transport
+        settings (redis, concurrency, TTL, config getter) and nothing else
+        of the original's state, so the override is scoped to one run.
+
+        Args:
+            judges: The judges this run should vote with; must be non-empty
+                (an empty list means "no override" and is the caller's to
+                filter out).
+
+        Returns:
+            A new :class:`JudgePanelReviewDispatcher`.
+
+        Raises:
+            ValueError: If ``judges`` is empty.
+        """
+        if not judges:
+            raise ValueError("with_judges() requires at least one judge")
+        return type(self)(
+            judges=self._ensure_adversarial_judge(judges),
+            decision=self._decision,
+            redis_url=self._redis_url,
+            max_concurrent=self._max_concurrent,
+            stream_ttl_seconds=self._stream_ttl_seconds,
+            config_getter=self._config_getter,
+        )
+
+    @staticmethod
+    def _ensure_adversarial_judge(judges: List[JudgeSpec]) -> List[JudgeSpec]:
+        """Guarantee the panel keeps a read-only adversarial seat.
+
+        Adversarial review is not optional, and a per-run override
+        arriving from a form is exactly where it can go missing. The
+        adversarial seats among :data:`JudgeBackend` are the ones whose
+        review dispatchers force ``files_modified=[]``: ``"codex"``
+        (``sdd-secondopinion``) and ``"mantle"`` (read-only by
+        construction). If a panel has neither, a Codex judge is APPENDED
+        rather than the panel rejected — the operator's own judges are
+        kept intact.
+
+        Deliberately keyed on that pair rather than on
+        ``catalog.resolve_adversarial_backend()``: that resolver may
+        return ``"nova"``, which is a valid *adversarial* backend but not
+        a valid :data:`JudgeBackend`, so using it here would raise
+        ``ValidationError`` on the appended spec.
+
+        Args:
+            judges: The panel as requested.
+
+        Returns:
+            ``judges`` unchanged when it already holds an adversarial
+            seat, otherwise a copy with a Codex judge appended.
+        """
+        if any(j.agent in _ADVERSARIAL_JUDGE_BACKENDS for j in judges):
+            return list(judges)
+        logging.getLogger(__name__).warning(
+            "Judge panel %s has no adversarial seat — appending codex "
+            "(model=%s). Adversarial review is not optional.",
+            [j.agent for j in judges],
+            conf.DEV_LOOP_ADVERSARIAL_MODEL,
+        )
+        return [*judges, JudgeSpec(agent="codex", model=conf.DEV_LOOP_ADVERSARIAL_MODEL)]
+
     def _build_judge(self, spec: JudgeSpec) -> Tuple[str, AbstractCodeReviewDispatcher]:
         """Materialize one ``JudgeSpec`` into ``(judge_id, review_dispatcher)``.
 
-        Lazily imports ``agent_builder``/``DevAgentSpec`` (rather than at
-        module scope) because ``code_review.py`` sits on the transitive
-        import path of ``parrot.flows.dev_loop``'s own ``__init__.py``
-        (via ``flow.py`` → ``nodes/qa.py``) — ``agent_builder`` itself
-        imports dispatch-profile names back from the package, which would
-        deadlock on a partially-initialized module if done eagerly here.
+        Every import here is lazy, and both are load-bearing:
+
+        * ``agent_builder``/``DevAgentSpec`` — ``code_review.py`` sits on
+          the transitive import path of ``parrot.flows.dev_loop``'s own
+          ``__init__.py`` (via ``flow.py`` → ``nodes/qa.py``), and
+          ``agent_builder`` imports dispatch-profile names back from the
+          package, which would deadlock on a partially-initialized module.
+        * ``MantleAdversarialReviewDispatcher`` — ``dispatchers/mantle.py``
+          imports :class:`AbstractCodeReviewDispatcher` and
+          :class:`CodeReviewDispatcherFactory` from THIS module, so a
+          module-scope import here is a hard circular import.
 
         Args:
             spec: The judge's backend + optional model override.
@@ -684,6 +798,20 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         Raises:
             ValueError: If ``spec.agent`` has no review-dispatcher mapping.
         """
+        judge_id = spec.agent
+        model = spec.model or None
+
+        # "mantle" is NOT a ``build_dispatcher`` branch: the counter-
+        # reviewer drives ``BedrockMantleClient`` directly and has no
+        # underlying dev dispatcher to wrap, so it must be built BEFORE
+        # the ``DevAgentSpec`` round-trip below (which would raise on it).
+        if spec.agent == "mantle":
+            from parrot.flows.dev_loop.dispatchers.mantle import (
+                MantleAdversarialReviewDispatcher,
+            )
+
+            return judge_id, MantleAdversarialReviewDispatcher(model=model)
+
         from parrot.flows.dev_loop.agent_builder import build_dispatcher
         from parrot.flows.dev_loop.models import DevAgentSpec
 
@@ -695,23 +823,62 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             stream_ttl_seconds=self._stream_ttl_seconds,
             config_getter=self._config_getter,
         )
-        judge_id = spec.agent
-        model = spec.model or None
 
         if spec.agent == "claude-code":
             return judge_id, ClaudeCodeReviewDispatcher(dispatcher=dispatcher, model=model)
         if spec.agent == "codex":
             return judge_id, CodexAdversarialReviewDispatcher(dispatcher=dispatcher, model=model)
-        if spec.agent == "gemini":
-            return judge_id, GeminiCodeReviewDispatcher(dispatcher=dispatcher, model=model)
-        if spec.agent == "google_coding":
-            return judge_id, GoogleCodingCodeReviewDispatcher(dispatcher=dispatcher, model=model)
 
         raise ValueError(
             f"JudgePanelReviewDispatcher does not support judge backend "
-            f"{spec.agent!r} — no review profile exists for it yet "
-            f"(supported: claude-code, codex, gemini, google_coding)."
+            f"{spec.agent!r} — no review profile exists for it "
+            f"(supported: {get_args(JudgeBackend)})."
         )
+
+    @staticmethod
+    async def _review_one_judge(
+        judge: AbstractCodeReviewDispatcher,
+        judge_id: str,
+        spec: JudgeSpec,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost],
+        round: str,
+        outer_labels: Optional[DispatchLabels],
+    ) -> CodeReviewVerdict:
+        """Dispatch one judge with its own labels, best-effort.
+
+        Wrapped in its own coroutine (rather than inlined in the
+        ``asyncio.gather`` generator expression) so a judge whose ``review``
+        does not accept ``labels=`` raises its ``TypeError`` INSIDE this
+        coroutine's own try/except — not while ``gather``'s argument list is
+        being constructed, where ``return_exceptions=True`` cannot help
+        because the exception happens before any coroutine is scheduled.
+        """
+        kwargs = {
+            "brief": brief,
+            "run_id": run_id,
+            "node_id": node_id,
+            "cwd": cwd,
+            "session_host": session_host,
+            "round": round,
+        }
+        judge_labels = DispatchLabels(
+            judge_id=judge_id,
+            agent=spec.agent,
+            model=spec.model or "",
+            subagent="sdd-secondopinion" if getattr(judge, "advisory", False) else "",
+            attempt=(outer_labels.attempt if outer_labels is not None else 1),
+        )
+        try:
+            return await judge.review(**kwargs, labels=judge_labels)
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await judge.review(**kwargs)
 
     async def review(
         self,
@@ -722,20 +889,25 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         judges = [self._build_judge(spec) for spec in self._judge_specs]
 
         results = await asyncio.gather(
             *(
-                judge.review(
+                self._review_one_judge(
+                    judge,
+                    judge_id,
+                    spec,
                     brief=brief,
                     run_id=run_id,
                     node_id=node_id,
                     cwd=cwd,
                     session_host=session_host,
                     round=round,
+                    outer_labels=labels,
                 )
-                for _judge_id, judge in judges
+                for (judge_id, judge), spec in zip(judges, self._judge_specs)
             ),
             return_exceptions=True,
         )
@@ -743,9 +915,7 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         verdicts: List[Tuple[str, Optional[CodeReviewVerdict]]] = []
         for (judge_id, _judge), result in zip(judges, results):
             if isinstance(result, BaseException):
-                self.logger.warning(
-                    "judge %s errored during panel review: %s", judge_id, result
-                )
+                self.logger.warning("judge %s errored during panel review: %s", judge_id, result)
                 verdicts.append((judge_id, None))
             else:
                 verdicts.append((judge_id, result))
@@ -758,22 +928,31 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         # per QA round (spec §2 item 5); a round-less caller (round="")
         # still records, just without per-attempt partitioning.
         if session_host is not None:
-            for (judge_id, _judge), spec, (_jid, verdict) in zip(
-                judges, self._judge_specs, verdicts
-            ):
+            for (judge_id, _judge), spec, (_jid, verdict) in zip(judges, self._judge_specs, verdicts):
                 if verdict is None:
-                    session_host.apply(JudgeVerdictRecorded(
-                        round=round, judge_id=judge_id, backend=judge_id,
-                        model=spec.model, passed=False, findings_count=0,
-                        summary="judge review could not run (infra error)",
-                    ))
+                    session_host.apply(
+                        JudgeVerdictRecorded(
+                            round=round,
+                            judge_id=judge_id,
+                            backend=judge_id,
+                            model=spec.model,
+                            passed=False,
+                            findings_count=0,
+                            summary="judge review could not run (infra error)",
+                        )
+                    )
                 else:
-                    session_host.apply(JudgeVerdictRecorded(
-                        round=round, judge_id=judge_id, backend=judge_id,
-                        model=spec.model, passed=verdict.passed,
-                        findings_count=len(verdict.findings),
-                        summary=verdict.summary,
-                    ))
+                    session_host.apply(
+                        JudgeVerdictRecorded(
+                            round=round,
+                            judge_id=judge_id,
+                            backend=judge_id,
+                            model=spec.model,
+                            passed=verdict.passed,
+                            findings_count=len(verdict.findings),
+                            summary=verdict.summary,
+                        )
+                    )
 
         panel_size = len(verdicts)
         errored_count = sum(1 for _judge_id, v in verdicts if v is None)
@@ -819,10 +998,10 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             for judge_id, v in verdicts
         )
         # Union (order-preserving, deduplicated) of every judge's reported
-        # edits. Only "claude-code"/"gemini" judges are write-enabled (the
-        # "codex" judge is always the read-only adversarial reviewer, so it
-        # never contributes here) — see the concurrency caveat in the class
-        # docstring / this task's Completion Note.
+        # edits. Only "claude-code" judges are write-enabled — "codex" and
+        # "mantle" are read-only adversarial reviewers that force
+        # ``files_modified=[]``, so they never contribute here. See the
+        # concurrency caveat in the class docstring.
         files_modified: List[str] = []
         for _judge_id, verdict in verdicts:
             if verdict is None:
@@ -845,7 +1024,6 @@ __all__ = [
     "ClaudeCodeReviewDispatcher",
     "CodexAdversarialReviewDispatcher",
     "CodexCodeReviewDispatcher",
-    "GeminiCodeReviewDispatcher",
     "JudgePanelReviewDispatcher",
     "ParallelPerspectiveReviewDispatcher",
 ]

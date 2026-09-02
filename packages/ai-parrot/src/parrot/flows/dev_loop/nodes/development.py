@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel
@@ -44,6 +45,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    DispatchLabels,
     QAReport,
     ResearchOutput,
     TaskScopedBrief,
@@ -57,6 +59,15 @@ from parrot.flows.dev_loop.nodes.base import (
 )
 from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
+
+#: The spec header line ``/sdd-spec`` writes, e.g. ``**Status**: draft``.
+#: Group 1 is the label+separator (preserved verbatim), group 2 the value.
+_SPEC_STATUS_RE = re.compile(r"^(\*\*Status\*\*:[ \t]*)(.+?)[ \t]*$", re.MULTILINE)
+
+#: Statuses a completed plan may advance to ``approved``. Anything else
+#: (``obsolete``, ``superseded``, an already-``approved`` spec on a
+#: QA-repair re-entry) was set deliberately and is never overwritten.
+_SPEC_STATUS_ADVANCEABLE = frozenset({"draft", "review"})
 
 DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseModel]]
 
@@ -190,10 +201,33 @@ class DevelopmentNode(DevLoopNode):
             except Exception:  # noqa: BLE001
                 pass
 
-        await self._check_plan_approval(shared, research)
+        approved_by = await self._check_plan_approval(shared, research)
+        await self._approve_spec(research, approved_by=approved_by)
         research = self._with_prior_work_context(shared, research)
         research = self._with_repair_feedback(shared, research)
 
+        dev_out = await self._dispatch(shared, research)
+        return await self._reconcile_files_changed(shared, research, dev_out)
+
+    async def _dispatch(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+    ) -> DevelopmentOutput:
+        """Route to the single-agent or pool path and return its raw output.
+
+        Split out of :meth:`execute` so every path funnels through one
+        reconciliation step (:meth:`_reconcile_files_changed`) instead of
+        returning straight to the caller.
+
+        Args:
+            shared: The run's shared state.
+            research: The (context-enriched) upstream research output.
+
+        Returns:
+            The dispatch's :class:`DevelopmentOutput`, exactly as the
+            agent/pool produced it.
+        """
         pool_cfg = self._resolve_pool_config(shared)
         if pool_cfg is None:
             return await self._execute_single(shared, research)
@@ -216,6 +250,35 @@ class DevelopmentNode(DevLoopNode):
         pool_cfg = self._collapse_for_single_task(shared, pool_cfg, scheduler, research)
 
         first_wave = scheduler.next_wave()
+
+        # Hotfix (2026-09-02): a QA repair-loop re-entry whose per-spec index
+        # holds no runnable task is the pool path's silent-no-op hole. Every
+        # task is already `done`, so `next_wave()` returns empty, the wave
+        # loop in `_execute_pool` breaks on its first turn without ever
+        # dispatching an agent, and `incomplete and total_completed == 0`
+        # (the "all tasks incomplete" guard) is False because `incomplete` is
+        # itself empty — so the node returns an empty DevelopmentOutput and
+        # reports SUCCESS in ~100ms. The retry edge then runs QA again over a
+        # byte-identical tree, which fails identically, burning a full QA
+        # cycle (~20 min observed) per retry until the stop rule escalates.
+        #
+        # The repair instruction lives in `research.log_excerpts` (stamped by
+        # `_with_repair_feedback` above), not in the task index — the tasks
+        # ARE done; what is left is fixing what QA rejected about them. So a
+        # single seat is dispatched with that brief, exactly like the
+        # hotfix/no-index path already does, instead of dispatching nobody.
+        if not first_wave and self._is_repair_reentry(shared):
+            self.logger.warning(
+                "%s: QA repair-loop re-entry (attempt %d) with 0 runnable "
+                "task(s) in the per-spec index — the pool would dispatch "
+                "nothing and QA would re-run on an unchanged tree. "
+                "Dispatching a single repair seat with the QA feedback "
+                "instead.",
+                research.feat_id or research.jira_issue_key,
+                shared.get("qa_attempt", 1),
+            )
+            return await self._execute_single(shared, research, pool_cfg=pool_cfg)
+
         if not should_fan_out(first_wave, pool_cfg):
             effective_slots = sum(spec.count for spec in pool_cfg.agents)
             self.logger.info(
@@ -229,10 +292,163 @@ class DevelopmentNode(DevLoopNode):
         return await self._execute_pool(shared, research, pool_cfg, scheduler)
 
     # ------------------------------------------------------------------
+    # files_changed reconciliation
+    # ------------------------------------------------------------------
+
+    async def _reconcile_files_changed(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        dev_out: DevelopmentOutput,
+    ) -> DevelopmentOutput:
+        """Union the agent's self-reported ``files_changed`` with git's truth.
+
+        Coding agents report the files they *think* they touched, and they
+        under-report systematically: they list the source files they set
+        out to edit and omit the test modules they created along the way.
+        That silently corrupts every downstream consumer — QA scopes its
+        pytest run to these paths (so an omitted test module is a test
+        that never runs), and the handoff nodes render them into the PR
+        body.
+
+        Git is the only authority on what actually changed, so anything
+        git reports and the agent did not is appended here. The agent's
+        own ordering is preserved and its entries are never dropped: a
+        path git cannot see (already reverted, or outside the worktree)
+        stays in the list rather than being second-guessed.
+
+        The object is returned **unchanged** — same identity, no
+        ``model_copy`` — whenever git adds nothing, which is also what
+        keeps a non-git worktree (and the single-path regression tests
+        that assert ``result is dev_out``) behaving exactly as before.
+
+        Args:
+            shared: The run's shared state, re-stamped when the list grows.
+            research: Upstream research output, for the worktree path and
+                the resolved base branch.
+            dev_out: The dispatch's raw output.
+
+        Returns:
+            ``dev_out`` itself, or a copy carrying the reconciled list.
+        """
+        try:
+            actual = await self._git_changed_files(research.worktree_path, research.base_branch)
+        except Exception:  # noqa: BLE001
+            self.logger.warning(
+                "Could not reconcile files_changed against git for %s; " "keeping the agent's self-reported list.",
+                research.feat_id or research.jira_issue_key,
+                exc_info=True,
+            )
+            return dev_out
+
+        reported = list(dev_out.files_changed)
+        seen = set(reported)
+        missing = [f for f in actual if f not in seen]
+        if not missing:
+            return dev_out
+
+        untested = [f for f in missing if "test" in PurePosixPath(f).name]
+        self.logger.warning(
+            "Development under-reported files_changed for %s: git shows %d "
+            "file(s) the agent omitted (%d of them test modules). Adding "
+            "them: %s",
+            research.feat_id or research.jira_issue_key,
+            len(missing),
+            len(untested),
+            missing[:20],
+        )
+        reconciled = dev_out.model_copy(update={"files_changed": [*reported, *missing]})
+        shared["development_output"] = reconciled
+        return reconciled
+
+    @staticmethod
+    async def _git_changed_files(worktree_path: str, base_branch: str = "") -> List[str]:
+        """Every path the worktree changed, committed and uncommitted.
+
+        Committed work comes from a three-dot diff against the merge base
+        with the run's base branch (falling back to ``origin/dev`` then
+        ``origin/main``, the same ladder ``QANode`` walks). Uncommitted
+        work — including untracked files, which is how a just-written
+        test module looks before the worker commits — comes from
+        ``git status --porcelain``.
+
+        Deletions are excluded from both halves: a deleted path is not
+        something a downstream consumer can lint, test, or link to.
+
+        Args:
+            worktree_path: The worktree to inspect.
+            base_branch: The run's resolved base branch; ``''`` to rely
+                on the fallback ladder alone.
+
+        Returns:
+            Repo-relative paths, deduplicated, committed-first. Empty
+            when the directory is not a git worktree or git fails.
+        """
+        files: List[str] = []
+
+        upstreams = [f"origin/{base_branch}" if "/" not in base_branch else base_branch] if base_branch else []
+        upstreams += ["origin/dev", "origin/main"]
+        for upstream in upstreams:
+            # Select on whether the ref RESOLVES, not on whether its diff
+            # is non-empty: a branch with nothing committed yet has an
+            # empty diff against its true base, and falling through to
+            # the next candidate would then report every commit that base
+            # is ahead by as if this run had made it.
+            if not await DevelopmentNode._run_git(worktree_path, "rev-parse", "--verify", "--quiet", upstream):
+                continue
+            out = await DevelopmentNode._run_git(
+                worktree_path, "diff", "--name-only", "--diff-filter=d", f"{upstream}...HEAD"
+            )
+            files.extend(line.strip() for line in out.splitlines() if line.strip())
+            break
+
+        status = await DevelopmentNode._run_git(worktree_path, "status", "--porcelain", "--untracked-files=all")
+        for line in (status or "").splitlines():
+            if len(line) < 4:
+                continue
+            code, path = line[:2], line[3:].strip()
+            if "D" in code:
+                continue
+            # Renames render as "old -> new"; only the new path exists.
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            path = path.strip('"')
+            if path:
+                files.append(path)
+
+        return list(dict.fromkeys(files))
+
+    @staticmethod
+    async def _run_git(worktree_path: str, *args: str) -> str:
+        """Run one git command in ``worktree_path``, returning stdout.
+
+        Args:
+            worktree_path: Working directory for the command.
+            *args: Arguments after ``git``.
+
+        Returns:
+            Decoded stdout on success, ``""`` on a non-zero exit or any
+            OS-level failure — reconciliation is best-effort and must
+            never fail a successful dispatch.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+        except Exception:  # noqa: BLE001
+            return ""
+        return stdout.decode(errors="replace") if proc.returncode == 0 else ""
+
+    # ------------------------------------------------------------------
     # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)
     # ------------------------------------------------------------------
 
-    async def _check_plan_approval(self, shared: Dict[str, Any], research: ResearchOutput) -> None:
+    async def _check_plan_approval(self, shared: Dict[str, Any], research: ResearchOutput) -> str:
         """Open and await the ``plan_approval`` gate on this run's FIRST
         entry into this node (opt-in via ``require_plan_approval``).
 
@@ -253,7 +469,13 @@ class DevelopmentNode(DevLoopNode):
 
         Args:
             shared: The flow's shared state dict.
-            research: The upstream research output (Jira key, spec path).
+            research: The flow's upstream research output (Jira key, spec path).
+
+        Returns:
+            Who approved the plan, for the spec's approval stamp: the
+            gate resolver's id when a human actually resolved a gate, and
+            ``""`` when no gate was opened (flag off, already checked, or
+            no ``SessionHost``) — i.e. when approval is implicit.
 
         Raises:
             RuntimeError: The gate resolved to anything other than
@@ -271,7 +493,7 @@ class DevelopmentNode(DevLoopNode):
         override = shared.get("require_plan_approval")
         required = self._require_plan_approval if override is None else bool(override)
         if not required or shared.get("_plan_gate_checked"):
-            return
+            return ""
         shared["_plan_gate_checked"] = True
 
         host = shared.get("session_host")
@@ -281,7 +503,7 @@ class DevelopmentNode(DevLoopNode):
                 "session_host in shared state (legacy DevLoopRunner "
                 "construction) — proceeding without a plan_approval gate."
             )
-            return
+            return ""
 
         # Lazy import — avoids a runner.py <-> factories.py <-> this module
         # import cycle (runner.py imports factories.py, which imports this
@@ -306,6 +528,116 @@ class DevelopmentNode(DevLoopNode):
         gate = await host.wait_gate(gate_id)
         if gate.status != "approved":
             raise RuntimeError(f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}")
+        return gate.resolved_by or "plan_approval gate"
+
+    async def _approve_spec(self, research: ResearchOutput, *, approved_by: str = "") -> bool:
+        """Flip the spec's ``**Status**`` from ``draft``/``review`` to ``approved``.
+
+        ``/sdd-spec`` writes every spec at ``Status: draft`` and tells a
+        human to "Mark status: approved when ready". In an interactive SDD
+        session that happens; in a dev-loop/dev-flow run **nobody ever
+        opens the file**, so specs stayed ``draft`` forever — including
+        after the feature had been fully developed, reviewed and merged,
+        which makes the field actively misleading rather than merely
+        stale.
+
+        This runs at the one point where the plan is settled and code is
+        about to be written, which is also the only point that can tell
+        approval from rejection:
+
+        * ``require_plan_approval`` off — approval is **implicit**. Nobody
+          was ever going to be asked, so reaching development IS the
+          approval.
+        * ``require_plan_approval`` on — a human resolved the gate. A
+          *rejected* gate raises in :meth:`_check_plan_approval` before
+          this is ever called, so a rejected plan correctly leaves the
+          spec at ``draft``.
+
+        Only ``draft`` and ``review`` are advanced: any other value was
+        set deliberately by someone and is left alone. Writing and
+        committing are both best-effort — a spec that cannot be stamped
+        must never fail a run that is otherwise ready to develop.
+
+        Args:
+            research: Upstream research output, for ``spec_path`` and the
+                worktree the spec is resolved against.
+            approved_by: Gate resolver id when a human approved, ``""``
+                when approval was implicit. Recorded in the commit
+                message only.
+
+        Returns:
+            ``True`` when the file was rewritten, ``False`` otherwise
+            (no spec path, missing file, no ``**Status**`` line, or a
+            status this must not touch).
+        """
+        if not research.spec_path:
+            return False
+        spec_path = Path(research.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(research.worktree_path) / spec_path
+        if not spec_path.is_file():
+            self.logger.debug("No spec at %s to stamp approved.", spec_path)
+            return False
+
+        try:
+            text = spec_path.read_text(encoding="utf-8")
+        except OSError:
+            self.logger.warning("Could not read %s to stamp approved.", spec_path, exc_info=True)
+            return False
+
+        match = _SPEC_STATUS_RE.search(text)
+        if match is None:
+            self.logger.debug("No '**Status**:' line in %s — nothing to stamp.", spec_path)
+            return False
+        current = match.group(2).strip()
+        if current not in _SPEC_STATUS_ADVANCEABLE:
+            # Already approved (idempotent on a QA-repair re-entry), or a
+            # deliberate value like 'obsolete'/'superseded'.
+            self.logger.debug("Spec %s is '%s' — leaving it alone.", spec_path, current)
+            return False
+
+        updated = text[: match.start()] + match.group(1) + "approved" + text[match.end() :]
+        try:
+            spec_path.write_text(updated, encoding="utf-8")
+        except OSError:
+            self.logger.warning("Could not write %s to stamp approved.", spec_path, exc_info=True)
+            return False
+
+        who = approved_by or "implicit (no plan_approval gate)"
+        self.logger.info(
+            "Spec %s: Status %s -> approved (%s).",
+            spec_path,
+            current,
+            who,
+        )
+        await self._commit_spec_approval(spec_path, research, who)
+        return True
+
+    async def _commit_spec_approval(
+        self,
+        spec_path: Path,
+        research: ResearchOutput,
+        approved_by: str,
+    ) -> None:
+        """Commit the approval stamp, honouring the SDD auto-commit rule.
+
+        Best-effort by design: on any git failure the stamp simply stays
+        uncommitted in the worktree, where the dev worker's first commit
+        picks it up anyway. Never raises.
+
+        Args:
+            spec_path: The stamped spec.
+            research: Upstream research output (worktree path, feature id).
+            approved_by: Human-readable approver, for the commit body.
+        """
+        feature = research.feat_id or research.jira_issue_key or spec_path.stem
+        message = f"sdd: approve spec for {feature}\n\nApproved by: {approved_by}"
+        # Both calls are best-effort: `_run_git` swallows non-zero exits
+        # (it cannot distinguish "git add printed nothing" from a failure,
+        # and does not need to — an uncommitted stamp is still a correct
+        # stamp, and the dev worker's first commit sweeps it up).
+        await self._run_git(research.worktree_path, "add", "--", str(spec_path))
+        await self._run_git(research.worktree_path, "commit", "-m", message, "--", str(spec_path))
 
     async def _count_tasks(self, research: ResearchOutput) -> Optional[int]:
         """Best-effort total task count from the per-spec index, for the
@@ -385,22 +717,75 @@ class DevelopmentNode(DevLoopNode):
         never re-derived because the retry edge never re-enters
         ``ResearchNode``.
 
+        Hotfix (2026-09-02): the condensed ``QAReport`` is only HALF the re-entry
+        context. In feature mode the ``feedback_router`` node produces a
+        ``FeedbackDecision`` whose ``dev_brief`` is the actual, specific
+        instruction set for this retry ("fix these four things") — and it
+        was published to ``shared["feedback_decision"]`` and then read by
+        nobody, so every feature-mode retry re-dispatched with the raw QA
+        failure and none of the router's reasoning. It is appended AFTER
+        the condensed report (evidence first, then the instruction derived
+        from it) and only when non-empty, so bug-mode runs — which have no
+        ``feedback_router`` in their topology — are byte-identical.
+
         Args:
             shared: The flow's shared state dict.
             research: The upstream research output (read fresh each call).
 
         Returns:
             ``research`` unchanged on a first pass or a passing prior
-            report; otherwise a copy with the prior failure condensed into
-            ``log_excerpts`` so both dispatch paths' briefs carry it.
+            report; otherwise a copy with the prior failure (and the
+            feedback router's ``dev_brief``, when one exists) condensed
+            into ``log_excerpts`` so both dispatch paths' briefs carry it.
         """
         prior_report: Optional[QAReport] = shared.get("qa_report")
         if prior_report is None or prior_report.passed:
             return research
         shared["qa_attempt"] = shared.get("qa_attempt", 1) + 1
         feedback = condense_qa_failure(prior_report)
-        note = f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
-        return research.model_copy(update={"log_excerpts": [*research.log_excerpts, note]})
+        notes = [f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"]
+        dev_brief = self._repair_dev_brief(shared)
+        if dev_brief:
+            notes.append(f"[Feedback router — required fixes for attempt " f"{shared['qa_attempt']}]\n{dev_brief}")
+        return research.model_copy(update={"log_excerpts": [*research.log_excerpts, *notes]})
+
+    @staticmethod
+    def _is_repair_reentry(shared: dict[str, Any]) -> bool:
+        """Whether this dispatch is a QA repair-loop retry, not a first pass.
+
+        Keys off the ``qa_attempt`` counter this node owns and bumps in
+        :meth:`_with_repair_feedback` — which only fires when a FAILING
+        ``QAReport`` is already in shared state. A first pass therefore
+        never has the key (or has it at 1), so this cannot mistake a fresh
+        run whose tasks happen to be pre-completed for a retry: that run
+        legitimately has nothing to dispatch and must stay a no-op.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            ``True`` on the second and later development dispatches of a run.
+        """
+        return int(shared.get("qa_attempt", 1)) >= 2
+
+    @staticmethod
+    def _repair_dev_brief(shared: dict[str, Any]) -> str:
+        """The feedback router's ``dev_brief`` for this retry, if any.
+
+        Read defensively via ``getattr`` rather than typed access: the
+        ``feedback_decision`` key only exists in the dev-flow (feature
+        mode) topology, and this node must stay usable in the bug-mode
+        flow — and standalone in tests — where nothing ever writes it.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            The stripped ``dev_brief``, or ``""`` when there is no
+            decision, no brief, or a blank one.
+        """
+        decision = shared.get("feedback_decision")
+        return (getattr(decision, "dev_brief", "") or "").strip()
 
     # ------------------------------------------------------------------
     # Config cascade
@@ -523,6 +908,85 @@ class DevelopmentNode(DevLoopNode):
     # Single-agent path (byte-identical to the pre-FEAT-323 behaviour)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _task_manifest_note(scheduler: TaskScheduler) -> str:
+        """Render the per-spec index as a path-bearing task inventory.
+
+        Args:
+            scheduler: The scheduler built from the feature's per-spec index.
+
+        Returns:
+            A prompt-ready block, one line per task, ordered as the index
+            lists them. Tasks whose index entry carries no ``file`` are
+            still listed (the id and title are useful on their own) with
+            the path column left explicitly unknown, so the agent never
+            reads a blank as a filename it may invent.
+        """
+        lines = [
+            "[TASK INVENTORY — from the per-spec index; these paths are " "authoritative]",
+            "Implement every task below that is not already 'done', in "
+            "depends_on order. Read each task's artifact at the path given "
+            "here — do NOT reconstruct a filename from the task id: the "
+            "<slug> in TASK-<NNN>-<slug>.md is per-task and is NOT the "
+            "feature slug.",
+        ]
+        for task in scheduler.all_tasks():
+            deps = ", ".join(task.depends_on) or "none"
+            path = task.file or "<not recorded in the index — locate it with a search>"
+            lines.append(f"  {task.id} [{task.status}] depends_on: {deps}")
+            if task.title:
+                lines.append(f"    title: {task.title}")
+            lines.append(f"    file:  {path}")
+        return "\n".join(lines)
+
+    async def _with_task_manifest(self, research: ResearchOutput) -> ResearchOutput:
+        """Name every task artifact by its real path for a single dev agent.
+
+        The pool path hands each seat a ``TaskScopedBrief.task_file``, so a
+        pooled worker never has to guess. A single agent gets no per-task
+        brief and implements the WHOLE spec — every task in it, in
+        sequence, the way ``sdd-worker`` does — so it has the same problem
+        once per task: the ``<slug>`` in ``TASK-<NNN>-<slug>.md`` is
+        per-task and is NOT the feature slug, and an agent reconstructing
+        the name reaches for the feature slug and reads a path that does
+        not exist.
+
+        The per-spec index knows every path. This folds the whole
+        inventory into ``log_excerpts`` — the same prompt channel
+        :meth:`_with_prior_work_context` uses — so the agent never
+        reconstructs a filename at all.
+
+        Args:
+            research: The upstream research output.
+
+        Returns:
+            A copy carrying the manifest, or ``research`` unchanged when no
+            per-spec index is readable (the normal case for a hotfix, which
+            reserves no FEAT/TASK ids and therefore has no index).
+        """
+        try:
+            scheduler = await self._build_scheduler(research)
+        except ValueError:
+            # A depends_on cycle is the pool path's problem to raise, not a
+            # reason to fail a single-agent run that never consults the graph.
+            self.logger.warning(
+                "Per-spec index for %s has a depends_on cycle; dispatching "
+                "the single agent without a task manifest.",
+                research.feat_id,
+                exc_info=True,
+            )
+            return research
+        if scheduler is None or not scheduler.all_tasks():
+            return research
+
+        note = self._task_manifest_note(scheduler)
+        self.logger.info(
+            "%s single-agent dispatch: injecting a %d-task manifest with " "index-resolved artifact paths.",
+            research.feat_id,
+            len(scheduler.all_tasks()),
+        )
+        return research.model_copy(update={"log_excerpts": [note, *research.log_excerpts]})
+
     async def _execute_single(
         self,
         shared: Dict[str, Any],
@@ -549,6 +1013,7 @@ class DevelopmentNode(DevLoopNode):
             The validated :class:`DevelopmentOutput`, carrying one
             ``WorkerSummary`` describing the backend/model actually used.
         """
+        research = await self._with_task_manifest(research)
         dispatcher = self._dispatcher
         profile = self._dispatch_profile
         spec: Optional[DevAgentSpec] = None
@@ -591,19 +1056,47 @@ class DevelopmentNode(DevLoopNode):
             setting_sources=["project"],
         )
 
-        dev_out: DevelopmentOutput = await dispatcher.dispatch(
-            brief=research,
-            profile=profile,
-            output_model=DevelopmentOutput,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=research.worktree_path,
-            # FEAT-322: fold dispatch-level events (queued/started/message/
-            # tool_use/…) into the run's SessionHost when one is present
-            # (seeded by DevLoopRunner.run(); absent for nodes invoked
-            # outside the runner). `dispatch()` defaults this to None.
-            session_host=shared.get("session_host"),
-        )
+        # FEAT-496: label the single-agent (non-pool) path too — best-effort,
+        # never lets a labelling failure affect the dispatch itself.
+        try:
+            single_labels: Optional[DispatchLabels] = DispatchLabels(
+                seat=self.name,
+                agent=spec.agent if spec is not None else "",
+                model=self._resolver_label_model(profile),
+                subagent=getattr(profile, "subagent", "") or "",
+            )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            single_labels = None
+
+        try:
+            dev_out: DevelopmentOutput = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                # FEAT-322: fold dispatch-level events (queued/started/message/
+                # tool_use/…) into the run's SessionHost when one is present
+                # (seeded by DevLoopRunner.run(); absent for nodes invoked
+                # outside the runner). `dispatch()` defaults this to None.
+                session_host=shared.get("session_host"),
+                labels=single_labels,
+            )
+        except TypeError as exc:
+            # FEAT-496: labels are best-effort — a dispatcher double that
+            # does not declare labels= must not break this path.
+            if "labels" not in str(exc):
+                raise
+            dev_out = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                session_host=shared.get("session_host"),
+            )
 
         # Record what actually ran, so a substitution is auditable on the
         # run bundle. This ONLY applies when a declared pool spec was
@@ -800,8 +1293,7 @@ class DevelopmentNode(DevLoopNode):
         done_ids = {t.id for t in scheduler.done()}
         todo = [t for t in all_tasks if t.id not in done_ids]
         self.logger.info(
-            "%s task plan: %d task(s) in the per-spec index — %d already done, "
-            "%d to run: %s",
+            "%s task plan: %d task(s) in the per-spec index — %d already done, " "%d to run: %s",
             research.feat_id,
             len(all_tasks),
             len(done_ids),
@@ -882,8 +1374,7 @@ class DevelopmentNode(DevLoopNode):
                     scheduler.mark_failed(task_id)
 
                 self.logger.info(
-                    "%s wave %d complete: %d completed (%s), %d failed (%s); "
-                    "%d task(s) still pending, %d skipped",
+                    "%s wave %d complete: %d completed (%s), %d failed (%s); " "%d task(s) still pending, %d skipped",
                     research.feat_id,
                     wave_number,
                     len(result.completed),
@@ -966,15 +1457,43 @@ class DevelopmentNode(DevLoopNode):
         first_worker = pool.workers[0]
 
         try:
-            await first_worker.dispatcher.dispatch(
-                brief=brief,
-                profile=first_worker.profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent=first_worker.spec.agent,
+                model=self._resolver_label_model(first_worker.profile),
             )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            labels = None
+
+        try:
+            try:
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=labels,
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a dispatcher that does
+                # not declare labels= must not be treated as "resolver
+                # failed"; retry once without them before giving up.
+                if "labels" not in str(exc):
+                    raise
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
             self.logger.warning("Conflict resolver (%s) failed on %s: %s", first_worker.spec.agent, path, exc)
@@ -988,19 +1507,57 @@ class DevelopmentNode(DevLoopNode):
             setter = getattr(fallback_dispatcher, "set_event_registry_resolver", None)
             if resolver is not None and callable(setter):
                 setter(resolver)
-            await fallback_dispatcher.dispatch(
-                brief=brief,
-                profile=fallback_profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            fallback_labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent="claude-code",
+                model=self._resolver_label_model(fallback_profile),
             )
+            try:
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=fallback_labels,
+                )
+            except TypeError as exc:
+                if "labels" not in str(exc):
+                    raise
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - fallback failure -> resolver fully failed
             self.logger.warning("Fallback claude-code conflict resolver also failed on %s: %s", path, exc)
             return False
+
+    @staticmethod
+    def _resolver_label_model(profile: Any) -> str:
+        """Best-effort model id off a dispatch profile (FEAT-496).
+
+        Mirrors ``agent_pool._profile_model``'s duck-typing (a direct
+        ``model`` field, or the combined ``llm="<backend>:<model>"`` field).
+        """
+        try:
+            if hasattr(profile, "model"):
+                return str(getattr(profile, "model") or "")
+            if hasattr(profile, "llm"):
+                llm = str(getattr(profile, "llm") or "")
+                return llm.split(":", 1)[-1] if ":" in llm else llm
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            pass
+        return ""
 
 
 __all__ = ["DevelopmentNode"]
