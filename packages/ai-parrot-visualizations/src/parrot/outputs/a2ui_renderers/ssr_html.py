@@ -404,6 +404,15 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         role = None
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
+        if "text" not in props and role != "cell":
+            # FEAT-499: baking drops the "text" key entirely (never an
+            # empty string) when an OPTIONAL binding failed to resolve —
+            # omit the whole element, matching _render_infographic's own
+            # `if text is not None` precedent, instead of leaving a
+            # visible-but-blank <p class="a2ui-...">. A table CELL keeps
+            # its slot (empty display) to preserve column alignment —
+            # a cell's own value is never itself an optional binding.
+            return ""
         cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
         semantic_cls = semantic_text_class(node)
         if semantic_cls:

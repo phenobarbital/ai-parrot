@@ -762,6 +762,13 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
     def _render_prim_Text(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
+        if "text" not in props:
+            # FEAT-499: baking drops the "text" key entirely (never an
+            # empty string) when an OPTIONAL binding failed to resolve —
+            # omit the whole element, matching _render_infographic's own
+            # `if text is not None` precedent, instead of leaving a
+            # visible-but-blank <p class="a2ui-...">.
+            return ""
         role = None
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
