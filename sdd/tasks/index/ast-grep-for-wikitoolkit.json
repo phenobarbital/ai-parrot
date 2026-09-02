@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-02T04:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-02T19:30:31+00:00",
   "tasks": [
     {
       "id": "TASK-2738",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T11:12:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2738-symbol-models-and-id-grammar.md"
+      "file": "sdd/tasks/completed/TASK-2738-symbol-models-and-id-grammar.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2739",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T11:24:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2739-astgrep-seam-and-rule-loader.md"
+      "file": "sdd/tasks/completed/TASK-2739-astgrep-seam-and-rule-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2740",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T11:40:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2740-outline-renderer-and-scanner-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2740-outline-renderer-and-scanner-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2741",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T11:50:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2741-python-ast-symbols.md"
+      "file": "sdd/tasks/completed/TASK-2741-python-ast-symbols.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2742",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T13:25:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2742-rules-typescript.md"
+      "file": "sdd/tasks/completed/TASK-2742-rules-typescript.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2743",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T13:36:47+00:00",
-      "file": "sdd/tasks/completed/TASK-2743-rules-php.md"
+      "file": "sdd/tasks/completed/TASK-2743-rules-php.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2744",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T13:51:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2744-rules-rust.md"
+      "file": "sdd/tasks/completed/TASK-2744-rules-rust.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2745",
@@ -163,7 +170,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T14:09:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2745-rules-perl.md"
+      "file": "sdd/tasks/completed/TASK-2745-rules-perl.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2746",
@@ -183,7 +191,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T14:16:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2746-rules-python-refs.md"
+      "file": "sdd/tasks/completed/TASK-2746-rules-python-refs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2747",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T12:23:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2747-store-schema-v2-and-symbol-methods.md"
+      "file": "sdd/tasks/completed/TASK-2747-store-schema-v2-and-symbol-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2748",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T14:42:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2748-symbol-pages-resolver-and-ingest.md"
+      "file": "sdd/tasks/completed/TASK-2748-symbol-pages-resolver-and-ingest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2749",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T15:23:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2749-structural-service-read-repair.md"
+      "file": "sdd/tasks/completed/TASK-2749-structural-service-read-repair.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2750",
@@ -265,7 +277,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T15:37:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2750-structural-tools-toolkit-mcp.md"
+      "file": "sdd/tasks/completed/TASK-2750-structural-tools-toolkit-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2751",
@@ -285,7 +298,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T15:49:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2751-cli-symbols-stats-docs.md"
+      "file": "sdd/tasks/completed/TASK-2751-cli-symbols-stats-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2752",
@@ -310,7 +324,8 @@
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
       "completed_at": "2026-09-02T16:11:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2752-e2e-integration-and-parity-suite.md"
+      "file": "sdd/tasks/completed/TASK-2752-e2e-integration-and-parity-suite.md",
+      "verification": "verified"
     }
   ]
 }
