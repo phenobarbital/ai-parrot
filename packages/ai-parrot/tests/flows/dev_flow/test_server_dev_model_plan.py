@@ -188,6 +188,23 @@ class TestConfigPayload:
         assert payload["adversarial_review"]["mandatory"] is True
         assert "cannot be switched off" in payload["adversarial_review"]["note"]
 
+    async def test_research_primary_models_in_config_payload(self, make_client):
+        client = await make_client()
+        plan = (await (await client.get("/api/config")).json())["defaults"]["model_plan"]
+        assert "research_primary_models" in plan
+        assert isinstance(plan["research_primary_models"], list)
+
+    async def test_fable_in_research_primary_models(self, make_client):
+        client = await make_client()
+        plan = (await (await client.get("/api/config")).json())["defaults"]["model_plan"]
+        assert "claude-fable-5-1" in plan["research_primary_models"]
+        assert "claude-fable-5" in plan["research_primary_models"]
+
+    async def test_opus_still_in_research_primary_models(self, make_client):
+        client = await make_client()
+        plan = (await (await client.get("/api/config")).json())["defaults"]["model_plan"]
+        assert "claude-opus-5" in plan["research_primary_models"]
+
 
 class TestPlanParsing:
     """``_parse_model_plan`` — backends strict, models free text."""

@@ -81,3 +81,28 @@ def test_backends_for_role_development_includes_all_backends():
     development_ids = {b.id for b in catalog.backends_for_role("development")}
     all_ids = {b.id for b in catalog.BACKENDS}
     assert development_ids == all_ids
+
+
+def test_research_primary_role_in_catalog_payload():
+    from parrot.flows.dev_loop import catalog
+    
+    payload = catalog.catalog_payload()
+    assert "research_primary" in payload["roles"]
+    assert len(payload["roles"]["research_primary"]) > 0
+
+
+def test_claude_code_is_research_primary_backend():
+    from parrot.flows.dev_loop import catalog
+    
+    payload = catalog.catalog_payload()
+    assert "claude-code" in payload["roles"]["research_primary"]
+
+
+def test_fable_in_claude_code_backend_models():
+    from parrot.flows.dev_loop import catalog
+    
+    payload = catalog.catalog_payload()
+    cc = next((b for b in payload["backends"] if b["id"] == "claude-code"), None)
+    assert cc is not None, "claude-code backend not in catalog payload"
+    assert "claude-fable-5-1" in cc["models"]
+    assert "claude-fable-5" in cc["models"]
