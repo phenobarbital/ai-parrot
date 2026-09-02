@@ -152,7 +152,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Touches session_state.py and the _apply_to_session_host shim. Parallel with the dispatcher tasks (disjoint files); the shim edit is additive and confined to one function.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2729-session-state-seat-projection.md"
+      "completed_at": "2026-09-02T03:03:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2729-session-state-seat-projection.md"
     },
     {
       "id": "TASK-2730",

@@ -332,10 +332,32 @@ class TestBackwardCompatibility:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `SeatState` (frozen, defined right after `DispatchState`;
+the forward reference `Dict[str, "SeatState"]` resolves fine under Pydantic
+v2 since both classes are in the same module) and
+`DispatchState.seats: Dict[str, SeatState] = Field(default_factory=dict)`.
+Added `seat`, `task_id`, `task_title`, `agent`, `model`, `summary` — all
+optional, defaulted to `""` — to the `_DispatchAction` base class (spec's
+Scope text named `seat`/`task_id`/`task_title`/`summary`; `agent`/`model`
+were added too since AC6 explicitly requires them on the seat entry and
+there is no other channel for them to reach `reduce()`). `reduce()`'s eight
+dispatch branches now additionally call a new `_fold_seat_from_action`
+helper (defined beside `_with_dispatch`) that upserts
+`DispatchState.seats[seat]` when the action carries a non-empty seat —
+strictly additive; the existing roll-up counters are computed exactly as
+before. `action_from_dispatch_event` gained an optional `seat: str = ""`
+parameter (payload's own `seat` key wins when present — labels are
+authoritative). `_apply_to_session_host` now passes
+`seat=event.node_id if "." in event.node_id else ""`. 14 new tests added
+(10 in `test_session_state.py`, 1 in `test_dual_publish.py`, matching
+existing `test_pool_worker_seats_fold_into_their_owning_node` unchanged);
+full `dev_loop` suite green (same 3 pre-existing unrelated failures in
+`test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: added `agent`/`model` fields to `_DispatchAction`
+(and threading them through `action_from_dispatch_event`/
+`_fold_seat_from_action`) beyond the four fields the Scope section named —
+required by AC6's explicit requirement that a seat entry carry `agent`/
+`model` "when the payload supplies them".
