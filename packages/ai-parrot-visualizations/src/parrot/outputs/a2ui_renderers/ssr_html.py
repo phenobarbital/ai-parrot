@@ -46,7 +46,7 @@ from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
 from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
-from parrot.outputs.a2ui.models import Component, CreateSurface
+from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
@@ -73,6 +73,36 @@ _SURFACE_NAME = "ssr_html"
 #: Basic Catalog composite/container primitives whose children render
 #: recursively (the CSS class used for the wrapping ``<div>``).
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
+
+
+def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
+    """Union ``parent.metadata.extensions`` onto every component ``lowered``
+    into (FEAT-499). The child's own key wins on a collision; ``lowered`` is
+    already the FULLY FLATTENED descendant list (:func:`to_components`
+    flattens the whole tree, not just direct children), so this single pass
+    reaches grandchildren too — not just the immediate lowered children.
+
+    Identical to :mod:`interactive_html`'s helper — kept as a small,
+    independently-duplicated function rather than a shared core import, per
+    the one-way import rule (renderers never import each other).
+    """
+    parent_ext = (
+        parent.metadata.extensions.root
+        if parent.metadata is not None and parent.metadata.extensions is not None
+        else {}
+    )
+    if not parent_ext:
+        return lowered
+    merged_components: list[Component] = []
+    for child in lowered:
+        child_ext = (
+            dict(child.metadata.extensions.root)
+            if child.metadata is not None and child.metadata.extensions is not None
+            else {}
+        )
+        merged = {**parent_ext, **child_ext}  # child's own key wins on collision
+        merged_components.append(child.model_copy(update={"metadata": ComponentMetadata(extensions=merged)}))
+    return merged_components
 
 
 def _esc(value: Any) -> str:
@@ -233,7 +263,8 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 entry = None
             if entry is not None and not entry.definition.is_primitive:
                 tree = entry.component_cls().lower(comp, envelope.data_model)
-                new_components.extend(to_components(tree, id_prefix=f"{comp.id}-lc"))
+                lowered = to_components(tree, id_prefix=f"{comp.id}-lc")
+                new_components.extend(_propagate_extensions(comp, lowered))
             else:
                 new_components.append(comp)
         return envelope.model_copy(update={"components": new_components})
