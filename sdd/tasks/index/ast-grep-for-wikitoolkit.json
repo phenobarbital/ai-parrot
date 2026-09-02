@@ -152,7 +152,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Owns perl.yaml + fixture + test; independent of the other rule tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2745-rules-perl.md"
+      "completed_at": "2026-09-02T14:09:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2745-rules-perl.md"
     },
     {
       "id": "TASK-2746",
