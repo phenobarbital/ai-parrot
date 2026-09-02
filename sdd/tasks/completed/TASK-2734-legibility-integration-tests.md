@@ -256,14 +256,44 @@ async def test_normalized_contract_holds(dispatcher_cls, kind, captured):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Wrote `test_dispatch_legibility_integration.py` (45 tests)
+covering the spec §4 three integration tests
+(`TestClaudeStreamLegibility`/`TestPoolTaskIdentity`/
+`TestMultiplexerPassthrough` — the latter split into the base case plus an
+explicit `google_coding` wire-format regression guard), the cross-backend
+`test_normalized_contract_holds` sweep (5 dispatcher classes × 8 kinds = 40
+parametrized cases, each calling the dispatcher's real `_publish_event`
+against a mocked Redis and asserting the guaranteed contract holds), and a
+backward-compatibility check that a pre-FEAT-496 `ActionEnvelope` still
+validates. All 45 pass on first run. Ran the full sweep of spec §5 (AC1
+through AC13, including AC7b and AC9b) and recorded evidence for each in
+`artifacts/logs/feat-496/acceptance-sweep.md`; 11/13 criteria are fully
+automated-PASS, 2 (AC7, AC7b — the two manual-console criteria) are
+PARTIAL: the underlying JS logic was verified by extraction + Node runtime
+smoke tests (TASK-2732/2733's own evidence files) and by a byte-for-byte
+diff proving `dev.html`/`index.html` share identical new logic, but actual
+browser/DOM rendering was never exercised against a live server in this
+session — flagged honestly rather than claimed as fully verified.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Ran the full `dev_loop` suite (`1601 passed, 6 skipped`, same 3
+pre-existing `test_recovery_lifecycle.py` failures reproduced identically
+via `git stash` against `dev` before any FEAT-496 change) and `ruff check`
+across all 31 touched files; every finding traced to pre-existing style
+debt already present on `dev` for that file, except two stale `# noqa:
+F401` comments in this task's own `test_llm_family_parity.py` (fixed here).
+No new dependency was added.
 
-**Acceptance sweep result**: <N>/<M> criteria evidenced — link to `artifacts/logs/feat-496/acceptance-sweep.md`
+**Acceptance sweep result**: 11/13 fully PASS, 2/13 (AC7, AC7b) PARTIAL
+(logic verified, live-browser rendering unverified) — see
+`artifacts/logs/feat-496/acceptance-sweep.md` for the full per-criterion
+table.
 
-**Defects found during the sweep**: none | `<task-id>`: description
+**Defects found during the sweep**: none new. Two lint nits in this task's
+own file (fixed in place, not owned by another task).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — AC7/AC7b's PARTIAL status is a disclosed
+verification limitation (no live server available in this session), not a
+functional gap; the underlying code was verified as thoroughly as
+possible without one.
