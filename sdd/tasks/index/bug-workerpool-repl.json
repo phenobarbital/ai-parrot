@@ -32,7 +32,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports ReadyResponse from TASK-2757; TASK-2759's host reader expects this frame, so it must precede it.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2758-worker-emit-ready-frame.md"
+      "completed_at": "2026-09-02T14:45:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2758-worker-emit-ready-frame.md"
     },
     {
       "id": "TASK-2759",
