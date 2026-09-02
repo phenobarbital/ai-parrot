@@ -77,7 +77,10 @@ except ImportError:  # pragma: no cover - exercised only when asyncpg is absent
 
 from parrot_formdesigner.core.resolution import resolve_rule_references
 from parrot_formdesigner.core.schema import FormSchema
-from parrot_formdesigner.services._identifiers import qualified_table, validate_identifier
+from parrot_formdesigner.services._identifiers import (
+    qualified_table,
+    validate_identifier,
+)
 
 DEFAULT_BATCH_SIZE = 1000
 
@@ -129,13 +132,28 @@ def walk_field_dicts(items: list[Any]) -> Iterator[dict[str, Any]]:
             yield from walk_field_dicts([template])
 
 
-def _all_field_ids(data: dict[str, Any]) -> set[str]:
-    """Collect every `field_id` present anywhere in a raw document."""
+def _reserved_names(data: dict[str, Any]) -> set[str]:
+    """Collect every name a renamed `field_id` must not collide with.
+
+    That is every `field_id` in the tree, plus every metadata key —
+    `FormSchema._validate_metadata` rejects a metadata key that collides
+    with a `field_id`, so a rename landing on one would turn a repairable
+    row into an unrepairable one.
+
+    Args:
+        data: A raw ``schema_json`` document.
+
+    Returns:
+        The set of names already claimed in the document.
+    """
     found: set[str] = set()
     for section in data.get("sections") or []:
         if isinstance(section, dict):
             for field_dict in walk_field_dicts(section.get("fields") or []):
                 found.add(str(field_dict.get("field_id")))
+    for entry in data.get("metadata") or []:
+        if isinstance(entry, dict) and entry.get("key") is not None:
+            found.add(str(entry["key"]))
     return found
 
 
@@ -169,7 +187,7 @@ def dedupe_field_ids(data: dict[str, Any]) -> list[tuple[str, str]]:
         The renames applied, as ``(old_field_id, new_field_id)`` pairs in
         traversal order. Empty when the document had no duplicates.
     """
-    taken = _all_field_ids(data)
+    taken = _reserved_names(data)
     seen: set[str] = set()
     renames: list[tuple[str, str]] = []
 
