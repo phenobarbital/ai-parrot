@@ -249,6 +249,35 @@ class DevelopmentNode(DevLoopNode):
         pool_cfg = self._collapse_for_single_task(shared, pool_cfg, scheduler, research)
 
         first_wave = scheduler.next_wave()
+
+        # Hotfix (2026-09-02): a QA repair-loop re-entry whose per-spec index
+        # holds no runnable task is the pool path's silent-no-op hole. Every
+        # task is already `done`, so `next_wave()` returns empty, the wave
+        # loop in `_execute_pool` breaks on its first turn without ever
+        # dispatching an agent, and `incomplete and total_completed == 0`
+        # (the "all tasks incomplete" guard) is False because `incomplete` is
+        # itself empty — so the node returns an empty DevelopmentOutput and
+        # reports SUCCESS in ~100ms. The retry edge then runs QA again over a
+        # byte-identical tree, which fails identically, burning a full QA
+        # cycle (~20 min observed) per retry until the stop rule escalates.
+        #
+        # The repair instruction lives in `research.log_excerpts` (stamped by
+        # `_with_repair_feedback` above), not in the task index — the tasks
+        # ARE done; what is left is fixing what QA rejected about them. So a
+        # single seat is dispatched with that brief, exactly like the
+        # hotfix/no-index path already does, instead of dispatching nobody.
+        if not first_wave and self._is_repair_reentry(shared):
+            self.logger.warning(
+                "%s: QA repair-loop re-entry (attempt %d) with 0 runnable "
+                "task(s) in the per-spec index — the pool would dispatch "
+                "nothing and QA would re-run on an unchanged tree. "
+                "Dispatching a single repair seat with the QA feedback "
+                "instead.",
+                research.feat_id or research.jira_issue_key,
+                shared.get("qa_attempt", 1),
+            )
+            return await self._execute_single(shared, research, pool_cfg=pool_cfg)
+
         if not should_fan_out(first_wave, pool_cfg):
             effective_slots = sum(spec.count for spec in pool_cfg.agents)
             self.logger.info(
@@ -688,22 +717,78 @@ class DevelopmentNode(DevLoopNode):
         never re-derived because the retry edge never re-enters
         ``ResearchNode``.
 
+        Hotfix (2026-09-02): the condensed ``QAReport`` is only HALF the re-entry
+        context. In feature mode the ``feedback_router`` node produces a
+        ``FeedbackDecision`` whose ``dev_brief`` is the actual, specific
+        instruction set for this retry ("fix these four things") — and it
+        was published to ``shared["feedback_decision"]`` and then read by
+        nobody, so every feature-mode retry re-dispatched with the raw QA
+        failure and none of the router's reasoning. It is appended AFTER
+        the condensed report (evidence first, then the instruction derived
+        from it) and only when non-empty, so bug-mode runs — which have no
+        ``feedback_router`` in their topology — are byte-identical.
+
         Args:
             shared: The flow's shared state dict.
             research: The upstream research output (read fresh each call).
 
         Returns:
             ``research`` unchanged on a first pass or a passing prior
-            report; otherwise a copy with the prior failure condensed into
-            ``log_excerpts`` so both dispatch paths' briefs carry it.
+            report; otherwise a copy with the prior failure (and the
+            feedback router's ``dev_brief``, when one exists) condensed
+            into ``log_excerpts`` so both dispatch paths' briefs carry it.
         """
         prior_report: Optional[QAReport] = shared.get("qa_report")
         if prior_report is None or prior_report.passed:
             return research
         shared["qa_attempt"] = shared.get("qa_attempt", 1) + 1
         feedback = condense_qa_failure(prior_report)
-        note = f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
-        return research.model_copy(update={"log_excerpts": [*research.log_excerpts, note]})
+        notes = [f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"]
+        dev_brief = self._repair_dev_brief(shared)
+        if dev_brief:
+            notes.append(
+                f"[Feedback router — required fixes for attempt "
+                f"{shared['qa_attempt']}]\n{dev_brief}"
+            )
+        return research.model_copy(update={"log_excerpts": [*research.log_excerpts, *notes]})
+
+    @staticmethod
+    def _is_repair_reentry(shared: dict[str, Any]) -> bool:
+        """Whether this dispatch is a QA repair-loop retry, not a first pass.
+
+        Keys off the ``qa_attempt`` counter this node owns and bumps in
+        :meth:`_with_repair_feedback` — which only fires when a FAILING
+        ``QAReport`` is already in shared state. A first pass therefore
+        never has the key (or has it at 1), so this cannot mistake a fresh
+        run whose tasks happen to be pre-completed for a retry: that run
+        legitimately has nothing to dispatch and must stay a no-op.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            ``True`` on the second and later development dispatches of a run.
+        """
+        return int(shared.get("qa_attempt", 1)) >= 2
+
+    @staticmethod
+    def _repair_dev_brief(shared: dict[str, Any]) -> str:
+        """The feedback router's ``dev_brief`` for this retry, if any.
+
+        Read defensively via ``getattr`` rather than typed access: the
+        ``feedback_decision`` key only exists in the dev-flow (feature
+        mode) topology, and this node must stay usable in the bug-mode
+        flow — and standalone in tests — where nothing ever writes it.
+
+        Args:
+            shared: The flow's shared state dict.
+
+        Returns:
+            The stripped ``dev_brief``, or ``""`` when there is no
+            decision, no brief, or a blank one.
+        """
+        decision = shared.get("feedback_decision")
+        return (getattr(decision, "dev_brief", "") or "").strip()
 
     # ------------------------------------------------------------------
     # Config cascade
