@@ -211,3 +211,141 @@ async def test_dispatch_profile_mismatch(dispatcher, brief):
             node_id="development",
             cwd=brief.worktree_path,
         )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2727 — wire-format fix (root cause 7) + display extraction
+# ---------------------------------------------------------------------------
+
+
+def _tool_call_step_update():
+    return {
+        "type": "step_update",
+        "step_update": {
+            "step_type": "tool_call",
+            "tool_call": {"name": "read_file", "args": {"path": "src/a.py"}},
+        },
+    }
+
+
+class TestAgyWireFormat:
+    @pytest.mark.asyncio
+    async def test_xadd_writes_a_single_event_field(self, dispatcher):
+        """Defect (b): the flat-field layout the multiplexer cannot read."""
+        await dispatcher._publish_event(
+            "flow:r1:dispatch:development",
+            kind="dispatch.tool_use",
+            run_id="r1",
+            node_id="development",
+            payload={"agy_event": {}},
+        )
+        args, _kwargs = dispatcher._fake_redis.xadd.call_args
+        fields = args[1]
+        assert set(fields) == {"event"}
+        assert json.loads(fields["event"])["kind"] == "dispatch.tool_use"
+
+    @pytest.mark.asyncio
+    async def test_multiplexer_reads_the_real_event_kind(self, dispatcher):
+        """AC9b — the end-to-end symptom: flow.unknown in the console."""
+        from parrot.flows.dev_loop.streaming import FlowStreamMultiplexer
+
+        await dispatcher._publish_event(
+            "flow:r1:dispatch:development.w1",
+            kind="dispatch.tool_use",
+            run_id="r1",
+            node_id="development.w1",
+            payload={"agy_event": {}},
+        )
+        args, _kwargs = dispatcher._fake_redis.xadd.call_args
+        fields = args[1]
+
+        mux = FlowStreamMultiplexer(dispatcher._fake_redis, run_id="r1")
+        env = mux._fields_to_envelope("flow:r1:dispatch:development.w1", fields, ts=1.0)
+        assert env["event_kind"] == "dispatch.tool_use"
+        assert env["event_kind"] != "flow.unknown"
+
+    @pytest.mark.asyncio
+    async def test_session_host_is_folded(self, dispatcher):
+        """Defect (b), second half: agy contributed nothing to session state."""
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        from parrot.flows.dev_loop.session_state import SessionHost
+
+        host = SessionHost("run-agy-fold")
+        token = _SESSION_HOST_CTX.set(host)
+        try:
+            await dispatcher._publish_event(
+                "flow:run-agy-fold:dispatch:development",
+                kind="dispatch.tool_use",
+                run_id="run-agy-fold",
+                node_id="development",
+                payload={"agy_event": {}, "tool_name": "read_file"},
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+        assert host.state.nodes["development"].dispatch.tool_use_count == 1
+
+    @pytest.mark.asyncio
+    async def test_redis_failure_still_folds_session_host(self, dispatcher, monkeypatch):
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        from parrot.flows.dev_loop.session_state import SessionHost
+
+        async def _broken_redis():
+            raise ConnectionError("redis down")
+
+        monkeypatch.setattr(dispatcher, "_get_redis", _broken_redis)
+
+        host = SessionHost("run-agy-broken")
+        token = _SESSION_HOST_CTX.set(host)
+        try:
+            await dispatcher._publish_event(
+                "flow:run-agy-broken:dispatch:development",
+                kind="dispatch.tool_use",
+                run_id="run-agy-broken",
+                node_id="development",
+                payload={"agy_event": {}, "tool_name": "read_file"},
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+        assert host.state.nodes["development"].dispatch.tool_use_count == 1
+
+
+class TestAgyEventExtraction:
+    def test_tool_call_yields_name_and_input(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_call_step_update())
+        assert out["tool_name"] == "read_file"
+        assert "a.py" in out["tool_input"]
+
+    def test_text_delta_yields_text(self):
+        out = GoogleCodingDispatcher._extract_agy_display(
+            {"type": "step_update", "step_update": {"text_delta": "hi"}}
+        )
+        assert out["text"] == "hi"
+
+    def test_result_as_json_string_does_not_raise(self):
+        out = GoogleCodingDispatcher._extract_agy_display(
+            {"type": "result", "result": '{"turns": 3}'}
+        )
+        assert isinstance(out, dict)
+
+    @pytest.mark.asyncio
+    async def test_raw_event_preserved(self, dispatcher):
+        """AC9."""
+        event = _tool_call_step_update()
+        await dispatcher._publish_agy_event(
+            "flow:r1:dispatch:development", event, "r1", "development"
+        )
+        args, _kwargs = dispatcher._fake_redis.xadd.call_args
+        fields = args[1]
+        decoded = json.loads(fields["event"])
+        assert decoded["payload"]["agy_event"] == event
+
+    @pytest.mark.asyncio
+    async def test_every_payload_has_a_summary(self, dispatcher):
+        for event in (_tool_call_step_update(), {"type": "init", "model": "gemini-3.6"}):
+            await dispatcher._publish_agy_event(
+                "flow:r1:dispatch:development", event, "r1", "development"
+            )
+        for call in dispatcher._fake_redis.xadd.call_args_list:
+            fields = call.args[1]
+            decoded = json.loads(fields["event"])
+            assert decoded["payload"]["summary"]

@@ -24,7 +24,12 @@ from parrot import conf
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
+    _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
+    summarize_tool_input,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
@@ -32,6 +37,8 @@ from parrot.flows.dev_loop.dispatchers.gemini import GeminiCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     CodexCodeDispatchProfile,
+    DispatchEvent,
+    DispatchLabels,
     GeminiCodeDispatchProfile,
     GoogleCodingDispatchProfile,
 )
@@ -83,16 +90,30 @@ class GoogleCodingDispatcher:
         node_id: str,
         payload: Dict[str, Any],
     ) -> None:
+        """Wrap the event in a :class:`DispatchEvent` and ``XADD`` it.
+
+        FEAT-496 root cause 7: this method previously wrote five flat
+        Redis fields (``kind``, ``run_id``, ``node_id``, ``timestamp``,
+        ``payload``-as-JSON-string) instead of the single ``{"event": ...}``
+        field every other dispatcher writes and
+        :class:`FlowStreamMultiplexer` expects — so every ``agy`` dispatch
+        event surfaced in the console as ``event_kind="flow.unknown"`` and
+        never reached session state at all. This now matches
+        ``ClaudeCodeDispatcher._publish_event`` exactly: the session-host
+        fold happens BEFORE the Redis round-trip (an independent failure
+        domain), and a Redis failure never skips it.
+        """
+        event = DispatchEvent(
+            kind=kind,  # type: ignore[arg-type]
+            ts=time.time(),
+            run_id=run_id,
+            node_id=node_id,
+            payload=normalize_payload(kind, payload),
+        )
+        _apply_to_session_host(event)
         try:
             r = await self._get_redis()
-            data = {
-                "kind": kind,
-                "run_id": run_id,
-                "node_id": node_id,
-                "timestamp": str(time.time()),
-                "payload": json.dumps(payload),
-            }
-            await r.xadd(stream_key, data)
+            await r.xadd(stream_key, {"event": event.model_dump_json()})
             await r.expire(stream_key, self.stream_ttl_seconds)
         except Exception as exc:
             self.logger.warning("Failed to publish dispatch event to Redis: %s", exc)
@@ -107,12 +128,15 @@ class GoogleCodingDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         """Dispatch a single agy CLI session and return its parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         schema_path: Optional[str] = None
         process: Any = None
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
         try:
             self._enforce_cwd_under_worktree_base(cwd)
 
@@ -137,6 +161,7 @@ class GoogleCodingDispatcher:
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
             raise
 
         async with self._semaphore:
@@ -232,6 +257,7 @@ class GoogleCodingDispatcher:
                 return result
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
                 if schema_path:
                     try:
                         os.unlink(schema_path)
@@ -411,13 +437,103 @@ class GoogleCodingDispatcher:
             elif st == "tool_response":
                 kind = "dispatch.tool_result"
 
+        payload: Dict[str, Any] = {"agy_event": event}
+        payload.update(self._extract_agy_display(event))
         await self._publish_event(
             stream_key,
             kind=kind,
             run_id=run_id,
             node_id=node_id,
-            payload={"agy_event": event},
+            payload=payload,
         )
+
+    @staticmethod
+    def _extract_agy_display(event: Dict[str, Any]) -> Dict[str, Any]:
+        """Best-effort display projection of one agy CLI stream event.
+
+        Never raises; never assumes a field exists — the CLI's event schema
+        is not pinned by this repo. ``event["result"]`` may arrive as a
+        JSON-encoded string rather than a dict (the same tolerance
+        ``_stream_stdout_events`` already applies at line ~375).
+
+        Args:
+            event: The parsed agy CLI stdout JSON event.
+
+        Returns:
+            A dict of additive display keys (``model``/``cwd``/
+            ``session_id`` for ``init``, ``tool_name``/``tool_input`` or
+            ``is_error``/``result_snippet`` for a tool step, ``text`` for a
+            text delta, turn/duration/status for a terminal ``result``).
+            Empty when nothing recognisable is present.
+        """
+        try:
+            out: Dict[str, Any] = {}
+            if not isinstance(event, dict):
+                return out
+            event_type = event.get("type") or event.get("event")
+
+            def _first(source: Dict[str, Any], keys: Sequence[str]) -> Any:
+                for key in keys:
+                    value = source.get(key)
+                    if value:
+                        return value
+                return None
+
+            if event_type == "init":
+                for key in ("model", "cwd", "session_id"):
+                    value = event.get(key)
+                    if value:
+                        out[key] = value
+            elif event_type == "step_update":
+                su = event.get("step_update")
+                if isinstance(su, dict):
+                    step_type = su.get("step_type")
+                    if step_type == "tool_call":
+                        tool_call = su.get("tool_call")
+                        name = ""
+                        args = None
+                        if isinstance(tool_call, dict):
+                            found_name = _first(tool_call, ("name", "tool", "toolName"))
+                            name = str(found_name) if found_name else ""
+                            for key in ("args", "arguments", "input"):
+                                if tool_call.get(key) is not None:
+                                    args = tool_call.get(key)
+                                    break
+                        if name:
+                            out["tool_name"] = name
+                        if args is not None:
+                            out["tool_input"] = summarize_tool_input(name, args)
+                    elif step_type == "tool_response":
+                        tool_response = su.get("tool_response")
+                        if isinstance(tool_response, dict):
+                            found_name = _first(tool_response, ("name", "tool", "toolName"))
+                            if found_name:
+                                out["tool_name"] = str(found_name)
+                            if tool_response.get("error") or tool_response.get("status") == "error":
+                                out["is_error"] = True
+                            response = tool_response.get("response")
+                            if response is None:
+                                response = tool_response.get("output")
+                            if response is not None:
+                                out["result_snippet"] = str(response)[:400]
+                    text_delta = su.get("text_delta")
+                    if text_delta:
+                        out["text"] = str(text_delta)[:400]
+            elif event_type == "result":
+                res = event.get("result")
+                if isinstance(res, str):
+                    try:
+                        res = json.loads(res)
+                    except Exception:  # noqa: BLE001
+                        res = None
+                if isinstance(res, dict):
+                    for key in ("turns", "num_turns", "duration_ms", "status"):
+                        if res.get(key) is not None:
+                            out[key] = res[key]
+
+            return out
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            return {}
 
     def _parse_and_validate_result(
         self,
