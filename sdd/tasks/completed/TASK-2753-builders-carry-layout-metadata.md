@@ -273,10 +273,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_016V1ED31jAfAKt2u9qoKZXx)
+**Date**: 2026-09-02
+**Notes**: Added `metadata: ComponentMetadata | None = None` to `build_surface`
+and `build_infographic`, threaded via `RecipeRunner._assemble_envelope_or_raise`
+into both the `Infographic` and generic branches. Explicit `metadata=` wins over
+a `metadata` key in `properties`; when `metadata=None`, `properties`' own
+`metadata` key (if any) passes through untouched (pre-existing behavior
+preserved). 10/10 new unit tests pass
+(`test_builders_metadata.py`); full `tests/outputs/a2ui/` suite (609 passed,
+1 skipped) and `tests/tools/infographic_recipes/` (72 passed) show no
+regressions. `ruff check` clean on all touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
