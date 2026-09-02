@@ -638,7 +638,7 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             "not delegate to a single dispatch profile."
         )
 
-    def with_judges(self, judges: List[JudgeSpec]) -> "JudgePanelReviewDispatcher":
+    def with_judges(self, judges: List[JudgeSpec]) -> JudgePanelReviewDispatcher:
         """Return a copy of this panel that votes with ``judges`` instead.
 
         The panel dispatcher is built ONCE — at server start, or lazily by
