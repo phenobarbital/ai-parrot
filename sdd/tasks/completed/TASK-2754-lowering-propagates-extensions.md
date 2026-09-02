@@ -263,4 +263,15 @@ passed) and `packages/ai-parrot/tests/outputs/a2ui/` +
 regressions. `ruff check` clean (one auto-fixed import-sort nit in the new
 test file).
 
+**Addendum (TASK-2756 verification sweep)**: the real e2e acceptance gate
+(`test_report_profile_replay_no_narrator`) caught a second gap in these
+SAME two files that this task's own unit tests did not exercise: baking
+correctly drops the "text" key when an optional binding is absent, but
+`_render_prim_Text`/`_render_Text` unconditionally emitted the wrapping
+`<p class="a2ui-...">` regardless, leaking a visible-but-blank element.
+Fixed in TASK-2756's commit (same two files) by omitting the element
+entirely when "text" is absent, matching `_render_infographic`'s existing
+precedent. See `sdd/tasks/completed/TASK-2756-e2e-verification-sweep.md`
+and `artifacts/logs/feat-499-verification.log` for full detail.
+
 **Deviations from spec**: none
