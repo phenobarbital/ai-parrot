@@ -10,6 +10,7 @@ illustrative 512 MiB "fast tests" fixture.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 import pytest
@@ -23,6 +24,12 @@ def worker_config():
     """Tiny ceiling, short TTL, no prewarm — mirrors the spec's fixture,
     with a real-worker-sized RLIMIT_AS (see module docstring)."""
     return WorkerConfig(deadline_ms=5_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0)
+
+
+#: Delays the WORKER's own bootstrap deterministically (FEAT-500): mirrored
+#: into the child via `repl_kwargs` and run by its own
+#: `PythonREPLTool._bootstrap()`. No test hook in production code.
+SLOW_BOOTSTRAP = {"setup_code": "import time\ntime.sleep(3)"}
 
 
 class TestWorkerPool:
@@ -142,3 +149,76 @@ class TestWorkerPool:
         assert handle_b.is_alive is False
         for handle in prewarmed_handles:
             assert handle.is_alive is False
+
+
+class TestReadinessGate:
+    """FEAT-500 G1/AC1: a spare only counts as prewarmed once it is READY."""
+
+    async def test_pool_spare_not_ready_until_ready_frame(self, tmp_path, caplog):
+        """`_prewarmed` stays empty while the worker boots, and the log follows the frame."""
+        caplog.set_level(logging.DEBUG, logger="parrot.tools.repl_worker.pool")
+        config = WorkerConfig(
+            deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1
+        )
+        pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        try:
+            await pool._ensure_started()
+            await asyncio.sleep(0.5)
+            # The old code appended (and logged "ready") in the same
+            # millisecond as the spawn — this is the regression guard.
+            assert pool._prewarmed == []
+            assert "prewarmed worker ready" not in caplog.text
+
+            for _ in range(80):  # <= 8 s
+                await asyncio.sleep(0.1)
+                if pool._prewarmed:
+                    break
+            assert len(pool._prewarmed) == 1
+            assert pool._prewarmed[0].is_ready is True
+            assert "prewarmed worker ready" in caplog.text
+        finally:
+            await pool.shutdown()
+
+    async def test_pool_spare_failing_bootstrap_is_never_appended(self, tmp_path):
+        """A spare that misses its bootstrap budget is dropped, not pooled."""
+        config = WorkerConfig(
+            deadline_ms=5_000,
+            max_workers=2,
+            idle_ttl_seconds=30,
+            prewarm_pool_size=1,
+            bootstrap_timeout_ms=500,
+        )
+        pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        try:
+            await pool._ensure_started()
+            await asyncio.sleep(3.0)  # past the 500 ms budget and the 3 s sleep
+            assert pool._prewarmed == []
+        finally:
+            await pool.shutdown()
+
+
+class TestRestartLoopVisibility:
+    """FEAT-500 G5/AC8: a session that keeps burning workers says so."""
+
+    async def test_pool_restart_loop_warning(self, worker_config, tmp_path, caplog):
+        caplog.set_level(logging.WARNING, logger="parrot.tools.repl_worker.pool")
+        pool = WorkerPool(worker_config, output_dir=str(tmp_path))
+        try:
+            for _ in range(3):
+                handle = await pool.acquire("s1")
+                await handle.wait_ready()
+                await handle.kill()  # external death
+                await pool.acquire("s1")  # observes the death -> one restart
+
+            assert pool.restart_count("s1") == 3
+            assert caplog.text.count("possible restart loop") == 1
+            assert "'s1'" in caplog.text
+        finally:
+            await pool.shutdown()
+
+    async def test_restart_count_unknown_session_is_zero(self, worker_config, tmp_path):
+        pool = WorkerPool(worker_config, output_dir=str(tmp_path))
+        try:
+            assert pool.restart_count("never-seen") == 0
+        finally:
+            await pool.shutdown()

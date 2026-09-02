@@ -35,13 +35,18 @@ import os
 import time
 from typing import Any, Optional
 
-from .handle import WorkerHandle
+from .handle import WorkerBootstrapError, WorkerHandle
 from .protocol import WorkerConfig
 
 logger = logging.getLogger(__name__)
 
 #: Absolute cap on the effective ceiling, regardless of `cpu_count()`.
 _CEILING_CAP = 16
+#: Sliding window (seconds) over which session worker restarts are counted
+#: before the pool calls it a restart loop (FEAT-500 G5/AC8).
+_RESTART_WINDOW_S = 60.0
+#: Restarts within `_RESTART_WINDOW_S` that trigger the restart-loop warning.
+_RESTART_LOOP_THRESHOLD = 3
 #: Floor on the effective ceiling when `max_workers` is left at its
 #: auto-detect default (0).
 _CEILING_FLOOR = 4
@@ -108,6 +113,11 @@ class WorkerPool:
         self._background_tasks: set[asyncio.Task] = set()
         self._maintenance_task: Optional[asyncio.Task] = None
         self._started = False
+        #: Monotonic timestamps of recent worker restarts per session
+        #: (FEAT-500 G5): a session that keeps burning workers is logged as
+        #: such instead of silently consuming spares on a 5 s grid. Pruned to
+        #: `_RESTART_WINDOW_S` on every read/write.
+        self._restarts: dict[str, list[float]] = {}
 
     @staticmethod
     def _effective_ceiling(config: WorkerConfig) -> int:
@@ -165,8 +175,19 @@ class WorkerPool:
                         return
                 try:
                     handle = await self._spawn_handle()
+                    # FEAT-500 (G1/AC1): "prewarmed" now means READY. Awaited
+                    # deliberately OUTSIDE `self._lock` — it can take up to
+                    # `bootstrap_timeout_ms`, and holding the lock that long
+                    # would stall every other session's `acquire()`.
+                    ready = await handle.wait_ready()
                 except asyncio.CancelledError:
                     raise
+                except WorkerBootstrapError:
+                    logger.exception("WorkerPool: prewarmed worker failed to become ready")
+                    # `_await_ready()` already killed it; idempotent, and it
+                    # also reaps the pipes/executors.
+                    await handle.kill()
+                    return
                 except Exception:
                     logger.exception("WorkerPool: failed to spawn a prewarmed worker")
                     return
@@ -184,7 +205,12 @@ class WorkerPool:
                 if handle is None:
                     await stale_handle.kill()
                     return
-                logger.debug("WorkerPool: prewarmed worker ready (pool size=%d)", len(self._prewarmed))
+                logger.debug(
+                    "WorkerPool: prewarmed worker ready (pid=%s, bootstrap_ms=%d, pool size=%d)",
+                    ready.pid,
+                    ready.bootstrap_ms,
+                    len(self._prewarmed),
+                )
 
     async def _maintenance_loop(self) -> None:
         """Background TTL-eviction sweep. Cancelled deterministically by shutdown()."""
@@ -205,11 +231,68 @@ class WorkerPool:
                 if now - last > self._config.idle_ttl_seconds:
                     handle = self._sessions.pop(session_id, None)
                     self._last_active.pop(session_id, None)
+                    # The session is gone; its restart history goes with it
+                    # (FEAT-500) so a later session reusing the same id
+                    # starts from a clean slate.
+                    self._restarts.pop(session_id, None)
                     if handle is not None:
                         to_evict.append((session_id, handle))
         for session_id, handle in to_evict:
             logger.info("WorkerPool: evicting idle session %r (TTL exceeded)", session_id)
             await handle.kill()
+
+    def _record_restart(self, session_id: str, dead: WorkerHandle) -> None:
+        """Count one worker restart for ``session_id`` and warn on a loop.
+
+        A session whose worker keeps dying used to burn one spare every few
+        seconds in complete silence (FEAT-500 G5). Restarts are kept in a
+        `_RESTART_WINDOW_S` sliding window; crossing
+        `_RESTART_LOOP_THRESHOLD` logs one warning naming the session and the
+        dead worker's exit code / stderr tail so the real cause is visible.
+
+        Called under ``self._lock``.
+
+        Args:
+            session_id: The session whose worker just died.
+            dead: The dead handle, read for its exit code and stderr tail.
+        """
+        now = time.monotonic()
+        recent = [t for t in self._restarts.get(session_id, []) if now - t <= _RESTART_WINDOW_S]
+        recent.append(now)
+        self._restarts[session_id] = recent
+        if len(recent) < _RESTART_LOOP_THRESHOLD:
+            return
+        exit_code = dead._proc.returncode if dead._proc is not None else None
+        stderr_tail = dead._stderr_tail[-1] if dead._stderr_tail else ""
+        logger.warning(
+            "WorkerPool: session %r restarted %d times in the last %ds — possible "
+            "restart loop (last worker exit code=%s, stderr tail=%r)",
+            session_id,
+            len(recent),
+            int(_RESTART_WINDOW_S),
+            exit_code,
+            stderr_tail,
+        )
+
+    def restart_count(self, session_id: str) -> int:
+        """How many times ``session_id``'s worker restarted recently.
+
+        Observability only — nothing in the pool branches on this value.
+
+        Args:
+            session_id: The session to report on.
+
+        Returns:
+            Restarts within the last `_RESTART_WINDOW_S` seconds (0 if the
+            session is unknown or has never restarted).
+        """
+        now = time.monotonic()
+        recent = [t for t in self._restarts.get(session_id, []) if now - t <= _RESTART_WINDOW_S]
+        if recent:
+            self._restarts[session_id] = recent
+        else:
+            self._restarts.pop(session_id, None)
+        return len(recent)
 
     async def acquire(self, session_id: str) -> WorkerHandle:
         """Return the live worker for ``session_id``, binding/spawning one if needed.
@@ -239,6 +322,7 @@ class WorkerPool:
                 # WorkerHandle.execute() at the time of death — our job here
                 # is just to make the session usable again.
                 logger.warning("WorkerPool: session %r worker is dead, restarting", session_id)
+                self._record_restart(session_id, existing)
                 self._sessions.pop(session_id, None)
                 self._last_active.pop(session_id, None)
 
@@ -321,6 +405,7 @@ class WorkerPool:
             self._sessions.clear()
             self._last_active.clear()
             self._prewarmed.clear()
+            self._restarts.clear()
 
         for handle in handles:
             await handle.kill()
