@@ -294,10 +294,44 @@ class TestParallelPerspectiveLabels:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `AbstractCodeReviewDispatcher.review` accepts `labels:
+Optional[DispatchLabels] = None` and forwards it to
+`self._dispatcher.dispatch(...)`, with an inner narrow `except TypeError`
+(retrying once without labels) so a dispatcher that hasn't declared
+`labels=` still actually runs the review rather than silently degrading to
+a fabricated pass. Threaded through `CodexAdversarialReviewDispatcher`,
+`ParallelPerspectiveReviewDispatcher` (labels its two sides `"primary"` /
+`"codex-adversarial"`), `JudgePanelReviewDispatcher` (one `DispatchLabels`
+per judge, zipped with `self._judge_specs`), and
+`MantleAdversarialReviewDispatcher` (no dispatch payload to stamp; folds
+`judge_id` into its `usage_attribution` seat instead, per the task's own
+guidance). `node_id` is unchanged everywhere — identity rides in `labels`.
+QANode's three own dispatches (deterministic `sdd-qa` gate, the
+`sdd-codereview` reviewer call, and the `sdd-worker` triage dispatch) are
+now labelled with their subagent name.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Found and fixed a real bug while writing the panel/parallel label tests:
+building each judge's/side's `DispatchLabels`-carrying coroutine directly
+inside the `asyncio.gather(...)` argument list means a duck-typed
+reviewer's `TypeError` (no `labels=` parameter) is raised while the
+argument list is being *constructed* — before any coroutine is scheduled —
+so `return_exceptions=True` cannot catch it and the exception propagates
+out of `review()` entirely, crashing the *whole* panel/parallel dispatch
+for every judge, not just the non-compliant one. Fixed by wrapping each
+judge's/side's dispatch in its own coroutine (`_review_one_judge`,
+`_review_side`) with its own inner `except TypeError` fallback, so the
+call — and any resulting exception — happens inside a scheduled coroutine
+where `return_exceptions=True` (and the per-call fallback) can actually
+help. 12 new tests (7 in `test_judge_panel.py`, 5 across
+`test_code_review.py`/qa test files already covered by existing suites);
+all pre-existing tests in `test_code_review.py` (44), `test_judge_panel.py`
+(25), and the qa test files (53) pass unchanged; full `dev_loop` suite
+green (same 3 pre-existing unrelated failures in
+`test_recovery_lifecycle.py`).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the per-judge/per-side coroutine wrapper
+was necessary to make the spec's own "a judge whose dispatcher does not
+accept labels still runs" acceptance criterion actually hold, not a
+deviation from it.

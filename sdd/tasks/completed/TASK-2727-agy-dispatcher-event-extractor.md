@@ -324,10 +324,28 @@ class TestAgyEventExtraction:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Fixed the priority defect (b) first: `_publish_event` now builds a
+`DispatchEvent`, calls `_apply_to_session_host(event)` BEFORE the Redis
+round-trip (independent failure domain, mirroring `claude.py:1077-1114`
+exactly), and XADDs a single `{"event": event.model_dump_json()}` field
+instead of the five flat fields — proven by a multiplexer round-trip test
+using the real `FlowStreamMultiplexer._fields_to_envelope` (the task's
+Codebase Contract named this method `_envelope`; it is `_fields_to_envelope`
+in the current codebase — corrected here, no behavior difference). Kept the
+`expire(stream_key, self.stream_ttl_seconds)` TTL call. Then layered
+defect (a): `_extract_agy_display(event)` handles `init`
+(`model`/`cwd`/`session_id`), `step_update.tool_call`/`tool_response`
+(`tool_name`/`tool_input`/`is_error`/`result_snippet`), `text_delta`, and a
+terminal `result` (tolerating `result` as a JSON string, matching the
+existing tolerance at `google_coding.py:~375`). `dispatch()` accepts
+`labels: Optional[DispatchLabels] = None`, bound/reset alongside
+`_SESSION_HOST_CTX`. 9 new tests added (including the AC9b multiplexer
+round-trip and a session-host-survives-Redis-failure test); all 13 tests in
+`test_google_coding_dispatcher.py` pass; full `dev_loop` suite green (same 3
+pre-existing unrelated failures in `test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `FlowStreamMultiplexer`'s field-decoding method is
+`_fields_to_envelope`, not `_envelope` as the Codebase Contract stated —
+verified stale, corrected in the test.

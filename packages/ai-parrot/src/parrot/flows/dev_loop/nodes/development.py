@@ -45,6 +45,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    DispatchLabels,
     QAReport,
     ResearchOutput,
     TaskScopedBrief,
@@ -334,8 +335,7 @@ class DevelopmentNode(DevLoopNode):
             actual = await self._git_changed_files(research.worktree_path, research.base_branch)
         except Exception:  # noqa: BLE001
             self.logger.warning(
-                "Could not reconcile files_changed against git for %s; "
-                "keeping the agent's self-reported list.",
+                "Could not reconcile files_changed against git for %s; " "keeping the agent's self-reported list.",
                 research.feat_id or research.jira_issue_key,
                 exc_info=True,
             )
@@ -746,10 +746,7 @@ class DevelopmentNode(DevLoopNode):
         notes = [f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"]
         dev_brief = self._repair_dev_brief(shared)
         if dev_brief:
-            notes.append(
-                f"[Feedback router — required fixes for attempt "
-                f"{shared['qa_attempt']}]\n{dev_brief}"
-            )
+            notes.append(f"[Feedback router — required fixes for attempt " f"{shared['qa_attempt']}]\n{dev_brief}")
         return research.model_copy(update={"log_excerpts": [*research.log_excerpts, *notes]})
 
     @staticmethod
@@ -926,8 +923,7 @@ class DevelopmentNode(DevLoopNode):
             reads a blank as a filename it may invent.
         """
         lines = [
-            "[TASK INVENTORY — from the per-spec index; these paths are "
-            "authoritative]",
+            "[TASK INVENTORY — from the per-spec index; these paths are " "authoritative]",
             "Implement every task below that is not already 'done', in "
             "depends_on order. Read each task's artifact at the path given "
             "here — do NOT reconstruct a filename from the task id: the "
@@ -985,8 +981,7 @@ class DevelopmentNode(DevLoopNode):
 
         note = self._task_manifest_note(scheduler)
         self.logger.info(
-            "%s single-agent dispatch: injecting a %d-task manifest with "
-            "index-resolved artifact paths.",
+            "%s single-agent dispatch: injecting a %d-task manifest with " "index-resolved artifact paths.",
             research.feat_id,
             len(scheduler.all_tasks()),
         )
@@ -1061,19 +1056,47 @@ class DevelopmentNode(DevLoopNode):
             setting_sources=["project"],
         )
 
-        dev_out: DevelopmentOutput = await dispatcher.dispatch(
-            brief=research,
-            profile=profile,
-            output_model=DevelopmentOutput,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=research.worktree_path,
-            # FEAT-322: fold dispatch-level events (queued/started/message/
-            # tool_use/…) into the run's SessionHost when one is present
-            # (seeded by DevLoopRunner.run(); absent for nodes invoked
-            # outside the runner). `dispatch()` defaults this to None.
-            session_host=shared.get("session_host"),
-        )
+        # FEAT-496: label the single-agent (non-pool) path too — best-effort,
+        # never lets a labelling failure affect the dispatch itself.
+        try:
+            single_labels: Optional[DispatchLabels] = DispatchLabels(
+                seat=self.name,
+                agent=spec.agent if spec is not None else "",
+                model=self._resolver_label_model(profile),
+                subagent=getattr(profile, "subagent", "") or "",
+            )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            single_labels = None
+
+        try:
+            dev_out: DevelopmentOutput = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                # FEAT-322: fold dispatch-level events (queued/started/message/
+                # tool_use/…) into the run's SessionHost when one is present
+                # (seeded by DevLoopRunner.run(); absent for nodes invoked
+                # outside the runner). `dispatch()` defaults this to None.
+                session_host=shared.get("session_host"),
+                labels=single_labels,
+            )
+        except TypeError as exc:
+            # FEAT-496: labels are best-effort — a dispatcher double that
+            # does not declare labels= must not break this path.
+            if "labels" not in str(exc):
+                raise
+            dev_out = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                session_host=shared.get("session_host"),
+            )
 
         # Record what actually ran, so a substitution is auditable on the
         # run bundle. This ONLY applies when a declared pool spec was
@@ -1270,8 +1293,7 @@ class DevelopmentNode(DevLoopNode):
         done_ids = {t.id for t in scheduler.done()}
         todo = [t for t in all_tasks if t.id not in done_ids]
         self.logger.info(
-            "%s task plan: %d task(s) in the per-spec index — %d already done, "
-            "%d to run: %s",
+            "%s task plan: %d task(s) in the per-spec index — %d already done, " "%d to run: %s",
             research.feat_id,
             len(all_tasks),
             len(done_ids),
@@ -1352,8 +1374,7 @@ class DevelopmentNode(DevLoopNode):
                     scheduler.mark_failed(task_id)
 
                 self.logger.info(
-                    "%s wave %d complete: %d completed (%s), %d failed (%s); "
-                    "%d task(s) still pending, %d skipped",
+                    "%s wave %d complete: %d completed (%s), %d failed (%s); " "%d task(s) still pending, %d skipped",
                     research.feat_id,
                     wave_number,
                     len(result.completed),
@@ -1436,15 +1457,43 @@ class DevelopmentNode(DevLoopNode):
         first_worker = pool.workers[0]
 
         try:
-            await first_worker.dispatcher.dispatch(
-                brief=brief,
-                profile=first_worker.profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent=first_worker.spec.agent,
+                model=self._resolver_label_model(first_worker.profile),
             )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            labels = None
+
+        try:
+            try:
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=labels,
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a dispatcher that does
+                # not declare labels= must not be treated as "resolver
+                # failed"; retry once without them before giving up.
+                if "labels" not in str(exc):
+                    raise
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
             self.logger.warning("Conflict resolver (%s) failed on %s: %s", first_worker.spec.agent, path, exc)
@@ -1458,19 +1507,57 @@ class DevelopmentNode(DevLoopNode):
             setter = getattr(fallback_dispatcher, "set_event_registry_resolver", None)
             if resolver is not None and callable(setter):
                 setter(resolver)
-            await fallback_dispatcher.dispatch(
-                brief=brief,
-                profile=fallback_profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            fallback_labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent="claude-code",
+                model=self._resolver_label_model(fallback_profile),
             )
+            try:
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=fallback_labels,
+                )
+            except TypeError as exc:
+                if "labels" not in str(exc):
+                    raise
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - fallback failure -> resolver fully failed
             self.logger.warning("Fallback claude-code conflict resolver also failed on %s: %s", path, exc)
             return False
+
+    @staticmethod
+    def _resolver_label_model(profile: Any) -> str:
+        """Best-effort model id off a dispatch profile (FEAT-496).
+
+        Mirrors ``agent_pool._profile_model``'s duck-typing (a direct
+        ``model`` field, or the combined ``llm="<backend>:<model>"`` field).
+        """
+        try:
+            if hasattr(profile, "model"):
+                return str(getattr(profile, "model") or "")
+            if hasattr(profile, "llm"):
+                llm = str(getattr(profile, "llm") or "")
+                return llm.split(":", 1)[-1] if ":" in llm else llm
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            pass
+        return ""
 
 
 __all__ = ["DevelopmentNode"]

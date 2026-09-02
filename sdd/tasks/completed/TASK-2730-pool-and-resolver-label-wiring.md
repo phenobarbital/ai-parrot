@@ -307,10 +307,34 @@ class TestResolverLabels:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `_dispatch_one` builds a best-effort `DispatchLabels` (task_id,
+task_title, task_file, seat, agent, model via new `_profile_model` duck-type
+helper, subagent, attempt) from the `TaskRef`/`PoolWorker`/possibly-escalated
+`profile`, and passes it to `dispatch()`. Added an explicit `attempt: int =
+1` parameter to `_dispatch_one` (not derived from `escalate`, since
+`run_wave`'s own `escalate` param can make a FIRST attempt escalate too —
+conflating them would mislabel a QA-repair-loop first attempt as a retry);
+`run_wave` passes `attempt=1` for first attempts and `attempt=2` for the
+retry pass. `_resolve_conflict` labels both the primary and claude-code
+fallback resolver dispatches with `task_id="RESOLVE_MERGE_CONFLICT"` /
+`seat="development.resolver"`. The single-agent (`_execute_single`) path is
+labelled with `seat=self.name` ("development"). Every dispatch call site
+that gained `labels=` is wrapped with a narrow `except TypeError` that
+retries once without labels when the error mentions "labels" — required
+because a duck-typed test double (or a not-yet-upgraded dispatcher) with no
+`labels=` parameter would otherwise raise, and the existing
+`except (TypeError, AttributeError, NameError, ImportError)` handler in
+`_dispatch_one` treats an unwrapped `TypeError` as an internal bug and marks
+the task permanently failed — exactly the breakage AC7 forbids. 8 new tests
+across `test_agent_pool.py` (6) and `test_development_node.py` (2); all
+pre-existing tests in both files pass unchanged; full `dev_loop` suite green
+(same 3 pre-existing unrelated failures in `test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: added the TypeError-fallback wrapper (not
+explicitly specified) — required to satisfy the acceptance criterion "A
+dispatcher that does not accept labels ... does not break the pool" given
+`_dispatch_one`'s existing `except (TypeError, ...)` branch would otherwise
+convert a missing-`labels=`-parameter into a non-retryable internal-error
+failure for every task on every worker.

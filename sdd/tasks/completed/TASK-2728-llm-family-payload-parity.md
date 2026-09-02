@@ -272,10 +272,20 @@ class TestLLMPayloadEnrichment:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `LLMCodeDispatcher._publish_event` now routes through
+`normalize_payload`; `dispatch()` accepts `labels: Optional[DispatchLabels]
+= None`, bound/reset alongside `_SESSION_HOST_CTX` on both exit paths. All
+four subclasses (`NovaCodeDispatcher`, `GrokCodeDispatcher`,
+`ZaiCodeDispatcher`, `MoonshotCodeDispatcher`) add the same kwarg to their
+overriding `dispatch` and forward `labels=labels` into `super().dispatch(...)`
+— no existing key removed/renamed. Added
+`test_llm_family_parity.py`, which discovers subclasses dynamically via
+`LLMCodeDispatcher.__subclasses__()` (not a hardcoded list) so a future
+fifth backend without `labels=` fails the sweep. 7 new tests pass; all 212
+pre-existing llm/grok/zai/moonshot/nova tests pass unchanged; full `dev_loop`
+suite green (same 3 pre-existing unrelated failures in
+`test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

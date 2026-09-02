@@ -160,26 +160,24 @@ NodeId = Literal[
 
 NodeStatus = Literal["idle", "running", "completed", "failed", "skipped"]
 
-DispatchStatus = Literal[
-    "queued", "running", "completed", "failed", "output_invalid"
-]
+DispatchStatus = Literal["queued", "running", "completed", "failed", "output_invalid"]
 
 RunPhase = Literal[
-    "created",       # RunCreated accepted, flow not yet scheduled
-    "running",       # at least one node running / more nodes pending
-    "awaiting_gate", # blocked on a pending ApprovalGate (HITL)
-    "succeeded",     # close reached via deployment/revision handoff
-    "failed",        # failure_handler terminal
-    "cancelled",     # RunCancelled accepted
+    "created",  # RunCreated accepted, flow not yet scheduled
+    "running",  # at least one node running / more nodes pending
+    "awaiting_gate",  # blocked on a pending ApprovalGate (HITL)
+    "succeeded",  # close reached via deployment/revision handoff
+    "failed",  # failure_handler terminal
+    "cancelled",  # RunCancelled accepted
 ]
 
 GateKind = Literal[
-    "manual_criterion",     # QA ManualCriterion instructions
+    "manual_criterion",  # QA ManualCriterion instructions
     "deployment_approval",  # gate before Jira → "Ready to Deploy"
-    "revision_approval",    # gate before pushing a revision to the PR
-    "plan_approval",        # optional: approve ResearchOutput plan
-    "review_escalation",    # FEAT-375: adversarial-review ESCALATE disposition
-    "open_questions",       # FEAT-412: dev-flow ideation Open Questions round
+    "revision_approval",  # gate before pushing a revision to the PR
+    "plan_approval",  # optional: approve ResearchOutput plan
+    "review_escalation",  # FEAT-375: adversarial-review ESCALATE disposition
+    "open_questions",  # FEAT-412: dev-flow ideation Open Questions round
 ]
 
 GateStatus = Literal["pending", "approved", "rejected", "expired"]
@@ -195,13 +193,13 @@ class DispatchState(_Frozen):
     """
 
     status: DispatchStatus
-    dispatcher: str = ""            # "claude-code", "codex", ...
+    dispatcher: str = ""  # "claude-code", "codex", ...
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     message_count: int = 0
     tool_use_count: int = 0
     last_error: str = ""
-    terminal: str = ""              # terminal channel URI (content by reference)
+    terminal: str = ""  # terminal channel URI (content by reference)
     # -- FEAT-378 TASK-1927: dispatch telemetry harvest (v0.2 amendment) --
     # Optional so old persisted envelopes (pre-TASK-1927) still validate.
     input_tokens: Optional[int] = None
@@ -211,6 +209,35 @@ class DispatchState(_Frozen):
     total_cost_usd: Optional[float] = None
     num_turns: Optional[int] = None
     duration_ms: Optional[int] = None
+    # -- FEAT-496: per-seat detail, additive alongside the roll-up above --
+    seats: Dict[str, "SeatState"] = Field(default_factory=dict)
+
+
+class SeatState(_Frozen):
+    """Per-seat detail under a node's DispatchState (FEAT-496).
+
+    `NodeId` is a closed `Literal` (see module docstring / `_owning_node_id`
+    in `dispatchers/_shared.py`), so a pooled worker's seat
+    (``"development.w1"``) cannot be its own `NodeState`. This model is the
+    chosen alternative: seat detail nests under the owning node's
+    `DispatchState`, additive to the existing roll-up counters, so the
+    roll-up semantics are unchanged and pre-FEAT-496 persisted envelopes
+    (which never mention a seat) still validate.
+    """
+
+    seat: str
+    task_id: str = ""
+    task_title: str = ""
+    agent: str = ""
+    model: str = ""
+    status: DispatchStatus = "queued"
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    message_count: int = 0
+    tool_use_count: int = 0
+    last_tool: str = ""
+    last_summary: str = ""
+    last_error: str = ""
 
 
 class NodeState(_Frozen):
@@ -237,7 +264,7 @@ class ApprovalGate(_Frozen):
 
     gate_id: str
     kind: GateKind
-    node_id: NodeId                 # node that opened the gate
+    node_id: NodeId  # node that opened the gate
     status: GateStatus = "pending"
     on_expiry: Literal["fail", "approve"] = "fail"
     # "fail"    → fail-closed: expiry sweep emits GateExpired (→ escalation).
@@ -247,11 +274,11 @@ class ApprovalGate(_Frozen):
     # "approve" → fail-open: expiry sweep emits GateResolved by
     #             "system:ttl-auto-approve" (advisory gates: plan_approval).
     title: str = ""
-    instructions: str = ""          # e.g. ManualCriterion.instructions
-    payload_ref: str = ""           # changeset/terminal URI with evidence
+    instructions: str = ""  # e.g. ManualCriterion.instructions
+    payload_ref: str = ""  # changeset/terminal URI with evidence
     opened_at: float = 0.0
     expires_at: Optional[float] = None
-    resolved_by: str = ""           # client/user identity — audit trail
+    resolved_by: str = ""  # client/user identity — audit trail
     resolved_at: Optional[float] = None
     comment: str = ""
     # -- FEAT-412: structured question/answer gates (kind="open_questions") --
@@ -273,7 +300,7 @@ class JudgeVerdict(_Frozen):
     """
 
     judge_id: str
-    backend: str = ""               # "claude-code", "codex", "gemini", ...
+    backend: str = ""  # "claude-code", "codex", "gemini", ...
     model: str = ""
     passed: bool = False
     findings_count: int = 0
@@ -309,7 +336,7 @@ class DevLoopSessionState(_Frozen):
 
     run_id: str
     channel: str
-    revision: bool = False          # initial graph vs revision graph
+    revision: bool = False  # initial graph vs revision graph
     phase: RunPhase = "created"
     created_at: float = 0.0
     finished_at: Optional[float] = None
@@ -396,6 +423,18 @@ class NodeSkipped(_ActionBase):
 
 class _DispatchAction(_ActionBase):
     node_id: NodeId
+    # -- FEAT-496: seat/task identity, additive and optional so every
+    # pre-FEAT-496 persisted ActionEnvelope (which never carries these)
+    # still validates. `seat` is the raw dispatch seat ("development.w1"),
+    # kept distinct from `node_id` (already rolled up to the owning node
+    # by `_owning_node_id` before the action is built) so per-seat detail
+    # can be folded without widening the closed `NodeId` Literal.
+    seat: str = ""
+    task_id: str = ""
+    task_title: str = ""
+    agent: str = ""
+    model: str = ""
+    summary: str = ""
 
 
 class DispatchQueued(_DispatchAction):
@@ -405,7 +444,7 @@ class DispatchQueued(_DispatchAction):
 
 class DispatchStarted(_DispatchAction):
     type: Literal["dispatch/started"] = "dispatch/started"
-    terminal: str = ""              # terminal channel URI
+    terminal: str = ""  # terminal channel URI
 
 
 class DispatchDelta(_DispatchAction):
@@ -452,7 +491,7 @@ class DispatchCompleted(_DispatchAction):
 
 class GateOpened(_ActionBase):
     type: Literal["gate/opened"] = "gate/opened"
-    gate: ApprovalGate              # status MUST be "pending"
+    gate: ApprovalGate  # status MUST be "pending"
 
 
 class GateResolved(_ActionBase):
@@ -485,7 +524,7 @@ class JiraLinked(_ActionBase):
 class PullRequestLinked(_ActionBase):
     type: Literal["run/prLinked"] = "run/prLinked"
     pr_url: str
-    changeset: str = ""             # changeset channel URI
+    changeset: str = ""  # changeset channel URI
 
 
 # -- feature-mode projections (new capability, FEAT-378) ---------------
@@ -499,7 +538,7 @@ class JudgeVerdictRecorded(_ActionBase):
     """
 
     type: Literal["feature/judgeVerdictRecorded"] = "feature/judgeVerdictRecorded"
-    round: str                      # QA round identifier the verdict belongs to
+    round: str  # QA round identifier the verdict belongs to
     judge_id: str
     backend: str = ""
     model: str = ""
@@ -509,9 +548,7 @@ class JudgeVerdictRecorded(_ActionBase):
 
 
 class FeedbackDecisionRecorded(_ActionBase):
-    type: Literal["feature/feedbackDecisionRecorded"] = (
-        "feature/feedbackDecisionRecorded"
-    )
+    type: Literal["feature/feedbackDecisionRecorded"] = "feature/feedbackDecisionRecorded"
     decision: Literal["retry", "escalate", "accept_with_notes"]
     dev_brief: str = ""
     notes: str = ""
@@ -538,20 +575,36 @@ class QaAttemptRecorded(_ActionBase):
     """
 
     type: Literal["run/qaAttemptRecorded"] = "run/qaAttemptRecorded"
-    attempt: int                    # 1-based attempt that just failed
-    qa_notes: str = ""              # condensed QAReport failure summary
+    attempt: int  # 1-based attempt that just failed
+    qa_notes: str = ""  # condensed QAReport failure summary
 
 
 DevLoopAction = Annotated[
     Union[
-        RunCreated, RunCancelled, RunClosed,
-        NodeStarted, NodeCompleted, NodeFailed, NodeSkipped,
-        DispatchQueued, DispatchStarted, DispatchDelta,
-        DispatchToolUse, DispatchToolResult,
-        DispatchOutputInvalid, DispatchFailed, DispatchCompleted,
-        GateOpened, GateResolved, GateExpired,
-        JiraLinked, PullRequestLinked, QaAttemptRecorded,
-        JudgeVerdictRecorded, FeedbackDecisionRecorded, DocsArtifactLinked,
+        RunCreated,
+        RunCancelled,
+        RunClosed,
+        NodeStarted,
+        NodeCompleted,
+        NodeFailed,
+        NodeSkipped,
+        DispatchQueued,
+        DispatchStarted,
+        DispatchDelta,
+        DispatchToolUse,
+        DispatchToolResult,
+        DispatchOutputInvalid,
+        DispatchFailed,
+        DispatchCompleted,
+        GateOpened,
+        GateResolved,
+        GateExpired,
+        JiraLinked,
+        PullRequestLinked,
+        QaAttemptRecorded,
+        JudgeVerdictRecorded,
+        FeedbackDecisionRecorded,
+        DocsArtifactLinked,
     ],
     Field(discriminator="type"),
 ]
@@ -695,9 +748,7 @@ class GateAlreadyResolvedError(RuntimeError):
 _TERMINAL_PHASES: frozenset = frozenset({"succeeded", "failed", "cancelled"})
 
 
-def _with_node(
-    state: DevLoopSessionState, node_id: str, **changes
-) -> DevLoopSessionState:
+def _with_node(state: DevLoopSessionState, node_id: str, **changes) -> DevLoopSessionState:
     """Return ``state`` with ``node_id``'s :class:`NodeState` updated.
 
     Creates the node projection on first touch (default ``idle`` state)
@@ -708,13 +759,93 @@ def _with_node(
     return state.model_copy(update={"nodes": nodes})
 
 
-def _with_dispatch(
-    state: DevLoopSessionState, node_id: str, **changes
-) -> DevLoopSessionState:
+def _with_dispatch(state: DevLoopSessionState, node_id: str, **changes) -> DevLoopSessionState:
     """Return ``state`` with ``node_id``'s :class:`DispatchState` updated."""
     node = state.nodes.get(node_id, NodeState(node_id=node_id))  # type: ignore[arg-type]
     dispatch = node.dispatch or DispatchState(status="queued")
     node = node.model_copy(update={"dispatch": dispatch.model_copy(update=changes)})
+    return state.model_copy(update={"nodes": {**state.nodes, node_id: node}})
+
+
+def _fold_seat_from_action(
+    state: DevLoopSessionState,
+    action: "_DispatchAction",
+    *,
+    message_delta: bool = False,
+    tool_use_delta: bool = False,
+) -> DevLoopSessionState:
+    """Additively fold per-seat detail from a dispatch action (FEAT-496).
+
+    No-op when the action carries no ``seat`` — every pre-FEAT-496 action
+    and every single-agent (non-pooled) dispatch falls through
+    byte-identically, since ``seat`` defaults to ``""``. Keeps the existing
+    roll-up counters on ``DispatchState`` untouched; this only ever writes
+    into ``DispatchState.seats``.
+
+    Args:
+        state: The state already updated by the roll-up fold
+            (``_with_dispatch``) for this action.
+        action: The dispatch action being folded.
+        message_delta: Bump the seat's ``message_count`` by one.
+        tool_use_delta: Bump the seat's ``tool_use_count`` by one.
+
+    Returns:
+        ``state`` with the seat entry created/updated, or ``state``
+        unchanged when the action carries no seat.
+    """
+    seat = getattr(action, "seat", "") or ""
+    if not seat:
+        return state
+    node_id = action.node_id
+    node = state.nodes.get(node_id, NodeState(node_id=node_id))  # type: ignore[arg-type]
+    dispatch = node.dispatch or DispatchState(status="queued")
+    prior = dispatch.seats.get(seat, SeatState(seat=seat))
+
+    changes: Dict[str, Any] = {}
+    task_id = getattr(action, "task_id", "") or ""
+    if task_id:
+        changes["task_id"] = task_id
+    task_title = getattr(action, "task_title", "") or ""
+    if task_title:
+        changes["task_title"] = task_title
+    agent = getattr(action, "agent", "") or ""
+    if agent:
+        changes["agent"] = agent
+    model = getattr(action, "model", "") or ""
+    if model:
+        changes["model"] = model
+    summary = getattr(action, "summary", "") or ""
+    if summary:
+        changes["last_summary"] = summary[:160]
+    tool_name = getattr(action, "tool_name", "") or ""
+    if tool_name:
+        changes["last_tool"] = tool_name
+    error = getattr(action, "error", "") or ""
+    if error:
+        changes["last_error"] = error[:500]
+
+    t = action.type
+    if t == "dispatch/queued":
+        changes["status"] = "queued"
+    elif t == "dispatch/started":
+        changes["status"] = "running"
+        changes["started_at"] = action.ts
+    elif t == "dispatch/failed":
+        changes["status"] = "failed"
+        changes["finished_at"] = action.ts
+    elif t == "dispatch/output_invalid":
+        changes["status"] = "output_invalid"
+    elif t == "dispatch/completed":
+        changes["status"] = "completed"
+        changes["finished_at"] = action.ts
+    if message_delta:
+        changes["message_count"] = prior.message_count + 1
+    if tool_use_delta:
+        changes["tool_use_count"] = prior.tool_use_count + 1
+
+    updated_seat = prior.model_copy(update=changes)
+    seats = {**dispatch.seats, seat: updated_seat}
+    node = node.model_copy(update={"dispatch": dispatch.model_copy(update={"seats": seats})})
     return state.model_copy(update={"nodes": {**state.nodes, node_id: node}})
 
 
@@ -771,75 +902,82 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         # phase — mirrors the guard already on run/cancelled below.
         if state.phase in _TERMINAL_PHASES:
             return state
-        return state.model_copy(update={
-            "phase": "running",
-            "created_at": action.ts,
-            "revision": action.revision,
-            "work_kind": action.work_kind,
-            "summary": action.summary,
-        })
+        return state.model_copy(
+            update={
+                "phase": "running",
+                "created_at": action.ts,
+                "revision": action.revision,
+                "work_kind": action.work_kind,
+                "summary": action.summary,
+            }
+        )
     if t == "run/cancelled":
         if state.phase in _TERMINAL_PHASES:
             return state
-        return state.model_copy(update={
-            "phase": "cancelled",
-            "cancel_requested_by": action.requested_by,
-            "finished_at": action.ts,
-        })
+        return state.model_copy(
+            update={
+                "phase": "cancelled",
+                "cancel_requested_by": action.requested_by,
+                "finished_at": action.ts,
+            }
+        )
     if t == "run/closed":
         # Terminal-sticky (FEAT-322 TASK-1850): a late/duplicate run/closed
         # against an already-terminal state must not flip the phase again
         # (e.g. failed -> succeeded) — same guard as run/created/cancelled.
         if state.phase in _TERMINAL_PHASES:
             return state
-        return state.model_copy(update={
-            "phase": action.outcome,
-            "finished_at": action.ts,
-            "jira_issue_key": action.jira_issue_key or state.jira_issue_key,
-            "pr_url": action.pr_url or state.pr_url,
-        })
+        return state.model_copy(
+            update={
+                "phase": action.outcome,
+                "finished_at": action.ts,
+                "jira_issue_key": action.jira_issue_key or state.jira_issue_key,
+                "pr_url": action.pr_url or state.pr_url,
+            }
+        )
 
     # -- node lifecycle
     if t == "node/started":
-        return _with_node(state, action.node_id,
-                          status="running", started_at=action.ts, error="")
+        return _with_node(state, action.node_id, status="running", started_at=action.ts, error="")
     if t == "node/completed":
-        return _with_node(state, action.node_id,
-                          status="completed", finished_at=action.ts,
-                          summary=action.summary)
+        return _with_node(state, action.node_id, status="completed", finished_at=action.ts, summary=action.summary)
     if t == "node/failed":
-        new = _with_node(state, action.node_id,
-                         status="failed", finished_at=action.ts,
-                         error=action.error)
+        new = _with_node(state, action.node_id, status="failed", finished_at=action.ts, error=action.error)
         return new.model_copy(update={"error": action.error})
     if t == "node/skipped":
         return _with_node(state, action.node_id, status="skipped")
 
     # -- dispatch lifecycle
     if t == "dispatch/queued":
-        return _with_dispatch(state, action.node_id,
-                              status="queued", dispatcher=action.dispatcher)
+        new_state = _with_dispatch(state, action.node_id, status="queued", dispatcher=action.dispatcher)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/started":
-        return _with_dispatch(state, action.node_id,
-                              status="running", started_at=action.ts,
-                              terminal=action.terminal)
+        new_state = _with_dispatch(
+            state, action.node_id, status="running", started_at=action.ts, terminal=action.terminal
+        )
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/delta":
         node = state.nodes.get(action.node_id)
         count = node.dispatch.message_count if node and node.dispatch else 0
-        return _with_dispatch(state, action.node_id, message_count=count + 1)
+        new_state = _with_dispatch(state, action.node_id, message_count=count + 1)
+        return _fold_seat_from_action(new_state, action, message_delta=True)
     if t == "dispatch/tool_use":
         node = state.nodes.get(action.node_id)
         count = node.dispatch.tool_use_count if node and node.dispatch else 0
-        return _with_dispatch(state, action.node_id, tool_use_count=count + 1)
+        new_state = _with_dispatch(state, action.node_id, tool_use_count=count + 1)
+        return _fold_seat_from_action(new_state, action, tool_use_delta=True)
     if t == "dispatch/tool_result":
-        return state  # counters only on tool_use; result content is by-ref
+        # counters only on tool_use; result content is by-ref. Still fold
+        # seat detail (e.g. is_error / last_summary) when labelled.
+        return _fold_seat_from_action(state, action)
     if t == "dispatch/output_invalid":
-        return _with_dispatch(state, action.node_id,
-                              status="output_invalid", last_error=action.error)
+        new_state = _with_dispatch(state, action.node_id, status="output_invalid", last_error=action.error)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/failed":
-        return _with_dispatch(state, action.node_id,
-                              status="failed", finished_at=action.ts,
-                              last_error=action.error)
+        new_state = _with_dispatch(
+            state, action.node_id, status="failed", finished_at=action.ts, last_error=action.error
+        )
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/completed":
         # Accumulate rather than assign. A node can complete several
         # dispatches: every worker of a dev-agent pool rolls up to the
@@ -851,26 +989,24 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         # summing onto an absent previous value is that value.
         node = state.nodes.get(action.node_id)
         prev = node.dispatch if node else None
-        return _with_dispatch(
-            state, action.node_id,
-            status="completed", finished_at=action.ts,
-            input_tokens=_add_optional(
-                getattr(prev, "input_tokens", None), action.input_tokens),
-            output_tokens=_add_optional(
-                getattr(prev, "output_tokens", None), action.output_tokens),
+        new_state = _with_dispatch(
+            state,
+            action.node_id,
+            status="completed",
+            finished_at=action.ts,
+            input_tokens=_add_optional(getattr(prev, "input_tokens", None), action.input_tokens),
+            output_tokens=_add_optional(getattr(prev, "output_tokens", None), action.output_tokens),
             cache_creation_input_tokens=_add_optional(
-                getattr(prev, "cache_creation_input_tokens", None),
-                action.cache_creation_input_tokens),
+                getattr(prev, "cache_creation_input_tokens", None), action.cache_creation_input_tokens
+            ),
             cache_read_input_tokens=_add_optional(
-                getattr(prev, "cache_read_input_tokens", None),
-                action.cache_read_input_tokens),
-            total_cost_usd=_add_optional(
-                getattr(prev, "total_cost_usd", None), action.total_cost_usd),
-            num_turns=_add_optional(
-                getattr(prev, "num_turns", None), action.num_turns),
-            duration_ms=_add_optional(
-                getattr(prev, "duration_ms", None), action.duration_ms),
+                getattr(prev, "cache_read_input_tokens", None), action.cache_read_input_tokens
+            ),
+            total_cost_usd=_add_optional(getattr(prev, "total_cost_usd", None), action.total_cost_usd),
+            num_turns=_add_optional(getattr(prev, "num_turns", None), action.num_turns),
+            duration_ms=_add_optional(getattr(prev, "duration_ms", None), action.duration_ms),
         )
+        return _fold_seat_from_action(new_state, action)
 
     # -- gates (HITL)
     if t == "gate/opened":
@@ -880,24 +1016,25 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         gate = state.gates.get(action.gate_id)
         if gate is None or gate.status != "pending":
             return state  # host should have rejected; reducer stays total
-        gate = gate.model_copy(update={
-            "status": action.resolution,
-            "resolved_by": action.resolved_by,
-            "resolved_at": action.ts,
-            "comment": action.comment,
-            # FEAT-412: fold structured answers exactly like ``comment``.
-            # Empty for every non-``open_questions`` gate, so the previous
-            # (empty) value is preserved byte-identically.
-            "answers": dict(action.answers),
-        })
+        gate = gate.model_copy(
+            update={
+                "status": action.resolution,
+                "resolved_by": action.resolved_by,
+                "resolved_at": action.ts,
+                "comment": action.comment,
+                # FEAT-412: fold structured answers exactly like ``comment``.
+                # Empty for every non-``open_questions`` gate, so the previous
+                # (empty) value is preserved byte-identically.
+                "answers": dict(action.answers),
+            }
+        )
         gates = {**state.gates, gate.gate_id: gate}
         return _recompute_phase(state.model_copy(update={"gates": gates}))
     if t == "gate/expired":
         gate = state.gates.get(action.gate_id)
         if gate is None or gate.status != "pending":
             return state
-        gates = {**state.gates,
-                 gate.gate_id: gate.model_copy(update={"status": "expired"})}
+        gates = {**state.gates, gate.gate_id: gate.model_copy(update={"status": "expired"})}
         return _recompute_phase(state.model_copy(update={"gates": gates}))
 
     # -- projections
@@ -931,9 +1068,7 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
             qa_attempt=action.qa_attempt,
             ts=action.ts,
         )
-        return state.model_copy(
-            update={"feedback_decisions": [*state.feedback_decisions, record]}
-        )
+        return state.model_copy(update={"feedback_decisions": [*state.feedback_decisions, record]})
     if t == "feature/docsArtifactLinked":
         artifact = DocsArtifact(
             docs_path=action.docs_path,
@@ -941,16 +1076,16 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
             pr_url=action.pr_url,
             ts=action.ts,
         )
-        return state.model_copy(
-            update={"docs_artifacts": [*state.docs_artifacts, artifact]}
-        )
+        return state.model_copy(update={"docs_artifacts": [*state.docs_artifacts, artifact]})
 
     # -- QA repair loop (FEAT-377 TASK-1910)
     if t == "run/qaAttemptRecorded":
-        return state.model_copy(update={
-            "qa_attempts": action.attempt,
-            "qa_notes": action.qa_notes,
-        })
+        return state.model_copy(
+            update={
+                "qa_attempts": action.attempt,
+                "qa_notes": action.qa_notes,
+            }
+        )
 
     return state  # forward-compat: unknown action → no-op
 
@@ -1027,9 +1162,7 @@ class SessionHost:
                 are swallowed — the new-path publish must never break a
                 run.
         """
-        self._state = DevLoopSessionState(
-            run_id=run_id, channel=session_channel(run_id)
-        )
+        self._state = DevLoopSessionState(run_id=run_id, channel=session_channel(run_id))
         self._seq = 0
         self._log: List[ActionEnvelope] = []
         self._on_envelope = on_envelope
@@ -1044,8 +1177,7 @@ class SessionHost:
 
     def snapshot(self) -> Snapshot:
         """Return a :class:`Snapshot` of the current state and seq."""
-        return Snapshot(channel=self._state.channel,
-                        state=self._state, from_seq=self._seq)
+        return Snapshot(channel=self._state.channel, state=self._state, from_seq=self._seq)
 
     def replay_since(self, last_seen_server_seq: int) -> List[ActionEnvelope]:
         """Return all envelopes with ``server_seq > last_seen_server_seq``."""
@@ -1069,7 +1201,9 @@ class SessionHost:
         """
         self._seq += 1
         envelope = ActionEnvelope(
-            channel=self._state.channel, server_seq=self._seq, action=action,
+            channel=self._state.channel,
+            server_seq=self._seq,
+            action=action,
             origin=origin,
         )
         self._state = reduce(self._state, action)
@@ -1133,8 +1267,7 @@ class SessionHost:
             raise GateNotFoundError(gate_id)
         if gate.status != "pending":
             raise GateAlreadyResolvedError(
-                f"gate {gate_id} already {gate.status} "
-                f"by {gate.resolved_by or 'system'}"
+                f"gate {gate_id} already {gate.status} " f"by {gate.resolved_by or 'system'}"
             )
         answers = dict(answers or {})
         if gate.kind == "open_questions" and resolution == "approved" and not answers:
@@ -1145,8 +1278,10 @@ class SessionHost:
             )
         return self.apply(
             GateResolved(
-                gate_id=gate_id, resolution=resolution,
-                resolved_by=resolved_by, comment=comment,
+                gate_id=gate_id,
+                resolution=resolution,
+                resolved_by=resolved_by,
+                comment=comment,
                 answers=answers,
             ),
             origin=origin,
@@ -1187,8 +1322,11 @@ class SessionHost:
         now = time.time()
         gate = ApprovalGate(
             gate_id=uuid.uuid4().hex,
-            kind=kind, node_id=node_id, title=title,
-            instructions=instructions, payload_ref=payload_ref,
+            kind=kind,
+            node_id=node_id,
+            title=title,
+            instructions=instructions,
+            payload_ref=payload_ref,
             opened_at=now,
             expires_at=(now + ttl_seconds) if ttl_seconds else None,
             on_expiry=on_expiry,
@@ -1196,8 +1334,7 @@ class SessionHost:
         )
         return gate.gate_id, self.apply(GateOpened(gate=gate))
 
-    def expire_due_gates(self, now: Optional[float] = None
-                         ) -> List[ActionEnvelope]:
+    def expire_due_gates(self, now: Optional[float] = None) -> List[ActionEnvelope]:
         """Expiry sweep — call periodically from the runner's loop.
 
         For each pending gate past its ``expires_at``, applies the gate's
@@ -1220,11 +1357,16 @@ class SessionHost:
             if now < gate.expires_at:
                 continue
             if gate.on_expiry == "approve":
-                out.append(self.apply(GateResolved(
-                    gate_id=gate.gate_id, resolution="approved",
-                    resolved_by="system:ttl-auto-approve",
-                    comment="TTL expired; fail-open policy.",
-                )))
+                out.append(
+                    self.apply(
+                        GateResolved(
+                            gate_id=gate.gate_id,
+                            resolution="approved",
+                            resolved_by="system:ttl-auto-approve",
+                            comment="TTL expired; fail-open policy.",
+                        )
+                    )
+                )
             else:
                 out.append(self.apply(GateExpired(gate_id=gate.gate_id)))
         return out
@@ -1280,9 +1422,9 @@ _DISPATCH_KIND_MAP: Dict[str, type] = {
 }
 
 
-def action_from_flow_event(event: str, node_id: str, ts: float,
-                           error: str = "",
-                           node_result: Any = None) -> Optional[DevLoopAction]:
+def action_from_flow_event(
+    event: str, node_id: str, ts: float, error: str = "", node_result: Any = None
+) -> Optional[DevLoopAction]:
     """Map a ``FlowEventPublisher`` event to a :data:`DevLoopAction`.
 
     Args:
@@ -1312,17 +1454,28 @@ def action_from_flow_event(event: str, node_id: str, ts: float,
     return NodeSkipped(node_id=node_id, ts=ts)  # type: ignore[arg-type]
 
 
-def action_from_dispatch_event(kind: str, node_id: str, ts: float,
-                               payload: Optional[dict] = None
-                               ) -> Optional[DevLoopAction]:
+def action_from_dispatch_event(
+    kind: str,
+    node_id: str,
+    ts: float,
+    payload: Optional[dict] = None,
+    seat: str = "",
+) -> Optional[DevLoopAction]:
     """Map a ``DispatchEvent.kind`` to a :data:`DevLoopAction`.
 
     Args:
         kind: The dispatch event kind (e.g. ``"dispatch.queued"``).
-        node_id: The node hosting the dispatch.
+        node_id: The node hosting the dispatch (already rolled up to the
+            owning node via ``_owning_node_id`` when the raw event's
+            ``node_id`` is a pool seat).
         ts: Event timestamp (POSIX seconds).
         payload: Optional raw payload dict; only display-ready fields are
             extracted (lazy-loading rule — heavy content stays by-reference).
+        seat: The raw dispatch seat (FEAT-496, e.g. ``"development.w1"``),
+            distinct from ``node_id``. ``payload["seat"]`` (stamped by
+            ``DispatchLabels``) wins when present; this parameter is the
+            fallback for unlabelled dispatches. Defaults to ``""`` so every
+            existing caller (pre-FEAT-496) is unaffected.
 
     Returns:
         The mapped action, or ``None`` if ``kind`` is not recognised.
@@ -1332,6 +1485,21 @@ def action_from_dispatch_event(kind: str, node_id: str, ts: float,
         return None
     payload = payload or {}
     kwargs: dict = {"node_id": node_id, "ts": ts}
+    # FEAT-496: seat/task identity — labels are authoritative, the caller's
+    # derived `seat` is the fallback for an unlabelled dispatch.
+    resolved_seat = str(payload.get("seat", "") or seat or "")
+    if resolved_seat:
+        kwargs["seat"] = resolved_seat
+    for field, payload_key in (
+        ("task_id", "task_id"),
+        ("task_title", "task_title"),
+        ("agent", "agent"),
+        ("model", "model"),
+        ("summary", "summary"),
+    ):
+        value = payload.get(payload_key)
+        if value:
+            kwargs[field] = str(value)[:160] if field == "summary" else str(value)
     if cls in (DispatchOutputInvalid, DispatchFailed):
         kwargs["error"] = str(payload.get("error", ""))[:500]
     if cls is DispatchToolUse:
@@ -1346,13 +1514,9 @@ def action_from_dispatch_event(kind: str, node_id: str, ts: float,
             if usage.get("output_tokens") is not None:
                 kwargs["output_tokens"] = int(usage["output_tokens"])
             if usage.get("cache_creation_input_tokens") is not None:
-                kwargs["cache_creation_input_tokens"] = int(
-                    usage["cache_creation_input_tokens"]
-                )
+                kwargs["cache_creation_input_tokens"] = int(usage["cache_creation_input_tokens"])
             if usage.get("cache_read_input_tokens") is not None:
-                kwargs["cache_read_input_tokens"] = int(
-                    usage["cache_read_input_tokens"]
-                )
+                kwargs["cache_read_input_tokens"] = int(usage["cache_read_input_tokens"])
             if usage.get("total_cost_usd") is not None:
                 kwargs["total_cost_usd"] = float(usage["total_cost_usd"])
             if usage.get("num_turns") is not None:

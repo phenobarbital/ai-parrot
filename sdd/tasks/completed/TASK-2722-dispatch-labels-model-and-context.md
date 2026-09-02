@@ -286,10 +286,15 @@ class TestLabelContext:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `DispatchLabels` to `models/base.py` (frozen, all-default
+fields, `as_payload()` omitting empty/default values), exported from
+`parrot.flows.dev_loop.models`. Added `_DISPATCH_LABELS_CTX`, `bind_labels()`,
+`current_labels()` to `dispatchers/_shared.py`, mirroring `_SESSION_HOST_CTX`
+exactly. Added `labels: Optional[DispatchLabels] = None` to the
+`DevLoopCodeDispatcher` Protocol's `dispatch()` signature. 7 new unit tests
+pass; full `dev_loop` suite still green (pre-existing 3 failures in
+`test_recovery_lifecycle.py` confirmed unrelated via `git stash` diff).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

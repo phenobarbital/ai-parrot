@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatchers._shared import T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
-from parrot.flows.dev_loop.models import ZaiCodeDispatchProfile
+from parrot.flows.dev_loop.models import DispatchLabels, ZaiCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
 
@@ -67,13 +67,10 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         _provider, model = LLMFactory.parse_llm_string(profile.llm)
         if profile.enable_thinking and model not in THINKING_CAPABLE_ZAI_MODELS:
             self.logger.warning(
-                "Z.ai thinking requested for model %s, which is not in the "
-                "known thinking-capable set.",
+                "Z.ai thinking requested for model %s, which is not in the " "known thinking-capable set.",
                 model,
             )
-        args["thinking"] = {
-            "type": "enabled" if profile.enable_thinking else "disabled"
-        }
+        args["thinking"] = {"type": "enabled" if profile.enable_thinking else "disabled"}
         args["reasoning_effort"] = profile.reasoning_effort
         return args
 
@@ -103,6 +100,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -112,5 +110,5 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
-

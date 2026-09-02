@@ -304,10 +304,22 @@ class TestSummarizeToolInput:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `normalize_payload(kind, payload)` and
+`summarize_tool_input(tool_name, tool_input, *, max_chars=120)` plus
+`SUMMARY_MAX_CHARS`/`TEXT_MAX_CHARS`/`TOOL_INPUT_MAX_CHARS` constants to
+`_shared.py`, with private helpers `_clamp`, `_build_summary`,
+`_kind_fallback`, `_labels_prefix`, `_fmt_duration_ms`. Both functions are
+total (wrapped in `try/except Exception`, never raise). `summarize_tool_input`
+checks `pattern`(+`path`) before the bare `path` key so a Grep-style call
+digests as `"<pattern> in <path>"` rather than falling into the path-only
+branch. 22 new unit tests pass; full `dev_loop` suite green (same 3
+pre-existing unrelated failures in `test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `summarize_tool_input`'s shape-recognition order
+checks `pattern` before `file_path`/`path`/`notebook_path` (the spec's table
+lists them in the reverse order) — necessary because a Grep call carries both
+`pattern` and `path`, and the table's own worked example
+(`"<pattern> in <path>"`) requires `pattern` to win. No test or acceptance
+criterion specifies the opposite order.

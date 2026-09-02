@@ -43,6 +43,7 @@ from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
     CriterionResult,
+    DispatchLabels,
     ManualCriterion,
     QAReport,
     ResearchOutput,
@@ -475,18 +476,33 @@ class QANode(DevLoopNode):
             worktree_path=effective_cwd,
             summary=brief.summary,
         )
-        return await self._dispatcher.dispatch(
-            brief=qa_brief,
-            profile=profile,
-            output_model=QAReport,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=effective_cwd,
-            # FEAT-322: fold dispatch-level events into the run's
-            # SessionHost when one is present (see development.py's
-            # dispatch() call for the same pattern/rationale).
-            session_host=shared.get("session_host"),
-        )
+        try:
+            return await self._dispatcher.dispatch(
+                brief=qa_brief,
+                profile=profile,
+                output_model=QAReport,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=effective_cwd,
+                # FEAT-322: fold dispatch-level events into the run's
+                # SessionHost when one is present (see development.py's
+                # dispatch() call for the same pattern/rationale).
+                session_host=shared.get("session_host"),
+                # FEAT-496: label QANode's own dispatch with its subagent.
+                labels=DispatchLabels(subagent=profile.subagent, seat=self.name),
+            )
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await self._dispatcher.dispatch(
+                brief=qa_brief,
+                profile=profile,
+                output_model=QAReport,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=effective_cwd,
+                session_host=shared.get("session_host"),
+            )
 
     # ------------------------------------------------------------------
     # Default criterion derivation (briefless topologies)
@@ -998,22 +1014,46 @@ class QANode(DevLoopNode):
             qa_criterion_results=qa_results,
             qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
+        reviewer = self._active_reviewer(shared)
         try:
-            verdict = await self._active_reviewer(shared).review(
-                brief=review_brief,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=review_cwd,
-                # FEAT-322: fold dispatch-level events into the run's
-                # SessionHost when one is present.
-                session_host=shared.get("session_host"),
-                # FEAT-378 (code-review finding): the QA-attempt-scoped round
-                # identifier JudgePanelReviewDispatcher stamps onto each
-                # JudgeVerdictRecorded action ("qa-1", "qa-2", ... — same
-                # convention as QaAttemptRecorded's attempt number above).
-                # Ignored by every non-panel dispatcher.
-                round=f"qa-{shared.get('qa_attempt', 1)}",
-            )
+            try:
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    # FEAT-322: fold dispatch-level events into the run's
+                    # SessionHost when one is present.
+                    session_host=shared.get("session_host"),
+                    # FEAT-378 (code-review finding): the QA-attempt-scoped
+                    # round identifier JudgePanelReviewDispatcher stamps onto
+                    # each JudgeVerdictRecorded action ("qa-1", "qa-2", ... —
+                    # same convention as QaAttemptRecorded's attempt number
+                    # above). Ignored by every non-panel dispatcher.
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                    # FEAT-496: label QANode's own code-review dispatch. A
+                    # panel reviewer stamps its own per-judge labels and only
+                    # reads `.attempt` off this one; a single reviewer
+                    # forwards it straight through to `dispatch()`.
+                    labels=DispatchLabels(subagent="sdd-codereview", seat=self.name),
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a reviewer that fully
+                # overrides review() without a labels= parameter (e.g.
+                # NovaAdversarialReviewDispatcher, which has no underlying
+                # dispatcher to delegate to and so cannot inherit the ABC's
+                # own labels fallback) must still actually run, not silently
+                # skip via the degrade-on-infra-error path below.
+                if "labels" not in str(exc):
+                    raise
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    session_host=shared.get("session_host"),
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)
             shared["_code_review_verdict"] = None
@@ -1100,15 +1140,30 @@ class QANode(DevLoopNode):
         )
 
         async def _dispatch_once() -> TriageReport:
-            return await self._dispatcher.dispatch(
-                brief=triage_brief,
-                profile=profile,
-                output_model=TriageReport,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=worktree_path,
-                session_host=shared.get("session_host"),
-            )
+            try:
+                return await self._dispatcher.dispatch(
+                    brief=triage_brief,
+                    profile=profile,
+                    output_model=TriageReport,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=worktree_path,
+                    session_host=shared.get("session_host"),
+                    # FEAT-496: label the triage worker's own dispatch.
+                    labels=DispatchLabels(subagent=profile.subagent, seat=self.name),
+                )
+            except TypeError as exc:
+                if "labels" not in str(exc):
+                    raise
+                return await self._dispatcher.dispatch(
+                    brief=triage_brief,
+                    profile=profile,
+                    output_model=TriageReport,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=worktree_path,
+                    session_host=shared.get("session_host"),
+                )
 
         def _index(report: TriageReport) -> Dict[str, AdversarialFinding]:
             # FEAT-375 code-review fix: match on the stable `finding_id`

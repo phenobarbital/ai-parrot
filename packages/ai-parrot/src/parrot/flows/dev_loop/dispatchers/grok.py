@@ -9,7 +9,11 @@ from pydantic import BaseModel
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatchers._shared import T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
-from parrot.flows.dev_loop.models import GrokCodeDispatchProfile, LLMCodeDispatchProfile
+from parrot.flows.dev_loop.models import (
+    DispatchLabels,
+    GrokCodeDispatchProfile,
+    LLMCodeDispatchProfile,
+)
 from parrot.flows.dev_loop.session_state import SessionHost
 
 
@@ -59,6 +63,7 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         llm_profile = LLMCodeDispatchProfile(
             subagent=profile.subagent,
@@ -80,5 +85,5 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
-

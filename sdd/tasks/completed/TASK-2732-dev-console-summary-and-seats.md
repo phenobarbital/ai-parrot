@@ -322,13 +322,54 @@ block that can be `node`-evaluated in a smoke test, and assert
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `briefOf` gained a leading `if (p.summary) return
+String(p.summary).slice(0, 160);` branch. Added `ownEvents(id)` (merges
+`app.events` for `id` and any `id.*` seat, sorted by `ts` ascending) and
+rewired `nodesForRender` to use it instead of the bare `app.events.get(n.id)`
+lookup. `foldAction` gained a new `foldSeat(n, a)` helper (the browser-side
+twin of `session_state.py`'s `_fold_seat_from_action`) called from every
+`dispatch/*` case (added a `dispatch/tool_result` case that previously fell
+through to `default: break` — no roll-up change, seat-fold only), so
+`app.s.nodes[id].dispatch.seats` builds up live from the actions stream
+exactly like the roll-up counters already did — this was necessary because
+the actions the browser receives are individual mutations, not full
+snapshots, so the seat fold has to be replicated client-side the same way
+the roll-up already is. `eventRowsHtml` renders a `[seat · task_id ·
+judge_id]` badge (whichever parts are present) per row and only shows "This
+node has not been dispatched yet" when the node has neither events nor
+seats. `nodeMetaHtml` is UNCHANGED (still the plain "dispatcher · N msgs · N
+tools" text line, safe to wrap in `esc()`); a NEW function `nodeSeatsHtml(n)`
+renders the seat table as raw HTML (every interpolated value individually
+escaped) — added as a sibling rather than folded into `nodeMetaHtml` because
+both existing call sites wrap `nodeMetaHtml(n)`'s return value in `esc()`,
+which would have HTML-escaped a literal `<table>` into visible tag text.
+Wired `nodeSeatsHtml` into both the "panels" and the focus-"rail" view
+(the "spine" view was left untouched — it never called `nodeMetaHtml`/
+`eventRowsHtml` in the first place, and its own-node-status-driven "not
+dispatched" text already satisfies AC7 without a seat-aware rewrite).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Rendering decisions for TASK-2733 to mirror**: badge format is
+`[shortSeat · task_id · judge_id]` — a single bracketed group, `·`-joined,
+only the present parts; the seat table has 6 columns (`seat`, `task`,
+`agent/model`, `status` as a `.pill`, `counts` as `"Nm/Nt"`, `last` as
+`last_summary` falling back to `last_error`), sorted by seat id; empty-state
+rule is "show 'not dispatched yet' iff zero events AND zero seats";
+merge/sort rule is `ownEvents(id)`: prefix-match `id` or `id.` then sort by
+`ts` ascending.
 
-**Rendering decisions for TASK-2733 to mirror**: (seat badge format, seat
-table columns, empty-state rule, merge/sort rule)
+**Verification**: no live server run in this session (see
+`artifacts/logs/feat-496/task-2732-smoke-evidence.md`) — instead, extracted
+and `node --check`'d the real `<script type="module">` block (my first
+attempt accidentally checked the wrong, tiny `<script>` tag and reported a
+false "OK"; corrected the regex to `<script[^>]*>` before trusting the
+result), then ran 8 runtime assertions against the extracted pure functions
+(`briefOf`, `foldSeat`, `ownEvents`, `nodeSeatsHtml`) under plain Node — all
+passed. Browser rendering/CSS/click-to-expand interaction is unverified;
+deferred to a live/replayed run.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `nodeSeatsHtml` is a new function rather than a
+change folded into `nodeMetaHtml` itself — required to avoid double-escaping
+the seat table's HTML (see above); both call sites of `nodeMetaHtml` are
+otherwise unchanged.

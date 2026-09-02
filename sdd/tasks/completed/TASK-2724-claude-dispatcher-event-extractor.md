@@ -367,10 +367,25 @@ class TestClaudeEventExtraction:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Rewrote `_publish_message_event` to walk content blocks via a new
+`_extract_message_blocks` static method: `ToolUseBlock` → `tool_name` +
+`tool_input` digest (plus recording `tool_use_id -> tool_name` into a
+per-dispatch `_TOOL_NAMES_CTX` correlation map, mirroring `_SESSION_HOST_CTX`
+exactly — bound/reset alongside it in `dispatch()`, on both the pre-semaphore
+`except` path and the `finally`); `ToolResultBlock` resolves through that
+map, plus `is_error` and a clamped `result_snippet` via a new `_snippet`
+helper. `SystemMessage`/`ResultMessage` enrichment (`subtype`, `model`, `cwd`,
+`session_id`, `tool_count`, `mcp_server_count`, `num_turns`, `duration_ms`,
+`total_cost_usd`) now runs unconditionally via duck-typed `getattr` — no SDK
+import added. `_publish_event` now routes every payload through
+`normalize_payload`. `dispatch()` accepts `labels: Optional[DispatchLabels]
+= None`. Kept emitting the legacy `tools` list alongside the new `tool_name`
+for backward compatibility. 7 new tests pass (including a per-dispatch
+correlation-isolation test using two concurrent seats with the SAME
+`tool_use_id` to prove no cross-talk); full `dev_loop` suite green (98 total
+claude/dual_publish tests plus the same 3 pre-existing unrelated failures in
+`test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
