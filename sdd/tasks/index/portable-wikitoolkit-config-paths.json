@@ -33,14 +33,14 @@
       "feature_id": "FEAT-495",
       "feature": "portable-wikitoolkit-config-paths",
       "spec": "sdd/specs/portable-wikitoolkit-config-paths.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates only .mcp.json.example; shares no files with TASK-2720 (.claude/settings.json). Technically parallelizable, but trivial — recommend sequential in one per-spec worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-02T02:31:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2721-add-mcp-json-example.md"
     }
