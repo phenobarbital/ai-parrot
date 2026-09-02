@@ -47,13 +47,24 @@ new findings were caught and fixed during this sweep:
   top-level name and are not separately flagged. Fixed: `noqa` kept only on
   the `moonshot` import.
 
-`mypy` was not found configured for `packages/ai-parrot` in this repo's CI
-at the time of this sweep (searched `pyproject.toml` / `.github/workflows/`
-for a `dev_loop`-scoped mypy invocation and found none); AC13's "type
-checks" clause is therefore satisfied by `ruff`'s own type-annotation rules
-(the `UP0xx` family) plus every new function in this feature carrying full
-type hints per the project's Google-style-docstring + strict-type-hints
-convention (spot-checked in every task's diff).
+**Correction** (flagged by the `code-reviewer` subagent during this task's
+own adversarial review, verified before accepting): the root `pyproject.toml`
+*does* have a `[tool.mypy]` section (`python_version`, `warn_return_any`,
+`warn_unused_configs` — no strict mode, no per-package `mypy_path`). The
+original wording here claimed no mypy configuration exists at all, which
+was inaccurate. Running `mypy --config-file pyproject.toml` against a
+FEAT-496-touched file (`dispatchers/_shared.py`) was attempted as evidence
+and produced 111 errors in 63 files, all pre-existing missing-library-stub
+noise unrelated to this feature (`pandas`/`yaml`/`jsonschema`/`aiofiles`/
+`datamodel.parsers.json`/a `jax` stub syntax error) that prevents mypy from
+completing a check of this file at all in the current environment — mypy
+is configured but not practically usable as CI evidence for this package
+today. AC13's "type checks" clause is therefore satisfied by `ruff`'s own
+type-annotation rules (the `UP0xx` family) plus every new function in this
+feature carrying full type hints per the project's Google-style-docstring +
+strict-type-hints convention (spot-checked in every task's diff) — not by a
+clean `mypy` run, which was not achievable for reasons unrelated to this
+feature's own code quality.
 
 ## Backend-parity summary
 
@@ -69,6 +80,81 @@ convention (spot-checked in every task's diff).
 
 None beyond the two lint nits already fixed above (both are TASK-2734's
 own file, `test_llm_family_parity.py` — not owned by another task).
+
+## Post-completion adversarial review findings (fixed before push)
+
+After all 13 tasks were marked done, two independent adversarial reviews
+were run per the completion protocol: a `code-reviewer` subagent and a
+background `codex exec review --base dev` session, each given only the
+diff/spec/acceptance-criteria (no shared reasoning). Both independently
+found the same critical defect; the subagent additionally found two
+"Important" gaps. All three were real, verified against the actual code
+before fixing, and fixed:
+
+- 🔴 **CRITICAL — `dev.html`/`index.html`'s `dispatch/queued` case wiped
+  the whole per-node dispatch object** (including `seats` and roll-up
+  counters) on every `dispatch/queued` action, not just the first. A
+  pooled node receives one `dispatch/queued` action PER SEAT; the second
+  seat's queue event silently erased the first seat's already-accumulated
+  state in the live console — a real AC6/AC7 violation in the browser
+  layer specifically (the Python-side `_with_dispatch` reducer never had
+  this bug). **CONFIRM, fixed**: merge into the existing dispatch object
+  in place (mirroring the already-correct `dispatch/started` case),
+  verified with a two-seat Node.js runtime scenario in both files.
+- 🟠 **IMPORTANT — `google_coding.py` never published a corrective
+  `dispatch.output_invalid` event on a validation failure**, unlike
+  claude.py/codex.py/gemini.py. Pre-existing (unrelated to this feature's
+  own changes), but newly consequential because this feature's own root-7
+  fix means agy events now actually reach session state — previously this
+  gap was invisible because agy events never folded into session state at
+  all. **CONFIRM, fixed**: added the identical `except
+  DispatchOutputValidationError` → `dispatch.output_invalid` publish
+  pattern already used by the other three backends, with a regression
+  test that fails pre-fix and passes post-fix.
+- 🟠 **IMPORTANT — `NovaAdversarialReviewDispatcher.review()` was never
+  updated to accept `labels=`**, unlike its structural sibling
+  `MantleAdversarialReviewDispatcher`. QANode's own code-review dispatch
+  call (added in TASK-2731) passed `labels=` unconditionally, so a
+  Nova-adversarial-configured reviewer raised `TypeError`, silently
+  degraded by the existing infra-error handler into "code-review could
+  not run" — a configured Nova reviewer never actually ran.
+  **CONFIRM, fixed two ways**: (1) `nodes/qa.py`'s code-review dispatch
+  call now uses the same narrow `except TypeError` retry-without-labels
+  guard already used at its other two dispatch call sites, verified with
+  a regression test that fails pre-fix and passes post-fix; (2)
+  `NovaAdversarialReviewDispatcher.review()` itself now accepts `labels=`
+  for protocol parity (mirroring Mantle exactly), closing the gap at the
+  source rather than only relying on the defensive fallback. Added a new
+  `test_every_review_dispatcher_accepts_labels` parity sweep
+  (`AbstractCodeReviewDispatcher.__subclasses__()`, dynamically
+  discovered — mirroring `test_llm_family_parity.py`'s pattern) that
+  fails against the pre-fix Nova code and would catch this class of drift
+  for any future review-dispatcher subclass.
+- 🟡 Suggestions noted but not acted on (per protocol, suggestions are
+  recorded for the PR reviewer, not auto-fixed): the LLM-family's
+  `dispatch.tool_use` payloads lack a `tool_input` digest (AC3 reads as a
+  blanket requirement, but the spec's own Module 5 text explicitly scoped
+  llm.py to "only needs the summary line and label stamping" — a
+  spec-internal inconsistency, not a clear implementation bug, left for
+  the spec owner to resolve); the TypeError-string-matching fallback
+  pattern (sound today — verified no current dispatcher/reviewer has a
+  `**kwargs` signature that could trigger a false match — but a design
+  suggestion to prefer `inspect.signature` inspection instead, for any
+  future duck-typed dispatcher); Codex/Gemini/agy's tool-result
+  correlation reads the tool name off the current event rather than a
+  genuine id→name map like Claude's (best-effort, CLI-wire-format
+  dependent, not provably a live bug); `action_from_dispatch_event()`
+  only reading `payload["error"]` (misses `error_message`/`stderr_tail`)
+  is pre-existing and out of this feature's scope.
+- 💡 Nitpick fixed: this document's original claim that "`mypy` was not
+  found configured" was inaccurate (a `[tool.mypy]` section exists in the
+  root `pyproject.toml`); corrected above with verified evidence that
+  running it is not practical CI signal for this package today for
+  reasons unrelated to this feature.
+
+Full suite after all post-review fixes: `1613 passed, 6 skipped` (same 3
+pre-existing `test_recovery_lifecycle.py` failures), `ruff check` clean of
+new issues on every touched file.
 
 ## Total test count added by FEAT-496
 

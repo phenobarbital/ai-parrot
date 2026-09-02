@@ -244,7 +244,27 @@ class GoogleCodingDispatcher:
                         f"agy CLI dispatch failed with exit code {return_code}: {stderr[-1000:]}"
                     )
 
-                result = self._parse_and_validate_result(result_data, assistant_text, output_model)
+                try:
+                    result = self._parse_and_validate_result(result_data, assistant_text, output_model)
+                except DispatchOutputValidationError as exc:
+                    # FEAT-496 (code-review finding): a mid-stream "result"
+                    # CLI event already published dispatch.completed via
+                    # _publish_agy_event (below) before this final validation
+                    # runs — mirror claude.py/codex.py/gemini.py's corrective
+                    # dispatch.output_invalid event so session state is not
+                    # left stuck reporting "completed" for a dispatch whose
+                    # output actually failed validation.
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.output_invalid",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "raw_payload": exc.raw_payload[:8000],
+                            "error_message": str(exc),
+                        },
+                    )
+                    raise
 
                 await self._publish_event(
                     stream_key,

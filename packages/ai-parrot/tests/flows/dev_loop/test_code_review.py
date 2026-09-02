@@ -27,7 +27,7 @@ from parrot.flows.dev_loop.nodes.qa import QANode
 class _DummyReviewer(AbstractCodeReviewDispatcher):
     agent_name = "dummy"
 
-    async def review(self, *, brief, run_id, node_id, cwd):
+    async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round="", labels=None):
         return None  # placeholder
 
     def build_review_profile(self):
@@ -540,3 +540,47 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         with pytest.raises(RuntimeError):
             await server_mod._on_startup(app)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 (code-review finding) — labels= parity sweep across every
+# AbstractCodeReviewDispatcher subclass, mirroring
+# test_llm_family_parity.py's dynamic LLMCodeDispatcher.__subclasses__()
+# sweep. Discovers subclasses dynamically so a future reviewer that forgets
+# labels= fails this test instead of silently drifting from the ABC's
+# contract (the gap this test closes: NovaAdversarialReviewDispatcher was
+# missed by the original TASK-2731 implementation and only caught by an
+# adversarial code review).
+# ---------------------------------------------------------------------------
+
+import inspect
+
+import parrot.flows.dev_loop.dispatchers.mantle
+import parrot.flows.dev_loop.dispatchers.nova  # noqa: F401
+
+
+def _all_review_dispatcher_classes():
+    return [AbstractCodeReviewDispatcher, *AbstractCodeReviewDispatcher.__subclasses__()]
+
+
+@pytest.mark.parametrize(
+    "cls", _all_review_dispatcher_classes(), ids=lambda c: c.__name__
+)
+def test_every_review_dispatcher_accepts_labels(cls):
+    sig = inspect.signature(cls.review)
+    assert "labels" in sig.parameters, f"{cls.__name__}.review lacks labels="
+    assert sig.parameters["labels"].default is None
+
+
+def test_at_least_the_known_review_subclasses_are_covered():
+    """Guards against an import regression silently shrinking the sweep."""
+    names = {c.__name__ for c in AbstractCodeReviewDispatcher.__subclasses__()}
+    assert {
+        "ClaudeCodeReviewDispatcher",
+        "CodexCodeReviewDispatcher",
+        "CodexAdversarialReviewDispatcher",
+        "ParallelPerspectiveReviewDispatcher",
+        "JudgePanelReviewDispatcher",
+        "MantleAdversarialReviewDispatcher",
+        "NovaAdversarialReviewDispatcher",
+    } <= names

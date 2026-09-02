@@ -308,6 +308,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run the advisory review directly against ``NovaClient.ask()``.
 
@@ -318,6 +319,13 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         ``AbstractCodeReviewDispatcher.review()``'s contract (this class
         cannot call ``super().review()`` — there is no underlying
         dispatcher to delegate to).
+
+        Args:
+            labels: FEAT-496 — accepted for protocol parity with the ABC's
+                now-updated signature (code-review finding: this seat has
+                no dispatch payload/usage-attribution seat to fold a
+                `judge_id` into, unlike `MantleAdversarialReviewDispatcher`,
+                so it is unused beyond satisfying the contract).
         """
         try:
             profile = self.build_review_profile()

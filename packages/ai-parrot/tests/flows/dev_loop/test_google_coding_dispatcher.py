@@ -200,6 +200,47 @@ async def test_dispatch_invalid_json_output(dispatcher, brief, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_invalid_output_publishes_corrective_event(dispatcher, brief, monkeypatch):
+    """FEAT-496 (code-review finding): a mid-stream "result" event already
+    published dispatch.completed before final validation runs. Unlike
+    claude.py/codex.py/gemini.py, this dispatcher had no corrective
+    dispatch.output_invalid event on a later validation failure, silently
+    leaving session state stuck reporting "completed" for the failed
+    dispatch. Now fixed to mirror the other three backends.
+    """
+    stream_lines = [
+        json.dumps({"type": "result", "result": "{not valid json}"}) + "\n",
+    ]
+    fake_proc = _FakeAgyProcess(stdout_lines=stream_lines)
+
+    async def fake_create_subprocess_exec(*cmd, **kwargs):
+        return fake_proc
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+
+    profile = GoogleCodingDispatchProfile(model="auto")
+    with pytest.raises(DispatchOutputValidationError):
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=profile,
+            output_model=DevelopmentOutput,
+            run_id="run-agy-corrective",
+            node_id="development",
+            cwd=brief.worktree_path,
+        )
+
+    kinds = []
+    for call in dispatcher._fake_redis.xadd.await_args_list:
+        fields = call.args[1]
+        kinds.append(json.loads(fields["event"])["kind"])
+    assert "dispatch.output_invalid" in kinds
+    assert kinds[-1] == "dispatch.output_invalid", (
+        "the corrective event must be the LAST one published, after any "
+        f"premature dispatch.completed from a mid-stream result event: {kinds}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_dispatch_profile_mismatch(dispatcher, brief):
     wrong_profile = "invalid_profile_object"
     with pytest.raises(ValueError, match="Expected GoogleCodingDispatchProfile"):
