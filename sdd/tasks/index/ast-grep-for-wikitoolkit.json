@@ -192,7 +192,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Store-only (store.py, arango_store.py, file_store.py, federation.py, symbols.py decoder); no overlap with the extraction tasks TASK-2739..2746.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2747-store-schema-v2-and-symbol-methods.md"
+      "completed_at": "2026-09-02T12:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2747-store-schema-v2-and-symbol-methods.md"
     },
     {
       "id": "TASK-2748",
