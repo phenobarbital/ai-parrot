@@ -191,3 +191,90 @@ def test_pytest_targets_are_deduped_and_sorted(worktree):
         str(worktree),
     )
     assert targets == ["packages/ai-parrot-tools/tests", "packages/ai-parrot/tests"]
+
+
+# ----------------------------------------------------------------------
+# Narrow (mirrored-subtree) scoping
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def mirrored(worktree):
+    """A worktree whose test tree mirrors the source tree, as the repo does."""
+    (worktree / "packages" / "ai-parrot" / "tests" / "flows" / "dev_loop").mkdir(parents=True)
+    (worktree / "packages" / "ai-parrot" / "tests" / "loaders").mkdir(parents=True)
+    return worktree
+
+
+def test_source_file_maps_to_mirrored_test_subtree(mirrored):
+    """`src/parrot/flows/dev_loop/nodes/qa.py` -> `tests/flows/dev_loop`."""
+    targets = QANode._pytest_targets(
+        ["packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py"],
+        str(mirrored),
+    )
+    assert targets == ["packages/ai-parrot/tests/flows/dev_loop"]
+
+
+def test_mapping_walks_up_to_the_deepest_directory_that_exists(mirrored):
+    """`tests/flows/dev_loop/nodes/` does not exist — stop at `dev_loop`."""
+    targets = QANode._pytest_targets(
+        ["packages/ai-parrot/src/parrot/flows/dev_flow/nodes/ideation.py"],
+        str(mirrored),
+    )
+    # `tests/flows/dev_flow` does not exist either → walk up to `tests/flows`.
+    assert targets == ["packages/ai-parrot/tests/flows"]
+
+
+def test_changed_test_module_is_its_own_target(mirrored):
+    test_file = mirrored / "packages/ai-parrot/tests/loaders/test_base.py"
+    test_file.write_text("")
+    targets = QANode._pytest_targets(
+        ["packages/ai-parrot/tests/loaders/test_base.py"],
+        str(mirrored),
+    )
+    assert targets == ["packages/ai-parrot/tests/loaders/test_base.py"]
+
+
+def test_target_covered_by_an_ancestor_is_pruned(mirrored):
+    """Source + its own new test must not hand pytest the module twice."""
+    (mirrored / "packages/ai-parrot/tests/loaders/test_base.py").write_text("")
+    targets = QANode._pytest_targets(
+        [
+            "packages/ai-parrot/src/parrot/loaders/base.py",
+            "packages/ai-parrot/tests/loaders/test_base.py",
+        ],
+        str(mirrored),
+    )
+    assert targets == ["packages/ai-parrot/tests/loaders"]
+
+
+def test_deleted_test_module_falls_back_to_the_package_root(mirrored):
+    targets = QANode._pytest_targets(
+        ["packages/ai-parrot/tests/loaders/test_gone.py"],
+        str(mirrored),
+    )
+    assert targets == ["packages/ai-parrot/tests"]
+
+
+@pytest.mark.asyncio
+async def test_tests_created_by_development_are_unioned_with_the_diff(ctx, mirrored, monkeypatch):
+    """The dev node reports source; the diff reports the new test — use both."""
+    ctx["development_output"] = DevelopmentOutput(
+        files_changed=["packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py"],
+        commit_shas=["abc"],
+        summary="s",
+    )
+    monkeypatch.setattr(
+        QANode,
+        "_get_changed_files",
+        AsyncMock(return_value=["packages/ai-parrot/tests/loaders/test_new.py"]),
+    )
+    (mirrored / "packages/ai-parrot/tests/loaders/test_new.py").write_text("")
+    dispatcher = _dispatcher()
+
+    await QANode(dispatcher=dispatcher).execute(ctx)
+
+    assert _qa_brief(dispatcher).acceptance_criteria[0].command == (
+        "pytest packages/ai-parrot/tests/flows/dev_loop "
+        "packages/ai-parrot/tests/loaders/test_new.py"
+    )

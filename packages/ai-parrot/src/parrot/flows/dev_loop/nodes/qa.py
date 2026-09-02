@@ -491,17 +491,22 @@ class QANode(DevLoopNode):
     ) -> List[AcceptanceCriterion]:
         """Derive one executable criterion for a run that declared none.
 
-        Runs pytest scoped to the test tree of every workspace package the
-        change actually touched — the whole-monorepo suite is minutes of
-        wall clock for a change that usually lands in one distribution.
+        Runs pytest scoped to the narrowest existing test directory that
+        mirrors each changed file (see :meth:`_pytest_targets`) — the
+        whole-monorepo suite is minutes of wall clock, and so is the full
+        test tree of ``ai-parrot`` itself (1250+ test modules), for a
+        change that usually lands in one subsystem.
 
-        Changed files come from ``DevelopmentOutput.files_changed`` when
-        development published one, falling back to a ``git diff`` against
-        the merge base (the same helper the lint scoping uses). A change
-        that touched no Python file at all yields NO criterion — a
-        docs-only run has nothing to verify with pytest, and inventing a
-        whole-repo run for it is exactly the waste this method exists to
-        avoid.
+        Changed files are the UNION of ``DevelopmentOutput.files_changed``
+        and a ``git diff`` against the merge base (the same helper the
+        lint scoping uses). The union is deliberate: the development node
+        routinely reports the source files it edited but omits the test
+        modules it created, and the diff routinely misses work that is
+        not committed yet — either source alone under-scopes the gate.
+        A change that touched no Python file at all yields NO criterion —
+        a docs-only run has nothing to verify with pytest, and inventing
+        a whole-repo run for it is exactly the waste this method exists
+        to avoid.
 
         The command bypasses ``ACCEPTANCE_CRITERION_ALLOWLIST`` for the
         same reason the runner's revision path does (runner.py, the
@@ -518,9 +523,9 @@ class QANode(DevLoopNode):
         """
         worktree = research.worktree_path
         development = shared.get("development_output")
-        files = [f for f in (getattr(development, "files_changed", None) or []) if f.endswith(".py")]
-        if not files:
-            files = await self._get_changed_files(worktree)
+        reported = [f for f in (getattr(development, "files_changed", None) or []) if f.endswith(".py")]
+        diffed = await self._get_changed_files(worktree)
+        files = list(dict.fromkeys([*reported, *diffed]))
         if not files:
             self.logger.info(
                 "No changed Python files for %s — deriving no default QA criterion.",
@@ -535,17 +540,34 @@ class QANode(DevLoopNode):
             research.feat_id or research.jira_issue_key,
             command,
         )
-        return [ShellCriterion(name="pytest (derived: changed packages)", command=command)]
+        return [ShellCriterion(name="pytest (derived: changed scopes)", command=command)]
 
-    @staticmethod
-    def _pytest_targets(files: List[str], worktree_path: str) -> List[str]:
-        """Map changed files to the test trees of the packages they touch.
+    @classmethod
+    def _pytest_targets(cls, files: List[str], worktree_path: str) -> List[str]:
+        """Map changed files to the narrowest test targets that cover them.
 
-        Each ``packages/<dist>/...`` path contributes
-        ``packages/<dist>/tests``, deduped and sorted. A target that does
-        not exist on disk is dropped — pytest exits 4 ("file or directory
-        not found") on a missing path, which would fail the gate for a
-        package that simply ships no tests.
+        Mapping a change to ``packages/<dist>/tests`` is correct but far
+        too coarse: for ``ai-parrot`` that is the entire 1250-module core
+        suite (~9 minutes), which is what the derived gate used to run for
+        a three-file change. The repo mirrors its source tree under
+        ``tests/`` (``src/parrot/flows/dev_loop/`` ->
+        ``tests/flows/dev_loop/``), so each changed file resolves instead
+        to the deepest mirrored directory that actually exists, walking up
+        towards ``packages/<dist>/tests`` until one does.
+
+        Per changed path:
+
+        * ``packages/<dist>/tests/...`` — a changed/created test module is
+          its own narrowest target, pointed at directly.
+        * ``packages/<dist>/src/<top_pkg>/<dirs>/<file>.py`` — mirrored to
+          the deepest existing ``packages/<dist>/tests/<dirs>``.
+        * anything else under ``packages/<dist>/`` — the package test root.
+        * anything outside ``packages/`` — dropped (nothing maps).
+
+        A distribution with no ``tests`` directory at all contributes no
+        target: pytest exits 4 ("file or directory not found") on a
+        missing path, which would fail the gate for a package that simply
+        ships no tests.
 
         Args:
             files: Changed file paths, repo-relative.
@@ -553,15 +575,91 @@ class QANode(DevLoopNode):
                 checks.
 
         Returns:
-            Existing test directories, sorted; empty when nothing mapped
-            (the caller then falls back to an unscoped ``pytest``).
+            Existing test paths, sorted, with any target already covered
+            by an ancestor target removed; empty when nothing mapped (the
+            caller then falls back to an unscoped ``pytest``).
         """
         targets: set = set()
         for path in files:
-            parts = PurePosixPath(path).parts
-            if len(parts) >= 2 and parts[0] == "packages":
-                targets.add(f"packages/{parts[1]}/tests")
-        return sorted(t for t in targets if os.path.isdir(os.path.join(worktree_path, t)))
+            target = cls._pytest_target_for(path, worktree_path)
+            if target:
+                targets.add(target)
+        return cls._prune_nested(targets)
+
+    @classmethod
+    def _pytest_target_for(cls, path: str, worktree_path: str) -> Optional[str]:
+        """Resolve one changed path to its narrowest existing test target.
+
+        Args:
+            path: A repo-relative changed file path.
+            worktree_path: Root the path is relative to.
+
+        Returns:
+            The test path to hand pytest, or ``None`` when the file maps
+            to nothing that exists on disk.
+        """
+        parts = PurePosixPath(path).parts
+        if len(parts) < 3 or parts[0] != "packages":
+            return None
+        tests_root = f"packages/{parts[1]}/tests"
+        if not os.path.isdir(os.path.join(worktree_path, tests_root)):
+            return None
+
+        rest = parts[2:]
+        if rest[0] == "tests":
+            # The changed test module itself is the tightest possible
+            # target. Fall back to the package root if it was deleted.
+            candidate = "/".join(parts)
+            if os.path.exists(os.path.join(worktree_path, candidate)):
+                return candidate
+            return tests_root
+        if rest[0] == "src":
+            # packages/<dist>/src/<top_pkg>/<dirs...>/<file> -> <dirs...>
+            inner = rest[1:]
+            subdirs = inner[1:-1] if len(inner) >= 2 else ()
+            return cls._deepest_existing_dir(tests_root, subdirs, worktree_path)
+        return tests_root
+
+    @staticmethod
+    def _deepest_existing_dir(
+        tests_root: str,
+        subdirs: Tuple[str, ...],
+        worktree_path: str,
+    ) -> str:
+        """Walk ``tests_root/subdirs`` upwards to the first directory that exists.
+
+        Args:
+            tests_root: ``packages/<dist>/tests`` — verified to exist by
+                the caller, so this always terminates with a real path.
+            subdirs: The source-relative directory chain to mirror.
+            worktree_path: Root the paths are relative to.
+
+        Returns:
+            The deepest existing mirrored directory, at worst
+            ``tests_root`` itself.
+        """
+        for depth in range(len(subdirs), 0, -1):
+            candidate = "/".join((tests_root, *subdirs[:depth]))
+            if os.path.isdir(os.path.join(worktree_path, candidate)):
+                return candidate
+        return tests_root
+
+    @staticmethod
+    def _prune_nested(targets: set) -> List[str]:
+        """Drop targets already covered by another, broader target.
+
+        Without this, a change touching both ``.../dev_loop/nodes/qa.py``
+        and ``.../tests/flows/dev_loop/test_qa.py`` would hand pytest both
+        the directory and a module inside it, collecting that module (and
+        reporting its failures) twice.
+
+        Args:
+            targets: Candidate test paths.
+
+        Returns:
+            The surviving paths, sorted.
+        """
+        return sorted(t for t in targets if not any(t.startswith(f"{other}/") for other in targets))
 
     # ------------------------------------------------------------------
     # Lint scoping helpers

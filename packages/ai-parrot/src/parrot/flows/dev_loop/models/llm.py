@@ -63,6 +63,11 @@ class LLMCodeDispatchProfile(BaseModel):
             "cat",
             "sed",
             "find",
+            "head",
+            "tail",
+            "wc",
+            "awk",
+            "jq",
             "mkdir",
             "mv",
             "ruff",
@@ -70,11 +75,19 @@ class LLMCodeDispatchProfile(BaseModel):
         ],
         description=(
             "Executable names allowed through the run_command tool. "
-            "`grep`/`mkdir`/`mv`/`ruff`/`mypy` are here because seats "
-            "reached for them constantly and every rejection cost a whole "
-            "turn: `ruff`/`mypy` ARE this repo's lint gate, `mkdir`/`mv` are "
-            "how a task creates a package or files a completed TASK, and "
-            "`grep` is what a model falls back to when search_files fails. "
+            "Everything past `find` is here because seats reached for it "
+            "constantly and every rejection cost a whole turn: `ruff`/"
+            "`mypy` ARE this repo's lint gate, `mkdir`/`mv` are how a task "
+            "creates a package or files a completed TASK, `grep` is what a "
+            "model falls back to when search_files fails, `head`/`tail`/"
+            "`wc` are how it samples or sizes a file it does not want to "
+            "read whole, and `awk`/`jq` are how it slices text or reads "
+            "the per-spec task index without burning a turn on a "
+            "`python -c` one-liner. None of these tokens collide with "
+            "`restrict_command_paths`: an `awk` program (`{print $1}`) or a "
+            "`jq` filter (`.tasks[].id`) is not path-shaped, since that "
+            "check only inspects tokens starting with `/`, `./`, `../` or "
+            "`~/`. "
             "This list is an ergonomics guard, not a security boundary — "
             "`python` and `git` are already on it."
         ),
