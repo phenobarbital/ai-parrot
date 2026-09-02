@@ -274,7 +274,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -284,8 +284,8 @@
       "parallelism_notes": "Sequential: CLI over the same service; edits cli.py after TASK-2748.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2751-cli-symbols-stats-docs.md"
+      "completed_at": "2026-09-02T15:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2751-cli-symbols-stats-docs.md"
     },
     {
       "id": "TASK-2752",
