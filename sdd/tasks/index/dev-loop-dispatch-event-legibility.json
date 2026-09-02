@@ -14,7 +14,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: every other task imports this. Alone in its wave; also shares _shared.py with TASK-2723, so the two are strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2722-dispatch-labels-model-and-context.md"
+      "completed_at": "2026-09-02T02:07:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2722-dispatch-labels-model-and-context.md"
     },
     {
       "id": "TASK-2723",
