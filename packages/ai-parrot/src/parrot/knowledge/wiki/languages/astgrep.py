@@ -230,9 +230,24 @@ def named_text(node: SgNode, var: str) -> str:
 # ---------------------------------------------------------------------
 
 
+#: Node kinds to walk past (not treat as a doc-comment blocker) when
+#: looking for the nearest preceding comment — Rust's ``#[derive(...)]``
+#: (TASK-2744: verified live, matches ``rust.py``'s own
+#: ``while prev.type == "attribute_item": prev = prev.prev_sibling``).
+#: Harmless no-op for grammars without this kind.
+_COMMENT_SKIP_KINDS = frozenset({"attribute_item"})
+
+
 def _first_comment_before(node: SgNode) -> SgNode | None:
-    """Return the nearest immediately-preceding comment-kind sibling."""
+    """Return the nearest preceding comment-kind sibling.
+
+    Skips over any :data:`_COMMENT_SKIP_KINDS` node in between (e.g. a
+    Rust attribute macro sitting between the doc comment and the item it
+    documents), matching every walker's own behavior for the same case.
+    """
     prev = node.prev()
+    while prev is not None and prev.kind() in _COMMENT_SKIP_KINDS:
+        prev = prev.prev()
     if prev is not None and "comment" in prev.kind():
         return prev
     return None

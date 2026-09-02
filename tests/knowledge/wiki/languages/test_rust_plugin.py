@@ -137,7 +137,9 @@ def test_rust_use_crate_without_root_returns_none():
     assert scanner.resolve_import("crate::utils::helpers", "parser.rs", index) is None
 
 
-def test_rust_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_rust_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that rust.yaml
+    # (TASK-2744) makes the ast-grep seam a real, working first tier.
     scanner = RustScanner()
 
     def _boom(source):
