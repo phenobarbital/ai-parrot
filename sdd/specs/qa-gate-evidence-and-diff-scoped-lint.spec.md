@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-497
 **Date**: 2026-09-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.0
 
 > **Authoring note (deliberate deviation from `/sdd-spec` guardrails)**: this

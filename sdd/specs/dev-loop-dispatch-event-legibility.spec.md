@@ -37,7 +37,7 @@ matter: *what is the flow doing right now*, *which task is it doing it for*,
 and *which sub-agent is doing it*. The DevelopmentNode — the node that does
 95% of the work — reports **nothing at all** in its card.
 
-Six verified root causes, all on the **emission** side (the multiplexer at
+Seven verified root causes, all on the **emission** side (the multiplexer at
 `packages/ai-parrot/src/parrot/flows/dev_loop/streaming.py` is a faithful
 pipe and needs no change):
 
@@ -96,6 +96,21 @@ pipe and needs no change):
    judge produced which. `JudgeVerdictRecorded` only lands at the *end*, so
    during the review there is no per-judge signal at all.
 
+7. **`google_coding` events never reach the UI or session state at all.**
+   Found while decomposing this spec (2026-09-02). Unlike the other four,
+   `GoogleCodingDispatcher._publish_event` (`google_coding.py:77-99`) does
+   **not** build a `DispatchEvent` and does **not** XADD a single `"event"`
+   field — it writes five flat fields (`kind`, `run_id`, `node_id`,
+   `timestamp`, `payload`-as-JSON-string). `FlowStreamMultiplexer._envelope`
+   (`streaming.py:497-506`) looks for `fields["event"]`, does not find it,
+   and takes the fallback branch: **every `agy` dispatch event surfaces in
+   the console as `event_kind="flow.unknown"`** with the raw field dict as
+   its payload. The same method also never calls `_apply_to_session_host`,
+   so an `agy`-backed dispatch contributes nothing to session state — no
+   status, no `message_count`, no `tool_use_count`. This is a distinct
+   defect from causes 1–6 (a wire-format divergence, not a thin payload)
+   and is fixed as part of Module 4c.
+
 ### Goals
 
 - **G1** — Every event published by every dev-loop dispatcher carries a
@@ -115,6 +130,8 @@ pipe and needs no change):
 - **G7** — Backends reach parity: `claude-code`, `codex`, `gemini`,
   `google_coding` and the `llm` family all emit the same normalized
   payload contract.
+- **G8** — Every backend publishes in the **same wire format**, so no
+  backend's events arrive as `flow.unknown` or bypass session state.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -556,6 +573,10 @@ def dispatch_labels():
 - [ ] **AC9** — `codex`, `gemini` and `google_coding` events expose
       `tool_name`/`summary` while still carrying their raw provider event
       for the expanded JSON view.
+- [ ] **AC9b** — A `google_coding` dispatch event reaches
+      `FlowStreamMultiplexer` with its real `event_kind` (never
+      `"flow.unknown"`) and folds into session state through
+      `_apply_to_session_host`, exactly like the other four backends.
 - [ ] **AC10** — A publishing/normalization failure never breaks a
       dispatch: `normalize_payload` is total, and the existing swallow-and-log
       discipline in `_publish_event` / `_apply_to_session_host` is preserved.
