@@ -134,7 +134,41 @@ the `stats` command and the root-resolution pattern in `test_cli.py`.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-02
+**Notes**: Added `@wiki.group(name="symbols")` with `lookup`/`outline`/
+`blast` subcommands. Each subcommand resolves the project + opens the
+built store (`_resolve_project` + `_require_built`, same as every other
+read command), builds the three structural tools via
+`create_structural_tools`, and calls the matching tool's `_execute()`
+directly — so CLI text output is byte-identical to the MCP tools' own
+rendering (`_echo_structural_result` just pops the tool's `"text"` key
+for the human path, or dumps the rest as JSON for `--json`), fulfilling
+"Human output = the tools' text rendering; --json = the Pydantic dict"
+exactly. `status` (the actual command backing every "stats" reference in
+this task and its own spec module — there is no separate `stats`
+command; confirmed via `test_polyglot_integration.py::
+test_stats_languages_block`'s docstring) gained an additive
+`"structural"` payload key (same `{name: mode}` mapping as the existing
+`"languages"` key, kept unchanged for backward compatibility) and now
+prints `symbols`/`Structural` in its human-readable output;
+`stats.symbols` itself already existed since TASK-2747's `store.stats()`
+addition. `CLAUDE_MD_SECTION` gained one paragraph on symbol lookup/
+outline/blast radius. `docs/wiki-claude-code.md` gained three CLI
+reference rows plus a "Symbols — the structural plane" section (install
+note, three tools, migration note); `docs/llm-wiki.md` (a different,
+older PageIndex/GraphIndex/Ontology example doc, not actually about the
+`wikitoolkit` CLI) got a short bridging paragraph + cross-reference,
+since a full rewrite of that doc is out of this task's scope. 18 new/
+updated tests across `test_cli_symbols.py` (new) and `test_cli.py`/
+`test_claude_code.py` (additive assertions); full targeted suite +
+installer round-trip pass. `ruff` clean on every file I touched (verified
+`cli.py`'s 3 pre-existing findings — F821 `Optional`, SIM102, ISC004 —
+are untouched by my diff via `git stash` comparison). `mypy` on `cli.py`:
+identical pre-existing error SET before/after my change (verified by
+diffing `stash`-vs-working-tree mypy output — the errors merely shift
+line numbers by the +135 lines I inserted; zero new errors).
+
+**Deviations from spec**: none beyond the two clarifications noted above
+(the `stats`→`status` naming, and the `docs/llm-wiki.md` scope), both
+already resolved via the codebase evidence cited.
