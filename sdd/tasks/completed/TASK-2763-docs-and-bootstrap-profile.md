@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2760
@@ -167,8 +167,67 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- `docs/repl-worker-sandbox.md` (+161 lines):
+  * §1 — new `### Readiness handshake (FEAT-500)` subsection: the 4-step
+    mechanism (worker writes `ReadyResponse` first / handle arms the readiness
+    future / `_send()` awaits it so every caller benefits / the pool gates
+    spares on it), plus a closing paragraph on what the absence of a handshake
+    caused.
+  * §2 — two new failure-mode rows (**bootstrap timeout** and **namespace-API
+    timeout**) and a new `### Which timeouts kill the worker?` table listing
+    all four budgets and their lethality.
+  * §3 — new `bootstrap_timeout_ms` / `namespace_timeout_ms` rows (defaults,
+    lethality, the "don't lower it" rationale, `> 0` validation); the
+    `prewarm_pool_size` row now notes spares are only pooled once ready; the
+    stale `rlimit_as_bytes` wording is fixed to "Applied by the worker itself
+    in `worker.main()` (via `apply_rlimits()`) before any heavy import runs —
+    **not** via `Popen(preexec_fn=...)`".
+  * §4 — a `NamespaceTimeoutError` block with a `try/except` example, stating
+    it is non-lethal, subclasses `TimeoutError`, and never has an empty
+    `str()`; `WorkerBootstrapError` mentioned alongside.
+  * new `## 4b. Restart-loop warning (FEAT-500)` — the log line,
+    `restart_count()`, and a 4-item ordered checklist of what to check
+    (bootstrap time, host load, exit code/stderr tail, and the case where the
+    loop is *correct* because the LLM keeps submitting non-terminating code).
+  * new `## 4c. Measuring worker bootstrap on your host (U3b)` — the
+    `-X importtime` procedure, the server-log grep, a healthy-cold-start log
+    sample, and the note that `bootstrap_ms` is measured worker-side so it can
+    be compared to `bootstrap_timeout_ms` directly.
+  * §6 History — a FEAT-500 entry; "See also" now links the profile artifact.
+- Created `artifacts/logs/feat-500-bootstrap-profile.md`: the F018 import
+  breakdown as a table (total 1.41 s; `parrot.tools` init 0.90 s of which
+  `parrot.plugins`→`navconfig.logging` 0.58 s; redaction→vault→documentdb
+  0.28 s; `tools.abstract`→events/conf→`navigator` auth 0.25 s; pandas
+  0.22 s), the F015/F016 spawn→ready timings (≈2.4 s idle, 12–14 s under 3×
+  CPU oversubscription) with F015's raw timeline, a fill-in-the-blanks
+  **"4. Affected host — TO BE FILLED IN (U3b)"** section (import profile,
+  spawn→ready from logs, host context), and a follow-up section scoping the
+  import-trim spec with its ceiling (~0.22 s vs 1.41 s today).
+- `artifacts/` IS git-ignored (`git check-ignore -v` → `.gitignore:283`), so
+  the profile was staged with `git add -f`, matching the
+  `feat-380-rlimit-as-calibration.md` precedent.
+- **Message-string fidelity**: every error/log string in the docs was copied
+  from the implemented code, not the spec — grepped
+  `handle.py:300` (`REPL worker pid=... did not become ready within ... ms
+  (...); stderr tail: ...`), `handle.py:459` (`repl_worker[pid=...]: '<op>'
+  request did not answer within ...s; the worker is still alive and the late
+  reply will be drained on the next call`), `pool.py` (`possible restart loop
+  (last worker exit code=..., stderr tail=...)`, `prewarmed worker ready
+  (pid=..., bootstrap_ms=..., pool size=...)`) and `worker.py`
+  (`repl_worker: ready in <N> ms (...), entering service loop`).
+- Verification (the task's grep pass, plus an import check): all documented
+  names appear in the docs (`bootstrap_timeout_ms` ×7, `namespace_timeout_ms`
+  ×5, `ReadyResponse` ×6, `NamespaceTimeoutError` ×7, `possible restart loop`
+  ×3) and all resolve in `src/` — confirmed by actually importing
+  `WorkerConfig`, `ReadyResponse`, `NamespaceTimeoutError`,
+  `WorkerBootstrapError` and asserting the defaults (30 000/30 000) plus the
+  presence of `WorkerHandle.wait_ready`/`is_ready` and
+  `WorkerPool.restart_count`.
+- The Windows section was left accurate and unchanged: the ready frame is
+  plain pipe I/O and the timeout-kill mapping is untouched.
+- No product code and no test files were touched by this task.
 
 **Deviations from spec**: none

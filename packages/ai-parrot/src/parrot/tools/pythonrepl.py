@@ -228,6 +228,7 @@ class PythonREPLTool(AbstractTool):
 
         # FEAT-252 (TASK-1614): allowlist-first AST gate
         from parrot.security.python_sanitizer import PythonCodeSanitizer, general_profile
+
         _policy = policy if policy is not None else general_profile()
         self._code_sanitizer = PythonCodeSanitizer(_policy)
 
@@ -684,9 +685,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                         output = io_buffer.getvalue() or ""
                         new_vars = set(self.locals.keys()) - pre_exec_keys
                         if new_vars:
-                            report = "\n".join(
-                                self._describe_new_var(name, self.locals[name]) for name in new_vars
-                            )
+                            report = "\n".join(self._describe_new_var(name, self.locals[name]) for name in new_vars)
                             if output and not output.endswith("\n"):
                                 output += "\n"
                             output += report
@@ -738,10 +737,7 @@ print("Use 'execution_results' dict to store intermediate results.")
         try:
             # pandas DataFrame
             if isinstance(val, pd.DataFrame):
-                header = (
-                    f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} "
-                    f"| Columns: {list(val.columns)}"
-                )
+                header = f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} " f"| Columns: {list(val.columns)}"
                 if val.empty:
                     return f"{header}\n(empty DataFrame)"
                 preview = val.head(self._NEW_VAR_PREVIEW_ROWS).to_string()
@@ -752,8 +748,7 @@ print("Use 'execution_results' dict to store intermediate results.")
             # pandas Series
             if isinstance(val, pd.Series):
                 header = (
-                    f"🆕 Series Created: '{var_name}' | Length: {len(val)} "
-                    f"| Name: {val.name} | dtype: {val.dtype}"
+                    f"🆕 Series Created: '{var_name}' | Length: {len(val)} " f"| Name: {val.name} | dtype: {val.dtype}"
                 )
                 if val.empty:
                     return f"{header}\n(empty Series)"
@@ -764,9 +759,7 @@ print("Use 'execution_results' dict to store intermediate results.")
 
             # Small collections / scalars worth showing inline
             if isinstance(val, (dict, list, tuple, set, int, float, str, bool)):
-                return self._bound_preview(
-                    f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}\n{val!r}"
-                )
+                return self._bound_preview(f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}\n{val!r}")
 
             # Anything else: keep the lightweight type-only report.
             private = " (private)" if var_name.startswith("_") else ""
@@ -949,17 +942,20 @@ print("Use 'execution_results' dict to store intermediate results.")
             # Host gate first — cheap rejection, no worker round-trip.
             gate_error = self._host_gate_check(query)
             if gate_error:
-                self.logger.warning(
-                    "Tool %s code rejected by host gate: %s", self.name, gate_error[:200]
-                )
+                self.logger.warning("Tool %s code rejected by host gate: %s", self.name, gate_error[:200])
                 return {"status": "done_with_errors", "result": gate_error, "error": gate_error}
 
             async with self._worker_session() as handle:
                 output = await handle.execute(query, debug=debug)
         except Exception as e:
-            self.logger.error(f"Error executing Python code: {e}")
-            msg = f"ToolError: {type(e).__name__}: {str(e)}"
-            return {"status": "error", "result": msg, "error": str(e)}
+            # FEAT-500 (G3/AC5): never surface a blank error. A bare
+            # `TimeoutError()` has `str(e) == ''`, which is exactly how the
+            # cold-start incident reached the LLM as
+            # "Error executing Python code: " / ValueError('').
+            detail = str(e) or type(e).__name__
+            self.logger.error("Error executing Python code: %s", detail)
+            msg = f"ToolError: {type(e).__name__}: {detail}"
+            return {"status": "error", "result": msg, "error": detail}
 
         # The worker already classifies error-shaped output into the
         # {status, result, error} dict shape itself (it runs the exact same
@@ -971,7 +967,8 @@ print("Use 'execution_results' dict to store intermediate results.")
         if isinstance(output, dict):
             self.logger.warning(
                 "Tool %s code execution returned an error: %s",
-                self.name, str(output)[:200],
+                self.name,
+                str(output)[:200],
             )
             return output
         return self._redact_execution_output(output)

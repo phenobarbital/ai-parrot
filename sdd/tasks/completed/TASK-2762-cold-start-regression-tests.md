@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2760, TASK-2761
@@ -187,8 +187,80 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- Created `packages/ai-parrot/tests/repl_worker/test_cold_start.py` with the
+  three tests, plus a module docstring recording the 4-step spiral mechanism
+  and its F016 provenance. Shared `SLOW_BOOT = "import time\ntime.sleep(8)"`
+  and `COLD_START_CONFIG` (`prewarm_pool_size=0`, so the
+  `spawned worker pid=` count is exact), and a local `_shutdown()` mirroring
+  `test_integration.py:26`.
+  1. `test_cold_worker_seeding_survives_slow_bootstrap` — Probe B: three
+     `_execute("print(n_rows)")` calls all return `str` containing `3`, zero
+     `worker is dead, restarting`, exactly one `spawned worker pid=`.
+  2. `test_pandas_seeding_order_independent` — a real DataFrame registered via
+     `dataframes={"sales": frame}` (constructor generates the alias + the
+     `*_row_count`/`_col_count`/`_shape`/`_columns` scalars, so
+     `len(df_locals) > 1` is asserted); runs `print(sales.shape)`, then
+     reverses `df_locals`' insertion order, clears `_seeded_df_names` /
+     `_seeded_worker_handle_id` to force a full reseed, and repeats. Reversing
+     the dict in-process is used instead of a `PYTHONHASHSEED` subprocess (the
+     spec offered either): seeding iterates `set(df_locals) - seeded`, so what
+     must be proven is that no insertion order is relied upon.
+  3. `test_namespace_api_after_soft_timeout_keeps_state` — tool-level AC3:
+     `x = 1`, one forced non-lethal `list_vars()` timeout
+     (`namespace_timeout_ms=200` + monkeypatched `handle._roundtrip`), worker
+     still alive, then `get_var("x") == 1`. Uses `PythonREPLTool` rather than
+     `PythonPandasTool` deliberately — the pandas `_execute` audit probes also
+     go through the 200 ms budget and would add noise unrelated to the
+     assertion.
+- `test_integration.py`: updated only the docstring of
+  `TestE2E::test_e2e_runaway_loop_recovery` to state that `deadline_ms` no
+  longer has to cover bootstrap (readiness is its own budget, awaited before
+  the deadline clock starts). All assertions and the 4 s config untouched, and
+  the test still passes.
+- No `@pytest.mark.slow`: grepped `pytest.ini` (markers: integration, live,
+  real_llm) and `pyproject.toml` (asyncio, real_llm) — no `slow` marker
+  exists, and `--strict-markers` is enabled, so adding one would error. Left
+  unmarked as the task instructs. Runtime is ~33 s for the three tests.
 
-**Deviations from spec**: none
+*Proof the regression test actually catches the bug (AC7 evidence)*
+Rather than trusting that the new test would have failed before the fix, I
+verified it: with the FEAT-500 product files temporarily reverted to
+`3a7870d2d` (pre-fix `dev`) in the worktree, the Probe B scenario was replayed
+directly and reproduced the incident exactly —
+
+```
+call 1: DICT-ERROR -> ''        <- the blank error, verbatim
+call 2: DICT-ERROR -> ''
+call 3: DICT-ERROR -> ''
+worker-is-dead-restarting lines: 8
+spawned worker pid= lines: 9
+[ERROR] python_repl_pandas.Tool(pythonrepl.py:960) :: Error executing Python code:
+```
+
+i.e. all three assertions of the new test fail pre-fix (str vs dict, 0 vs 8
+restarts, 1 vs 9 spawns), and the incident's exact log signature appears. The
+product files were then restored with `git checkout HEAD --` and re-verified
+(worktree clean, `FEAT-500` markers back in `handle.py`). Post-fix the same
+scenario is 3 successes / 0 restarts / 1 spawn.
+
+*Verification*
+- `pytest packages/ai-parrot/tests/repl_worker/ packages/ai-parrot/tests/test_pythonrepl_executor.py`
+  -> **106 passed, 1 failed**. The single failure is the pre-existing
+  `test_e2e.py::test_e2e_data_analysis_session` (`NameError: name 'plt' is not
+  defined` — a matplotlib-preload environment issue; that file had 3 failures
+  at baseline and has 1 now).
+- `ruff check` on both test files: only the repo-wide `I001` (ruff's isort
+  wants no blank line between `import pytest` and the `parrot` imports; every
+  test module in the repo, including `test_integration.py` at baseline, uses
+  that blank line). No other findings.
+- **No product code was changed by this task**, and no product bug surfaced
+  that needed reporting.
+
+**Deviations from spec**: one, forced by the codebase. The task's snippet
+passes `generate_guide=False` to `PythonPandasTool`; that parameter **does not
+exist** anywhere in `pythonpandas.py`/`pythonrepl.py` (grep-verified — it would
+have been swallowed into `**kwargs`). It was omitted rather than passed as a
+phantom kwarg.
