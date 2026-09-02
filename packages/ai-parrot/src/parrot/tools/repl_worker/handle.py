@@ -53,6 +53,7 @@ from .protocol import (
 
 logger = logging.getLogger(__name__)
 
+
 class WorkerBootstrapError(RuntimeError):
     """The worker never sent its :class:`ReadyResponse` in time (FEAT-500).
 
@@ -297,8 +298,7 @@ class WorkerHandle:
         await self._kill_process()
         tail = " | ".join(self._stderr_tail[-5:]) or "<empty>"
         self._fail_ready(
-            f"REPL worker pid={pid} did not become ready within {budget_ms} ms "
-            f"({cause}); stderr tail: {tail}"
+            f"REPL worker pid={pid} did not become ready within {budget_ms} ms " f"({cause}); stderr tail: {tail}"
         )
 
     def _fail_ready(self, message: str) -> None:
@@ -348,9 +348,7 @@ class WorkerHandle:
                 caller's own ceiling, not the bootstrap budget).
         """
         if self._ready is None:
-            raise WorkerBootstrapError(
-                "WorkerHandle.wait_ready() called before start(): no worker has been spawned"
-            )
+            raise WorkerBootstrapError("WorkerHandle.wait_ready() called before start(): no worker has been spawned")
         # Shield: several callers share this one future, so one caller's
         # timeout or cancellation must never cancel it for the others.
         if timeout_s is None:
@@ -752,9 +750,7 @@ class WorkerHandle:
         self._fail_ready("REPL worker was killed before it signalled readiness")
         if self._pending_reply is not None:
             self._pending_reply.cancel()
-            self._pending_reply.add_done_callback(
-                lambda f: f.exception() if not f.cancelled() else None
-            )
+            self._pending_reply.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
             self._pending_reply = None
         if self._stdio_task is not None:
             self._stdio_task.cancel()

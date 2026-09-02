@@ -4,11 +4,7 @@ from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import pandas as pd
 from parrot._imports import lazy_import
 from .abstract import AbstractTool
-from .pythonrepl import (
-    PythonREPLTool,
-    PythonREPLArgs,
-    brace_escape
-)
+from .pythonrepl import PythonREPLTool, PythonREPLArgs, brace_escape
 from .repl_worker import NamespaceTimeoutError, WorkerBootstrapError
 
 if TYPE_CHECKING:
@@ -49,39 +45,39 @@ class PythonPandasTool(PythonREPLTool):
     # structured-chart/A2UI); altair is the sole fallback for complex
     # visualizations (heatmaps, correlation matrices, network graphs).
     PLOTTING_LIBRARIES = {
-        'plotly': {
-            'import_as': 'px, go, pio',
-            'import_statement': 'import plotly.express as px\nimport plotly.graph_objects as go\nimport plotly.io as pio',
-            'description': 'Interactive web-based plotting library',
-            'best_for': ['interactive plots', 'dashboards', 'web applications'],
-            'examples': [
+        "plotly": {
+            "import_as": "px, go, pio",
+            "import_statement": "import plotly.express as px\nimport plotly.graph_objects as go\nimport plotly.io as pio",
+            "description": "Interactive web-based plotting library",
+            "best_for": ["interactive plots", "dashboards", "web applications"],
+            "examples": [
                 'fig = px.scatter(df1, x="column1", y="column2", color="category")',
                 'fig = px.histogram(df1, x="numeric_column")',
                 'fig = go.Figure(data=go.Bar(x=df1["category"], y=df1["value"]))',
-                'fig.show()  # Note: may not display in REPL, use fig.write_html("plot.html")'
-            ]
+                'fig.show()  # Note: may not display in REPL, use fig.write_html("plot.html")',
+            ],
         },
-        'altair': {
-            'import_as': 'alt',
-            'import_statement': 'import altair as alt',
-            'description': 'Declarative statistical visualization (Grammar of Graphics)',
-            'best_for': ['exploratory analysis', 'statistical plots', 'clean syntax'],
-            'examples': [
+        "altair": {
+            "import_as": "alt",
+            "import_statement": "import altair as alt",
+            "description": "Declarative statistical visualization (Grammar of Graphics)",
+            "best_for": ["exploratory analysis", "statistical plots", "clean syntax"],
+            "examples": [
                 'chart = alt.Chart(df1).mark_circle().encode(x="column1", y="column2")',
                 'chart = alt.Chart(df1).mark_bar().encode(x="category", y="count()")',
-                'chart.show()  # or chart.save("plot.html")'
-            ]
+                'chart.show()  # or chart.save("plot.html")',
+            ],
         },
     }
 
     def __init__(
         self,
         dataframes: Optional[Dict[str, pd.DataFrame]] = None,
-        dataset_manager: Optional['DatasetManager'] = None,
+        dataset_manager: Optional["DatasetManager"] = None,
         df_prefix: str = "df",
         include_sample_data: bool = False,
         sample_rows: int = 3,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the Python Pandas tool with DataFrame management.
@@ -118,16 +114,17 @@ class PythonPandasTool(PythonREPLTool):
         self._process_dataframes()
 
         # Set up locals with DataFrames
-        df_locals = kwargs.get('locals_dict', {})
+        df_locals = kwargs.get("locals_dict", {})
         df_locals.update(self.df_locals)
-        kwargs['locals_dict'] = df_locals
+        kwargs["locals_dict"] = df_locals
 
         # FEAT-252: pandas agents get the data-analysis execution policy by
         # default (wider pandas/numpy allowlist) instead of the tighter
         # general_profile() the base REPL falls back to.
-        if kwargs.get('policy') is None:
+        if kwargs.get("policy") is None:
             from parrot.security.python_sanitizer import data_analysis_profile
-            kwargs['policy'] = data_analysis_profile()
+
+            kwargs["policy"] = data_analysis_profile()
 
         # Initialize parent class
         super().__init__(**kwargs)
@@ -185,9 +182,7 @@ class PythonPandasTool(PythonREPLTool):
                     # first and blankest on a cold worker. Say WHICH variable
                     # failed, and keep the exception type so callers that
                     # branch on TimeoutError still match.
-                    raise type(exc)(
-                        f"seeding {name!r} into the REPL worker failed: {exc}"
-                    ) from exc
+                    raise type(exc)(f"seeding {name!r} into the REPL worker failed: {exc}") from exc
             self._seeded_df_names |= new_names
         return handle
 
@@ -208,8 +203,8 @@ class PythonPandasTool(PythonREPLTool):
 
     def create_session_clone(
         self,
-        dataset_manager: Optional['DatasetManager'] = None,
-    ) -> 'PythonPandasTool':
+        dataset_manager: Optional["DatasetManager"] = None,
+    ) -> "PythonPandasTool":
         """Create a lightweight, session-isolated clone of this tool.
 
         The clone shares the heavy infrastructure (library imports,
@@ -245,9 +240,9 @@ class PythonPandasTool(PythonREPLTool):
             base_url=self.base_url,
             static_dir=str(self.static_dir),
             routing_meta=dict(self.routing_meta),
-            executor=getattr(self, 'executor', None),
-            webhook_callback_url=getattr(self, 'webhook_callback_url', None),
-            remote_timeout_seconds=getattr(self, 'remote_timeout_seconds', 300),
+            executor=getattr(self, "executor", None),
+            webhook_callback_url=getattr(self, "webhook_callback_url", None),
+            remote_timeout_seconds=getattr(self, "remote_timeout_seconds", 300),
         )
 
         # ── Copy PythonPandasTool-specific config ──
@@ -288,6 +283,7 @@ class PythonPandasTool(PythonREPLTool):
         # bypasses `__init__` entirely (see comment above), so they're set
         # here instead.
         import uuid as _uuid
+
         clone._session_id = f"pythonrepl-{_uuid.uuid4().hex}"
         clone._worker_config = getattr(self, "_worker_config", None)
         clone._worker_pool = None
@@ -303,8 +299,8 @@ class PythonPandasTool(PythonREPLTool):
         clone.globals = dict(self.globals)
 
         # Fresh execution_results per session
-        clone.locals['execution_results'] = {}
-        clone.globals['execution_results'] = {}
+        clone.locals["execution_results"] = {}
+        clone.globals["execution_results"] = {}
 
         # ── Sync DataFrames from the session DM ──
         clone.dataframes = {}
@@ -335,12 +331,12 @@ class PythonPandasTool(PythonREPLTool):
     # ─────────────────────────────────────────────────────────────
 
     @property
-    def dataset_manager(self) -> Optional['DatasetManager']:
+    def dataset_manager(self) -> Optional["DatasetManager"]:
         """Access the DatasetManager instance."""
         return self._dataset_manager
 
     @dataset_manager.setter
-    def dataset_manager(self, manager: 'DatasetManager') -> None:
+    def dataset_manager(self, manager: "DatasetManager") -> None:
         """Set or replace the DatasetManager and sync dataframes."""
         self._dataset_manager = manager
         self.sync_from_manager()
@@ -429,10 +425,11 @@ class PythonPandasTool(PythonREPLTool):
 
     def _update_description(self) -> None:
         """Update tool description to include available DataFrames."""
-        df_summary = ", ".join([
-            f"{df_key}: {df.shape[0]} rows × {df.shape[1]} cols"
-            for df_key, df in self.dataframes.items()
-        ]) if self.dataframes else "No DataFrames"
+        df_summary = (
+            ", ".join([f"{df_key}: {df.shape[0]} rows × {df.shape[1]} cols" for df_key, df in self.dataframes.items()])
+            if self.dataframes
+            else "No DataFrames"
+        )
 
         self.description = (
             f"Execute Python code with pandas DataFrames. "
@@ -442,36 +439,35 @@ class PythonPandasTool(PythonREPLTool):
 
     def _generate_plotting_guide(self) -> str:
         """Generate comprehensive plotting libraries guide for the LLM."""
-        guide_parts = [
-            "# Plotting Libraries Guide",
-            "",
-            "## Available Libraries",
-            ""
-        ]
+        guide_parts = ["# Plotting Libraries Guide", "", "## Available Libraries", ""]
 
         for lib_name, lib_info in self.PLOTTING_LIBRARIES.items():
-            guide_parts.extend([
-                f"### {lib_name.title()}",
-                f"**Import**: `{lib_info['import_statement']}`",
-                f"**Best for**: {', '.join(lib_info['best_for'])}",
-                "",
-                "**Examples**:",
-            ])
-            guide_parts.extend(f"- `{example}`" for example in lib_info['examples'])
+            guide_parts.extend(
+                [
+                    f"### {lib_name.title()}",
+                    f"**Import**: `{lib_info['import_statement']}`",
+                    f"**Best for**: {', '.join(lib_info['best_for'])}",
+                    "",
+                    "**Examples**:",
+                ]
+            )
+            guide_parts.extend(f"- `{example}`" for example in lib_info["examples"])
             guide_parts.append("")
 
         # Add general recommendations
-        guide_parts.extend([
-            "## General Tips",
-            "- matplotlib and seaborn are NOT available — for standard charts,",
-            "  return the data as a dict/DataFrame; the system renders it",
-            "  automatically via structured-chart/A2UI.",
-            "- For interactive plots: Use plotly and save as HTML",
-            "- For complex visualizations only (heatmaps, correlation matrices,",
-            "  network graphs): use altair and return `.to_dict()`",
-            "- For large datasets: Consider aggregation or sampling first",
-            "",
-        ])
+        guide_parts.extend(
+            [
+                "## General Tips",
+                "- matplotlib and seaborn are NOT available — for standard charts,",
+                "  return the data as a dict/DataFrame; the system renders it",
+                "  automatically via structured-chart/A2UI.",
+                "- For interactive plots: Use plotly and save as HTML",
+                "- For complex visualizations only (heatmaps, correlation matrices,",
+                "  network graphs): use altair and return `.to_dict()`",
+                "- For large datasets: Consider aggregation or sampling first",
+                "",
+            ]
+        )
 
         return "\n".join(guide_parts)
 
@@ -515,15 +511,11 @@ class PythonPandasTool(PythonREPLTool):
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             # Use stable alias from DatasetManager when available,
             # otherwise fall back to sequential numbering.
-            df_alias = (
-                alias_map.get(df_name, f"{self.df_prefix}{i + 1}")
-                if alias_map
-                else f"{self.df_prefix}{i + 1}"
-            )
+            df_alias = alias_map.get(df_name, f"{self.df_prefix}{i + 1}") if alias_map else f"{self.df_prefix}{i + 1}"
 
             # Bind DataFrame with both original name and standardized key
-            self.df_locals[df_name] = df          # PRIMARY: Original name
-            self.df_locals[df_alias] = df         # ALIAS: Convenience reference
+            self.df_locals[df_name] = df  # PRIMARY: Original name
+            self.df_locals[df_alias] = df  # ALIAS: Convenience reference
 
             for key in [df_name, df_alias]:
                 self.df_locals[f"{key}_row_count"] = len(df)
@@ -708,12 +700,12 @@ class PythonPandasTool(PythonREPLTool):
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             df_alias = f"{self.df_prefix}{i + 1}"
             result[df_name] = {
-                'original_name': df_name,
-                'alias': df_alias,
-                'shape': df.shape,
-                'columns': df.columns.tolist(),
-                'memory_usage_mb': round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2),
-                'null_count': int(df.isnull().sum().sum()),
+                "original_name": df_name,
+                "alias": df_alias,
+                "shape": df.shape,
+                "columns": df.columns.tolist(),
+                "memory_usage_mb": round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2),
+                "null_count": int(df.isnull().sum().sum()),
             }
         return result
 
@@ -741,13 +733,13 @@ class PythonPandasTool(PythonREPLTool):
 
         df = self.dataframes[resolved]
         return {
-            'shape': df.shape,
-            'columns': df.columns.tolist(),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-            'memory_usage_bytes': df.memory_usage(deep=True).sum(),
-            'null_counts': df.isnull().sum().to_dict(),
-            'row_count': len(df),
-            'column_count': len(df.columns),
+            "shape": df.shape,
+            "columns": df.columns.tolist(),
+            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+            "memory_usage_bytes": df.memory_usage(deep=True).sum(),
+            "null_counts": df.isnull().sum().to_dict(),
+            "row_count": len(df),
+            "column_count": len(df.columns),
         }
 
     # ─────────────────────────────────────────────────────────────
@@ -781,14 +773,14 @@ class PythonPandasTool(PythonREPLTool):
                     print(f"Shape: {summary.get('shape')}")
                     print(f"Columns: {summary.get('columns')}")
                     print(f"\nData Types:")
-                    for col, dtype in summary.get('dtypes', {}).items():
+                    for col, dtype in summary.get("dtypes", {}).items():
                         print(f"  {col}: {dtype}")
-                    if 'column_types' in summary:
+                    if "column_types" in summary:
                         print(f"\nColumn Categories:")
-                        for col, cat in summary['column_types'].items():
+                        for col, cat in summary["column_types"].items():
                             print(f"  {col}: {cat}")
                     print(f"\nNull Counts:")
-                    for col, count in summary.get('null_counts', {}).items():
+                    for col, count in summary.get("null_counts", {}).items():
                         if count > 0:
                             print(f"  {col}: {count}")
                     return f"EDA completed for {df_key}"
@@ -814,13 +806,15 @@ class PythonPandasTool(PythonREPLTool):
             return f"EDA completed for {df_key}"
 
         # Add to locals
-        self.locals.update({
-            'list_available_dataframes': list_available_dataframes,
-            'get_df_guide': get_df_guide,
-            'quick_eda': quick_eda,
-            'get_plotting_guide': get_plotting_guide,
-            'talib': _get_talib_or_none(),
-        })
+        self.locals.update(
+            {
+                "list_available_dataframes": list_available_dataframes,
+                "get_df_guide": get_df_guide,
+                "quick_eda": quick_eda,
+                "get_plotting_guide": get_plotting_guide,
+                "talib": _get_talib_or_none(),
+            }
+        )
 
         # Update globals
         self.globals.update(self.locals)
@@ -839,11 +833,10 @@ class PythonPandasTool(PythonREPLTool):
                 df_alias = f"{self.df_prefix}{i + 1}"
                 shape = df.shape
                 df_info_lines.append(
-                    f"print('  - {name} (alias: {df_alias}): "
-                    f"{shape[0]} rows × {shape[1]} columns')"
+                    f"print('  - {name} (alias: {df_alias}): " f"{shape[0]} rows × {shape[1]} columns')"
                 )
 
-        df_info_code = '\n'.join(df_info_lines)
+        df_info_code = "\n".join(df_info_lines)
 
         df_setup = f"""
 # DataFrame-specific setup
@@ -863,13 +856,15 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
     def get_environment_info(self) -> Dict[str, Any]:
         """Override to include DataFrame information."""
         info = super().get_environment_info()
-        info.update({
-            'dataframes_count': len(self.dataframes),
-            'dataframes': self.list_dataframes(),
-            'df_prefix': self.df_prefix,
-            'has_dataset_manager': self._dataset_manager is not None,
-            'guide_generated': bool(self.df_guide),
-        })
+        info.update(
+            {
+                "dataframes_count": len(self.dataframes),
+                "dataframes": self.list_dataframes(),
+                "df_prefix": self.df_prefix,
+                "has_dataset_manager": self._dataset_manager is not None,
+                "guide_generated": bool(self.df_guide),
+            }
+        )
         return info
 
     def get_execution_state(self) -> Dict[str, Any]:
@@ -882,36 +877,36 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
             - dataframes: Dict of available DataFrames
             - variables: Other variables from execution
         """
-        state = {
-            'execution_results': self.locals.get('execution_results', {}),
-            'dataframes': {},
-            'variables': {}
-        }
+        state = {"execution_results": self.locals.get("execution_results", {}), "dataframes": {}, "variables": {}}
 
         # Extract DataFrames
         for name, df in self.dataframes.items():
-            state['dataframes'][name] = df
+            state["dataframes"][name] = df
             # Also include by alias
             for i, (df_name, _) in enumerate(self.dataframes.items()):
                 if df_name == name:
                     alias = f"{self.df_prefix}{i + 1}"
-                    state['dataframes'][alias] = df
+                    state["dataframes"][alias] = df
                     break
 
         # Extract other relevant variables (excluding functions, modules)
         for key, value in self.locals.items():
-            if not key.startswith('_') and not callable(value) and (key not in ['execution_results'] and not key.endswith('_row_count')):
+            if (
+                not key.startswith("_")
+                and not callable(value)
+                and (key not in ["execution_results"] and not key.endswith("_row_count"))
+            ):
                 with contextlib.suppress(Exception):
                     # Only include serializable or DataFrame-like objects
                     if isinstance(value, (str, int, float, bool, list, dict, pd.DataFrame, pd.Series)):
-                        state['variables'][key] = value
+                        state["variables"][key] = value
 
         return state
 
     def clear_execution_results(self):
         """Clear execution_results dictionary for new queries."""
-        if 'execution_results' in self.locals:
-            self.locals['execution_results'].clear()
+        if "execution_results" in self.locals:
+            self.locals["execution_results"].clear()
 
     # ─────────────────────────────────────────────────────────────
     # Execution (with data quality checks via DatasetManager)
@@ -957,18 +952,12 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
         result = await super()._execute(code, debug=debug, **kwargs)
 
         # ── NameError recovery: tell the LLM which variables actually exist ──
-        if isinstance(result, str) and 'NameError' in result:
+        if isinstance(result, str) and "NameError" in result:
             available_names = list(self.dataframes.keys())
-            available_aliases = [
-                f"{self.df_prefix}{i + 1}"
-                for i in range(len(self.dataframes))
-            ]
+            available_aliases = [f"{self.df_prefix}{i + 1}" for i in range(len(self.dataframes))]
             all_vars = available_names + available_aliases
             if all_vars:
-                result += (
-                    f"\n\nAvailable DataFrame variables: {all_vars}. "
-                    f"Use one of these exact names."
-                )
+                result += f"\n\nAvailable DataFrame variables: {all_vars}. " f"Use one of these exact names."
             else:
                 result += (
                     "\n\nNo DataFrames are currently loaded in "
@@ -982,12 +971,12 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
         # 1. Automatic Audit (Code + Data Preview)
         try:
             audit_parts = []
-            
+
             # A. Executed Code Echo
             # Always informative to see what logic was applied, especially for filters.
             # We format it as a block.
             audit_parts.append(f"\n📝 [AUDIT] Executed Code:\n```python\n{code.strip()}\n```")
-            
+
             # B. DataFrame Preview
             # Check for new or modified DataFrames to assist debugging
             # (code-review fix: see `pre_keys` comment above — query the
@@ -1000,7 +989,7 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
             new_keys = current_keys - pre_keys
 
             for key in new_keys:
-                if key.startswith('_'):
+                if key.startswith("_"):
                     continue
 
                 try:
@@ -1015,18 +1004,18 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
                 if isinstance(val, pd.DataFrame) and not val.empty:
                     audit_parts.append(f"\n🔍 [AUDIT] Preview of '{key}' (first 3 rows):")
                     try:
-                         # Use strict float formatting to avoid scientific notation if possible
-                         preview = val.head(3).to_string(index=False) 
+                        # Use strict float formatting to avoid scientific notation if possible
+                        preview = val.head(3).to_string(index=False)
                     except Exception:
-                         preview = str(val.head(3))
+                        preview = str(val.head(3))
                     audit_parts.append(preview)
-            
+
             if audit_parts:
                 # Append to result
                 debug_text = "\n".join(audit_parts)
                 if isinstance(result, str):
                     result += debug_text
-                    
+
         except Exception as e:
             self.logger.warning(f"Failed to generate DataFrame/Code preview: {e}")
 

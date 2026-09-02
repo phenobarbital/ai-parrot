@@ -67,7 +67,12 @@ _PICKLE_MARKER = "__repl_worker_pickle_b64__"
 # executable does not.
 _SAFE_PICKLE_TOP_LEVEL_MODULES = frozenset(
     {
-        "pandas", "numpy", "datetime", "decimal", "collections", "builtins",
+        "pandas",
+        "numpy",
+        "datetime",
+        "decimal",
+        "collections",
+        "builtins",
         # `pathlib` round-trips plain path data only (no `__reduce__` gadget
         # comparable to os/subprocess) and legitimately shows up in the REPL
         # namespace, e.g. `report_directory` (code-review fix, discovered via
@@ -79,9 +84,20 @@ _SAFE_PICKLE_TOP_LEVEL_MODULES = frozenset(
 #: if a `__reduce__` payload resolves to them (e.g. `(eval, ("...",))`).
 _UNSAFE_BUILTINS = frozenset(
     {
-        "eval", "exec", "compile", "__import__", "open", "input",
-        "breakpoint", "getattr", "setattr", "delattr", "vars", "globals",
-        "locals", "memoryview",
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+        "open",
+        "input",
+        "breakpoint",
+        "getattr",
+        "setattr",
+        "delattr",
+        "vars",
+        "globals",
+        "locals",
+        "memoryview",
     }
 )
 

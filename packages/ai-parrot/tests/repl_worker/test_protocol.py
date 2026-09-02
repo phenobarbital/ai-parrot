@@ -148,9 +148,7 @@ class TestValueCodec:
         assert config.prewarm_pool_size == 2
 
     def test_namespace_loss_error_shape(self):
-        err = NamespaceLossError(
-            cause="timeout", lost_variables=["df", "x"], message="recreate your state"
-        )
+        err = NamespaceLossError(cause="timeout", lost_variables=["df", "x"], message="recreate your state")
         assert err.cause == "timeout"
         assert err.lost_variables == ["df", "x"]
 

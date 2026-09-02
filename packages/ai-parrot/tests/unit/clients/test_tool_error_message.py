@@ -61,9 +61,7 @@ async def test_client_value_error_never_blank():
 
 async def test_client_value_error_preserves_a_real_message():
     """A tool that DOES report an error still surfaces its own message."""
-    stub = _client_stub(
-        ToolResult(status="error", result=None, error="repl_worker[pid=42]: boom")
-    )
+    stub = _client_stub(ToolResult(status="error", result=None, error="repl_worker[pid=42]: boom"))
 
     with pytest.raises(ValueError, match="repl_worker\\[pid=42\\]: boom"):
         await AbstractClient._execute_tool(stub, "python_repl_pandas", {})

@@ -129,9 +129,7 @@ class TestWorkerPool:
 
     async def test_orphan_reaping(self, worker_config, tmp_path):
         """shutdown() leaves zero live workers, including prewarmed spares (AC12)."""
-        config = WorkerConfig(
-            deadline_ms=5_000, max_workers=4, idle_ttl_seconds=30, prewarm_pool_size=1
-        )
+        config = WorkerConfig(deadline_ms=5_000, max_workers=4, idle_ttl_seconds=30, prewarm_pool_size=1)
         pool = WorkerPool(config, output_dir=str(tmp_path))
         handle_a = await pool.acquire("a")
         handle_b = await pool.acquire("b")
@@ -157,9 +155,7 @@ class TestReadinessGate:
     async def test_pool_spare_not_ready_until_ready_frame(self, tmp_path, caplog):
         """`_prewarmed` stays empty while the worker boots, and the log follows the frame."""
         caplog.set_level(logging.DEBUG, logger="parrot.tools.repl_worker.pool")
-        config = WorkerConfig(
-            deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1
-        )
+        config = WorkerConfig(deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1)
         pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
         try:
             await pool._ensure_started()
@@ -234,9 +230,7 @@ class TestShutdownDuringBootstrap:
         `_sessions + _prewarmed` cannot see it; the cancelled top-up itself is
         the only thing that can kill it.
         """
-        config = WorkerConfig(
-            deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1
-        )
+        config = WorkerConfig(deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1)
         pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
 
         spawned = []
@@ -259,6 +253,6 @@ class TestShutdownDuringBootstrap:
 
         await pool.shutdown()
 
-        assert all(not handle.is_alive for handle in spawned), (
-            "a worker spawned but not yet prewarmed outlived shutdown()"
-        )
+        assert all(
+            not handle.is_alive for handle in spawned
+        ), "a worker spawned but not yet prewarmed outlived shutdown()"

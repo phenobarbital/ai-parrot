@@ -242,9 +242,7 @@ class TestReadiness:
         This is the exact call that used to kill the worker: `set_var()` on a
         worker whose bootstrap outlasts the old hard-coded 5 s budget.
         """
-        handle = WorkerHandle(
-            real_worker_config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP
-        )
+        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
         await handle.start()
         try:
             await handle.set_var("x", 1)
@@ -419,9 +417,7 @@ class TestConcurrencyRegressions:
         finally:
             await handle.kill()
 
-    async def test_execute_after_undrained_timeout_is_not_reported_as_loss(
-        self, tmp_path, monkeypatch
-    ):
+    async def test_execute_after_undrained_timeout_is_not_reported_as_loss(self, tmp_path, monkeypatch):
         """A drain timeout inside `execute()` must not claim the namespace was lost.
 
         `NamespaceTimeoutError` subclasses `TimeoutError` (== `asyncio.
