@@ -45,6 +45,7 @@ from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    DispatchLabels,
     QAReport,
     ResearchOutput,
     TaskScopedBrief,
@@ -1061,19 +1062,47 @@ class DevelopmentNode(DevLoopNode):
             setting_sources=["project"],
         )
 
-        dev_out: DevelopmentOutput = await dispatcher.dispatch(
-            brief=research,
-            profile=profile,
-            output_model=DevelopmentOutput,
-            run_id=shared["run_id"],
-            node_id=self.name,
-            cwd=research.worktree_path,
-            # FEAT-322: fold dispatch-level events (queued/started/message/
-            # tool_use/…) into the run's SessionHost when one is present
-            # (seeded by DevLoopRunner.run(); absent for nodes invoked
-            # outside the runner). `dispatch()` defaults this to None.
-            session_host=shared.get("session_host"),
-        )
+        # FEAT-496: label the single-agent (non-pool) path too — best-effort,
+        # never lets a labelling failure affect the dispatch itself.
+        try:
+            single_labels: Optional[DispatchLabels] = DispatchLabels(
+                seat=self.name,
+                agent=spec.agent if spec is not None else "",
+                model=self._resolver_label_model(profile),
+                subagent=getattr(profile, "subagent", "") or "",
+            )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            single_labels = None
+
+        try:
+            dev_out: DevelopmentOutput = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                # FEAT-322: fold dispatch-level events (queued/started/message/
+                # tool_use/…) into the run's SessionHost when one is present
+                # (seeded by DevLoopRunner.run(); absent for nodes invoked
+                # outside the runner). `dispatch()` defaults this to None.
+                session_host=shared.get("session_host"),
+                labels=single_labels,
+            )
+        except TypeError as exc:
+            # FEAT-496: labels are best-effort — a dispatcher double that
+            # does not declare labels= must not break this path.
+            if "labels" not in str(exc):
+                raise
+            dev_out = await dispatcher.dispatch(
+                brief=research,
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=research.worktree_path,
+                session_host=shared.get("session_host"),
+            )
 
         # Record what actually ran, so a substitution is auditable on the
         # run bundle. This ONLY applies when a declared pool spec was
@@ -1436,15 +1465,43 @@ class DevelopmentNode(DevLoopNode):
         first_worker = pool.workers[0]
 
         try:
-            await first_worker.dispatcher.dispatch(
-                brief=brief,
-                profile=first_worker.profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent=first_worker.spec.agent,
+                model=self._resolver_label_model(first_worker.profile),
             )
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            labels = None
+
+        try:
+            try:
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=labels,
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a dispatcher that does
+                # not declare labels= must not be treated as "resolver
+                # failed"; retry once without them before giving up.
+                if "labels" not in str(exc):
+                    raise
+                await first_worker.dispatcher.dispatch(
+                    brief=brief,
+                    profile=first_worker.profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
             self.logger.warning("Conflict resolver (%s) failed on %s: %s", first_worker.spec.agent, path, exc)
@@ -1458,19 +1515,57 @@ class DevelopmentNode(DevLoopNode):
             setter = getattr(fallback_dispatcher, "set_event_registry_resolver", None)
             if resolver is not None and callable(setter):
                 setter(resolver)
-            await fallback_dispatcher.dispatch(
-                brief=brief,
-                profile=fallback_profile,
-                output_model=DevelopmentOutput,
-                run_id=run_id,
-                node_id="development.resolver",
-                cwd=path,
-                session_host=session_host,
+            fallback_labels = DispatchLabels(
+                task_id="RESOLVE_MERGE_CONFLICT",
+                task_title=f"resolve merge conflict in {path}",
+                seat="development.resolver",
+                agent="claude-code",
+                model=self._resolver_label_model(fallback_profile),
             )
+            try:
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                    labels=fallback_labels,
+                )
+            except TypeError as exc:
+                if "labels" not in str(exc):
+                    raise
+                await fallback_dispatcher.dispatch(
+                    brief=brief,
+                    profile=fallback_profile,
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development.resolver",
+                    cwd=path,
+                    session_host=session_host,
+                )
             return True
         except Exception as exc:  # noqa: BLE001 - fallback failure -> resolver fully failed
             self.logger.warning("Fallback claude-code conflict resolver also failed on %s: %s", path, exc)
             return False
+
+    @staticmethod
+    def _resolver_label_model(profile: Any) -> str:
+        """Best-effort model id off a dispatch profile (FEAT-496).
+
+        Mirrors ``agent_pool._profile_model``'s duck-typing (a direct
+        ``model`` field, or the combined ``llm="<backend>:<model>"`` field).
+        """
+        try:
+            if hasattr(profile, "model"):
+                return str(getattr(profile, "model") or "")
+            if hasattr(profile, "llm"):
+                llm = str(getattr(profile, "llm") or "")
+                return llm.split(":", 1)[-1] if ":" in llm else llm
+        except Exception:  # noqa: BLE001 - labels are best-effort telemetry
+            pass
+        return ""
 
 
 __all__ = ["DevelopmentNode"]

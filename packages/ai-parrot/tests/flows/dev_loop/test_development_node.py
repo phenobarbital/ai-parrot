@@ -84,6 +84,7 @@ class FakeDispatcher:
     def __init__(self, fail_ids=()):
         self.calls = []
         self.session_hosts = []
+        self.labels = []
         self.fail_ids = set(fail_ids)
         self.resolver = None
 
@@ -91,11 +92,13 @@ class FakeDispatcher:
         self.resolver = resolver
 
     async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kwargs):
-        # **_kwargs tolerates ``session_host=``, which BOTH the
-        # single-agent path (FEAT-466 TASK-2506) and the pool path pass.
+        # **_kwargs tolerates ``session_host=``/``labels=``, which BOTH the
+        # single-agent path (FEAT-466 TASK-2506 / FEAT-496) and the pool
+        # path pass.
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
         self.session_hosts.append(_kwargs.get("session_host"))
+        self.labels.append(_kwargs.get("labels"))
         if task_id in self.fail_ids:
             self.fail_ids.discard(task_id)
             raise RuntimeError("boom")
@@ -1199,3 +1202,51 @@ class TestRepairReentryDispatch:
         await node.execute(ctx)
 
         assert [c[0] for c in pool_dispatcher.calls] == ["TASK-2"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2730 — resolver seat + single-agent path labels
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestResolverLabels:
+    async def test_resolver_dispatch_is_labelled(self, tmp_path):
+        from parrot.flows.dev_loop.agent_pool import PoolWorker
+        from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile
+
+        dispatcher = FakeDispatcher()
+        worker = PoolWorker(
+            worker_id="development.w1",
+            spec=DevAgentSpec(agent="claude-code", model="claude-sonnet-4-6"),
+            dispatcher=dispatcher,
+            profile=ClaudeCodeDispatchProfile(model="claude-sonnet-4-6"),
+        )
+        pool = MagicMock()
+        pool.workers = [worker]
+
+        node = DevelopmentNode(dispatcher=MagicMock())
+        research = _research(str(tmp_path))
+
+        ok = await node._resolve_conflict(
+            str(tmp_path), "conflict in x.py", pool=pool, research=research, run_id="r1",
+        )
+
+        assert ok is True
+        labels = dispatcher.labels[-1]
+        assert labels.task_id == "RESOLVE_MERGE_CONFLICT"
+        assert labels.seat == "development.resolver"
+        assert labels.agent == "claude-code"
+        assert labels.model == "claude-sonnet-4-6"
+
+    async def test_single_agent_path_is_labelled(self, tmp_path):
+        research = _research(str(tmp_path))
+        dispatcher = FakeDispatcher()
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        ctx = {"run_id": "r1", "research_output": research}
+        await node.execute(ctx)
+
+        labels = dispatcher.labels[-1]
+        assert labels is not None
+        assert labels.seat == "development"

@@ -553,3 +553,133 @@ async def test_brief_carries_the_task_file_from_the_index():
     # The prompt is built from the serialized brief, so the path must
     # survive `model_dump_json()` — that is what the seat actually reads.
     assert "TASK-2719-tests-fable-research-primary.md" in briefs[0].model_dump_json()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2730 — DispatchLabels wiring from the pool
+# ---------------------------------------------------------------------------
+
+
+class RecordingLabelsDispatcher:
+    """Accepts labels= and records (node_id, labels) per call."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd,
+                       session_host=None, labels=None):
+        self.calls.append((node_id, labels))
+        return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+
+class LegacyDispatcherNoLabels:
+    """Fulfils the pre-FEAT-496 Protocol shape — no labels= parameter."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd,
+                       session_host=None):
+        self.calls.append((brief.task_id, node_id))
+        return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+
+@pytest.mark.asyncio
+class TestPoolLabelWiring:
+    async def test_labels_carry_task_identity(self):
+        d = RecordingLabelsDispatcher()
+        pool = _build_pool([d])
+        await pool.run_wave(
+            _tasks("TASK-1857"), research=_research(), run_id="r1", cwd_for=_cwd_for
+        )
+        node_id, labels = d.calls[-1]
+        assert node_id == "development.w1"
+        assert labels.task_id == "TASK-1857"
+        assert labels.seat == "development.w1"
+        assert labels.agent == "claude-code"
+
+    async def test_task_title_and_file_reach_the_labels(self):
+        d = RecordingLabelsDispatcher()
+        pool = _build_pool([d])
+        task = TaskRef(
+            id="TASK-1857", title="Wire the shim", status="pending",
+            depends_on=[], file="sdd/tasks/active/TASK-1857-x.md",
+        )
+        await pool.run_wave([task], research=_research(), run_id="r1", cwd_for=_cwd_for)
+        _node_id, labels = d.calls[-1]
+        assert labels.task_title == "Wire the shim"
+        assert labels.task_file == "sdd/tasks/active/TASK-1857-x.md"
+
+    async def test_two_seats_get_their_own_task(self):
+        """No cross-talk: w1 must never be told it is running w2's task."""
+        d1, d2 = RecordingLabelsDispatcher(), RecordingLabelsDispatcher()
+        pool = _build_pool([d1, d2])
+        await pool.run_wave(
+            _tasks("TASK-1", "TASK-2"), research=_research(), run_id="r1", cwd_for=_cwd_for
+        )
+        _node1, labels1 = d1.calls[-1]
+        _node2, labels2 = d2.calls[-1]
+        assert labels1.task_id != labels2.task_id
+        assert labels1.seat == "development.w1"
+        assert labels2.seat == "development.w2"
+
+    async def test_retry_reports_attempt_two(self):
+        d1 = RecordingLabelsDispatcher()
+        pool = _build_pool([d1])  # single worker: retry lands on itself
+
+        # Force a failure on the first attempt only.
+        state = {"first": True}
+
+        async def flaky_dispatch(*, brief, profile, output_model, run_id, node_id, cwd,
+                                 session_host=None, labels=None):
+            d1.calls.append((node_id, labels))
+            if state["first"]:
+                state["first"] = False
+                raise RuntimeError("boom")
+            return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+        d1.dispatch = flaky_dispatch
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for
+        )
+        assert "TASK-1" in result.completed
+        assert d1.calls[0][1].attempt == 1
+        assert d1.calls[-1][1].attempt == 2
+
+    async def test_escalated_dispatch_reports_escalation_model(self):
+        d1 = RecordingLabelsDispatcher()
+        spec = DevAgentSpec(
+            agent="claude-code", model="claude-sonnet-4-6",
+            escalation_model="claude-opus-4-6",
+        )
+
+        state = {"first": True}
+
+        async def flaky_dispatch(*, brief, profile, output_model, run_id, node_id, cwd,
+                                 session_host=None, labels=None):
+            d1.calls.append((node_id, labels))
+            if state["first"]:
+                state["first"] = False
+                raise RuntimeError("boom")
+            return DevelopmentOutput(files_changed=[], commit_shas=[], summary=brief.task_id)
+
+        d1.dispatch = flaky_dispatch
+        pool = _build_pool_with_specs([d1], [spec])
+        await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for
+        )
+        assert d1.calls[-1][1].model == "claude-opus-4-6"
+
+    async def test_dispatcher_without_labels_kwarg_still_works(self):
+        """Labels are best-effort — a duck-typed double must not break."""
+        d = LegacyDispatcherNoLabels()
+        pool = _build_pool([d])
+        result = await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="r1", cwd_for=_cwd_for
+        )
+        assert "TASK-1" in result.completed
+        assert d.calls == [("TASK-1", "development.w1")]
+
+# NOTE: the merge-conflict resolver seat and the single-agent (non-pool)
+# development path are covered by test_development_node.py — agent_pool.py
+# owns no resolver logic (FEAT-496 TASK-2730).
