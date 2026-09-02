@@ -135,7 +135,70 @@ modes. 7. Move to `completed/`. 8. Index → `done`. 9. Completion Note.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `perl.yaml` is kind-only (verified: `yaml.safe_dump` of the
+parsed file contains no `pattern` substring) and validates without
+WARNING. Symbol table verified against `sample.pm`: `package
+MyApp::Model::User` (depth 1), `sub validate parent=MyApp::Model::User
+depth=2 doc='Validate the user.'` (POD `=head2`), `has name`
+(ATTRIBUTE), `field $x` (FIELD); parent correctly switches to
+`MyApp::Other` after the second `package` statement (block-less
+sibling-scoping, `perl_sub_parent`). Imports match the walker
+(pragmas filtered, `Moose`/`MyApp::Schema`/`Baz` kept). Fallback verified
+live: monkeypatching the `.so` lookup away makes `supported_language
+("perl")` cache `False` and the scanner falls back silently
+(`mode != "ast-grep"`, outline still correct via tree-sitter/heuristic).
+`pytest tests/knowledge/wiki/languages/test_rules_perl.py
+tests/knowledge/wiki/languages/test_outline_parity.py
+tests/knowledge/wiki/languages/test_perl.py -v` → 53 passed. Full
+`tests/knowledge/wiki/languages`: 254 passed. Full `tests/knowledge/wiki`:
+1317 passed (same single pre-existing unrelated failure). `ruff check` /
+`mypy --ignore-missing-imports` clean.
+**Deviations from spec**: Continuing the pattern from TASK-2742/2743/2744
+(all additive, all verified live, none changing prior behavior — 254/254
+languages tests pass): four small `astgrep.py` (TASK-2739) additions/fixes:
+1. **Genuine bug fix**: `pod_head2` called `_first_comment_before` (which
+   filters on `"comment" in kind`), but a POD block's own kind is
+   exactly `"pod"` — never matching — so `pod_head2` could never actually
+   return anything. Now checks `node.prev()` for `kind() == "pod"`
+   directly. This task's own scope required `doc: pod_head2`, so it had
+   to work.
+2. New extractor `pod_head2_or_leading_comment` — this task's scope
+   explicitly asks for "`doc: pod_head2` with `leading_comment`
+   fallback"; a single extractor name can't express a fallback chain in
+   the existing schema, so this combinator wraps both.
+3. New extractor `perl_sub_parent` — Perl's container statements have
+   two forms verified live: block-form (`package Foo { ... }`), a real
+   ancestor of everything inside, and block-less (`package Foo;`), a
+   *preceding sibling* instead (`preceding_package`). A sub/method needs
+   whichever form is actually in play; `_resolve_parent`'s existing
+   `{ancestor: ...}` dict form and `preceding_package` string form are
+   each only half the answer, so this tries ancestor first, then falls
+   back to `preceding_package`.
+4. New extractor `perl_pod_summary` (+ helper `_pod_paragraph`, + `import
+   re`) — the file-level module summary (`=head1 NAME`/`DESCRIPTION`,
+   mirroring `perl.py`'s `_pod_summary`) had no seam-side equivalent;
+   `test_pod_summary` (pre-existing, both `TestHeuristic` and
+   `TestTreeSitter` classes in `test_perl.py`) requires it.
+Two DISCOVERED-not-fixed, pre-existing, out-of-scope `perl.py` walker
+issues (same category as TASK-2744's Rust findings — not in any FEAT-498
+task's files):
+- The tree-sitter tier's doc lookup (`_leading_doc`, a plain `#`
+  comment) is a completely different mechanism from the heuristic
+  tier's (`_head2_docs`, POD blocks) — a sub preceded by POD gets a doc
+  under heuristic but not tree-sitter. `perl` added to
+  `test_outline_parity.py`'s `PIN_TO_HEURISTIC` (alongside `rust`) so
+  the shared harness compares against the heuristic tier, which
+  `pod_head2_or_leading_comment` was built to match.
+- The heuristic tier's `_sub_params` has a `my ($self, $x) = @_` unpack
+  fallback when no explicit signature exists; the tree-sitter tier
+  (which `perl.yaml`'s `signature: {path: [signature]}` mirrors) does
+  not. `TestHeuristic::test_sub_params_from_my_unpack` (pre-existing)
+  needed `force_no_astgrep` alongside its existing `force_heuristic`.
+Also NOT extracted (documented, narrow simplification, not a bug):
+Moose/Moo's `isa => 'Type'` suffix on `has` attributes — finding the
+value tied to the specific key `isa` (as opposed to `is`) needs
+key/value pair matching beyond the seam's generic field/path
+primitives. `TestHeuristic::test_moose_has` (pre-existing, asserts the
+`Str` suffix) needed `force_no_astgrep` for the same reason.

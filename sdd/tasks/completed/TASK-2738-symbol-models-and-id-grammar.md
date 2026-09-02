@@ -199,7 +199,17 @@ to `sdd/tasks/completed/`. 8. Index → `done`. 9. Fill the Completion Note.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Implemented exactly as specified — `symbols.py` created with
+`SymbolKind`, `SymbolRecord`, `SymbolRef`, `StructuralOutline`,
+`sym_concept_id`, `parse_sym_id`, `sha1_of_text`; additive fields on
+`LanguageOutline`, `FileSlice`, `RepoScan`, `WikiPageRecord`;
+`_ID_KINDS` += `sym`; `WikiProjectConfig.symbol_depth`/`.structural_backend`;
+`EdgeKind.CALLS`/`.IMPLEMENTS`. `pytest tests/knowledge/wiki/test_symbols.py
+tests/knowledge/wiki/test_context.py tests/knowledge/wiki/languages
+tests/knowledge/wiki/test_repo_scan.py tests/knowledge/wiki/test_store.py -v`
+→ 353 passed. `ruff check` clean on all touched/created files (pre-existing
+unrelated findings in `store.py`/`test_context.py` left untouched, out of
+scope). `mypy` clean on `symbols.py`.
 **Deviations from spec**: none

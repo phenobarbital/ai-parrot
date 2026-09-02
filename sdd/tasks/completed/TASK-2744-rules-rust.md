@@ -117,7 +117,59 @@ def test_rust_table_and_trait_impl():
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `rust.yaml` reproduces the design §4.4 Rust table (verified
+live): `struct Parser doc='A document parser.'` (`#[derive(Debug)]`
+correctly skipped), `impl Parser`, `fn new parent=Parser doc='Create a
+parser.'`, `fn private_helper parent=Parser exp=False`, `trait Visitor`,
+`mod utils`, `enum Kind`; `not_pub` absent from both `symbols` (matches
+neither `has: visibility_modifier` nor `inside: impl_item`) and
+`outline`. `implements` ref verified for `impl Trait for Type` (both a
+bare `type_identifier` trait name and a `scoped_type_identifier` path
+like `std::fmt::Display`). `calls` ref verified.
+`pytest tests/knowledge/wiki/languages/test_rules_rust.py
+tests/knowledge/wiki/languages/test_outline_parity.py
+tests/knowledge/wiki/languages/test_rust_plugin.py -v` → 28 passed. Full
+`tests/knowledge/wiki/languages`: 249 passed. Full `tests/knowledge/wiki`:
+1311 passed (same single pre-existing unrelated failure). `ruff check` /
+`mypy --ignore-missing-imports` clean.
+**Deviations from spec**: Four small, additive `astgrep.py` corrections
+(owned by TASK-2739), all verified necessary by running the actual
+grammar, none changing existing behavior (249/249 languages tests pass,
+including every prior task's tests unchanged):
+1. `_first_comment_before` now skips `attribute_item` nodes (Rust's
+   `#[derive(...)]`) while walking backward for a doc comment — matches
+   `rust.py`'s own `_leading_doc`'s `while prev.type == "attribute_item"`
+   loop exactly; this task's own scope explicitly required it
+   ("doc-comment first line must skip #[derive] attribute macro items").
+2. `_resolve_value_spec`'s `field`/`path` branches now strip one layer of
+   surrounding `(...)` (`_strip_enclosing_parens`, added in TASK-2743 for
+   PHP's `signature: {field: parameters}`) — Rust's `parameters` field
+   has the exact same "text includes its own parens" grammar shape, so
+   this pre-existing fix (not a new one) was simply exercised again here.
+3. **Discovered, NOT fixed — a genuine, pre-existing bug in `rust.py`'s
+   tree-sitter path**, unrelated to this feature: `impl_item` has no
+   `"name"` field in tree-sitter-rust's grammar (only `"type"`), so
+   `_name_of()` (`child_by_field_name("name")`, written for the other
+   item kinds which DO have a `"name"` field) silently renders
+   `"impl :"` for every impl block. Invisible until now because every
+   Rust outline test in this suite already forces the heuristic tier
+   (`force_heuristic`) — my byte-for-byte parity harness is the first
+   thing in this codebase to actually exercise `_outline_treesitter`'s
+   impl-naming path. Not in any FEAT-498 task's files, so not fixed;
+   `rust.yaml` extracts the CORRECT name (`"Parser"`, matching this
+   task's own explicit acceptance criteria and the design table), and
+   `test_outline_parity.py`'s shared `test_outline_parity_with_and_
+   without_seam` pins Rust's fallback-tier comparison to the heuristic
+   tier (`PIN_TO_HEURISTIC`) to sidestep the dormant bug rather than
+   propagate it into a correct rule.
+4. Relatedly, `rust.py`'s heuristic tier (unlike its tree-sitter tier,
+   the one `render.py` was modeled on) appends `-> {return_type}` to a
+   rendered fn signature — a second, independent cross-tier
+   inconsistency, also invisible before this feature's parity harness.
+   Worked around by dropping the return type from
+   `test_outline_parity.py`'s shared `RUST_SRC` fixture rather than
+   picking a side in an unrelated, pre-existing walker inconsistency.
+Recommend a follow-up ticket against `rust.py` for both cross-tier
+inconsistencies (impl naming, return-type inclusion) — out of scope here.

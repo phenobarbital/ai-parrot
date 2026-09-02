@@ -19,7 +19,7 @@ from parrot.knowledge.wiki.languages.javascript import (
     _grammar_for,
 )
 
-SAMPLE_TS = '''
+SAMPLE_TS = """
 import { Model } from './base/model';
 import React from 'react';
 export { helper } from './utils';
@@ -40,7 +40,7 @@ export type UserId = string;
 export const DEFAULT_LIMIT = 10;
 
 function internalHelper(): void { ... }
-'''
+"""
 
 
 def test_jsts_outline_exports(force_heuristic):
@@ -81,14 +81,8 @@ def test_jsts_relative_resolution():
     scanner = JavaScriptScanner()
     rel_paths = ["src/user.ts", "src/base/model.ts", "src/utils/index.ts"]
     index = scanner.build_reference_index(rel_paths)
-    assert (
-        scanner.resolve_import("./base/model", "src/user.ts", index)
-        == "src/base/model.ts"
-    )
-    assert (
-        scanner.resolve_import("./utils", "src/user.ts", index)
-        == "src/utils/index.ts"
-    )
+    assert scanner.resolve_import("./base/model", "src/user.ts", index) == "src/base/model.ts"
+    assert scanner.resolve_import("./utils", "src/user.ts", index) == "src/utils/index.ts"
     assert scanner.resolve_import("react", "src/user.ts", index) is None
 
 
@@ -96,9 +90,7 @@ def test_jsts_parent_relative_resolution():
     scanner = JavaScriptScanner()
     rel_paths = ["src/services/nested/x.ts", "src/base/model.ts"]
     index = scanner.build_reference_index(rel_paths)
-    target = scanner.resolve_import(
-        "../../base/model", "src/services/nested/x.ts", index
-    )
+    target = scanner.resolve_import("../../base/model", "src/services/nested/x.ts", index)
     assert target == "src/base/model.ts"
 
 
@@ -121,12 +113,7 @@ def test_jsts_imports_include_bare_specifiers():
 def test_jsts_multiline_import_extracted(force_heuristic):
     # Common Prettier/ESLint output style — the import specifier's
     # `from '...'` clause lands on its own line, well after `import`.
-    source = (
-        "import {\n"
-        "    Model,\n"
-        "    Config,\n"
-        "} from './base/model';\n"
-    )
+    source = "import {\n" "    Model,\n" "    Config,\n" "} from './base/model';\n"
     scanner = JavaScriptScanner()
     result = scanner.outline(source, "src/services/user.ts")
     assert "./base/model" in result.imports
@@ -147,7 +134,12 @@ def test_jsts_unresolvable_relative_returns_none():
     assert result is None
 
 
-def test_jsts_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_jsts_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that typescript.yaml
+    # (TASK-2742) makes the ast-grep seam a real, working first tier —
+    # without it, the seam would serve this file successfully and
+    # `_outline_heuristic` (the fallback this test breaks) would never
+    # even be called.
     scanner = JavaScriptScanner()
 
     def _boom(source):
@@ -224,9 +216,7 @@ class TestExtractScriptBlocks:
 
     def test_lang_read_in_any_attribute_order(self):
         """`lang` need not be the first attribute."""
-        src = (
-            '<script context="module" lang="ts">\nexport const a = 1\n</script>\n'
-        )
+        src = '<script context="module" lang="ts">\nexport const a = 1\n</script>\n'
         assert _extract_script_blocks(src, ".svelte")[1] == "ts"
 
     def test_lookalike_attribute_not_mistaken_for_lang(self):
@@ -319,9 +309,7 @@ class TestSvelteOutline:
 
     def test_svelte_no_script_degrades_without_raising(self, force_heuristic):
         """Markup-only component: empty outline, no exception."""
-        result = JavaScriptScanner().outline(
-            "<div>only markup</div>\n", "src/lib/Plain.svelte"
-        )
+        result = JavaScriptScanner().outline("<div>only markup</div>\n", "src/lib/Plain.svelte")
         assert result.outline == []
         assert result.summary == ""
 
@@ -353,25 +341,17 @@ class TestAliasResolution:
     def test_alias_from_tsconfig_paths(self, tmp_path, restore_scan_root):
         """A declared `paths` entry expands, then extension-guesses."""
         (tmp_path / "tsconfig.json").write_text(
-            '{"compilerOptions": {"baseUrl": ".", '
-            '"paths": {"$lib/*": ["src/lib/*"]}}}'
+            '{"compilerOptions": {"baseUrl": ".", ' '"paths": {"$lib/*": ["src/lib/*"]}}}'
         )
         (tmp_path / "src/lib").mkdir(parents=True)
         (tmp_path / "src/lib/util.ts").write_text("export function helper() {}\n")
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["tsconfig.json", "src/lib/util.ts", "src/lib/Widget.svelte"]
-        )
-        assert (
-            scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index)
-            == "src/lib/util.ts"
-        )
+        index = scanner.build_reference_index(["tsconfig.json", "src/lib/util.ts", "src/lib/Widget.svelte"])
+        assert scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index) == "src/lib/util.ts"
 
-    def test_alias_sveltekit_convention_fallback(
-        self, svelte_repo, restore_scan_root
-    ):
+    def test_alias_sveltekit_convention_fallback(self, svelte_repo, restore_scan_root):
         """`$lib/` resolves with nothing declared but svelte.config.js.
 
         The motivating case: on a fresh clone the only `$lib` declaration
@@ -379,13 +359,8 @@ class TestAliasResolution:
         """
         restore_scan_root(svelte_repo)
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "src/lib/util.ts", "src/lib/Widget.svelte"]
-        )
-        assert (
-            scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index)
-            == "src/lib/util.ts"
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "src/lib/util.ts", "src/lib/Widget.svelte"])
+        assert scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index) == "src/lib/util.ts"
 
     def test_alias_from_svelte_config_block(self, tmp_path, restore_scan_root):
         """An explicit `kit.alias` block is scraped, not evaluated."""
@@ -403,13 +378,8 @@ class TestAliasResolution:
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "src/widgets/Btn.ts"]
-        )
-        assert (
-            scanner.resolve_import("$components/Btn", "src/routes/x.svelte", index)
-            == "src/widgets/Btn.ts"
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "src/widgets/Btn.ts"])
+        assert scanner.resolve_import("$components/Btn", "src/routes/x.svelte", index) == "src/widgets/Btn.ts"
 
     def test_alias_longest_prefix_wins(self, tmp_path, restore_scan_root):
         """`$lib/components/` beats `$lib/` when both are declared."""
@@ -425,20 +395,17 @@ class TestAliasResolution:
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index([
-            "tsconfig.json", "src/widgets/Btn.ts", "src/lib/components/Btn.ts",
-        ])
-        assert index.aliases[0][0] == "$lib/components/"
-        assert (
-            scanner.resolve_import(
-                "$lib/components/Btn", "src/routes/+page.svelte", index
-            )
-            == "src/widgets/Btn.ts"
+        index = scanner.build_reference_index(
+            [
+                "tsconfig.json",
+                "src/widgets/Btn.ts",
+                "src/lib/components/Btn.ts",
+            ]
         )
+        assert index.aliases[0][0] == "$lib/components/"
+        assert scanner.resolve_import("$lib/components/Btn", "src/routes/+page.svelte", index) == "src/widgets/Btn.ts"
 
-    def test_alias_falls_through_to_shorter_prefix(
-        self, tmp_path, restore_scan_root
-    ):
+    def test_alias_falls_through_to_shorter_prefix(self, tmp_path, restore_scan_root):
         """A more specific alias that expands to nothing must not shadow.
 
         `$lib/components/*` -> `src/widgets/*` is the longest match for
@@ -457,47 +424,39 @@ class TestAliasResolution:
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index([
-            "tsconfig.json", "src/widgets/Other.ts", "src/lib/components/Btn.ts",
-        ])
+        index = scanner.build_reference_index(
+            [
+                "tsconfig.json",
+                "src/widgets/Other.ts",
+                "src/lib/components/Btn.ts",
+            ]
+        )
         # The longest prefix is tried first and misses...
         assert index.aliases[0][0] == "$lib/components/"
         # ...but resolution falls through to `$lib/` rather than giving up.
         assert (
-            scanner.resolve_import(
-                "$lib/components/Btn", "src/routes/+page.svelte", index
-            )
+            scanner.resolve_import("$lib/components/Btn", "src/routes/+page.svelte", index)
             == "src/lib/components/Btn.ts"
         )
 
     @pytest.mark.parametrize("spec", ["$app/environment", "$env/static/public"])
-    def test_alias_unresolved_returns_none(
-        self, svelte_repo, restore_scan_root, spec
-    ):
+    def test_alias_unresolved_returns_none(self, svelte_repo, restore_scan_root, spec):
         """SvelteKit virtual modules are dropped, not left dangling."""
         restore_scan_root(svelte_repo)
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "src/lib/util.ts"]
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "src/lib/util.ts"])
         assert scanner.resolve_import(spec, "src/lib/Widget.svelte", index) is None
 
     @pytest.mark.parametrize("spec", ["react", "lodash", "@sveltejs/kit"])
-    def test_bare_package_still_unresolved(
-        self, svelte_repo, restore_scan_root, spec
-    ):
+    def test_bare_package_still_unresolved(self, svelte_repo, restore_scan_root, spec):
         """Bare packages now REACH resolve_import and must be rejected."""
         restore_scan_root(svelte_repo)
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "src/lib/util.ts"]
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "src/lib/util.ts"])
         assert scanner.resolve_import(spec, "src/lib/Widget.svelte", index) is None
 
     @pytest.mark.parametrize("rune", ["$state", "$derived", "$effect", "$props"])
-    def test_svelte_runes_are_not_aliases(
-        self, svelte_repo, restore_scan_root, rune
-    ):
+    def test_svelte_runes_are_not_aliases(self, svelte_repo, restore_scan_root, rune):
         """Svelte 5 runes are compiler intrinsics, never alias matches.
 
         Guaranteed structurally: every alias prefix ends in `/`, so a
@@ -505,19 +464,15 @@ class TestAliasResolution:
         """
         restore_scan_root(svelte_repo)
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "src/lib/util.ts"]
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "src/lib/util.ts"])
         assert all(prefix.endswith("/") for prefix, _ in index.aliases)
         assert scanner.resolve_import(rune, "src/lib/Widget.svelte", index) is None
 
-    def test_malformed_tsconfig_degrades_to_convention(
-        self, tmp_path, restore_scan_root
-    ):
+    def test_malformed_tsconfig_degrades_to_convention(self, tmp_path, restore_scan_root):
         """Comments/trailing commas are legal tsconfig but not stdlib json."""
         (tmp_path / "svelte.config.js").write_text("export default { kit: {} }\n")
         (tmp_path / "tsconfig.json").write_text(
-            '{\n  // a comment stdlib json cannot parse\n'
+            "{\n  // a comment stdlib json cannot parse\n"
             '  "compilerOptions": {"paths": {"$lib/*": ["nope/*"]},}\n}\n'
         )
         (tmp_path / "src/lib").mkdir(parents=True)
@@ -525,20 +480,11 @@ class TestAliasResolution:
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["svelte.config.js", "tsconfig.json", "src/lib/util.ts"]
-        )
-        assert (
-            scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index)
-            == "src/lib/util.ts"
-        )
+        index = scanner.build_reference_index(["svelte.config.js", "tsconfig.json", "src/lib/util.ts"])
+        assert scanner.resolve_import("$lib/util", "src/lib/Widget.svelte", index) == "src/lib/util.ts"
 
-    @pytest.mark.parametrize(
-        "config_name", ["tsconfig.json", "jsconfig.json", "svelte.config.js"]
-    )
-    def test_non_utf8_config_does_not_abort_the_scan(
-        self, tmp_path, restore_scan_root, config_name
-    ):
+    @pytest.mark.parametrize("config_name", ["tsconfig.json", "jsconfig.json", "svelte.config.js"])
+    def test_non_utf8_config_does_not_abort_the_scan(self, tmp_path, restore_scan_root, config_name):
         """A config file that is not valid UTF-8 must degrade, not crash.
 
         `UnicodeDecodeError` is a `ValueError`, not an `OSError`, so a
@@ -553,9 +499,7 @@ class TestAliasResolution:
         restore_scan_root(tmp_path)
 
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            [config_name, "src/a.ts", "src/b.ts"]
-        )
+        index = scanner.build_reference_index([config_name, "src/a.ts", "src/b.ts"])
         # Relative resolution is unaffected by the unreadable config.
         assert scanner.resolve_import("./b", "src/a.ts", index) == "src/b.ts"
 
@@ -571,13 +515,10 @@ class TestAliasResolution:
         scan = scan_repository(tmp_path, use_git=False)
         assert {fs.rel_path for fs in scan.files} >= {"src/a.ts", "src/b.ts"}
 
-    def test_tsconfig_paths_keeps_every_fallback_target(
-        self, tmp_path, restore_scan_root
-    ):
+    def test_tsconfig_paths_keeps_every_fallback_target(self, tmp_path, restore_scan_root):
         """A `paths` entry may list fallbacks; all of them stay usable."""
         (tmp_path / "tsconfig.json").write_text(
-            '{"compilerOptions": {"baseUrl": ".", "paths": {'
-            '"$lib/*": ["missing/*", "src/lib/*"]}}}'
+            '{"compilerOptions": {"baseUrl": ".", "paths": {' '"$lib/*": ["missing/*", "src/lib/*"]}}}'
         )
         (tmp_path / "src/lib").mkdir(parents=True)
         (tmp_path / "src/lib/util.ts").write_text("export function helper() {}\n")
@@ -586,10 +527,7 @@ class TestAliasResolution:
         scanner = JavaScriptScanner()
         index = scanner.build_reference_index(["tsconfig.json", "src/lib/util.ts"])
         # The first target expands to nothing; the second must still be tried.
-        assert (
-            scanner.resolve_import("$lib/util", "src/routes/x.svelte", index)
-            == "src/lib/util.ts"
-        )
+        assert scanner.resolve_import("$lib/util", "src/routes/x.svelte", index) == "src/lib/util.ts"
 
     def test_no_scan_root_does_not_raise(self, restore_scan_root):
         """A scanner used outside a scan still builds a usable index."""
@@ -597,27 +535,15 @@ class TestAliasResolution:
         scanner = JavaScriptScanner()
         index = scanner.build_reference_index(["src/a.ts", "src/b.ts"])
         assert isinstance(index, JsIndex)
-        assert (
-            scanner.resolve_import("./b", "src/a.ts", index) == "src/b.ts"
-        )
+        assert scanner.resolve_import("./b", "src/a.ts", index) == "src/b.ts"
 
-    def test_relative_resolution_unchanged_by_alias_branch(
-        self, restore_scan_root
-    ):
+    def test_relative_resolution_unchanged_by_alias_branch(self, restore_scan_root):
         """The pre-existing relative path stays first and untouched."""
         restore_scan_root(None)
         scanner = JavaScriptScanner()
-        index = scanner.build_reference_index(
-            ["src/user.ts", "src/base/model.ts", "src/utils/index.ts"]
-        )
-        assert (
-            scanner.resolve_import("./base/model", "src/user.ts", index)
-            == "src/base/model.ts"
-        )
-        assert (
-            scanner.resolve_import("./utils", "src/user.ts", index)
-            == "src/utils/index.ts"
-        )
+        index = scanner.build_reference_index(["src/user.ts", "src/base/model.ts", "src/utils/index.ts"])
+        assert scanner.resolve_import("./base/model", "src/user.ts", index) == "src/base/model.ts"
+        assert scanner.resolve_import("./utils", "src/user.ts", index) == "src/utils/index.ts"
 
     def test_index_is_hashable_and_frozen(self, restore_scan_root):
         """JsIndex keeps the frozenset's immutability guarantees."""
@@ -625,9 +551,7 @@ class TestAliasResolution:
         index = JavaScriptScanner().build_reference_index(["a.ts"])
         # The point is that hashing does not raise, and that equal indexes
         # hash equally — `hash(x) is not None` would hold for any value.
-        assert hash(index) == hash(
-            JavaScriptScanner().build_reference_index(["a.ts"])
-        )
+        assert hash(index) == hash(JavaScriptScanner().build_reference_index(["a.ts"]))
         with pytest.raises(FrozenInstanceError):
             index.files = frozenset()
 

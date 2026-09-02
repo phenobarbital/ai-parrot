@@ -339,6 +339,22 @@ class TestStatusAndExport:
         assert payload["stats"]["pages"] >= 3
         assert payload["stale_sources"] == 0
 
+    def test_status_reports_symbols_and_structural(self, runner, repo):
+        """FEAT-498: stats.symbols + a per-language structural mode block."""
+        _build(runner, repo)
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["stats"]["symbols"] >= 1
+        assert payload["structural"]["python"] == "ast"
+
+    def test_status_text_shows_symbols_and_structural(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(wiki, ["status", "--path", str(repo)])
+        assert result.exit_code == 0
+        assert "symbols" in result.output
+        assert "Structural" in result.output
+
     def test_export_markdown_bundle(self, runner, repo):
         _build(runner, repo)
         result = runner.invoke(wiki, ["export", "--path", str(repo), "-o", "docs/wiki"])

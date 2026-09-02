@@ -117,7 +117,39 @@ TASK-2741 completed. 3. Index → `in-progress`. 4. Rule file → fixture → te
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `python.yaml` has `symbols: []` (schema-tested) — Python
+symbols stay exclusively `ast`-derived (TASK-2741); only `refs`/`imports`
+extraction rules exist. Verified live against the §4.4 sample + a
+decorator/call fixture: `calls` refs carry the correct dotted
+`src_qualname` (`"UserService.get_user"` for a call inside a method,
+`"g"` for a top-level decorated function, and the decorator's own call
+site `@helper(1)` is correctly excluded via `not: {inside: {kind:
+decorator}}`); `extends` correctly isolates the superclass list
+(`argument_list` matched directly, not the whole `class_definition`, so
+`each: identifier` never picks up the class's own name). `PythonScanner`
+merges only `refs` — symbols and the rendered outline are byte-identical
+with and without the seam (verified via `model_dump()` equality, not
+just field spot-checks).
+`pytest tests/knowledge/wiki/languages/test_rules_python.py
+tests/knowledge/wiki/languages/test_python_plugin.py -v` → 19 passed.
+Full `tests/knowledge/wiki/languages`: 265 passed. Full
+`tests/knowledge/wiki`: 1322 passed (same single pre-existing unrelated
+failure). `ruff check` / `mypy --ignore-missing-imports` clean.
+**Deviations from spec**: One additive `astgrep.py` (TASK-2739)
+extension, verified necessary live, not changing any existing behavior
+(265/265 languages tests pass): `RefSpec.scope` gained a string form
+(alongside the existing `{"ancestor": [...]}` dict form) naming an
+:data:`EXTRACTORS` entry, plus a new extractor `python_call_scope`. The
+existing ancestor-dict scope resolution stops at the *nearest* matching
+ancestor's own bare `name` field — for a Python call inside a method,
+that is just `"get_user"`, not the class-qualified `"UserService.
+get_user"` this task's own acceptance criteria and TASK-2741's
+`ast`-derived symbol qualnames require; `python_call_scope` walks
+outward once, joining an enclosing `function_definition`'s name with its
+enclosing `class_definition`'s name when both are present. This is the
+same "generic engine falls short of one language's qualname shape"
+pattern as TASK-2743's `php_qualified_container`/`qualname_joiner` and
+TASK-2745's `perl_sub_parent` — extending the schema, not the language
+files' scope.
