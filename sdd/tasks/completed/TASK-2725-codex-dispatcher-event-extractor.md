@@ -253,10 +253,19 @@ class TestCodexEventExtraction:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `_extract_codex_display(event)` static method mapping
+`command_execution`/`file_change`/`mcp_tool_call`/`web_search` item types to
+`tool_name`/`tool_input` (via `summarize_tool_input`), plus exit/status
+detail on completion and a text fallback for non-tool events. Total
+(`try/except Exception -> {}`). `_publish_codex_event` now merges these keys
+additively alongside the preserved `codex_event`. `_publish_event` routes
+through `normalize_payload`. `dispatch()` accepts `labels:
+Optional[DispatchLabels] = None`, bound/reset alongside `_SESSION_HOST_CTX`
+on both the pre-semaphore except path and the finally. 9 new tests added to
+the existing `test_codex_dispatcher.py`; all 14 tests in that file (5
+pre-existing + 9 new) pass; full `dev_loop` suite green (same 3 pre-existing
+unrelated failures in `test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
