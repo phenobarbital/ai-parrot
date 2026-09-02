@@ -23,6 +23,17 @@ work here.
 
 Transport stays thin (spec §7): authenticate -> build context -> ``dispatch``
 -> serialize. All protocol decisions live in :class:`A2UIRuntime`.
+
+**Auth inheritance caveat**: ``navigator_auth``'s ``@is_authenticated()``
+applies via ``setattr`` on the decorated class's own methods.  When a
+subclass overrides ``post``/``get``, the wrapped version on the parent is
+shadowed and the auth check is silently lost.  Therefore this class
+**re-applies** ``@is_authenticated()`` and ``@user_session()`` — matching
+every other ``AgentTalk`` subclass (``AgentVoiceTalk``,
+``InfographicTalk``, ``AgentTranscribeOnly``).  The internal
+``_authenticate()`` helper is a *secondary* gate (agent resolution + 401
+on missing ``user_id``); it is **not** a substitute for the decorator,
+which performs real credential verification against the auth backends.
 """
 
 from __future__ import annotations
@@ -35,6 +46,7 @@ from typing import Any
 from aiohttp import web
 from navconfig.logging import logging
 from parrot.a2a.models import A2UI_MEDIA_TYPE
+from navigator_auth.decorators import is_authenticated, user_session
 from parrot.auth.permission import build_principal_context
 from parrot.handlers.agent import AgentTalk
 from parrot.handlers.models.ui_surfaces import PgUISurfaceStore
@@ -67,6 +79,8 @@ logger = logging.getLogger(__name__)
 _SSE_KEEPALIVE_SECONDS = 15.0
 
 
+@is_authenticated()
+@user_session()
 class A2UIHandler(AgentTalk):
     """HTTP transport for A2UI Agent Functions (spec §3 Module 6).
 

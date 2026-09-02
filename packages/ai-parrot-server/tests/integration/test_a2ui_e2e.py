@@ -17,6 +17,7 @@ from aiohttp import web
 from parrot.a2a.models import A2UI_MEDIA_TYPE, Message
 from parrot.a2a.server import A2AServer
 from parrot.auth.resolver import DefaultPermissionResolver
+from navigator_session.data import SessionData
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.deeplink import DeepLinkResumeHandler
 from parrot.memory.file import FileConversationMemory
@@ -31,6 +32,15 @@ from parrot.tools import tool
 from parrot.tools.manager import ToolManager
 
 pytestmark = pytest.mark.asyncio
+
+
+@web.middleware
+async def _stub_auth_middleware(request, handler):
+    """Mark every test request as pre-authenticated and attach a minimal
+    session so ``@is_authenticated()``/``@user_session()`` pass through."""
+    request["authenticated"] = True
+    request["NAV_SESSION"] = SessionData(data={"user_id": "u-test"})
+    return await handler(request)
 
 
 @tool
@@ -111,7 +121,7 @@ class TestE2E:
     async def test_e2e_http_call_agent_function(self, aiohttp_client, tmp_path):
         """A real @tool-decorated function, invoked via POST, returns its real result."""
         agent = _make_agent(tmp_path)
-        app = web.Application()
+        app = web.Application(middlewares=[_stub_auth_middleware])
         app["bot_manager"] = _bot_manager(agent)
         app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         client = await aiohttp_client(app)
@@ -148,7 +158,7 @@ class TestE2E:
         agent = _make_agent(tmp_path)
         agent.tool_manager.register_tool(guarded_fn)
         agent.tool_manager.set_resolver(DefaultPermissionResolver())
-        app = web.Application()
+        app = web.Application(middlewares=[_stub_auth_middleware])
         app["bot_manager"] = _bot_manager(agent)
         app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         client = await aiohttp_client(app)
@@ -177,7 +187,7 @@ class TestE2E:
 
         agent.ask = AsyncMock(side_effect=capture_ask)
 
-        app = web.Application()
+        app = web.Application(middlewares=[_stub_auth_middleware])
         app["bot_manager"] = _bot_manager(agent)
         app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         client = await aiohttp_client(app)
@@ -253,7 +263,7 @@ class TestE2E:
         import json
 
         agent = _make_agent(tmp_path)
-        app = web.Application()
+        app = web.Application(middlewares=[_stub_auth_middleware])
         app["bot_manager"] = _bot_manager(agent)
         app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         client = await aiohttp_client(app)
