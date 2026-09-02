@@ -245,7 +245,14 @@ _BEHAVIOR_JS = r"""
 
   // DataTable search + pagination (TASK-2711) — rendered only above
   // _PAGINATION_ROW_THRESHOLD rows; purely client-side over the
-  // already-baked rows, no data re-fetch.
+  // already-baked rows, no data re-fetch. Registers a per-table hook in
+  // `tablePaginators` (keyed by table id) so the FilterBar runtime
+  // (TASK-2716) can narrow the paginated set to filtered rows instead of
+  // both features fighting over the same `<tr>.style.display` — without
+  // this hook, FilterBar's initial no-op `applyFilters()` call would
+  // force every row's display back to "", silently undoing pagination's
+  // page-1-only visibility on any surface that has both.
+  var tablePaginators = {};
   document.querySelectorAll("[data-table-search]").forEach(function (input) {
     var tableId = input.getAttribute("data-table-search");
     var table = document.querySelector('table[data-table="' + tableId + '"]');
@@ -255,11 +262,13 @@ _BEHAVIOR_JS = r"""
     var pager = document.querySelector('[data-table-pager="' + tableId + '"]');
     var pageSize = 50;
     var page = 0;
+    var rowFilter = null; // set via tablePaginators[tableId](predicate) by FilterBar
 
     function matches() {
+      var base = rowFilter ? allRows.filter(rowFilter) : allRows;
       var q = input.value.trim().toLowerCase();
-      if (!q) return allRows;
-      return allRows.filter(function (r) { return r.textContent.toLowerCase().indexOf(q) !== -1; });
+      if (!q) return base;
+      return base.filter(function (r) { return r.textContent.toLowerCase().indexOf(q) !== -1; });
     }
 
     function render() {
@@ -279,6 +288,12 @@ _BEHAVIOR_JS = r"""
       render();
     });
     render();
+
+    tablePaginators[tableId] = function (predicate) {
+      rowFilter = predicate;
+      page = 0;
+      render();
+    };
   });
 
   // Generic Tabs primitive (FEAT-470 TASK-2544) — same active-class-toggle
@@ -387,18 +402,26 @@ _BEHAVIOR_JS = r"""
 
       // Tables: toggle pre-rendered <tr> visibility — same, already-
       // formatted cells either way (TASK-2711), never a from-scratch
-      // client-side re-render.
+      // client-side re-render. A table with search/pagination (TASK-2711,
+      // registered in tablePaginators) delegates through it instead of
+      // setting `display` directly, so filtering narrows the paginated
+      // set rather than fighting it over the same attribute.
       document.querySelectorAll("table[data-table]").forEach(function (table) {
+        var tableId = table.getAttribute("data-table");
         var trs = Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-row]"));
-        var visibleCount = 0;
-        trs.forEach(function (tr) {
+        if (trs.length === 0) return;
+        function rowPasses(tr) {
           var row;
           try { row = JSON.parse(tr.getAttribute("data-row")); } catch (e) { row = {}; }
-          var match = rowMatches(row, filters);
-          tr.style.display = match ? "" : "none";
-          if (match) visibleCount++;
-        });
-        if (trs.length > 0) showEmptyState(table, visibleCount === 0);
+          return rowMatches(row, filters);
+        }
+        var visibleCount = trs.filter(rowPasses).length;
+        if (tablePaginators[tableId]) {
+          tablePaginators[tableId](rowPasses);
+        } else {
+          trs.forEach(function (tr) { tr.style.display = rowPasses(tr) ? "" : "none"; });
+        }
+        showEmptyState(table, visibleCount === 0);
       });
 
       // Charts: filter each chart's ORIGINAL embedded rows and redraw.

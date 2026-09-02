@@ -94,7 +94,14 @@ tbody tr:nth-child(even) {
     background: var(--neutral-bg);
 }
 
-table .num {
+/* `table .num` covers interactive-html's real <table>/<td class="num">
+ * cells; `.a2ui-cell.num` covers ssr-html/pdf, whose DataTable lowering
+ * (catalog/parrot/datatable.py) degrades to a Card/Row/Text tree with no
+ * <table> ancestor at all — code review, FEAT-493: without the unscoped
+ * selector, numeric columns rendered right-aligned/tabular-nums only on
+ * interactive-html, never on ssr-html or the PDF surface that inherits it. */
+table .num,
+.a2ui-cell.num {
     text-align: right;
     font-family: var(--mono-family);
     font-variant-numeric: tabular-nums;

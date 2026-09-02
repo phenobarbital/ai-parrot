@@ -29,6 +29,14 @@ class TestInfographicLayouts:
         html = InfographicHTMLRenderer().render_to_html(_resp(), layout="bogus")
         assert 'data-layout="analytics"' in html
 
+    def test_unknown_layout_logs_a_warning(self, caplog):
+        """Code review, FEAT-493: unknown-theme handling logged a warning two
+        lines above this call site; unknown-layout silently fell back with
+        no log at all. Both axes must warn-and-fall-back identically."""
+        with caplog.at_level("WARNING"):
+            InfographicHTMLRenderer().render_to_html(_resp(), layout="bogus")
+        assert any("bogus" in record.message for record in caplog.records)
+
     def test_wrapper_carries_both_classes(self):
         """ds-page for the new layouts, container for report parity."""
         html = InfographicHTMLRenderer().render_to_html(_resp())

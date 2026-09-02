@@ -151,3 +151,32 @@ class TestFilteringRuntime:
         doc = art.content.decode()
 
         assert "No rows match the current filters." in doc
+
+    async def test_filtering_delegates_to_pagination_instead_of_fighting_it(self):
+        """A table large enough to trigger TASK-2711's search/pagination
+        registers itself in `tablePaginators`, and the FilterBar runtime
+        (TASK-2716) looks it up before touching `<tr>.style.display`
+        directly — regression guard: FilterBar's initial no-op
+        `applyFilters()` call must not force every row's display back to
+        "" and silently undo pagination's page-1-only visibility."""
+        env = _envelope(
+            Component(
+                id="fb",
+                component="FilterBar",
+                filters=[{"column": "division", "label": "Division", "options": []}],
+            ),
+            Component(
+                id="tbl",
+                component="DataTable",
+                title="Ledger",
+                columns=[{"name": "division"}, {"name": "rev"}],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"division": "Sales", "rev": i} for i in range(101)]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert "data-table-search" in doc  # pagination present (>100 rows)
+        assert "tablePaginators" in doc  # the shared coordination registry
+        assert "tablePaginators[tableId](rowPasses)" in doc

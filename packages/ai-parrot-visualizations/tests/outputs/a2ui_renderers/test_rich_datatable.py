@@ -91,6 +91,25 @@ class TestRichTableMarkup:
         assert "1,234,567" in doc
         assert 'class="num"' in doc or "a2ui-cell num" in doc
 
+    async def test_numeric_cell_class_has_a_matching_css_rule(self, renderer_cls):
+        """Code review, FEAT-493: `table .num` in base.css never matched
+        ssr-html/pdf's Text-based DataTable cells (that lowering path,
+        catalog/parrot/datatable.py, has no <table> ancestor at all) —
+        right-alignment/tabular-nums silently never applied outside
+        interactive-html. Assert the emitted class combination is actually
+        covered by a CSS rule in the composed stylesheet, not just that the
+        class string appears somewhere in the markup."""
+        env = _table_envelope(
+            columns=[{"name": "rev", "type": "integer"}],
+            rows=[{"rev": 1234567}],
+        )
+        doc = (await renderer_cls().render(env)).content.decode()
+        if "a2ui-cell num" in doc:
+            assert ".a2ui-cell.num" in doc  # ssr-html / pdf
+        else:
+            assert 'class="num"' in doc
+            assert "table .num" in doc  # interactive-html's real <table>
+
     async def test_raw_value_in_data_v(self, renderer_cls):
         env = _table_envelope(
             columns=[{"name": "rev", "type": "integer"}],

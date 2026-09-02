@@ -380,7 +380,13 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Resolve `layout` the same way (unknown -> DEFAULT_LAYOUT) so the
         # `data-layout` attribute always matches the CSS that was actually
         # composed.
-        layout_name = layout if layout in DesignSystem.LAYOUTS else DesignSystem.DEFAULT_LAYOUT
+        if layout in DesignSystem.LAYOUTS:
+            layout_name = layout
+        else:
+            logger.warning(
+                "Unknown layout '%s', falling back to '%s'", layout, DesignSystem.DEFAULT_LAYOUT
+            )
+            layout_name = DesignSystem.DEFAULT_LAYOUT
         style = DesignSystem.stylesheet(theme_cfg, layout_name)
 
         return self._assemble_document(
