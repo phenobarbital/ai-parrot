@@ -1591,7 +1591,7 @@ class AnthropicClient(AbstractClient):
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature or self.temperature,
             "messages": messages,
             "system": system_prompt
@@ -1678,7 +1678,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1748,7 +1748,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1823,7 +1823,7 @@ Format your response clearly with these sections.
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1924,7 +1924,7 @@ Provide your final answer with:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
