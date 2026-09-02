@@ -193,7 +193,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "The only task permitted to add a catalog/ file and a golden fixture; also edits ssr_html.py, so it is sequenced against TASK-2711.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2715-filterbar-composite.md"
+      "completed_at": "2026-09-02T01:32:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2715-filterbar-composite.md"
     },
     {
       "id": "TASK-2716",
