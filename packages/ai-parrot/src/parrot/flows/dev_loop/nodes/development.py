@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -57,6 +58,15 @@ from parrot.flows.dev_loop.nodes.base import (
 )
 from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
+
+#: The spec header line ``/sdd-spec`` writes, e.g. ``**Status**: draft``.
+#: Group 1 is the label+separator (preserved verbatim), group 2 the value.
+_SPEC_STATUS_RE = re.compile(r"^(\*\*Status\*\*:[ \t]*)(.+?)[ \t]*$", re.MULTILINE)
+
+#: Statuses a completed plan may advance to ``approved``. Anything else
+#: (``obsolete``, ``superseded``, an already-``approved`` spec on a
+#: QA-repair re-entry) was set deliberately and is never overwritten.
+_SPEC_STATUS_ADVANCEABLE = frozenset({"draft", "review"})
 
 DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseModel]]
 
@@ -190,7 +200,8 @@ class DevelopmentNode(DevLoopNode):
             except Exception:  # noqa: BLE001
                 pass
 
-        await self._check_plan_approval(shared, research)
+        approved_by = await self._check_plan_approval(shared, research)
+        await self._approve_spec(research, approved_by=approved_by)
         research = self._with_prior_work_context(shared, research)
         research = self._with_repair_feedback(shared, research)
 
@@ -408,7 +419,7 @@ class DevelopmentNode(DevLoopNode):
     # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)
     # ------------------------------------------------------------------
 
-    async def _check_plan_approval(self, shared: Dict[str, Any], research: ResearchOutput) -> None:
+    async def _check_plan_approval(self, shared: Dict[str, Any], research: ResearchOutput) -> str:
         """Open and await the ``plan_approval`` gate on this run's FIRST
         entry into this node (opt-in via ``require_plan_approval``).
 
@@ -429,7 +440,13 @@ class DevelopmentNode(DevLoopNode):
 
         Args:
             shared: The flow's shared state dict.
-            research: The upstream research output (Jira key, spec path).
+            research: The flow's upstream research output (Jira key, spec path).
+
+        Returns:
+            Who approved the plan, for the spec's approval stamp: the
+            gate resolver's id when a human actually resolved a gate, and
+            ``""`` when no gate was opened (flag off, already checked, or
+            no ``SessionHost``) — i.e. when approval is implicit.
 
         Raises:
             RuntimeError: The gate resolved to anything other than
@@ -447,7 +464,7 @@ class DevelopmentNode(DevLoopNode):
         override = shared.get("require_plan_approval")
         required = self._require_plan_approval if override is None else bool(override)
         if not required or shared.get("_plan_gate_checked"):
-            return
+            return ""
         shared["_plan_gate_checked"] = True
 
         host = shared.get("session_host")
@@ -457,7 +474,7 @@ class DevelopmentNode(DevLoopNode):
                 "session_host in shared state (legacy DevLoopRunner "
                 "construction) — proceeding without a plan_approval gate."
             )
-            return
+            return ""
 
         # Lazy import — avoids a runner.py <-> factories.py <-> this module
         # import cycle (runner.py imports factories.py, which imports this
@@ -482,6 +499,116 @@ class DevelopmentNode(DevLoopNode):
         gate = await host.wait_gate(gate_id)
         if gate.status != "approved":
             raise RuntimeError(f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}")
+        return gate.resolved_by or "plan_approval gate"
+
+    async def _approve_spec(self, research: ResearchOutput, *, approved_by: str = "") -> bool:
+        """Flip the spec's ``**Status**`` from ``draft``/``review`` to ``approved``.
+
+        ``/sdd-spec`` writes every spec at ``Status: draft`` and tells a
+        human to "Mark status: approved when ready". In an interactive SDD
+        session that happens; in a dev-loop/dev-flow run **nobody ever
+        opens the file**, so specs stayed ``draft`` forever — including
+        after the feature had been fully developed, reviewed and merged,
+        which makes the field actively misleading rather than merely
+        stale.
+
+        This runs at the one point where the plan is settled and code is
+        about to be written, which is also the only point that can tell
+        approval from rejection:
+
+        * ``require_plan_approval`` off — approval is **implicit**. Nobody
+          was ever going to be asked, so reaching development IS the
+          approval.
+        * ``require_plan_approval`` on — a human resolved the gate. A
+          *rejected* gate raises in :meth:`_check_plan_approval` before
+          this is ever called, so a rejected plan correctly leaves the
+          spec at ``draft``.
+
+        Only ``draft`` and ``review`` are advanced: any other value was
+        set deliberately by someone and is left alone. Writing and
+        committing are both best-effort — a spec that cannot be stamped
+        must never fail a run that is otherwise ready to develop.
+
+        Args:
+            research: Upstream research output, for ``spec_path`` and the
+                worktree the spec is resolved against.
+            approved_by: Gate resolver id when a human approved, ``""``
+                when approval was implicit. Recorded in the commit
+                message only.
+
+        Returns:
+            ``True`` when the file was rewritten, ``False`` otherwise
+            (no spec path, missing file, no ``**Status**`` line, or a
+            status this must not touch).
+        """
+        if not research.spec_path:
+            return False
+        spec_path = Path(research.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(research.worktree_path) / spec_path
+        if not spec_path.is_file():
+            self.logger.debug("No spec at %s to stamp approved.", spec_path)
+            return False
+
+        try:
+            text = spec_path.read_text(encoding="utf-8")
+        except OSError:
+            self.logger.warning("Could not read %s to stamp approved.", spec_path, exc_info=True)
+            return False
+
+        match = _SPEC_STATUS_RE.search(text)
+        if match is None:
+            self.logger.debug("No '**Status**:' line in %s — nothing to stamp.", spec_path)
+            return False
+        current = match.group(2).strip()
+        if current not in _SPEC_STATUS_ADVANCEABLE:
+            # Already approved (idempotent on a QA-repair re-entry), or a
+            # deliberate value like 'obsolete'/'superseded'.
+            self.logger.debug("Spec %s is '%s' — leaving it alone.", spec_path, current)
+            return False
+
+        updated = text[: match.start()] + match.group(1) + "approved" + text[match.end() :]
+        try:
+            spec_path.write_text(updated, encoding="utf-8")
+        except OSError:
+            self.logger.warning("Could not write %s to stamp approved.", spec_path, exc_info=True)
+            return False
+
+        who = approved_by or "implicit (no plan_approval gate)"
+        self.logger.info(
+            "Spec %s: Status %s -> approved (%s).",
+            spec_path,
+            current,
+            who,
+        )
+        await self._commit_spec_approval(spec_path, research, who)
+        return True
+
+    async def _commit_spec_approval(
+        self,
+        spec_path: Path,
+        research: ResearchOutput,
+        approved_by: str,
+    ) -> None:
+        """Commit the approval stamp, honouring the SDD auto-commit rule.
+
+        Best-effort by design: on any git failure the stamp simply stays
+        uncommitted in the worktree, where the dev worker's first commit
+        picks it up anyway. Never raises.
+
+        Args:
+            spec_path: The stamped spec.
+            research: Upstream research output (worktree path, feature id).
+            approved_by: Human-readable approver, for the commit body.
+        """
+        feature = research.feat_id or research.jira_issue_key or spec_path.stem
+        message = f"sdd: approve spec for {feature}\n\nApproved by: {approved_by}"
+        # Both calls are best-effort: `_run_git` swallows non-zero exits
+        # (it cannot distinguish "git add printed nothing" from a failure,
+        # and does not need to — an uncommitted stamp is still a correct
+        # stamp, and the dev worker's first commit sweeps it up).
+        await self._run_git(research.worktree_path, "add", "--", str(spec_path))
+        await self._run_git(research.worktree_path, "commit", "-m", message, "--", str(spec_path))
 
     async def _count_tasks(self, research: ResearchOutput) -> Optional[int]:
         """Best-effort total task count from the per-spec index, for the

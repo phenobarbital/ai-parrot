@@ -397,25 +397,6 @@ class TestFullQAFlowIntegration:
         assert qa_dispatcher.dispatch.await_count == 1
         codex_dispatcher.dispatch.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_gemini_review_pass_no_fix(self, qa_ctx):
-        """Full QA -> Gemini review passes -> no rerun needed."""
-        qa_dispatcher = MagicMock()
-        qa_dispatcher.dispatch = AsyncMock(
-            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
-        )
-        gemini_dispatcher = MagicMock()
-        gemini_dispatcher.dispatch = AsyncMock(
-            return_value=CodeReviewVerdict(passed=True, findings=[], files_modified=[])
-        )
-        reviewer = GeminiCodeReviewDispatcher(dispatcher=gemini_dispatcher)
-        node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
-        report = await node.execute(qa_ctx)
-        assert report.passed is True
-        qa_dispatcher.dispatch.assert_awaited_once()
-        gemini_dispatcher.dispatch.assert_awaited_once()
-
-
 class _FakeApp(dict):
     """Minimal stand-in for ``aiohttp.web.Application``."""
 
@@ -526,21 +507,24 @@ class TestServerWiringIntegration:
         assert isinstance(dispatcher._primary, CodexCodeReviewDispatcher)
 
     @pytest.mark.asyncio
-    async def test_server_wiring_gemini(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini primary, upgraded to
-        'parallel' (mandatory adversarial review)."""
+    @pytest.mark.parametrize("banned", ["gemini", "google_coding"])
+    async def test_server_wiring_rejects_banned_reviewer(self, monkeypatch, banned):
+        """A banned reviewer fails startup loudly instead of being built.
+
+        Previously DEV_LOOP_CODEREVIEW_AGENT=gemini wired a Gemini primary
+        into the 'parallel' reviewer. Both backends are now barred from
+        every review role, so the server must refuse rather than quietly
+        substitute something else.
+        """
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
-        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig("gemini"))
+        monkeypatch.setattr(server_mod.conf, "config", _CodeReviewAgentConfig(banned))
 
         app = _FakeApp()
         app["redis_url"] = "redis://localhost:6379/0"
-        await server_mod._on_startup(app)
-
-        dispatcher = captured["codereview_dispatcher"]
-        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
-        assert isinstance(dispatcher._primary, GeminiCodeReviewDispatcher)
+        with pytest.raises(RuntimeError, match="DEV_LOOP_CODEREVIEW_AGENT"):
+            await server_mod._on_startup(app)
 
     @pytest.mark.asyncio
     async def test_server_wiring_invalid(self, monkeypatch):
