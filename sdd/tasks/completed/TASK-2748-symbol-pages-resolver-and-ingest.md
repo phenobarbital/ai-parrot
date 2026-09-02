@@ -178,7 +178,61 @@ ingest. 6. Tests. 7. Move to `completed/`. 8. Index → `done`. 9. Completion No
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `build_file_slice()` hashes the raw bytes (not the decoded
+text) so `content_hash` equals `SourceCollectionManager._compute_hash`
+byte-for-byte (verified live); it also filters `lang_outline.symbols` by
+a new `symbol_depth: int = 2` keyword-only parameter (threaded through
+`scan_repository()` too — AC20-permitted additive kwarg) so
+`symbol_depth=1` genuinely drops methods, verified live. `build_symbol_pages(root,
+slice)` re-reads the file's bytes itself (a deliberate signature widening
+from the task's literal `(slice)` — the excerpt needs raw bytes
+`FileSlice` doesn't carry; documented below) and builds one `sym:`
+`WikiPageRecord` per symbol via `symbol_to_page_fields()`, plus
+`defines`/`contains` edges; ordinal assignment
+(`_ordinal_concept_ids`, shared with `SymbolResolver` so both agree on
+the same ids) is source-byte-order, first-occurrence-clean, verified
+stable across re-scans of an unchanged file. `SymbolResolver` implements
+the exact three-step algorithm from the task's own test spec (verified
+byte-for-byte against it: same-file → `extracted`, import-reachable →
+`extracted`, globally-unique → `inferred`, ambiguous → no edge), using
+`target_text` normalization (last segment after `->`/`::`/`.`/`\`) tried
+alongside the raw text at every step. `cli._ingest_files()` groups
+`scan.symbol_records`/`symbol_edges` by owning rel_path (`_owning_rel_path`,
+parsing `file:`/`sym:` concept ids) and threads them into the SAME
+`replace_source_slice()` call as the file record (atomic per source,
+both the sqlite and per-slice-bulk paths), then calls `upsert_symbols()`
+per file.
+`pytest tests/knowledge/wiki/test_repo_scan.py
+tests/knowledge/wiki/test_symbol_resolver.py
+tests/knowledge/wiki/test_ingest_symbols.py
+tests/knowledge/wiki/test_ingest_files_batching.py
+tests/knowledge/wiki/languages/test_repo_scan_integration.py -v` → 84
+passed (`test_ingest_symbols.py` parametrized over sqlite + memory).
+Full `tests/knowledge/wiki`: 1346 passed (same single pre-existing
+unrelated failure). `ruff check` clean; `mypy --ignore-missing-imports`
+— every finding on both touched files verified byte-for-byte present in
+the pre-task versions too, except one I introduced and fixed (see
+Deviations).
+**Deviations from spec**: Two adjustments, both necessary and narrowly
+scoped:
+1. `build_symbol_pages`'s signature is `(root: Path, slice: FileSlice)`,
+   not the task's literal `(slice: FileSlice)` — the ≤2000-char source
+   excerpt (spec §7 "sym: page body") needs `data[start_byte:end_byte]`,
+   and `FileSlice` does not carry the file's raw bytes (by design — only
+   `record`/`imports`/`language`/`symbols`/`refs`). Re-reading the file
+   inside this function (rather than threading `data` through
+   `scan_repository`'s per-file loop) keeps the call site simple and the
+   function usable standalone (e.g. from a future read-repair path).
+2. `store.replace_source_slice`'s declared `edges` parameter type
+   (`Optional[list[tuple[str, str, str]]]`, in `store.py`/
+   `arango_store.py`/`file_store.py` — none touched here) does not admit
+   the 4-tuples (with `provenance`) `symbol_edges` carries, even though
+   every backend's own edge-insertion helper already accepts a 4th
+   provenance element (mirrors `add_edges`, verified: my
+   `test_ingest_symbols.py` writes 4-tuple `calls`/`extends` edges
+   through this exact path on both sqlite and memory and reads back the
+   correct `provenance`). Rather than widen three files not in this
+   task's list, `cli.py` uses one local `typing.cast` at the call site —
+   a type-annotation-only fix, zero behavior change.
