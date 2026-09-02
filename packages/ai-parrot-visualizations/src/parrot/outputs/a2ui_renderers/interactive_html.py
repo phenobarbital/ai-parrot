@@ -135,6 +135,7 @@ def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[C
         merged_components.append(child.model_copy(update={"metadata": ComponentMetadata(extensions=merged)}))
     return merged_components
 
+
 #: Vendored Chart.js v4.5.1 UMD bundle (MIT license header preserved in the
 #: file itself). Shares the `formats/assets/` placement convention with the
 #: vendored ECharts bundle (`echarts.py`'s `_ECHARTS_JS_PATH`).

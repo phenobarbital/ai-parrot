@@ -593,9 +593,7 @@ class TestRenderFailureBothRoutes:
         await store.update_envelope(surface_id, broken, record.recipe_params)
 
         app = {"ui_surfaces_store": store}
-        h_html = _handler(
-            app, match_info={"surface_id": surface_id}, user_id="owner-broken", query={"format": "html"}
-        )
+        h_html = _handler(app, match_info={"surface_id": surface_id}, user_id="owner-broken", query={"format": "html"})
         resp_rest = await _get(h_html)
         assert resp_rest.status == 422
         body_rest = await _decode(resp_rest)

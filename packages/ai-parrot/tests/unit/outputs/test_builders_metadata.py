@@ -67,9 +67,7 @@ class TestRunnerThreadsLayoutMetadata:
         assert envelope.components[0].metadata.extensions.root["parrot_optional"] == ["/narrative"]
 
     def test_generic_branch_threads_metadata(self, runner, optional_metadata):
-        recipe = _make_recipe(
-            layout=LayoutSpec(component="Report", title="t", metadata=optional_metadata)
-        )
+        recipe = _make_recipe(layout=LayoutSpec(component="Report", title="t", metadata=optional_metadata))
         envelope = runner._assemble_envelope_or_raise(recipe, {})
         assert envelope.components[0].metadata.extensions.root["parrot_optional"] == ["/narrative"]
 
