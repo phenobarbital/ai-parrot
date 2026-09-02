@@ -32,7 +32,7 @@
       "feature_id": "FEAT-494",
       "feature": "select-model-dev-flow-ideation-model",
       "spec": "sdd/specs/select-model-dev-flow-ideation-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2717 (catalog must list Fable before server serialises the models list).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2718-server-dev-add-research-primary-models-payload.md"
+      "completed_at": "2026-09-02T02:25:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2718-server-dev-add-research-primary-models-payload.md"
     },
     {
       "id": "TASK-2719",
