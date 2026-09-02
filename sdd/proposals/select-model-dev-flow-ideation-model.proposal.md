@@ -42,11 +42,12 @@ The ideation (research-primary) seat in the dev-flow is currently defaulted to
 ### What Changes
 
 1. **`packages/ai-parrot/src/parrot/flows/dev_loop/catalog.py`** — add
-   `"claude-fable"` (and `"claude-fable-5"` if the CLI accepts that alias) to
-   the `claude-code` backend's `models` tuple, alongside the existing Opus 5 /
-   Sonnet 5 / Sonnet 4.6 / Haiku 4.5 entries. Also add a `research_primary`
-   role listing to `catalog_payload()` → `"roles"` so future UI/CLI surfaces can
-   query it.
+   **`"claude-fable-5-1"`** and **`"claude-fable-5"`** to the `claude-code`
+   backend's `models` tuple (both ids confirmed by the user — include both so
+   operators can use whichever the installed CLI version accepts), alongside the
+   existing Opus 5 / Sonnet 5 / Sonnet 4.6 / Haiku 4.5 entries. Also add a
+   `research_primary` role listing to `catalog_payload()` → `"roles"` so future
+   UI/CLI surfaces can query it.
 
 2. **`examples/dev_loop/server_dev.py` — `_model_plan_payload`** — extend the
    returned dict with a `research_primary_models` key: the curated model list for
@@ -63,8 +64,8 @@ The ideation (research-primary) seat in the dev-flow is currently defaulted to
 
 ### What's New
 
-- `"claude-fable"` (Anthropic direct API model id) added to the `claude-code`
-  backend's model list in the catalog.
+- `"claude-fable-5-1"` and `"claude-fable-5"` (confirmed Anthropic direct API
+  model ids) added to the `claude-code` backend's model list in the catalog.
 - `research_primary_models` key in the `/api/config` `defaults.model_plan`
   payload.
 - `research_primary` role in `catalog_payload()` → `"roles"`.
@@ -75,7 +76,8 @@ The ideation (research-primary) seat in the dev-flow is currently defaulted to
 - The env-key `DEV_FLOW_IDEATION_MODEL` already works — no changes to env-key
   resolution.
 - `model_plan.py` `DEFAULT_RESEARCH_PRIMARY` stays `"claude-opus-5"` — this is
-  an exposure fix, not a default change.
+  an exposure fix, not a default change. Fable is a selectable alternative,
+  not the new default (confirmed by the user).
 - `IdeationNode` dispatch logic is not touched — it already accepts any non-empty
   string as the model id (free-text policy, `catalog.py:22-24`).
 - The Bedrock cross-region ids (`global.anthropic.claude-fable-5`) in
@@ -102,7 +104,7 @@ supports. The gap is a presentation bug, not a design gap.
 
 | Layer | File | Change |
 |---|---|---|
-| Catalog | `packages/ai-parrot/src/parrot/flows/dev_loop/catalog.py` | Add `"claude-fable"` (+ alias) to `claude-code` models; add `research_primary` role to `catalog_payload` |
+| Catalog | `packages/ai-parrot/src/parrot/flows/dev_loop/catalog.py` | Add `"claude-fable-5-1"` and `"claude-fable-5"` to `claude-code` models; add `research_primary` role to `catalog_payload` |
 | Server payload | `examples/dev_loop/server_dev.py` | Add `research_primary_models` to `_model_plan_payload` |
 | UI | `examples/dev_loop/static/dev.html` | Add/complete ideation model picker |
 | Tests | `packages/ai-parrot/tests/flows/dev_flow/test_server_dev_model_plan.py` | Assert `research_primary_models` present in `/api/config` response; assert `"claude-fable"` in that list |
@@ -110,10 +112,11 @@ supports. The gap is a presentation bug, not a design gap.
 **Backward compatibility**: purely additive — new keys in the payload, new entry
 in a model list. Clients that ignore unknown keys are unaffected.
 
-**Risk**: minimal. The `claude` CLI's actual acceptance of `"claude-fable"` as
-a `--model` flag should be verified before release; if the alias differs
-(`claude-fable-5`), both ids can be included — the catalog's model lists are
-never a whitelist.
+**Risk**: minimal. Both `"claude-fable-5-1"` and `"claude-fable-5"` are
+included in the catalog entry — the catalog's model lists are never a
+whitelist, so including both costs nothing and covers whichever id the
+installed CLI version accepts. `claude-opus-5` remains the default for the
+ideation seat; Fable is an opt-in selectable alternative.
 
 ## Code Context
 
@@ -147,9 +150,9 @@ never a whitelist.
 
 ## Open Questions
 
-- [ ] What is the exact Claude CLI model id string for Fable? (`"claude-fable"`,
+- [x] What is the exact Claude CLI model id string for Fable? (`"claude-fable"`,
   `"claude-fable-5"`, or another alias?) Verify against the `claude --help`
   model list or Anthropic model catalogue before finalising the catalog entry.
-  — *Owner: user*
-- [ ] Should Fable be the NEW default for the ideation seat, or remain a
-  selectable alternative (keeping `claude-opus-5` as default)? — *Owner: user*
+  — *Resolved*: claude-fable-5-1 and claude-fable-5
+- [x] Should Fable be the NEW default for the ideation seat, or remain a
+  selectable alternative (keeping `claude-opus-5` as default)? — *Resolved*: keep claude-opus-5 as default
