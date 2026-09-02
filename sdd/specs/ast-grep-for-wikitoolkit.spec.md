@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-498
 **Date**: 2026-09-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 > Input: `sdd/proposals/ast-grep-for-wikitoolkit.brainstorm.md` (Option A,
@@ -845,9 +845,9 @@ tests/knowledge/wiki/test_store.py — runs the BaseWikiStore contract against e
 - [x] MCP tool naming — *Resolved in /sdd-spec*: `wiki_symbol_lookup`, `wiki_code_outline`, `wiki_blast_radius` (consistent with the six existing `wiki_*` tools and `permission_rules()`); toolkit exposes `code_symbol_lookup`, `code_outline`, `code_blast_radius`.
 - [x] `wiki_query` and symbol pages — *Resolved in /sdd-spec*: excluded by default; opt-in `include_symbols=True`. `wiki_page`/`wiki_related` accept `sym:` ids unconditionally.
 - [x] Duplicate-qualname ids — *Resolved in /sdd-spec*: source-order ordinal suffix `~2`, `~3` … (`sym:<rel>#<q>`, `sym:<rel>#<q>~2`); the first occurrence keeps the clean id.
-- [ ] `EdgeKind.CALLS` / `IMPLEMENTS` — the spec **adds both** (additive enum members, needed for a 1:1 `sync_graph` mirror). Veto here if GraphIndex maintainers prefer wiki-only `rel` strings until the mirror is exercised. — *Owner: Jesus*
+- [ ] `EdgeKind.CALLS` / `IMPLEMENTS` — the spec **adds both** (additive enum members, needed for a 1:1 `sync_graph` mirror). Veto here if GraphIndex maintainers prefer wiki-only `rel` strings until the mirror is exercised. — *Owner: Jesus*: both
 - [ ] Read-repair when `wiki_write_lock` is held — the spec **serves stale with `stale=True`, no wait**. Alternative: wait up to N seconds. Decide before Module 7. — *Owner: spec author*
-- [ ] Rule files: package data only (spec) vs. a `.parrot/wiki/rules/` overlay for project-specific symbols — deferred to a later feature unless a concrete project needs it during implementation. — *Owner: Jesus*
+- [x] Rule files: package data only (spec) vs. a `.parrot/wiki/rules/` overlay for project-specific symbols — deferred to a later feature unless a concrete project needs it during implementation. — *Owner: Jesus*: follow-up later feature
 
 ---
 
