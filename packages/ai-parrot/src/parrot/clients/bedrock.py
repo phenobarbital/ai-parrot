@@ -1571,6 +1571,7 @@ class BedrockConverseBase(AbstractClient):
         Raises:
             InvokeError: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             await self._ensure_client()
 

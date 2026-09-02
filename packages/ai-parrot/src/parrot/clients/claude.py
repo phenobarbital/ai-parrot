@@ -1999,6 +1999,7 @@ Provide your final answer with:
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)

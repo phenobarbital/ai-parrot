@@ -24,8 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
+from typing import TYPE_CHECKING, Any, Optional
 from datamodel.parsers.json import json_decoder
 from tenacity import (
     AsyncRetrying,
@@ -1178,7 +1177,7 @@ class OpenAIBaseClient(AbstractClient):
         structured_output: StructuredOutputConfig | None = None,
         model: str | None = None,
         system_prompt: str | None = None,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: list | None = None,
@@ -1213,6 +1212,7 @@ class OpenAIBaseClient(AbstractClient):
             InvokeError: On provider errors, or if the client is not
                 initialized.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)

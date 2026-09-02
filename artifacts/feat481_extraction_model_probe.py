@@ -84,7 +84,7 @@ def _out_tokens(usage) -> str:
     return "n/a"
 
 
-async def _probe_one(model: str, prompt: str, system_prompt: str, max_tokens: int) -> dict:
+async def _probe_one(model: str, prompt: str, system_prompt: str, max_tokens: int | None) -> dict:
     from parrot.clients.factory import LLMFactory
     from parrot.exceptions import InvokeError
     from parrot.flows.wiki_ingest.nodes.meeting_page import MeetingPageExtraction
@@ -103,6 +103,8 @@ async def _probe_one(model: str, prompt: str, system_prompt: str, max_tokens: in
                 output_type=MeetingPageExtraction,
                 system_prompt=system_prompt,
                 temperature=0.0,
+                # None => let the client resolve its own budget
+                # (_resolve_invoke_max_tokens), which is what production does.
                 max_tokens=max_tokens,
             )
         out = result.output
@@ -129,7 +131,13 @@ async def main() -> int:
     ap.add_argument("--models", required=True, help="comma-separated provider:model list")
     ap.add_argument("--meeting-dir", default=None)
     ap.add_argument("--transcript", action="store_true", help="include transcript in the prompt")
-    ap.add_argument("--max-tokens", type=int, default=4096, help="max_output_tokens (invoke default is 4096)")
+    ap.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="max_output_tokens override; omit to use each client's own "
+             "_invoke_max_tokens default (8192, Google 16384, Groq 4096)",
+    )
     args = ap.parse_args()
 
     from parrot.flows.wiki_ingest.nodes.fetch_gate import GatedMeeting
@@ -148,7 +156,7 @@ async def main() -> int:
     prompt = _build_prompt(meeting, transcript_read=args.transcript and bool(m["transcript_text"]))
     print(f"meeting='{meeting.title}' summary_chars={len(m['summary_text'] or '')} "
           f"transcript={'yes' if args.transcript and m['transcript_text'] else 'no'} "
-          f"max_tokens={args.max_tokens}\n")
+          f"max_tokens={args.max_tokens if args.max_tokens else 'client default'}\n")
 
     models = [s.strip() for s in args.models.split(",") if s.strip()]
     rows = []
