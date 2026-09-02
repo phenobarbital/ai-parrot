@@ -230,6 +230,38 @@ def test_pool_worker_seats_fold_into_their_owning_node():
     assert dispatch_state.num_turns == 6
 
 
+def test_pool_worker_seats_are_also_projected_individually():
+    """FEAT-496: the roll-up above is unchanged; seat detail is additive.
+
+    Same event sequence as ``test_pool_worker_seats_fold_into_their_owning_node``
+    (which must keep passing unchanged) — this test only adds NEW
+    assertions about ``DispatchState.seats``.
+    """
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        for seat in ("development.w1", "development.w2"):
+            _apply_to_session_host(
+                _dispatch_event("dispatch.queued", node_id=seat, dispatcher="nvidia")
+            )
+            _apply_to_session_host(
+                _dispatch_event("dispatch.tool_use", node_id=seat, tool_name="write_file")
+            )
+        _apply_to_session_host(
+            _dispatch_event("dispatch.tool_use", node_id="development.resolver", tool_name="Bash")
+        )
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    seats = host.state.nodes["development"].dispatch.seats
+    assert set(seats) == {"development.w1", "development.w2", "development.resolver"}
+    assert seats["development.w1"].last_tool == "write_file"
+    assert seats["development.w2"].last_tool == "write_file"
+    assert seats["development.resolver"].last_tool == "Bash"
+    # Roll-up still correct alongside the new per-seat detail.
+    assert host.state.nodes["development"].dispatch.tool_use_count == 3
+
+
 def test_dispatch_completed_without_usage_keeps_earlier_totals():
     """An unreported second dispatch must not blank the first's numbers."""
     host = SessionHost(RUN_ID)

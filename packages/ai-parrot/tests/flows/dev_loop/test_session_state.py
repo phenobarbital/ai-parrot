@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     ActionOrigin,
@@ -24,6 +23,7 @@ from parrot.flows.dev_loop.session_state import (
     DispatchOutputInvalid,
     DispatchQueued,
     DispatchStarted,
+    DispatchState,
     DispatchToolResult,
     DispatchToolUse,
     GateAlreadyResolvedError,
@@ -34,6 +34,7 @@ from parrot.flows.dev_loop.session_state import (
     JiraLinked,
     NodeCompleted,
     NodeFailed,
+    NodeId,
     NodeSkipped,
     NodeStarted,
     PullRequestLinked,
@@ -46,6 +47,7 @@ from parrot.flows.dev_loop.session_state import (
     RunRemoved,
     RunSummary,
     RunSummaryChanged,
+    SeatState,
     SessionHost,
     Snapshot,
     action_from_dispatch_event,
@@ -616,3 +618,93 @@ def test_shim_dispatch_event_error_truncated_to_500_chars():
         "dispatch.failed", "qa", 1.0, {"error": "x" * 1000}
     )
     assert len(action.error) == 500
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2729 — SeatState projection + tool_name regression
+# ---------------------------------------------------------------------------
+
+
+class TestToolNameRegression:
+    def test_tool_name_is_populated(self):
+        """Root cause 3: tool_name was always '' for Claude dispatches."""
+        a = action_from_dispatch_event(
+            "dispatch.tool_use", "development", 1.0,
+            {"tool_name": "Read", "tools": ["Read"]})
+        assert a.tool_name == "Read"
+
+
+class TestSeatProjection:
+    def test_seat_event_updates_rollup_and_seat(self):
+        state = _fresh_state()
+        a = action_from_dispatch_event(
+            "dispatch.tool_use", "development", 1.0,
+            {"tool_name": "Bash", "seat": "development.w1",
+             "task_id": "TASK-1857", "agent": "claude-code"},
+            seat="development.w1")
+        s = reduce(state, a)
+        d = s.nodes["development"].dispatch
+        assert d.tool_use_count == 1                     # roll-up preserved
+        assert d.seats["development.w1"].task_id == "TASK-1857"
+        assert d.seats["development.w1"].last_tool == "Bash"
+        assert d.seats["development.w1"].agent == "claude-code"
+
+    def test_single_agent_dispatch_has_no_seats(self):
+        state = _fresh_state()
+        a = action_from_dispatch_event("dispatch.tool_use", "qa", 1.0,
+                                       {"tool_name": "Read"})
+        s = reduce(state, a)
+        assert s.nodes["qa"].dispatch.seats == {}
+
+    def test_seat_before_queued_does_not_raise(self):
+        """reduce() must stay total."""
+        state = _fresh_state()
+        a = action_from_dispatch_event("dispatch.tool_use", "development", 1.0,
+                                       {"seat": "development.w9"},
+                                       seat="development.w9")
+        assert reduce(state, a) is not None
+
+    def test_two_seats_roll_up_independently(self):
+        state = _fresh_state()
+        for seat, tool in (("development.w1", "Read"), ("development.w2", "Bash")):
+            a = action_from_dispatch_event(
+                "dispatch.tool_use", "development", 1.0,
+                {"tool_name": tool, "seat": seat}, seat=seat)
+            state = reduce(state, a)
+        d = state.nodes["development"].dispatch
+        assert d.tool_use_count == 2
+        assert d.seats["development.w1"].last_tool == "Read"
+        assert d.seats["development.w2"].last_tool == "Bash"
+
+    def test_action_from_dispatch_event_tool_name_from_claude_shaped_payload(self):
+        """A realistic Claude-shaped tool_use payload populates tool_name."""
+        a = action_from_dispatch_event(
+            "dispatch.tool_use", "development", 1.0,
+            {"tool_name": "Read", "tool_input": "foo.py", "tools": ["Read"],
+             "summary": "Read foo.py"})
+        assert a.tool_name == "Read"
+
+
+class TestBackwardCompatibility:
+    def test_dispatch_state_without_seats_validates(self):
+        assert DispatchState(status="running").seats == {}
+
+    def test_seat_state_importable_and_constructible(self):
+        s = SeatState(seat="development.w1")
+        assert s.status == "queued"
+        assert s.task_id == ""
+
+    def test_pre_feat496_envelope_replays(self):
+        """A persisted envelope with no seat fields must still validate."""
+        state = _fresh_state()
+        action = action_from_dispatch_event(
+            "dispatch.tool_use", "development", 1.0, {"tool_name": ""})
+        s = reduce(state, action)
+        assert s.nodes["development"].dispatch.seats == {}
+        assert s.nodes["development"].dispatch.tool_use_count == 1
+
+    def test_node_id_literal_unchanged(self):
+        """NodeId is unchanged — seats never appear as their own NodeState."""
+        import typing
+
+        assert "development.w1" not in typing.get_args(NodeId)

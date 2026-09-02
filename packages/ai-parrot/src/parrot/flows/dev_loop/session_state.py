@@ -211,6 +211,35 @@ class DispatchState(_Frozen):
     total_cost_usd: Optional[float] = None
     num_turns: Optional[int] = None
     duration_ms: Optional[int] = None
+    # -- FEAT-496: per-seat detail, additive alongside the roll-up above --
+    seats: Dict[str, "SeatState"] = Field(default_factory=dict)
+
+
+class SeatState(_Frozen):
+    """Per-seat detail under a node's DispatchState (FEAT-496).
+
+    `NodeId` is a closed `Literal` (see module docstring / `_owning_node_id`
+    in `dispatchers/_shared.py`), so a pooled worker's seat
+    (``"development.w1"``) cannot be its own `NodeState`. This model is the
+    chosen alternative: seat detail nests under the owning node's
+    `DispatchState`, additive to the existing roll-up counters, so the
+    roll-up semantics are unchanged and pre-FEAT-496 persisted envelopes
+    (which never mention a seat) still validate.
+    """
+
+    seat: str
+    task_id: str = ""
+    task_title: str = ""
+    agent: str = ""
+    model: str = ""
+    status: DispatchStatus = "queued"
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    message_count: int = 0
+    tool_use_count: int = 0
+    last_tool: str = ""
+    last_summary: str = ""
+    last_error: str = ""
 
 
 class NodeState(_Frozen):
@@ -396,6 +425,18 @@ class NodeSkipped(_ActionBase):
 
 class _DispatchAction(_ActionBase):
     node_id: NodeId
+    # -- FEAT-496: seat/task identity, additive and optional so every
+    # pre-FEAT-496 persisted ActionEnvelope (which never carries these)
+    # still validates. `seat` is the raw dispatch seat ("development.w1"),
+    # kept distinct from `node_id` (already rolled up to the owning node
+    # by `_owning_node_id` before the action is built) so per-seat detail
+    # can be folded without widening the closed `NodeId` Literal.
+    seat: str = ""
+    task_id: str = ""
+    task_title: str = ""
+    agent: str = ""
+    model: str = ""
+    summary: str = ""
 
 
 class DispatchQueued(_DispatchAction):
@@ -718,6 +759,88 @@ def _with_dispatch(
     return state.model_copy(update={"nodes": {**state.nodes, node_id: node}})
 
 
+def _fold_seat_from_action(
+    state: DevLoopSessionState,
+    action: "_DispatchAction",
+    *,
+    message_delta: bool = False,
+    tool_use_delta: bool = False,
+) -> DevLoopSessionState:
+    """Additively fold per-seat detail from a dispatch action (FEAT-496).
+
+    No-op when the action carries no ``seat`` — every pre-FEAT-496 action
+    and every single-agent (non-pooled) dispatch falls through
+    byte-identically, since ``seat`` defaults to ``""``. Keeps the existing
+    roll-up counters on ``DispatchState`` untouched; this only ever writes
+    into ``DispatchState.seats``.
+
+    Args:
+        state: The state already updated by the roll-up fold
+            (``_with_dispatch``) for this action.
+        action: The dispatch action being folded.
+        message_delta: Bump the seat's ``message_count`` by one.
+        tool_use_delta: Bump the seat's ``tool_use_count`` by one.
+
+    Returns:
+        ``state`` with the seat entry created/updated, or ``state``
+        unchanged when the action carries no seat.
+    """
+    seat = getattr(action, "seat", "") or ""
+    if not seat:
+        return state
+    node_id = action.node_id
+    node = state.nodes.get(node_id, NodeState(node_id=node_id))  # type: ignore[arg-type]
+    dispatch = node.dispatch or DispatchState(status="queued")
+    prior = dispatch.seats.get(seat, SeatState(seat=seat))
+
+    changes: Dict[str, Any] = {}
+    task_id = getattr(action, "task_id", "") or ""
+    if task_id:
+        changes["task_id"] = task_id
+    task_title = getattr(action, "task_title", "") or ""
+    if task_title:
+        changes["task_title"] = task_title
+    agent = getattr(action, "agent", "") or ""
+    if agent:
+        changes["agent"] = agent
+    model = getattr(action, "model", "") or ""
+    if model:
+        changes["model"] = model
+    summary = getattr(action, "summary", "") or ""
+    if summary:
+        changes["last_summary"] = summary[:160]
+    tool_name = getattr(action, "tool_name", "") or ""
+    if tool_name:
+        changes["last_tool"] = tool_name
+    error = getattr(action, "error", "") or ""
+    if error:
+        changes["last_error"] = error[:500]
+
+    t = action.type
+    if t == "dispatch/queued":
+        changes["status"] = "queued"
+    elif t == "dispatch/started":
+        changes["status"] = "running"
+        changes["started_at"] = action.ts
+    elif t == "dispatch/failed":
+        changes["status"] = "failed"
+        changes["finished_at"] = action.ts
+    elif t == "dispatch/output_invalid":
+        changes["status"] = "output_invalid"
+    elif t == "dispatch/completed":
+        changes["status"] = "completed"
+        changes["finished_at"] = action.ts
+    if message_delta:
+        changes["message_count"] = prior.message_count + 1
+    if tool_use_delta:
+        changes["tool_use_count"] = prior.tool_use_count + 1
+
+    updated_seat = prior.model_copy(update=changes)
+    seats = {**dispatch.seats, seat: updated_seat}
+    node = node.model_copy(update={"dispatch": dispatch.model_copy(update={"seats": seats})})
+    return state.model_copy(update={"nodes": {**state.nodes, node_id: node}})
+
+
 def _add_optional(previous, incoming):
     """Sum two optional numbers, keeping "unreported" distinct from zero.
 
@@ -817,29 +940,37 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
 
     # -- dispatch lifecycle
     if t == "dispatch/queued":
-        return _with_dispatch(state, action.node_id,
+        new_state = _with_dispatch(state, action.node_id,
                               status="queued", dispatcher=action.dispatcher)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/started":
-        return _with_dispatch(state, action.node_id,
+        new_state = _with_dispatch(state, action.node_id,
                               status="running", started_at=action.ts,
                               terminal=action.terminal)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/delta":
         node = state.nodes.get(action.node_id)
         count = node.dispatch.message_count if node and node.dispatch else 0
-        return _with_dispatch(state, action.node_id, message_count=count + 1)
+        new_state = _with_dispatch(state, action.node_id, message_count=count + 1)
+        return _fold_seat_from_action(new_state, action, message_delta=True)
     if t == "dispatch/tool_use":
         node = state.nodes.get(action.node_id)
         count = node.dispatch.tool_use_count if node and node.dispatch else 0
-        return _with_dispatch(state, action.node_id, tool_use_count=count + 1)
+        new_state = _with_dispatch(state, action.node_id, tool_use_count=count + 1)
+        return _fold_seat_from_action(new_state, action, tool_use_delta=True)
     if t == "dispatch/tool_result":
-        return state  # counters only on tool_use; result content is by-ref
+        # counters only on tool_use; result content is by-ref. Still fold
+        # seat detail (e.g. is_error / last_summary) when labelled.
+        return _fold_seat_from_action(state, action)
     if t == "dispatch/output_invalid":
-        return _with_dispatch(state, action.node_id,
+        new_state = _with_dispatch(state, action.node_id,
                               status="output_invalid", last_error=action.error)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/failed":
-        return _with_dispatch(state, action.node_id,
+        new_state = _with_dispatch(state, action.node_id,
                               status="failed", finished_at=action.ts,
                               last_error=action.error)
+        return _fold_seat_from_action(new_state, action)
     if t == "dispatch/completed":
         # Accumulate rather than assign. A node can complete several
         # dispatches: every worker of a dev-agent pool rolls up to the
@@ -851,7 +982,7 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         # summing onto an absent previous value is that value.
         node = state.nodes.get(action.node_id)
         prev = node.dispatch if node else None
-        return _with_dispatch(
+        new_state = _with_dispatch(
             state, action.node_id,
             status="completed", finished_at=action.ts,
             input_tokens=_add_optional(
@@ -871,6 +1002,7 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
             duration_ms=_add_optional(
                 getattr(prev, "duration_ms", None), action.duration_ms),
         )
+        return _fold_seat_from_action(new_state, action)
 
     # -- gates (HITL)
     if t == "gate/opened":
@@ -1313,16 +1445,24 @@ def action_from_flow_event(event: str, node_id: str, ts: float,
 
 
 def action_from_dispatch_event(kind: str, node_id: str, ts: float,
-                               payload: Optional[dict] = None
+                               payload: Optional[dict] = None,
+                               seat: str = "",
                                ) -> Optional[DevLoopAction]:
     """Map a ``DispatchEvent.kind`` to a :data:`DevLoopAction`.
 
     Args:
         kind: The dispatch event kind (e.g. ``"dispatch.queued"``).
-        node_id: The node hosting the dispatch.
+        node_id: The node hosting the dispatch (already rolled up to the
+            owning node via ``_owning_node_id`` when the raw event's
+            ``node_id`` is a pool seat).
         ts: Event timestamp (POSIX seconds).
         payload: Optional raw payload dict; only display-ready fields are
             extracted (lazy-loading rule — heavy content stays by-reference).
+        seat: The raw dispatch seat (FEAT-496, e.g. ``"development.w1"``),
+            distinct from ``node_id``. ``payload["seat"]`` (stamped by
+            ``DispatchLabels``) wins when present; this parameter is the
+            fallback for unlabelled dispatches. Defaults to ``""`` so every
+            existing caller (pre-FEAT-496) is unaffected.
 
     Returns:
         The mapped action, or ``None`` if ``kind`` is not recognised.
@@ -1332,6 +1472,21 @@ def action_from_dispatch_event(kind: str, node_id: str, ts: float,
         return None
     payload = payload or {}
     kwargs: dict = {"node_id": node_id, "ts": ts}
+    # FEAT-496: seat/task identity — labels are authoritative, the caller's
+    # derived `seat` is the fallback for an unlabelled dispatch.
+    resolved_seat = str(payload.get("seat", "") or seat or "")
+    if resolved_seat:
+        kwargs["seat"] = resolved_seat
+    for field, payload_key in (
+        ("task_id", "task_id"),
+        ("task_title", "task_title"),
+        ("agent", "agent"),
+        ("model", "model"),
+        ("summary", "summary"),
+    ):
+        value = payload.get(payload_key)
+        if value:
+            kwargs[field] = str(value)[:160] if field == "summary" else str(value)
     if cls in (DispatchOutputInvalid, DispatchFailed):
         kwargs["error"] = str(payload.get("error", ""))[:500]
     if cls is DispatchToolUse:

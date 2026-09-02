@@ -101,8 +101,14 @@ def _apply_to_session_host(event: DispatchEvent) -> None:
     if host is None:
         return
     try:
+        # FEAT-496: keep _owning_node_id(...) as the action's node_id
+        # (NodeId validation requires it) but also pass the raw seat, so
+        # Module 6's seat fold can record per-seat detail under the owning
+        # node without widening NodeId. action_from_dispatch_event prefers
+        # payload["seat"] (stamped by DispatchLabels) over this fallback.
         action = action_from_dispatch_event(
-            event.kind, _owning_node_id(event.node_id), event.ts, event.payload
+            event.kind, _owning_node_id(event.node_id), event.ts, event.payload,
+            seat=event.node_id if "." in event.node_id else "",
         )
         if action is not None:
             host.apply(action)
