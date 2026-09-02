@@ -87,8 +87,8 @@ class TestPdfPrintLayout:
         document = (
             "<!DOCTYPE html><html><head><style>"
             f"{style}"
-            "</style></head><body><div class=\"ds-page\" data-layout=\"print\" data-theme=\"light\">"
-            f'<table><thead><tr><th>ID</th><th>Desc</th></tr></thead><tbody>{rows}</tbody></table>'
+            '</style></head><body><div class="ds-page" data-layout="print" data-theme="light">'
+            f"<table><thead><tr><th>ID</th><th>Desc</th></tr></thead><tbody>{rows}</tbody></table>"
             "</div></body></html>"
         )
         pdf_bytes = pdf_mod.PDFRenderer()._rasterize(document)

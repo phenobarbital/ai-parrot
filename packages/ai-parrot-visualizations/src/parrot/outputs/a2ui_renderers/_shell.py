@@ -8,6 +8,7 @@ shell both call, so the design system's ``div.ds-page[data-layout]
 [data-theme]`` wrapper and viewport meta tag are consistent across every
 backend-rendered HTML lane.
 """
+
 from __future__ import annotations
 
 import html

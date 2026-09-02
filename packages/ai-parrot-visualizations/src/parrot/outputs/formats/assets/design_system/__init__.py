@@ -18,6 +18,7 @@ from an async ``render()``, and re-reading these files on every call would
 block the event loop repeatedly for no benefit, since the bundled CSS never
 changes at runtime.
 """
+
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -84,9 +85,7 @@ class DesignSystem:
     _cache: ClassVar[dict[tuple[str, str], str]] = {}
 
     @classmethod
-    def stylesheet(
-        cls, theme: "str | ThemeConfig | None" = None, layout: str | None = None
-    ) -> str:
+    def stylesheet(cls, theme: "str | ThemeConfig | None" = None, layout: str | None = None) -> str:
         """Return the composed CSS for a ``(theme, layout)`` pair.
 
         Args:
@@ -209,9 +208,7 @@ class DesignSystem:
         if name is None:
             return None
         if name not in cls.LAYOUTS or _LAYOUT_CSS.get(name) is None:
-            logger.warning(
-                "Unknown or unavailable design-system layout %r in resolve(); ignoring.", name
-            )
+            logger.warning("Unknown or unavailable design-system layout %r in resolve(); ignoring.", name)
             return None
         return name
 

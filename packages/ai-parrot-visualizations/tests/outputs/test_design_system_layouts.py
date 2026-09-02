@@ -1,4 +1,5 @@
 """Unit tests for layout-report.css / layout-print.css (FEAT-493, TASK-2708)."""
+
 import re
 from pathlib import Path
 
@@ -249,9 +250,7 @@ class TestReportLayoutParity:
         report_text = report_path.read_text(encoding="utf-8")
         report_selectors = _top_level_selectors(report_text)
         overlap = components_selectors & report_selectors
-        assert not overlap, (
-            f"duplicated rules between components.css and layout-report.css: {overlap}"
-        )
+        assert not overlap, f"duplicated rules between components.css and layout-report.css: {overlap}"
 
 
 class TestPrintLayout:

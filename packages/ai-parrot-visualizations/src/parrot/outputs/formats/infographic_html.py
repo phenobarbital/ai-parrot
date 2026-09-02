@@ -7,6 +7,7 @@ document with inline CSS and (optionally) inline ECharts JS for charts.
 This renderer is a sibling to InfographicRenderer (JSON); content
 negotiation in get_infographic() decides which one to use.
 """
+
 import logging
 import re
 import uuid
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 try:
     import nh3 as _nh3
+
     _NH3_AVAILABLE = True
 except ImportError:
     _nh3 = None
@@ -121,8 +123,8 @@ _DEFAULT_NEGATIVE_COLOR = "#ef4444"
 _BAR_BORDER_RADIUS = 4
 
 # Fallbacks when the active theme is unavailable.
-_DEFAULT_PRIMARY_COLOR = "#6366f1"      # line / gradient base
-_DEFAULT_SPLITLINE_COLOR = "#e2e8f0"    # subtle Y-axis gridline
+_DEFAULT_PRIMARY_COLOR = "#6366f1"  # line / gradient base
+_DEFAULT_SPLITLINE_COLOR = "#e2e8f0"  # subtle Y-axis gridline
 
 # Opacity stops for the gradient fill under line / area charts (top → bottom).
 _AREA_GRADIENT_TOP_ALPHA = 0.28
@@ -270,8 +272,8 @@ class InfographicHTMLRenderer(BaseRenderer):
     async def render(
         self,
         response: Any,
-        environment: str = 'terminal',
-        export_format: str = 'html',
+        environment: str = "terminal",
+        export_format: str = "html",
         include_code: bool = False,
         **kwargs,
     ) -> Tuple[str, Optional[Any]]:
@@ -325,12 +327,11 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Normalise to InfographicResponse
         if isinstance(data, str):
             import json as _json
+
             try:
                 data = _json.loads(data)
             except (ValueError, TypeError):
-                raise ValueError(
-                    "render_to_html received a plain string that is not valid JSON"
-                )
+                raise ValueError("render_to_html received a plain string that is not valid JSON")
         if isinstance(data, dict):
             data = InfographicResponse.model_validate(data)
 
@@ -358,9 +359,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 break
 
         # Check if charts exist (ECharts JS needed)
-        has_charts = any(
-            getattr(b, "type", None) == "chart" for b in data.blocks
-        )
+        has_charts = any(getattr(b, "type", None) == "chart" for b in data.blocks)
         echarts_script = self._get_echarts_script() if has_charts else ""
 
         # Determine which interactive JS to inject
@@ -463,15 +462,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         if meta.version or meta.status:
             parts.append('        <div class="doc-bar">')
             if meta.version:
-                parts.append(
-                    f'          <span class="doc-pill doc-pill--version">'
-                    f"{escape(meta.version)}</span>"
-                )
+                parts.append(f'          <span class="doc-pill doc-pill--version">' f"{escape(meta.version)}</span>")
             if meta.status:
-                parts.append(
-                    f'          <span class="doc-pill doc-pill--status">'
-                    f"{escape(meta.status)}</span>"
-                )
+                parts.append(f'          <span class="doc-pill doc-pill--status">' f"{escape(meta.status)}</span>")
             parts.append("        </div>")
         if meta.changelog:
             parts.append('        <aside class="doc-changelog">')
@@ -479,21 +472,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             parts.append("          <ul>")
             for entry in meta.changelog:
                 parts.append('            <li class="doc-changelog__entry">')
-                parts.append(
-                    f'              <span class="doc-changelog__version">'
-                    f"{escape(entry.version)}</span>"
-                )
-                parts.append(
-                    f'              <span class="doc-changelog__date">'
-                    f"{escape(entry.date)}</span>"
-                )
-                summary_html = self._expand_microsyntax(
-                    self._render_i18n_span(entry.summary)
-                )
-                parts.append(
-                    f'              <span class="doc-changelog__summary">'
-                    f"{summary_html}</span>"
-                )
+                parts.append(f'              <span class="doc-changelog__version">' f"{escape(entry.version)}</span>")
+                parts.append(f'              <span class="doc-changelog__date">' f"{escape(entry.date)}</span>")
+                summary_html = self._expand_microsyntax(self._render_i18n_span(entry.summary))
+                parts.append(f'              <span class="doc-changelog__summary">' f"{summary_html}</span>")
                 parts.append("            </li>")
             parts.append("          </ul>")
             parts.append("        </aside>")
@@ -534,11 +516,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 while i < len(blocks) and getattr(blocks[i], "type", None) == "hero_card":
                     cards.append(self._render_hero_card(blocks[i]))
                     i += 1
-                parts.append(
-                    '        <div class="kpi-grid">\n'
-                    + "\n".join(cards)
-                    + "\n        </div>"
-                )
+                parts.append('        <div class="kpi-grid">\n' + "\n".join(cards) + "\n        </div>")
                 continue
 
             parts.append(self._render_single_block(block, depth=0))
@@ -580,9 +558,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         if isinstance(block, dict):
             model_cls = _BLOCK_MODEL_MAP.get(block_type)
             if model_cls is None:
-                logger.warning(
-                    "No model for block type '%s' — skipping.", block_type
-                )
+                logger.warning("No model for block type '%s' — skipping.", block_type)
                 return ""
             try:
                 block = model_cls.model_validate(block)
@@ -682,10 +658,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             spans = []
             for index, (locale, value) in enumerate(text.items()):
                 css_cls = "i18n i18n--default" if index == 0 else "i18n"
-                spans.append(
-                    f'<span lang="{escape(str(locale))}" class="{css_cls}">'
-                    f"{escape(str(value))}</span>"
-                )
+                spans.append(f'<span lang="{escape(str(locale))}" class="{css_cls}">' f"{escape(str(value))}</span>")
             return "".join(spans)
         return str(escape(text))
 
@@ -734,8 +707,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         html = _MICRO_CHIP_RE.sub(r'<span class="chip">\1</span>', html)
         html = _MICRO_METHOD_RE.sub(
             lambda m: (
-                f'<span class="method-badge method-badge--{m.group(1).lower()}">'
-                f"{m.group(1).upper()}</span>"
+                f'<span class="method-badge method-badge--{m.group(1).lower()}">' f"{m.group(1).upper()}</span>"
             ),
             html,
         )
@@ -775,13 +747,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             color_style = f' style="color: {escape(block.color)}"'
         trend_html = ""
         if block.trend:
-            arrow = {"up": "&#9650;", "down": "&#9660;", "flat": "&#9654;"}.get(
-                block.trend.value, ""
-            )
+            arrow = {"up": "&#9650;", "down": "&#9660;", "flat": "&#9654;"}.get(block.trend.value, "")
             trend_val = escape(block.trend_value) if block.trend_value else ""
             trend_html = (
-                f'\n            <div class="kpi-trend {escape(block.trend.value)}">'
-                f"{arrow} {trend_val}</div>"
+                f'\n            <div class="kpi-trend {escape(block.trend.value)}">' f"{arrow} {trend_val}</div>"
             )
         return (
             f'            <div class="kpi-card">\n'
@@ -796,7 +765,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         highlight_cls = " highlight" if block.highlight else ""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         # markdown_it renders safe HTML (html=False by default)
         content_html = self._expand_microsyntax(self._md.render(block.content))
         return (
@@ -819,9 +788,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         # cannot carry functions, so the option dict holds a quoted token that
         # we replace with the unquoted function source here.
         if _CURRENCY_FORMATTER_TOKEN in option_json:
-            option_json = option_json.replace(
-                f'"{_CURRENCY_FORMATTER_TOKEN}"', _CURRENCY_FORMATTER_JS
-            )
+            option_json = option_json.replace(f'"{_CURRENCY_FORMATTER_TOKEN}"', _CURRENCY_FORMATTER_JS)
 
         return (
             f'        <div class="chart-container">\n'
@@ -883,7 +850,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             return {
                 "color": {
                     "type": "linear",
-                    "x": 0, "y": 0, "x2": 0, "y2": 1,
+                    "x": 0,
+                    "y": 0,
+                    "x2": 0,
+                    "y2": 1,
                     "colorStops": [
                         {"offset": 0, "color": top},
                         {"offset": 1, "color": bottom},
@@ -928,13 +898,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                 data.append({"value": None})
                 continue
             is_pos = v >= 0
-            data.append({
-                "value": v,
-                "itemStyle": {
-                    "color": pos if is_pos else neg,
-                    "borderRadius": self._bar_border_radius(is_pos),
-                },
-            })
+            data.append(
+                {
+                    "value": v,
+                    "itemStyle": {
+                        "color": pos if is_pos else neg,
+                        "borderRadius": self._bar_border_radius(is_pos),
+                    },
+                }
+            )
         return data
 
     def _build_echarts_option(self, block: ChartBlock) -> dict:
@@ -978,9 +950,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             if block.x_axis_label:
                 option["xAxis"]["name"] = str(escape(block.x_axis_label))
             # Subtle horizontal gridlines on the value axis (PowerBI-style).
-            split_color = getattr(
-                self._theme_cfg, "neutral_border", None
-            ) or _DEFAULT_SPLITLINE_COLOR
+            split_color = getattr(self._theme_cfg, "neutral_border", None) or _DEFAULT_SPLITLINE_COLOR
             option["yAxis"] = {
                 "type": "value",
                 "splitLine": {"show": True, "lineStyle": {"color": split_color}},
@@ -994,9 +964,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 option["yAxis"]["axisLabel"] = {"formatter": _CURRENCY_FORMATTER_TOKEN}
                 option["tooltip"]["valueFormatter"] = _CURRENCY_FORMATTER_TOKEN
             top_round = [_BAR_BORDER_RADIUS, _BAR_BORDER_RADIUS, 0, 0]
-            primary = getattr(
-                self._theme_cfg, "primary", None
-            ) or _DEFAULT_PRIMARY_COLOR
+            primary = getattr(self._theme_cfg, "primary", None) or _DEFAULT_PRIMARY_COLOR
             # Single-series lines get a gradient fill (the cumulative-line look);
             # multi-series lines stay unfilled to avoid muddy overlaps. Area
             # charts always get the gradient.
@@ -1078,28 +1046,26 @@ class InfographicHTMLRenderer(BaseRenderer):
                 for v in s.values:
                     if v is not None and v > max_val:
                         max_val = v
-            indicator = [
-                {"name": label, "max": max_val * 1.2 or 100}
-                for label in block.labels
-            ]
+            indicator = [{"name": label, "max": max_val * 1.2 or 100} for label in block.labels]
             option["radar"] = {"indicator": indicator}
-            option["series"] = [{
-                "type": "radar",
-                "data": [
-                    {"name": s.name, "value": s.values}
-                    for s in block.series
-                ],
-            }]
+            option["series"] = [
+                {
+                    "type": "radar",
+                    "data": [{"name": s.name, "value": s.values} for s in block.series],
+                }
+            ]
 
         # ── Gauge ───────────────────────────────
         elif ct == ChartType.GAUGE:
             gauge_val = 0
             if block.series and block.series[0].values:
                 gauge_val = block.series[0].values[0]
-            option["series"] = [{
-                "type": "gauge",
-                "data": [{"value": gauge_val, "name": block.series[0].name if block.series else ""}],
-            }]
+            option["series"] = [
+                {
+                    "type": "gauge",
+                    "data": [{"value": gauge_val, "name": block.series[0].name if block.series else ""}],
+                }
+            ]
 
         # ── Funnel ──────────────────────────────
         elif ct == ChartType.FUNNEL:
@@ -1182,12 +1148,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         title_html = ""
         if block.title:
             if block.style and str(block.style) in ("titled", "BulletListStyle.TITLED"):
-                title_html = (
-                    f'\n            <div class="bullet-list__header">'
-                    f'{escape(block.title)}</div>'
-                )
+                title_html = f'\n            <div class="bullet-list__header">' f"{escape(block.title)}</div>"
             else:
-                title_html = f'\n            <h3>{escape(block.title)}</h3>'
+                title_html = f"\n            <h3>{escape(block.title)}</h3>"
 
         # Build list items
         tag = "ol" if block.ordered else "ul"
@@ -1199,13 +1162,12 @@ class InfographicHTMLRenderer(BaseRenderer):
                 items_parts.append(
                     f'                <li class="bullet-list__item-dot">'
                     f'<span class="bullet-list__dot" style="background:{escape(block.color)}"></span>'
-                    f'<span>{item_text}</span></li>'
+                    f"<span>{item_text}</span></li>"
                 )
             items = "\n".join(items_parts)
         else:
             items = "\n".join(
-                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>"
-                for item in block.items
+                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>" for item in block.items
             )
 
         # Wrap in grid if columns specified
@@ -1219,18 +1181,13 @@ class InfographicHTMLRenderer(BaseRenderer):
         else:
             list_html = f"            <{tag}>\n{items}\n            </{tag}>\n"
 
-        return (
-            f'        <div class="{escape(container_cls)}">'
-            f"{title_html}\n"
-            f"{list_html}"
-            f"        </div>"
-        )
+        return f'        <div class="{escape(container_cls)}">' f"{title_html}\n" f"{list_html}" f"        </div>"
 
     def _render_table(self, block: TableBlock) -> str:
         """Render TableBlock as HTML table with optional styling."""
         title_html = ""
         if block.title:
-            title_html = f'            <h3>{escape(block.title)}</h3>\n'
+            title_html = f"            <h3>{escape(block.title)}</h3>\n"
 
         # Build table CSS classes
         table_classes = ["data-table"]
@@ -1255,22 +1212,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                     th_style_parts.append(f"background:{escape(col.color)}")
                 if th_style_parts:
                     th_attrs.append(f' style="{"; ".join(th_style_parts)}"')
-                header_cells.append(
-                    f"                    <th{''.join(th_attrs)}>{escape(col.header)}</th>"
-                )
+                header_cells.append(f"                    <th{''.join(th_attrs)}>{escape(col.header)}</th>")
             else:
-                header_cells.append(
-                    f"                    <th>{escape(str(col))}</th>"
-                )
+                header_cells.append(f"                    <th>{escape(str(col))}</th>")
         headers = "\n".join(header_cells)
 
         # Build body rows
         rows_html = ""
         for row in block.rows:
-            cells = "\n".join(
-                f"                    <td>{escape(str(cell))}</td>"
-                for cell in row
-            )
+            cells = "\n".join(f"                    <td>{escape(str(cell))}</td>" for cell in row)
             rows_html += f"                <tr>\n{cells}\n                </tr>\n"
 
         # Build caption
@@ -1288,18 +1238,9 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         # Wrap in responsive container if requested
         if block.responsive:
-            table_inner = (
-                f'            <div class="data-table--responsive">\n'
-                f"{table_inner}"
-                f"            </div>\n"
-            )
+            table_inner = f'            <div class="data-table--responsive">\n' f"{table_inner}" f"            </div>\n"
 
-        return (
-            f'        <div class="table-container">\n'
-            f"{title_html}"
-            f"{table_inner}"
-            f"        </div>"
-        )
+        return f'        <div class="table-container">\n' f"{title_html}" f"{table_inner}" f"        </div>"
 
     def _render_image(self, block: ImageBlock) -> str:
         """Render ImageBlock as img tag."""
@@ -1330,10 +1271,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             attr_parts.append(str(escape(block.source)))
         attr_html = ""
         if attr_parts:
-            attr_html = (
-                f'\n            <div class="attribution">'
-                f'&mdash; {", ".join(attr_parts)}</div>'
-            )
+            attr_html = f'\n            <div class="attribution">' f'&mdash; {", ".join(attr_parts)}</div>'
         return (
             f'        <blockquote class="quote-block">\n'
             f"            {text}"
@@ -1364,7 +1302,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         """Render TimelineBlock as chronological event list."""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         events_html = ""
         for evt in block.events:
             desc_html = ""
@@ -1382,17 +1320,13 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f"                </div>\n"
                 f"            </div>\n"
             )
-        return (
-            f'        <div class="timeline-block">'
-            f"{title_html}\n{events_html}"
-            f"        </div>"
-        )
+        return f'        <div class="timeline-block">' f"{title_html}\n{events_html}" f"        </div>"
 
     def _render_progress(self, block: ProgressBlock) -> str:
         """Render ProgressBlock as progress bars."""
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            title_html = f"\n            <h3>{escape(block.title)}</h3>"
         items_html = ""
         for item in block.items:
             fill_style = f"width: {item.value}%"
@@ -1400,10 +1334,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 fill_style += f"; background: linear-gradient(90deg, {item.color}, {item.color})"
             target_html = ""
             if item.target is not None:
-                target_html = (
-                    f'\n                <div class="progress-target"'
-                    f' style="left: {item.target}%"></div>'
-                )
+                target_html = f'\n                <div class="progress-target"' f' style="left: {item.target}%"></div>'
             items_html += (
                 f'            <div class="progress-item">\n'
                 f'                <div class="progress-header">\n'
@@ -1417,11 +1348,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f"                </div>\n"
                 f"            </div>\n"
             )
-        return (
-            f'        <div class="progress-block">'
-            f"{title_html}\n{items_html}"
-            f"        </div>"
-        )
+        return f'        <div class="progress-block">' f"{title_html}\n{items_html}" f"        </div>"
 
     # ── New block renderers ─────────────────────
 
@@ -1440,23 +1367,16 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="checklist{style_cls}">']
         if block.title:
-            parts.append(
-                f'          <div class="checklist__title">{escape(block.title)}</div>'
-            )
+            parts.append(f'          <div class="checklist__title">{escape(block.title)}</div>')
         parts.append('          <div class="checklist__items">')
         for item in block.items:
             checked_cls = " checklist__item--checked" if item.checked else ""
             check_mark = "&#10003;" if item.checked else ""
             parts.append(f'            <div class="checklist__item{checked_cls}">')
-            parts.append(
-                f'              <div class="checklist__checkbox">{check_mark}</div>'
-            )
+            parts.append(f'              <div class="checklist__checkbox">{check_mark}</div>')
             parts.append(f"              <span>{escape(item.text)}</span>")
             if item.description:
-                parts.append(
-                    f'              <div class="checklist__desc">'
-                    f"{escape(item.description)}</div>"
-                )
+                parts.append(f'              <div class="checklist__desc">' f"{escape(item.description)}</div>")
             parts.append("            </div>")
         parts.append("          </div>")
         parts.append("        </div>")
@@ -1477,22 +1397,34 @@ class InfographicHTMLRenderer(BaseRenderer):
             HTML string with accordion structure and JS-togglable sections.
         """
         _ALLOWED_TAGS = {
-            "p", "br", "strong", "em", "ul", "ol", "li", "a", "span",
-            "div", "h3", "h4", "code", "pre", "table", "tr", "td", "th",
-            "thead", "tbody",
+            "p",
+            "br",
+            "strong",
+            "em",
+            "ul",
+            "ol",
+            "li",
+            "a",
+            "span",
+            "div",
+            "h3",
+            "h4",
+            "code",
+            "pre",
+            "table",
+            "tr",
+            "td",
+            "th",
+            "thead",
+            "tbody",
         }
 
         allow_multiple = "true" if block.allow_multiple else "false"
         title_html = ""
         if block.title:
-            title_html = (
-                f'        <div class="accordion__title">'
-                f"{escape(block.title)}</div>\n"
-            )
+            title_html = f'        <div class="accordion__title">' f"{escape(block.title)}</div>\n"
 
-        parts = [
-            f'        <div class="accordion" data-allow-multiple="{allow_multiple}">'
-        ]
+        parts = [f'        <div class="accordion" data-allow-multiple="{allow_multiple}">']
         if title_html:
             parts.append(f"        {title_html.strip()}")
 
@@ -1507,24 +1439,15 @@ class InfographicHTMLRenderer(BaseRenderer):
                 num_style = ""
                 if item.number_color:
                     num_style = f' style="background:{escape(item.number_color)}"'
-                header_parts.append(
-                    f'<div class="accordion__number"{num_style}>{item.number}</div>'
-                )
-            header_parts.append(
-                f'<div class="accordion__item-title">{escape(item.title)}</div>'
-            )
+                header_parts.append(f'<div class="accordion__number"{num_style}>{item.number}</div>')
+            header_parts.append(f'<div class="accordion__item-title">{escape(item.title)}</div>')
             if item.subtitle:
-                header_parts.append(
-                    f'<div class="accordion__subtitle">{escape(item.subtitle)}</div>'
-                )
+                header_parts.append(f'<div class="accordion__subtitle">{escape(item.subtitle)}</div>')
             if item.badge:
                 badge_style = ""
                 if item.badge_color:
                     badge_style = f' style="background:{escape(item.badge_color)}"'
-                header_parts.append(
-                    f'<div class="accordion__badge"{badge_style}>'
-                    f"{escape(item.badge)}</div>"
-                )
+                header_parts.append(f'<div class="accordion__badge"{badge_style}>' f"{escape(item.badge)}</div>")
             header_parts.append('<div class="accordion__arrow">&#9654;</div>')
 
             # Build body content
@@ -1546,13 +1469,8 @@ class InfographicHTMLRenderer(BaseRenderer):
                     safe_html = str(escape(item.html_content))
                 body_html = f"            {safe_html}"
 
-            parts.append(
-                f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">'
-            )
-            parts.append(
-                '            <button class="accordion__header"'
-                ' onclick="toggleAccordion(this)">'
-            )
+            parts.append(f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">')
+            parts.append('            <button class="accordion__header"' ' onclick="toggleAccordion(this)">')
             for hp in header_parts:
                 parts.append(f"              {hp}")
             parts.append("            </button>")
@@ -1603,7 +1521,7 @@ class InfographicHTMLRenderer(BaseRenderer):
                 icon_html = f'<span class="tab-icon">{escape(tab.icon)}</span> '
             parts.append(
                 f'            <button class="tab-view__btn{active_cls}"'
-                f' onclick="showTab(\'{prefix}\', \'{escape(tab.id)}\', this)">'
+                f" onclick=\"showTab('{prefix}', '{escape(tab.id)}', this)\">"
                 f"{icon_html}{escape(tab.label)}</button>"
             )
         parts.append("          </div>")
@@ -1614,10 +1532,7 @@ class InfographicHTMLRenderer(BaseRenderer):
             active_cls = " active" if is_active else ""
             pane_id = f"{prefix}-{tab.id}"
 
-            parts.append(
-                f'          <div class="tab-view__pane{active_cls}"'
-                f' id="{escape(pane_id)}">'
-            )
+            parts.append(f'          <div class="tab-view__pane{active_cls}"' f' id="{escape(pane_id)}">')
 
             # Render each block inside the pane
             for inner_block in tab.blocks:
@@ -1649,10 +1564,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="chain{direction_cls}">']
         if block.title:
-            parts.append(
-                f'          <h3 class="chain__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            parts.append(f'          <h3 class="chain__title">' f"{self._render_i18n_span(block.title)}</h3>")
         node_count = len(block.nodes)
         for index, node in enumerate(block.nodes):
             color_style = ""
@@ -1698,10 +1610,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         parts = [f'        <div class="steps{style_cls}">']
         if block.title:
-            parts.append(
-                f'          <h3 class="steps__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            parts.append(f'          <h3 class="steps__title">' f"{self._render_i18n_span(block.title)}</h3>")
         for index, step in enumerate(block.steps, start=1):
             if block.style == "icon" and step.icon:
                 marker = escape(step.icon)
@@ -1744,10 +1653,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         """
         title_html = ""
         if block.title:
-            title_html = (
-                f'\n            <h3 class="code-block__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            title_html = f'\n            <h3 class="code-block__title">' f"{self._render_i18n_span(block.title)}</h3>"
 
         # Only the bare "language-{lang}" class lands on <code>, matching
         # the plain highlight.js-style convention consumers expect. The
@@ -1764,9 +1670,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         rendered_lines = []
         for line_no, line in enumerate(lines, start=1):
             if line_no in highlight_set:
-                rendered_lines.append(
-                    f'<span class="code-block__line--highlight">{line}</span>'
-                )
+                rendered_lines.append(f'<span class="code-block__line--highlight">{line}</span>')
             else:
                 rendered_lines.append(line)
         code_html = "\n".join(rendered_lines)
@@ -1795,15 +1699,11 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         title_html = ""
         if block.title:
-            title_html = (
-                f'\n          <h3 class="card-grid__title">'
-                f"{self._render_i18n_span(block.title)}</h3>"
-            )
+            title_html = f'\n          <h3 class="card-grid__title">' f"{self._render_i18n_span(block.title)}</h3>"
 
         parts = [
             '        <div class="card-grid-wrapper">' + title_html,
-            f'          <div class="card-grid" '
-            f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
+            f'          <div class="card-grid" ' f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
         ]
         for card in block.cards:
             color_style = ""

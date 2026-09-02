@@ -192,9 +192,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 f"{html.escape(link.action_label)}</a>"
             )
 
-        theme, layout = DesignSystem.resolve(
-            envelope, theme_default=self.theme, layout_default=self.layout
-        )
+        theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
         style = DesignSystem.stylesheet(theme, layout)
         document = document_shell(
             title=envelope.surface_id,
@@ -266,9 +264,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                     columns_by_id[comp.id] = [c for c in columns if isinstance(c, dict)]
         return columns_by_id
 
-    def _index_datatable_cells(
-        self, node: BasicNode, columns_by_id: dict[str, list[dict[str, Any]]]
-    ) -> None:
+    def _index_datatable_cells(self, node: BasicNode, columns_by_id: dict[str, list[dict[str, Any]]]) -> None:
         """Walk a reconstructed tree, populating ``self._table_cell_columns``.
 
         A ``Card`` carrying ``parrot_component_id`` is a lowered DataTable —
@@ -470,7 +466,9 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
                 display = "all"
             parts.append(f"{_esc(label)} = {_esc(display)}")
         degradations.append(
-            degradation_record(node, f"{_SURFACE_NAME} renders FilterBar as a static summary (no client-side filtering)")
+            degradation_record(
+                node, f"{_SURFACE_NAME} renders FilterBar as a static summary (no client-side filtering)"
+            )
         )
         summary = "Filters: " + "; ".join(parts)
         return f'<p class="a2ui-text a2ui-filter-summary">{summary}</p>'

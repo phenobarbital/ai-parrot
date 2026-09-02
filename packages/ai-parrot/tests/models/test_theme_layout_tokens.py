@@ -1,4 +1,5 @@
 """Unit tests for ThemeConfig layout tokens (FEAT-493, TASK-2706)."""
+
 import pytest
 from parrot.models.infographic import ThemeConfig, theme_registry
 
@@ -10,8 +11,14 @@ class TestThemeLayoutTokens:
         """to_css_variables() carries every new layout custom property."""
         css = ThemeConfig(name="t").to_css_variables()
         for var in (
-            "--content-width", "--radius", "--shadow", "--mono-family",
-            "--panel-bg", "--panel-border", "--header-bg", "--header-text",
+            "--content-width",
+            "--radius",
+            "--shadow",
+            "--mono-family",
+            "--panel-bg",
+            "--panel-border",
+            "--header-bg",
+            "--header-text",
         ):
             assert var in css, var
 
@@ -24,14 +31,12 @@ class TestThemeLayoutTokens:
     def test_unset_tokens_derive(self):
         """An unset panel_bg derives rather than emitting empty."""
         theme = ThemeConfig(name="t", neutral_bg="#ffffff")
-        assert theme.panel_bg is None                  # not mutated on the model
+        assert theme.panel_bg is None  # not mutated on the model
         assert "--panel-bg:" in theme.to_css_variables()
         assert "--panel-bg: ;" not in theme.to_css_variables()
 
     def test_explicit_token_wins(self):
-        assert "--content-width: 1400px" in ThemeConfig(
-            name="t", content_width="1400px"
-        ).to_css_variables()
+        assert "--content-width: 1400px" in ThemeConfig(name="t", content_width="1400px").to_css_variables()
 
     def test_invalid_colour_rejected(self):
         # NOTE (TASK-2706): the shared `_CSS_COLOR_RE` treats any bare

@@ -145,6 +145,8 @@ def is_kpi_row(node: BasicNode) -> bool:
     if not children:
         return False
     return all(
-        isinstance(child, BasicNode) and child.component == "Card" and node_extensions(child).get("parrot_variant") == "kpi"
+        isinstance(child, BasicNode)
+        and child.component == "Card"
+        and node_extensions(child).get("parrot_variant") == "kpi"
         for child in children
     )

@@ -561,9 +561,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         data_model_json = _safe_json(envelope.data_model)
         chart_js = _CHART_JS_SOURCE
-        theme, layout = DesignSystem.resolve(
-            envelope, theme_default=self.theme, layout_default=self.layout
-        )
+        theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
         style = DesignSystem.stylesheet(theme, layout)
 
         document = document_shell(
@@ -1015,8 +1013,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         notice_html = ""
         if truncated and total_rows is not None:
             notice_html = (
-                f'<p class="a2ui-table-notice">showing {len(rows)} of '
-                f"{html.escape(str(total_rows))} rows</p>"
+                f'<p class="a2ui-table-notice">showing {len(rows)} of ' f"{html.escape(str(total_rows))} rows</p>"
             )
 
         search_html = ""

@@ -1,4 +1,5 @@
 """Unit tests for the shared document shell (FEAT-493, TASK-2709)."""
+
 import pytest
 from parrot.outputs.a2ui.models import Component, CreateSurface
 from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer
@@ -35,8 +36,8 @@ class TestDocumentShell:
 
     async def test_design_system_css_inlined(self, simple_envelope):
         doc = (await InteractiveHTMLRenderer().render(simple_envelope)).content.decode()
-        assert ".kpi-card" in doc          # components.css reached the document
-        assert "--content-width" in doc    # tokens reached the document
+        assert ".kpi-card" in doc  # components.css reached the document
+        assert "--content-width" in doc  # tokens reached the document
 
     async def test_self_contained_invariant(self, simple_envelope):
         doc = (await InteractiveHTMLRenderer().render(simple_envelope)).content.decode()

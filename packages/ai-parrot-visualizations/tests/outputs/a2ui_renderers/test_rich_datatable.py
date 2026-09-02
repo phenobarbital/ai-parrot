@@ -89,7 +89,7 @@ class TestRichTableMarkup:
         )
         doc = (await renderer_cls().render(env)).content.decode()
         assert "1,234,567" in doc
-        assert 'class="num"' in doc or 'a2ui-cell num' in doc
+        assert 'class="num"' in doc or "a2ui-cell num" in doc
 
     async def test_raw_value_in_data_v(self, renderer_cls):
         env = _table_envelope(

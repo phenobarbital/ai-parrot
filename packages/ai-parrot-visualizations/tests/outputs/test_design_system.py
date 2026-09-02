@@ -1,4 +1,5 @@
 """Unit tests for the design-system composer (FEAT-493, TASK-2707)."""
+
 import pytest
 from parrot.models.infographic import theme_registry
 from parrot.outputs.formats.assets.design_system import DesignSystem
@@ -8,9 +9,9 @@ class TestDesignSystem:
     def test_composes_default_pair(self):
         css = DesignSystem.stylesheet("light", "analytics")
         assert css.strip()
-        assert "--content-width" in css      # tokens present
-        assert ".kpi-card" in css            # components present
-        assert ".ds-page" in css             # shell present
+        assert "--content-width" in css  # tokens present
+        assert ".kpi-card" in css  # components present
+        assert ".ds-page" in css  # shell present
 
     def test_assets_packaged_and_non_empty(self):
         """Catches a package-data regression: every asset must load with content."""

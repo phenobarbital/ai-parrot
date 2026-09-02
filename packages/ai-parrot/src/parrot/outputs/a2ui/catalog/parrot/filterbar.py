@@ -68,9 +68,7 @@ FILTERBAR_INSTRUCTIONS = (
 )
 
 
-def _lower_filter(
-    *, column: str, label: str, options: list[dict[str, Any]], multiple: bool, node_id: str
-) -> BasicNode:
+def _lower_filter(*, column: str, label: str, options: list[dict[str, Any]], multiple: bool, node_id: str) -> BasicNode:
     """Lower one declared filter to a ``ChoicePicker`` primitive.
 
     Args:

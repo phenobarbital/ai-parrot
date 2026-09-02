@@ -122,7 +122,7 @@ class TestFilteringRuntime:
         assert "data-filter-summary" in doc
         assert "data-msf-toggle" in doc
         assert "data-msf-search" in doc
-        assert 'table[data-table]' in doc
+        assert "table[data-table]" in doc
 
     async def test_no_external_references(self):
         """test_interactive_html.py:64-67's invariant, re-asserted with a FilterBar present."""
