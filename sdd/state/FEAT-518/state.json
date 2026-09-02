@@ -16,7 +16,7 @@
   "mode": "auto",
   "detected_mode": "investigation",
   "wiki_available": true,
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -69,7 +69,7 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/bug-workerpool-repl.proposal.md",
-      "commit_sha": "62ac8383a",
+      "commit_sha": "d3b33476f",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Root cause reproduced and localized (handle.py/pool.py/pythonpandas.py); remaining choices are bounded design decisions."
     }
