@@ -173,7 +173,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Sole owner of runner.py + recipes/models.py (core) — no overlap with 2712/2713.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2714-recipe-runner-theme-layout.md"
+      "completed_at": "2026-09-02T00:46:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2714-recipe-runner-theme-layout.md"
     },
     {
       "id": "TASK-2715",
