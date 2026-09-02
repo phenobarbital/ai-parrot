@@ -32,7 +32,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Shares _shared.py with TASK-2722 — cannot run beside it. Unblocks the whole parallel wave below.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2723-normalize-payload-contract.md"
+      "completed_at": "2026-09-02T02:12:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2723-normalize-payload-contract.md"
     },
     {
       "id": "TASK-2724",
