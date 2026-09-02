@@ -264,7 +264,7 @@
     }
   ],
   "scope": {
-    "statement": "Extract a shared Rich console/presentation layer for the parrot CLI and migrate `parrot agent` onto it, adopting devloop's modal pause/resume Live discipline so streamed responses render with the same fidelity as batch responses. Keep prompt_toolkit and questionary; adopt neither Textual nor InquirerPy. Bring `parrot attach` (agentd) onto the same layer and give AgentREPL a real post-turn hook so its monkeypatch can be retired. Retire the three stacked workarounds (sys.__stdout__ bypass, _BlockingSafeFile, _mute_stream_loggers) as the seam makes them unnecessary.",
+    "statement": "Extract a shared Rich console/presentation layer for the parrot CLI and migrate `parrot agent` onto it, adopting devloop's modal pause/resume Live discipline so streamed responses render with the same fidelity as batch responses. Keep prompt_toolkit and questionary; adopt neither Textual nor InquirerPy. Bring `parrot attach` (agentd) onto the same layer and give AgentREPL a real post-turn hook so its monkeypatch can be retired. Retire the three stacked workarounds (sys.__stdout__ bypass, _BlockingSafeFile, _mute_stream_loggers) as the seam makes them unnecessary. Generalize cli/wizard.py into a shared engine the agent console reuses (D1). The existing Rich HITL surface under parrot/human/ is explicitly deferred to a follow-up (D2), but the shared layer must be designed so it can adopt it later without a second redesign.",
     "confidence": "high",
     "evidence": [
       "F003",
@@ -279,18 +279,18 @@
       "packages/ai-parrot/src/parrot/cli/devloop/console.py",
       "packages/ai-parrot-integrations/src/parrot/integrations/agentd/cli.py",
       "packages/ai-parrot/tests/cli/test_integration.py",
-      "packages/ai-parrot/tests/cli/devloop/"
+      "packages/ai-parrot/tests/cli/devloop/",
+      "packages/ai-parrot/src/parrot/cli/wizard.py"
     ],
     "possibly_in_scope": [
-      "packages/ai-parrot/src/parrot/cli/loaders.py",
-      "packages/ai-parrot/src/parrot/cli/wizard.py",
-      "packages/ai-parrot/src/parrot/human/channels/cli.py"
+      "packages/ai-parrot/src/parrot/cli/loaders.py"
     ],
     "out_of_scope": [
       "Textual adoption (rejected at U1)",
       "InquirerPy adoption (rejected at U2)",
       "packages/ai-parrot/src/parrot/cli/tool_worker.py (its sys.stdout.write is an IPC marker protocol, not display)",
-      "parrot/clients/* changes from commit 7c2790044"
+      "parrot/clients/* changes from commit 7c2790044",
+      "packages/ai-parrot/src/parrot/human/channels/cli.py and cli_companion.py \u2014 deferred to a follow-up feature (D2); the shared layer must stay adoptable by them without redesign"
     ]
   },
   "confidence_map": [
@@ -360,11 +360,12 @@
       ]
     },
     {
-      "claim": "cli/wizard.py is reusable by the agent console (specified generic, but reuse not yet demonstrated outside devloop)",
-      "confidence": "medium",
+      "claim": "cli/wizard.py will be generalized into a shared engine the agent console reuses (decision D1, not inference)",
+      "confidence": "high",
       "evidence": [
         "F010"
-      ]
+      ],
+      "reasoning": "Decision, not discovery: F010 shows the devloop spec already declared this engine generic (goal G2); D1 commits this feature to making that real. Whether it generalizes cleanly is now an implementation task, not an open risk."
     },
     {
       "claim": "Extracting a console/renderer seam is the right structural fix rather than patching render_stream_chunk alone",
@@ -443,5 +444,23 @@
     },
     "truncated": false,
     "truncation_reason": null
-  }
+  },
+  "deferred_questions": [
+    {
+      "id": "D1",
+      "question": "Does cli/wizard.py actually generalise to the agent console, or is it devloop-shaped in practice?",
+      "user_answer": "Generalize it. cli/wizard.py becomes a genuinely shared engine the agent console reuses, rather than staying devloop-shaped. This makes real the 'generic, reusable engine' the devloop spec already declared as goal G2 (F010).",
+      "resolution": "in_scope",
+      "affects_claims": [
+        "C13"
+      ]
+    },
+    {
+      "id": "D2",
+      "question": "Should parrot/human/channels/cli.py and cli_companion.py (an existing Rich-based HITL surface not named in the request) migrate onto the shared layer in this feature or a follow-up?",
+      "user_answer": "Migrate later. Explicitly a follow-up feature, not FEAT-519. The shared console layer must therefore be designed so that surface CAN adopt it later without a second redesign, but no migration work happens here.",
+      "resolution": "deferred_followup",
+      "affects_claims": []
+    }
+  ]
 }

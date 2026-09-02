@@ -227,9 +227,9 @@ is already solved in-repo by cheaper means. Rejected by the user at U1.
 | C10 | A FEAT-168 mock-based suite covers the REPL and must stay green | F009 | high | direct read of test classes |
 | C11 | Three workarounds now compensate for one seam; two landed during this run | F011 | high | git log + diff of both commits |
 | C12 | Extracting a shared console seam is the right fix, not patching one function | F004, F008, F011 | high | upgraded from medium by C11 |
-| C13 | `cli/wizard.py` is reusable by the agent console | F010 | medium | spec'd as generic (devloop G2), but reuse outside devloop not yet demonstrated |
+| C13 | `cli/wizard.py` will be generalized into a shared engine the agent console reuses | F010 + decision D1 | high | Decision, not discovery: F010 shows the devloop spec already declared this engine generic (goal G2); D1 commits this feature to making that real. Whether it generalizes cleanly is now an implementation task, not an open risk. |
 
-Distribution: **12** high, **1** medium, **0** low.
+Distribution: **13** high, **0** medium, **0** low.
 
 ---
 
@@ -262,18 +262,26 @@ Distribution: **12** high, **1** medium, **0** low.
   instance-level monkeypatch.
   *Resolves claims*: C9
 
-### Unresolved (defer to spec / implementation)
+- [x] **D1 — Does `cli/wizard.py` actually generalise to the agent console, or is
+  it devloop-shaped in practice?**
+  *Resolved*: **Generalize it.** `cli/wizard.py` becomes a genuinely shared
+  engine the agent console reuses, rather than staying devloop-shaped. This makes
+  real the "generic, reusable engine" the devloop spec already declared as goal
+  G2 (F010). **In scope for FEAT-519.**
+  *Resolves claims*: C13
 
-- [ ] **Does `cli/wizard.py` actually generalise to the agent console, or is it
-  devloop-shaped in practice?** — *Owner*: tbd
-  *Blocks claims*: C13
-  *Plausible answers*: a) reuse as-is · b) reuse after widening its field types ·
-  c) leave it devloop-only and share only the console layer
+- [x] **D2 — Should `packages/ai-parrot/src/parrot/human/channels/cli.py` and
+  `cli_companion.py` (an existing Rich-based HITL surface not named in the
+  request) migrate onto the shared layer in this feature or a follow-up?**
+  *Resolved*: **Migrate later** — explicitly a follow-up feature, not FEAT-519.
+  Constraint this places on the design: the shared console layer must be built so
+  that surface *can* adopt it later without a second redesign, even though no
+  migration work happens here.
 
-- [ ] **Should `parrot/human/channels/cli.py` and `cli_companion.py` (an existing
-  Rich-based HITL surface not named in the request) migrate onto the shared
-  layer in this feature or a follow-up?** — *Owner*: tbd
-  *Plausible answers*: a) this feature · b) follow-up · c) leave independent
+### Unresolved
+
+None. All six questions (U1-U4, D1-D2) are resolved; nothing is deferred to the
+spec phase as an open decision.
 
 ---
 
@@ -294,12 +302,20 @@ Suggested module shape for the spec (from §2.1 + U3/U4):
    `_mute_stream_loggers` as the seam makes them unnecessary.
 3. **`AgentREPL` seam** — pluggable renderer + a real post-turn hook.
 4. **agentd migration** — adopt the hook, delete `_wrap_with_event_drain`.
-5. **devloop convergence** — move `RunView` onto the shared layer without
+5. **Generalized wizard** (D1) — widen `cli/wizard.py` from its devloop-shaped
+   usage into the shared engine its own spec (devloop G2) already declared it to
+   be, and have the agent console consume it.
+6. **devloop convergence** — move `RunView` onto the shared layer without
    regressing its behaviour.
-6. **Tests** — keep `packages/ai-parrot/tests/cli/test_integration.py` green; extend using
+7. **Tests** — keep `packages/ai-parrot/tests/cli/test_integration.py` green; extend using
    `packages/ai-parrot/tests/cli/devloop/test_renderer.py` as the template for Live assertions;
    add a regression test that streamed output contains rendered Markdown and
    that log records do not interleave with tokens.
+
+**Explicit non-goal (D2)**: migrating
+`packages/ai-parrot/src/parrot/human/channels/cli.py` and `cli_companion.py`
+onto the shared layer. Deferred to a follow-up — but the layer must be designed
+so that migration needs no second redesign.
 
 ### Alternatives
 
