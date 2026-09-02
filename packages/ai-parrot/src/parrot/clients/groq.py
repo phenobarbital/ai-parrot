@@ -80,6 +80,10 @@ class GroqClient(OpenAIBaseClient):
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
     _lightweight_model: str = "kimi-k2-instruct"
+    # Groq caps completion tokens at 4096 for most hosted models; asking for
+    # more is rejected outright rather than clamped, so invoke() must not
+    # inherit AbstractClient's more generous default.
+    _invoke_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -1353,7 +1357,7 @@ Format your response clearly with these sections.
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1385,6 +1389,7 @@ Format your response clearly with these sections.
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)

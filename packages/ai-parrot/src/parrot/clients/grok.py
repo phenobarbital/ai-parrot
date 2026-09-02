@@ -703,7 +703,7 @@ class GrokClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -714,6 +714,7 @@ class GrokClient(AbstractClient):
         structured output. A single ``chat.sample()`` or ``chat.parse()``
         call is made — no retry, no history, no prompt builder.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)

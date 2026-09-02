@@ -113,6 +113,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = "gemini-3.1-flash-lite"
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite"
+    # Gemini bills reasoning tokens against max_output_tokens, and the Gemini 3.x
+    # Pro family is thinking-only (see _requires_thinking) so reasoning cannot be
+    # switched off. Reasoning routinely consumes several thousand tokens before
+    # the first byte of the answer, so invoke() needs materially more headroom
+    # than the framework default. Gemini accepts up to 65535 output tokens; this
+    # is only a cap, billing follows actual usage.
+    _invoke_max_tokens: int = 16384
     # Default prefixes for which tools + response_schema may be sent in a
     # single GenerateContentConfig (FEAT-193). Override per-subclass by
     # setting this attribute, or per-instance via the constructor kwarg
@@ -5468,7 +5475,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -5500,6 +5507,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)

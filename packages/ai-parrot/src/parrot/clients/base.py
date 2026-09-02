@@ -271,6 +271,23 @@ class AbstractClient(EventEmitterMixin, ABC):
     # None means fall back to self.model.
     _lightweight_model: Optional[str] = None
 
+    # Default output-token budget for invoke(). Subclasses override this where
+    # the provider caps lower (GroqClient: 4096, local backends: 4096) or where
+    # reasoning models need extra headroom (GoogleGenAIClient: 16384).
+    #
+    # Reasoning / "thinking" models bill their reasoning tokens against the SAME
+    # output budget as the answer, so a 4096 cap can be consumed entirely by
+    # reasoning before a single byte of the answer is emitted. Observed on
+    # gemini-3.1-pro-preview: 3,199 of 4,096 budgeted tokens went to reasoning,
+    # leaving 883 for a document that needed ~1,700 — the call finished at
+    # MAX_TOKENS with truncated (unparseable) JSON. The identical call on
+    # gemini-2.5-pro spent 1,011 on reasoning and finished cleanly at STOP.
+    #
+    # Resolution order (see _resolve_invoke_max_tokens): per-call
+    # ``invoke(max_tokens=N)`` > per-instance ``Client(invoke_max_tokens=N)`` >
+    # per-instance ``Client(max_tokens=N)`` > this class default.
+    _invoke_max_tokens: int = 8192
+
     # Fallback model for capacity errors — subclasses set their own default
     # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K,
     # BedrockMantleClient "google.gemma-4-26b-a4b"). FEAT-438 G5: declared
@@ -333,6 +350,15 @@ $backstory
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
             self.max_tokens = kwargs.get('max_tokens', 4096)
+        # Whether max_tokens was EXPLICITLY configured by the caller (directly
+        # or via a preset) rather than inherited from the framework default
+        # above. invoke() only honours an explicit value, so that a client's
+        # _invoke_max_tokens default is never shadowed by ask()'s generic one.
+        self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
+        # Per-instance override for invoke()'s output-token budget. ``None``
+        # means "fall back to an explicit self.max_tokens, then the class
+        # default" (see _resolve_invoke_max_tokens).
+        self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
@@ -1752,7 +1778,7 @@ $backstory
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1773,7 +1799,11 @@ $backstory
                 ``_lightweight_model``, then ``self.model``.
             system_prompt: Override the system prompt. Falls back to
                 ``BASIC_SYSTEM_PROMPT`` rendered with instance attributes.
-            max_tokens: Maximum completion tokens (default 4096).
+            max_tokens: Maximum completion tokens. ``None`` (the default) resolves
+                via :meth:`_resolve_invoke_max_tokens` — per-instance
+                ``invoke_max_tokens``, then ``max_tokens``, then the client's
+                :attr:`_invoke_max_tokens` class default. Pass an explicit value
+                only to cap a single call.
             temperature: Sampling temperature (default 0.0 for deterministic output).
             use_tools: If ``True``, inject registered tools into the request.
             tools: Additional tool definitions to pass directly to the provider.
@@ -1859,6 +1889,54 @@ $backstory
         if self._lightweight_model is not None:
             return self._lightweight_model
         return self.model
+
+    def _resolve_invoke_max_tokens(self, max_tokens: Optional[int] = None) -> int:
+        """Return the output-token budget to use for an invoke() call.
+
+        Resolution order (first non-``None`` wins):
+
+        1. the explicit per-call ``max_tokens`` argument;
+        2. the per-instance ``invoke_max_tokens`` constructor kwarg;
+        3. the per-instance ``max_tokens`` constructor kwarg, but ONLY when it
+           was explicitly passed (or set by a ``preset``) — the framework's own
+           ``max_tokens`` default must not shadow a client's
+           :attr:`_invoke_max_tokens`;
+        4. the client's :attr:`_invoke_max_tokens` class default.
+
+        The class default is deliberately generous because reasoning models bill
+        their reasoning tokens against the same budget as the answer — see the
+        comment on :attr:`_invoke_max_tokens`. Clients whose provider caps lower
+        (Groq, local backends) override the class attribute.
+
+        Args:
+            max_tokens: Caller-supplied per-call override, or ``None``.
+
+        Returns:
+            A positive output-token budget.
+
+        Raises:
+            ValueError: If a resolved budget is not a positive integer.
+        """
+        for candidate in (
+            max_tokens,
+            getattr(self, "invoke_max_tokens", None),
+            (
+                getattr(self, "max_tokens", None)
+                if getattr(self, "_max_tokens_configured", False)
+                else None
+            ),
+            self._invoke_max_tokens,
+        ):
+            if candidate is None:
+                continue
+            resolved = int(candidate)
+            if resolved <= 0:
+                raise ValueError(
+                    f"invoke() max_tokens must be a positive integer, got {resolved!r}"
+                )
+            return resolved
+        # Unreachable while _invoke_max_tokens carries a positive class default.
+        raise ValueError("invoke() max_tokens could not be resolved")
 
     def _build_invoke_result(
         self,

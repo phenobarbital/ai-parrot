@@ -64,6 +64,10 @@ class LocalLLMClient(OpenAIBaseClient):
     # _lightweight_model is inherited as None from OpenAIBaseClient
     # (FEAT-438) — _resolve_invoke_model() falls back to self.model.
     _default_model: str = "llama3.1:8b"
+    # Local servers (Ollama/vLLM) are usually deployed with modest context
+    # windows and generation is wall-clock expensive, so keep invoke()'s budget
+    # conservative. Raise per-instance with ``invoke_max_tokens=``.
+    _invoke_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -208,7 +212,7 @@ class LocalLLMClient(OpenAIBaseClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -241,6 +245,7 @@ class LocalLLMClient(OpenAIBaseClient):
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
         config = self._build_invoke_structured_config(output_type, structured_output)
         resolved_model = self._resolve_invoke_model(model)
