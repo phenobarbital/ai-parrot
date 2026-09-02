@@ -345,6 +345,37 @@ After all tasks are done:
      - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
    ```
 
+## Structured Output Contract (dispatched runs)
+
+When you are dispatched by the dev-loop/dev-flow (`DevelopmentNode`) rather
+than driven interactively, your final message must be the single
+`DevelopmentOutput` JSON object described in the dispatch prompt. One field
+is routinely got wrong:
+
+**`files_changed` must list EVERY file you created, modified, or deleted —
+including the test modules you wrote.**
+
+Listing only the source files you set out to edit is the common failure, and
+it is not cosmetic:
+
+- QA scopes its pytest run to these paths. A test module missing from this
+  list is a test that never runs — you will have written it for nothing.
+- The handoff nodes render this list into the PR body, so an incomplete list
+  becomes an incomplete PR description.
+
+Derive it from git, never from memory:
+
+```bash
+git diff --name-only --diff-filter=d $BASE_BRANCH...HEAD   # committed
+git status --porcelain --untracked-files=all               # not yet committed
+```
+
+Use repo-relative paths exactly as git prints them (e.g.
+`packages/ai-parrot/tests/flows/dev_loop/test_qa.py`). `DevelopmentNode`
+reconciles your list against git and appends whatever you left out, but it
+logs the omission as a warning — a run whose `files_changed` needed
+reconciling is a run that reported its work incorrectly.
+
 ## STOP Conditions
 
 STOP and report (do NOT continue silently) if:
