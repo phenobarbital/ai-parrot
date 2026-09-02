@@ -1,4 +1,5 @@
 """QANode additive code-review gate (FEAT-250 TASK-008, extended FEAT-270)."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -132,9 +133,7 @@ async def test_qa_validates_after_fix(ctx):
     Write-enabled reviewers run FIRST so their fixes land before the single
     deterministic QA pass — no redundant re-run needed.
     """
-    verdict = CodeReviewVerdict(
-        passed=True, findings=[], files_modified=["sync.py"]
-    )
+    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa])
@@ -160,9 +159,7 @@ async def test_no_fixes_still_two_dispatches(ctx):
 @pytest.mark.asyncio
 async def test_qa_fails_after_fix(ctx):
     """When QA fails after reviewer fix, overall QA fails (FEAT-270)."""
-    verdict = CodeReviewVerdict(
-        passed=True, findings=[], files_modified=["sync.py"]
-    )
+    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
     qa_fail = QAReport(passed=False, criterion_results=[], lint_passed=False)
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa_fail])
@@ -222,9 +219,7 @@ async def test_custom_codereview_dispatcher_used(ctx):
     dispatcher.dispatch = AsyncMock(return_value=qa)
     mock_reviewer = MagicMock()
     mock_reviewer.advisory = False
-    mock_reviewer.review = AsyncMock(
-        return_value=CodeReviewVerdict(passed=True, findings=[])
-    )
+    mock_reviewer.review = AsyncMock(return_value=CodeReviewVerdict(passed=True, findings=[]))
     node = QANode(dispatcher=dispatcher, codereview_dispatcher=mock_reviewer)
     report = await node.execute(ctx)
     assert report.passed is True
@@ -260,15 +255,11 @@ async def test_review_brief_carries_deterministic_qa_results(ctx):
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(return_value=qa)
     reviewer = MagicMock()
-    reviewer.review = AsyncMock(
-        return_value=CodeReviewVerdict(passed=True, findings=[])
-    )
+    reviewer.review = AsyncMock(return_value=CodeReviewVerdict(passed=True, findings=[]))
     node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
     await node.execute(ctx)
     review_brief = reviewer.review.await_args.kwargs["brief"]
-    assert review_brief.qa_criterion_results == [
-        {"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}
-    ]
+    assert review_brief.qa_criterion_results == [{"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}]
     assert review_brief.qa_lint_passed is True
 
 
@@ -352,11 +343,7 @@ class TestPerRunJudgePanel:
 
         panel = self._Panel()
         node = QANode(dispatcher=MagicMock(), codereview_dispatcher=panel)
-        shared = {
-            "feature_brief": MagicMock(
-                judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")])
-            )
-        }
+        shared = {"feature_brief": MagicMock(judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")]))}
 
         first = node._active_reviewer(shared)
         second = node._active_reviewer(shared)
@@ -392,11 +379,7 @@ class TestPerRunJudgePanel:
         reviewer = MagicMock(spec=["review", "advisory", "agent_name"])
         reviewer.agent_name = "parallel"
         node = QANode(dispatcher=MagicMock(), codereview_dispatcher=reviewer)
-        shared = {
-            "feature_brief": MagicMock(
-                judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")])
-            )
-        }
+        shared = {"feature_brief": MagicMock(judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")]))}
 
         with caplog.at_level(logging.WARNING):
             assert node._active_reviewer(shared) is reviewer
