@@ -240,12 +240,25 @@ Manual verification procedure
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Applied TASK-2732's five decisions verbatim to `index.html`:
+`briefOf`'s leading `if (p.summary) ...` branch; the new `foldSeat`/
+`ownEvents`/`nodeSeatsHtml` functions (copied byte-for-byte — see
+`artifacts/logs/feat-496/task-2733-smoke-evidence.md` for the diff proof);
+`nodesForRender` rewired to `ownEvents(n.id)` (kept `TOPOLOGY[app.mode] ||
+TOPOLOGY.bug` unchanged — this file's own structural difference, not part
+of the mirrored logic); `eventRowsHtml`'s `[seat · task_id · judge_id]`
+badge and the "hasSeats" empty-state gate; `nodeMetaHtml` left unchanged for
+the same double-escaping reason as `dev.html`; `nodeSeatsHtml` wired into
+both the "panels" and rail-focus views (this file's third view name/
+structure differs cosmetically from `dev.html`'s "spine" but was equally
+left untouched, for the same reason: it never called `nodeMetaHtml`/
+`eventRowsHtml`). Verified both the `bug` and `feature` topologies share the
+same `development` node id, so pooled seats group correctly under it in
+either mode without any topology-specific change.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Any change back-ported to `dev.html`**: none — no divergence was found;
+TASK-2732's decisions transferred without needing adjustment.
 
-**Any change back-ported to `dev.html`**: none | describe
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

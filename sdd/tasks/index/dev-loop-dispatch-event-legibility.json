@@ -239,7 +239,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -249,8 +249,8 @@
       "parallelism_notes": "Deliberately sequential after 2732: it ADOPTS that task's rendering decisions rather than re-deciding them. Different file, but running them in parallel is how the two consoles diverge.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2733-index-console-parity.md"
+      "completed_at": "2026-09-02T04:00:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2733-index-console-parity.md"
     },
     {
       "id": "TASK-2734",
