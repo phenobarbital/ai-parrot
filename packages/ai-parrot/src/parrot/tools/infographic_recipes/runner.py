@@ -632,6 +632,7 @@ class RecipeRunner:
                     theme=props.get("theme") or recipe.render.theme,
                     surface_id=f"{recipe.name}-infographic",
                     data_model=data_model,
+                    metadata=layout.metadata,
                 )
             else:
                 envelope = build_surface(
@@ -639,6 +640,7 @@ class RecipeRunner:
                     props,
                     surface_id=f"{recipe.name}-{layout.component.lower()}",
                     data_model=data_model,
+                    metadata=layout.metadata,
                 )
         except CatalogValidationError as exc:
             raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))) from exc

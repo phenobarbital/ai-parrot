@@ -3,7 +3,7 @@
   "feat_id": "FEAT-518",
   "feature_slug": "bug-workerpool-repl",
   "started_at": "2026-09-02T13:36:00+02:00",
-  "updated_at": "2026-09-02T13:52:00+02:00",
+  "updated_at": "2026-09-02T14:08:00+02:00",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -37,12 +37,12 @@
       "queries_executed": 16,
       "queries_skipped": 0,
       "depth_reached": 1,
-      "files_read": 13,
+      "files_read": 14,
       "grep_calls": 15,
       "git_calls": 4,
       "truncated": false,
       "truncation_reason": null,
-      "probes_run": 3,
+      "probes_run": 4,
       "started_at": "2026-09-02T13:37:00+02:00",
       "completed_at": "2026-09-02T13:45:00+02:00",
       "duration_seconds": 480.0
@@ -60,15 +60,16 @@
       "lint_iterations": 1
     },
     "qa": {
-      "status": "skipped",
+      "status": "completed",
       "questions_total": 3,
-      "questions_answered": 0,
-      "skipped_reason": "autonomous session (no interactive gate); unknowns U1-U3 left open in the proposal \u00a75 for the user"
+      "questions_answered": 3,
+      "skipped_reason": null,
+      "answered_at": "2026-09-02T14:05:00+02:00"
     },
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/bug-workerpool-repl.proposal.md",
-      "commit_sha": "62ac8383a",
+      "commit_sha": "d3b33476f",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Root cause reproduced and localized (handle.py/pool.py/pythonpandas.py); remaining choices are bounded design decisions."
     }
@@ -82,7 +83,7 @@
     "max_wall_seconds": 300
   },
   "consumed": {
-    "files_read": 13,
+    "files_read": 14,
     "grep_calls": 15,
     "git_calls": 4,
     "wall_seconds": 480.0
@@ -90,6 +91,6 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "Answer U1-U3 in \u00a75 of the proposal (or accept defaults), then run /sdd-spec FEAT-518."
+    "next_action": "Run /sdd-spec FEAT-518 (type feature, base dev)."
   }
 }
