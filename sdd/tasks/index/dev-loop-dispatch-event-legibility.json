@@ -112,7 +112,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Touches only dispatchers/google_coding.py. Parallel with the rest of the wave. Carries spec root cause 7 (events arriving as flow.unknown).",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2727-agy-dispatcher-event-extractor.md"
+      "completed_at": "2026-09-02T02:41:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2727-agy-dispatcher-event-extractor.md"
     },
     {
       "id": "TASK-2728",
