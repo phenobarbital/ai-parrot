@@ -52,7 +52,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Touches only dispatchers/claude.py. Parallel with 2725/2726/2727/2728/2729 — disjoint files, no shared symbols beyond the TASK-2722/2723 API.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2724-claude-dispatcher-event-extractor.md"
+      "completed_at": "2026-09-02T02:24:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2724-claude-dispatcher-event-extractor.md"
     },
     {
       "id": "TASK-2725",
