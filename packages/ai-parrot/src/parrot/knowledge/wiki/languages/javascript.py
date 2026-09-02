@@ -37,8 +37,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
-from parrot.knowledge.wiki.languages import treesitter
+from parrot.knowledge.wiki.languages import astgrep, treesitter
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
+from parrot.knowledge.wiki.languages.render import render_outline, structural_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,29 @@ def _grammar_for(suffix: str, lang: str | None) -> str:
     if suffix == _SVELTE_SUFFIX:
         return "typescript" if lang in _TYPESCRIPT_LANGS else "javascript"
     return "typescript" if suffix in (".ts", ".tsx") else "javascript"
+
+
+def _astgrep_lang_for(suffix: str, lang: str | None) -> str:
+    """Pick the ast-grep language name for one file (FEAT-498).
+
+    Unlike :func:`_grammar_for` (which the tree-sitter walker uses and
+    which never distinguishes ``.tsx`` from ``.ts``), ast-grep-py exposes
+    ``"tsx"`` as a distinct language so JSX syntax parses correctly.
+    ``typescript.yaml``'s ``aliases: [tsx, javascript]`` serves all three
+    names from the same rule file.
+
+    Args:
+        suffix: The file's suffix, including the leading dot.
+        lang: The ``lang`` returned by :func:`_extract_script_blocks`.
+
+    Returns:
+        ``"tsx"``, ``"typescript"`` or ``"javascript"``.
+    """
+    if suffix == _SVELTE_SUFFIX:
+        return "typescript" if lang in _TYPESCRIPT_LANGS else "javascript"
+    if suffix == ".tsx":
+        return "tsx"
+    return "typescript" if suffix == ".ts" else "javascript"
 
 
 @dataclass(frozen=True)
@@ -499,6 +523,9 @@ class JavaScriptScanner(LanguageScanner):
     suffixes: ClassVar[frozenset[str]] = frozenset(
         {".js", ".jsx", ".mjs", ".ts", ".tsx", ".svelte"}
     )
+    #: ``"ast-grep"`` after the structural seam served the most recent
+    #: file, otherwise ``None`` (see :attr:`mode`). FEAT-498.
+    _last_mode: str | None = None
 
     # -- outline ------------------------------------------------------------
 
@@ -522,6 +549,19 @@ class JavaScriptScanner(LanguageScanner):
             imports = _extract_imports(source)
             suffix = PurePosixPath(rel_path).suffix
             script_source, lang = _extract_script_blocks(source, suffix)
+            if structural_enabled():
+                ast_grep_lang = _astgrep_lang_for(suffix, lang)
+                structural = astgrep.extract(script_source, ast_grep_lang, rel_path)
+                if structural is not None:
+                    self._last_mode = "ast-grep"
+                    return LanguageOutline(
+                        summary=structural.summary,
+                        outline=render_outline(structural.symbols, "javascript"),
+                        imports=imports,
+                        symbols=structural.symbols,
+                        refs=structural.refs,
+                    )
+            self._last_mode = None
             language = _grammar_for(suffix, lang)
             parser = treesitter.get_parser(language)
             if parser is not None:
@@ -756,6 +796,8 @@ class JavaScriptScanner(LanguageScanner):
         and Svelte files were reported as tree-sitter while being parsed
         by regex.
         """
+        if self._last_mode == "ast-grep":
+            return "ast-grep"
         if (
             treesitter.get_parser("typescript") is not None
             and treesitter.get_parser("javascript") is not None

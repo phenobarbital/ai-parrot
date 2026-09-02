@@ -22,8 +22,9 @@ from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Any, ClassVar
 
-from parrot.knowledge.wiki.languages import treesitter
+from parrot.knowledge.wiki.languages import astgrep, treesitter
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
+from parrot.knowledge.wiki.languages.render import render_outline, structural_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,9 @@ class RustScanner(LanguageScanner):
 
     name: ClassVar[str] = "rust"
     suffixes: ClassVar[frozenset[str]] = frozenset({".rs"})
+    #: ``"ast-grep"`` after the structural seam served the most recent
+    #: file, otherwise ``None`` (see :attr:`mode`). FEAT-498.
+    _last_mode: str | None = None
 
     # -- outline --------------------------------------------------------
 
@@ -146,6 +150,18 @@ class RustScanner(LanguageScanner):
         """
         try:
             imports = _extract_rust_imports(source)
+            if structural_enabled():
+                structural = astgrep.extract(source, "rust", rel_path)
+                if structural is not None:
+                    self._last_mode = "ast-grep"
+                    return LanguageOutline(
+                        summary=structural.summary,
+                        outline=render_outline(structural.symbols, "rust"),
+                        imports=imports,
+                        symbols=structural.symbols,
+                        refs=structural.refs,
+                    )
+            self._last_mode = None
             parser = treesitter.get_parser("rust")
             if parser is not None:
                 summary, lines = self._outline_treesitter(parser, source)
@@ -416,6 +432,8 @@ class RustScanner(LanguageScanner):
     def mode(self) -> str:
         """``"tree-sitter"`` when the optional grammar loads, else
         ``"heuristic"``."""
+        if self._last_mode == "ast-grep":
+            return "ast-grep"
         if treesitter.get_parser("rust") is not None:
             return "tree-sitter"
         return "heuristic"
