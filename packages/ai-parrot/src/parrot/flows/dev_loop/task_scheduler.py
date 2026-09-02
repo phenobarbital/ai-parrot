@@ -38,6 +38,16 @@ class TaskRef(BaseModel):
     depends_on: List[str] = Field(
         default_factory=list, description="TASK-NNN ids this task depends on."
     )
+    file: str = Field(
+        default="",
+        description=(
+            "Repo-relative path of the task's markdown artifact, e.g. "
+            "'sdd/tasks/active/TASK-1857-<slug>.md'. The index is the only "
+            "place this is knowable: <slug> is per-task and cannot be "
+            "derived from the id or the feature slug. Empty when the index "
+            "entry omits it."
+        ),
+    )
 
 
 class TaskScheduler:
@@ -219,6 +229,19 @@ class TaskScheduler:
             self._pending.discard(current)
             self._skipped.add(current)
             to_skip.extend(dependents.get(current, []))
+
+    def all_tasks(self) -> List[TaskRef]:
+        """Return every task read from the index, in index order.
+
+        Public counterpart to the internal ``_tasks`` map so callers that
+        only want to *report* the plan (how many tasks the feature was
+        split into, and which ones) do not have to reach into private
+        state.
+
+        Returns:
+            One :class:`TaskRef` per entry in the per-spec index.
+        """
+        return list(self._tasks.values())
 
     def pending(self) -> List[TaskRef]:
         """Return currently pending (not yet dispatchable-checked) tasks."""

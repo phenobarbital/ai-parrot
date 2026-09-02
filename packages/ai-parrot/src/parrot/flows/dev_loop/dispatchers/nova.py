@@ -50,6 +50,7 @@ from parrot.flows.dev_loop.models import (
     AdversarialFinding,
     CodeReviewFinding,
     CodeReviewVerdict,
+    DispatchLabels,
     NovaAdversarialReviewProfile,
     NovaCodeDispatchProfile,
     NovaMechanicalProfile,
@@ -181,10 +182,10 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",
-            "parallel_tool_calls": False,
-            "max_tokens": effective_max_tokens(
-                model or profile.model, profile.max_tokens, self.logger
-            ),
+            # Read from the profile (default True): one turn per tool call
+            # is what made whole tasks die against `max_turns`.
+            "parallel_tool_calls": getattr(profile, "parallel_tool_calls", True),
+            "max_tokens": effective_max_tokens(model or profile.model, profile.max_tokens, self.logger),
         }
         if profile.temperature is not None:
             args["temperature"] = profile.temperature
@@ -224,6 +225,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -233,6 +235,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+            labels=labels,
         )
 
 
@@ -305,6 +308,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run the advisory review directly against ``NovaClient.ask()``.
 
@@ -315,6 +319,13 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         ``AbstractCodeReviewDispatcher.review()``'s contract (this class
         cannot call ``super().review()`` — there is no underlying
         dispatcher to delegate to).
+
+        Args:
+            labels: FEAT-496 — accepted for protocol parity with the ABC's
+                now-updated signature (code-review finding: this seat has
+                no dispatch payload/usage-attribution seat to fold a
+                `judge_id` into, unlike `MantleAdversarialReviewDispatcher`,
+                so it is unused beyond satisfying the contract).
         """
         try:
             profile = self.build_review_profile()
@@ -334,9 +345,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
                     f"CodeReviewVerdict (got {type(verdict).__name__})"
                 )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error, mirrors code_review.py:145-157
-            self.logger.warning(
-                "%s code-review dispatch failed: %s", self.agent_name, exc
-            )
+            self.logger.warning("%s code-review dispatch failed: %s", self.agent_name, exc)
             return CodeReviewVerdict(
                 passed=True,
                 findings=[
@@ -348,16 +357,16 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             )
 
         tagged_findings = [
-            finding
-            if isinstance(finding, AdversarialFinding)
-            else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            (
+                finding
+                if isinstance(finding, AdversarialFinding)
+                else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            )
             for finding in verdict.findings
         ]
         return verdict.model_copy(update={"files_modified": [], "findings": tagged_findings})
 
-    async def _collect_diff(
-        self, cwd: str, profile: NovaAdversarialReviewProfile
-    ) -> str:
+    async def _collect_diff(self, cwd: str, profile: NovaAdversarialReviewProfile) -> str:
         """Compute the review diff for ``profile.review_scope``, truncated
         deterministically at ``profile.max_diff_chars``.
         """
@@ -377,8 +386,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         stdout_b, stderr_b = await process.communicate()
         if process.returncode != 0:
             raise DispatchExecutionError(
-                f"git diff failed (exit {process.returncode}): "
-                f"{stderr_b.decode('utf-8', errors='replace')[:2000]}"
+                f"git diff failed (exit {process.returncode}): " f"{stderr_b.decode('utf-8', errors='replace')[:2000]}"
             )
         diff_text = stdout_b.decode("utf-8", errors="replace")
         return self._truncate_diff(diff_text, profile.max_diff_chars)
@@ -388,10 +396,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         """Deterministically truncate ``diff_text``, never silently."""
         if len(diff_text) <= max_diff_chars:
             return diff_text
-        return (
-            diff_text[:max_diff_chars]
-            + f"\n\n[... diff truncated at {max_diff_chars} characters ...]"
-        )
+        return diff_text[:max_diff_chars] + f"\n\n[... diff truncated at {max_diff_chars} characters ...]"
 
     @staticmethod
     def _build_prompt(brief: BaseModel, diff_text: str) -> str:
@@ -530,14 +535,9 @@ async def summarize_pr_changes(
     # conf.py but never actually consumed anywhere — wire it into the
     # default profile here (an explicit `profile=` still wins, matching
     # every other config-vs-explicit-override precedent in this feature).
-    resolved_profile = profile or NovaMechanicalProfile(
-        model=conf.DEV_LOOP_NOVA_MECHANICAL_MODEL
-    )
+    resolved_profile = profile or NovaMechanicalProfile(model=conf.DEV_LOOP_NOVA_MECHANICAL_MODEL)
     if not _has_nova_credentials():
-        log.debug(
-            "PR summary enrichment skipped — no Nova/Bedrock opt-in "
-            "configured (AWS_NOVA_API_KEY)."
-        )
+        log.debug("PR summary enrichment skipped — no Nova/Bedrock opt-in " "configured (AWS_NOVA_API_KEY).")
         return ""
     # NOTE: construction stays *inside* the try — ``NovaClient()`` itself
     # can raise (bad/absent credentials), and this helper must never raise.

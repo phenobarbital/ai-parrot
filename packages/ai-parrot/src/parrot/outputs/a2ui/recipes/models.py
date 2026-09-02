@@ -160,7 +160,22 @@ class RenderSpec(BaseModel):
 
     Attributes:
         profile: Renderer name resolved via ``get_a2ui_renderer()``.
-        theme: Optional theme name passed through to the renderer.
+        theme: Optional theme name. Passed to the resolved renderer's
+            constructor as ``theme=`` when it accepts that parameter
+            (FEAT-493 TASK-2714) — the HTML renderers
+            (``interactive-html``, ``ssr-html``, ``pdf``) do; a renderer
+            without a ``theme`` parameter (e.g. ``echarts``,
+            ``folium-map``, ``adaptive-cards``) ignores this field and
+            constructs exactly as before. On the ``Infographic`` layout
+            branch, this value is ALSO threaded into
+            ``build_infographic(theme=...)`` as an ``Infographic.theme``
+            prop (unchanged by this task).
+        layout: Optional design-system layout name (e.g. ``"report"``,
+            ``"analytics"``, ``"print"``). Passed to the resolved
+            renderer's constructor as ``layout=`` when it accepts that
+            parameter — same detect-don't-assume rule as ``theme``.
+            ``None`` lets the renderer use its own default (FEAT-493
+            TASK-2714).
         delivery: Optional delivery config (provider/recipients) for
             ``deliver_artifact``.
     """
@@ -169,6 +184,7 @@ class RenderSpec(BaseModel):
 
     profile: str = "interactive-html"
     theme: Optional[str] = None
+    layout: Optional[str] = None
     delivery: Optional[dict[str, Any]] = None
 
 

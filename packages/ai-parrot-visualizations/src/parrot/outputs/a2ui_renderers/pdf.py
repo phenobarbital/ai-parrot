@@ -110,6 +110,21 @@ class PDFRenderer(SSRHTMLRenderer):
 
     _UNSUPPORTED: frozenset[str] = frozenset({"Video", "AudioPlayer"})
 
+    def __init__(self, *, theme: str = "light") -> None:
+        """Initialize the renderer, ALWAYS composing with ``layout="print"``.
+
+        Args:
+            theme: Default theme name resolved by
+                :class:`~parrot.outputs.formats.assets.design_system.DesignSystem`.
+
+        No ``layout`` parameter is accepted here (FEAT-493 TASK-2713,
+        spec §3 Module 6): a rasterized, paginated PDF is never a screen
+        dashboard, so the layout is forced in the class rather than left
+        to a constructor default a caller could override into
+        ``"analytics"`` by accident.
+        """
+        super().__init__(theme=theme, layout="print")
+
     async def render(
         self,
         envelope: CreateSurface,

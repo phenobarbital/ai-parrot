@@ -8,7 +8,7 @@ degrade-never-fail on publish failure, and the grounding filter.
 from __future__ import annotations
 
 from typing import Any, List
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -80,6 +80,39 @@ async def test_from_config_enabled_when_path_set(tmp_path, monkeypatch):
     monkeypatch.setattr(conf, "DEV_LOOP_GRAPH_MEMORY_PATH", str(tmp_path))
     mem = await DevLoopGraphMemory.from_config()
     assert isinstance(mem, DevLoopGraphMemory)
+
+
+@pytest.mark.asyncio
+async def test_from_config_non_string_path_disabled(tmp_path, monkeypatch):
+    """A non-str setting value must disable the plane, not build one on disk.
+
+    ``MagicMock.__fspath__()`` returns "MagicMock/<mock name>/<id>", so a mock
+    value sailing past the falsy check made ``SQLitePersistence`` mkdir that
+    tree in the CWD.  ``chdir(tmp_path)`` keeps a regression out of the repo.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(conf, "DEV_LOOP_GRAPH_MEMORY_PATH", MagicMock())
+
+    assert await DevLoopGraphMemory.from_config() is None
+    assert not (tmp_path / "MagicMock").exists()
+
+
+@pytest.mark.asyncio
+async def test_from_config_mocked_conf_module_disabled(tmp_path, monkeypatch):
+    """A mocked ``parrot.conf`` module must disable the plane too.
+
+    ``from_config`` re-resolves ``from parrot import conf`` at call time, so a
+    test that swaps the settings module for a ``MagicMock`` (in ``sys.modules``
+    or on the ``parrot`` package) hands every attribute lookup a truthy child
+    mock — the shape that wrote a real SQLite graph plane into the repo root.
+    """
+    import parrot
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(parrot, "conf", MagicMock())
+
+    assert await DevLoopGraphMemory.from_config() is None
+    assert not (tmp_path / "MagicMock").exists()
 
 
 # ---------------------------------------------------------------------------

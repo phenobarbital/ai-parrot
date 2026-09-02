@@ -398,8 +398,19 @@ class A2AServer:
     _INTERNAL_TOOL_NAMES = frozenset({"to_json"})
 
     def _build_skills_from_tools(self) -> List[AgentSkill]:
-        """Convert agent's tools to A2A skills (excluding internal plumbing)."""
+        """Convert agent's tools to A2A skills (excluding internal plumbing).
+
+        FEAT-477 (TASK-2600/TASK-2610): also surfaces the agent's MCP
+        *exposure set* — methods decorated with ``@mcp_tool`` — as skills.
+        Those methods are deliberately **never** registered into
+        ``agent.tool_manager`` (OQ2 — decorating a method changes what MCP
+        clients can call and nothing else), so they would otherwise be
+        invisible here even though the spec (§3 Module 1) documents this
+        `AgentCard` surfacing as a zero-new-code side effect of reification.
+        Additive only: never removes or overrides a `tool_manager` skill.
+        """
         skills = []
+        seen_names: set[str] = set()
 
         # Get tools from tool_manager if available (guard against a None
         # tool_manager so agents without one fall through to `tools`).
@@ -411,14 +422,37 @@ class A2AServer:
                 if tool := self.agent.tool_manager.get_tool(tool_name):
                     if skill := self._tool_to_skill(tool):
                         skills.append(skill)
+                        seen_names.add(tool_name)
 
         # Also check direct tools attribute
         elif hasattr(self.agent, "tools") and self.agent.tools:
             for tool in self.agent.tools:
-                if getattr(tool, "name", None) in self._INTERNAL_TOOL_NAMES:
+                tool_name = getattr(tool, "name", None)
+                if tool_name in self._INTERNAL_TOOL_NAMES:
                     continue
                 if skill := self._tool_to_skill(tool):
                     skills.append(skill)
+                    if tool_name:
+                        seen_names.add(tool_name)
+
+        # FEAT-477: the agent's @mcp_tool exposure set (never in
+        # tool_manager — OQ2). build_exposure_set() only consults
+        # agent.tool_manager when there is at least one decorated method
+        # (it never asks for it otherwise) — but an agent with decorated
+        # methods and no tool_manager at all would raise AttributeError,
+        # which must not break AgentCard generation for everyone else.
+        from parrot.mcp.agent_tools import build_exposure_set
+
+        try:
+            exposure_set = build_exposure_set(self.agent)
+        except AttributeError:
+            exposure_set = []
+        for tool in exposure_set:
+            if tool.name in seen_names or tool.name in self._INTERNAL_TOOL_NAMES:
+                continue
+            if skill := self._tool_to_skill(tool):
+                skills.append(skill)
+                seen_names.add(tool.name)
 
         return skills
 

@@ -40,6 +40,7 @@ from ..handlers.agents.factory import AgentFactoryHandler
 from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.infographic_recipes import RecipeHandler
+from ..handlers.ui_surfaces import UISurfacesHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -111,6 +112,11 @@ from ..handlers.comm_center import CommCenterHandler
 
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+
+# FEAT-477: agent-as-MCP-server mount (Module 2, TASK-2602)
+from ..mcp.agent_mount import AgentMCPMount
+from ..mcp.config import AgentMCPMountConfig, MCPServerConfig
+from ..mcp.principal_guard import AuditSink, PBACResolver
 
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
@@ -1962,7 +1968,47 @@ class BotManager:
 
         configure_liveavatar_output_subscriber(self.app)
 
-    def setup(self, app: web.Application) -> web.Application:
+    def setup(
+        self,
+        app: web.Application,
+        *,
+        agent_mount_config: Optional[AgentMCPMountConfig] = None,
+        agent_mount_auth_template: Optional[MCPServerConfig] = None,
+        agent_mount_pbac_resolver: Optional[PBACResolver] = None,
+        agent_mount_audit_sink: Optional[AuditSink] = None,
+    ) -> web.Application:
+        """Register BotManager routes on `app`.
+
+        Args:
+            app: The aiohttp application to configure.
+            agent_mount_config: Optional FEAT-477 agent-as-MCP-server mount
+                configuration. When provided, one MCP endpoint per listed
+                agent (plus the optional aggregate) is registered alongside
+                the tool-level `ParrotMCPServer`, if any (G11 — the
+                tool-level server's behavior is unchanged either way).
+                Defaults to `None` (no agent mount — today's behavior).
+            agent_mount_auth_template: Optional `MCPServerConfig` whose
+                auth fields (`auth_method`, `oauth2_*`, `api_key_store`)
+                are copied onto every per-agent server this mount builds.
+                Without one, every agent-mount request gets
+                `AuthMethod.NONE` and is rejected by principal resolution
+                (fail-closed — never open — but also never functional).
+                Only read when `agent_mount_config` is also given.
+            agent_mount_pbac_resolver: Optional `(pctx, resource,
+                required_permissions) -> bool` PBAC resolver (the
+                `PBACPermissionResolver.can_execute` shape) enforcing
+                `tools/list`/`tools/call` on the agent mount. `None`
+                (default) denies every call — deny-by-default, not a
+                silent no-op. Only read when `agent_mount_config` is also
+                given.
+            agent_mount_audit_sink: Optional callback invoked with every
+                agent-mount `tools/call` decision and principal-resolution
+                failure. `None` (default) only logs. Only read when
+                `agent_mount_config` is also given.
+
+        Returns:
+            The configured `app`.
+        """
         self.app = None
         if app:
             self.app = app if isinstance(app, web.Application) else app.get_app()
@@ -1994,15 +2040,28 @@ class BotManager:
         # A2UI Agent Functions runtime (FEAT-469 TASK-2573, spec §3 Module 6, G6) —
         # a DEDICATED endpoint for renderer->agent envelopes, deliberately NOT
         # routed through the AgentTalk POST above (spec §8). The literal
-        # "/capabilities" sub-route is registered first so aiohttp resolves it
-        # before matching it as part of the bare "{agent_id}/a2ui" pattern,
-        # mirroring the knowledge-router precedent below.
+        # "/capabilities" and "/surfaces/{surface_id}" sub-routes are
+        # registered first so aiohttp resolves them before matching either as
+        # part of the bare "{agent_id}/a2ui" pattern, mirroring the
+        # knowledge-router precedent below.
         router.add_view("/api/v1/agents/{agent_id}/a2ui/capabilities", A2UIHandler)
+        # FEAT-492 (TASK-2703): mirror of the ui_surfaces REST lane's
+        # negotiated GET — same SurfaceNegotiationService, no duplicated
+        # negotiation logic.
+        router.add_view("/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}", A2UIHandler)
         router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         # A2UI deep-link web resume route (FEAT-469 TASK-2574, spec §3 Module 7) —
         # still unmounted before this task; guards internally on Redis
         # availability and on double registration.
         self._register_a2ui_deeplink_routes()
+        # FEAT-492: persistent ui_surfaces plane (bookmarkable A2UI surfaces,
+        # spec §3 Module 4) — one UISurfacesHandler dispatching on match_info/
+        # path suffix (InfographicTalk/RecipeHandler idiom), five URL shapes.
+        router.add_view("/api/v1/ui/surfaces", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/refresh", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
@@ -2174,12 +2233,8 @@ class BotManager:
         # ai-parrot-server also exposes /api/v1/agent_tools; idempotent
         # against a host app (e.g. repo-root app.py) that still registers
         # it directly.
-        if 'tools_list' not in self.app.router.named_resources():
-            self.app.router.add_view(
-                '/api/v1/agent_tools',
-                ToolList,
-                name='tools_list'
-            )
+        if "tools_list" not in self.app.router.named_resources():
+            self.app.router.add_view("/api/v1/agent_tools", ToolList, name="tools_list")
         # Bot Handler
         router.add_view("/api/v1/chatbots", BotHandler)
         router.add_view("/api/v1/chatbots/{name}", BotHandler)
@@ -2253,7 +2308,46 @@ Available documentation UIs:
 - RapiDoc:     http://localhost:5000/api/docs/rapidoc
 - OpenAPI Spec: http://localhost:5000/api/docs/swagger.json
             """)
+        self._wire_agent_mount(
+            agent_mount_config,
+            auth_template=agent_mount_auth_template,
+            pbac_resolver=agent_mount_pbac_resolver,
+            audit_sink=agent_mount_audit_sink,
+        )
         return self.app
+
+    def _wire_agent_mount(
+        self,
+        agent_mount_config: Optional[AgentMCPMountConfig],
+        *,
+        auth_template: Optional[MCPServerConfig] = None,
+        pbac_resolver: Optional[PBACResolver] = None,
+        audit_sink: Optional[AuditSink] = None,
+    ) -> None:
+        """Build and mount the FEAT-477 agent-as-MCP-server surface, if configured.
+
+        Opt-in — only wired when `agent_mount_config` is given, so today's
+        behavior is unchanged by default (G11). Split out from `setup()`
+        so the wiring itself (which params reach `AgentMCPMount`) is
+        independently testable without exercising `setup()`'s much larger,
+        unrelated route-registration body.
+
+        Args:
+            agent_mount_config: The `AgentMCPMountConfig`, or `None` to
+                skip agent-mount wiring entirely.
+            auth_template: See `setup()`.
+            pbac_resolver: See `setup()`.
+            audit_sink: See `setup()`.
+        """
+        if agent_mount_config is None:
+            return
+        AgentMCPMount(
+            self,
+            agent_mount_config,
+            pbac_resolver=pbac_resolver,
+            audit_sink=audit_sink,
+            auth_template=auth_template,
+        ).setup(self.app)
 
     async def _cleanup_expired_bots(self) -> None:
         """Background task to cleanup expired temporary bot instances.

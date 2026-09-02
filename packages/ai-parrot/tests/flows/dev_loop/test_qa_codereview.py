@@ -1,4 +1,5 @@
 """QANode additive code-review gate (FEAT-250 TASK-008, extended FEAT-270)."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -132,9 +133,7 @@ async def test_qa_validates_after_fix(ctx):
     Write-enabled reviewers run FIRST so their fixes land before the single
     deterministic QA pass — no redundant re-run needed.
     """
-    verdict = CodeReviewVerdict(
-        passed=True, findings=[], files_modified=["sync.py"]
-    )
+    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa])
@@ -160,9 +159,7 @@ async def test_no_fixes_still_two_dispatches(ctx):
 @pytest.mark.asyncio
 async def test_qa_fails_after_fix(ctx):
     """When QA fails after reviewer fix, overall QA fails (FEAT-270)."""
-    verdict = CodeReviewVerdict(
-        passed=True, findings=[], files_modified=["sync.py"]
-    )
+    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=["sync.py"])
     qa_fail = QAReport(passed=False, criterion_results=[], lint_passed=False)
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa_fail])
@@ -179,6 +176,42 @@ async def test_backward_compat_no_reviewer(ctx):
 
 
 @pytest.mark.asyncio
+async def test_reviewer_without_labels_kwarg_still_runs(ctx):
+    """FEAT-496 regression guard.
+
+    `NovaAdversarialReviewDispatcher` (and any reviewer that fully
+    overrides `review()` with no underlying dispatcher to delegate to)
+    declares no `labels=` parameter at all. QANode's own code-review
+    dispatch call must not let that raise a TypeError that the
+    degrade-on-infra-error path then silently reports as "code-review
+    could not run" — the review must actually execute.
+    """
+    qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=qa)
+
+    class _NoLabelsReviewer:
+        """Duck-types the exact shape NovaAdversarialReviewDispatcher has:
+        no underlying `_dispatcher`, `review()` with no `labels=` param."""
+
+        advisory = True
+
+        def __init__(self):
+            self.calls = 0
+
+        async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round=""):
+            self.calls += 1
+            return CodeReviewVerdict(passed=True, findings=[])
+
+    reviewer = _NoLabelsReviewer()
+    node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
+    report = await node.execute(ctx)
+
+    assert reviewer.calls == 1, "the reviewer must actually run, not be skipped"
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
 async def test_custom_codereview_dispatcher_used(ctx):
     """An explicit codereview_dispatcher is used instead of the default."""
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
@@ -186,9 +219,7 @@ async def test_custom_codereview_dispatcher_used(ctx):
     dispatcher.dispatch = AsyncMock(return_value=qa)
     mock_reviewer = MagicMock()
     mock_reviewer.advisory = False
-    mock_reviewer.review = AsyncMock(
-        return_value=CodeReviewVerdict(passed=True, findings=[])
-    )
+    mock_reviewer.review = AsyncMock(return_value=CodeReviewVerdict(passed=True, findings=[]))
     node = QANode(dispatcher=dispatcher, codereview_dispatcher=mock_reviewer)
     report = await node.execute(ctx)
     assert report.passed is True
@@ -224,13 +255,132 @@ async def test_review_brief_carries_deterministic_qa_results(ctx):
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(return_value=qa)
     reviewer = MagicMock()
-    reviewer.review = AsyncMock(
-        return_value=CodeReviewVerdict(passed=True, findings=[])
-    )
+    reviewer.review = AsyncMock(return_value=CodeReviewVerdict(passed=True, findings=[]))
     node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
     await node.execute(ctx)
     review_brief = reviewer.review.await_args.kwargs["brief"]
-    assert review_brief.qa_criterion_results == [
-        {"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}
-    ]
+    assert review_brief.qa_criterion_results == [{"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}]
     assert review_brief.qa_lint_passed is True
+
+
+@pytest.mark.asyncio
+async def test_advisory_review_runs_after_qa_not_concurrently(ctx):
+    """Order is the guarantee, not an incidental scheduling detail.
+
+    An advisory reviewer runs read-only and cannot execute a criterion
+    itself, so it must see the deterministic gate's recorded results.
+    Running the two concurrently withholds that evidence structurally —
+    the regression this pins against (bf2693e20 undoing df9f21053).
+    """
+    calls: list[str] = []
+
+    async def _qa_dispatch(**kwargs):
+        calls.append("qa")
+        return QAReport(passed=True, criterion_results=[], lint_passed=True)
+
+    async def _review(**kwargs):
+        calls.append("review")
+        assert "qa" in calls, "review must not start before QA has recorded its results"
+        return CodeReviewVerdict(passed=True, findings=[])
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=_qa_dispatch)
+    reviewer = MagicMock()
+    reviewer.advisory = True
+    reviewer.review = AsyncMock(side_effect=_review)
+
+    await QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer).execute(ctx)
+
+    assert calls == ["qa", "review"]
+
+
+class TestPerRunJudgePanel:
+    """``FeatureBrief.judge_panel`` must actually reach the reviewer.
+
+    The field existed, the server parsed it into the brief, and nothing
+    ever read it: QANode's reviewer came exclusively from the dispatcher
+    injected at construction time, built once at server start from
+    ``DEV_LOOP_JUDGE_PANEL`` / ``default_judge_panel()``. Editing the
+    panel in the console therefore changed nothing about the run — which
+    is how a Gemini judge kept being dispatched after it had been removed
+    there.
+    """
+
+    class _Panel:
+        """Stand-in exposing only the ``with_judges`` seam QANode uses."""
+
+        agent_name = "judge-panel"
+        advisory = True
+
+        def __init__(self, judges=None):
+            self.judges = judges
+            self.calls = []
+
+        def with_judges(self, judges):
+            self.calls.append(judges)
+            return type(self)(judges)
+
+    def test_brief_panel_overrides_the_injected_panel(self):
+        from parrot.flows.dev_loop.models import JudgePanelConfig, JudgeSpec
+
+        panel = self._Panel()
+        node = QANode(dispatcher=MagicMock(), codereview_dispatcher=panel)
+        judges = [JudgeSpec(agent="claude-code"), JudgeSpec(agent="codex")]
+        shared = {"feature_brief": MagicMock(judge_panel=JudgePanelConfig(judges=judges))}
+
+        reviewer = node._active_reviewer(shared)
+
+        assert reviewer is not panel
+        assert panel.calls == [judges]
+
+    def test_resolution_is_cached_per_run(self):
+        """`execute()` resolves twice (advisory branch + the review itself).
+
+        Both must see the SAME reviewer, and the panel must not be rebuilt
+        once per QA attempt.
+        """
+        from parrot.flows.dev_loop.models import JudgePanelConfig, JudgeSpec
+
+        panel = self._Panel()
+        node = QANode(dispatcher=MagicMock(), codereview_dispatcher=panel)
+        shared = {"feature_brief": MagicMock(judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")]))}
+
+        first = node._active_reviewer(shared)
+        second = node._active_reviewer(shared)
+
+        assert first is second
+        assert len(panel.calls) == 1
+
+    def test_no_brief_keeps_the_injected_reviewer(self):
+        """Bug-mode runs carry no FeatureBrief at all."""
+        panel = self._Panel()
+        node = QANode(dispatcher=MagicMock(), codereview_dispatcher=panel)
+
+        assert node._active_reviewer({}) is panel
+
+    def test_empty_panel_keeps_the_injected_reviewer(self):
+        node_panel = self._Panel()
+        node = QANode(dispatcher=MagicMock(), codereview_dispatcher=node_panel)
+        shared = {"feature_brief": MagicMock(judge_panel=None)}
+
+        assert node._active_reviewer(shared) is node_panel
+
+    def test_non_panel_reviewer_is_left_alone(self, caplog):
+        """A deployment that swapped the panel out keeps its reviewer.
+
+        DEV_FLOW_USE_REVIEW_PAIR installs the model plan's primary+counter
+        pair, which has no ``with_judges``. The override is dropped — but
+        loudly, not silently.
+        """
+        import logging
+
+        from parrot.flows.dev_loop.models import JudgePanelConfig, JudgeSpec
+
+        reviewer = MagicMock(spec=["review", "advisory", "agent_name"])
+        reviewer.agent_name = "parallel"
+        node = QANode(dispatcher=MagicMock(), codereview_dispatcher=reviewer)
+        shared = {"feature_brief": MagicMock(judge_panel=JudgePanelConfig(judges=[JudgeSpec(agent="codex")]))}
+
+        with caplog.at_level(logging.WARNING):
+            assert node._active_reviewer(shared) is reviewer
+        assert "override ignored" in caplog.text

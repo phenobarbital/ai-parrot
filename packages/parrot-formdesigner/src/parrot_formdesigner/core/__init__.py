@@ -50,11 +50,14 @@ from .style import (
     StyleSchema,
 )
 from .types import FieldType, LocalizedString
+from .voice_answer import VoiceAnswerEnvelope
 
 __all__ = [
     # Types
     "LocalizedString",
     "FieldType",
+    # Voice answer envelope (FEAT-488)
+    "VoiceAnswerEnvelope",
     # Auth
     "AuthConfig",
     "NoAuth",

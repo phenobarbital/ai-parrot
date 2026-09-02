@@ -26,16 +26,26 @@ import asyncio
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set, Union
+from typing import Any, Callable, ClassVar, Dict, Literal, Optional, Set, Union
 
 from navconfig.logging import logging
+from pydantic import BaseModel
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
-from parrot.bots.flows.core.checkpoint import CheckpointStore
+from parrot.bots.flows.core.checkpoint import (
+    CheckpointInputMetadata,
+    CheckpointPersistenceError,
+    CheckpointStore,
+    get_checkpoint_store,
+)
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.result import FlowResult
-from parrot.flows.dev_loop.checkpoint import DevCheckpointCoordinator
+from parrot.flows.dev_loop.checkpoint import (
+    TOPOLOGY_VERSION,
+    DevCheckpointCoordinator,
+    compute_input_fingerprint,
+)
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import (
@@ -395,6 +405,14 @@ class DevLoopRunner:
             and still used as this run's identity, just without checkpoint
             recovery, exactly as before FEAT-480).
     """
+
+    #: Checkpoint namespace this runner owns. The stable checkpoint
+    #: identity is ``"<workflow>/<run_id>"`` (FEAT-480 spec §2 step 1), so
+    #: a ``dev-loop`` checkpoint never satisfies a ``dev-flow`` resume of
+    #: the same run_id. Declared here (rather than repeated as a literal
+    #: at every ``prepare()``/``inspect_checkpoint()`` call site) so the
+    #: subclass override is the ONLY place the two can differ.
+    CHECKPOINT_WORKFLOW: ClassVar[Literal["dev-loop", "dev-flow"]] = "dev-loop"
 
     def __init__(
         self,
@@ -1175,6 +1193,7 @@ class DevLoopRunner:
         run_id: Optional[str] = None,
         initial_task: str = "",
         extra_shared: Optional[Dict[str, Any]] = None,
+        flow_kwargs_overrides: Optional[Dict[str, Any]] = None,
     ) -> FlowResult:
         """Execute one dev-loop run for *brief*, respecting the run cap.
 
@@ -1195,6 +1214,22 @@ class DevLoopRunner:
             initial_task: Optional human-readable task line stored as the
                 context's ``initial_task``.
             extra_shared: Extra entries merged into ``shared_data``.
+            flow_kwargs_overrides: FEAT-490 — optional per-run overrides
+                merged over ``self._dev_loop_flow_kwargs`` when building a
+                fresh flow on the recovery path (cache miss). Passed as a
+                call argument and closed over per call — never stored on
+                ``self``, since this runner executes up to
+                ``max_concurrent_runs`` runs concurrently. ``None`` (the
+                default) leaves every existing caller byte-identical.
+                TASK-2691: an ops embedder threads a per-run
+                ``DevFlowModelPlan`` (Module 7's new
+                ``build_dev_loop_flow(model_plan=...)`` kwarg, TASK-2690)
+                by passing ``flow_kwargs_overrides={"model_plan": plan}``
+                here — this base class stays a dev-flow-agnostic generic
+                mapping by design (spec §8 Q5); it does not, and must not,
+                gain a typed ``model_plan`` parameter of its own. The ops
+                console is not wired to send one (spec §1 Non-Goals) —
+                this is library-level parity only.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -1251,11 +1286,11 @@ class DevLoopRunner:
         flow: AgentsFlow = self.flow
         if recovery_enabled:
             flow, mode = await self._checkpoint_coordinator.prepare(
-                workflow="dev-loop",
+                workflow=self.CHECKPOINT_WORKFLOW,
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
-                flow_factory=self._dev_loop_flow_factory(),
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
                 execution_policy=self._execution_policy_for_fingerprint(),
             )
             # spec §5: recovered runs must be distinguishable in session
@@ -1327,20 +1362,205 @@ class DevLoopRunner:
         self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
-    def _dev_loop_flow_factory(self) -> Callable[[Optional[Any]], AgentsFlow]:
+    @property
+    def recovery_enabled(self) -> bool:
+        """Whether this runner can resume a run from a checkpoint at all.
+
+        ``True`` only when ``dev_loop_flow_kwargs`` was supplied, since the
+        recovery path must build a genuinely fresh per-run flow (spec §7).
+        A server exposes this so an operator is never offered a "resume"
+        control that would silently start a full fresh run instead.
+        """
+        return self._dev_loop_flow_kwargs is not None
+
+    def _recovery_supported(self, brief: Any) -> bool:
+        """Whether :meth:`run` would take the recovery path for *brief*.
+
+        The dev-loop's ``run()`` hands a :class:`FeatureBrief` to
+        ``_run_feature()`` BEFORE its recovery gate, so feature-mode runs
+        of this topology are never checkpoint-recovered.
+        :class:`~parrot.flows.dev_flow.runner.DevFlowRunner` overrides
+        this — its single topology serves both of its brief kinds through
+        the coordinator.
+
+        Args:
+            brief: The brief a caller intends to run.
+
+        Returns:
+            ``True`` when a run of *brief* can be resumed from a
+            checkpoint.
+        """
+        return not isinstance(brief, FeatureBrief)
+
+    def _checkpoint_input_metadata(self, brief: BaseModel) -> CheckpointInputMetadata:
+        """The :class:`CheckpointInputMetadata` a run of *brief* would carry.
+
+        Computed exactly as ``DevCheckpointCoordinator.prepare()`` computes
+        it, from the same execution policy — so a comparison against a
+        stored checkpoint's ``input_metadata`` answers the same question
+        ``AgentsFlow.resume(expected_input=...)`` will later answer, before
+        a run is started rather than after it fails.
+
+        Args:
+            brief: The run's input brief.
+
+        Returns:
+            The metadata whose ``input_fingerprint`` must match a stored
+            checkpoint's for a resume to be accepted.
+        """
+        policy = self._execution_policy_for_fingerprint()
+        return CheckpointInputMetadata(
+            workflow=self.CHECKPOINT_WORKFLOW,
+            topology_version=TOPOLOGY_VERSION,
+            input_fingerprint=compute_input_fingerprint(
+                workflow=self.CHECKPOINT_WORKFLOW,
+                brief=brief,
+                repository=str(policy.get("repository", "")),
+                execution_policy=policy,
+                document_identity=str(policy.get("document_identity", "")),
+            ),
+        )
+
+    async def inspect_checkpoint(
+        self,
+        run_id: str,
+        *,
+        brief: Optional[BaseModel] = None,
+    ) -> Dict[str, Any]:
+        """Report whether ``run_id`` can be resumed — WITHOUT starting a run.
+
+        Read-only preflight for a caller that wants to hand ``run_id=`` to
+        :meth:`run` and continue an interrupted run instead of paying for
+        intake/research/ideation/planning again. Without it the two ways a
+        resume fails (an unknown or TTL-expired id, and an input that no
+        longer fingerprints the same) only surface once :meth:`run` is
+        already in flight, as an exception inside the caller's background
+        task — after the console has already reported "running".
+
+        Args:
+            run_id: The run identity to probe.
+            brief: The brief the caller intends to resume with. Supply it
+                to get a real ``resumable`` verdict; omit it to probe mere
+                existence (``resumable`` is then ``None`` — "unknown", not
+                "no").
+
+        Returns:
+            A JSON-serialisable report::
+
+                {"run_id", "workflow", "flow_id", "recovery_enabled",
+                 "found", "resumable", "reason", "status",
+                 "checkpoint_id", "created_at", "completed_nodes"}
+
+            ``reason`` is ``None`` when resumable, else one of
+            ``"recovery_disabled"`` (this runner was built without
+            ``dev_loop_flow_kwargs``), ``"unsupported_brief"``,
+            ``"no_checkpoint"`` (never written, or expired — the Redis
+            tier's TTL is 24h by default), ``"fingerprint_unchecked"``
+            (no *brief* given) or ``"fingerprint_mismatch"``.
+
+        Raises:
+            CheckpointPersistenceError: The checkpoint store could not be
+                reached (e.g. Redis down) — deliberately NOT folded into a
+                ``found: False`` report, which would read as "this run is
+                gone" and invite a fresh, expensive re-run.
+        """
+        workflow = self.CHECKPOINT_WORKFLOW
+        flow_id = f"{workflow}/{run_id}"
+        report: Dict[str, Any] = {
+            "run_id": run_id,
+            "workflow": workflow,
+            "flow_id": flow_id,
+            "recovery_enabled": self.recovery_enabled,
+            "found": False,
+            "resumable": False,
+            "reason": None,
+            "status": None,
+            "checkpoint_id": None,
+            "created_at": None,
+            "completed_nodes": [],
+        }
+        if not report["recovery_enabled"]:
+            report["reason"] = "recovery_disabled"
+            return report
+        if brief is not None and not self._recovery_supported(brief):
+            report["reason"] = "unsupported_brief"
+            return report
+
+        store = get_checkpoint_store(self._checkpoint_store)
+        try:
+            checkpoint = await store.latest(flow_id)
+        except Exception as exc:
+            raise CheckpointPersistenceError(
+                f"inspect_checkpoint(): checkpoint lookup failed for " f"flow_id={flow_id!r}: {exc}"
+            ) from exc
+
+        if checkpoint is None:
+            report["reason"] = "no_checkpoint"
+            return report
+
+        created_at = getattr(checkpoint, "created_at", None)
+        report.update(
+            found=True,
+            status=checkpoint.status,
+            checkpoint_id=checkpoint.checkpoint_id,
+            created_at=created_at.isoformat() if created_at is not None else None,
+            completed_nodes=list(checkpoint.context.completed_tasks),
+        )
+        if brief is None:
+            report["resumable"] = None
+            report["reason"] = "fingerprint_unchecked"
+            return report
+
+        # Same equality `AgentsFlow.resume()` applies (flow.py:1521) — a
+        # pre-FEAT-480 checkpoint carrying `input_metadata=None` compares
+        # unequal there too, so reporting it as resumable here would be a
+        # lie the resume itself then contradicts.
+        if checkpoint.input_metadata != self._checkpoint_input_metadata(brief):
+            report["reason"] = "fingerprint_mismatch"
+            return report
+
+        report["resumable"] = True
+        return report
+
+    def _dev_loop_flow_factory(
+        self, overrides: Optional[Dict[str, Any]] = None
+    ) -> Callable[[Optional[Any]], AgentsFlow]:
         """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
 
         Rebuilds a genuinely fresh ``AgentsFlow`` via ``build_dev_loop_flow``
         using the SAME kwargs the caller originally built ``self.flow``
         with (``self._dev_loop_flow_kwargs``), with checkpointing forced
         on — per-run construction is mandatory for the recovery path
-        (spec §7: shared flow instances are concurrent today). The
-        ``definition`` argument ``AgentsFlow.resume()``/
-        ``DevCheckpointCoordinator`` pass to this closure is deliberately
-        ignored, matching the ``flow_factory`` contract documented in
-        ``parrot.flows.dev_loop.checkpoint``: ``build_dev_loop_flow``
-        always derives its own declarative snapshot via
-        ``build_dev_loop_definition()`` regardless.
+        (spec §7: shared flow instances are concurrent today).
+
+        FEAT-490 correction (post-review): ``AgentsFlow.resume()`` calls
+        THIS SAME closure — ``flow_factory(checkpoint.definition)`` — to
+        rebuild the topology of a run it is resuming, not only
+        ``DevCheckpointCoordinator.prepare()``'s cache-miss branch
+        (``flow_factory(None)``). A prior version of this docstring
+        claimed the ``definition`` argument was "deliberately ignored" and
+        merged ``overrides`` unconditionally before returning the closure —
+        that silently applied a NEWLY submitted per-run override (e.g. a
+        different ``model_plan``) to every not-yet-completed node of a
+        RESUMED run, contradicting the resume rule (spec §8 Q1: a resumed
+        run keeps the seats/config it was created with). The definition's
+        *content* is still ignored (``build_dev_loop_flow`` always derives
+        its own declarative snapshot via ``build_dev_loop_definition()``
+        regardless) — but its *presence* is the only signal available at
+        this call site for "is this call rebuilding a FRESH run or
+        RESUMING one," per ``DevCheckpointCoordinator.prepare()``'s
+        contract (``flow_factory(None)`` on a cache miss,
+        ``flow_factory(checkpoint.definition)`` — never ``None`` — inside
+        ``AgentsFlow.resume()``). ``overrides`` is therefore applied
+        INSIDE the closure, gated on ``_definition is None``.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only, and
+                ONLY when the closure is invoked on the fresh (cache-miss)
+                path. Captured in the closure and re-evaluated per
+                invocation — never assigned to ``self`` — concurrent runs
+                each get their own closure.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -1356,9 +1576,20 @@ class DevLoopRunner:
                 "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
                 "to have been passed to DevLoopRunner.__init__()."
             )
-        kwargs = dict(self._dev_loop_flow_kwargs)
+        base_kwargs = self._dev_loop_flow_kwargs
 
         def _factory(_definition: Optional[Any]) -> AgentsFlow:
+            # `_definition is None` <=> DevCheckpointCoordinator.prepare()'s
+            # cache-miss branch (flow_factory(None)) — the ONLY case a
+            # per-run override may apply. A non-None `_definition` means
+            # AgentsFlow.resume() is rebuilding a RESUMED run's topology;
+            # the override must NOT reach it, or a resumed run's
+            # not-yet-completed nodes would adopt a newly submitted
+            # per-run config instead of keeping the one the run was
+            # created with.
+            kwargs = dict(base_kwargs)
+            if _definition is None and overrides:
+                kwargs.update(overrides)
             return build_dev_loop_flow(
                 **kwargs,
                 checkpoint=True,

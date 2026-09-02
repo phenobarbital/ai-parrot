@@ -53,12 +53,13 @@ from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
 )
+from ..utils.http_logging import quiet_http_loggers
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
 # Silence the underlying HTTP stack used by the Anthropic SDK; its DEBUG
 # traces (connect_tcp/start_tls) are pure noise for callers of this client.
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Covers the httpx2/httpcore2 names too — see parrot.utils.http_logging.
+quiet_http_loggers()
 
 # FEAT-232: backend selector type alias.
 AnthropicBackend = Literal["direct", "bedrock", "aws"]

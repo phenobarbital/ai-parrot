@@ -22,8 +22,12 @@ from parrot import conf
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
     _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
+    summarize_tool_input,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
@@ -31,6 +35,7 @@ from parrot.flows.dev_loop.models import (
     CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     DispatchEvent,
+    DispatchLabels,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
 
@@ -77,6 +82,7 @@ class CodexCodeDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         """Dispatch a single Codex CLI session and return parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
@@ -88,6 +94,8 @@ class CodexCodeDispatcher:
         # raise here still resets the var (the main finally: below only
         # covers the semaphore block).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
         try:
             self._enforce_cwd_under_worktree_base(cwd)
 
@@ -100,6 +108,7 @@ class CodexCodeDispatcher:
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
             raise
 
         async with self._semaphore:
@@ -210,6 +219,7 @@ class CodexCodeDispatcher:
                 return result
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
                 for path in (schema_path, output_path):
                     if path is None:
                         continue
@@ -392,13 +402,82 @@ class CodexCodeDispatcher:
         run_id: str,
         node_id: str,
     ) -> None:
+        payload: Dict[str, Any] = {"codex_event": event}
+        payload.update(self._extract_codex_display(event))
         await self._publish_event(
             stream_key,
             kind=self._codex_event_kind(event),
             run_id=run_id,
             node_id=node_id,
-            payload={"codex_event": event},
+            payload=payload,
         )
+
+    @staticmethod
+    def _extract_codex_display(event: Dict[str, Any]) -> Dict[str, Any]:
+        """Best-effort display projection of one Codex CLI stream event.
+
+        Never raises and never assumes a field is present — the CLI's event
+        schema is not pinned by this repo; every field is read defensively
+        via ``.get()``.
+
+        Args:
+            event: The parsed Codex CLI stdout JSON event.
+
+        Returns:
+            A dict of additive display keys (``tool_name``, ``tool_input``,
+            ``text``, and any status/exit detail the item carries). Empty
+            when nothing recognisable is present.
+        """
+        try:
+            out: Dict[str, Any] = {}
+            item = event.get("item") if isinstance(event, dict) else None
+            item_type = item.get("type") if isinstance(item, dict) else None
+
+            if item_type == "command_execution":
+                out["tool_name"] = "shell"
+                command = item.get("command")
+                if command:
+                    out["tool_input"] = summarize_tool_input("shell", {"command": command})
+                exit_code = item.get("exit_code")
+                if exit_code is not None:
+                    out["exit_code"] = exit_code
+                status = item.get("status")
+                if status:
+                    out["status"] = status
+            elif item_type == "file_change":
+                out["tool_name"] = "edit"
+                changes = item.get("changes")
+                path = item.get("path")
+                if changes:
+                    out["tool_input"] = summarize_tool_input("edit", {"path": str(changes)})
+                elif path:
+                    out["tool_input"] = summarize_tool_input("edit", {"path": path})
+            elif item_type == "mcp_tool_call":
+                server = item.get("server") or ""
+                tool = item.get("tool") or ""
+                name = " ".join(part for part in (server, tool) if part)
+                if name:
+                    out["tool_name"] = name
+                arguments = item.get("arguments")
+                if arguments is not None:
+                    out["tool_input"] = summarize_tool_input(name, arguments)
+            elif item_type == "web_search":
+                out["tool_name"] = "web_search"
+                query = item.get("query")
+                if query:
+                    out["tool_input"] = summarize_tool_input("web_search", {"prompt": query})
+            else:
+                text = None
+                if isinstance(item, dict):
+                    text = item.get("text")
+                if not text and isinstance(event, dict):
+                    text = event.get("message")
+                if text:
+                    out["text"] = str(text)[:400]
+
+            return out
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            return {}
 
     def _codex_event_kind(self, event: Dict[str, Any]) -> str:
         event_type = event.get("type")
@@ -528,7 +607,7 @@ class CodexCodeDispatcher:
             ts=time.time(),
             run_id=run_id,
             node_id=node_id,
-            payload=payload,
+            payload=normalize_payload(kind, payload),
         )
         # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
         _apply_to_session_host(event)
@@ -548,4 +627,3 @@ class CodexCodeDispatcher:
             await redis_client.xadd(stream_key, fields, maxlen=maxlen, approximate=True)
         except Exception as exc:  # pragma: no cover - best-effort publish
             self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
-

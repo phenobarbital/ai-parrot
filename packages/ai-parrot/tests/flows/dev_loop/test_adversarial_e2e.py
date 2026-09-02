@@ -33,7 +33,6 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.session_state import SessionHost
 
-
 # ---------------------------------------------------------------------------
 # Fake-CLI-binary harness (mirrors test_codex_dispatcher.py — no real
 # subprocess/network access; `_create_process` is monkeypatched to write a
@@ -81,9 +80,7 @@ def codex_dispatcher(monkeypatch, tmp_path):
         "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
-    disp = CodexCodeDispatcher(
-        max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=60
-    )
+    disp = CodexCodeDispatcher(max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=60)
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
 
@@ -124,16 +121,18 @@ def ctx(tmp_path):
 @pytest.mark.asyncio
 async def test_e2e_adversarial_review_triage(codex_dispatcher, ctx, monkeypatch):
     """Real CodexAdversarialReviewDispatcher → QANode triage: 1 CONFIRM (rerun), 1 REJECT (notes)."""
-    verdict_payload = json.dumps({
-        "passed": False,
-        "findings": [
-            {"message": "Off by one", "severity": "major", "file": "a.py", "line": 10},
-            {"message": "Style nit", "severity": "minor", "file": "b.py", "line": 2},
-        ],
-        "summary": "two findings",
-        # Lying stub: the advisory dispatcher must strip this regardless.
-        "files_modified": ["should_not_appear.py"],
-    })
+    verdict_payload = json.dumps(
+        {
+            "passed": False,
+            "findings": [
+                {"message": "Off by one", "severity": "major", "file": "a.py", "line": 10},
+                {"message": "Style nit", "severity": "minor", "file": "b.py", "line": 2},
+            ],
+            "summary": "two findings",
+            # Lying stub: the advisory dispatcher must strip this regardless.
+            "files_modified": ["should_not_appear.py"],
+        }
+    )
 
     async def _fake_create(command: Sequence[str]):
         _write_output(command, verdict_payload)
@@ -144,16 +143,30 @@ async def test_e2e_adversarial_review_triage(codex_dispatcher, ctx, monkeypatch)
     adversarial_reviewer = CodexAdversarialReviewDispatcher(dispatcher=codex_dispatcher)
 
     confirmed = AdversarialFinding(
-        message="Off by one", severity="major", file="a.py", line=10,
-        source="codex-adversarial", disposition="confirm", triage_reason="fixed the off-by-one",
+        message="Off by one",
+        severity="major",
+        file="a.py",
+        line=10,
+        source="codex-adversarial",
+        disposition="confirm",
+        triage_reason="fixed the off-by-one",
         finding_id="finding-0",
     )
     rejected = AdversarialFinding(
-        message="Style nit", severity="minor", file="b.py", line=2,
-        source="codex-adversarial", disposition="reject", triage_reason="not actually an issue",
+        message="Style nit",
+        severity="minor",
+        file="b.py",
+        line=2,
+        source="codex-adversarial",
+        disposition="reject",
+        triage_reason="not actually an issue",
         finding_id="finding-1",
     )
     triage_report = TriageReport(findings=[confirmed, rejected], files_modified=["a.py"])
+
+    # Evidence now comes from git, not the worker's claim (FEAT-497) — `ctx`'s
+    # `worktree_path` is a plain tmp_path, not a real repo, so verify directly.
+    monkeypatch.setattr(QANode, "_paths_touched_since", AsyncMock(return_value=["a.py"]))
 
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     rerun_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
@@ -174,13 +187,15 @@ async def test_e2e_adversarial_review_triage(codex_dispatcher, ctx, monkeypatch)
 @pytest.mark.asyncio
 async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monkeypatch):
     """ESCALATE → a real SessionHost gate is opened+pending, then resolves; note is PR-visible."""
-    verdict_payload = json.dumps({
-        "passed": False,
-        "findings": [
-            {"message": "Possible security issue", "severity": "critical", "file": "auth.py", "line": 5},
-        ],
-        "summary": "one finding",
-    })
+    verdict_payload = json.dumps(
+        {
+            "passed": False,
+            "findings": [
+                {"message": "Possible security issue", "severity": "critical", "file": "auth.py", "line": 5},
+            ],
+            "summary": "one finding",
+        }
+    )
 
     async def _fake_create(command: Sequence[str]):
         _write_output(command, verdict_payload)
@@ -191,8 +206,13 @@ async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monk
     adversarial_reviewer = CodexAdversarialReviewDispatcher(dispatcher=codex_dispatcher)
 
     escalated = AdversarialFinding(
-        message="Possible security issue", severity="critical", file="auth.py", line=5,
-        source="codex-adversarial", disposition="escalate", triage_reason="needs a human call",
+        message="Possible security issue",
+        severity="critical",
+        file="auth.py",
+        line=5,
+        source="codex-adversarial",
+        disposition="escalate",
+        triage_reason="needs a human call",
         finding_id="finding-0",
     )
     triage_report = TriageReport(findings=[escalated], files_modified=[])
@@ -213,9 +233,7 @@ async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monk
     # dispatch's semaphore/subprocess/stream-reading chain, the triage
     # dispatch) so poll briefly with sleep(0.005) rather than assuming a fixed yield count.
     for _ in range(200):
-        if any(
-            g.kind == "review_escalation" for g in session_host.state.gates.values()
-        ):
+        if any(g.kind == "review_escalation" for g in session_host.state.gates.values()):
             break
         await asyncio.sleep(0.005)
     else:

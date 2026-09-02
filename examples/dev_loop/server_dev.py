@@ -49,6 +49,7 @@ import asyncio
 import functools
 import logging
 import os
+import re
 import sys
 import time
 import uuid
@@ -58,6 +59,7 @@ from typing import Any
 import redis.asyncio as aioredis
 from aiohttp import web
 from parrot import conf
+from parrot.bots.flows.core.checkpoint import FlowLockedError
 from parrot.flows.dev_flow.flow import build_dev_flow
 from parrot.flows.dev_flow.model_plan import (
     DevFlowModelPlan,
@@ -78,10 +80,12 @@ from parrot.flows.dev_loop.agent_builder import (
     parse_pool_env,
     resolve_pool_max,
 )
+from parrot.flows.dev_loop.checkpoint import RecoveredArtifactError
 from parrot.flows.dev_loop.commands import resolve_gate_handler
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import DevAgentSpec, JudgePanelConfig
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
+from pydantic import BaseModel
 
 # Sibling-module imports, resolvable whether this file is launched as a
 # script or imported from elsewhere — the same trick ``server.py`` uses for
@@ -100,6 +104,33 @@ RUN_ARTIFACT_DIR = ops_server.RUN_ARTIFACT_DIR
 
 # The three user-selected dev-flow intents (spec §8: no LLM classification).
 _DEV_KINDS = ("enhancement", "new_feature", "feature")
+
+#: Accepted shape for an operator-supplied ``run_id`` (FEAT-480 recovery).
+#: The console mints ``run-<hex8>``, but any id minted by another client is
+#: equally valid — this only rejects what would corrupt the checkpoint key
+#: (``flowckpt:{flow_id}:*``, colon-delimited) or a route path.
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+#: Operator-facing explanation per ``inspect_checkpoint()`` reason code.
+_RESUME_REASON_HELP: dict[str, str] = {
+    "recovery_disabled": (
+        "this server was started without checkpoint recovery wiring "
+        "(dev_loop_flow_kwargs), so no run can be resumed"
+    ),
+    "unsupported_brief": "this brief kind cannot be resumed by the dev-flow topology",
+    "no_checkpoint": (
+        "no checkpoint exists for that run_id — it was never run on this "
+        "checkpoint store, or it expired (the Redis tier keeps checkpoints "
+        "for FLOW_CHECKPOINT_REDIS_TTL, 24h by default)"
+    ),
+    "fingerprint_mismatch": (
+        "a checkpoint exists but the run's inputs changed since it was "
+        "written. Resume needs the SAME brief (kind, title/description or "
+        "document_path/document_kind, context, jira_issue_key, dev_agents, "
+        "judge_panel) and the same server-side execution policy the "
+        "original run used"
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +244,17 @@ def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
                         "reviewer — supported: "
                         f"{', '.join(llm_catalog.PRIMARY_REVIEW_BACKENDS)}"
                     )
-                review_kwargs["primary"] = DevAgentSpec(agent=agent, model=(primary.get("model") or "").strip())
+                # A blank model means "no opinion" here exactly as it does
+                # for `research_primary`, `counter_model` and the partner
+                # model — passing "" explicitly would make DevAgentSpec
+                # record it as an expressed choice ("use the backend
+                # default"), which then reads as an ignored selection in
+                # `_plan_field_diffs`.
+                primary_kwargs: dict[str, Any] = {"agent": agent}
+                primary_model = (primary.get("model") or "").strip()
+                if primary_model:
+                    primary_kwargs["model"] = primary_model
+                review_kwargs["primary"] = DevAgentSpec(**primary_kwargs)
         counter_model = (review.get("counter_model") or "").strip()
         if counter_model:
             review_kwargs["counter_model"] = counter_model
@@ -350,6 +391,60 @@ def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = Tr
     }
 
 
+def _plan_field_diffs(requested: Any, effective: Any, *, prefix: str = "") -> list[str]:
+    """Return one ``path: requested=X effective=Y`` line per differing seat.
+
+    Compares ONLY the fields the operator actually expressed
+    (``model_fields_set``), recursively — a field the console left blank
+    carries no opinion, so it can never manufacture a mismatch. This is
+    what makes the difference *nameable*: plain ``requested != effective``
+    equality covers every field of the model, while the warning it fed
+    printed four of them, so a difference in ``research_partner.*``,
+    ``review.primary.model`` or a seat's ``count`` read as "requested ==
+    effective" in the log (the FEAT-486 false-positive report).
+
+    Args:
+        requested: The operator's parsed plan (or a nested sub-model).
+        effective: The server's build-time plan at the same position.
+        prefix: Dotted path accumulated by the recursion.
+
+    Returns:
+        Human-readable diff lines; empty when every expressed field is
+        already what the server will run.
+    """
+    diffs: list[str] = []
+    if not isinstance(requested, BaseModel) or not isinstance(effective, BaseModel):
+        return diffs
+    for name in sorted(requested.model_fields_set):
+        req = getattr(requested, name, None)
+        eff = getattr(effective, name, None)
+        path = f"{prefix}{name}"
+        if isinstance(req, BaseModel) and isinstance(eff, BaseModel):
+            diffs.extend(_plan_field_diffs(req, eff, prefix=f"{path}."))
+        elif isinstance(req, list) and isinstance(eff, list):
+            if len(req) != len(eff):
+                diffs.append(f"{path}: requested={_fmt_seats(req)} effective={_fmt_seats(eff)}")
+                continue
+            for index, (req_item, eff_item) in enumerate(zip(req, eff)):
+                if isinstance(req_item, BaseModel) and isinstance(eff_item, BaseModel):
+                    diffs.extend(_plan_field_diffs(req_item, eff_item, prefix=f"{path}[{index}]."))
+                elif req_item != eff_item:
+                    diffs.append(f"{path}[{index}]: requested={req_item!r} effective={eff_item!r}")
+        elif req != eff:
+            diffs.append(f"{path}: requested={req!r} effective={eff!r}")
+    return diffs
+
+
+def _fmt_seats(seats: list[Any]) -> str:
+    """Render a seat list as ``agent:model xN`` for a diff line."""
+    rendered = [
+        (f"{spec.agent}:{spec.model or '<default>'}" + (f"x{spec.count}" if spec.count > 1 else ""))
+        for spec in seats
+        if isinstance(spec, DevAgentSpec)
+    ]
+    return ", ".join(rendered) or "<single-agent>"
+
+
 async def handle_config(request: web.Request) -> web.Response:
     """Serve the dev console's configuration catalog.
 
@@ -373,6 +468,8 @@ async def handle_config(request: web.Request) -> web.Response:
             # natural-language intake for these, a document picker otherwise).
             "nl_kinds": ["enhancement", "new_feature"],
             "gate_resolve_url_template": ("/api/flow/{run_id}/gates/{gate_id}/resolve"),
+            # FEAT-480: where the console probes a run_id before resuming it.
+            "checkpoint_probe_url_template": "/api/flow/{run_id}/checkpoint",
             "defaults": {
                 "development_agent": conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
@@ -388,6 +485,10 @@ async def handle_config(request: web.Request) -> web.Response:
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
                 "wiki_search": app.get("wiki_search") is not None,
                 "jira_configured": app.get("jira_toolkit") is not None,
+                # FEAT-480: whether this server can resume a run at all —
+                # false hides the console's resume field instead of letting
+                # an operator paste a run_id that would silently start over.
+                "recovery_enabled": bool(getattr(runner, "recovery_enabled", False)),
                 # FEAT-486 (spec G7): the per-seat LLM plan this server
                 # actually built its flow with — already env-resolved, so
                 # the console shows what will really run rather than what
@@ -414,6 +515,65 @@ async def handle_config(request: web.Request) -> web.Response:
     )
 
 
+def _parse_resume_run_id(form: dict[str, Any]) -> str | None:
+    """Extract the optional operator-supplied ``run_id`` (FEAT-480 recovery).
+
+    Args:
+        form: The decoded JSON body posted by the console.
+
+    Returns:
+        The run id to resume, or ``None`` when the payload asks for a fresh
+        run (absent or blank field).
+
+    Raises:
+        ValueError: The field is present but not a usable identifier.
+        TypeError: The field is present but not a string.
+    """
+    raw = form.get("run_id")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise TypeError("run_id must be a string")
+    run_id = raw.strip()
+    if not run_id:
+        return None
+    if not _RUN_ID_RE.match(run_id):
+        raise ValueError(
+            "run_id must be 1-64 chars of letters, digits, '.', '_' or '-' " f"and start alphanumeric; got {run_id!r}"
+        )
+    return run_id
+
+
+async def handle_checkpoint(request: web.Request) -> web.Response:
+    """``GET /api/flow/{run_id}/checkpoint`` — is this run still resumable?
+
+    Existence probe only: with no brief to fingerprint, it reports what the
+    checkpoint store holds (status, checkpoint id, which nodes already
+    completed) and leaves ``resumable`` ``null`` — "unknown", not "no". The
+    real verdict is issued by ``POST /api/flow/run`` once the operator's
+    form supplies the brief.
+
+    This is what makes the console's resume field usable after a crash: the
+    operator has a run_id from a dead session and needs to know whether the
+    ideation/planner work behind it survived BEFORE rebuilding the form.
+    """
+    runner: DevFlowRunner = request.app["runner"]
+    run_id = request.match_info["run_id"]
+    if not _RUN_ID_RE.match(run_id):
+        return web.json_response({"error": "invalid run_id"}, status=400)
+    try:
+        report = await runner.inspect_checkpoint(run_id)
+    except Exception as exc:  # noqa: BLE001 - store outage is a 503, not a 500
+        logger.warning("checkpoint probe failed for run_id=%s: %s", run_id, exc)
+        return web.json_response(
+            {"error": f"checkpoint store unavailable: {exc}"},
+            status=503,
+        )
+    report["active"] = run_id in request.app["flow_tasks"]
+    report["help"] = _RESUME_REASON_HELP.get(report.get("reason") or "", "")
+    return web.json_response(report)
+
+
 async def handle_run(request: web.Request) -> web.Response:
     """Start one ``DevFlowRunner.run(...)`` invocation.
 
@@ -421,6 +581,19 @@ async def handle_run(request: web.Request) -> web.Response:
     brief shape only — every run executes the SAME dev-flow graph, whose
     ``dev_intake`` node routes a natural-language brief through ideation and
     a document brief straight to the planner.
+
+    FEAT-480 resume: an optional ``run_id`` in the payload means "continue
+    THAT run" instead of minting a new identity. The completed nodes behind
+    it (dev_intake, ideation, planner — and their worktree/spec/task-index
+    artifacts) are restored from the checkpoint rather than re-dispatched,
+    so an interrupted run does not pay for research/ideation/planning twice.
+
+    The resume is preflighted synchronously here (:meth:`inspect_checkpoint`)
+    and refused with a 409 when it cannot succeed. That refusal is the point:
+    a checkpoint miss would otherwise start a full FRESH run under the
+    operator's id — hours of agent time spent re-deriving work they explicitly
+    asked to reuse — and a fingerprint mismatch would raise inside the
+    background task, long after this endpoint answered "202-ish, running".
     """
     if not request.can_read_body:
         return web.json_response({"error": "JSON body required"}, status=400)
@@ -447,6 +620,19 @@ async def handle_run(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
+    # FEAT-490: the server's static build-time plan — the baseline for a
+    # FRESH run (narrowed below to the submission itself, since a fresh
+    # run genuinely applies it) and for the resume-diff/log/response below.
+    # KNOWN LIMITATION (code review, accepted — not fixed here): for a
+    # RESUME specifically, this is NOT necessarily the plan the resumed
+    # run's checkpoint was actually created with — only an embedder that
+    # itself submitted a differing per-run plan on the ORIGINAL call and
+    # then reuses that same run_id would see a diff computed against the
+    # wrong baseline here. This console never does that (it mints a fresh
+    # run_id on every request that doesn't explicitly resume), so the
+    # common case is unaffected; a correct fix would need the original
+    # per-run plan persisted on the checkpoint and read back during the
+    # `inspect_checkpoint` preflight — out of scope for this pass.
     effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
 
     kind = getattr(brief, "kind", "")
@@ -457,8 +643,52 @@ async def handle_run(request: web.Request) -> web.Response:
         label = brief.title
         initial_task = f"{kind}: {brief.title[:120]}"
 
-    run_id = f"run-{uuid.uuid4().hex[:8]}"
     runner: DevFlowRunner = request.app["runner"]
+    try:
+        resume_run_id = _parse_resume_run_id(form)
+    except (ValueError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    resume: dict[str, Any] | None = None
+    if resume_run_id is None:
+        run_id = f"run-{uuid.uuid4().hex[:8]}"
+    else:
+        run_id = resume_run_id
+        if run_id in request.app["flow_tasks"]:
+            return web.json_response(
+                {
+                    "error": f"run_id {run_id!r} is still in flight on this server — "
+                    "stop it before resuming it.",
+                    "reason": "already_running",
+                },
+                status=409,
+            )
+        try:
+            resume = await runner.inspect_checkpoint(run_id, brief=brief)
+        except Exception as exc:  # noqa: BLE001 - store outage is a 503
+            logger.warning("resume preflight failed for run_id=%s: %s", run_id, exc)
+            return web.json_response(
+                {"error": f"checkpoint store unavailable: {exc}"},
+                status=503,
+            )
+        if not resume.get("resumable"):
+            reason = resume.get("reason") or "not_resumable"
+            return web.json_response(
+                {
+                    "error": f"run_id {run_id!r} cannot be resumed: " f"{_RESUME_REASON_HELP.get(reason, reason)}.",
+                    "reason": reason,
+                    "resume": resume,
+                },
+                status=409,
+            )
+        logger.info(
+            "dev-flow run_id=%s RESUMING from checkpoint %s (status=%s, " "completed nodes: %s)",
+            run_id,
+            resume.get("checkpoint_id"),
+            resume.get("status"),
+            ", ".join(resume.get("completed_nodes") or []) or "none",
+        )
+
     started_at = time.time()
 
     extra_shared: dict[str, Any] = {}
@@ -471,37 +701,55 @@ async def handle_run(request: web.Request) -> web.Response:
     # the flow's build-time default instead of silently overriding it.
     if "require_plan_approval" in form:
         extra_shared["require_plan_approval"] = bool(form.get("require_plan_approval"))
-    # FEAT-486: the per-seat plan is a BUILD-time input
-    # (`build_dev_flow(model_plan=...)`), because the seats it selects are
-    # baked into node constructors — DevelopmentNode's pool_config,
-    # IdeationNode's model, QANode's review dispatcher. This console builds
-    # ONE flow at startup, so a run cannot swap them mid-flight. A
-    # submitted plan is therefore fully validated and echoed back, but only
-    # takes effect when it matches the server's build-time plan; any
-    # difference is logged loudly rather than silently ignored, and the
-    # response always reports what will REALLY run.
-    if requested_plan is not None and requested_plan != effective_plan:
+    # FEAT-490: the per-seat plan is now a PER-RUN input on the fresh path —
+    # `runner.run(model_plan=...)` below threads it into THIS run's flow
+    # build (dev_flow/runner.py TASK-2686), no server restart required. A
+    # RESUME is the one case that remains build-time-like: TASK-2687's rule
+    # keeps a resumed run on the seats it was created with, since its
+    # completed nodes already ran under them — a newly submitted plan on a
+    # resume is validated and echoed back, but does not take effect. This
+    # narrows `effective_plan` (originally just the server's static
+    # build-time default) to the plan that will REALLY govern this specific
+    # run, so both the diff below and the response's echoed `model_plan`
+    # tell the truth for a fresh run instead of describing a plan the run
+    # is about to leave behind.
+    if requested_plan is not None and resume_run_id is None:
+        effective_plan = requested_plan
+
+    # The diff is field-level and expressed-fields-only (see
+    # `_plan_field_diffs`): whole-model `!=` equality fired on fields the
+    # message never printed — a changed research partner or a blank review
+    # primary model logged "requested == effective" and read as a false
+    # positive. `plan_diffs` both gates the warning and IS the warning. For
+    # a fresh run `effective_plan` was just narrowed to `requested_plan`
+    # above, so this is always empty there (spec §8 Q4) — the diff now
+    # fires only for the resume case, where a submission genuinely will not
+    # apply.
+    # `dev_pool` is deliberately NOT reported: the development pool IS
+    # per-run. `_build_dev_brief_from_form` puts the very same `dev_agents`
+    # rows on the brief, `IdeationNode` forwards them onto the FeatureBrief,
+    # and `DevelopmentNode._resolve_pool_config` reads the brief BEFORE its
+    # injected build-time config.
+    plan_diffs: list[str] = []
+    if requested_plan is not None:
+        plan_diffs = [
+            diff for diff in _plan_field_diffs(requested_plan, effective_plan) if not diff.startswith("dev_pool")
+        ]
+    if plan_diffs:
         logger.warning(
             "dev-flow run_id=%s requested a model plan that differs from the "
-            "server's build-time plan; the run will use the SERVER plan "
-            "(requested pool=%s research=%s review=%s/%s; effective pool=%s "
-            "research=%s review=%s/%s). Restart the console with the desired "
-            "DEV_FLOW_* env keys to change the seats.",
+            "seats this run keeps — it resumed a checkpoint, and a resumed "
+            "run keeps the seats it was created with (spec §8 Q1). "
+            "Differing seats: %s. Start a fresh run (no run_id) to use them.",
             run_id,
-            [f"{s.agent}:{s.model}" for s in requested_plan.dev_pool],
-            requested_plan.research_primary,
-            requested_plan.review.primary.agent,
-            requested_plan.review.counter_model,
-            [f"{s.agent}:{s.model}" for s in effective_plan.dev_pool],
-            effective_plan.research_primary,
-            effective_plan.review.primary.agent,
-            effective_plan.review.counter_model,
+            "; ".join(plan_diffs),
         )
 
     async def _run() -> None:
         try:
             logger.info(
-                "Starting dev-flow run_id=%s kind=%s (%s) extra_shared=%s",
+                "%s dev-flow run_id=%s kind=%s (%s) extra_shared=%s",
+                "Resuming" if resume else "Starting",
                 run_id,
                 kind,
                 label,
@@ -512,12 +760,37 @@ async def handle_run(request: web.Request) -> web.Response:
                 run_id=run_id,
                 initial_task=initial_task,
                 extra_shared=extra_shared or None,
+                # FEAT-490: passed unconditionally — on a fresh run this
+                # reaches build_dev_flow for THIS run (TASK-2686); on a
+                # resume the runner itself never applies it (TASK-2687),
+                # matching the `effective_plan`/`plan_diffs` narrowing above.
+                model_plan=requested_plan,
             )
             logger.info(
                 "dev-flow run_id=%s finished status=%s in %.1fs",
                 run_id,
                 result.status,
                 time.time() - started_at,
+            )
+        except FlowLockedError:
+            # The preflight above cannot see this: another process/session
+            # holds the resume lease. Named explicitly so the log says what
+            # to do rather than dumping a bare traceback.
+            logger.error(
+                "dev-flow run_id=%s: another process is already resuming this "
+                "run (checkpoint lease held). Wait for it to finish or stop it.",
+                run_id,
+            )
+        except RecoveredArtifactError as exc:
+            # Also invisible to the preflight (validated only after the
+            # checkpoint's shared_data is restored): the run's worktree or
+            # its spec/task-index files are gone or moved.
+            logger.error(
+                "dev-flow run_id=%s: checkpoint restored but its artifacts are "
+                "no longer valid — %s. Recreate the worktree, or start a fresh "
+                "run without a run_id.",
+                run_id,
+                exc,
             )
         except Exception:
             logger.exception("dev-flow run_id=%s failed", run_id)
@@ -531,12 +804,23 @@ async def handle_run(request: web.Request) -> web.Response:
             "run_id": run_id,
             "mode": "dev-flow",
             "kind": kind,
+            # FEAT-480: null for a fresh run; the accepted preflight report
+            # (checkpoint id, status, restored node ids) for a resumed one,
+            # so the console can say WHICH work it is not paying for again.
+            "resume": resume,
             "ws_url": f"/api/flow/{run_id}/ws",
             "state_ws_url": f"/api/flow/{run_id}/ws?view=state",
             "bundle_url": f"/api/flow/{run_id}/bundle",
             "gate_resolve_url": f"/api/flow/{run_id}/gates/{{gate_id}}/resolve",
-            # FEAT-486: what this run's seats will REALLY be — never the
-            # submitted selection when the two differ (see the warning above).
+            # FEAT-486/FEAT-490: what this run's seats will REALLY be —
+            # the submitted selection itself for a fresh run (per-run,
+            # TASK-2686), or the seats a resumed run was created with when
+            # the two differ (see the warning above). `model_plan_ignored`
+            # names each expressed seat the server is NOT honouring —
+            # always `[]` for a fresh console run — so the console renders
+            # the server's own diff instead of re-deriving a partial one in
+            # JavaScript.
+            "model_plan_ignored": plan_diffs,
             "model_plan": _model_plan_payload(
                 effective_plan,
                 review_pair_active=bool(request.app.get("review_pair_active", False)),
@@ -826,6 +1110,9 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
     app.router.add_post("/api/flow/run", handle_run)
     # Bundle/replay/cancel are app-key driven and mode-agnostic — reused
     # verbatim from the ops console so the artifact contract stays identical.
+    # FEAT-480: read-only resumability probe for a run_id the operator holds
+    # from an interrupted session (see handle_checkpoint).
+    app.router.add_get("/api/flow/{run_id}/checkpoint", handle_checkpoint)
     app.router.add_get("/api/flow/{run_id}/bundle", ops_server.handle_bundle)
     app.router.add_get("/api/flow/{run_id}/replay", ops_server.handle_replay)
     app.router.add_get("/api/flow/{run_id}/ws", flow_stream_ws)

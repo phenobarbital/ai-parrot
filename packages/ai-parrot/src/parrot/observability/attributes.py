@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     "openai": "openai",
     "anthropic": "anthropic",
+    "claude": "anthropic",  # ClaudeClient class default (backends remap below)
     "claude-agent": "anthropic",  # routes through Anthropic
     # FEAT-232: Claude served through AWS Bedrock. OpenLIT's canonical provider
     # value for Bedrock is ``aws.bedrock`` (GEN_AI_SYSTEM_AWS_BEDROCK), distinct
@@ -50,6 +51,30 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     "nvidia": "nvidia",  # custom — no OTel-standard
     "huggingface": "huggingface",  # custom
     "gemma4": "huggingface",  # Gemma is HF-hosted
+    # Out-of-process CODING AGENTS dispatched by dev-loop/dev-flow. These
+    # emit lifecycle events under their dev-loop BACKEND id, not under a
+    # client's `client_name` (see
+    # `flows/dev_loop/dispatchers/claude.py:_emit_usage_event`), so the id
+    # has to be mapped here or every dispatched seat logs an unknown
+    # provider and its traces land under a non-SemConv system value.
+    "claude-code": "anthropic",  # Claude Code CLI → Anthropic
+    "openai-codex": "openai",  # Codex CLI → OpenAI
+    # Bedrock-hosted routes. All three are AWS Bedrock endpoints whatever
+    # model family they serve, so they share Bedrock's canonical value —
+    # the model itself is already carried by `gen_ai.request.model`.
+    "nova": "aws.bedrock",
+    "bedrock-mantle": "aws.bedrock",
+    "bedrock-converse": "aws.bedrock",
+    # Remaining first-party clients with no OTel-standard value — custom,
+    # but mapped so they are a deliberate value rather than a warning.
+    "zai": "zai",
+    "moonshot": "moonshot",
+    "openrouter": "openrouter",
+    "vllm": "vllm",
+    "transformers": "huggingface",  # local HF transformers runtime
+    "localllm": "local",
+    "google_live": "gemini",  # Gemini Live, same system as "gemini-live"
+    "generic": "generic",  # OpenAI-compatible catch-all client
 }
 
 # Track which unknown client_names have already been warned about (module-level).

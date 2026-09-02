@@ -99,6 +99,39 @@ def _get_bool(getter: ConfigGetter, key: str, fallback: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_int(getter: ConfigGetter, key: str, fallback: int) -> int:
+    """Resolve an integer config value tolerant of str/int getters.
+
+    Args:
+        getter: A ``(key, fallback) -> Any`` callable.
+        key: Env/config key.
+        fallback: Default integer when unset or unparsable.
+
+    Returns:
+        The resolved integer; ``fallback`` when the value is missing or is
+        not an integer (a typo'd cap is a degradation signal at wiring
+        time, never an exception).
+    """
+    value = getter(key, fallback)
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        logger.warning("%s=%r is not an integer; using %d.", key, value, fallback)
+        return fallback
+
+
+#: Turn budget for the IN-PROCESS coding loop (``LLMCodeDispatcher`` and its
+#: nova/zai/moonshot/grok subclasses). Those backends are chat models, not
+#: agentic CLIs: one turn is one chat completion, and a real SDD task — read,
+#: patch, run pytest, commit, then call ``final_output`` — routinely needs
+#: more than the profile's conservative library default of 24. Every seat of
+#: an 8-task run hit that ceiling and the whole flow ended PARTIAL, so this
+#: wiring is opinionated where the library stays conservative (the same
+#: posture as the dev console's default dev pool).
+ENV_LLM_MAX_TURNS: str = "DEV_LOOP_LLM_MAX_TURNS"
+DEFAULT_LLM_MAX_TURNS: int = 60
+
+
 def build_dispatcher(
     spec: DevAgentSpec,
     *,
@@ -136,6 +169,10 @@ def build_dispatcher(
         "max_concurrent": max_concurrent,
         "stream_ttl_seconds": stream_ttl_seconds,
     }
+    # In-process-loop backends only. The agentic CLIs (claude-code, codex,
+    # gemini, google_coding) run their own loop and have no turn budget for
+    # this wiring to set.
+    llm_max_turns = _get_int(config_getter, ENV_LLM_MAX_TURNS, DEFAULT_LLM_MAX_TURNS)
 
     if spec.agent == "claude-code":
         dispatcher: DevLoopCodeDispatcher = ClaudeCodeDispatcher(**common)
@@ -165,6 +202,7 @@ def build_dispatcher(
         )
         profile = LLMCodeDispatchProfile(
             llm=f"nvidia:{nvidia_model}",
+            max_turns=llm_max_turns,
             enable_thinking=_get_bool(
                 config_getter, "DEV_LOOP_NVIDIA_ENABLE_THINKING", False
             ),
@@ -177,7 +215,8 @@ def build_dispatcher(
     if spec.agent == "grok":
         dispatcher = GrokCodeDispatcher(**common)
         profile = GrokCodeDispatchProfile(
-            model=spec.model or config_getter("DEV_LOOP_GROK_MODEL", "grok-build-0.1")
+            model=spec.model or config_getter("DEV_LOOP_GROK_MODEL", "grok-build-0.1"),
+            max_turns=llm_max_turns,
         )
         return dispatcher, profile
 
@@ -185,6 +224,7 @@ def build_dispatcher(
         dispatcher = ZaiCodeDispatcher(**common)
         profile = ZaiCodeDispatchProfile(
             model=spec.model or config_getter("DEV_LOOP_ZAI_MODEL", "glm-5.2"),
+            max_turns=llm_max_turns,
             enable_thinking=_get_bool(
                 config_getter, "DEV_LOOP_ZAI_ENABLE_THINKING", True
             ),
@@ -196,6 +236,7 @@ def build_dispatcher(
         dispatcher = MoonshotCodeDispatcher(**common)
         profile = MoonshotCodeDispatchProfile(
             model=spec.model or config_getter("DEV_LOOP_MOONSHOT_MODEL", "kimi-k3"),
+            max_turns=llm_max_turns,
             reasoning_effort=config_getter(
                 "DEV_LOOP_MOONSHOT_REASONING_EFFORT", "max"
             ),
@@ -213,7 +254,8 @@ def build_dispatcher(
         dispatcher = NovaCodeDispatcher(**common)
         profile = NovaCodeDispatchProfile(
             model=spec.model
-            or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5")
+            or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5"),
+            max_turns=llm_max_turns,
         )
         return dispatcher, profile
 

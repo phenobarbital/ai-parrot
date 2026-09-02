@@ -29,6 +29,7 @@ from parrot.bots.flows.core.checkpoint import (
     FlowCheckpoint,
     FlowStateSerializer,
 )
+from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.core.types import FlowStatus
 from parrot.flows.dev_loop import (
     BugBrief,
@@ -448,3 +449,344 @@ async def test_run_id_omitted_is_plain_fresh_run(mock_jira, patch_handoff, patch
     # A fresh run every time — no checkpoint was ever consulted/written
     # for a specific stable identity (nothing to assert on fake_store
     # beyond "did not raise"); the point is the recovery path was skipped.
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2685: per-run flow-kwargs overrides seam
+# ---------------------------------------------------------------------------
+
+
+def test_run_without_overrides_is_byte_identical(mock_jira) -> None:
+    """``_dev_loop_flow_factory()`` with no overrides builds with exactly
+    today's kwargs — the bug flow must not notice this change at all."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    # Patch the exact globals dict `_dev_loop_flow_factory`'s code executes
+    # against — NOT a dotted monkeypatch string. Same pitfall this file's
+    # `patch_handoff` fixture already documents: test_lazy_import.py can
+    # leave `DevLoopRunner` bound to a module object `sys.modules` no
+    # longer resolves to, so a string-path patch can silently land on an
+    # orphaned module while the live method keeps calling the real thing.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+        factory = runner._dev_loop_flow_factory()
+        factory(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert len(captured) == 1
+    for key, value in kwargs.items():
+        assert captured[0][key] == value
+    assert captured[0]["checkpoint"] is True
+    assert captured[0]["checkpoint_required"] is True
+
+
+def test_overrides_reach_the_flow_factory(mock_jira) -> None:
+    """A supplied override appears in the kwargs ``build_dev_loop_flow`` is
+    called with."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    # See test_run_without_overrides_is_byte_identical for why this patches
+    # the method's own __globals__ rather than a dotted monkeypatch string.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+        factory = runner._dev_loop_flow_factory({"redis_url": "redis://override:6399/0"})
+        factory(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://override:6399/0"
+    # Everything else is unaffected.
+    assert captured[0]["dispatcher"] is dispatcher
+
+
+def test_overrides_are_not_stored_on_the_instance(mock_jira) -> None:
+    """Inspect the runner after building a factory with overrides: no
+    per-run kwargs left behind on ``self``."""
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    runner._dev_loop_flow_factory({"redis_url": "redis://override:6399/0"})
+
+    # The instance's own kwargs dict is untouched — no override key leaked in.
+    assert runner._dev_loop_flow_kwargs == kwargs
+    assert runner._dev_loop_flow_kwargs["redis_url"] == kwargs["redis_url"]
+    assert not hasattr(runner, "_current_flow_kwargs")
+    assert not hasattr(runner, "_flow_kwargs_overrides")
+
+
+def test_concurrent_runs_do_not_leak_overrides(mock_jira) -> None:
+    """Two interleaved runs with different overrides each build with theirs."""
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**built_kwargs):
+        captured.append(built_kwargs)
+        return MagicMock()
+
+    # See test_run_without_overrides_is_byte_identical for why this patches
+    # the method's own __globals__ rather than the (possibly orphaned)
+    # module object reachable through a fresh `import ... as` statement.
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        # Two closures built back-to-back, simulating two concurrent runs
+        # with distinct per-run overrides — neither must see the other's.
+        factory_a = runner._dev_loop_flow_factory({"redis_url": "redis://a:6399/0"})
+        factory_b = runner._dev_loop_flow_factory({"redis_url": "redis://b:6399/0"})
+        factory_a(None)
+        factory_b(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://a:6399/0"
+    assert captured[1]["redis_url"] == "redis://b:6399/0"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2691: per-run plan threaded through the ops runner
+# ---------------------------------------------------------------------------
+
+
+class _StubOpsFlow:
+    """Completes immediately, recording the context it was handed —
+    avoids driving the real eight-node graph (already exhaustively
+    covered elsewhere in this suite) for a test about the SEAM."""
+
+    def __init__(self) -> None:
+        self.contexts: list = []
+        self._run_id_holder: dict = {}
+
+    async def run_flow(self, ctx, **kwargs) -> FlowResult:
+        self.contexts.append(ctx)
+        return FlowResult(output=ctx.shared_data["run_id"], status=FlowStatus.COMPLETED)
+
+
+async def test_dev_loop_runner_threads_a_per_run_plan(brief, mock_jira) -> None:
+    """Spec §3 Module 8: an ops embedder passes a per-run DevFlowModelPlan
+    through the SAME generic overrides mapping TASK-2685 added — no typed
+    `model_plan` parameter is added to `DevLoopRunner.run()` itself (spec
+    §8 Q5) — and it reaches `build_dev_loop_flow` (TASK-2690's new kwarg)
+    end to end through the public `run()` API."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        sentinel_plan = object()
+        result = await runner.run(
+            brief,
+            run_id="run-ops-plan",
+            flow_kwargs_overrides={"model_plan": sentinel_plan},
+        )
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert result.status == FlowStatus.COMPLETED
+    assert len(captured) == 1
+    assert captured[0]["model_plan"] is sentinel_plan
+
+
+async def test_ops_path_without_a_plan_is_byte_identical(brief, mock_jira) -> None:
+    """No `flow_kwargs_overrides` -> `build_dev_loop_flow` receives exactly
+    today's kwargs, with no `model_plan` key at all."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        result = await runner.run(brief, run_id="run-ops-no-plan")
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert result.status == FlowStatus.COMPLETED
+    assert len(captured) == 1
+    assert "model_plan" not in captured[0]
+    for key, value in kwargs.items():
+        assert captured[0][key] == value
+
+
+async def test_no_per_run_plan_state_leaks_across_concurrent_ops_runs(brief, mock_jira) -> None:
+    """No per-run state on the instance; concurrent runs stay isolated —
+    two sequential `run()` calls with different plans each build with
+    their own, and the instance's own kwargs are never mutated."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return _StubOpsFlow()
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        dispatcher = MagicMock()
+        kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+        runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+        plan_a, plan_b = object(), object()
+        await runner.run(
+            brief.model_copy(deep=True),
+            run_id="run-ops-a",
+            flow_kwargs_overrides={"model_plan": plan_a},
+        )
+        assert "model_plan" not in runner._dev_loop_flow_kwargs
+        await runner.run(
+            brief.model_copy(deep=True),
+            run_id="run-ops-b",
+            flow_kwargs_overrides={"model_plan": plan_b},
+        )
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["model_plan"] is plan_a
+    assert captured[1]["model_plan"] is plan_b
+    assert "model_plan" not in runner._dev_loop_flow_kwargs
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 post-review fix: overrides must NOT reach a RESUMED run's rebuild
+# ---------------------------------------------------------------------------
+#
+# CRITICAL bug found by adversarial review after all 8 FEAT-490 tasks were
+# implemented: `AgentsFlow.resume()` (bots/flows/flow/flow.py) calls the
+# SAME `flow_factory` closure DevCheckpointCoordinator.prepare() uses for a
+# fresh build — `flow_factory(checkpoint.definition)`, never `None` — to
+# rebuild the topology of every not-yet-completed node on a RESUMED run.
+# The original `_dev_loop_flow_factory(overrides)` merged `overrides` into
+# `kwargs` unconditionally, BEFORE returning the closure — so a per-run
+# override (e.g. a differing `model_plan`) silently reached a resumed run's
+# rebuild too, contradicting the resume rule (spec §8 Q1) every other test
+# in this suite exercises only through a MOCKED `prepare()`/`_checkpoint_
+# coordinator` (which never invokes the real closure with a non-None
+# definition, so the mocks alone could never have caught this). Fixed by
+# moving the merge INSIDE the closure, gated on `_definition is None` — the
+# only signal `prepare()`/`resume()` give the closure for "is this call
+# fresh or resuming." These tests drive the closure with BOTH shapes
+# directly, the same signal the real coordinator/`AgentsFlow.resume()` use.
+
+
+def test_overrides_apply_on_the_fresh_definition_none_call(mock_jira) -> None:
+    """`factory(None)` — the cache-miss/fresh signal — still applies
+    overrides (regression guard: the fix must not disable the fresh path)."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        factory = runner._dev_loop_flow_factory({"redis_url": "redis://override:6399/0"})
+        factory(None)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://override:6399/0"
+
+
+def test_overrides_do_not_reach_a_resumed_rebuild(mock_jira) -> None:
+    """`factory(<a real definition, i.e. what AgentsFlow.resume() passes>)`
+    — the exact call shape `AgentsFlow.resume()` uses at
+    `bots/flows/flow/flow.py:1556` (`flow_factory(checkpoint.definition)`)
+    — must build with ONLY the construction-time kwargs. This is the
+    precise regression guard for the bug: before the fix, this assertion
+    failed (the override reached the resumed rebuild too)."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        factory = runner._dev_loop_flow_factory({"redis_url": "redis://should-not-apply:6399/0"})
+        # A stand-in for `checkpoint.definition` — any non-None object is
+        # the correct signal; AgentsFlow.resume() never passes None here.
+        sentinel_definition = object()
+        factory(sentinel_definition)
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == kwargs["redis_url"]
+    assert captured[0]["redis_url"] != "redis://should-not-apply:6399/0"
+
+
+def test_same_closure_applies_overrides_only_to_its_fresh_call(mock_jira) -> None:
+    """A single closure instance, called first fresh then as-if-resuming —
+    mirrors `prepare()` calling the SAME closure it built once per `run()`
+    invocation. Only the `_definition is None` call sees the override."""
+    captured: list[dict] = []
+
+    def fake_build_dev_loop_flow(**kwargs):
+        captured.append(kwargs)
+        return MagicMock()
+
+    dispatcher = MagicMock()
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    runner = DevLoopRunner(MagicMock(), dev_loop_flow_kwargs=kwargs)
+
+    target_globals = DevLoopRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_loop_flow"]
+    target_globals["build_dev_loop_flow"] = fake_build_dev_loop_flow
+    try:
+        factory = runner._dev_loop_flow_factory({"redis_url": "redis://per-run:6399/0"})
+        factory(None)
+        factory(object())
+    finally:
+        target_globals["build_dev_loop_flow"] = original
+
+    assert captured[0]["redis_url"] == "redis://per-run:6399/0"
+    assert captured[1]["redis_url"] == kwargs["redis_url"]

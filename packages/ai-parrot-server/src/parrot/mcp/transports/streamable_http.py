@@ -35,6 +35,7 @@ The event store is in-memory and per-process, matching how the rest of
 the MCP server stack keeps state; a shared (e.g. Redis-backed) store for
 multi-worker deployments is a documented follow-up.
 """
+
 import asyncio
 import contextlib
 import hashlib
@@ -50,6 +51,11 @@ from aiohttp import web
 from parrot.mcp.server_base import SUPPORTED_PROTOCOL_VERSIONS
 
 from parrot.mcp.config import AuthMethod, MCPServerConfig
+from parrot.mcp.session_store import (
+    InMemorySessionStore,
+    SessionStore,
+    SessionStoreUnavailable,
+)
 from parrot.mcp.transports.http import HttpMCPServer
 
 #: Seconds between SSE keep-alive comments on an idle stream.
@@ -89,9 +95,7 @@ def _cancelled_by_caller() -> bool:
     return bool(task is not None and task.cancelling())
 
 
-def _jsonrpc_error(
-    code: int, message: str, request_id: Any = None
-) -> dict[str, Any]:
+def _jsonrpc_error(code: int, message: str, request_id: Any = None) -> dict[str, Any]:
     """Build a JSON-RPC error object."""
     return {
         "jsonrpc": "2.0",
@@ -117,9 +121,7 @@ class StreamEvent:
     def to_sse(self) -> bytes:
         """Serialize as an SSE ``message`` event carrying the event id."""
         data = json.dumps(self.message)
-        return (
-            f"id: {self.event_id}\nevent: message\ndata: {data}\n\n"
-        ).encode()
+        return (f"id: {self.event_id}\nevent: message\ndata: {data}\n\n").encode()
 
 
 def parse_event_id(raw: str) -> tuple[str, int] | None:
@@ -242,9 +244,7 @@ class McpStreamSession:
 
     def is_busy(self) -> bool:
         """True when the session has a live stream or unfinished work."""
-        return self.live_stream or any(
-            not task.done() for task in self.tasks.values()
-        )
+        return self.live_stream or any(not task.done() for task in self.tasks.values())
 
 
 class StreamableHttpMCPServer(HttpMCPServer):
@@ -260,26 +260,24 @@ class StreamableHttpMCPServer(HttpMCPServer):
         self,
         config: MCPServerConfig,
         parent_app: web.Application | None = None,
+        session_store: SessionStore | None = None,
     ):
         super().__init__(config, parent_app=parent_app)
         self._sessions: dict[str, McpStreamSession] = {}
-        self._session_ttl: float = float(
-            getattr(config, "session_ttl", 3600) or 3600
-        )
-        self._event_buffer_size: int = int(
-            getattr(config, "event_buffer_size", 1000) or 1000
-        )
-        self._max_sessions: int = int(
-            getattr(config, "max_sessions", 1000) or 1000
-        )
-        self._max_streams: int = int(
-            getattr(config, "max_streams_per_session", 64) or 64
-        )
-        self._allowed_origins: list[str] | None = getattr(
-            config, "allowed_origins", None
-        )
-        self._allow_any_origin: bool = bool(
-            getattr(config, "allow_any_origin", False)
+        self._session_ttl: float = float(getattr(config, "session_ttl", 3600) or 3600)
+        self._event_buffer_size: int = int(getattr(config, "event_buffer_size", 1000) or 1000)
+        self._max_sessions: int = int(getattr(config, "max_sessions", 1000) or 1000)
+        self._max_streams: int = int(getattr(config, "max_streams_per_session", 64) or 64)
+        self._allowed_origins: list[str] | None = getattr(config, "allowed_origins", None)
+        self._allow_any_origin: bool = bool(getattr(config, "allow_any_origin", False))
+        # FEAT-477 TASK-2609: shared session + event store. Defaults to the
+        # in-process implementation — an explicit choice preserving today's
+        # single-worker behavior byte-for-byte (G11). Pass a
+        # `RedisSessionStore` to make sessions/events visible across
+        # gunicorn workers and survive a worker recycle; never an automatic
+        # fallback (see `session_store.py`).
+        self._session_store: SessionStore = session_store or InMemorySessionStore(
+            ttl=int(self._session_ttl), max_events=self._event_buffer_size
         )
         self._prune_task: asyncio.Task | None = None
 
@@ -352,21 +350,24 @@ class StreamableHttpMCPServer(HttpMCPServer):
 
     def _credential_digest(self, request: web.Request) -> str | None:
         """Hash the presented credential, for binding without storing it."""
-        credential = request.headers.get(
-            self.config.api_key_header
-        ) or request.headers.get("Authorization")
+        credential = request.headers.get(self.config.api_key_header) or request.headers.get("Authorization")
         if not credential:
             return None
         return hashlib.sha256(credential.encode("utf-8")).hexdigest()
 
-    async def _create_session(
-        self, protocol_version: str, principal: Any = None
-    ) -> McpStreamSession | None:
+    async def _create_session(self, protocol_version: str, principal: Any = None) -> McpStreamSession | None:
         """Mint a new session with a cryptographically secure id.
 
         Returns ``None`` when the server is already holding its configured
         maximum number of sessions, so the caller can answer 503 instead of
         growing memory without bound.
+
+        Mirrors the session's metadata into ``self._session_store``
+        (FEAT-477 TASK-2609) so another worker sharing a
+        ``RedisSessionStore`` can resolve it later (``_get_session``). This
+        propagates ``SessionStoreUnavailable`` — an explicitly configured
+        shared store that is unreachable must fail the request cleanly,
+        never silently mint a session only this process knows about.
         """
         await self._prune_sessions()
         if len(self._sessions) >= self._max_sessions:
@@ -375,9 +376,18 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 len(self._sessions),
             )
             return None
+        session_id = secrets.token_urlsafe(32)
+        # Control-plane operation: fail closed (propagate
+        # SessionStoreUnavailable) rather than mint a session this store
+        # will never be able to resolve for another worker.
+        await self._session_store.create_session(
+            user=principal,
+            protocol_version=protocol_version,
+            session_id=session_id,
+        )
         now = time.monotonic()
         session = McpStreamSession(
-            session_id=secrets.token_urlsafe(32),
+            session_id=session_id,
             protocol_version=protocol_version,
             created_at=now,
             last_seen=now,
@@ -386,22 +396,46 @@ class StreamableHttpMCPServer(HttpMCPServer):
         self._sessions[session.session_id] = session
         return session
 
-    async def _get_session(
-        self, session_id: str, request: web.Request
-    ) -> McpStreamSession | None:
+    async def _get_session(self, session_id: str, request: web.Request) -> McpStreamSession | None:
         """Look up a session, expiring it when past its TTL.
 
         A session is only returned to the principal that created it, so a
         leaked ``Mcp-Session-Id`` cannot be replayed under another identity.
+
+        FEAT-477 TASK-2609: when the session is not held locally (this
+        worker did not create it, or was recycled since), falls through to
+        ``self._session_store``. A hit is adopted as a fresh local
+        ``McpStreamSession`` shell — the durable identity/principal
+        resolves correctly across workers, though in-flight dispatch tasks
+        and a live GET stream are inherently per-process and cannot be
+        recovered (buffered *events* still replay via the store; see
+        ``_handle_streamable_get``). Propagates
+        ``SessionStoreUnavailable`` so an explicitly configured shared
+        store that is unreachable fails the request cleanly rather than
+        silently reporting "session not found".
         """
         await self._prune_sessions()
         session = self._sessions.get(session_id)
         if session is None:
-            return None
-        if session.principal != self._principal(request):
-            self.logger.warning(
-                "Rejecting MCP session %s: principal mismatch", session_id
+            record = await self._session_store.get_session(session_id)
+            if record is None:
+                return None
+            if record.principal != self._principal(request):
+                self.logger.warning("Rejecting MCP session %s: principal mismatch", session_id)
+                return None
+            now = time.monotonic()
+            session = McpStreamSession(
+                session_id=session_id,
+                protocol_version=record.protocol_version,
+                created_at=now,
+                last_seen=now,
+                principal=record.principal,
             )
+            self._sessions[session_id] = session
+            self.logger.info("Adopted MCP session %s from shared store (cross-worker)", session_id)
+            return session
+        if session.principal != self._principal(request):
+            self.logger.warning("Rejecting MCP session %s: principal mismatch", session_id)
             return None
         session.last_seen = time.monotonic()
         return session
@@ -428,8 +462,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
         expired = [
             sid
             for sid, session in self._sessions.items()
-            if now - session.last_seen > self._session_ttl
-            and not session.is_busy()
+            if now - session.last_seen > self._session_ttl and not session.is_busy()
         ]
         for sid in expired:
             session = self._sessions.pop(sid, None)
@@ -449,23 +482,41 @@ class StreamableHttpMCPServer(HttpMCPServer):
         for task in tasks:
             task.cancel()
         if tasks:
-            _, pending = await asyncio.wait(
-                tasks, timeout=TEARDOWN_TIMEOUT
-            )
+            _, pending = await asyncio.wait(tasks, timeout=TEARDOWN_TIMEOUT)
             if pending:
                 self.logger.warning(
-                    "%s task(s) on session %s ignored cancellation after %ss; "
-                    "abandoning them",
+                    "%s task(s) on session %s ignored cancellation after %ss; " "abandoning them",
                     len(pending),
                     session.session_id,
                     TEARDOWN_TIMEOUT,
                 )
         session.tasks.clear()
         session.wakeup.set()
+        # FEAT-477 TASK-2609: keep the shared store in sync so a pruned/
+        # deleted session cannot "resurrect" via _get_session's cross-worker
+        # fallback. Best effort — local teardown must complete regardless of
+        # the store's availability (unlike create/get, this is cleanup, not
+        # a control-plane decision to serve or refuse traffic).
+        try:
+            await self._session_store.delete_session(session.session_id)
+        except SessionStoreUnavailable as exc:
+            self.logger.warning(
+                "Could not mirror-delete session %s from the shared store: %s",
+                session.session_id,
+                exc,
+            )
 
-    def _track(
-        self, session: McpStreamSession | None, message: dict[str, Any], coro
-    ) -> asyncio.Task:
+    @staticmethod
+    def _session_store_unavailable_response() -> web.Response:
+        """Clean 503 for a control-plane session-store failure (TASK-2609).
+
+        Returned when an explicitly configured shared store
+        (``RedisSessionStore``) cannot service a session create/lookup —
+        fail closed, never silently degrade to per-process state.
+        """
+        return web.json_response(_jsonrpc_error(-32000, "Session store unavailable"), status=503)
+
+    def _track(self, session: McpStreamSession | None, message: dict[str, Any], coro) -> asyncio.Task:
         """Run a dispatch coroutine as a task the session can cancel."""
         task = asyncio.create_task(coro)
         if session is not None:
@@ -475,7 +526,9 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 lambda finished, s=session, k=key: (
                     # Only drop our own entry: a batch may repeat an id, and
                     # the later task then owns the slot.
-                    s.tasks.pop(k, None) if s.tasks.get(k) is finished else None
+                    s.tasks.pop(k, None)
+                    if s.tasks.get(k) is finished
+                    else None
                 )
             )
         return task
@@ -502,18 +555,14 @@ class StreamableHttpMCPServer(HttpMCPServer):
         hostname = urlparse(origin).hostname or ""
         if hostname in LOCALHOST_HOSTS:
             return None
-        if self._allowed_origins and origin.rstrip("/") in {
-            o.rstrip("/") for o in self._allowed_origins
-        }:
+        if self._allowed_origins and origin.rstrip("/") in {o.rstrip("/") for o in self._allowed_origins}:
             return None
         return web.json_response(
             _jsonrpc_error(-32600, f"Origin not allowed: {origin}"),
             status=403,
         )
 
-    def _check_protocol_header(
-        self, request: web.Request
-    ) -> web.Response | None:
+    def _check_protocol_header(self, request: web.Request) -> web.Response | None:
         """Reject requests carrying an unsupported protocol-version header."""
         header = request.headers.get("MCP-Protocol-Version")
         if header and header not in SUPPORTED_PROTOCOL_VERSIONS:
@@ -566,9 +615,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
             and not str(message.get("method", "")).startswith("notifications/")
         )
 
-    def _session_headers(
-        self, session: McpStreamSession | None, **extra: str
-    ) -> dict[str, str]:
+    def _session_headers(self, session: McpStreamSession | None, **extra: str) -> dict[str, str]:
         """Response headers echoing the session id when one is in play."""
         headers = dict(extra)
         if session is not None:
@@ -579,9 +626,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
     # POST — client-to-server messages
     # ------------------------------------------------------------------
 
-    async def _handle_streamable_post(
-        self, request: web.Request
-    ) -> web.StreamResponse:
+    async def _handle_streamable_post(self, request: web.Request) -> web.StreamResponse:
         """Handle POST: JSON-RPC single messages or batches."""
         error = await self._guard(request)
         if error:
@@ -599,16 +644,12 @@ class StreamableHttpMCPServer(HttpMCPServer):
         try:
             data = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response(
-                _jsonrpc_error(-32700, "Parse error"), status=400
-            )
+            return web.json_response(_jsonrpc_error(-32700, "Parse error"), status=400)
 
         is_batch = isinstance(data, list)
         messages: list[Any] = data if is_batch else [data]
         if not messages or not all(isinstance(m, dict) for m in messages):
-            return web.json_response(
-                _jsonrpc_error(-32600, "Invalid Request"), status=400
-            )
+            return web.json_response(_jsonrpc_error(-32600, "Invalid Request"), status=400)
 
         is_initialize = any(m.get("method") == "initialize" for m in messages)
         if is_initialize and len(messages) > 1:
@@ -623,7 +664,10 @@ class StreamableHttpMCPServer(HttpMCPServer):
         if not is_initialize:
             session_id = request.headers.get("Mcp-Session-Id")
             if session_id:
-                session = await self._get_session(session_id, request)
+                try:
+                    session = await self._get_session(session_id, request)
+                except SessionStoreUnavailable:
+                    return self._session_store_unavailable_response()
                 if session is None:
                     return web.json_response(
                         _jsonrpc_error(-32001, "Session not found"),
@@ -640,9 +684,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
             # effects and acknowledge with 202 (spec requirement).
             for message in messages:
                 await self._handle_notification(session, message)
-            return web.Response(
-                status=202, headers=self._session_headers(session)
-            )
+            return web.Response(status=202, headers=self._session_headers(session))
 
         if is_initialize:
             return await self._respond_initialize(request, messages[0])
@@ -654,26 +696,21 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 return web.json_response(
                     _jsonrpc_error(
                         -32600,
-                        "Mcp-Session-Id is required for text/event-stream "
-                        "responses; call initialize first",
+                        "Mcp-Session-Id is required for text/event-stream " "responses; call initialize first",
                     ),
                     status=400,
                 )
 
         return await self._respond_json(request, session, messages, is_batch)
 
-    async def _handle_notification(
-        self, session: McpStreamSession | None, message: dict[str, Any]
-    ) -> None:
+    async def _handle_notification(self, session: McpStreamSession | None, message: dict[str, Any]) -> None:
         """Run one notification for its side effects."""
         if message.get("method") == "notifications/cancelled":
             self._cancel_request(session, message)
             return
         await self._handle_request(message)
 
-    def _cancel_request(
-        self, session: McpStreamSession | None, message: dict[str, Any]
-    ) -> None:
+    def _cancel_request(self, session: McpStreamSession | None, message: dict[str, Any]) -> None:
         """Cancel the in-flight dispatch named by ``notifications/cancelled``."""
         if session is None:
             return
@@ -687,19 +724,20 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 session.session_id,
             )
 
-    async def _respond_initialize(
-        self, request: web.Request, message: dict[str, Any]
-    ) -> web.StreamResponse:
+    async def _respond_initialize(self, request: web.Request, message: dict[str, Any]) -> web.StreamResponse:
         """Dispatch an initialize request, minting a new session."""
         response = await self._handle_request(message)
         if response is None:  # pragma: no cover - initialize always answers
             return web.Response(status=202)
 
         negotiated = response.get("result", {}).get("protocolVersion")
-        session = await self._create_session(
-            protocol_version=negotiated or ASSUMED_HEADER_VERSION,
-            principal=self._principal(request),
-        )
+        try:
+            session = await self._create_session(
+                protocol_version=negotiated or ASSUMED_HEADER_VERSION,
+                principal=self._principal(request),
+            )
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
             return web.json_response(
                 _jsonrpc_error(-32000, "Server session capacity reached"),
@@ -708,15 +746,11 @@ class StreamableHttpMCPServer(HttpMCPServer):
 
         if self._wants_sse(request) and not self._wants_json(request):
             # SSE-only client: answer on a stream rather than forcing JSON.
-            buffer = session.open_stream(
-            self._event_buffer_size, max_streams=self._max_streams
-        )
+            buffer = session.open_stream(self._event_buffer_size, max_streams=self._max_streams)
             event = buffer.append(response)
             return await self._write_events(request, session, buffer, [event])
 
-        return web.json_response(
-            response, headers=self._session_headers(session)
-        )
+        return web.json_response(response, headers=self._session_headers(session))
 
     async def _respond_json(
         self,
@@ -739,18 +773,11 @@ class StreamableHttpMCPServer(HttpMCPServer):
             except asyncio.CancelledError:
                 if not task.cancelled():
                     raise  # this handler is being cancelled, not the task
-                response = _jsonrpc_error(
-                    -32800, "Request cancelled", message.get("id")
-                )
+                response = _jsonrpc_error(-32800, "Request cancelled", message.get("id"))
             if response is None:
                 continue
-            if (
-                "tools" in response.get("result", {})
-                and "Anthropic" in request.headers.get("User-Agent", "")
-            ):
-                response["result"] = self._convert_tools_to_anthropic(
-                    response["result"]
-                )
+            if "tools" in response.get("result", {}) and "Anthropic" in request.headers.get("User-Agent", ""):
+                response["result"] = self._convert_tools_to_anthropic(response["result"])
             responses.append(response)
 
         headers = self._session_headers(session)
@@ -777,9 +804,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
         concurrently open GET stream cannot consume these responses while
         this response is still writing them.
         """
-        buffer = session.open_stream(
-            self._event_buffer_size, max_streams=self._max_streams
-        )
+        buffer = session.open_stream(self._event_buffer_size, max_streams=self._max_streams)
         tasks: list[asyncio.Task] = []
         for message in messages:
             if self._is_request(message):
@@ -849,8 +874,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
             # Client went away mid-call: dispatch tasks keep running and
             # their responses stay buffered (undelivered) for resumption.
             self.logger.info(
-                "SSE POST client disconnected; %s call(s) continue for "
-                "session %s (stream %s)",
+                "SSE POST client disconnected; %s call(s) continue for " "session %s (stream %s)",
                 sum(1 for t in (tasks or []) if not t.done()),
                 session.session_id,
                 buffer.stream_id,
@@ -861,6 +885,31 @@ class StreamableHttpMCPServer(HttpMCPServer):
             buffer.attached = False
             session.wakeup.set()
         return response
+
+    async def _mirror_event(self, session_id: str, stream_id: str, message: dict[str, Any]) -> None:
+        """Best-effort mirror of one buffered event into the shared store.
+
+        FEAT-477 TASK-2609: durability for the "launch a long tool call,
+        disconnect, reconnect on a different worker, collect the result"
+        scenario. Deliberately **not** fail-closed like session
+        create/get — a data-plane durability hiccup must not fail an
+        otherwise-successful in-process response delivery to the client
+        that is actually connected right now.
+
+        Args:
+            session_id: The owning session's id.
+            stream_id: The stream this event belongs to.
+            message: The JSON-RPC message being buffered.
+        """
+        try:
+            await self._session_store.append_event(session_id, stream_id, message)
+        except SessionStoreUnavailable as exc:
+            self.logger.warning(
+                "Could not mirror event for session %s stream %s to the " "shared store: %s",
+                session_id,
+                stream_id,
+                exc,
+            )
 
     async def _dispatch_to_stream(
         self,
@@ -874,14 +923,15 @@ class StreamableHttpMCPServer(HttpMCPServer):
         except asyncio.CancelledError:
             # Record the cancellation for anyone resuming the stream, then
             # let the cancellation propagate.
-            buffer.append(
-                _jsonrpc_error(-32800, "Request cancelled", message.get("id"))
-            )
+            cancelled = _jsonrpc_error(-32800, "Request cancelled", message.get("id"))
+            buffer.append(cancelled)
+            await self._mirror_event(session.session_id, buffer.stream_id, cancelled)
             session.wakeup.set()
             raise
         if response is None:
             return None
         event = buffer.append(response)
+        await self._mirror_event(session.session_id, buffer.stream_id, response)
         session.wakeup.set()
         return event
 
@@ -889,18 +939,14 @@ class StreamableHttpMCPServer(HttpMCPServer):
     # GET — server-to-client stream (resumable)
     # ------------------------------------------------------------------
 
-    async def _handle_streamable_get(
-        self, request: web.Request
-    ) -> web.StreamResponse:
+    async def _handle_streamable_get(self, request: web.Request) -> web.StreamResponse:
         """Open the session's SSE stream, replaying from Last-Event-ID."""
         error = await self._guard(request)
         if error:
             return error
 
         if not self._wants_sse(request):
-            return web.Response(
-                status=405, headers={"Allow": "POST, DELETE"}
-            )
+            return web.Response(status=405, headers={"Allow": "POST, DELETE"})
 
         session_id = request.headers.get("Mcp-Session-Id")
         if not session_id:
@@ -908,16 +954,15 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 _jsonrpc_error(-32600, "Missing Mcp-Session-Id header"),
                 status=400,
             )
-        session = await self._get_session(session_id, request)
+        try:
+            session = await self._get_session(session_id, request)
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
-            return web.json_response(
-                _jsonrpc_error(-32001, "Session not found"), status=404
-            )
+            return web.json_response(_jsonrpc_error(-32001, "Session not found"), status=404)
         if session.live_stream:
             return web.json_response(
-                _jsonrpc_error(
-                    -32600, "A stream is already open for this session"
-                ),
+                _jsonrpc_error(-32600, "A stream is already open for this session"),
                 status=409,
             )
 
@@ -928,20 +973,50 @@ class StreamableHttpMCPServer(HttpMCPServer):
             parsed = parse_event_id(raw_last_id)
             if parsed is None:
                 return web.json_response(
-                    _jsonrpc_error(
-                        -32600, f"Malformed Last-Event-ID: {raw_last_id}"
-                    ),
+                    _jsonrpc_error(-32600, f"Malformed Last-Event-ID: {raw_last_id}"),
                     status=400,
                 )
             stream_id, sequence = parsed
             resumed = session.streams.get(stream_id)
             if resumed is None:
-                return web.json_response(
-                    _jsonrpc_error(
-                        -32001, f"Unknown stream in Last-Event-ID: {stream_id}"
-                    ),
-                    status=404,
+                # FEAT-477 TASK-2609: the stream may belong to a different
+                # worker (e.g. this session was just adopted from the
+                # shared store in ``_get_session``). Best-effort fallback:
+                # replay from the shared event log before giving up. A
+                # store hiccup here degrades to the existing "unknown
+                # stream" 404 rather than a hard failure — the client can
+                # still reconnect fresh without ``Last-Event-ID``.
+                try:
+                    store_events = await self._session_store.events_after(session.session_id, stream_id, sequence)
+                except SessionStoreUnavailable as exc:
+                    self.logger.warning(
+                        "Could not query the shared store for session %s " "stream %s replay: %s",
+                        session.session_id,
+                        stream_id,
+                        exc,
+                    )
+                    store_events = []
+                if not store_events:
+                    return web.json_response(
+                        _jsonrpc_error(-32001, f"Unknown stream in Last-Event-ID: {stream_id}"),
+                        status=404,
+                    )
+                resumed = session.open_stream(
+                    self._event_buffer_size,
+                    stream_id=stream_id,
+                    max_streams=self._max_streams,
                 )
+                # Rehydrate the buffer preserving the store's original
+                # sequence numbers, so Last-Event-ID continuity holds.
+                for record in store_events:
+                    resumed._events.append(
+                        StreamEvent(
+                            stream_id=stream_id,
+                            sequence=record.sequence,
+                            message=record.message,
+                        )
+                    )
+                resumed._counter = max(record.sequence for record in store_events)
             # Replay from where the client says it stopped, delivered or not.
             replay = resumed.events_after(sequence)
 
@@ -988,9 +1063,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
                     sources = [resumed]
                 else:
                     sources = [
-                        buffer
-                        for buffer in session.streams.values()
-                        if not buffer.attached or buffer is server_stream
+                        buffer for buffer in session.streams.values() if not buffer.attached or buffer is server_stream
                     ]
                 for buffer in list(sources):
                     if buffer.attached and buffer is not server_stream:
@@ -999,9 +1072,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
                         await response.write(event.to_sse())
                         event.delivered = True
                 try:
-                    await asyncio.wait_for(
-                        session.wakeup.wait(), timeout=KEEP_ALIVE_INTERVAL
-                    )
+                    await asyncio.wait_for(session.wakeup.wait(), timeout=KEEP_ALIVE_INTERVAL)
                 except TimeoutError:
                     await response.write(b": keep-alive\n\n")
                 # An attached stream is proof of life: keep the session from
@@ -1011,17 +1082,13 @@ class StreamableHttpMCPServer(HttpMCPServer):
             session.live_stream = False
             if _cancelled_by_caller():
                 raise
-            self.logger.info(
-                "SSE GET stream cancelled: %s", session.session_id
-            )
+            self.logger.info("SSE GET stream cancelled: %s", session.session_id)
         except (
             ConnectionResetError,
             ConnectionError,
             OSError,
         ):
-            self.logger.info(
-                "SSE GET client disconnected: %s", session.session_id
-            )
+            self.logger.info("SSE GET client disconnected: %s", session.session_id)
         finally:
             session.live_stream = False
             with contextlib.suppress(Exception):
@@ -1032,9 +1099,7 @@ class StreamableHttpMCPServer(HttpMCPServer):
     # DELETE — session termination
     # ------------------------------------------------------------------
 
-    async def _handle_streamable_delete(
-        self, request: web.Request
-    ) -> web.Response:
+    async def _handle_streamable_delete(self, request: web.Request) -> web.Response:
         """Terminate a session, cancelling its pending dispatch tasks."""
         error = await self._guard(request)
         if error:
@@ -1047,11 +1112,12 @@ class StreamableHttpMCPServer(HttpMCPServer):
                 status=400,
             )
         # Look up before removing so ownership is enforced on DELETE too.
-        session = await self._get_session(session_id, request)
+        try:
+            session = await self._get_session(session_id, request)
+        except SessionStoreUnavailable:
+            return self._session_store_unavailable_response()
         if session is None:
-            return web.json_response(
-                _jsonrpc_error(-32001, "Session not found"), status=404
-            )
+            return web.json_response(_jsonrpc_error(-32001, "Session not found"), status=404)
         self._sessions.pop(session_id, None)
         # Awaits cancellation, so 204 means the work has actually stopped.
         await self._teardown_session(session)

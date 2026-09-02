@@ -141,8 +141,12 @@ def _make_handler(
         request.json = AsyncMock(return_value=json_body)
 
     handler = ScrapingHandler.__new__(ScrapingHandler)
+    # `request` is a READ-ONLY property on navigator's BaseView
+    # (`return self._request`), so setting the backing attribute above
+    # is the whole job. The assignment that used to follow dates from
+    # when `request` was a plain attribute and now raises
+    # "property 'request' ... has no setter" before any test body runs.
     handler._request = request
-    handler.request = request
     handler.logger = MagicMock()
 
     return handler

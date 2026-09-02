@@ -124,3 +124,29 @@ class TestFromWorktree:
 
     def test_missing_worktree_index_returns_none(self, tmp_path):
         assert TaskScheduler.from_worktree(str(tmp_path), "nope") is None
+
+
+class TestTaskFile:
+    """The index's `file` is the only place the per-task slug is knowable."""
+
+    def test_file_is_carried_from_the_index(self, index_file):
+        p = index_file(
+            [
+                {
+                    "id": "TASK-2719",
+                    "status": "pending",
+                    "depends_on": [],
+                    "file": "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md",
+                }
+            ]
+        )
+        s = TaskScheduler.from_index_file(p)
+        assert (
+            s.next_wave()[0].file
+            == "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
+        )
+
+    def test_file_defaults_to_empty_for_legacy_entries(self, index_file):
+        p = index_file([{"id": "TASK-1", "status": "pending", "depends_on": []}])
+        s = TaskScheduler.from_index_file(p)
+        assert s.next_wave()[0].file == ""

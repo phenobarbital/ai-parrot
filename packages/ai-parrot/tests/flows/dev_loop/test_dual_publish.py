@@ -84,7 +84,8 @@ async def test_flow_event_node_failed_error_folds_into_host(publisher):
     ctx = _ctx_with({"run_id": RUN_ID, "session_host": host})
 
     await publisher(
-        "node_failed", "qa",
+        "node_failed",
+        "qa",
         {"flow": "dev-loop", "context": ctx, "error": "boom", "error_type": "RuntimeError"},
     )
 
@@ -154,7 +155,8 @@ async def test_session_fold_precedes_the_redis_round_trip(monkeypatch):
     monkeypatch.setattr(pub, "_ensure_redis", _ensure_redis)
 
     await pub(
-        "node_failed", "qa",
+        "node_failed",
+        "qa",
         {"flow": "dev-loop", "context": ctx, "error": "boom"},
     )
 
@@ -187,6 +189,90 @@ def test_dispatch_event_bumps_counters():
     assert dispatch_state.message_count == 1
     assert dispatch_state.tool_use_count == 1
     assert dispatch_state.dispatcher == "claude-code"
+
+
+def test_pool_worker_seats_fold_into_their_owning_node():
+    """A pooled `development` node used to report 0 msgs / 0 tools.
+
+    `NodeId` is a closed Literal, so a "development.w1"-keyed action was
+    rejected and swallowed. Seats now roll up to the node that owns them,
+    and several workers accumulate onto that one node.
+    """
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        for seat in ("development.w1", "development.w2"):
+            _apply_to_session_host(_dispatch_event("dispatch.queued", node_id=seat, dispatcher="nvidia"))
+            _apply_to_session_host(_dispatch_event("dispatch.message", node_id=seat))
+            _apply_to_session_host(_dispatch_event("dispatch.tool_use", node_id=seat, tool_name="write_file"))
+            _apply_to_session_host(
+                _dispatch_event(
+                    "dispatch.completed",
+                    node_id=seat,
+                    usage={"input_tokens": 100, "output_tokens": 20, "num_turns": 3},
+                )
+            )
+        _apply_to_session_host(_dispatch_event("dispatch.tool_use", node_id="development.resolver", tool_name="Bash"))
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    assert "development.w1" not in host.state.nodes
+    dispatch_state = host.state.nodes["development"].dispatch
+    assert dispatch_state.message_count == 2
+    assert dispatch_state.tool_use_count == 3
+    # Both workers' spend is summed, not overwritten by the last one.
+    assert dispatch_state.input_tokens == 200
+    assert dispatch_state.output_tokens == 40
+    assert dispatch_state.num_turns == 6
+
+
+def test_pool_worker_seats_are_also_projected_individually():
+    """FEAT-496: the roll-up above is unchanged; seat detail is additive.
+
+    Same event sequence as ``test_pool_worker_seats_fold_into_their_owning_node``
+    (which must keep passing unchanged) — this test only adds NEW
+    assertions about ``DispatchState.seats``.
+    """
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        for seat in ("development.w1", "development.w2"):
+            _apply_to_session_host(_dispatch_event("dispatch.queued", node_id=seat, dispatcher="nvidia"))
+            _apply_to_session_host(_dispatch_event("dispatch.tool_use", node_id=seat, tool_name="write_file"))
+        _apply_to_session_host(_dispatch_event("dispatch.tool_use", node_id="development.resolver", tool_name="Bash"))
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    seats = host.state.nodes["development"].dispatch.seats
+    assert set(seats) == {"development.w1", "development.w2", "development.resolver"}
+    assert seats["development.w1"].last_tool == "write_file"
+    assert seats["development.w2"].last_tool == "write_file"
+    assert seats["development.resolver"].last_tool == "Bash"
+    # Roll-up still correct alongside the new per-seat detail.
+    assert host.state.nodes["development"].dispatch.tool_use_count == 3
+
+
+def test_dispatch_completed_without_usage_keeps_earlier_totals():
+    """An unreported second dispatch must not blank the first's numbers."""
+    host = SessionHost(RUN_ID)
+    token = _SESSION_HOST_CTX.set(host)
+    try:
+        _apply_to_session_host(
+            _dispatch_event(
+                "dispatch.completed",
+                node_id="development.w1",
+                usage={"input_tokens": 7, "output_tokens": 11},
+            )
+        )
+        _apply_to_session_host(_dispatch_event("dispatch.completed", node_id="development.w2"))
+    finally:
+        _SESSION_HOST_CTX.reset(token)
+
+    dispatch_state = host.state.nodes["development"].dispatch
+    assert dispatch_state.input_tokens == 7
+    assert dispatch_state.output_tokens == 11
+    # Never fabricated: nothing reported cost anywhere.
+    assert dispatch_state.total_cost_usd is None
 
 
 def test_dispatch_event_no_host_bound_is_noop():
@@ -254,15 +340,15 @@ def _research_payload() -> str:
 
 @pytest.fixture(autouse=True)
 def _patch_worktree_base(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH", str(tmp_path)
-    )
+    monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH", str(tmp_path))
     return tmp_path
 
 
 def _make_dispatcher(monkeypatch) -> ClaudeCodeDispatcher:
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -286,8 +372,11 @@ async def _run_dispatch(dispatcher, monkeypatch, tmp_path, *, session_host=None)
         lambda *a, **kw: fake_client,
     )
     brief = ResearchOutput(
-        jira_issue_key="OPS-0", spec_path="x", feat_id="FEAT-0",
-        branch_name="b", worktree_path=str(tmp_path),
+        jira_issue_key="OPS-0",
+        spec_path="x",
+        feat_id="FEAT-0",
+        branch_name="b",
+        worktree_path=str(tmp_path),
     )
     return await dispatcher.dispatch(
         brief=brief,
@@ -322,6 +411,7 @@ async def test_legacy_envelope_unchanged_with_shim_active(monkeypatch, tmp_path)
         # the only per-call variable — both dispatched the same event kind
         # sequence against the same fake messages).
         import json as _json
+
         legacy_event = _json.loads(legacy_call.args[1]["event"])
         shimmed_event = _json.loads(shimmed_call.args[1]["event"])
         assert legacy_event["kind"] == shimmed_event["kind"]
@@ -390,13 +480,20 @@ async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(m
             lambda *a, **kw: fake_client,
         )
         brief = ResearchOutput(
-            jira_issue_key="OPS-0", spec_path="x", feat_id="FEAT-0",
-            branch_name="b", worktree_path=str(tmp_path),
+            jira_issue_key="OPS-0",
+            spec_path="x",
+            feat_id="FEAT-0",
+            branch_name="b",
+            worktree_path=str(tmp_path),
         )
         return await disp.dispatch(
-            brief=brief, profile=ClaudeCodeDispatchProfile(),
-            output_model=ResearchOutput, run_id=run_id, node_id="research",
-            cwd=str(tmp_path), session_host=host,
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id=run_id,
+            node_id="research",
+            cwd=str(tmp_path),
+            session_host=host,
         )
 
     await asyncio.gather(
@@ -438,8 +535,11 @@ async def test_session_host_ctx_reset_on_cwd_validation_failure(monkeypatch, tmp
     with pytest.raises(DispatchExecutionError):
         await disp.dispatch(
             brief=ResearchOutput(
-                jira_issue_key="OPS-0", spec_path="x", feat_id="FEAT-0",
-                branch_name="b", worktree_path=str(tmp_path),
+                jira_issue_key="OPS-0",
+                spec_path="x",
+                feat_id="FEAT-0",
+                branch_name="b",
+                worktree_path=str(tmp_path),
             ),
             profile=ClaudeCodeDispatchProfile(),
             output_model=ResearchOutput,

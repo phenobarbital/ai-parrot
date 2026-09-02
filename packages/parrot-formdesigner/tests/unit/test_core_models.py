@@ -144,19 +144,19 @@ class TestFormSchemaFormUid:
 from parrot_formdesigner.core.options import OptionsSource
 
 
-def test_options_source_http_method_default_get():
+def test_options_source_http_method_default_get() -> None:
     """New OptionsSource defaults http_method to GET."""
     src = OptionsSource(source_type="endpoint", source_ref="https://api.test/users")
     assert src.http_method == "GET"
 
 
-def test_options_source_auth_ref_optional():
+def test_options_source_auth_ref_optional() -> None:
     """auth_ref is optional; legacy schemas without it deserialize unchanged."""
     src = OptionsSource(source_type="endpoint", source_ref="https://api.test/users")
     assert src.auth_ref is None
 
 
-def test_options_source_with_post_and_auth():
+def test_options_source_with_post_and_auth() -> None:
     """OptionsSource accepts POST method and auth_ref."""
     src = OptionsSource(
         source_type="endpoint",
@@ -168,7 +168,7 @@ def test_options_source_with_post_and_auth():
     assert src.auth_ref == "MY_API_KEY"
 
 
-def test_options_source_value_label_field_names_unchanged():
+def test_options_source_value_label_field_names_unchanged() -> None:
     """value_field and label_field names are preserved."""
     src = OptionsSource(
         source_type="endpoint",
@@ -184,25 +184,25 @@ def test_options_source_value_label_field_names_unchanged():
 from pydantic import ValidationError
 
 
-def test_field_constraints_scale_validator_rejects_inverted_range():
+def test_field_constraints_scale_validator_rejects_inverted_range() -> None:
     """scale_max < scale_min raises ValidationError."""
     with pytest.raises(ValidationError, match="scale_max"):
         FieldConstraints(scale_min=5, scale_max=3)
 
 
-def test_field_constraints_scale_equal_raises():
+def test_field_constraints_scale_equal_raises() -> None:
     """scale_max == scale_min raises ValidationError."""
     with pytest.raises(ValidationError):
         FieldConstraints(scale_min=5, scale_max=5)
 
 
-def test_field_constraints_anchor_labels_in_bounds():
+def test_field_constraints_anchor_labels_in_bounds() -> None:
     """Anchor label keys outside [scale_min, scale_max] raise."""
     with pytest.raises(ValidationError, match="anchor_labels"):
         FieldConstraints(scale_min=0, scale_max=10, anchor_labels={11: "Extreme"})
 
 
-def test_field_constraints_anchor_labels_valid():
+def test_field_constraints_anchor_labels_valid() -> None:
     """Anchor labels within bounds are accepted."""
     fc = FieldConstraints(
         scale_min=0, scale_max=10,
@@ -211,7 +211,7 @@ def test_field_constraints_anchor_labels_valid():
     assert len(fc.anchor_labels) == 3
 
 
-def test_field_constraints_scale_none_is_ok():
+def test_field_constraints_scale_none_is_ok() -> None:
     """scale_* fields default to None — existing usage unchanged."""
     fc = FieldConstraints()
     assert fc.scale_min is None
@@ -222,7 +222,7 @@ def test_field_constraints_scale_none_is_ok():
 from parrot_formdesigner.core.types import FieldType
 
 
-def test_field_type_enum_has_new_values():
+def test_field_type_enum_has_new_values() -> None:
     """All 10 new FieldType values are present with stable string aliases."""
     new_types = {
         FieldType.SIGNATURE: "signature",
@@ -241,12 +241,12 @@ def test_field_type_enum_has_new_values():
         assert FieldType(expected_value) == ft, f"String alias broken for {expected_value}"
 
 
-def test_field_type_enum_total_count():
+def test_field_type_enum_total_count() -> None:
     """FieldType now has exactly 32 values (20 existing + 10 FEAT-167 + 1 FEAT-170 REST + 1 FEAT-300 FORMULA)."""
     assert len(FieldType) == 32
 
 
-def test_field_type_existing_values_unchanged():
+def test_field_type_existing_values_unchanged() -> None:
     """All original 20 FieldType values are unchanged."""
     assert FieldType.TEXT.value == "text"
     assert FieldType.ARRAY.value == "array"
@@ -257,13 +257,13 @@ def test_field_type_existing_values_unchanged():
 from parrot_formdesigner.core.schema import RenderedForm, RenderWarning
 
 
-def test_rendered_form_warnings_default_empty():
+def test_rendered_form_warnings_default_empty() -> None:
     """RenderedForm defaults warnings to empty list."""
     rf = RenderedForm(content="<form/>", content_type="text/html")
     assert rf.warnings == []
 
 
-def test_render_warning_model():
+def test_render_warning_model() -> None:
     """RenderWarning has all required fields."""
     w = RenderWarning(
         field_id="sig1",
@@ -275,7 +275,7 @@ def test_render_warning_model():
     assert w.renderer == "pdf"
 
 
-def test_rendered_form_with_warnings():
+def test_rendered_form_with_warnings() -> None:
     """RenderedForm accepts and stores warnings."""
     w = RenderWarning(field_id="f1", field_type="nps", renderer="xforms", reason="fallback")
     rf = RenderedForm(content={}, content_type="application/json", warnings=[w])
@@ -285,7 +285,7 @@ def test_rendered_form_with_warnings():
 
 # --- TASK-1154: pycountry / LOCATION reference data tests ---
 
-def test_pycountry_dependency_resolves_es():
+def test_pycountry_dependency_resolves_es() -> None:
     """Wrapper returns ISO-2 ES → name Spain, flag 🇪🇸, dial code +34."""
     pytest.importorskip("pycountry")
     from parrot_formdesigner.core._location_data import get_country_info, is_valid_iso_country_code
@@ -298,7 +298,7 @@ def test_pycountry_dependency_resolves_es():
     assert is_valid_iso_country_code("ES") is True
 
 
-def test_location_rejects_unknown_code():
+def test_location_rejects_unknown_code() -> None:
     """is_valid_iso_country_code('XX') returns False."""
     pytest.importorskip("pycountry")
     from parrot_formdesigner.core._location_data import is_valid_iso_country_code
@@ -306,7 +306,7 @@ def test_location_rejects_unknown_code():
     assert is_valid_iso_country_code("XX") is False
 
 
-def test_list_country_options_has_entries():
+def test_list_country_options_has_entries() -> None:
     """list_country_options returns a non-empty list of FieldOption."""
     pytest.importorskip("pycountry")
     from parrot_formdesigner.core._location_data import list_country_options
@@ -319,7 +319,7 @@ def test_list_country_options_has_entries():
     assert "VE" in values
 
 
-def test_location_data_importable_without_pycountry(monkeypatch):
+def test_location_data_importable_without_pycountry(monkeypatch) -> None:
     """_location_data degrades gracefully when pycountry is not installed."""
     import sys
     import importlib
@@ -339,3 +339,113 @@ def test_location_data_importable_without_pycountry(monkeypatch):
         sys.modules.pop("parrot_formdesigner.core._location_data", None)
         monkeypatch.delitem(sys.modules, "pycountry", raising=False)
 
+
+# ---------------------------------------------------------------------------
+# FEAT-488: FormField content_type and accept_content_types
+# ---------------------------------------------------------------------------
+
+from parrot_formdesigner.core.voice_answer import VoiceAnswerEnvelope
+
+
+class TestFormFieldContentType:
+    """Tests for FormField.content_type and accept_content_types (FEAT-488)."""
+
+    def test_content_type_defaults_none(self) -> None:
+        """content_type defaults to None for backward compatibility."""
+        field = FormField(field_id="f1", field_type=FieldType.TEXT_AREA, label="F1")
+        assert field.content_type is None
+
+    def test_accept_content_types_defaults_none(self) -> None:
+        """accept_content_types defaults to None for backward compatibility."""
+        field = FormField(field_id="f1", field_type=FieldType.TEXT_AREA, label="F1")
+        assert field.accept_content_types is None
+
+    def test_content_type_set(self) -> None:
+        """content_type can be set and round-trips correctly."""
+        field = FormField(
+            field_id="f1",
+            field_type=FieldType.TEXT_AREA,
+            label="F1",
+            content_type="text/markdown",
+        )
+        assert field.content_type == "text/markdown"
+        # Verify round-trip through JSON
+        json_str = field.model_dump_json()
+        assert '"content_type":"text/markdown"' in json_str
+        field2 = FormField.model_validate_json(json_str)
+        assert field2.content_type == "text/markdown"
+
+    def test_accept_content_types_set(self) -> None:
+        """accept_content_types can be set and round-trips correctly."""
+        field = FormField(
+            field_id="f1",
+            field_type=FieldType.TEXT_AREA,
+            label="F1",
+            accept_content_types=["text/plain", "application/json"],
+        )
+        assert field.accept_content_types == ["text/plain", "application/json"]
+        # Verify round-trip through JSON
+        json_str = field.model_dump_json()
+        assert '"accept_content_types":["text/plain","application/json"]' in json_str
+        field2 = FormField.model_validate_json(json_str)
+        assert field2.accept_content_types == ["text/plain", "application/json"]
+
+    def test_both_content_type_and_accept_content_types(self) -> None:
+        """Both fields can be set together."""
+        field = FormField(
+            field_id="voice",
+            field_type=FieldType.TEXT_AREA,
+            label="Voice note",
+            content_type="text/plain",
+            accept_content_types=["text/plain", "application/json"],
+        )
+        assert field.content_type == "text/plain"
+        assert field.accept_content_types == ["text/plain", "application/json"]
+
+
+class TestVoiceAnswerEnvelope:
+    """Tests for VoiceAnswerEnvelope model (FEAT-488 Module 1)."""
+
+    def test_required_answer(self) -> None:
+        """answer is required."""
+        env = VoiceAnswerEnvelope(answer="I agree with the terms.")
+        assert env.answer == "I agree with the terms."
+
+    def test_optional_blob_ref(self) -> None:
+        """blob_ref defaults to None."""
+        env = VoiceAnswerEnvelope(answer="Test")
+        assert env.blob_ref is None
+
+    def test_optional_data_url(self) -> None:
+        """data_url defaults to None."""
+        env = VoiceAnswerEnvelope(answer="Test")
+        assert env.data_url is None
+
+    def test_full_envelope(self) -> None:
+        """Full envelope with all fields."""
+        env = VoiceAnswerEnvelope(
+            answer="I agree with the terms.",
+            blob_ref="s3://bucket/voice-notes/abc123.wav",
+            data_url=None,
+        )
+        assert env.answer == "I agree with the terms."
+        assert env.blob_ref == "s3://bucket/voice-notes/abc123.wav"
+        assert env.data_url is None
+
+    def test_extra_forbid(self) -> None:
+        """extra='forbid' rejects unknown fields."""
+        with pytest.raises(ValidationError):
+            VoiceAnswerEnvelope(answer="test", unknown_field="bad")
+
+    def test_roundtrip_json(self) -> None:
+        """Envelope round-trips through JSON serialization."""
+        original = VoiceAnswerEnvelope(
+            answer="Test answer",
+            blob_ref="s3://bucket/key.wav",
+            data_url="data:audio/wav;base64,ABC==",
+        )
+        json_str = original.model_dump_json()
+        restored = VoiceAnswerEnvelope.model_validate_json(json_str)
+        assert restored.answer == original.answer
+        assert restored.blob_ref == original.blob_ref
+        assert restored.data_url == original.data_url

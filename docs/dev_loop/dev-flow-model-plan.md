@@ -210,11 +210,95 @@ derived wave width is spread over the configured backends round-robin
 (width 3 over 2 backends ⇒ 2 + 1). With nothing configured it still
 returns a single `claude-code` spec, so plain dev_loop runs are unchanged.
 
-## Known limitation
+## Per-run application (FEAT-490)
 
-`model_plan` is a **build-time** input: the seats it selects are baked into
-node constructors. A console or server that builds one flow at startup
-cannot swap seats per run — see `examples/dev_loop/README.md`.
+`model_plan` selects the ideation model and the review pair **for the run
+it is submitted with**, not for the process. `DevFlowRunner.run()` accepts
+a keyword-only `model_plan: DevFlowModelPlan | None = None`:
+
+```python
+result = await runner.run(
+    brief,
+    run_id=run_id,
+    model_plan=DevFlowModelPlan(research_primary="claude-sonnet-5"),
+)
+```
+
+**How it works.** Since FEAT-480, a run whose caller supplies both a
+stable `run_id` and `dev_loop_flow_kwargs` (the console always does — see
+`examples/dev_loop/server_dev.py`) goes through
+`DevCheckpointCoordinator.prepare()`, and on a **cache miss** (i.e. every
+genuinely new run) that coordinator calls the runner's `flow_factory`,
+which builds a fresh, checkpoint-aware `AgentsFlow` for THAT run alone.
+`model_plan` is merged into that per-call build — never stored on the
+runner instance, so concurrent runs with different plans never leak seats
+into each other (`DevLoopRunner` runs up to `max_concurrent_runs`
+simultaneously). Omitting `model_plan` (the default) reaches
+`build_dev_flow` with exactly the kwargs the runner was constructed with —
+byte-identical to every caller that predates this feature.
+
+**The one case that stays fixed: a resume.** A **resumed** run (a
+caller-supplied `run_id` whose checkpoint the coordinator finds) keeps the
+seats it was created with: its already-completed nodes ran under those
+seats, and adopting a different plan mid-history would make the resumed
+bundle self-contradictory. `result.metadata` on the returned `FlowResult`
+records both `model_plan_requested` and `model_plan_effective` (`None`
+when a resume did not apply the submission) plus `run_mode` (`"fresh"` |
+`"resumed"`), so a caller never has to guess which one actually ran.
+Mechanically: `AgentsFlow.resume()` DOES call the same `flow_factory`
+closure a fresh build uses — via `flow_factory(checkpoint.definition)`,
+to rebuild the topology of every not-yet-completed node — so the rule
+above is enforced *inside* that closure rather than by the coordinator
+skipping it: the closure only merges a per-run override when invoked with
+`_definition is None` (the fresh/cache-miss signal), never when
+`AgentsFlow.resume()` calls it with a real definition. A per-run
+`model_plan` therefore never reaches a resumed run's rebuild.
+
+**The dev console (`examples/dev_loop/server_dev.py`) always takes the
+fresh path** for the common case: `handle_run` mints its own `run_id`
+(`f"run-{uuid.uuid4().hex[:8]}"`) whenever the payload carries none, so a
+submitted plan on that path is fully applied — `model_plan_ignored` in the
+run response is `[]`. The console also accepts an explicit `run_id` in the
+payload to **resume** an interrupted run (preflighted via
+`GET /api/flow/{run_id}/checkpoint` / refused with a `409` when it cannot
+succeed) — that is the one path where a submitted plan differing from the
+resumed run's seats is reported as ignored, exactly as this section
+describes. See `examples/dev_loop/README.md`'s "per-run" note for the
+operator-facing version of this same rule.
+
+**Known limitation of the console's resume diff.** The console computes
+what a resume "ignores" against its own static build-time plan (the same
+baseline a fresh run's diff uses), not against the plan the resumed
+checkpoint was actually created with — an embedder that itself submitted
+a differing per-run plan on the ORIGINAL call and then reuses that same
+`run_id` would see a diff computed against the wrong baseline. The console
+never does this (every request that doesn't explicitly resume mints a
+fresh `run_id`), so this does not affect normal console use; a correct
+fix would need the original per-run plan persisted on the checkpoint and
+surfaced during the `inspect_checkpoint` preflight.
+
+**The checkpoint fingerprint is unaffected — accepted, and pinned by a
+test.** `_execution_policy_for_fingerprint()` still derives solely from
+the runner's construction-time kwargs (unchanged by this feature); a
+per-run `model_plan` argument never reaches it. For an embedder that
+reuses a stable `run_id` across two calls with different plans, this means
+the second call resumes the first (same fingerprint) and, per the resume
+rule above, keeps the first call's seats — the two decisions are
+consistent by construction. The dev console never reuses a `run_id` for a
+fresh request, so it is unaffected in practice.
+
+**The ops topology has the same library seam, but its console does not
+use it.** `build_dev_loop_flow()` also accepts a `model_plan` parameter
+(FEAT-490 Module 7), wired to the two seats that topology actually has —
+the development pool and `QANode`'s review pair; there is no
+`IdeationNode` in the bug-mode graph, so `research_primary`/
+`research_partner` have nothing to map onto there. `DevLoopRunner.run()`
+threads a per-run plan through the SAME generic `flow_kwargs_overrides`
+mapping the dev-flow runner uses (`flow_kwargs_overrides={"model_plan":
+plan}`) — deliberately **not** a typed `model_plan` parameter on the base
+class, so a dev-flow concept stays out of the bug-mode runner. The ops
+console (`examples/dev_loop/server.py`) is not wired to send one; building
+that UI is a separate feature.
 
 ## See also
 

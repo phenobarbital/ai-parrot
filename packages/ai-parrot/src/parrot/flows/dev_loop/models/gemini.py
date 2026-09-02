@@ -1,4 +1,9 @@
-"""Gemini dispatch/review profiles for the dev-loop flow (FEAT-129/270)."""
+"""Gemini dispatch profile for the dev-loop flow (FEAT-129).
+
+Development seat only. The review profile that used to live here was
+removed with ``GeminiCodeReviewDispatcher`` — Gemini is banned from every
+reviewer role (see ``models/base.py``'s ``JudgeBackend``).
+"""
 
 from __future__ import annotations
 
@@ -20,21 +25,5 @@ class GeminiCodeDispatchProfile(BaseModel):
         default=True,
         description="Whether to run the gemini session in a sandbox.",
     )
-    approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
-    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
-
-
-
-class GeminiCodeReviewProfile(GeminiCodeDispatchProfile):
-    """Review profile for the Gemini code review dispatcher (FEAT-270).
-
-    Inherits ``GeminiCodeDispatchProfile`` so it carries the fields that
-    ``GeminiCodeDispatcher._build_command()`` accesses. Overrides defaults
-    for the write-enabled review use case.
-    """
-
-    subagent: Literal["sdd-worker"] = "sdd-worker"
-    model: str = "auto"
-    sandbox: bool = False
     approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)

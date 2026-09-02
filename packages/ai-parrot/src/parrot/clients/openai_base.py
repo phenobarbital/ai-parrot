@@ -44,7 +44,14 @@ from ..models import (
 )
 from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
+from ..utils.http_logging import quiet_http_loggers
 from .base import AbstractClient
+
+# The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
+# DEBUG. Quieted here — the base of EVERY OpenAI-protocol client — so Bedrock
+# Mantle, OpenRouter, Moonshot, Nvidia, vLLM and LocalLLM are covered, not
+# just parrot.clients.gpt. See parrot.utils.http_logging for the name split.
+quiet_http_loggers()
 
 if TYPE_CHECKING:
     from PIL import Image

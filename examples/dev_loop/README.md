@@ -436,7 +436,8 @@ subagent refuses to touch it and returns the collision as an open question.
 |---|---|---|
 | `/` | GET | Serves `static/dev.html` |
 | `/api/config` | GET | Backends/models catalog, the three intents, `document_kinds`, `nl_kinds`, `gate_resolve_url_template`, and the dev defaults (`ideation_max_rounds`, `gate_ttl_questions`, `require_plan_approval`, `qa_max_retries`, `development_pool_max`, `max_concurrent_runs`, …). Carries **no** `log_group`, `time_window_minutes` or `jira_project`. |
-| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`. |
+| `/api/flow/run` | POST | Start (or **resume**) a run. Body per the intent (below); an optional `run_id` resumes that run. Returns `run_id`, `resume` (null for a fresh run), `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`, the effective `model_plan`, and `model_plan_ignored` — one `field: requested=… effective=…` line per submitted seat the server is not honouring (empty when every expressed seat matches). |
+| `/api/flow/{run_id}/checkpoint` | GET | **Is this run resumable?** Read-only probe: `found`, `status`, `checkpoint_id`, `completed_nodes`, `active`, plus a `reason`/`help` pair. `resumable` is `null` here — with no brief to fingerprint the answer is *unknown*, not *no*. |
 | `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
 | `/api/flow/{run_id}/cancel` | POST | Cancel a run |
 | `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
@@ -477,6 +478,57 @@ curl -X POST http://localhost:8081/api/flow/run \
 
 Optional in both shapes: `jira_issue_key` (link-only), `dev_agents`,
 `judge_panel`, `skip_qa`, `skip_jira`, `require_plan_approval`.
+
+### Resuming an interrupted run (FEAT-480)
+
+A dev-flow run checkpoints after every node. Pass the original `run_id` back
+and the work already done — `dev_intake`, `ideation` (including the answered
+open questions), `planner` and the worktree/spec/task-index it created — is
+**restored instead of re-dispatched**; execution picks up at the first node
+that never completed.
+
+```bash
+# 1. Is the run still recoverable? (24h Redis TTL by default)
+curl -s http://localhost:8081/api/flow/run-3f9a1c02/checkpoint | jq
+# {"found": true, "status": "running", "checkpoint_id": 7,
+#  "completed_nodes": ["dev_intake", "ideation", "planner"], "resumable": null, ...}
+
+# 2. Resume it — SAME brief as the original run, plus its run_id.
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/my-feature.brainstorm.md",
+    "document_kind": "brainstorm",
+    "run_id": "run-3f9a1c02"
+  }'
+```
+
+In the console the same thing is the **"Resume a run — run_id"** field in
+section 01, with a *Check* button that calls the probe above.
+
+Rules worth knowing before you rely on it:
+
+* **The brief must be identical.** Resume is gated by a SHA-256 fingerprint
+  over the normalized brief (kind, title/description or document_path/
+  document_kind, context, jira_issue_key, dev_agents, judge_panel), the
+  topology version and the server's routing policy (`skip_qa`,
+  `require_plan_approval`, `development_pool_max`, `ideation_max_rounds`, the
+  model plan's pool shape/review backend). Change any of it and the server
+  answers **409 `fingerprint_mismatch`** rather than silently starting over.
+  A natural-language run cannot be resumed by pointing at the document its
+  ideation produced — that is a *different* brief; re-post the original
+  `title`/`description`.
+* **An unknown or expired `run_id` is a 409, never a fresh run.** Checkpoints
+  live in the ephemeral Redis tier for `FLOW_CHECKPOINT_REDIS_TTL` (24h);
+  after that the run is gone.
+* **The worktree must still be there.** A restored `planner_output` is
+  validated against the real repo (registered worktree, expected branch, spec
+  and task-index files present). If it moved, the run fails with a
+  `RecoveredArtifactError` naming what is missing.
+* Resume needs a server started with recovery wiring
+  (`defaults.recovery_enabled` in `/api/config`); the console hides the field
+  when it is false.
 
 ### The `open_questions` gate protocol
 
@@ -577,13 +629,23 @@ Two behaviours worth knowing:
   break every run. `kimi-k3` is reachable via the `moonshot` backend, not
   via NIM.
 
-> **Two limitations, stated plainly.**
-> 1. `model_plan` is a **build-time** input — the seats it selects are
->    baked into node constructors, and this console builds one flow at
->    startup. A submitted plan is fully validated and echoed back in the
->    run response, and any difference from the server's plan is logged as
->    a warning, but the run uses the **server's** plan. Restart the console
->    with the desired `DEV_FLOW_*` keys to change seats.
+> **Two things worth knowing, stated plainly.**
+> 1. **`model_plan` is per-run (FEAT-490).** Every seat — ideation model,
+>    review pair, and the development pool — takes effect for a single
+>    submitted run, with no server restart. A submitted plan is fully
+>    validated and echoed back in the run response as the plan that will
+>    REALLY run. **The one case that does not apply a new submission is a
+>    resume**: `POST /api/flow/run` with an explicit `run_id` that
+>    preflights as resumable continues that run on the seats it was
+>    created with (a resumed run's completed nodes already ran under
+>    them — adopting a different plan mid-history would make the run
+>    self-contradictory). A submission that differs from a resumed run's
+>    seats is still fully validated and echoed back, and any difference is
+>    logged as a warning — **field by field**, naming each seat, and only
+>    for fields the console actually expressed (a blank input means
+>    "keep the resumed run's seat", never an ignored choice) — and
+>    returned as `model_plan_ignored` for the UI banner. Start a fresh run
+>    (omit `run_id`) to use a different plan.
 > 2. By default this console wires the FEAT-378 **judge panel** as its QA
 >    reviewer, and an explicit reviewer wins over the plan by design. The
 >    review pair is therefore configured and validated but not the active
@@ -608,6 +670,7 @@ See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
 | `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Read-only counter-reviewer, over Bedrock Mantle. |
 | `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | The Mantle counter-reviewer's own model key. Distinct from `DEV_LOOP_ADVERSARIAL_MODEL` (the codex seat's). Also used when `DEV_LOOP_ADVERSARIAL_BACKEND=mantle` selects the `mantle-adversarial` reviewer in the ops console. |
 | `DEV_FLOW_USE_REVIEW_PAIR` | `false` | Dev console only: replace the judge panel with the model plan's review pair as the active QA reviewer. |
+| `DEV_LOOP_LLM_MAX_TURNS` | `60` | Turn budget for the **in-process** coding loop (`nvidia`, `nova`, `zai`, `moonshot`, `grok`). One turn is one chat completion, so a real SDD task needs far more than the profile's conservative library default of 24. The agentic CLIs (`claude-code`, `codex`, `gemini`, `google_coding`) run their own loop and ignore this. When the budget runs out, the dispatcher spends one extra round with `tool_choice` forced to `final_output` to recover work already committed; a dispatch that then declares its own task in `incomplete_tasks` is still treated as failed and retried. |
 | `DEV_LOOP_RESEARCH_MCP_ENABLED` | `true` | Kill switch for the research seats' MCP wiring (both consoles) — see the FEAT-484/485 section below. |
 | `DEV_LOOP_RESEARCH_MCP_TOOLKITS` | `auto` | Which `.parrot/mcp-toolkits.yaml` sections to serve to the research seats (`auto` = the sections declared in the file). |
 | `NOVA_CODE_MAX_CONCURRENT_DISPATCHES` | `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | Concurrency cap when `DEV_LOOP_DEVELOPMENT_AGENT=nova`. |

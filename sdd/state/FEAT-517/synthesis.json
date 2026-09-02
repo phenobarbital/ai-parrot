@@ -1,0 +1,373 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-517",
+  "mode": "enrichment",
+  "summary_oneline": "Compose a FlexDashboard agent (PandasAgent + InfographicAuthoringMixin + skills + kb) over six QuerySource slugs, reusing the existing deterministic A2UI recipe/refresh lane end-to-end — no core changes required.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/data.py",
+      "symbol": "PandasAgent",
+      "lines": "379-491",
+      "role": "Base class. Already accepts query= (QuerySource slugs), builds an internal DatasetManager, exposes add_query()/refresh_data(), and has output_routing (FEAT-224) for auto STRUCTURED_CHART/TABLE/MAP selection.",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager.add_dataset",
+      "lines": "501, 966-1091",
+      "role": "The 'DatasSourceManager' of the ticket. add_dataset(query_slug=...) registers each of the six slugs as a lazy QuerySlugSource with description + usage_guidance + permanent_filter.",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/qsource.py",
+      "symbol": "QSourceTool",
+      "lines": "62-437",
+      "role": "LLM-facing ad-hoc QuerySource executor (slug or raw SQL). Optional here — fixed slugs are better served by DatasetManager registration.",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "agents/finance_reporter.py",
+      "symbol": "FinanceReporter",
+      "lines": "85-326",
+      "role": "Direct architectural precedent (FEAT-420): NarrativeMixin + InfographicAuthoringMixin + PandasAgent, dataset registration in configure(), tier-2 publish_recipe with LayoutSpec v2 (KPICard/DataTable), skill_paths opt-in.",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "examples/agents/a2ui/deterministic_refresh_dashboard.py",
+      "symbol": "(worked example)",
+      "lines": "1-764",
+      "role": "End-to-end demonstration of the requested refresh lane: @infographic_transformer with filter params, publish_recipe, RecipeRunner deterministic replay, A2UIRuntime callAgentFunction→refresh_dashboard, surface filter state per surfaceId. Docstring cites the Flex Program report as its lineage.",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py",
+      "symbol": "InfographicToolkit",
+      "lines": "180-899",
+      "role": "Requested toolkit: render/render_template/render_data_template + A2UI envelope builders; template_dirs validated eagerly at construction.",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+      "symbol": "WorkingMemoryToolkit",
+      "lines": "44-650",
+      "role": "Requested toolkit: store/get/search/compute_and_store/merge/import_from_tool for intermediate data operations.",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/mixin.py",
+      "symbol": "SkillRegistryMixin._configure_skill_registry + create_skill_trigger_middleware",
+      "lines": "142-188",
+      "role": "Deterministic /trigger activation for the requested /widget and /infographic skills; SkillDefinition.triggers in skills/models.py.",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "AbstractBot(use_kb, local_kb, kb=[...]) / register_kb",
+      "lines": "287-288, 554-562, 1172-1176",
+      "role": "kb attachment plane for the KPI-definition documents; Porygon (agents/porygon.py) shows local_kb=True usage with embedding model config.",
+      "evidence": [
+        "F005",
+        "F003"
+      ]
+    },
+    {
+      "path": "docs/flex_program_report (39).html",
+      "symbol": "(target layout reference)",
+      "lines": "1-3064",
+      "role": "The concrete visual target: KPI hero row, Chart.js month charts, pay-code pie, data tables, map, multi-select filter bar with embedded data. NOTE: ticket's artifacts/a2ui_live/ paths do not exist; this file and documents/flex_program_report.html are the real references.",
+      "evidence": [
+        "F006",
+        "F004"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Recipe numbers must come from registered @infographic_transformer functions over declared datasets, never from replaying LLM-generated code (FEAT-324 G1).",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "Each Flex KPI (worked hours by month, payroll by month, payroll %, pay-code allocation, utilization, proximity) needs a named, registered transformer; the dashboard recipe references them by section name."
+    },
+    {
+      "statement": "publish_recipe forces TransformStep.inputs to equal the SectionDescriptor's dataset alias 1:1, and transformers hard-code their input frame keys.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "DatasetManager aliases for the six slugs must exactly match the keys the new flex transformers read (e.g. inputs['hours'], inputs['finance'])."
+    },
+    {
+      "statement": "Finance_results_bi returns currency columns as formatted strings ('$137,456.85') and mixed grain (month-end dates); flex_hours uses month_start/month_end; fm_* use BOP/EOP dates with inconsistent casing and a 'catagory' typo column.",
+      "evidence": [
+        "F006"
+      ],
+      "implication": "Transformers need a deterministic normalization layer (currency parsing, month alignment, column canonicalization) — this is where KPI ambiguity actually lives, and what the kb docs must pin down."
+    },
+    {
+      "statement": "The interactive-html renderer ships from ai-parrot-visualizations, registers on import, and requires an HTTP origin (file:// breaks Chart.js canvases).",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "The agent's rendered dashboards must be served (parrot server static/handlers or --serve harness), not just written to disk."
+    },
+    {
+      "statement": "InfographicToolkit validates every template_dirs entry eagerly at construction.",
+      "evidence": [
+        "F005",
+        "F003"
+      ],
+      "implication": "If a Flex HTML template ships with the agent, its directory must exist on every checkout (package data or repo-tracked dir), not a gitignored artifacts path."
+    },
+    {
+      "statement": "The A2UI v1 dialect surface (renderers, envelope routing, structured outputs) is under very active development, and bots/data.py carries a fresh 'wip: info agent' commit (69422348d).",
+      "evidence": [
+        "F006"
+      ],
+      "implication": "Coordinate before building: pin to the current v1 LayoutSpec conventions (path bindings, parrot_optional extensions) and check whether the info-agent WIP overlaps this feature."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "agents/flex_dashboard.py — FlexDashboard(NarrativeMixin?, InfographicAuthoringMixin, PandasAgent) with the six QuerySource slug datasets registered on its DatasetManager, WorkingMemoryToolkit + InfographicToolkit attached, output_routing enabled.",
+      "A registered flex transformer module (payroll contribution, pay-code allocation, rep utilization, proximity staffing) following @infographic_transformer with declared filter params (month, flex_type, pay_code, cost_center).",
+      "Dashboard recipe descriptor(s): hero-card KPI row (Worked Hours, Payroll, P&L Revenue, Payroll % to Revenue) + monthly chart sections + pay-code sections, published via publish_recipe and refreshable via the A2UIRuntime refresh_dashboard lane.",
+      "Skills: /widget (export any KPI as an A2UI structured chart / map / hero card envelope) and /infographic (InfographicToolkit descriptive infographic), declared as file-based skills with triggers.",
+      "kb documents defining each KPI's exact computation (currency parsing, month grain, utilization formula, proximity method) attached via the bot kb plane.",
+      "An example/runner (and possibly seed) mirroring examples/agents/a2ui/deterministic_refresh_dashboard.py for the Flex agent."
+    ],
+    "modified": [],
+    "untouched": [
+      "packages/ai-parrot/src/parrot/bots/data.py (PandasAgent core)",
+      "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py",
+      "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+      "packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/interactive_html.py",
+      "packages/ai-parrot/src/parrot/skills/mixin.py"
+    ],
+    "patterns": [
+      {
+        "statement": "FinanceReporter (FEAT-420) — mixin composition, configure()-time dataset registration, section names = transformer names, LayoutSpec v2 KPICard/DataTable, explicit dataset_sql for replay.",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "statement": "deterministic_refresh_dashboard example (FEAT-324/326×469) — transformers with filter placeholders, FileRecipeStore, RecipeRunner byte-identical replay, A2UIRuntime refresh RPC + per-surface filter state.",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "statement": "Porygon — enable_skill_registry + per-agent skills directory (agents/porygon/skills/*.md) and local_kb=True with kb embedding config.",
+        "evidence": [
+          "F003",
+          "F005"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "Filter semantics: the requested dashboard filters (Month, Flex Type, Pay Code, Cost Center) do not all exist in all datasets (finance has only project+month; employees have Flex Type but no pay_code).",
+        "mitigation": "Define per-section filter applicability in the spec; treat filters as per-dataset params on each transformer, not a global cross-filter.",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "risk": "Concurrent WIP: 'wip: info agent' commit on bots/data.py suggests overlapping in-flight work on an infographic agent.",
+        "mitigation": "Confirm with the author before /sdd-task; rebase the spec on whatever that WIP lands.",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "risk": "Slug data only exists in prod QuerySource (per project convention ENV=prod for data access); deterministic tests can't hit it.",
+        "mitigation": "Seed synthetic frames for tests like the deterministic-refresh example does (no DB, no network); keep slugs behind DatasetManager lazy fetch.",
+        "evidence": [
+          "F004"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Every named building block (PandasAgent, DatasetManager slug sources, InfographicToolkit, WorkingMemoryToolkit, skill /triggers, kb, deterministic refresh runtime) already exists; the feature is pure composition with no core-package changes.",
+      "evidence": [
+        "F001",
+        "F002",
+        "F004",
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "Each class/API was located and its contract read directly."
+    },
+    {
+      "id": "C2",
+      "statement": "FinanceReporter is the correct template for the agent's structure, including its documented pitfalls (alias↔transformer key 1:1, eager template_dirs, explicit dataset_sql).",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Same base class, same mixins, same recipe machinery, in-file rationale from FEAT-420 review."
+    },
+    {
+      "id": "C3",
+      "statement": "The refresh button + in-dashboard filters requirement maps exactly onto the FEAT-469 A2UIRuntime lane (callAgentFunction→refresh_dashboard, per-surface dataModel state), already demonstrated end-to-end.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "The worked example implements precisely this, and cites the Flex Program report as its origin."
+    },
+    {
+      "id": "C4",
+      "statement": "The six slugs are consumed via DatasetManager.add_dataset(query_slug=...) (lazy QuerySlugSource), not via ad-hoc QSourceTool calls.",
+      "evidence": [
+        "F002",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "add_dataset explicitly supports query_slug with permanent_filter and usage_guidance; PandasAgent syncs the catalog into the REPL automatically."
+    },
+    {
+      "id": "C5",
+      "statement": "/widget and /infographic are implementable as file-based skills with deterministic triggers; /widget additionally needs a small per-KPI export path (agent function or tool) that emits the A2UI structured envelope.",
+      "evidence": [
+        "F005",
+        "F004"
+      ],
+      "confidence": "medium",
+      "reasoning": "Trigger middleware and skill discovery are verified; the exact KPI→envelope export tool is new glue whose shape (agent function vs skill-guided tool call) is a design choice."
+    },
+    {
+      "id": "C6",
+      "statement": "The ticket's example paths artifacts/a2ui_live/*.html do not exist; the real references are docs/flex_program_report (39).html and documents/flex_program_report.html.",
+      "evidence": [
+        "F006",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Filesystem checked; the shipped report's ids match the ticket's KPI/filter vocabulary."
+    },
+    {
+      "id": "C7",
+      "statement": "KPI computation is the ambiguous core: currency-string parsing, month-grain alignment across three date conventions, and utilization/proximity formulas are not fully derivable from the sample rows.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "Sample rows show the shape but not the business rules; this is exactly why the ticket asks for kb docs."
+    },
+    {
+      "id": "C8",
+      "statement": "An in-flight 'info agent' WIP on bots/data.py may overlap this feature.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "low",
+      "reasoning": "Single WIP commit message; content not inspected."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Filter scope: should Month / Flex Type / Pay Code / Cost Center filters apply per-section (only to datasets that carry the column) or act as a global cross-filter (requiring a defined join/mapping between datasets)?",
+      "resolves": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "Per-section: each filter only affects sections whose dataset has the column (simplest, matches the shipped report)",
+        "Global cross-filter with a documented dataset→column mapping",
+        "Only the Payroll Contribution sections are filterable; the rest are static"
+      ],
+      "user_answer": "Per-section: each filter only affects sections whose dataset carries that column (matches shipped flex_program_report behavior)."
+    },
+    {
+      "id": "U2",
+      "question": "KB mechanism for the KPI-definition documents: file-based kb= documents shipped with the agent, local_kb (pgvector) loaded by a seeder script (Porygon/security_advisor style), or plain skill assets read on demand?",
+      "resolves": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "Markdown docs in the agent's directory attached via kb= / file knowledge base",
+        "local_kb=True with a load script into pgvector",
+        "Skill assets under the agent's skills directory"
+      ],
+      "user_answer": "File-based kb= markdown documents shipped in the agent's directory (versioned with code, no DB dependency)."
+    },
+    {
+      "id": "U3",
+      "question": "Deployment/persistence target: does this agent run under ai-parrot-server (navigator) with recipes in the server recipe store and dashboards served over HTTP, or standalone with FileRecipeStore + local artifacts like the example?",
+      "resolves": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "Server deployment (navigator) — recipes via infographic_recipes handlers",
+        "Standalone example-style first (FileRecipeStore), server wiring later",
+        "Both: standalone example + server registration in the same feature"
+      ],
+      "user_answer": "Both: standalone example-style runner (FileRecipeStore) for dev/tests + server registration (infographic_recipes handlers) in the same feature."
+    },
+    {
+      "id": "U4",
+      "question": "Proximity Staffing definition: what is the expected computation/output — nearest-employee distance per store (haversine) with a radius threshold (e.g. 25/50 miles), rendered as a map layer, a table, or both?",
+      "resolves": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "Per-store nearest-N employees + distance, map with two layers (stores/employees) and a coverage table",
+        "Coverage % of stores with ≥1 employee within a fixed radius, threshold configurable",
+        "Just an LLM-answerable computation via the pandas tool, no dedicated dashboard section"
+      ],
+      "user_answer": "Map + coverage table: per-store nearest-N employees with haversine distance, configurable radius threshold, two map layers plus a coverage table."
+    },
+    {
+      "id": "U5",
+      "question": "Is the 'wip: info agent' commit (69422348d) on bots/data.py the beginning of THIS feature (should this proposal absorb/coordinate with it), or unrelated?",
+      "resolves": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "Unrelated — proceed independently",
+        "Same feature — this proposal supersedes/absorbs the WIP",
+        "Related but separate — coordinate merge order"
+      ],
+      "user_answer": "Unrelated — proceed independently; no coordination needed."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the architecture is predetermined by the FinanceReporter + deterministic-refresh precedents; the remaining ambiguity (filter semantics, KPI formulas, kb mechanism) is exactly what a spec's acceptance criteria and the kb documents should pin down. No alternative architectures worth a brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006"
+    ],
+    "findings_unused": [],
+    "notes": "Wiki unavailable (MCP + CLI timeout) — grep-first research. Budget: ~6 reads (incl. partial/structural), 14 greps, 2 git logs; not truncated. Overall confidence capped at medium by C7 (KPI formula ambiguity) despite high localization confidence."
+  }
+}

@@ -29,6 +29,7 @@ Responsibilities (per spec §3 Module 2):
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -47,13 +48,18 @@ from parrot.core.events.lifecycle.events.client import (
 )
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
     DispatchExecutionError,
     DispatchOutputValidationError,
     T,
     _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
+    summarize_tool_input,
+    TEXT_MAX_CHARS,
 )
-from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent
+from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent, DispatchLabels
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.observability.context import usage_attribution
 
@@ -70,6 +76,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # here: plan mode gates command execution to read-only behaviour, and the
 # read-only QA/code-review gates legitimately need a shell.
 _WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+# FEAT-496: per-dispatch tool_use_id -> tool_name correlation map. Bound in
+# dispatch() alongside _SESSION_HOST_CTX/_DISPATCH_LABELS_CTX — NEVER instance
+# state on self, since one dispatcher instance is shared across concurrent
+# pool seats and a plain dict would cross-contaminate their tool results.
+_TOOL_NAMES_CTX: "contextvars.ContextVar[Optional[Dict[str, str]]]" = contextvars.ContextVar(
+    "dev_loop_claude_tool_names", default=None
+)
 
 
 def _claude_profile_is_read_only(profile: ClaudeCodeDispatchProfile) -> bool:
@@ -149,6 +163,20 @@ class ClaudeCodeDispatcher:
         """
         self._event_registry_resolver = resolver
 
+    @property
+    def event_registry_resolver(self) -> Optional[Callable[[str], Optional[EventRegistry]]]:
+        """The wired ``run_id -> EventRegistry`` lookup, if any.
+
+        Public so an owner that was handed ONE wired dispatcher can pass
+        the same lookup on to dispatchers it did not build itself — the
+        dev-agent pool's workers, which ``agent_builder.build_dispatcher``
+        constructs with no knowledge of the run.
+
+        Returns:
+            The resolver, or ``None`` when none was wired.
+        """
+        return self._event_registry_resolver
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -163,6 +191,7 @@ class ClaudeCodeDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         """Dispatch a single Claude Code session and return its parsed output.
 
@@ -178,6 +207,11 @@ class ClaudeCodeDispatcher:
             node_id: The flow node id, used for the Redis stream key.
             cwd: Working directory for the Claude Code session. MUST be
                 under ``conf.WORKTREE_BASE_PATH`` (defense in depth).
+            session_host: Optional per-dispatch session host to fold
+                published events into.
+            labels: Optional identity of the work this dispatch is doing
+                (FEAT-496) — task, seat, agent, model. Stamped onto every
+                published payload; never affects control flow.
 
         Returns:
             An instance of ``output_model`` validated from the assistant's
@@ -195,6 +229,10 @@ class ClaudeCodeDispatcher:
         # (cwd validation, the "queued" publish) so an early raise there
         # still resets the var instead of leaking it forward.
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels + a fresh per-dispatch tool_use_id -> name
+        # correlation map alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
+        _tools_token = _TOOL_NAMES_CTX.set({})
         try:
             # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
             # no-edit) dispatches such as the sdd-codereview gate, which may
@@ -206,10 +244,17 @@ class ClaudeCodeDispatcher:
                 kind="dispatch.queued",
                 run_id=run_id,
                 node_id=node_id,
-                payload={"profile": profile.model_dump(mode="json")},
+                payload={
+                    "profile": profile.model_dump(mode="json"),
+                    # Fills the run bundle's "Dispatcher" column, which
+                    # read this key and found nothing (see llm.py).
+                    "dispatcher": "claude-code",
+                },
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
+            _TOOL_NAMES_CTX.reset(_tools_token)
             raise
 
         async with self._semaphore:
@@ -319,6 +364,40 @@ class ClaudeCodeDispatcher:
                     )
                     raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
 
+                # A session cut short by its turn cap is a distinct
+                # failure with a distinct fix (raise the cap, or find out
+                # why the dispatch needed that many turns). Check it before
+                # the generic error/validation paths, which would otherwise
+                # report the symptom — an unparseable final payload.
+                if self._max_turns_exhausted(messages):
+                    cap = self._effective_max_turns(profile)
+                    message = f"Dispatch hit its max_turns cap ({cap})"
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "MaxTurnsExhausted",
+                            "error_message": message,
+                            "max_turns": cap,
+                        },
+                    )
+                    self.logger.error(
+                        "Dispatch hit max_turns=%s for run=%s node=%s",
+                        cap,
+                        run_id,
+                        node_id,
+                    )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="MaxTurnsExhausted",
+                    )
+                    raise DispatchExecutionError(message)
+
                 # Even when the SDK does NOT raise (some CLI versions emit
                 # the erroring result and close the stream cleanly), an
                 # ``is_error`` ResultMessage must fail the dispatch — never
@@ -401,6 +480,8 @@ class ClaudeCodeDispatcher:
                 return result
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
+                _TOOL_NAMES_CTX.reset(_tools_token)
 
     # ------------------------------------------------------------------
     # Internal helpers (underscored — but accessible to unit tests)
@@ -511,6 +592,7 @@ class ClaudeCodeDispatcher:
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
+            max_turns=self._effective_max_turns(profile),
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
@@ -526,6 +608,51 @@ class ClaudeCodeDispatcher:
             # byte-identical to pre-Module-6 behavior.
             mcp_servers=profile.mcp_servers,
         )
+
+    @staticmethod
+    def _effective_max_turns(profile: ClaudeCodeDispatchProfile) -> Optional[int]:
+        """Resolve the turn cap for a dispatch: profile first, then conf.
+
+        ``ClaudeCodeDispatchProfile.max_turns`` is the per-dispatch cap set
+        by the node that knows how bounded its own task is (SynthesisNode).
+        ``conf.DEV_LOOP_CLAUDE_MAX_TURNS`` is the operator's blanket
+        backstop for every dispatch that declares none. Both unset (the
+        default) means no cap, byte-identical to pre-cap behavior.
+
+        Args:
+            profile: The dispatch profile being translated.
+
+        Returns:
+            The cap to forward as ``ClaudeAgentRunOptions.max_turns``, or
+            ``None`` for an uncapped session.
+        """
+        if profile.max_turns is not None:
+            return profile.max_turns
+        return getattr(conf, "DEV_LOOP_CLAUDE_MAX_TURNS", 0) or None
+
+    @staticmethod
+    def _max_turns_exhausted(messages: List[Any]) -> bool:
+        """Whether the session terminated by hitting its turn cap.
+
+        The SDK's terminal ``ResultMessage`` reports this as
+        ``subtype="error_max_turns"``. Without this check the truncated
+        session reaches :meth:`_validate_output`, which reports the
+        *symptom* ("could not locate a JSON object in the assistant
+        output") rather than the cause. Duck-typed on ``subtype`` for the
+        same reason as :meth:`_extract_result_error` — no eager SDK import.
+
+        Args:
+            messages: Every message buffered from the stream, in order.
+
+        Returns:
+            True when the terminal result says the cap was hit.
+        """
+        for msg in reversed(messages):
+            subtype = getattr(msg, "subtype", None)
+            if subtype is None:
+                continue
+            return str(subtype) == "error_max_turns"
+        return False
 
     def _resolve_dispatch_env(self) -> Dict[str, str]:
         """Compute env overrides that steer the subprocess auth method.
@@ -990,7 +1117,7 @@ class ClaudeCodeDispatcher:
             ts=time.time(),
             run_id=run_id,
             node_id=node_id,
-            payload=payload,
+            payload=normalize_payload(kind, payload),
         )
         # FEAT-322 TASK-1852: dual-publish — fold into the run's SessionHost
         # (if any) independent of legacy Redis availability, mirroring
@@ -1014,6 +1141,118 @@ class ClaudeCodeDispatcher:
         except Exception as exc:  # pragma: no cover - best-effort publish
             self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
 
+    @staticmethod
+    def _snippet(value: Any, *, max_chars: int = TEXT_MAX_CHARS) -> str:
+        """Best-effort, clamped text rendering of a tool-result content blob.
+
+        ``ToolResultBlock.content`` may be a plain string, a list of
+        content-block dicts (``{"type": "text", "text": ...}``), or
+        something else entirely — never raises.
+        """
+        try:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                text = value
+            elif isinstance(value, list):
+                parts = []
+                for item in value:
+                    if isinstance(item, dict):
+                        parts.append(str(item.get("text", item)))
+                    else:
+                        parts.append(str(item))
+                text = " ".join(parts)
+            else:
+                text = str(value)
+            return text[:max_chars]
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            return ""
+
+    @staticmethod
+    def _extract_message_blocks(content: List[Any], payload: Dict[str, Any]) -> str:
+        """Walk one message's content blocks and enrich ``payload`` in place.
+
+        ``ToolUseBlock`` → ``tool_name`` (the key ``session_state`` actually
+        reads, FEAT-496 root cause 3) plus a ``tool_input`` digest, and
+        records the ``tool_use_id -> tool_name`` mapping into the active
+        per-dispatch correlation map so a later ``ToolResultBlock`` can
+        resolve the originating tool's name instead of publishing a bare
+        ``toolu_...`` id.
+
+        ``ToolResultBlock`` → resolves its ``tool_use_id`` through that same
+        map, plus ``is_error`` and a clamped ``result_snippet``. An
+        unpaired id (e.g. a resumed session) degrades gracefully — no
+        exception, just no ``tool_name``.
+
+        ``TextBlock`` / ``ThinkingBlock`` → a clamped ``text`` snippet.
+
+        Every attribute access is duck-typed (``getattr`` with a default) —
+        the ``claude_agent_sdk`` types are never imported here.
+
+        Args:
+            content: The message's ``content`` list of SDK blocks.
+            payload: The payload dict to enrich in place.
+
+        Returns:
+            The event kind implied by the blocks seen: ``dispatch.tool_use``,
+            ``dispatch.tool_result``, or ``dispatch.message`` when only
+            text/thinking blocks (or nothing recognised) are present.
+        """
+        kind = "dispatch.message"
+        tool_names: List[str] = []
+        text_snippet = ""
+        # Lazily initialise the correlation map when no dispatch() call
+        # bound one (e.g. a unit test driving this method directly) so
+        # tool-use/tool-result pairing still works within one asyncio Task.
+        tool_map = _TOOL_NAMES_CTX.get()
+        if tool_map is None:
+            tool_map = {}
+            _TOOL_NAMES_CTX.set(tool_map)
+        for block in content:
+            try:
+                cls_name = type(block).__name__
+                if cls_name == "ToolUseBlock":
+                    kind = "dispatch.tool_use"
+                    name = getattr(block, "name", "") or ""
+                    tool_id = getattr(block, "id", "") or ""
+                    if name:
+                        tool_names.append(name)
+                        payload.setdefault("tool_name", name)
+                        payload.setdefault(
+                            "tool_input",
+                            summarize_tool_input(name, getattr(block, "input", None)),
+                        )
+                        if tool_id:
+                            tool_map[tool_id] = name
+                    if tool_id:
+                        payload.setdefault("tool_use_id", tool_id)
+                elif cls_name == "ToolResultBlock":
+                    kind = "dispatch.tool_result"
+                    tool_id = getattr(block, "tool_use_id", "") or ""
+                    name = tool_map.get(tool_id, "") if tool_id else ""
+                    if tool_id:
+                        payload.setdefault("tool_use_id", tool_id)
+                    if name:
+                        tool_names.append(name)
+                        payload.setdefault("tool_name", name)
+                    if getattr(block, "is_error", False):
+                        payload["is_error"] = True
+                    payload.setdefault(
+                        "result_snippet",
+                        ClaudeCodeDispatcher._snippet(getattr(block, "content", None)),
+                    )
+                elif cls_name in ("TextBlock", "ThinkingBlock") and not text_snippet:
+                    raw = getattr(block, "text", "") or ""
+                    if raw:
+                        text_snippet = raw[:TEXT_MAX_CHARS]
+            except Exception:  # noqa: BLE001 - one bad block must not sink the rest
+                continue
+        if tool_names:
+            payload["tools"] = tool_names
+        if text_snippet:
+            payload["text"] = text_snippet
+        return kind
+
     async def _publish_message_event(
         self,
         stream_key: str,
@@ -1030,43 +1269,69 @@ class ClaudeCodeDispatcher:
         (catch-all).
 
         Each event carries structured metadata so the live stream shows
-        *what* happened (tool name, text snippet), not just the message
-        class.
+        *what* happened (tool name, tool input digest, text snippet) rather
+        than the message's class name (FEAT-496 root causes 1-3). The SDK
+        is duck-typed throughout — every attribute access uses ``getattr``
+        with a default, so no ``claude_agent_sdk`` import is needed here.
         """
         kind = "dispatch.message"
         payload: Dict[str, Any] = {
             "message_class": type(message).__name__,
         }
-        content = getattr(message, "content", None)
-        if isinstance(content, list):
-            tool_names: List[str] = []
-            text_snippet = ""
-            for block in content:
-                cls_name = type(block).__name__
-                if cls_name == "ToolUseBlock":
-                    kind = "dispatch.tool_use"
-                    name = getattr(block, "name", None)
-                    if name:
-                        tool_names.append(name)
-                elif cls_name == "ToolResultBlock":
-                    kind = "dispatch.tool_result"
-                    name = getattr(block, "tool_use_id", None) or getattr(block, "name", None)
-                    if name:
-                        tool_names.append(name)
-                elif cls_name == "TextBlock" and not text_snippet:
-                    raw = getattr(block, "text", "") or ""
-                    if raw:
-                        text_snippet = raw[:200]
-            if tool_names:
-                payload["tools"] = tool_names
-            if text_snippet:
-                payload["text"] = text_snippet
-        # Surface terminal-result error metadata inline so the live stream
-        # shows *why* a dispatch died, not just that a ResultMessage arrived.
-        if getattr(message, "is_error", False):
-            payload["is_error"] = True
-            payload["api_error_status"] = getattr(message, "api_error_status", None)
-            payload["result_text"] = getattr(message, "result", None)
+        try:
+            content = getattr(message, "content", None)
+            if isinstance(content, list):
+                kind = self._extract_message_blocks(content, payload)
+
+            # SystemMessage enrichment — carries the session's resolved
+            # model, cwd, tools, mcp_servers, session_id. ResultMessage
+            # enrichment — terminal telemetry, now surfaced on the success
+            # path too (previously only attached when is_error was set).
+            # Both are duck-typed: an attribute simply is not present on
+            # message classes that do not carry it.
+            subtype = getattr(message, "subtype", None)
+            if subtype:
+                payload["subtype"] = subtype
+            model = getattr(message, "model", None)
+            if model:
+                payload["model"] = model
+            cwd = getattr(message, "cwd", None)
+            if cwd:
+                payload["cwd"] = cwd
+            session_id = getattr(message, "session_id", None)
+            if session_id:
+                payload["session_id"] = session_id
+            tools = getattr(message, "tools", None)
+            if tools is not None:
+                payload["tool_count"] = len(tools)
+            mcp_servers = getattr(message, "mcp_servers", None)
+            if mcp_servers is not None:
+                payload["mcp_server_count"] = len(mcp_servers)
+
+            num_turns = getattr(message, "num_turns", None)
+            if num_turns is not None:
+                payload["num_turns"] = num_turns
+            duration_ms = getattr(message, "duration_ms", None)
+            if duration_ms is not None:
+                payload["duration_ms"] = duration_ms
+            total_cost_usd = getattr(message, "total_cost_usd", None)
+            if total_cost_usd is not None:
+                payload["total_cost_usd"] = total_cost_usd
+
+            # Surface terminal-result error metadata inline so the live
+            # stream shows *why* a dispatch died, not just that a
+            # ResultMessage arrived.
+            if getattr(message, "is_error", False):
+                payload["is_error"] = True
+                payload["api_error_status"] = getattr(message, "api_error_status", None)
+                payload["result_text"] = getattr(message, "result", None)
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            self.logger.debug(
+                "Claude message extraction failed for run=%s node=%s",
+                run_id,
+                node_id,
+                exc_info=True,
+            )
         await self._publish_event(
             stream_key,
             kind=kind,

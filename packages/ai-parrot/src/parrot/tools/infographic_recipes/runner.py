@@ -56,6 +56,7 @@ Slack public-URL lookup), not re-invented as a separate persist call.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from typing import Any, Optional
@@ -246,6 +247,7 @@ class RecipeRunner:
         params: dict[str, Any] | None = None,
         pctx: Any | None = None,
         recipe_owner: Optional[str] = None,
+        include_envelope: bool = False,
     ) -> RenderedArtifact:
         """Run the full seven-step replay pipeline for recipe ``name``.
 
@@ -266,9 +268,21 @@ class RecipeRunner:
                 from the constructor's ``owner`` (the NotificationMixin-
                 bearing delivery owner — an unrelated concept) to avoid
                 confusion between the two.
+            include_envelope: When ``True``, attach the assembled
+                ``CreateSurface`` envelope dump
+                (``envelope.model_dump(by_alias=True, mode="json")`` — the
+                same shape ``persist_envelope`` stores) at
+                ``RenderedArtifact.metadata["source_envelope"]`` before
+                returning. Lets a refresh caller (FEAT-492) obtain the
+                envelope without a second ArtifactStore round-trip.
+                Non-breaking: defaults to ``False``, in which case the
+                ``"source_envelope"`` key is never added.
 
         Returns:
             The rendered, persisted-if-configured :class:`RenderedArtifact`.
+            When ``include_envelope=True``, its ``metadata`` dict carries the
+            reserved ``"source_envelope"`` key with the assembled envelope
+            dump.
 
         Raises:
             RecipeRunException: On any pipeline abort (stage-tagged diagnostic).
@@ -285,6 +299,8 @@ class RecipeRunner:
         self._check_bind_drift_or_raise(recipe, data_model)
         envelope = self._assemble_envelope_or_raise(recipe, data_model)
         artifact = await self._render_or_raise(recipe, envelope)
+        if include_envelope:
+            artifact.metadata["source_envelope"] = envelope.model_dump(by_alias=True, mode="json")
         await self._deliver_best_effort(recipe, artifact)
         return artifact
 
@@ -616,6 +632,7 @@ class RecipeRunner:
                     theme=props.get("theme") or recipe.render.theme,
                     surface_id=f"{recipe.name}-infographic",
                     data_model=data_model,
+                    metadata=layout.metadata,
                 )
             else:
                 envelope = build_surface(
@@ -623,6 +640,7 @@ class RecipeRunner:
                     props,
                     surface_id=f"{recipe.name}-{layout.component.lower()}",
                     data_model=data_model,
+                    metadata=layout.metadata,
                 )
         except CatalogValidationError as exc:
             raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))) from exc
@@ -632,7 +650,19 @@ class RecipeRunner:
         # Unknown/uninstalled renderer -> let ImportError propagate UNCHANGED
         # (acceptance criterion: "degrades with the existing actionable ImportError").
         renderer_cls = get_a2ui_renderer(recipe.render.profile)
-        renderer = renderer_cls()
+        # Detect support rather than assume it (FEAT-493 TASK-2714): not every
+        # registered renderer is an HTML one (echarts/folium-map/adaptive-cards
+        # have their own constructors) — pass only the (theme, layout) kwargs
+        # the callee's own constructor actually declares, so a renderer that
+        # cannot be themed keeps working exactly as before instead of raising
+        # a TypeError that would surface as a spurious stage="render" failure.
+        params = inspect.signature(renderer_cls).parameters
+        kwargs = {
+            name: value
+            for name, value in (("theme", recipe.render.theme), ("layout", recipe.render.layout))
+            if name in params and value is not None
+        }
+        renderer = renderer_cls(**kwargs)
         try:
             return await renderer.render(envelope)
         except Exception as exc:  # noqa: BLE001 - any renderer failure is stage="render"
