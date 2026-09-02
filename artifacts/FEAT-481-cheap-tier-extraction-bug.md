@@ -6,6 +6,13 @@
 **Branch:** `feat-481-fireflies-wiki-knowledgebase-agent`
 **Status:** root cause identified; a FEAT-481-scoped interim guard is in place (see §6). **The real fix is still open.**
 
+> ⚠️ **The TL;DR and root-cause sections below are SUPERSEDED.** A live
+> cross-provider matrix (30 `provider:model` rows, 6 providers) run on
+> 2026-09-02 shows the "schema problem" conclusion is an artefact of the
+> probe running the wrong model. Read **ADDENDUM (2026-09-02)** at the end of
+> this document first; the sections above are kept for the raw captures and
+> the code map, which remain accurate.
+
 ---
 
 ## TL;DR
@@ -266,3 +273,177 @@ created before the loader syncs into it. Likely a first-run bootstrap/ordering g
 The test vault was `git init`-ed for reversible testing; partial artifacts from failed
 runs (`.wiki_kb/`, `Raw/` bundle, control-page edits) are parked in the vault's
 `git stash` entries. No successful compile wrote content pages.
+
+---
+
+# ADDENDUM (2026-09-02, Jesus) — live cross-provider reproduction
+
+**The §TL;DR conclusion above is wrong.** A live matrix across 30
+`provider:model` rows and 6 providers shows this is neither a cheap-tier nor a
+schema problem. Evidence, harness and live tests:
+
+| Artifact | Path |
+|---|---|
+| Matrix harness | `artifacts/feat481_structured_output_matrix.py` |
+| Meeting fixture (15,035 chars, no vault needed) | `artifacts/feat481_fixtures/meeting_large_summary.md` |
+| Live pytest regression tests | `packages/ai-parrot/tests/clients/test_structured_output_live_matrix.py` |
+| Run data + raw model responses | `artifacts/logs/feat481/` |
+| Rendered results table | https://claude.ai/code/artifact/85bb482b-7976-47bd-bfb2-50b64988c2ec |
+
+```bash
+source .venv/bin/activate
+export PARROT_MATRIX_LIVE=1
+python artifacts/feat481_structured_output_matrix.py --preset all --repeat 2 --save-raw
+```
+
+## A1 — The probe measured the wrong models (`_lightweight_model` outranks `self.model`)
+
+`AbstractClient._resolve_invoke_model()` (`clients/base.py:1849-1861`) resolves:
+
+```
+explicit model= argument  >  self._lightweight_model  >  self.model
+```
+
+`self.model` — what `LLMFactory.create("google:gemini-2.5-pro")` sets — is **last**.
+`GoogleGenAIClient._lightweight_model` is `"gemini-3.1-flash-lite"`
+(`clients/google/client.py:115`), and `feat481_extraction_model_probe.py` never
+passes `model=`. So **every Gemini row of the original probe ran
+`gemini-3.1-flash-lite`**, whatever tier was requested. Reproduced directly:
+
+```
+--no-pin-model  google:gemini-2.5-pro    → effective gemini-3.1-flash-lite  22,775 chars ×159
+--no-pin-model  google:gemini-2.5-flash  → effective gemini-3.1-flash-lite  22,775 chars ×159
+--pin-model     google:gemini-2.5-pro    → effective gemini-2.5-pro         PASS 2/2
+--pin-model     google:gemini-2.5-flash-lite → effective gemini-2.5-flash-lite  PASS 2/2
+```
+
+That is the whole basis of the report's "all tiers fail identically" observation:
+the byte-identical ~25 KB failure at the same column across flash, flash-lite and
+pro is what one model looks like, tested three times. The same trap applies to
+`AnthropicClient`/`BedrockConverseClient`/`ClaudeAgentClient`
+(`claude-haiku-4-5-20251001`), `OpenAIClient` (`gpt-4.1`), `GroqClient`,
+`GrokClient` and `ZaiClient`.
+
+## A2 — With the model actually pinned, most models pass
+
+At the production default (`max_tokens=4096`, `temperature=0.0`, 2 runs/cell),
+of the **20 models this account could reach, 12 passed 2/2**: `gemini-2.5-pro`,
+`gemini-2.5-flash-lite`, `claude-sonnet-5` and `claude-haiku-4-5` (Bedrock
+Converse), `qwen3-32b`, `qwen3-coder-30b-a3b`, `deepseek.r1`, `gpt-oss-120b`
+(Bedrock), `nova-2-lite`, `nova-lite`, `nova-pro`, and `gpt-oss-120b` (NVIDIA
+NIM). **`gemini-2.5-flash-lite` — the model the report names as the original
+failure — passes 2/2.**
+
+Not testable on this machine (billing/entitlement, not model behaviour):
+Anthropic direct API and Claude Agent SDK (credit balance exhausted), OpenAI
+direct (no credits), Codex CLI (model selection blocked on a ChatGPT-account
+login), `claude-fable-5` (not enabled on the AWS account).
+
+## A3 — Every real failure is `finish_reason = MAX_TOKENS`
+
+All 14 failing calls, across three providers, stopped at the output cap — none
+at `STOP`:
+
+```
+google:gemini-3.1-flash-lite    MAX_TOKENS  out=4081
+google:gemini-2.5-flash         MAX_TOKENS  out=1491  thinking=2591
+google:gemini-3.8-flash         MAX_TOKENS  out=2250  thinking=1831
+google:gemini-3.1-pro-preview   MAX_TOKENS  out= 883  thinking=3199
+bedrock-converse:claude-opus-5  max_tokens  out=4096
+nvidia:nemotron-3-super-120b    length      out=4096
+```
+
+`invoke()` never inspects `finish_reason`, so a *known*-truncated response is fed
+to `_parse_structured_output`, fails to parse, and is returned as the raw string.
+The string leak is a **detectable** condition the client declines to detect.
+
+Thinking tokens are the aggravating factor — they are billed against
+`max_output_tokens` before any JSON is emitted:
+
+```
+gemini-3.1-pro-preview  prompt=3507  thoughts=2251  candidates=1831  → MAX_TOKENS
+gemini-2.5-pro          prompt=3507  thoughts=1011  candidates=1720  → STOP
+```
+
+## A4 — Raising the budget splits the failures into two populations
+
+Re-run at `max_tokens=12288`:
+
+- **Budget-limited (now pass 2/2):** `gemini-2.5-flash`,
+  `bedrock-converse:claude-opus-5`, `nvidia:nemotron-3-super-120b`.
+- **Genuinely degenerate (worse):** the whole Gemini 3.x family expands to fill
+  whatever budget it gets — `gemini-3.1-flash-lite` 22 KB → 91 KB (repeat ×159 →
+  ×671), `gemini-3.5-flash-lite` 37 KB → 119 KB, `gemini-3.8-flash` 16 KB →
+  84 KB, `gemini-3.1-pro-preview` 4.7 KB → 51 KB.
+
+So the report's corollary ("raising `max_output_tokens` is not a fix") is right
+for Gemini 3.x and wrong for everyone else.
+
+## A5 — Corrections to the body of this report
+
+- **"It is a SCHEMA problem"** — no. A capped-length `MeetingPageExtraction`
+  variant (`--schemas page_capped`) did not rescue the degenerating models, and
+  the 12 passing models never needed it.
+- **"`MeetingPageExtraction` carries `filename`, `content`, `vault_path`"** — it
+  does not. Those are fields of `MeetingPageResult`, built in Python from the
+  extraction (`nodes/meeting_page.py:181-185`). The model is never asked to emit
+  a rendered page, so "the schema asks for a whole page" is not a cause.
+- **"`gemini-2.5-pro` fails too"** — it passes 2/2 when actually invoked.
+- The failure is **flaky, not deterministic**, despite `temperature=0`:
+  `gemini-3.5-flash-lite` and `gemini-3.8-flash` each scored 1/2. A single-shot
+  probe cannot distinguish a hard failure from a flaky one; use `--repeat`.
+
+## A6 — Revised fix list
+
+1. **Fix `_resolve_invoke_model()` ordering** so an explicitly selected
+   `self.model` outranks `_lightweight_model`. Everything else is unmeasurable
+   until this lands.
+2. **Raise `InvokeError` on a truncated `finish_reason`** in shared client code,
+   before parsing, for every provider. Turns 14 silent string leaks into 14
+   accurate errors.
+3. **Set an explicit `max_tokens` on the meeting-page call** and fix the 4096
+   `invoke()` default, which was sized for models that do no thinking.
+   **Note (2026-09-02, in-flight on `dev`):** parallel work has introduced
+   `AbstractClient._default_max_tokens = 16384` and routed `__init__` through it
+   — reached the same conclusion from NVIDIA NIM reasoning models. That change
+   only moves `self.max_tokens`, which `ask()` uses. **`invoke()` is not
+   covered**: its signature default is still a hardcoded `max_tokens: int = 4096`
+   in `base.py:1681/1719/1774`, `google/client.py:5471`, `claude.py:1944` and the
+   other clients. The FEAT-481 path is `invoke()`, so it still runs at 4096.
+   Route those signatures through `self._default_max_tokens` too.
+4. **Do not constrain the schema** — measured, it is not the lever.
+5. **Choose the extraction model on this evidence.** For a cheap tier,
+   `gemini-2.5-flash-lite`, `nova-2-lite` and `claude-haiku-4-5` each cleared it
+   2/2 at the stock budget. Avoid the Gemini 3.x family for this call.
+
+## A7 — Unrelated defects found while testing
+
+### A7.1 — `AnthropicClient(backend="bedrock")` cannot authenticate
+
+`AnthropicClient(backend="bedrock")` (the `bedrock:` / `anthropic-aws:` provider
+keys) is rejected with `403 The security token included in the request is
+invalid` using the **same** `parrot.conf` AWS credentials that every
+`bedrock-converse:` and `nova:` row authenticates with successfully.
+`BedrockBackend.build_client()` passes `aws_access_key`/`aws_secret_key` to
+`AsyncAnthropicBedrock`, but they resolve from `conf.AWS_ACCESS_KEY` /
+`AWS_SECRET_KEY` rather than the `AWS_CREDENTIALS` profile the Converse path
+uses. Deserves its own ticket.
+
+### A7.2 — `OpenAICodexClient` structured `invoke()` is broken for every schema
+
+`codex-agent:` / `openai-codex:` cannot satisfy **any** Pydantic `output_type`.
+`OpenAICodexClient._write_output_schema()` (`clients/codex_agent.py:653-665`)
+writes `output_type.model_json_schema()` verbatim, and OpenAI's strict
+structured-output mode rejects it:
+
+```
+invalid_request_error / invalid_json_schema
+Invalid schema for response_format 'codex_output_schema':
+In context=(), 'additionalProperties' is required to be supplied and to be false.
+```
+
+The writer must inject `"additionalProperties": false` into the root object and
+into every nested definition under `$defs` (and mark every property required,
+which strict mode also demands) before handing the file to `codex exec`. This is
+not an account or entitlement problem — it fails identically for the small
+`Classification` schema. Deserves its own ticket.
