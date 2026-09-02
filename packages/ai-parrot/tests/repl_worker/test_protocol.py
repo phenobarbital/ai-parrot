@@ -8,6 +8,7 @@ import pickle
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from parrot.tools.repl_worker.protocol import (
     ErrorResponse,
@@ -21,6 +22,7 @@ from parrot.tools.repl_worker.protocol import (
     OkResponse,
     PingRequest,
     PongResponse,
+    ReadyResponse,
     ResetRequest,
     SetVarRequest,
     SnapshotRequest,
@@ -50,6 +52,7 @@ ALL_MESSAGES = [
     SnapshotResponse(data={"x": 1}),
     PongResponse(),
     ErrorResponse(message="not_implemented"),
+    ReadyResponse(pid=1, bootstrap_ms=10),
 ]
 
 
@@ -62,6 +65,27 @@ def test_protocol_roundtrip(message):
     parsed = read_frame(stream)
     assert type(parsed) is type(message)
     assert parsed.model_dump() == message.model_dump()
+
+
+def test_ready_response_roundtrip():
+    """The FEAT-500 readiness frame survives write_frame -> read_frame."""
+    buf = io.BytesIO()
+    write_frame(buf, ReadyResponse(pid=4242, bootstrap_ms=1234))
+    buf.seek(0)
+    msg = read_frame(buf)
+    assert isinstance(msg, ReadyResponse)
+    assert (msg.pid, msg.bootstrap_ms) == (4242, 1234)
+
+
+def test_worker_config_new_fields_defaults_and_validation():
+    """Both FEAT-500 timeout budgets default to 30 s and reject <= 0."""
+    cfg = WorkerConfig()
+    assert cfg.bootstrap_timeout_ms == 30_000
+    assert cfg.namespace_timeout_ms == 30_000
+    with pytest.raises(ValidationError):
+        WorkerConfig(bootstrap_timeout_ms=0)
+    with pytest.raises(ValidationError):
+        WorkerConfig(namespace_timeout_ms=-1)
 
 
 def test_read_frame_raises_eoferror_on_empty_stream():

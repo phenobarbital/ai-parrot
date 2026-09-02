@@ -310,6 +310,29 @@ class ErrorResponse(BaseModel):
     message: str
 
 
+class ReadyResponse(BaseModel):
+    """Worker -> host: the readiness handshake frame (FEAT-500).
+
+    The very first frame a worker writes, emitted after its
+    :class:`~parrot.tools.repl_worker.worker.WorkerNamespace` has finished
+    constructing (framework + pandas import + REPL bootstrap) and before it
+    enters its service loop. The host arms a readiness future in
+    ``WorkerHandle.start()`` and refuses to write any request frame until
+    this frame has been read, so no caller can ever hit a still-booting
+    worker (spec G1/AC1).
+
+    Attributes:
+        op: Frame discriminator, always ``"ready"``.
+        pid: The worker process' own pid, for log/error correlation.
+        bootstrap_ms: Monotonic milliseconds from the worker's ``main()``
+            entry to the moment the namespace became usable.
+    """
+
+    op: Literal["ready"] = "ready"
+    pid: int
+    bootstrap_ms: int = Field(ge=0)
+
+
 class NamespaceLossError(BaseModel):
     """Payload embedded in the ``{status, result, error}`` dict after a kill.
 
@@ -324,7 +347,21 @@ class NamespaceLossError(BaseModel):
 
 
 class WorkerConfig(BaseModel):
-    """Deployment-tunable limits (all with working defaults)."""
+    """Deployment-tunable limits (all with working defaults).
+
+    Timeout budgets (FEAT-500):
+        bootstrap_timeout_ms: How long the host waits for the worker's
+            :class:`ReadyResponse` frame after spawning it. Expiry is
+            **lethal**: a process that cannot finish bootstrapping within
+            this budget is not a live worker, so it is killed and every
+            waiter receives a ``WorkerBootstrapError`` (spec §2, Q1).
+        namespace_timeout_ms: Budget for every **non-**``exec`` request
+            (``get_var``/``set_var``/``list_vars``/``snapshot``/``reset``/
+            ``inject_dataframe``). Expiry is **non-lethal**: the caller gets
+            a ``NamespaceTimeoutError`` with a real message, the worker stays
+            alive and its namespace is preserved (spec G2/U2). Only
+            ``deadline_ms`` (the ``execute()`` deadline) still kills.
+    """
 
     # ~12 GiB — empirically calibrated (TASK-1946, Module 8): observed peak
     # VmPeak 5522.8 MB across a full session (bootstrap + 500 MB DataFrame +
@@ -339,6 +376,13 @@ class WorkerConfig(BaseModel):
     max_workers: int = 0  # 0 -> max(4, cpu_count), cap 16
     idle_ttl_seconds: int = 1800  # 30 min
     prewarm_pool_size: int = 2
+    # FEAT-500 — readiness handshake + non-lethal namespace timeouts.
+    # 30 s each: bootstrap was measured at 12-14 s under 3x CPU
+    # oversubscription (spec F016), and a large get_var/snapshot pickle can
+    # take seconds on a loaded host. Do not lower the bootstrap budget below
+    # 30 s by default (spec §7 "Prewarm contention").
+    bootstrap_timeout_ms: int = Field(default=30_000, gt=0)
+    namespace_timeout_ms: int = Field(default=30_000, gt=0)
 
 
 #: Every concrete message type, keyed by its ``op`` literal — used to parse
@@ -359,6 +403,7 @@ _MESSAGE_TYPES: dict[str, type[BaseModel]] = {
     "snapshot_result": SnapshotResponse,
     "pong": PongResponse,
     "error": ErrorResponse,
+    "ready": ReadyResponse,
 }
 
 
