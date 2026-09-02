@@ -52,7 +52,7 @@
       "feature_id": "FEAT-499",
       "feature": "a2ui-optional-binding-lowering",
       "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Shares NO files with TASK-2753/2754 — it touches only packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py. Can run concurrently in a separate worktree from the start.",
       "assigned_to": null,
       "started_at": "2026-09-02T12:03:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2755-respond-html-structured-error.md"
+      "completed_at": "2026-09-02T12:21:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2755-respond-html-structured-error.md"
     },
     {
       "id": "TASK-2756",
