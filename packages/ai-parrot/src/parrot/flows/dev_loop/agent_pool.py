@@ -264,7 +264,7 @@ class DevAgentPool:
             retry starts clean — the pool does not attempt to unwind partial
             commits itself.
         """
-        brief = TaskScopedBrief(research=research, task_id=task.id)
+        brief = TaskScopedBrief(research=research, task_id=task.id, task_file=task.file)
         profile = worker.profile
         if escalate and worker.spec.escalation_model:
             profile = self._escalated_profile(worker)

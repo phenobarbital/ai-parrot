@@ -914,7 +914,10 @@ class LLMCodeDispatcher:
                     "in ONE message. Reading five files one per turn spends "
                     "five turns for nothing.\n"
                     "- `run_command` execs a bare argv: there is NO shell, so "
-                    "no pipes, no `>` redirection, no `&&`, no `cd` — to run "
+                    "no pipes, no `>` redirection, no `&&`, no `cd`, and NO "
+                    "glob expansion — `ls sdd/tasks/*.md` passes the literal "
+                    "`*` to `ls` and fails; use `list_files` or "
+                    "`search_files` to match by pattern. To run "
                     "in a subdirectory pass its `cwd` argument. Create "
                     "files with `write_file` and change them with "
                     "`edit_file` — not `cat >`, `sed -i` or `python -c`, and "
@@ -1760,7 +1763,63 @@ class LLMCodeDispatcher:
             profile.command_timeout_seconds,
         )
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
-        return {**result, "ok": result["exit_code"] == 0}
+        payload = {**result, "ok": result["exit_code"] == 0}
+        if not payload["ok"]:
+            # An unexpanded glob is the one failure whose stderr actively
+            # misleads: `ls sdd/tasks/completed/TASK-2717*` reports "no
+            # such file or directory" for a path that DOES exist, and a
+            # seat reads that as a missing file (or a wrong worktree) and
+            # goes hunting. There is no shell here, so the `*` reached
+            # the command verbatim — say so.
+            globbed = self._unexpanded_glob_tokens(argv)
+            if globbed:
+                payload["hint"] = (
+                    f"`run_command` execs a bare argv — there is NO shell, so "
+                    f"the wildcard(s) in {globbed} were passed literally and "
+                    f"matched nothing. The path may well exist. Use "
+                    f"`list_files` on the directory (or `search_files`) to "
+                    f"get the real names, then pass them in full."
+                )
+        return payload
+
+    #: Shell glob metacharacters. `~` is deliberately excluded: it is a
+    #: shell expansion too, but `_validate_command_paths` already treats
+    #: `~/` as an out-of-worktree path and rejects it earlier.
+    _GLOB_METACHARS: Tuple[str, ...] = ("*", "?", "[")
+
+    @classmethod
+    def _unexpanded_glob_tokens(cls, argv: Sequence[str]) -> List[str]:
+        """Name the argv tokens that carry an unexpanded shell wildcard.
+
+        Only path-shaped tokens count: a `-k 'test_foo or test_bar[1]'`
+        pytest expression or a `--grep` regex legitimately contains these
+        characters and is not a failed glob. A token qualifies when it
+        holds a metacharacter AND looks like a path (has a `/`, or ends in
+        a `.<ext>` suffix) AND is not an option flag or the value of an
+        inline-code flag.
+
+        Args:
+            argv: The command as the model wrote it.
+
+        Returns:
+            The offending tokens, in argv order; empty when none qualify.
+        """
+        tokens: List[str] = []
+        skip_next = False
+        for token in argv[1:]:
+            if skip_next:
+                skip_next = False
+                continue
+            if token in cls._INLINE_CODE_FLAGS:
+                skip_next = True
+                continue
+            if token.startswith("-"):
+                continue
+            if not any(char in token for char in cls._GLOB_METACHARS):
+                continue
+            if "/" in token or re.search(r"\.[A-Za-z0-9]+$", token):
+                tokens.append(token)
+        return tokens
 
     #: A token is treated as a path when it starts one of these ways.
     #: Anything else (a `-k` expression, a module name, a git ref) is left

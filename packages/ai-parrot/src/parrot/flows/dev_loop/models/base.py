@@ -465,6 +465,17 @@ class TaskScopedBrief(BaseModel):
 
     research: ResearchOutput
     task_id: str = Field(..., description="TASK-NNN id this dispatch must implement.")
+    task_file: str = Field(
+        default="",
+        description=(
+            "Repo-relative path of the task's markdown artifact, e.g. "
+            "'sdd/tasks/active/TASK-2719-tests-fable-research-primary.md'. "
+            "Read THIS path — do NOT reconstruct the filename from "
+            "`task_id`: the slug is per-task and is NOT the feature slug, "
+            "so a reconstructed name is a guess that costs a turn. Empty "
+            "when the per-spec index entry carries no `file`."
+        ),
+    )
 
 
 class WorkerSummary(BaseModel):

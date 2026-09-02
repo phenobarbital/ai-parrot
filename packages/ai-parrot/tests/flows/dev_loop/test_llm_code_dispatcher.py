@@ -1291,3 +1291,69 @@ async def test_queued_event_names_the_backend(monkeypatch, brief, _patch_worktre
 
     queued = [e for e in _published_events(dispatcher) if e["kind"] == "dispatch.queued"]
     assert queued[0]["payload"]["dispatcher"] == "nvidia"
+
+
+@pytest.mark.asyncio
+async def test_run_command_flags_an_unexpanded_glob(monkeypatch, tmp_path):
+    """A literal `*` reads as "file missing"; the hint must name the cause.
+
+    Regression: a seat ran `ls sdd/tasks/completed/TASK-2717*` against a
+    directory that DID hold that file, read `ls`'s "No such file or
+    directory", and concluded its worktree was wrong.
+    """
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    (tmp_path / "sdd" / "tasks" / "completed").mkdir(parents=True)
+    (tmp_path / "sdd" / "tasks" / "completed" / "TASK-2717-real-slug.md").write_text("x")
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path),
+        {"argv": ["ls", "sdd/tasks/completed/TASK-2717*"]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "NO shell" in result["hint"]
+    assert "sdd/tasks/completed/TASK-2717*" in result["hint"]
+    assert "list_files" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_run_command_hint_absent_when_the_failure_is_not_a_glob(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path),
+        {"argv": ["ls", "definitely-missing.md"]},
+        LLMCodeDispatchProfile(),
+    )
+
+    assert result["ok"] is False
+    assert "hint" not in result
+
+
+@pytest.mark.asyncio
+async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    result = await dispatcher._tool_run_command(
+        str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile()
+    )
+
+    assert result["ok"] is True
+    assert "hint" not in result
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["ls", "sdd/tasks/completed/TASK-2717*"], ["sdd/tasks/completed/TASK-2717*"]),
+        (["pytest", "tests/flows/dev_loop/test_*.py"], ["tests/flows/dev_loop/test_*.py"]),
+        # A `-k` selector is an expression, not a failed glob.
+        (["pytest", "-k", "test_foo or test_bar[1]", "tests/"], []),
+        (["git", "log", "--grep=TASK-*"], []),
+        (["python", "-c", 'print("a*b")'], []),
+        (["ls", "sdd/tasks/completed/"], []),
+    ],
+)
+def test_unexpanded_glob_tokens_only_flags_path_shaped_wildcards(argv, expected):
+    assert LLMCodeDispatcher._unexpanded_glob_tokens(argv) == expected

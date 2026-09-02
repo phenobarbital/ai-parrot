@@ -516,3 +516,40 @@ async def test_a_failed_dispatch_is_still_retried():
 
     assert result.failed == ["TASK-1"]
     assert len(d1.calls) + len(d2.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_brief_carries_the_task_file_from_the_index():
+    """Without it the seat guesses the slug — and it guesses the FEATURE slug.
+
+    Regression: a worker's first turn was `read_file
+    sdd/tasks/active/TASK-2719-<feature-slug>.md`, which does not exist;
+    the real artifact is `TASK-2719-tests-fable-research-primary.md`.
+    """
+    briefs = []
+
+    class RecordingDispatcher:
+        async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+            briefs.append(brief)
+            return DevelopmentOutput(
+                files_changed=[], commit_shas=[], summary=brief.task_id
+            )
+
+    pool = DevAgentPool.build(
+        DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex")]),
+        lambda spec: (RecordingDispatcher(), object()),
+        4,
+    )
+    task = TaskRef(
+        id="TASK-2719",
+        status="pending",
+        depends_on=[],
+        file="sdd/tasks/active/TASK-2719-tests-fable-research-primary.md",
+    )
+
+    await pool.run_wave([task], research=_research(), run_id="r1", cwd_for=lambda _w: "/tmp/wt")
+
+    assert briefs[0].task_file == "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
+    # The prompt is built from the serialized brief, so the path must
+    # survive `model_dump_json()` — that is what the seat actually reads.
+    assert "TASK-2719-tests-fable-research-primary.md" in briefs[0].model_dump_json()
