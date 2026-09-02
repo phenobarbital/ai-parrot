@@ -1,0 +1,89 @@
+{
+  "feature": "a2ui-optional-binding-lowering",
+  "feature_id": "FEAT-499",
+  "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-02T12:01:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2753",
+      "slug": "builders-carry-layout-metadata",
+      "title": "Builders carry LayoutSpec.metadata onto the root wire Component",
+      "feature_id": "FEAT-499",
+      "feature": "a2ui-optional-binding-lowering",
+      "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches builders.py + runner.py. TASK-2754 modifies renderers that consume what this task produces, and its tests assert end-to-end bake behaviour, so it must land first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2753-builders-carry-layout-metadata.md"
+    },
+    {
+      "id": "TASK-2754",
+      "slug": "lowering-propagates-extensions",
+      "title": "Lowering propagates metadata.extensions to lowered children",
+      "feature_id": "FEAT-499",
+      "feature": "a2ui-optional-binding-lowering",
+      "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2753"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-2753: without the root component carrying metadata there is nothing for lowering to propagate, and its Report-path test cannot pass.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2754-lowering-propagates-extensions.md"
+    },
+    {
+      "id": "TASK-2755",
+      "slug": "respond-html-structured-error",
+      "title": "_respond_html returns a structured 422 instead of leaking a traceback",
+      "feature_id": "FEAT-499",
+      "feature": "a2ui-optional-binding-lowering",
+      "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Shares NO files with TASK-2753/2754 \u2014 it touches only packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py. Can run concurrently in a separate worktree from the start.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2755-respond-html-structured-error.md"
+    },
+    {
+      "id": "TASK-2756",
+      "slug": "e2e-verification-sweep",
+      "title": "End-to-end verification \u2014 the three failing e2e tests pass unmodified",
+      "feature_id": "FEAT-499",
+      "feature": "a2ui-optional-binding-lowering",
+      "spec": "sdd/specs/a2ui-optional-binding-lowering.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2753",
+        "TASK-2754",
+        "TASK-2755"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Verification gate for the whole feature; needs all three implementation tasks merged before it can run.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2756-e2e-verification-sweep.md"
+    }
+  ]
+}
