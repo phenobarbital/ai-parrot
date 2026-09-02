@@ -22,14 +22,19 @@ from parrot import conf
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
+    _DISPATCH_LABELS_CTX,
     _SESSION_HOST_CTX,
     _apply_to_session_host,
+    bind_labels,
+    normalize_payload,
+    summarize_tool_input,
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DispatchEvent,
+    DispatchLabels,
     GeminiCodeDispatchProfile,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
@@ -82,6 +87,7 @@ class GeminiCodeDispatcher:
         node_id: str,
         cwd: str,
         session_host: Optional[SessionHost] = None,
+        labels: Optional[DispatchLabels] = None,
     ) -> T:
         """Dispatch a single Gemini CLI session and return its parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
@@ -91,6 +97,8 @@ class GeminiCodeDispatcher:
         # raise here still resets the var (the main finally: below only
         # covers the semaphore block).
         _host_token = _SESSION_HOST_CTX.set(session_host)
+        # FEAT-496: bind labels alongside the session host, same discipline.
+        _labels_token = bind_labels(labels)
         try:
             self._enforce_cwd_under_worktree_base(cwd)
 
@@ -121,6 +129,7 @@ class GeminiCodeDispatcher:
             )
         except Exception:
             _SESSION_HOST_CTX.reset(_host_token)
+            _DISPATCH_LABELS_CTX.reset(_labels_token)
             raise
 
         async with self._semaphore:
@@ -225,6 +234,7 @@ class GeminiCodeDispatcher:
                 return result
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
 
     def _build_command(
         self,
@@ -321,13 +331,81 @@ class GeminiCodeDispatcher:
         run_id: str,
         node_id: str,
     ) -> None:
+        payload: Dict[str, Any] = {"gemini_event": event}
+        payload.update(self._extract_gemini_display(event))
         await self._publish_event(
             stream_key,
             kind=self._gemini_event_kind(event),
             run_id=run_id,
             node_id=node_id,
-            payload={"gemini_event": event},
+            payload=payload,
         )
+
+    @staticmethod
+    def _extract_gemini_display(event: Dict[str, Any]) -> Dict[str, Any]:
+        """Best-effort display projection of one Gemini CLI stream event.
+
+        Never raises; never assumes a field exists — the CLI's event schema
+        is not pinned by this repo, and the tool name may be echoed under
+        several different keys depending on CLI version.
+
+        Args:
+            event: The parsed Gemini CLI stdout JSON event.
+
+        Returns:
+            A dict of additive display keys (``tool_name``, ``tool_input``,
+            ``text``, ``is_error``, ``result_snippet``). Empty when nothing
+            recognisable is present.
+        """
+        try:
+            out: Dict[str, Any] = {}
+            if not isinstance(event, dict):
+                return out
+            event_type = event.get("type")
+
+            def _tool_name() -> str:
+                for key in ("name", "tool", "toolName"):
+                    value = event.get(key)
+                    if value:
+                        return str(value)
+                return ""
+
+            if event_type == "tool_call":
+                name = _tool_name()
+                if name:
+                    out["tool_name"] = name
+                args = None
+                for key in ("args", "arguments", "input"):
+                    if event.get(key) is not None:
+                        args = event.get(key)
+                        break
+                if args is not None:
+                    out["tool_input"] = summarize_tool_input(name, args)
+            elif event_type == "tool_response":
+                name = _tool_name()
+                if name:
+                    out["tool_name"] = name
+                error = event.get("error")
+                status = event.get("status")
+                if error or status == "error":
+                    out["is_error"] = True
+                response = event.get("response")
+                if response is None:
+                    response = event.get("output")
+                if response is not None:
+                    out["result_snippet"] = str(response)[:400]
+            elif event_type == "message" and event.get("role") == "assistant":
+                content = event.get("content")
+                if content:
+                    out["text"] = str(content)[:400]
+            else:
+                content = event.get("content") or event.get("message")
+                if isinstance(content, str) and content:
+                    out["text"] = content[:400]
+
+            return out
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            return {}
 
     def _gemini_event_kind(self, event: Dict[str, Any]) -> str:
         event_type = event.get("type")
@@ -465,7 +543,7 @@ class GeminiCodeDispatcher:
             ts=time.time(),
             run_id=run_id,
             node_id=node_id,
-            payload=payload,
+            payload=normalize_payload(kind, payload),
         )
         # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
         _apply_to_session_host(event)

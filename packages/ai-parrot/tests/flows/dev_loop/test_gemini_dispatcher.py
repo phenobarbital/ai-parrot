@@ -284,3 +284,77 @@ class TestGeminiFailures:
                 node_id="development",
                 cwd="/etc",
             )
+
+
+class TestGeminiEventExtraction:
+    """FEAT-496 TASK-2726 — display extraction from gemini_event."""
+
+    def test_tool_call_yields_name_and_input(self):
+        out = GeminiCodeDispatcher._extract_gemini_display(
+            {"type": "tool_call", "name": "read_file", "args": {"path": "src/foo.py"}}
+        )
+        assert out["tool_name"] == "read_file"
+        assert "foo.py" in out["tool_input"]
+
+    def test_tool_response_yields_summary(self):
+        out = GeminiCodeDispatcher._extract_gemini_display(
+            {"type": "tool_response", "name": "read_file", "response": "ok"}
+        )
+        assert out.get("tool_name") == "read_file"
+
+    def test_assistant_message_yields_text(self):
+        out = GeminiCodeDispatcher._extract_gemini_display(
+            {"type": "message", "role": "assistant", "content": "hello"}
+        )
+        assert out["text"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_raw_event_preserved(self, dispatcher):
+        """AC9."""
+        event = {"type": "tool_call", "name": "read_file", "args": {}}
+        await dispatcher._publish_gemini_event(
+            "flow:r1:dispatch:development", event, "r1", "development"
+        )
+        events = _published_events(dispatcher)
+        assert events[-1]["payload"]["gemini_event"] == event
+
+    @pytest.mark.parametrize("bad", [{}, {"type": None}, {"type": "tool_call"}])
+    def test_malformed_never_raises(self, bad):
+        assert isinstance(GeminiCodeDispatcher._extract_gemini_display(bad), dict)
+
+    @pytest.mark.asyncio
+    async def test_every_payload_has_a_summary(self, dispatcher):
+        for event in (
+            {"type": "tool_call", "name": "read_file", "args": {}},
+            {"type": "tool_response", "name": "read_file", "response": "ok"},
+        ):
+            await dispatcher._publish_gemini_event(
+                "flow:r1:dispatch:development", event, "r1", "development"
+            )
+        for evt in _published_events(dispatcher):
+            assert evt["payload"]["summary"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_accepts_labels(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        from parrot.flows.dev_loop.models import DispatchLabels
+
+        async def _fake_create(command, cwd):
+            return _FakeGeminiProcess(stdout_lines=[])
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        with pytest.raises(DispatchOutputValidationError):
+            # No output produced -> validation error is fine; we only care
+            # that the queued event was labelled before failing.
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=GeminiCodeDispatchProfile(),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development.w1",
+                cwd=str(_patch_worktree_base),
+                labels=DispatchLabels(task_id="TASK-1", seat="development.w1"),
+            )
+        events = _published_events(dispatcher)
+        queued = next(e for e in events if e["kind"] == "dispatch.queued")
+        assert queued["payload"]["task_id"] == "TASK-1"
