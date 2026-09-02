@@ -377,10 +377,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-02
+**Notes**: Implemented `_git_state` and `_paths_touched_since` verbatim from
+spec §3 Module 1, added `FrozenSet` to the `typing` import, and wired the
+git-derived evidence into `_run_finding_triage` (before-snapshot, unverified
+warning, `files_modified_set`/return value). Updated the two existing
+`test_qa_triage.py` tests that relied on a claimed-but-unverifiable evidence
+path (monkeypatched `_paths_touched_since`). Also had to make the same fix
+to `test_adversarial_e2e.py::test_e2e_adversarial_review_triage` — not
+listed in this task's Files to Modify table, but it uses the same
+`worktree_path=str(tmp_path)` (non-repo) pattern and broke for the identical
+reason; the task's own AC requires the whole `tests/flows/dev_loop` suite to
+pass, so it had to be fixed here. Added
+`test_qa_triage_evidence.py` with the unit tests for both helpers plus the
+two §4 integration tests. Full `pytest packages/ai-parrot/tests/flows/dev_loop -v`
+run: 1468 passed, 3 pre-existing failures in `test_recovery_lifecycle.py`
+confirmed unrelated (same failures reproduce on a stash of this task's diff).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the implementation itself. One AC —
+"ruff check on the two touched files reports no new findings relative to
+the parent commit" — could not be fully verified inside this task because
+`scripts/sdd/lint_new.py` (its own verification tool) is TASK-2736's
+deliverable. Manual inspection: our one-line edit to the `typing` import
+(adding `FrozenSet`) causes ruff's `UP035` findings for the *pre-existing*
+`Dict`/`List`/`Tuple` names on that same line to also intersect a
+git-changed line, since diff-line attribution operates on whole line
+numbers, not sub-line spans. This is an inherent, spec-acknowledged
+trade-off of diff-line attribution vs. baseline-subtraction (§2, Open
+Questions) — not a defect introduced here. Re-verified after TASK-2736/2737
+landed; see FEAT-497 feature-level completion summary for the final,
+whole-diff `lint_new.py` result.

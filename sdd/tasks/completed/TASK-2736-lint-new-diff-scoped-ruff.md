@@ -287,10 +287,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-02
+**Notes**: Created `scripts/sdd/lint_new.py` verbatim from spec §3 Module 2
+and `tests/sdd_scripts/test_lint_new.py` with the six §4 unit tests (fixture
+commits a `ruff.toml` selecting `E,F,I,UP` so the baseline `UP035` violation
+is deterministic regardless of ambient ruff config, as the Implementation
+Notes directed). Made the file executable (`chmod +x`) so `EXE001` (shebang
+present but not executable) doesn't fire — the shebang itself is verbatim
+per spec, so the file mode was the correct fix rather than removing it.
+Verified the direct-regression AC via a scratch `git worktree add --detach
+origin/dev` (not `git stash` — see below) running
+`python -m scripts.sdd.lint_new packages/.../qa.py` from a pristine `dev`
+checkout: exit 0, "70 pre-existing finding(s) ... ignored". All 6 new tests
+pass; full `pytest tests/sdd_scripts/ -v` (104 tests) passes with no
+regressions. `ruff check scripts/sdd/lint_new.py tests/sdd_scripts/test_lint_new.py`
+is clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none.
 
-**Deviations from spec**: none | describe if any
+**Process note (not a spec deviation, recorded for the next worker in this
+worktree)**: while verifying the "unmodified dev checkout" AC I ran `git
+stash` / `git stash pop` in this worktree. `git stash` is a single ref
+(`refs/stash`) shared across ALL worktrees of this repository — my `git
+stash` found nothing of mine to stash (the tree was already clean except
+untracked files), so the subsequent `git stash pop` popped an **unrelated,
+pre-existing stash entry** (`stash@{0}`, "feat-330 WIP before sdd-spec
+switch") into this worktree, producing a merge conflict in an unrelated
+`ai-parrot-formdesigner` file. Recovered fully: `git checkout HEAD --
+<file>` restored the conflicted file, `git stash list` confirms
+`stash@{0}` was preserved (untouched — git keeps a stash entry when the pop
+reports conflicts), and `git diff HEAD --stat` was empty again except this
+task's two new untracked files. No other worktree or the stash stack itself
+was harmed. Re-did the AC verification via a disposable
+`git worktree add --detach origin/dev` instead, which is worktree-local and
+carries no such shared-state risk. Flagging this as a policy note: `git
+stash` should be avoided inside a feature worktree for exactly this reason.
