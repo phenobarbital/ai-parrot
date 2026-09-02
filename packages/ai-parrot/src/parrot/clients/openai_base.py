@@ -630,8 +630,9 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = prepared_tools
             args["tool_choice"] = "auto"
 
-        if max_tokens or self.max_tokens:
-            args["max_tokens"] = max_tokens or self.max_tokens
+        _resolved_max_tokens = self._resolve_max_tokens(max_tokens)
+        if _resolved_max_tokens is not None:
+            args["max_tokens"] = _resolved_max_tokens
         if temperature:
             args["temperature"] = temperature
 
@@ -986,7 +987,7 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = tools_payload
             args["tool_choice"] = "auto"
 
-        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        max_tokens_value = self._resolve_max_tokens(max_tokens)
         if max_tokens_value is not None:
             args["max_tokens"] = max_tokens_value
 

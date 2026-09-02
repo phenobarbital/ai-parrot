@@ -84,6 +84,8 @@ class GroqClient(OpenAIBaseClient):
     # more is rejected outright rather than clamped, so invoke() must not
     # inherit AbstractClient's more generous default.
     _invoke_max_tokens: int = 4096
+    # Same provider cap applies to ask()/ask_stream().
+    _default_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -330,7 +332,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -343,6 +345,7 @@ class GroqClient(OpenAIBaseClient):
         use_code_interpreter: Optional[bool] = None
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
+        max_tokens = self._resolve_max_tokens(max_tokens)
         model = model.value if isinstance(model, GroqModel) else model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -738,7 +741,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -755,6 +758,7 @@ class GroqClient(OpenAIBaseClient):
         Yields successive string chunks followed by a final
         :class:`~parrot.models.responses.AIMessage` with metadata.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())

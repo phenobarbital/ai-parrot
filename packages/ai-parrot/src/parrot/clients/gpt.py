@@ -847,7 +847,7 @@ class OpenAIClient(OpenAIBaseClient):
             model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
         if model_str != "gpt-5-nano":
-            args["max_tokens"] = max_tokens or self.max_tokens
+            args["max_tokens"] = self._resolve_max_tokens(max_tokens)
         if temperature:
             args["temperature"] = temperature
         if deep_research and background:
@@ -1135,7 +1135,7 @@ class OpenAIClient(OpenAIBaseClient):
             args["tool_choice"] = "auto"
             args["parallel_tool_calls"] = True
 
-        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        max_tokens_value = self._resolve_max_tokens(max_tokens)
         if max_tokens_value is not None:
             args["max_tokens"] = max_tokens_value
 
@@ -1518,7 +1518,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
-            max_tokens=max_tokens or self.max_tokens,
+            max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=response_format,
         )
@@ -1617,7 +1617,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=self.max_tokens,
+            max_tokens=self._resolve_max_tokens(),
             temperature=temperature or self.temperature,
             use_tools=False,
         )
@@ -1677,7 +1677,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=self.max_tokens,
+            max_tokens=self._resolve_max_tokens(),
             temperature=temperature,
         )
 
@@ -1722,7 +1722,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=self.max_tokens,
+            max_tokens=self._resolve_max_tokens(),
             temperature=temperature,
         )
 
@@ -1768,7 +1768,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=self.max_tokens,
+            max_tokens=self._resolve_max_tokens(),
             temperature=temperature,
         )
 
@@ -1827,7 +1827,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=self.max_tokens,
+            max_tokens=self._resolve_max_tokens(),
             temperature=temperature,
             response_format={
                 "type": "json_schema",
@@ -2045,7 +2045,7 @@ class OpenAIClient(OpenAIBaseClient):
         response = await self.client.chat.completions.create(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            max_tokens=max_tokens or self.max_tokens,
+            max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=resp_format,
         )

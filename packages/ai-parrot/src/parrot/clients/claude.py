@@ -74,6 +74,10 @@ class AnthropicClient(AbstractClient):
     _default_model: str = 'claude-sonnet-4-5'
     _fallback_model: str = 'claude-sonnet-4.5'
     _lightweight_model: str = "claude-haiku-4-5-20251001"
+    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
+    # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
+    # ask()/ask_stream() fell back to before FEAT-481.
+    _default_max_tokens: int = 16000
     # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
     _min_cache_tokens: int = 1024
 
@@ -494,7 +498,7 @@ class AnthropicClient(AbstractClient):
 
         # Anthropic SDK requires max_tokens to be a non-None int;
         # _calculate_nonstreaming_timeout() does `int * max_tokens`.
-        _max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        _max_tokens = self._resolve_max_tokens(max_tokens)
         payload = {
             "model": model,
             "max_tokens": _max_tokens,
@@ -785,7 +789,7 @@ class AnthropicClient(AbstractClient):
         
         payload = {
             "model": model,
-            "max_tokens": self.max_tokens or 4096,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": self.temperature,
             "messages": messages,
             "tools": self._prepare_tools()
@@ -939,7 +943,7 @@ class AnthropicClient(AbstractClient):
                 self.register_tool(tool)
 
         # Ensure max_tokens is never None (SDK multiplies it for timeout calc)
-        current_max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        current_max_tokens = self._resolve_max_tokens(max_tokens)
         retry_count = 0
         assistant_content = ""
         final_message = None
@@ -1414,7 +1418,7 @@ class AnthropicClient(AbstractClient):
         # Prepare the payload
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(max_tokens),
             "temperature": temperature or self.temperature,
             "messages": messages
         }

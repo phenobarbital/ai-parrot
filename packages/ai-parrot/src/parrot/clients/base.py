@@ -271,6 +271,18 @@ class AbstractClient(EventEmitterMixin, ABC):
     # None means fall back to self.model.
     _lightweight_model: Optional[str] = None
 
+    # Default output-token budget for ask() / ask_stream() when neither the
+    # caller nor the constructor supplied one. ``None`` means "send no cap and
+    # let the provider apply its own default" — the right choice for providers
+    # whose native ceiling is far above anything we would hardcode
+    # (GoogleGenAIClient). Subclasses override this where the provider caps
+    # lower (GroqClient: 4096) or where generation is locally expensive
+    # (TransformersClient / Gemma4Client: 512, LocalLLMClient: 4096).
+    #
+    # Resolution order (see _resolve_max_tokens): per-call ``ask(max_tokens=N)``
+    # > per-instance ``Client(max_tokens=N)`` / ``preset`` > this class default.
+    _default_max_tokens: Optional[int] = 8192
+
     # Default output-token budget for invoke(). Subclasses override this where
     # the provider caps lower (GroqClient: 4096, local backends: 4096) or where
     # reasoning models need extra headroom (GoogleGenAIClient: 16384).
@@ -343,21 +355,21 @@ $backstory
             self.temperature = preset_config.get('temperature', 0.4)
             self.top_k = preset_config.get('top_k', 30)
             self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens', 4096)
+            self.max_tokens = preset_config.get('max_tokens')
         else:
             # define default values from preset default:
             self.temperature = kwargs.get('temperature', 0)
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
-            self.max_tokens = kwargs.get('max_tokens', 4096)
-        # Whether max_tokens was EXPLICITLY configured by the caller (directly
-        # or via a preset) rather than inherited from the framework default
-        # above. invoke() only honours an explicit value, so that a client's
-        # _invoke_max_tokens default is never shadowed by ask()'s generic one.
-        self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
-        # Per-instance override for invoke()'s output-token budget. ``None``
-        # means "fall back to an explicit self.max_tokens, then the class
-        # default" (see _resolve_invoke_max_tokens).
+            # ``None`` means "not configured" — the per-client
+            # _default_max_tokens / _invoke_max_tokens defaults take over. Do
+            # NOT reintroduce a literal here: a framework-wide default assigned
+            # eagerly is indistinguishable from a deliberate caller choice, and
+            # would shadow every per-client default downstream.
+            self.max_tokens = kwargs.get('max_tokens')
+        # Per-instance override for invoke()'s output-token budget specifically.
+        # ``None`` means "fall back to self.max_tokens, then the class default"
+        # (see _resolve_invoke_max_tokens).
         self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
@@ -1685,7 +1697,7 @@ $backstory
         self,
         prompt: str,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1703,7 +1715,10 @@ $backstory
         Args:
             prompt: The input prompt for the model
             model: The model to use
-            max_tokens: Maximum number of tokens in the response
+            max_tokens: Maximum number of tokens in the response. ``None`` (the
+                default) resolves via :meth:`_resolve_max_tokens` — the
+                per-instance ``max_tokens``, then the client's
+                :attr:`_default_max_tokens`.
             temperature: Sampling temperature for response generation
             files: Optional files to include in the request
             system_prompt: Optional system prompt to guide the model
@@ -1723,7 +1738,7 @@ $backstory
         self,
         prompt: str,
         model: str = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1890,6 +1905,38 @@ $backstory
             return self._lightweight_model
         return self.model
 
+    def _resolve_max_tokens(self, max_tokens: Optional[int] = None) -> Optional[int]:
+        """Return the output-token budget to use for an ask() / ask_stream() call.
+
+        Resolution order (first non-``None`` wins):
+
+        1. the explicit per-call ``max_tokens`` argument;
+        2. the per-instance ``max_tokens`` constructor kwarg (or ``preset``);
+        3. the client's :attr:`_default_max_tokens` class default.
+
+        Args:
+            max_tokens: Caller-supplied per-call override, or ``None``.
+
+        Returns:
+            A positive output-token budget, or ``None`` when the client's
+            :attr:`_default_max_tokens` is ``None`` — meaning "send no cap and
+            let the provider apply its own default". Callers that must supply a
+            concrete integer to their SDK should treat ``None`` accordingly.
+
+        Raises:
+            ValueError: If a resolved budget is not a positive integer.
+        """
+        for candidate in (max_tokens, getattr(self, "max_tokens", None), self._default_max_tokens):
+            if candidate is None:
+                continue
+            resolved = int(candidate)
+            if resolved <= 0:
+                raise ValueError(
+                    f"max_tokens must be a positive integer, got {resolved!r}"
+                )
+            return resolved
+        return None
+
     def _resolve_invoke_max_tokens(self, max_tokens: Optional[int] = None) -> int:
         """Return the output-token budget to use for an invoke() call.
 
@@ -1897,10 +1944,7 @@ $backstory
 
         1. the explicit per-call ``max_tokens`` argument;
         2. the per-instance ``invoke_max_tokens`` constructor kwarg;
-        3. the per-instance ``max_tokens`` constructor kwarg, but ONLY when it
-           was explicitly passed (or set by a ``preset``) — the framework's own
-           ``max_tokens`` default must not shadow a client's
-           :attr:`_invoke_max_tokens`;
+        3. the per-instance ``max_tokens`` constructor kwarg (or ``preset``);
         4. the client's :attr:`_invoke_max_tokens` class default.
 
         The class default is deliberately generous because reasoning models bill
@@ -1920,11 +1964,7 @@ $backstory
         for candidate in (
             max_tokens,
             getattr(self, "invoke_max_tokens", None),
-            (
-                getattr(self, "max_tokens", None)
-                if getattr(self, "_max_tokens_configured", False)
-                else None
-            ),
+            getattr(self, "max_tokens", None),
             self._invoke_max_tokens,
         ):
             if candidate is None:
