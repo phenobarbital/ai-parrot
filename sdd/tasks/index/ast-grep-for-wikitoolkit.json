@@ -32,7 +32,7 @@
       "feature_id": "FEAT-498",
       "feature": "ast-grep-for-wikitoolkit",
       "spec": "sdd/specs/ast-grep-for-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Shares no files with TASK-2747 (store); the two can run side by side after TASK-2738.",
       "assigned_to": null,
       "started_at": "2026-09-02T11:01:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2739-astgrep-seam-and-rule-loader.md"
+      "completed_at": "2026-09-02T11:24:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2739-astgrep-seam-and-rule-loader.md"
     },
     {
       "id": "TASK-2740",

@@ -209,7 +209,37 @@ line twice: with and without `ast-grep-py`. 7. Move file to `completed/`.
 
 ## Completion Note
 
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Implemented `languages/astgrep.py` per spec — `is_available`,
+`supported_language` (whitelist + cached Perl dynamic registration),
+`parse` with the `BaseException` fence, `RuleSet` (Pydantic, `SymbolSpec`/
+`RefSpec`/`ImportSpec`, `lru_cache`d `load()` resolving aliases and
+validating extractor names), the fixed `EXTRACTORS` table, `named_text`,
+and `extract()` with per-(language, rule-id) once-only `RuntimeError`
+isolation. `ast-grep-py==0.45.3` installed locally
+(`uv pip install "ast-grep-py>=0.45"`) so the `requires_astgrep`-marked
+tests ran for real (dynamic Perl registration against the installed
+`tree-sitter-perl` wheel verified live, not just mocked).
+`pytest tests/knowledge/wiki/languages/test_astgrep_seam.py -v` → 12/12
+passed (all ast-grep-dependent cases executed, none skipped in this env).
+Full `tests/knowledge/wiki/languages` suite (197 tests) and
+`tests/knowledge/wiki` (1239 passed, 1 pre-existing unrelated failure in
+`test_claude_code.py` verified present before this task's changes too)
+unaffected. `ruff check` / `mypy --ignore-missing-imports` clean on all
+touched/created files (two `# type: ignore` comments document genuine
+`ast_grep_py` stub gaps — an incomplete `CustomLang` TypedDict missing
+`extensions`, and the SDK's `find_all` overload being too strict for the
+YAML-driven dynamic rule dicts this feature's "rules are pure data"
+design requires).
+**Deviations from spec**: The exact resolution semantics of the `name`/
+`signature`/`parent`/`exported`/`is_async` spec shapes (`field`/`path`/
+`text`, `ancestor`, `inside`/`has`) and the qualname joiner per language
+(`.` default, `::` for php/rust/perl) are my own reasonable interpretation
+of §2's YAML schema — no rule YAML file exists yet to exercise them
+end-to-end (that starts at TASK-2742). Flagging so TASK-2742..2746 verify
+against real grammars and extend `_resolve_value_spec`/`_resolve_parent`/
+`_resolve_bool_spec` if a shape does not match what a real rule file
+needs; none of this task's own acceptance criteria depend on those exact
+shapes beyond the isolated-bad-kind test (which uses a hand-built
+`RuleSet`, not a YAML file).
