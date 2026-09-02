@@ -14,7 +14,7 @@
       "feature_id": "FEAT-500",
       "feature": "bug-workerpool-repl",
       "spec": "sdd/specs/bug-workerpool-repl.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: protocol.py + __init__ exports consumed by every later task. Must land first.",
       "assigned_to": null,
       "started_at": "2026-09-02T14:37:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2757-protocol-ready-frame-and-config.md"
+      "completed_at": "2026-09-02T14:40:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2757-protocol-ready-frame-and-config.md"
     },
     {
       "id": "TASK-2758",
