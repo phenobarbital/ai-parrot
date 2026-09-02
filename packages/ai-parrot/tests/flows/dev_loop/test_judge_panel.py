@@ -10,10 +10,10 @@ from __future__ import annotations
 from typing import get_args
 
 import pytest
-
 from parrot.flows.dev_loop.code_review import (
     CodeReviewDispatcherFactory,
     JudgePanelReviewDispatcher,
+    ParallelPerspectiveReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     CodeReviewFinding,
@@ -337,3 +337,115 @@ class TestPerRunPanelOverride:
     def test_rejects_an_empty_panel(self):
         with pytest.raises(ValueError, match="at least one judge"):
             JudgePanelReviewDispatcher(redis_url="redis://fake").with_judges([])
+
+
+# ---------------------------------------------------------------------------
+# FEAT-496 TASK-2731 — per-judge DispatchLabels attribution
+# ---------------------------------------------------------------------------
+
+
+class _RecordingStubJudge:
+    """Duck-typed judge that records every kwarg its review() receives."""
+
+    def __init__(self, verdict=None, *, advisory=False):
+        self._verdict = verdict or _v(True)
+        self.advisory = advisory
+        self.calls = []
+
+    async def review(self, **kw):
+        self.calls.append(kw)
+        return self._verdict
+
+
+class TestJudgePanelLabels:
+    async def test_each_judge_gets_a_distinct_judge_id(self):
+        judges = {
+            "claude-code": _RecordingStubJudge(),
+            "codex": _RecordingStubJudge(),
+            "mantle": _RecordingStubJudge(),
+        }
+        panel = _panel(judges)
+        await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+
+        ids = {name: j.calls[-1]["labels"].judge_id for name, j in judges.items()}
+        assert set(ids.values()) == {"claude-code", "codex", "mantle"}
+
+    async def test_judge_labels_carry_backend_and_model(self):
+        judges = {"claude-code": _RecordingStubJudge(), "codex": _RecordingStubJudge()}
+        specs = [
+            JudgeSpec(agent="claude-code", model="claude-opus-4-6"),
+            JudgeSpec(agent="codex", model="gpt-5.5"),
+        ]
+        panel = _panel(judges, judges=specs)
+        await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+
+        claude_labels = judges["claude-code"].calls[-1]["labels"]
+        assert claude_labels.agent == "claude-code"
+        assert claude_labels.model == "claude-opus-4-6"
+
+    async def test_node_id_is_still_qa(self):
+        """NodeId is a closed Literal — identity must ride in labels."""
+        judges = {"claude-code": _RecordingStubJudge(), "codex": _RecordingStubJudge()}
+        panel = _panel(judges)
+        await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+
+        for j in judges.values():
+            assert j.calls[-1]["node_id"] == "qa"
+
+    async def test_judge_ids_match_verdict_records(self):
+        """Live labels and the terminal JudgeVerdictRecorded must agree."""
+        judges = {"claude-code": _RecordingStubJudge(_v(True)), "codex": _RecordingStubJudge(_v(True))}
+        panel = _panel(judges)
+        host = SessionHost("run-labels")
+
+        await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt", session_host=host)
+
+        recorded_ids = {v.judge_id for verdicts in host.state.judge_verdicts.values() for v in verdicts}
+        live_ids = {j.calls[-1]["labels"].judge_id for j in judges.values()}
+        assert recorded_ids == live_ids
+
+    async def test_decision_rule_unchanged(self):
+        """Majority + fail-closed escalation still behave exactly as before."""
+        judges = {
+            "claude-code": _RecordingStubJudge(_v(True)),
+            "codex": _RecordingStubJudge(_v(True)),
+            "mantle": _RecordingStubJudge(_v(False)),
+        }
+        panel = _panel(judges)
+        verdict = await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+        assert verdict.passed is True
+
+    async def test_judge_without_labels_kwarg_still_runs(self):
+        """Labels are best-effort — a duck-typed double must not break."""
+
+        class _NoKwargsJudge:
+            def __init__(self):
+                self.called = False
+
+            async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round=""):
+                self.called = True
+                return _v(True)
+
+        judge = _NoKwargsJudge()
+        specs = [JudgeSpec(agent="claude-code")]
+        panel = JudgePanelReviewDispatcher(judges=specs, redis_url="redis://fake")
+        panel._build_judge = lambda spec: (spec.agent, judge)
+
+        verdict = await panel.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+
+        # The panel retries once without labels when a judge's review()
+        # does not declare labels= — the review genuinely still runs.
+        assert judge.called is True
+        assert verdict.passed is True
+
+
+class TestParallelPerspectiveLabels:
+    async def test_sides_are_labelled(self):
+        primary = _RecordingStubJudge(_v(True))
+        adversary = _RecordingStubJudge(_v(True))
+        dispatcher = ParallelPerspectiveReviewDispatcher(primary=primary, adversary=adversary)
+
+        await dispatcher.review(brief=None, run_id="r", node_id="qa", cwd="/wt")
+
+        assert primary.calls[-1]["labels"].judge_id == "primary"
+        assert adversary.calls[-1]["labels"].judge_id == "codex-adversarial"

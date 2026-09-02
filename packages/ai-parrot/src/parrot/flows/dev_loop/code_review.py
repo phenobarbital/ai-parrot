@@ -31,6 +31,7 @@ from parrot.flows.dev_loop.models import (
     CodeReviewVerdict,
     CodexAdversarialReviewProfile,
     CodexCodeReviewProfile,
+    DispatchLabels,
     JudgeBackend,
     JudgePanelConfig,
     JudgeSpec,
@@ -114,6 +115,7 @@ class AbstractCodeReviewDispatcher(ABC):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run code review, optionally fix issues, return a verdict.
 
@@ -133,17 +135,38 @@ class AbstractCodeReviewDispatcher(ABC):
                 threaded through so :class:`JudgePanelReviewDispatcher` can
                 stamp ``JudgeVerdictRecorded.round``. Unused by this base
                 implementation and every non-panel dispatcher.
+            labels: FEAT-496 — identity of the work this review is doing
+                (e.g. ``judge_id`` for a panel judge). Display metadata
+                only; forwarded to the underlying dispatcher's ``dispatch()``
+                and never affects the decision made here.
         """
         try:
-            return await self._dispatcher.dispatch(
-                brief=brief,
-                profile=self.build_review_profile(),
-                output_model=CodeReviewVerdict,
-                run_id=run_id,
-                node_id=node_id,
-                cwd=cwd,
-                session_host=session_host,
-            )
+            try:
+                return await self._dispatcher.dispatch(
+                    brief=brief,
+                    profile=self.build_review_profile(),
+                    output_model=CodeReviewVerdict,
+                    run_id=run_id,
+                    node_id=node_id,
+                    cwd=cwd,
+                    session_host=session_host,
+                    labels=labels,
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a dispatcher that does
+                # not declare labels= must still actually run the review,
+                # not silently degrade to a fabricated pass.
+                if "labels" not in str(exc):
+                    raise
+                return await self._dispatcher.dispatch(
+                    brief=brief,
+                    profile=self.build_review_profile(),
+                    output_model=CodeReviewVerdict,
+                    run_id=run_id,
+                    node_id=node_id,
+                    cwd=cwd,
+                    session_host=session_host,
+                )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning(
                 "%s code-review dispatch failed: %s", self.agent_name, exc
@@ -288,6 +311,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         """Run the advisory review, then enforce the no-writes contract.
 
@@ -305,6 +329,7 @@ class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             cwd=cwd,
             session_host=session_host,
             round=round,
+            labels=labels,
         )
         tagged_findings = [
             finding
@@ -357,6 +382,37 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
             "and does not delegate to a single dispatch profile."
         )
 
+    @staticmethod
+    async def _review_side(
+        reviewer: AbstractCodeReviewDispatcher,
+        side_labels: DispatchLabels,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost],
+        round: str,
+    ) -> CodeReviewVerdict:
+        """Dispatch one side with its own labels, best-effort.
+
+        Wrapped in its own coroutine so a duck-typed reviewer whose
+        ``review`` does not accept ``labels=`` raises its ``TypeError``
+        INSIDE this coroutine's try/except, not while ``gather``'s argument
+        list is being constructed (where ``return_exceptions=True`` cannot
+        help — that exception happens before any coroutine is scheduled).
+        """
+        kwargs = {
+            "brief": brief, "run_id": run_id, "node_id": node_id, "cwd": cwd,
+            "session_host": session_host, "round": round,
+        }
+        try:
+            return await reviewer.review(**kwargs, labels=side_labels)
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await reviewer.review(**kwargs)
+
     async def review(
         self,
         *,
@@ -366,13 +422,17 @@ class ParallelPerspectiveReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
+        base_labels = labels.model_dump() if labels is not None else {}
         primary_result, adversary_result = await asyncio.gather(
-            self._primary.review(
+            self._review_side(
+                self._primary, DispatchLabels(**{**base_labels, "judge_id": "primary"}),
                 brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
                 session_host=session_host, round=round,
             ),
-            self._adversary.review(
+            self._review_side(
+                self._adversary, DispatchLabels(**{**base_labels, "judge_id": "codex-adversarial"}),
                 brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
                 session_host=session_host, round=round,
             ),
@@ -772,6 +832,47 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             f"(supported: {get_args(JudgeBackend)})."
         )
 
+    @staticmethod
+    async def _review_one_judge(
+        judge: AbstractCodeReviewDispatcher,
+        judge_id: str,
+        spec: JudgeSpec,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost],
+        round: str,
+        outer_labels: Optional[DispatchLabels],
+    ) -> CodeReviewVerdict:
+        """Dispatch one judge with its own labels, best-effort.
+
+        Wrapped in its own coroutine (rather than inlined in the
+        ``asyncio.gather`` generator expression) so a judge whose ``review``
+        does not accept ``labels=`` raises its ``TypeError`` INSIDE this
+        coroutine's own try/except — not while ``gather``'s argument list is
+        being constructed, where ``return_exceptions=True`` cannot help
+        because the exception happens before any coroutine is scheduled.
+        """
+        kwargs = {
+            "brief": brief, "run_id": run_id, "node_id": node_id, "cwd": cwd,
+            "session_host": session_host, "round": round,
+        }
+        judge_labels = DispatchLabels(
+            judge_id=judge_id,
+            agent=spec.agent,
+            model=spec.model or "",
+            subagent="sdd-secondopinion" if getattr(judge, "advisory", False) else "",
+            attempt=(outer_labels.attempt if outer_labels is not None else 1),
+        )
+        try:
+            return await judge.review(**kwargs, labels=judge_labels)
+        except TypeError as exc:
+            if "labels" not in str(exc):
+                raise
+            return await judge.review(**kwargs)
+
     async def review(
         self,
         *,
@@ -781,20 +882,18 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
         cwd: str,
         session_host: Optional[SessionHost] = None,
         round: str = "",
+        labels: Optional[DispatchLabels] = None,
     ) -> CodeReviewVerdict:
         judges = [self._build_judge(spec) for spec in self._judge_specs]
 
         results = await asyncio.gather(
             *(
-                judge.review(
-                    brief=brief,
-                    run_id=run_id,
-                    node_id=node_id,
-                    cwd=cwd,
-                    session_host=session_host,
-                    round=round,
+                self._review_one_judge(
+                    judge, judge_id, spec,
+                    brief=brief, run_id=run_id, node_id=node_id, cwd=cwd,
+                    session_host=session_host, round=round, outer_labels=labels,
                 )
-                for _judge_id, judge in judges
+                for (judge_id, judge), spec in zip(judges, self._judge_specs)
             ),
             return_exceptions=True,
         )
