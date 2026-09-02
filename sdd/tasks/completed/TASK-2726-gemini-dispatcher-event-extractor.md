@@ -231,10 +231,19 @@ class TestGeminiEventExtraction:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: Added `_extract_gemini_display(event)` static method probing an
+ordered list of alternative keys (`name`/`tool`/`toolName`) for the tool
+name and (`args`/`arguments`/`input`) for arguments, per the CLI-version
+tolerance the spec calls for. `tool_response` yields `tool_name` when
+echoed, `is_error`, and a clamped `result_snippet`. Assistant `message`
+events yield clamped `text`. Total (`try/except Exception -> {}`).
+`_publish_gemini_event` merges these keys additively alongside the preserved
+`gemini_event`. `_publish_event` routes through `normalize_payload`.
+`dispatch()` accepts `labels: Optional[DispatchLabels] = None`, bound/reset
+alongside `_SESSION_HOST_CTX`. 10 new tests added; all 15 tests in
+`test_gemini_dispatcher.py` pass; full `dev_loop` suite green (same 3
+pre-existing unrelated failures in `test_recovery_lifecycle.py`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

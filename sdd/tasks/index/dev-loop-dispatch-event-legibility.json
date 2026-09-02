@@ -92,7 +92,7 @@
       "feature_id": "FEAT-496",
       "feature": "dev-loop-dispatch-event-legibility",
       "spec": "sdd/specs/dev-loop-dispatch-event-legibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Touches only dispatchers/gemini.py. Parallel with the rest of the wave.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:57:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2726-gemini-dispatcher-event-extractor.md"
+      "completed_at": "2026-09-02T02:32:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2726-gemini-dispatcher-event-extractor.md"
     },
     {
       "id": "TASK-2727",
