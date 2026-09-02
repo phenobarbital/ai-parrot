@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-519",
+  "feature_slug": "new-cli-infra",
+  "started_at": "2026-09-02T21:52:00Z",
+  "updated_at": "2026-09-02T22:45:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-519/source.md",
+    "fetched_at": "2026-09-02T21:52:00Z",
+    "summary_oneline": "Refactor the parrot CLI console (parrot agent <agent_id>) from raw stdout prints to a rich TUI stack"
+  },
+  "mode": "investigation",
+  "phase": "committed",
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true,
+      "queries_total": 20
+    },
+    "research": {
+      "status": "complete",
+      "findings": 11,
+      "truncated": false
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "lint": "pass"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 4,
+      "questions_answered": 4
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/new-cli-infra.proposal.md",
+      "commit_sha": "60f90d1a6"
+    }
+  },
+  "budget": {
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300,
+    "profile": "default"
+  },
+  "consumed": {
+    "files_read": 17,
+    "grep_calls": 14,
+    "git_calls": 4,
+    "depth_reached": 1,
+    "wall_seconds": 0
+  }
+}
