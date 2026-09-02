@@ -441,6 +441,24 @@ class WikiProjectConfig(BaseModel):
             "sync into the vault and which folder each one maps onto."
         ),
     )
+    symbol_depth: int = Field(
+        default=2,
+        ge=1,
+        le=6,
+        description=(
+            "Maximum symbol nesting depth persisted as sym: pages "
+            "(FEAT-498) — 1 = top-level declarations only, 2 = top-level "
+            "plus direct members."
+        ),
+    )
+    structural_backend: bool = Field(
+        default=True,
+        description=(
+            "Kill switch for the optional ast-grep structural extraction "
+            "seam (FEAT-498). When False, scanners always use their "
+            "tree-sitter/heuristic tiers even if ast-grep-py is installed."
+        ),
+    )
 
     @field_validator("namespaces")
     @classmethod

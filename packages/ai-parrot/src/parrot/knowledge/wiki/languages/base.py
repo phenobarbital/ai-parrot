@@ -17,6 +17,8 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.wiki.symbols import SymbolRecord, SymbolRef
+
 
 class LanguageOutline(BaseModel):
     """Result of deep-scanning one source file.
@@ -30,11 +32,17 @@ class LanguageOutline(BaseModel):
             the source (e.g. dotted Python modules, PHP ``use`` targets,
             relative JS/TS specifiers) — resolved later by
             :meth:`LanguageScanner.resolve_import`.
+        symbols: Structural symbol records extracted for this file
+            (FEAT-498), empty when the structural backend did not run.
+        refs: Unresolved symbol references extracted for this file
+            (FEAT-498), empty when the structural backend did not run.
     """
 
     summary: str = ""
     outline: list[str] = Field(default_factory=list)
     imports: list[str] = Field(default_factory=list)
+    symbols: list[SymbolRecord] = Field(default_factory=list)
+    refs: list[SymbolRef] = Field(default_factory=list)
 
 
 class LanguageScanner(ABC):

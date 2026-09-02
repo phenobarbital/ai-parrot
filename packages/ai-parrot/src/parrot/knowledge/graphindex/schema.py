@@ -77,6 +77,10 @@ class EdgeKind(str, Enum):
         SUPPORTED_BY: A claim is supported by a source/page.
         CONTRADICTS: Two claims/entities conflict — surfaced (never
             hidden) by the context builder and grounding evaluator.
+        CALLS: A symbol invokes another symbol (FEAT-498 structural
+            plane; wiki `sym:` pages only).
+        IMPLEMENTS: A symbol implements an interface/trait (FEAT-498
+            structural plane; wiki `sym:` pages only).
     """
 
     CONTAINS = "contains"
@@ -89,6 +93,8 @@ class EdgeKind(str, Enum):
     ABOUT = "about"
     SUPPORTED_BY = "supported_by"
     CONTRADICTS = "contradicts"
+    CALLS = "calls"
+    IMPLEMENTS = "implements"
 
 
 class AssertionMeta(BaseModel):

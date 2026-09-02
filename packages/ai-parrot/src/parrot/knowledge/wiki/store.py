@@ -247,6 +247,13 @@ class WikiPageRecord(BaseModel):
             sync (TASK-2466) replicate a record without making it look
             newer than its source. Legacy/defensive ``None`` sorts
             oldest in any last-write-wins comparison.
+        content_hash: SHA-1 hex digest of the page's source content
+            (FEAT-498) — same digest family as
+            ``SourceCollectionManager._compute_hash`` for ``file:``
+            pages, and :func:`parrot.knowledge.wiki.symbols.sha1_of_text`
+            of the node text for ``sym:`` pages. ``None`` for pages that
+            predate the freshness plane or are not backed by scanned
+            source (e.g. ``dir:`` pages).
     """
 
     concept_id: str = Field(..., min_length=1)
@@ -260,6 +267,7 @@ class WikiPageRecord(BaseModel):
     origin: str = "ingest"
     asserted_by: Optional[str] = None
     updated_at: Optional[str] = None
+    content_hash: Optional[str] = None
 
 
 def rank_by_cosine(

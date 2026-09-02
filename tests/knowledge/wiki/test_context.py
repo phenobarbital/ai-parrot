@@ -214,6 +214,9 @@ class TestNamespacedIds:
             ("file:x", (None, "file:x")),
             # ``::`` inside a local path is not a namespace prefix.
             ("file:a::b.py", (None, "file:a::b.py")),
+            # FEAT-498 — ``sym:`` symbol ids are accepted as a page-id kind.
+            ("ns::sym:a.py#X", ("ns", "sym:a.py#X")),
+            ("sym:a.py#X", (None, "sym:a.py#X")),
         ],
     )
     def test_split_namespaced_id(self, page_id, expected):

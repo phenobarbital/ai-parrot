@@ -43,6 +43,7 @@ from parrot.knowledge.wiki.languages import (
 )
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
+from parrot.knowledge.wiki.symbols import SymbolRecord, SymbolRef
 
 logger = logging.getLogger(__name__)
 
@@ -171,12 +172,18 @@ class FileSlice(BaseModel):
         language: Name of the :class:`LanguageScanner` that produced this
             slice's outline/imports (e.g. ``"python"``), or ``None`` when
             no scanner claims the file's suffix (shallow page only).
+        symbols: Structural symbol records extracted for this file
+            (FEAT-498), empty when the structural backend did not run.
+        refs: Unresolved symbol references extracted for this file
+            (FEAT-498), empty when the structural backend did not run.
     """
 
     rel_path: str
     record: WikiPageRecord
     imports: list[str] = Field(default_factory=list)
     language: str | None = None
+    symbols: list[SymbolRecord] = Field(default_factory=list)
+    refs: list[SymbolRef] = Field(default_factory=list)
 
 
 class RepoScan(BaseModel):
@@ -189,6 +196,10 @@ class RepoScan(BaseModel):
         dir_edges: ``contains`` edges (dir → child dir/file pages).
         import_edges: ``references`` edges between ``file:`` pages.
         skipped: Relative paths skipped (too large / binary / unreadable).
+        symbol_records: ``sym:`` page records derived from every file's
+            symbols (FEAT-498), populated by the ingest pipeline.
+        symbol_edges: ``(src, dst, rel, provenance)`` edges between
+            symbols (FEAT-498), e.g. ``defines``/``contains``/``calls``.
     """
 
     root: Path
@@ -197,6 +208,8 @@ class RepoScan(BaseModel):
     dir_edges: list[tuple[str, str, str]] = Field(default_factory=list)
     import_edges: list[tuple[str, str, str]] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
+    symbol_records: list[WikiPageRecord] = Field(default_factory=list)
+    symbol_edges: list[tuple[str, str, str, str]] = Field(default_factory=list)
 
 
 def is_wiki_relevant(
