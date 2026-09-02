@@ -875,27 +875,46 @@ class QANode(DevLoopNode):
             qa_criterion_results=qa_results,
             qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
+        reviewer = self._active_reviewer(shared)
         try:
-            verdict = await self._active_reviewer(shared).review(
-                brief=review_brief,
-                run_id=shared["run_id"],
-                node_id=self.name,
-                cwd=review_cwd,
-                # FEAT-322: fold dispatch-level events into the run's
-                # SessionHost when one is present.
-                session_host=shared.get("session_host"),
-                # FEAT-378 (code-review finding): the QA-attempt-scoped round
-                # identifier JudgePanelReviewDispatcher stamps onto each
-                # JudgeVerdictRecorded action ("qa-1", "qa-2", ... — same
-                # convention as QaAttemptRecorded's attempt number above).
-                # Ignored by every non-panel dispatcher.
-                round=f"qa-{shared.get('qa_attempt', 1)}",
-                # FEAT-496: label QANode's own code-review dispatch. A panel
-                # reviewer stamps its own per-judge labels and only reads
-                # `.attempt` off this one; a single reviewer forwards it
-                # straight through to `dispatch()`.
-                labels=DispatchLabels(subagent="sdd-codereview", seat=self.name),
-            )
+            try:
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    # FEAT-322: fold dispatch-level events into the run's
+                    # SessionHost when one is present.
+                    session_host=shared.get("session_host"),
+                    # FEAT-378 (code-review finding): the QA-attempt-scoped
+                    # round identifier JudgePanelReviewDispatcher stamps onto
+                    # each JudgeVerdictRecorded action ("qa-1", "qa-2", ... —
+                    # same convention as QaAttemptRecorded's attempt number
+                    # above). Ignored by every non-panel dispatcher.
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                    # FEAT-496: label QANode's own code-review dispatch. A
+                    # panel reviewer stamps its own per-judge labels and only
+                    # reads `.attempt` off this one; a single reviewer
+                    # forwards it straight through to `dispatch()`.
+                    labels=DispatchLabels(subagent="sdd-codereview", seat=self.name),
+                )
+            except TypeError as exc:
+                # FEAT-496: labels are best-effort — a reviewer that fully
+                # overrides review() without a labels= parameter (e.g.
+                # NovaAdversarialReviewDispatcher, which has no underlying
+                # dispatcher to delegate to and so cannot inherit the ABC's
+                # own labels fallback) must still actually run, not silently
+                # skip via the degrade-on-infra-error path below.
+                if "labels" not in str(exc):
+                    raise
+                verdict = await reviewer.review(
+                    brief=review_brief,
+                    run_id=shared["run_id"],
+                    node_id=self.name,
+                    cwd=review_cwd,
+                    session_host=shared.get("session_host"),
+                    round=f"qa-{shared.get('qa_attempt', 1)}",
+                )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)
             shared["_code_review_verdict"] = None

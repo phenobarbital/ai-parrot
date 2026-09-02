@@ -555,9 +555,17 @@ function foldAction(a) {
                              n.error = a.error || ""; break; }
     case "node/skipped":   { node(a.node_id).status = "skipped"; break; }
 
-    case "dispatch/queued":  { node(a.node_id).dispatch =
-      { status: "queued", dispatcher: a.dispatcher || "", message_count: 0, tool_use_count: 0 };
-      foldSeat(node(a.node_id), a); break; }
+    case "dispatch/queued":  { const n = node(a.node_id);
+      // FEAT-496: merge into any existing DispatchState rather than
+      // replacing it wholesale — a pooled node gets one dispatch/queued
+      // PER SEAT as each worker starts, and the second seat's queued
+      // action must not wipe the first seat's already-accumulated
+      // counters/seats (mirrors _with_dispatch's model_copy(update=...)
+      // merge semantics server-side).
+      n.dispatch = n.dispatch || { message_count: 0, tool_use_count: 0 };
+      n.dispatch.status = "queued";
+      n.dispatch.dispatcher = a.dispatcher || n.dispatch.dispatcher || "";
+      foldSeat(n, a); break; }
     case "dispatch/started": { const n = node(a.node_id); n.dispatch = n.dispatch || {};
                                n.dispatch.status = "running"; n.dispatch.started_at = a.ts;
                                foldSeat(n, a); break; }

@@ -179,6 +179,42 @@ async def test_backward_compat_no_reviewer(ctx):
 
 
 @pytest.mark.asyncio
+async def test_reviewer_without_labels_kwarg_still_runs(ctx):
+    """FEAT-496 regression guard.
+
+    `NovaAdversarialReviewDispatcher` (and any reviewer that fully
+    overrides `review()` with no underlying dispatcher to delegate to)
+    declares no `labels=` parameter at all. QANode's own code-review
+    dispatch call must not let that raise a TypeError that the
+    degrade-on-infra-error path then silently reports as "code-review
+    could not run" — the review must actually execute.
+    """
+    qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=qa)
+
+    class _NoLabelsReviewer:
+        """Duck-types the exact shape NovaAdversarialReviewDispatcher has:
+        no underlying `_dispatcher`, `review()` with no `labels=` param."""
+
+        advisory = True
+
+        def __init__(self):
+            self.calls = 0
+
+        async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round=""):
+            self.calls += 1
+            return CodeReviewVerdict(passed=True, findings=[])
+
+    reviewer = _NoLabelsReviewer()
+    node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
+    report = await node.execute(ctx)
+
+    assert reviewer.calls == 1, "the reviewer must actually run, not be skipped"
+    assert report.passed is True
+
+
+@pytest.mark.asyncio
 async def test_custom_codereview_dispatcher_used(ctx):
     """An explicit codereview_dispatcher is used instead of the default."""
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
