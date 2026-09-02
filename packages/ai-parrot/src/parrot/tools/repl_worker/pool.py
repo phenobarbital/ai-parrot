@@ -173,6 +173,7 @@ class WorkerPool:
                     total = len(self._sessions) + len(self._prewarmed)
                     if len(self._prewarmed) >= self._config.prewarm_pool_size or total >= self._ceiling:
                         return
+                handle = None
                 try:
                     handle = await self._spawn_handle()
                     # FEAT-500 (G1/AC1): "prewarmed" now means READY. Awaited
@@ -181,6 +182,16 @@ class WorkerPool:
                     # would stall every other session's `acquire()`.
                     ready = await handle.wait_ready()
                 except asyncio.CancelledError:
+                    # `shutdown()` cancels in-flight top-ups, and this handle
+                    # has NOT been appended to `_prewarmed` yet — so the
+                    # shutdown sweep (which only walks `_sessions` +
+                    # `_prewarmed`) can never see it. Kill it here or the
+                    # worker process and its readiness task outlive the pool
+                    # (AC12). The window is real: `wait_ready()` above can be
+                    # awaiting for up to `bootstrap_timeout_ms`.
+                    if handle is not None:
+                        with contextlib.suppress(Exception):
+                            await handle.kill()
                     raise
                 except WorkerBootstrapError:
                     logger.exception("WorkerPool: prewarmed worker failed to become ready")

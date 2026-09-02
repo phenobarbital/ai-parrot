@@ -441,6 +441,19 @@ class WorkerHandle:
                 # Shielding cancels only the outer wrapper, so a non-lethally
                 # timed-out reply stays genuinely pending and awaitable.
                 return await asyncio.wait_for(asyncio.shield(future), timeout=timeout_s)
+            except asyncio.CancelledError:
+                # The caller gave up (its own outer timeout, or task
+                # cancellation) — but the shielded executor thread still owns
+                # the pipe and WILL consume one reply frame. Park it exactly
+                # as a non-lethal timeout does: otherwise this method returns
+                # with `_pending_reply` empty, the next `_send()` writes while
+                # that thread is still reading, two threads read the same pipe
+                # and every subsequent reply is off by one frame. Cancellation
+                # is not a deadline breach, so the worker is never killed here
+                # (even when `lethal=True`).
+                future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+                self._pending_reply = future
+                raise
             except asyncio.TimeoutError:
                 # The executor thread is still blocked reading the pipe and
                 # will finish in the background; nobody awaits `future`
@@ -587,6 +600,16 @@ class WorkerHandle:
             # The ONLY lethal caller (G2/AC4): exceeding `deadline_ms` is
             # what SIGKILLs a worker, and nothing else does.
             response: ExecResult = await self._send(request, deadline_s, lethal=True)
+        except NamespaceTimeoutError as exc:
+            # A reply parked by an EARLIER non-lethal timeout still had not
+            # landed when the drain step ran. The worker is alive and its
+            # namespace is intact, so this must not be dressed up as a
+            # namespace-loss error — that would falsely tell the LLM every
+            # variable was lost (and `NamespaceTimeoutError` would otherwise
+            # be caught by the clause below, since it subclasses
+            # `TimeoutError`, which IS `asyncio.TimeoutError` on 3.11+).
+            detail = str(exc)
+            return {"status": "error", "result": detail, "error": detail}
         except asyncio.TimeoutError:
             return self._build_loss_error("timeout", f"execution exceeded deadline_ms={self._config.deadline_ms}")
         except (WorkerBootstrapError, EOFError, OSError, ValueError) as exc:

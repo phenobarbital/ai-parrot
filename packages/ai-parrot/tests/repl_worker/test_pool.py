@@ -222,3 +222,43 @@ class TestRestartLoopVisibility:
             assert pool.restart_count("never-seen") == 0
         finally:
             await pool.shutdown()
+
+
+class TestShutdownDuringBootstrap:
+    """Code-review finding (FEAT-500 AC12): no worker may outlive the pool."""
+
+    async def test_shutdown_while_spare_is_booting_kills_it(self, tmp_path):
+        """A top-up cancelled mid-`wait_ready()` must not leak its worker.
+
+        The handle is not in `_prewarmed` yet, so `shutdown()`'s sweep over
+        `_sessions + _prewarmed` cannot see it; the cancelled top-up itself is
+        the only thing that can kill it.
+        """
+        config = WorkerConfig(
+            deadline_ms=5_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=1
+        )
+        pool = WorkerPool(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+
+        spawned = []
+        real_spawn = pool._spawn_handle
+
+        async def tracking_spawn():
+            handle = await real_spawn()
+            spawned.append(handle)
+            return handle
+
+        pool._spawn_handle = tracking_spawn
+
+        await pool._ensure_started()
+        for _ in range(50):  # wait until the spare is spawned but still booting
+            await asyncio.sleep(0.1)
+            if spawned:
+                break
+        assert spawned, "no worker was spawned"
+        assert pool._prewarmed == [], "spare should still be booting"
+
+        await pool.shutdown()
+
+        assert all(not handle.is_alive for handle in spawned), (
+            "a worker spawned but not yet prewarmed outlived shutdown()"
+        )

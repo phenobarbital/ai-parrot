@@ -374,3 +374,98 @@ class TestNonLethalTimeouts:
         with pytest.raises(WorkerBootstrapError) as excinfo:
             await asyncio.wait_for(handle.wait_ready(), timeout=5)
         assert str(excinfo.value)
+
+
+class TestConcurrencyRegressions:
+    """Code-review findings (FEAT-500): cancellation and drain edge cases."""
+
+    async def test_cancelled_send_parks_the_reply(self, real_worker_config, tmp_path, monkeypatch):
+        """A cancelled caller must not leave the pipe owned by an untracked thread.
+
+        `_send()` shields its executor round-trip, so cancelling the awaiting
+        task does NOT stop the thread that is mid-`read_frame()`. If that
+        future were not parked, the next `_send()` would write while the old
+        thread is still reading — two readers on one pipe, and every later
+        reply shifted by a frame.
+        """
+        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        await handle.start()
+        await handle.wait_ready()
+        real_roundtrip = handle._roundtrip
+
+        def slow_roundtrip(request):
+            time.sleep(1.0)
+            return real_roundtrip(request)
+
+        monkeypatch.setattr(handle, "_roundtrip", slow_roundtrip)
+        try:
+            task = asyncio.create_task(handle.list_vars())
+            await asyncio.sleep(0.2)  # let it write the request and block
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            # The straggler is tracked, and the worker was NOT killed.
+            assert handle._pending_reply is not None
+            assert handle.is_alive is True
+
+            monkeypatch.setattr(handle, "_roundtrip", real_roundtrip)
+            await asyncio.sleep(1.2)  # let the parked reply land
+            names = await handle.list_vars()
+            # Correct frame, not the parked one mis-attributed.
+            assert isinstance(names, list)
+            assert "pd" in names
+            assert handle._pending_reply is None
+        finally:
+            await handle.kill()
+
+    async def test_execute_after_undrained_timeout_is_not_reported_as_loss(
+        self, tmp_path, monkeypatch
+    ):
+        """A drain timeout inside `execute()` must not claim the namespace was lost.
+
+        `NamespaceTimeoutError` subclasses `TimeoutError` (== `asyncio.
+        TimeoutError` on 3.11+), so without an explicit branch `execute()`
+        would report "execution exceeded deadline_ms" and "ALL variables were
+        lost" for a worker that is alive with its namespace intact.
+        """
+        # `execute()` drains with ITS OWN budget (deadline_ms + 250 ms grace),
+        # so the deadline must be SHORTER than the straggler, or execute()
+        # simply waits it out and succeeds (itself correct behaviour — this
+        # test needs the drain to actually expire).
+        config = WorkerConfig(
+            deadline_ms=1_000,
+            max_workers=2,
+            idle_ttl_seconds=5,
+            prewarm_pool_size=0,
+            namespace_timeout_ms=200,
+        )
+        handle = WorkerHandle(config, output_dir=str(tmp_path))
+        await handle.start()
+        await handle.wait_ready()
+        try:
+            await handle.execute("x = 1")
+            real_roundtrip = handle._roundtrip
+
+            def slow_roundtrip(request):
+                time.sleep(3.0)
+                return real_roundtrip(request)
+
+            monkeypatch.setattr(handle, "_roundtrip", slow_roundtrip)
+            with pytest.raises(NamespaceTimeoutError):
+                await handle.list_vars()
+
+            # Straggler still in flight -> execute()'s drain step times out.
+            result = await handle.execute("y = 2")
+            assert isinstance(result, dict)
+            assert result["status"] == "error"
+            assert result["error"]
+            assert "lost" not in result["result"].lower()
+            assert handle.is_alive is True
+
+            # And the namespace really did survive.
+            monkeypatch.setattr(handle, "_roundtrip", real_roundtrip)
+            await asyncio.sleep(3.2)
+            assert await handle.get_var("x") == 1
+        finally:
+            await handle.kill()
