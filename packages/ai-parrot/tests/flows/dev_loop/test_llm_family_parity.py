@@ -15,9 +15,9 @@ from parrot.flows.dev_loop.models import DispatchLabels
 
 # Import the subclass modules so they register on LLMCodeDispatcher before
 # the sweep below runs.
-import parrot.flows.dev_loop.dispatchers.nova  # noqa: F401
-import parrot.flows.dev_loop.dispatchers.grok  # noqa: F401
-import parrot.flows.dev_loop.dispatchers.zai  # noqa: F401
+import parrot.flows.dev_loop.dispatchers.nova
+import parrot.flows.dev_loop.dispatchers.grok
+import parrot.flows.dev_loop.dispatchers.zai
 import parrot.flows.dev_loop.dispatchers.moonshot  # noqa: F401
 
 ALL = [LLMCodeDispatcher, *LLMCodeDispatcher.__subclasses__()]
