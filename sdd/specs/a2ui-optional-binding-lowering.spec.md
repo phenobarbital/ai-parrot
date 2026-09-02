@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-499
 **Date**: 2026-09-02
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -141,14 +141,23 @@ composites in `_INTERCEPTED` — `Chart`, `DataTable`, `Infographic`. So:
 
 So Module 1 must also make lowering propagate the marker: when
 `_lower_composites` replaces a composite, each emitted child inherits the
-parent's `metadata.extensions.parrot_optional` (union with its own, if any).
+parent's **entire `metadata.extensions` mapping** (union with its own, where
+the child's own value wins on a key collision) — not just the
+`parrot_optional` key. Resolved decision, §8 Q1: propagating the whole
+mapping is simpler and keeps every other `parrot_*` presentation hint
+(FEAT-470 G4) alive across lowering, instead of silently dropping hints a
+future catalog component adds.
 `SSRHTMLRenderer` uses the same lowering-then-bake order (FEAT-470
 TASK-2543) and must get the identical treatment, or the `Report` profile
 stays broken for `ssr-html` and `pdf` (`PDFRenderer(SSRHTMLRenderer)`).
 
 **Module 2 — fail loudly but structurally.** `_respond_html` wraps the
-render call and maps failures to a JSON error body, matching `_refresh`'s
-existing shape. Both routes inherit the fix for free because they already
+render call and maps failures to a JSON error body with status **422**,
+matching `_refresh`'s existing shape. Resolved decision, §8 Q2: a stored
+surface that cannot be re-baked is an unprocessable *entity*, not a server
+fault — 4xx, never 5xx. This also aligns with `_refresh`, which reserves
+502 exclusively for `stage="data"` (a genuine upstream failure) and uses
+422 for everything else. Both routes inherit the fix for free because they already
 share the one `SurfaceNegotiationService` instance by design (FEAT-492 §2).
 
 ### Component Diagram
@@ -231,17 +240,18 @@ def build_infographic(
   `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/interactive_html.py`,
   `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/ssr_html.py`
 - **Responsibility**: Thread `LayoutSpec.metadata` onto the root wire
-  `Component`, and propagate `metadata.extensions.parrot_optional` from a
-  composite to the children it lowers into, so `baking._optional_paths`
-  finds it in both the intercepted and the lowered case.
+  `Component`, and propagate the composite's whole `metadata.extensions`
+  mapping to the children it lowers into (child's own key wins on a
+  collision), so `baking._optional_paths` finds `parrot_optional` in both
+  the intercepted and the lowered case.
 - **Depends on**: nothing (pure core + renderer change)
 
 ### Module 2: structured error on the HTML serving lane
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py`
 - **Responsibility**: Guard the `render()` call in
   `SurfaceNegotiationService._respond_html` and return a structured JSON
-  error, mirroring `_refresh`'s existing mapping instead of leaking a
-  traceback. Covers the `A2UIHandler` mirror route automatically.
+  error with status **422** (resolved: 4xx, not 5xx), mirroring `_refresh`'s
+  existing shape instead of leaking a traceback. Covers the `A2UIHandler` mirror route automatically.
 - **Depends on**: nothing (independent of Module 1; deliverable separately)
 
 ---
@@ -294,9 +304,13 @@ finance fixtures are needed.
 - [ ] `ssr-html` and `pdf` behave identically to `interactive-html` for both
       layout shapes
 - [ ] `GET /api/v1/ui/surfaces/{id}` with `Accept: text/html` returns a
-      structured JSON error (not a traceback) when the render fails
+      structured JSON error with status **422** (not a traceback, and not a
+      5xx) when the render fails
 - [ ] `GET /api/v1/agents/{agent_id}/a2ui/surfaces/{id}` returns the same
-      structured error for the same input
+      422 structured error for the same input
+- [ ] A lowered child inherits its parent composite's whole
+      `metadata.extensions`, with the child's own value winning on a key
+      collision
 - [ ] Every emitted envelope still validates against the v1.0
       `agent_to_renderer.json` schema (FEAT-470 G1 conformance suite green)
 - [ ] No change to `build_surface`/`build_infographic` call sites elsewhere
@@ -408,8 +422,9 @@ class UISurfacesHandler(BaseView):
   semantics outside the v1.0 schema (FEAT-470 G4). Stay inside it.
 - Additive, defaulted parameters only — every existing `build_surface` /
   `build_infographic` call site must keep working untouched.
-- Union, never replace, when propagating to a lowered child that already
-  carries its own `parrot_optional`.
+- Union, never replace, when propagating `metadata.extensions` to a lowered
+  child that already carries its own — and on a key collision the CHILD's
+  value wins (it is the more specific declaration).
 - `self.logger` for the "optional binding omitted" path; it is an INFO-level
   degradation, not a warning.
 
@@ -449,15 +464,18 @@ None. No new packages.
 
 ## 8. Open Questions
 
-- [ ] Should lowering propagate the **whole** `metadata.extensions` from
+- [x] Should lowering propagate the **whole** `metadata.extensions` from
       parent to lowered children, or only the `parrot_optional` key?
-      Whole-extensions is simpler and more future-proof for other
-      `parrot_*` hints; key-only is narrower and cannot surprise an
-      unrelated consumer. — *Owner: Jesus Lara*
-- [ ] What status code should a failed HTML render return — `422`
-      (unprocessable stored surface, matching `_refresh`'s non-`data` stage
-      mapping) or `500`? `_refresh` uses 502 only for `stage="data"`, which
-      has no analogue on a pure re-bake. — *Owner: Jesus Lara*
+      — *Resolved by Jesus Lara*: "yes" — propagate the **whole**
+      `metadata.extensions` mapping (the first alternative, and the one
+      described as simpler and more future-proof for other `parrot_*`
+      hints). Child's own key wins on a collision. Routed into §2
+      Overview, §3 Module 1, §5 and §7.
+- [x] What status code should a failed HTML render return — `422` or
+      `500`? — *Resolved by Jesus Lara*: "let's use a 4xx error instead
+      5xx error" ⇒ **422**, the only 4xx candidate on the table and the one
+      `_refresh` already uses for every non-`data` stage. Routed into §2
+      Overview, §3 Module 2 and §5.
 - [ ] Should `bake_envelope` additionally union optional paths across all
       components as a belt-and-braces guard, or is per-component resolution
       after correct propagation sufficient? — *Owner: implementer*
