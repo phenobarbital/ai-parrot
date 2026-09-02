@@ -1,9 +1,8 @@
 """``A2UIHandler`` surfaces mirror route tests (FEAT-492, TASK-2703).
 
-Real aiohttp ``TestClient`` end-to-end (``A2UIHandler`` does not use
-``@is_authenticated()`` — see ``handlers/a2ui.py`` module docstring — so the
-``test_a2ui_handler.py`` client-fixture idiom applies directly). The
-``PgUISurfaceStore`` is stubbed via ``app["ui_surfaces_store"]`` (the same
+Real aiohttp ``TestClient`` end-to-end.  ``A2UIHandler`` is decorated with
+``@is_authenticated()``/``@user_session()`` — the test middleware stubs both.
+The ``PgUISurfaceStore`` is stubbed via ``app["ui_surfaces_store"]`` (the same
 app-context slot ``UISurfacesHandler``/``A2UIHandler`` both lazily populate),
 so no live Postgres is required.
 """
@@ -17,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
+from navigator_session.data import SessionData
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.agent import AgentTalk
 from parrot.handlers.models.ui_surfaces import (
@@ -95,10 +95,19 @@ def fake_store():
     return store
 
 
+@web.middleware
+async def _stub_auth_middleware(request, handler):
+    """Mark every test request as pre-authenticated and attach a minimal
+    session so ``@is_authenticated()``/``@user_session()`` pass through."""
+    request["authenticated"] = True
+    request["NAV_SESSION"] = SessionData(data={"user_id": "u-test"})
+    return await handler(request)
+
+
 @pytest.fixture
 async def client(aiohttp_client, tmp_path, fake_store):
     agent = _make_agent(tmp_path)
-    app = web.Application()
+    app = web.Application(middlewares=[_stub_auth_middleware])
     app["bot_manager"] = _bot_manager(agent)
     app["_test_agent"] = agent
     app["ui_surfaces_store"] = fake_store
