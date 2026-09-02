@@ -244,7 +244,8 @@ class AnthropicClient(AbstractClient):
     # — the param must be omitted entirely. Mirrors the guard pattern in
     # ``GoogleGenAIClient._requires_thinking``.
     _ADAPTIVE_ONLY_PREFIXES: tuple = (
-        "claude-fable-5",
+        "claude-fable-5",       # covers fable-5 AND fable-5-1
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
     )
@@ -866,18 +867,29 @@ class AnthropicClient(AbstractClient):
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: bool = True,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
         context_1m: bool = False,
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
-        """Stream Claude's response using AsyncIterator with optional conversation memory.
+        """Stream Claude's response with tool-use support.
 
         Yields successive string chunks of the response followed by a single
         final :class:`~parrot.models.responses.AIMessage` with full metadata
         (usage, stop_reason, model, turn_id).
 
+        When the model requests a tool during streaming, the tool is executed
+        between streaming rounds: text from the current round is yielded as
+        it arrives, then the tool executes (a brief pause the caller sees as
+        a gap between chunks), and a new streaming round begins with the
+        tool result injected into the conversation.  This mirrors the
+        ``while True`` tool loop in :meth:`ask`.
+
         Args:
+            use_tools: Whether to include tool definitions and run the
+                streaming tool-call loop.  Defaults to ``True``.
             deep_research: If True, use enhanced system prompt for thorough research
             agent_config: Optional configuration (not used, for interface compatibility)
         """
@@ -915,7 +927,7 @@ class AnthropicClient(AbstractClient):
             model=_lc_model_s or "",
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
-            has_tools=False,
+            has_tools=bool(self.tools) and use_tools,
             parent_trace=None,
         )
         _lc_t0_s = _lc_time_s.perf_counter()
@@ -931,6 +943,9 @@ class AnthropicClient(AbstractClient):
         retry_count = 0
         assistant_content = ""
         final_message = None
+        all_tool_calls: List[ToolCall] = []
+        _max_tool_rounds = 25  # safety cap, same depth as ask()
+
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {
@@ -950,36 +965,98 @@ class AnthropicClient(AbstractClient):
                 if context_1m:
                     payload["betas"] = ["context-1m-2025-08-07"]
 
-                payload["tools"] = self._prepare_tools()
+                if use_tools:
+                    payload["tools"] = self._prepare_tools()
 
                 assistant_content = ""
                 max_tokens_reached = False
                 stop_reason = None
 
                 try:
-                    # Use the Anthropic SDK's streaming API
-                    async with self._sdk_stream(payload) as stream:
-                        async for text in stream.text_stream:
-                            assistant_content += text
-                            # FEAT-176: per-chunk event (short-circuited when no subscribers)
-                            if _lc_has_chunk_subs:
-                                await self.events.emit(ClientStreamChunkEvent(
-                                    trace_context=_lc_tc_s,
-                                    client_name=self._telemetry_client_name,
-                                    model=_lc_model_s or "",
-                                    chunk_index=_lc_chunk_idx,
-                                    chunk_size_bytes=len(text.encode("utf-8")),
-                                    source_type="client",
-                                    source_name="anthropic",
-                                ))
-                                _lc_chunk_idx += 1
-                            yield text
+                    # ── Streaming tool-call loop ──────────────────────
+                    # Each round streams text via text_stream, then checks
+                    # if the model stopped with stop_reason="tool_use".
+                    # If so, tools are executed between rounds and the
+                    # conversation continues with a new stream.
+                    for _tool_round in range(_max_tool_rounds):
+                        round_text = ""
+                        async with self._sdk_stream(payload) as stream:
+                            async for text in stream.text_stream:
+                                round_text += text
+                                assistant_content += text
+                                # FEAT-176: per-chunk event (short-circuited when no subscribers)
+                                if _lc_has_chunk_subs:
+                                    await self.events.emit(ClientStreamChunkEvent(
+                                        trace_context=_lc_tc_s,
+                                        client_name=self._telemetry_client_name,
+                                        model=_lc_model_s or "",
+                                        chunk_index=_lc_chunk_idx,
+                                        chunk_size_bytes=len(text.encode("utf-8")),
+                                        source_type="client",
+                                        source_name="anthropic",
+                                    ))
+                                    _lc_chunk_idx += 1
+                                yield text
 
-                        # Get the final message to check stop reason
-                        final_message = await stream.get_final_message()
-                        stop_reason = final_message.stop_reason
-                        if stop_reason == 'max_tokens':
-                            max_tokens_reached = True
+                            # Get the final message to check stop reason
+                            final_message = await stream.get_final_message()
+                            stop_reason = final_message.stop_reason
+
+                        if stop_reason == "tool_use" and use_tools:
+                            # Extract tool-use blocks from the final message
+                            result_content = final_message.model_dump().get("content", [])
+                            tool_results = []
+
+                            for content_block in result_content:
+                                if content_block.get("type") == "tool_use":
+                                    tool_name = content_block["name"]
+                                    tool_input = content_block["input"]
+                                    tool_id = content_block["id"]
+
+                                    tc = ToolCall(
+                                        id=tool_id,
+                                        name=tool_name,
+                                        arguments=tool_input,
+                                    )
+                                    try:
+                                        start_time = time.time()
+                                        tool_result = await self._execute_tool(tool_name, tool_input)
+                                        tc.result = tool_result
+                                        tc.execution_time = time.time() - start_time
+                                        tool_results.append({
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_id,
+                                            "content": str(tool_result),
+                                        })
+                                    except Exception as e:
+                                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                                        if isinstance(e, HumanInteractionInterrupt):
+                                            e.session_id = session_id
+                                            e.messages = messages + [
+                                                {"role": "assistant", "content": result_content}
+                                            ]
+                                            e.tool_call_id = tool_id
+                                            e.agent_name = model
+                                            raise
+                                        tc.error = str(e)
+                                        tool_results.append({
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_id,
+                                            "is_error": True,
+                                            "content": str(e),
+                                        })
+                                    all_tool_calls.append(tc)
+
+                            # Append assistant turn + tool results, loop.
+                            messages.append({"role": "assistant", "content": result_content})
+                            messages.append({"role": "user", "content": tool_results})
+                            payload["messages"] = messages
+                        else:
+                            # Not a tool-use stop — done streaming.
+                            if stop_reason == 'max_tokens':
+                                max_tokens_reached = True
+                            break
 
                 except Exception as e:
                     # Handle rate limits and server errors
@@ -1043,6 +1120,7 @@ class AnthropicClient(AbstractClient):
                     break
 
         # Yield final AIMessage with full metadata
+        tools_used = [tc.name for tc in all_tool_calls]
         if final_message is not None:
             ai_message = AIMessageFactory.from_claude(
                 response=final_message.model_dump(),
@@ -1051,6 +1129,7 @@ class AnthropicClient(AbstractClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+                tool_calls=all_tool_calls,
             )
         else:
             ai_message = AIMessage(
@@ -1067,6 +1146,7 @@ class AnthropicClient(AbstractClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+                tool_calls=all_tool_calls,
             )
         # Update conversation memory BEFORE yielding the final AIMessage so the
         # memory write executes even if the consumer stops iterating after receiving
@@ -1085,7 +1165,7 @@ class AnthropicClient(AbstractClient):
                 turn_id,
                 original_prompt,
                 assistant_content,
-                []  # No tools used in streaming
+                tools_used,
             )
 
         # FEAT-176: lifecycle event — AfterClientCallEvent for stream

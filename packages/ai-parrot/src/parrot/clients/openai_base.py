@@ -894,10 +894,12 @@ class OpenAIBaseClient(AbstractClient):
         user_id: str | None = None,
         session_id: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        use_tools: bool = True,
         structured_output: type | StructuredOutputConfig | None = None,
         lazy_loading: bool = False,
+        **kwargs,
     ) -> AsyncIterator[str | AIMessage]:
-        """Stream a response with optional conversation memory.
+        """Stream a response with tool-use support and conversation memory.
 
         Generic chat-completions streaming implementation shared by every
         ``OpenAIBaseClient`` subclass. Subclasses needing Responses-API
@@ -908,8 +910,17 @@ class OpenAIBaseClient(AbstractClient):
         SDK directly, so a subclass's funnel override applies to streaming
         too.
 
+        When the model requests tool calls during streaming, the tool-call
+        chunks are accumulated, the tools executed between rounds, and a new
+        streaming request is issued with the tool results — mirroring the
+        ``_run_tool_call_loop()`` used by :meth:`ask`.
+
         Yields successive string chunks followed by a final
         :class:`~parrot.models.responses.AIMessage`.
+
+        Args:
+            use_tools: Whether to include tool definitions and run the
+                streaming tool-call loop.  Defaults to ``True``.
 
         Raises:
             NotImplementedError: If the resolved model requires Responses-API
@@ -933,7 +944,7 @@ class OpenAIBaseClient(AbstractClient):
             model=model_str,
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=system_prompt,
-            has_tools=False,
+            has_tools=bool(self.tools) and use_tools,
             parent_trace=None,
         )
         _lc_t0 = time.perf_counter()
@@ -964,7 +975,7 @@ class OpenAIBaseClient(AbstractClient):
                 self.register_tool(tool)
 
         tools_payload = None
-        if self.tools:
+        if use_tools and self.tools:
             if lazy_loading:
                 tools_payload = self._prepare_lazy_tools()
             else:
@@ -989,28 +1000,131 @@ class OpenAIBaseClient(AbstractClient):
             if response_format:
                 args["response_format"] = response_format
 
-        # `.parse()` cannot reliably stream every SDK's tool-calling/plain
-        # responses; only prefer it when structured output was requested —
-        # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
-        response_stream = await self._chat_completion(
-            model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
-        )
-
+        # ── Streaming tool-call loop ──────────────────────────────────
+        # Mirrors _run_tool_call_loop() used by ask(). Each round streams
+        # text and accumulates tool-call chunks; when the model finishes
+        # with tool calls, they are executed between rounds and the
+        # conversation continues.
+        all_tool_calls: list[ToolCall] = []
         assistant_content = ""
         usage_data = None
-        async for chunk in response_stream:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                text_chunk = chunk.choices[0].delta.content
-                assistant_content += text_chunk
-                yield text_chunk
-            if hasattr(chunk, "usage") and chunk.usage is not None:
-                usage_data = chunk.usage
+        _max_tool_rounds = 25  # safety cap
+
+        for _round in range(_max_tool_rounds):
+            # `.parse()` cannot reliably stream every SDK's tool-calling/plain
+            # responses; only prefer it when structured output was requested —
+            # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
+            response_stream = await self._chat_completion(
+                model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
+            )
+
+            # Accumulate tool-call chunks by index. OpenAI streams them
+            # incrementally: first chunk carries id+name, subsequent ones
+            # carry argument fragments.
+            _tc_accum: dict[int, dict[str, str]] = {}
+            _round_content = ""
+            _finish_reason: str | None = None
+
+            async for chunk in response_stream:
+                if chunk.choices:
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    if delta and delta.content:
+                        text_chunk = delta.content
+                        _round_content += text_chunk
+                        assistant_content += text_chunk
+                        yield text_chunk
+                    # Accumulate streamed tool-call fragments.
+                    if delta and getattr(delta, "tool_calls", None):
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            if idx not in _tc_accum:
+                                _tc_accum[idx] = {
+                                    "id": getattr(tc_delta, "id", None) or "",
+                                    "name": "",
+                                    "arguments": "",
+                                }
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    _tc_accum[idx]["name"] = tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    _tc_accum[idx]["arguments"] += tc_delta.function.arguments
+                    _finish_reason = getattr(choice, "finish_reason", None) or _finish_reason
+                if hasattr(chunk, "usage") and chunk.usage is not None:
+                    usage_data = chunk.usage
+
+            # ── Tool-use round: execute and loop ──────────────────────
+            if _tc_accum and _finish_reason in ("tool_calls", "stop"):
+                # Build assistant message with tool_calls for conversation.
+                tc_serialized = []
+                for idx in sorted(_tc_accum):
+                    tc_info = _tc_accum[idx]
+                    tc_serialized.append({
+                        "id": tc_info["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc_info["name"],
+                            "arguments": tc_info["arguments"],
+                        },
+                    })
+                messages.append({
+                    "role": "assistant",
+                    "content": _round_content or None,
+                    "tool_calls": tc_serialized,
+                })
+
+                for idx in sorted(_tc_accum):
+                    tc_info = _tc_accum[idx]
+                    try:
+                        tool_args = json.loads(tc_info["arguments"]) if tc_info["arguments"] else {}
+                    except (json.JSONDecodeError, TypeError):
+                        tool_args = {}
+                    tc = ToolCall(
+                        id=tc_info["id"],
+                        name=tc_info["name"],
+                        arguments=tool_args,
+                    )
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tc_info["name"], tool_args)
+                        tc.result = tool_result
+                        tc.execution_time = time.time() - start_time
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_info["id"],
+                            "name": tc_info["name"],
+                            "content": str(tool_result),
+                        })
+                    except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = messages
+                            e.tool_call_id = tc_info["id"]
+                            e.agent_name = model_str
+                            raise
+                        tc.error = str(e)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_info["id"],
+                            "name": tc_info["name"],
+                            "content": str(e),
+                        })
+                    all_tool_calls.append(tc)
+                # Continue to next streaming round.
+            else:
+                # No tool calls — append assistant content and break.
+                if _round_content:
+                    messages.append({"role": "assistant", "content": _round_content})
+                break
 
         if usage_data is not None:
             usage = CompletionUsage.from_openai(usage_data)
         else:
             usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
+        tools_used = [tc.name for tc in all_tool_calls]
         ai_message = AIMessage(
             input=prompt,
             output=assistant_content,
@@ -1021,6 +1135,7 @@ class OpenAIBaseClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
+            tool_calls=all_tool_calls,
         )
         await self._emit_after_call(
             _lc_tc,
@@ -1029,12 +1144,11 @@ class OpenAIBaseClient(AbstractClient):
             duration_ms=(time.perf_counter() - _lc_t0) * 1000,
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
-            finish_reason=None,
+            finish_reason=_finish_reason,
         )
         yield ai_message
 
         if assistant_content:
-            messages.append({"role": "assistant", "content": assistant_content})
             await self._update_conversation_memory(
                 user_id,
                 session_id,
@@ -1044,7 +1158,7 @@ class OpenAIBaseClient(AbstractClient):
                 turn_id,
                 prompt,
                 assistant_content,
-                [],
+                tools_used,
             )
 
     async def invoke(

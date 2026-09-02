@@ -132,10 +132,12 @@ async def _run(
             console.print(f"[bold red]O365 device-code identity error:[/bold red] {exc}")
             raise SystemExit(1) from exc
 
+    streaming = not no_stream
+
     # Build config and run the REPL
     config = REPLConfig(
         agent_name=name,
-        streaming=not no_stream,
+        streaming=streaming,
         server_url=server,
         permission_context=permission_context,
     )
@@ -152,6 +154,13 @@ async def _run(
     finally:
         if server and isinstance(loader, ServerAgentProxy):
             await loader.close()
+        # Clean up bot resources (aiohttp sessions, DB connections, etc.)
+        # to avoid "Unclosed client session" warnings on exit.
+        if hasattr(bot, "cleanup") and callable(bot.cleanup):
+            try:
+                await bot.cleanup()
+            except Exception:
+                logger.debug("Bot cleanup error (ignored on exit)", exc_info=True)
 
 
 async def _handle_list(

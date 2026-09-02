@@ -67,9 +67,11 @@ _PREFIXABLE_NAMESPACES: tuple[str, ...] = ("anthropic.", "amazon.", "meta.")
 # only governs (a) the default-when-omitted case and (b) whether an explicit
 # prefix on an already-Bedrock-shaped/vendor id is honoured or warned away.
 REQUIRES_REGION_PREFIX: dict[str, str] = {
-    "claude-opus-5": "us",       # no in-region access in us-west-2/us-east-2
-    "claude-fable-5": "global",  # geo IDs not published; global only
-    "claude-haiku-4-5": "us",    # geo access only via "us."
+    "claude-opus-5": "us",         # no in-region access in us-west-2/us-east-2
+    "claude-sonnet-5": "us",       # same tier as Opus 5
+    "claude-fable-5": "global",    # geo IDs not published; global only
+    "claude-fable-5-1": "global",  # same tier as Fable 5
+    "claude-haiku-4-5": "us",      # geo access only via "us."
     # Meta Llama 4 Maverick has NO in-region access in any US region — the
     # "us." geo inference profile is the only way to call it.
     "llama4-maverick-17b-instruct": "us",
@@ -111,10 +113,12 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
     "claude-3-5-haiku-20241022":  "anthropic.claude-3-5-haiku-20241022-v1:0",
 
     # ── Claude 5 (2026 generation, FEAT-405) ───────────────────────────────
-    # NOTE: Opus 5 / Fable 5 carry NO ``-vN:0`` suffix — breaks the
+    # NOTE: Claude 5 family models carry NO ``-vN:0`` suffix — breaks the
     # ``anthropic.<id>-vN:0`` convention used by every model above.
-    "claude-opus-5":  "anthropic.claude-opus-5",
-    "claude-fable-5": "anthropic.claude-fable-5",
+    "claude-opus-5":    "anthropic.claude-opus-5",
+    "claude-sonnet-5":  "anthropic.claude-sonnet-5",
+    "claude-fable-5":   "anthropic.claude-fable-5",
+    "claude-fable-5-1": "anthropic.claude-fable-5-1",
 
     # ── Not yet available on Bedrock (will warn+passthrough) ──────────────
     # claude-opus-4-8, claude-opus-4-7 — Bedrock IDs TBD.
