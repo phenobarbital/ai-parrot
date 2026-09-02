@@ -2,9 +2,9 @@
 id: FEAT-518
 title: PythonREPL WorkerPool death spiral — cold workers SIGKILLed by the 5 s namespace-API timeout
 slug: bug-workerpool-repl
-type: hotfix
+type: feature
 mode: investigation
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -12,7 +12,7 @@ source:
   fetched_at: 2026-09-02
   summary_oneline: PythonREPL WorkerPool death spiral — every python_repl_pandas call fails after 5s with an empty ValueError and the worker is restarted
 overall_confidence: high
-base_branch: main
+base_branch: dev
 research_state: sdd/state/FEAT-518/
 created: 2026-09-02
 updated: 2026-09-02
@@ -24,7 +24,7 @@ updated: 2026-09-02
 > **Confidence**: high (root cause reproduced on `dev`)
 > **Source**: `inline` (`/sdd-proposal bug-workerpool-repl -- …`, server log excerpt from the `flex_dashboard` bot, 2026-09-02 13:33–13:34)
 > **Audit**: [`sdd/state/FEAT-518/`](../state/FEAT-518/)
-> **Type / base**: `hotfix` on `main` is *proposed* (the released code is affected, F013) — see U1. If the user prefers a feature flow, flip `type: feature` / `base_branch: dev` in this frontmatter before `/sdd-spec`.
+> **Type / base**: `feature` on `dev` (U1 resolved: the bug is on `dev` and `main`, F013; it ships with the next release rather than as a hotfix).
 
 ---
 
@@ -134,7 +134,7 @@ grep -E "spawned worker pid=|repl_worker: ready|worker is dead" server.log | gre
 
 ### Hypothesis 3 — Production bootstrap is slow because each worker re-runs the whole `parrot` package init  · Confidence: medium
 
-**Supporting**: F005, F015, F016 · **Reasoning**: 1.95 s just to reach `STARTING APP: Navigator` on an idle dev box; navconfig/vault/logstash init and the tool-registry import all run in every child. Trimming the worker's import surface is a worthwhile secondary task but not the fix.
+**Supporting**: F005, F015, F016, F018 · **Reasoning**: 1.95 s just to reach `STARTING APP: Navigator` on an idle dev box; `-X importtime` (F018) attributes ~80 % of the 1.41 s import to navconfig/plugins, vault→documentdb, events/conf→navigator auth, and only ~16 % to pandas. Trimming the worker's import surface is a worthwhile secondary task but not the fix.
 
 ---
 
@@ -153,8 +153,9 @@ grep -E "spawned worker pid=|repl_worker: ready|worker is dead" server.log | gre
 | C9 | Not a regression; code unchanged since 2026-08-20 and identical on `main` | F012, F013 | high | git log / diff |
 | C10 | `ping()` is unused; no cold-worker namespace test exists | F014 | high | grep over src + tests |
 | C11 | The session's *first* worker death was the same cold-start timeout | F003 | low | report begins mid-spiral |
+| C12 | ~80 % of the worker's import is parrot framework init, ~16 % pandas (dev box) | F018 | high | `python -X importtime`; host share unmeasured |
 
-Distribution: **9** high, **1** medium, **1** low.
+Distribution: **10** high, **1** medium, **1** low.
 
 ---
 
@@ -162,19 +163,18 @@ Distribution: **9** high, **1** medium, **1** low.
 
 ### Resolved (during proposal phase)
 
-*(none — autonomous session, no interactive Q&A gate)*
+- [x] **U1 — Hotfix on `main` or feature on `dev`?** — *Resolved*: "currently the issue is on dev (also in main), add in dev to be later launched in a new release" → `type: feature`, `base_branch: dev`.
+  *Resolves claims*: C9
+- [x] **U2 — Should a namespace-API timeout on an alive worker stay lethal?** — *Resolved*: "execute deadline kill" → only the `execute()` `deadline_ms` may SIGKILL the worker; `set_var`/`get_var`/`list_vars`/`snapshot`/`inject_dataframe` timeouts fail softly (raise a *messaged* error, worker stays alive).
+  *Resolves claims*: C2
+- [x] **U3 — What dominates bootstrap on the affected host?** — *Resolved (partially)*: "maybe a research is required, I don't know the answer" → local profile added as F018: on the dev box ~80 % of the 1.41 s import is the parrot framework init (`navconfig`/`parrot.plugins` 0.58 s, `parrot.security.redaction`→vault→documentdb 0.28 s, `parrot.tools.abstract`→events/conf→`navigator` auth 0.25 s) and pandas is only 0.22 s. The affected host itself is still unmeasured.
+  *Resolves claims*: C8 (partially), C12
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **U1 — Hotfix on `main` or feature on `dev`?** — *Owner*: user
-  *Blocks claims*: C9 (base branch choice only)
-  *Plausible answers*: a) **hotfix, base `main`, sync-down to `staging`/`dev`** (proposed — production agents are unusable) · b) feature flow on `dev`
-- [ ] **U2 — Should a namespace-API timeout on an alive worker stay lethal?** — *Owner*: user / spec
-  *Blocks claims*: C2 (fix shape)
-  *Plausible answers*: a) keep lethal, but only *after* readiness is confirmed (a post-ready timeout then means a real hang) · b) make namespace timeouts non-lethal; only the `execute()` deadline kills · c) raise namespace timeouts to `deadline_ms` and keep lethal
-- [ ] **U3 — What is spawn→ready on the affected host, and what dominates?** — *Owner*: user (needs host access)
+- [ ] **U3b — Measure spawn→`repl_worker: ready` and `python -X importtime` on the affected host** — *Owner*: tbd (needs host access)
   *Blocks claims*: C8
-  *Plausible answers*: a) > 5 s from `parrot` package init (navconfig/vault/logstash) → also trim the worker import surface · b) > 5 s from CPU contention → handshake alone suffices · c) < 5 s normally, incident was a load spike
+  *Plausible answers*: a) network-bound navconfig/vault init dominates → trim the worker import surface in the same feature · b) CPU contention dominates → readiness handshake alone suffices
 
 ---
 
@@ -184,10 +184,10 @@ Distribution: **9** high, **1** medium, **1** low.
 
 1. **Readiness handshake** — `WorkerHandle.start()` (or `WorkerPool._spawn_handle`) waits for the worker to answer (`ping()` exists, 10 s, unused) or the worker writes an explicit `ready` frame after `WorkerNamespace` is built; spares are appended to `_prewarmed` only once ready; `acquire()` never binds a not-yet-ready spare (or awaits its readiness, bounded).
 2. **Namespace-API budget** — replace the hard-coded `5.0` with a `WorkerConfig` field (and/or derive from `deadline_ms`), so operators have a knob; consider a `bootstrap_timeout_ms`.
-3. **Timeout semantics** (U2) — decide lethal vs soft for non-exec requests; whichever is chosen, the error must carry a message and, if the worker is killed, the G5 loss dict (`lost_variables`) must be produced instead of a bare `TimeoutError('')`.
+3. **Timeout semantics** (U2, decided) — only the `execute()` deadline kills; every other request type times out *softly*: the worker stays alive, the caller gets a messaged error (never a bare `TimeoutError('')`), and a worker that IS killed by the deadline still produces the G5 loss dict (`lost_variables`).
 4. **Spiral breaker** — `acquire()` should prefer the *readiest* spare (not `pop(0)`), and a session that has failed N consecutive cold-start cycles should surface a clear error instead of burning spares.
 5. **Regression test** — turn Probe B (F016) into a deterministic test: a worker whose bootstrap is artificially delayed beyond the namespace timeout must still serve `set_var` + `execute` successfully.
-6. **Secondary** (H3) — measure and trim the worker's import surface (`-X importtime`), since every spawn re-runs the full `parrot` package init.
+6. **Secondary** (H3, F018) — trim the worker's import surface: ~80 % of the child's import is parrot framework init (navconfig/plugins, vault→documentdb, events/conf→navigator auth) that the REPL never uses; include a host-side `-X importtime` probe task (U3b).
 
 ### Alternatives
 
@@ -204,22 +204,22 @@ Distribution: **9** high, **1** medium, **1** low.
 | State checkpoints | `sdd/state/FEAT-518/state.json` |
 | Source (raw) | `sdd/state/FEAT-518/source.md` |
 | Research plan | `sdd/state/FEAT-518/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-518/findings/F001-*.md` … `F017-*.md` |
+| Findings (digests) | `sdd/state/FEAT-518/findings/F001-*.md` … `F018-*.md` |
 | Synthesis (JSON) | `sdd/state/FEAT-518/synthesis.json` |
 | Synthesis reasoning | `sdd/state/FEAT-518/synthesis.thinking.log` |
 
 **Budget consumed** (profile `default`):
-- Files read: 13 / 40
+- Files read: 14 / 40
 - Grep calls: 15 / 25
 - Git calls: 4 / 10
 - Wiki calls: 2 (free)
-- Local probes: 3 (idle baseline, loaded + DataFrame seeding, loaded + scalar seeding)
+- Local probes: 4 (idle baseline, loaded + DataFrame seeding, loaded + scalar seeding, `-X importtime` profile)
 - Wall time: ≈480 s / 300 s (exceeded by the load probes; research was otherwise complete — not truncated)
 - Truncated: **no**
 
 **Mode determination**: `auto` → `investigation` (negations: "dying", "dead", "not able", "failed").
 
-**Gates**: the session ran autonomously; the plan gate and review gate were auto-approved (equivalent to `--no-gate`) and the Q&A phase was skipped — U1–U3 are left for the user in §5.
+**Gates**: the plan and review gates were auto-approved (autonomous session, equivalent to `--no-gate`); the Q&A phase ran afterwards — U1–U3 answered by the user on 2026-09-02 (§5).
 
 ---
 
