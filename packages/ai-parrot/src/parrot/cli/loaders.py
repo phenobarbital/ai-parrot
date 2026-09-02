@@ -59,6 +59,10 @@ class StandaloneAgentLoader:
     Uses ``AgentRegistry.get_instance()`` with fuzzy name matching fallback
     and an interactive ``questionary.select()`` picker when no name is given.
 
+    On first use, runs the full discovery pipeline (module imports, YAML
+    config, YAML definitions) so that decorator-registered and
+    config-registered agents are available even without a running server.
+
     Attributes:
         logger: Module-level logger.
     """
@@ -66,6 +70,39 @@ class StandaloneAgentLoader:
     def __init__(self) -> None:
         """Initialise the standalone loader."""
         self.logger = logging.getLogger(__name__)
+        self._discovered = False
+
+    async def _ensure_discovered(self) -> None:
+        """Run the registry discovery pipeline once.
+
+        Mirrors the three-step sequence from
+        ``BotManager.load_bots()`` so that CLI-launched agents
+        have the same visibility as server-launched ones:
+
+        1. ``load_modules()`` — import ``*.py`` files from every
+           discovery directory, triggering ``@register_agent`` decorators.
+        2. ``discover_config_agents()`` — register agents declared in
+           ``agents.yaml``.
+        3. ``load_agent_definitions()`` — register agents from YAML
+           definition files in ``agents/agents/``.
+        """
+        if self._discovered:
+            return
+        self._discovered = True
+
+        # Step 1: decorator-based discovery (imports *.py)
+        imported = await agent_registry.load_modules()
+        self.logger.debug("Discovery: imported %d module(s)", imported)
+
+        # Step 2: agents.yaml config entries
+        config_count = agent_registry.discover_config_agents()
+        self.logger.debug("Discovery: %d agent(s) from config", config_count)
+
+        # Step 3: YAML agent definition files (agents/agents/*.yaml)
+        definitions_dir = agent_registry.agents_dir / "agents"
+        if definitions_dir.is_dir():
+            def_count = agent_registry.load_agent_definitions(definitions_dir)
+            self.logger.debug("Discovery: %d agent(s) from YAML definitions", def_count)
 
     async def load(self, name: str) -> AbstractBot:
         """Load a registered agent by name.
@@ -82,6 +119,7 @@ class StandaloneAgentLoader:
         Raises:
             AgentLoadError: If the agent is not found, with fuzzy suggestions.
         """
+        await self._ensure_discovered()
         self.logger.debug("Loading agent '%s' from registry", name)
         bot = await agent_registry.get_instance(name)
         if bot is None:
@@ -97,6 +135,7 @@ class StandaloneAgentLoader:
         Returns:
             List of ``BotMetadata`` instances from the registry.
         """
+        await self._ensure_discovered()
         return list(agent_registry._registered_agents.values())
 
     async def select_agent(self) -> str:
@@ -111,6 +150,7 @@ class StandaloneAgentLoader:
         Raises:
             AgentLoadError: If no agents are registered.
         """
+        await self._ensure_discovered()
         agents = list(agent_registry._registered_agents.keys())
         if not agents:
             raise AgentLoadError(

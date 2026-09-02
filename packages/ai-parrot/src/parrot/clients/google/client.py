@@ -113,6 +113,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = "gemini-3.1-flash-lite"
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite"
+    # Gemini bills reasoning tokens against max_output_tokens, and the Gemini 3.x
+    # Pro family is thinking-only (see _requires_thinking) so reasoning cannot be
+    # switched off. Reasoning routinely consumes several thousand tokens before
+    # the first byte of the answer, so invoke() needs materially more headroom
+    # than the framework default. Gemini accepts up to 65535 output tokens; this
+    # is only a cap, billing follows actual usage.
+    _invoke_max_tokens: int = 16384
     # Default prefixes for which tools + response_schema may be sent in a
     # single GenerateContentConfig (FEAT-193). Override per-subclass by
     # setting this attribute, or per-instance via the constructor kwarg
@@ -1041,7 +1048,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return text
 
         if isinstance(output_config, StructuredOutputConfig):
-            return await self._parse_structured_output(structured_text, output_config)
+            return await self._parse_structured_output(
+                structured_text,
+                output_config,
+                finish_reason=self._extract_finish_reason(structured_response),
+            )
         elif isinstance(output_config, type):
             if hasattr(output_config, "model_validate_json"):
                 return output_config.model_validate_json(structured_text)
@@ -3400,6 +3411,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Handle structured output
         final_output = None
+        if structured_output_for_later or output_config:
+            # A MAX_TOKENS response is known-truncated: fail here, before the
+            # fast-path/reformat/combined-mode parsers below can leak the
+            # truncated text as a plain string or "reformat" a partial answer.
+            # Deliberately NOT gated on non-empty text: a reasoning model can
+            # burn the whole output budget on thinking and return MAX_TOKENS
+            # with no text at all, which must not parse as "".
+            self._raise_if_truncated(self._extract_finish_reason(final_response), model=model)
         if structured_output_for_later and use_tools and assistant_response_text:
             try:
                 # Create a new generation config for structured output only
@@ -3512,7 +3531,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # Parse the structured output
                         if isinstance(structured_output_for_later, StructuredOutputConfig):
                             final_output = await self._parse_structured_output(
-                                structured_text, structured_output_for_later
+                                structured_text,
+                                structured_output_for_later,
+                                finish_reason=self._extract_finish_reason(structured_response),
                             )
                         elif isinstance(structured_output_for_later, type):
                             if hasattr(structured_output_for_later, "model_validate_json"):
@@ -3525,6 +3546,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     else:
                         self.logger.warning("No structured text received, falling back to original response")
                         final_output = assistant_response_text
+            except InvokeError:
+                # A truncated reformat response is a real error, not a fallback case.
+                raise
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails
@@ -3549,6 +3573,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     )
                 else:
                     final_output = parsed
+            except InvokeError:
+                # A truncated reformat response is a real error, not a fallback case.
+                raise
             except Exception as e:
                 self.logger.warning(
                     "Combined-mode parse raised %s — falling back to reformat call.",
@@ -3561,6 +3588,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
+                except InvokeError:
+                    raise
                 except Exception as reformat_err:
                     self.logger.error("Recovery reformat also failed: %s", reformat_err)
                     final_output = assistant_response_text
@@ -4811,7 +4840,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     try:
                         output_config = self._get_structured_config(structured_output)
                         if isinstance(output_config, StructuredOutputConfig):
-                            final_output = await self._parse_structured_output(text_response, output_config)
+                            final_output = await self._parse_structured_output(
+                                text_response,
+                                output_config,
+                                finish_reason=self._extract_finish_reason(item),
+                            )
                         elif isinstance(structured_output, type):
                             if hasattr(structured_output, "model_validate_json"):
                                 final_output = structured_output.model_validate_json(text_response)
@@ -4991,7 +5024,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         final_output = None
         if structured_output_config:
             try:
-                final_output = await self._parse_structured_output(response.text, structured_output_config)
+                final_output = await self._parse_structured_output(
+                    response.text,
+                    structured_output_config,
+                    finish_reason=self._extract_finish_reason(response),
+                )
+            except InvokeError:
+                raise
             except Exception as e:
                 self.logger.error(f"Failed to parse structured output from vision model: {e}")
                 final_output = response.text
@@ -5320,7 +5359,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         _extracted_text = self._safe_extract_text(response)
         if output_config:
             try:
-                final_output = await self._parse_structured_output(_extracted_text, output_config)
+                final_output = await self._parse_structured_output(
+                    _extracted_text,
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
+                )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = _extracted_text
 
@@ -5468,7 +5513,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -5500,6 +5545,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
@@ -5576,10 +5622,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Parse output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                        model=resolved_model,
+                    )
 
             # Extract usage
             usage_dict: Dict[str, Any] = {}

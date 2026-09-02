@@ -367,10 +367,18 @@ class GrokClient(AbstractClient):
         structured_payload = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response))
                 if output_config.custom_parser:
                     structured_payload = output_config.custom_parser(text_content)
                 else:
-                    structured_payload = await self._parse_structured_output(text_content, output_config)
+                    structured_payload = await self._parse_structured_output(
+                        text_content,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                    )
+            except InvokeError:
+                raise
             except Exception:
                 pass
 
@@ -703,7 +711,7 @@ class GrokClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -714,6 +722,7 @@ class GrokClient(AbstractClient):
         structured output. A single ``chat.sample()`` or ``chat.parse()``
         call is made — no retry, no history, no prompt builder.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
@@ -753,16 +762,26 @@ class GrokClient(AbstractClient):
             output: Any
             if use_sdk_parse and config:
                 response, parsed = await chat.parse(config.output_type)
+                # The SDK may have parsed a truncated payload (or raised a
+                # generic error on it): attribute the failure to truncation.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 output = parsed
             else:
                 response = await chat.sample()
                 raw_text = response.content or ""
                 output = raw_text
                 if config:
+                    # Known-truncated output must not reach a custom parser either.
+                    self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                     if config.custom_parser:
                         output = config.custom_parser(raw_text)
                     else:
-                        output = await self._parse_structured_output(raw_text, config)
+                        output = await self._parse_structured_output(
+                            raw_text,
+                            config,
+                            finish_reason=self._extract_finish_reason(response),
+                            model=resolved_model,
+                        )
 
             usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
             return self._build_invoke_result(

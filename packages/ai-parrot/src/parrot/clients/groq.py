@@ -80,6 +80,10 @@ class GroqClient(OpenAIBaseClient):
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
     _lightweight_model: str = "kimi-k2-instruct"
+    # Groq caps completion tokens at 4096 for most hosted models; asking for
+    # more is rejected outright rather than clamped, so invoke() must not
+    # inherit AbstractClient's more generous default.
+    _invoke_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -652,16 +656,21 @@ class GroqClient(OpenAIBaseClient):
             ) else structured_response.choices[0].message
 
             parsed_config = structured_output_for_later
+            _final_response = structured_response
         else:
             parsed_config = request_output_config
+            _final_response = response
 
         response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         if parsed_config:
             try:
                 final_output = await self._parse_structured_output(
                     response_text,
-                    parsed_config
+                    parsed_config,
+                    finish_reason=self._extract_finish_reason(_final_response),
                 )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
         else:
@@ -1201,8 +1210,11 @@ Format your response clearly with these sections.
             try:
                 final_output = await self._parse_structured_output(
                     result.content,
-                    output_config
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = result.content
 
@@ -1327,8 +1339,11 @@ Format your response clearly with these sections.
         try:
             final_output = await self._parse_structured_output(
                 result.content,
-                output_config
+                output_config,
+                finish_reason=self._extract_finish_reason(response),
             )
+        except InvokeError:
+            raise
         except Exception:
             final_output = result.content
 
@@ -1353,7 +1368,7 @@ Format your response clearly with these sections.
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1385,6 +1400,7 @@ Format your response clearly with these sections.
         Raises:
             :class:`InvokeError`: On provider errors.
         """
+        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
@@ -1464,10 +1480,17 @@ Format your response clearly with these sections.
             # Parse output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_groq(final_response.usage)
             return self._build_invoke_result(

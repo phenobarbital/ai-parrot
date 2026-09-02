@@ -491,7 +491,21 @@ class BaseBot(AbstractBot):
                     if output_mode == OutputMode.A2UI:
                         # FEAT-273: A2UI envelopes bypass the legacy formatter entirely.
                         finalize_a2ui_response(response)
-                    elif output_mode != OutputMode.DEFAULT:
+                    elif output_mode in (
+                        OutputMode.DEFAULT,
+                        OutputMode.TERMINAL,
+                        OutputMode.TELEGRAM,
+                        OutputMode.MSTEAMS,
+                        OutputMode.SLACK,
+                        OutputMode.WHATSAPP,
+                    ):
+                        # Passthrough modes: TERMINAL is rendered by the CLI
+                        # REPL; chat-channel modes are handled by their
+                        # respective integrations — neither needs the
+                        # formatter pipeline.
+                        if output_mode != OutputMode.DEFAULT:
+                            response.output_mode = output_mode
+                    else:
                         # Check if data is empty and try to extract it from output
                         extracted_data = None
                         if not response.data:
@@ -1434,6 +1448,7 @@ class BaseBot(AbstractBot):
                 if interactive_envelope is not None or infographic_envelope is not None:
                     pass  # already finalized above — skip the formatter
                 elif output_mode in [
+                    OutputMode.TERMINAL,
                     OutputMode.TELEGRAM,
                     OutputMode.MSTEAMS,
                     OutputMode.SLACK,
@@ -1760,6 +1775,7 @@ class BaseBot(AbstractBot):
                     "temperature": kwargs.get("temperature", 0),
                     "user_id": user_id,
                     "session_id": session_id,
+                    "use_tools": kwargs.get("use_tools", True),
                 }
 
                 if "tool_type" in kwargs:

@@ -640,6 +640,19 @@ class OpenAIClient(OpenAIBaseClient):
             if isinstance(item, dict):
                 stop_reason = stop_reason or item.get("stop_reason")
 
+        # 4b) The Responses API reports truncation at the top level, not per
+        #     output item: ``status="incomplete"`` with
+        #     ``incomplete_details.reason`` ("max_output_tokens" |
+        #     "content_filter"). Surface it as the Chat-style finish_reason so
+        #     the shared truncation guard (_raise_if_truncated) can see it.
+        if finish_reason is None and getattr(resp, "status", None) == "incomplete":
+            details = getattr(resp, "incomplete_details", None)
+            if isinstance(details, dict):
+                finish_reason = details.get("reason")
+            else:
+                finish_reason = getattr(details, "reason", None)
+            finish_reason = finish_reason or "incomplete"
+
         # 5) Build a Chat-like container
         class _Msg:
             def __init__(self, content, tool_calls):
@@ -938,10 +951,19 @@ class OpenAIClient(OpenAIBaseClient):
         final_output = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=model_str)
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=model_str,
+                    )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 
@@ -1017,6 +1039,7 @@ class OpenAIClient(OpenAIBaseClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: bool = True,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
@@ -1024,6 +1047,7 @@ class OpenAIClient(OpenAIBaseClient):
         enable_web_search: bool = True,
         enable_code_interpreter: bool = False,
         lazy_loading: bool = False,
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream OpenAI's response with optional conversation memory.
 
@@ -1065,7 +1089,7 @@ class OpenAIClient(OpenAIBaseClient):
             model=model_str,
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=system_prompt,
-            has_tools=False,
+            has_tools=bool(self.tools) and use_tools,
             parent_trace=None,
         )
         _lc_t0_gpts = _lc_time_gpts.perf_counter()
@@ -1276,47 +1300,128 @@ class OpenAIClient(OpenAIBaseClient):
             if output_config:
                 chat_args["response_format"] = output_config.output_type
             usage_data = None
-            # FEAT-438 G3: route through the single completion funnel
-            # (_chat_completion) instead of calling the SDK directly.
-            # `_chat_completion`'s dispatch (`.parse()` only when
-            # use_tools=False) reproduces this branch's original "prefer
-            # .parse() only when output_config is set" intent. Documented,
-            # authorized behavior change (spec G3 / TASK-2298 Completion
-            # Note): this drops the narrow SDK-version TypeError→create()
-            # fallback the direct-call version had for
-            # `.parse(stream=True, ...)`.
-            response_stream = await self._chat_completion(
-                model=model_str,
-                messages=messages,
-                use_tools=not bool(output_config),
-                stream=True,
-                **chat_args,
-            )
+            all_tool_calls: List[ToolCall] = []
+            _max_tool_rounds = 25  # safety cap
 
-            async for chunk in response_stream:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    text_chunk = chunk.choices[0].delta.content
-                    assistant_content += text_chunk
-                    # FEAT-176: per-chunk event
-                    if _lc_has_chunk_subs_gpt:
-                        await self.events.emit(
-                            _GPTStreamChunkEvent(
-                                trace_context=_lc_tc_gpts,
-                                client_name="openai",
-                                model=model_str,
-                                chunk_index=_lc_chunk_idx_gpt,
-                                chunk_size_bytes=len(text_chunk.encode("utf-8")),
-                                source_type="client",
-                                source_name="openai",
-                            )
-                        )
-                        _lc_chunk_idx_gpt += 1
-                    yield text_chunk
-                # Capture usage from the final chunk (present when stream_options.include_usage=True)
-                if hasattr(chunk, "usage") and chunk.usage is not None:
-                    usage_data = chunk.usage
+            # ── Streaming tool-call loop (Chat Completions path) ──
+            for _tool_round in range(_max_tool_rounds):
+                # FEAT-438 G3: route through the single completion funnel
+                response_stream = await self._chat_completion(
+                    model=model_str,
+                    messages=messages,
+                    use_tools=use_tools and not bool(output_config),
+                    stream=True,
+                    **chat_args,
+                )
+
+                _finish_reason = None
+                # Accumulator for incremental tool-call chunks (keyed by index)
+                _tc_accum: Dict[int, Dict[str, str]] = {}
+
+                async for chunk in response_stream:
+                    if chunk.choices:
+                        delta = chunk.choices[0].delta
+                        _finish_reason = chunk.choices[0].finish_reason or _finish_reason
+
+                        if delta and delta.content:
+                            text_chunk = delta.content
+                            assistant_content += text_chunk
+                            # FEAT-176: per-chunk event
+                            if _lc_has_chunk_subs_gpt:
+                                await self.events.emit(
+                                    _GPTStreamChunkEvent(
+                                        trace_context=_lc_tc_gpts,
+                                        client_name="openai",
+                                        model=model_str,
+                                        chunk_index=_lc_chunk_idx_gpt,
+                                        chunk_size_bytes=len(text_chunk.encode("utf-8")),
+                                        source_type="client",
+                                        source_name="openai",
+                                    )
+                                )
+                                _lc_chunk_idx_gpt += 1
+                            yield text_chunk
+
+                        # Accumulate tool-call fragments by index
+                        if delta and hasattr(delta, "tool_calls") and delta.tool_calls:
+                            for tc_chunk in delta.tool_calls:
+                                idx = tc_chunk.index
+                                if idx not in _tc_accum:
+                                    _tc_accum[idx] = {"id": "", "name": "", "arguments": ""}
+                                if tc_chunk.id:
+                                    _tc_accum[idx]["id"] = tc_chunk.id
+                                if tc_chunk.function:
+                                    if tc_chunk.function.name:
+                                        _tc_accum[idx]["name"] = tc_chunk.function.name
+                                    if tc_chunk.function.arguments:
+                                        _tc_accum[idx]["arguments"] += tc_chunk.function.arguments
+
+                    # Capture usage from the final chunk
+                    if hasattr(chunk, "usage") and chunk.usage is not None:
+                        usage_data = chunk.usage
+
+                # If the model requested tool calls, execute them and loop
+                if _tc_accum and _finish_reason in ("tool_calls", "stop") and use_tools:
+                    import json as _tc_json
+
+                    # Build the assistant message with tool_calls for the conversation
+                    oai_tool_calls = []
+                    for idx in sorted(_tc_accum):
+                        acc = _tc_accum[idx]
+                        oai_tool_calls.append({
+                            "id": acc["id"],
+                            "type": "function",
+                            "function": {"name": acc["name"], "arguments": acc["arguments"]},
+                        })
+                    assistant_msg: Dict[str, Any] = {"role": "assistant", "content": assistant_content or None}
+                    assistant_msg["tool_calls"] = oai_tool_calls
+                    messages.append(assistant_msg)
+
+                    # Execute each tool and feed results back
+                    for tc_entry in oai_tool_calls:
+                        tool_name = tc_entry["function"]["name"]
+                        try:
+                            tool_args = _tc_json.loads(tc_entry["function"]["arguments"])
+                        except _tc_json.JSONDecodeError:
+                            tool_args = {}
+                        tc = ToolCall(id=tc_entry["id"], name=tool_name, arguments=tool_args)
+                        try:
+                            start_t = time.time()
+                            tool_result = await self._execute_tool(tool_name, tool_args)
+                            tc.result = tool_result
+                            tc.execution_time = time.time() - start_t
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc_entry["id"],
+                                "content": str(tool_result),
+                            })
+                        except Exception as e:
+                            from parrot.core.exceptions import HumanInteractionInterrupt
+
+                            if isinstance(e, HumanInteractionInterrupt):
+                                e.session_id = session_id
+                                e.messages = list(messages)
+                                e.tool_call_id = tc_entry["id"]
+                                e.agent_name = model_str
+                                raise
+                            tc.error = str(e)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc_entry["id"],
+                                "content": f"Error: {e}",
+                            })
+                        all_tool_calls.append(tc)
+
+                    # Reset text accumulator for the next round (tool result
+                    # round may produce new text)
+                    assistant_content = ""
+                    continue
+
+                # Not a tool-call stop — done streaming
+                break
 
             # Build and yield final AIMessage for Chat Completions path
+            tools_used = [tc.name for tc in all_tool_calls]
             if usage_data is not None:
                 chat_usage = CompletionUsage.from_openai(usage_data)
             else:
@@ -1331,6 +1436,7 @@ class OpenAIClient(OpenAIBaseClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+                tool_calls=all_tool_calls,
             )
             # FEAT-176: lifecycle event — AfterClientCallEvent (Chat Completions path)
             _lc_chat_usage = getattr(chat_ai_message, "usage", None)
@@ -1341,7 +1447,7 @@ class OpenAIClient(OpenAIBaseClient):
                 duration_ms=(_lc_time_gpts.perf_counter() - _lc_t0_gpts) * 1000,
                 input_tokens=getattr(_lc_chat_usage, "prompt_tokens", None) if _lc_chat_usage else None,
                 output_tokens=getattr(_lc_chat_usage, "completion_tokens", None) if _lc_chat_usage else None,
-                finish_reason=None,
+                finish_reason=_finish_reason,
             )
             yield chat_ai_message
 
@@ -1358,7 +1464,7 @@ class OpenAIClient(OpenAIBaseClient):
                 turn_id,
                 prompt,
                 assistant_content,
-                [],
+                tools_used if 'tools_used' in dir() else [],
             )
 
     # batch_ask() moved to OpenAIBaseClient (FEAT-438 Module 2) — the
