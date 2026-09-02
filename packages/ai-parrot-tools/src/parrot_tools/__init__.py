@@ -162,6 +162,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "query_plan": "parrot_tools.think.QueryPlanTool",
     "rag_retrieval_think": "parrot_tools.think.RAGRetrievalThinkTool",
     "troc_operations": "parrot_tools.troc.tool.TROCOperationsToolkit",
+    "publish_surface": "parrot_tools.ui_surfaces.PublishSurfaceTool",
     "what_if": "parrot_tools.whatif_toolkit.WhatIfToolkit",
     "workday": "parrot_tools.workday.tool.WorkdayToolkit",
     "y_finance": "parrot_tools.yfinance.YFinanceTool",
