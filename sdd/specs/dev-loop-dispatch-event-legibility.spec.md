@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-496
 **Date**: 2026-09-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 
 ---
@@ -128,10 +128,9 @@ pipe and needs no change):
 - New event *kinds*. The `DispatchEvent.kind` Literal
   (`models/base.py:745-754`) is unchanged — this feature enriches payloads,
   it does not add a taxonomy.
-- Reworking `examples/dev_loop/static/index.html` (the bug-mode console) or
-  `afd.html`. Only `dev.html` is in scope; `index.html` shares the
-  `briefOf`/`nodesForRender` shape and may be updated opportunistically but
-  is not an acceptance criterion.
+- Reworking `examples/dev_loop/static/afd.html`. It does not render a node
+  event log and is untouched. (`index.html`, the bug/feature-mode console,
+  **is** in scope — see §8's resolved question and Module 9.)
 - Persisting a per-seat projection into `DevLoopSessionState.nodes` keyed by
   seat. `NodeId` is a closed `Literal` (`session_state.py:140-159`) and
   widening it is a breaking change to every persisted envelope; see §2
@@ -440,7 +439,7 @@ class DevLoopCodeDispatcher(Protocol):
   `code_review.py:775-800` (one per judge, carrying `judge_id`).
 - **Depends on**: Modules 1, 3, 4, 5.
 
-### Module 8: Console — summary + seat grouping
+### Module 8: Console — summary + seat grouping (`dev.html`)
 
 - **Path**: `examples/dev_loop/static/dev.html`
 - **Responsibility**: `briefOf` (`:494`) prefers `p.summary`;
@@ -448,6 +447,24 @@ class DevLoopCodeDispatcher(Protocol):
   `eventRowsHtml` (`:1011`) renders a seat + task badge per row;
   `nodeMetaHtml` (`:1031`) renders the seat table from `dispatch.seats`.
 - **Depends on**: Modules 2, 6, 7.
+
+### Module 9: Console parity — `index.html`
+
+- **Path**: `examples/dev_loop/static/index.html`
+- **Responsibility**: apply the identical Module 8 treatment to the
+  bug/feature-mode console, which carries its own copy of every one of
+  those functions at different line numbers: `briefOf` (`:447`, `tool_name`
+  at `:455`, the `keys[0]` fallback at `:463`), `foldAction` (`:498`),
+  the `app.events` keying (`:602-604`), `nodesForRender` (`:774-788`, whose
+  `TOPOLOGY[app.mode]` at `:775` covers both the `bug` and `feature`
+  topologies at `:336-350`), `eventRowsHtml` (`:790`, the "not been
+  dispatched yet" string at `:792`) and `nodeMetaHtml` (`:810-818`).
+  Deliberately a separate module from Module 8: same change, different
+  file, no shared symbols — so the two can run on different seats.
+  **No divergence permitted** — if Module 8 changes the seat-grouping rule
+  or the badge shape, this module matches it exactly.
+- **Depends on**: Module 8 (adopts its resolved rendering decisions rather
+  than re-deciding them).
 
 ---
 
@@ -531,6 +548,10 @@ def dispatch_labels():
 - [ ] **AC7** — In `dev.html`, the Development card renders its seats and
       their events; it never shows *"This node has not been dispatched
       yet"* while seats are running.
+- [ ] **AC7b** — `index.html` behaves identically to `dev.html` on both its
+      `bug` and `feature` topologies: `briefOf` prefers `summary`, seat
+      events render under their owning node, and no rendering decision
+      diverges from Module 8.
 - [ ] **AC8** — Each QA judge's events are attributable via `judge_id`.
 - [ ] **AC9** — `codex`, `gemini` and `google_coding` events expose
       `tool_name`/`summary` while still carrying their raw provider event
@@ -747,6 +768,22 @@ function nodesForRender()                                     // line 995
 function eventRowsHtml(nodeId, events)                        // line 1011
 //   "This node has not been dispatched yet."                 // line 1013
 function nodeMetaHtml(n)                                      // line 1031
+
+// examples/dev_loop/static/index.html — an INDEPENDENT copy of the same
+// functions at different line numbers. Nothing is shared between the two
+// consoles; both must be edited.
+const TOPOLOGY = { bug: [...8 ids...], feature: [...] }      // line 336-350
+function briefOf(kind, p)                                     // line 447
+//   if (p.tool_name) return String(p.tool_name);             // line 455
+//   return keys.length ? `${keys[0]}=${...}` : "";           // line 463  ← same bug surface
+function foldAction(a)                                        // line 498
+//   app.events keyed by env.node_id (seats included)         // lines 602-604
+function nodesForRender()                                     // line 774
+//   const spec = TOPOLOGY[app.mode] || TOPOLOGY.bug;         // line 775  ← two topologies
+//   const events = app.events.get(n.id) || [];               // line 778  ← seats dropped
+function eventRowsHtml(nodeId, events)                        // line 790
+//   "This node has not been dispatched yet."                 // line 792
+function nodeMetaHtml(n)                                      // line 810-818
 ```
 
 ### Integration Points
@@ -767,6 +804,7 @@ function nodeMetaHtml(n)                                      // line 1031
 | labels build | `JudgePanelReviewDispatcher.review` | per-judge in `gather` | `code_review.py:786-800` |
 | `p.summary` branch | `briefOf` | first branch | `dev.html:494-511` |
 | seat grouping | `nodesForRender` | prefix match on node id | `dev.html:995-1009` |
+| `p.summary` branch + seat grouping | `index.html` copies | same edits, second console | `index.html:447,463,774-788` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -796,8 +834,13 @@ Verified absent from the codebase on 2026-09-02 (`grep -rn` over
   `decision`, `command`/`cmd`, `criterion`, `tool_name`, `pr_url`,
   `issue_key`, `step`, `error`, `status`, `kind`, then the `keys[0]`
   fallback. No `summary`.
-- ~~Per-seat rendering in `dev.html`~~ — `nodesForRender` reads only the ten
-  `TOPOLOGY.dev` ids.
+- ~~Per-seat rendering in `dev.html` or `index.html`~~ — both
+  `nodesForRender` implementations read only their fixed `TOPOLOGY` ids
+  (`dev.html:999`, `index.html:778`).
+- ~~A shared JS module between `dev.html` and `index.html`~~ — there is
+  none. `briefOf`, `foldAction`, `nodesForRender`, `eventRowsHtml` and
+  `nodeMetaHtml` are each duplicated verbatim in both files; editing one
+  does not affect the other.
 - ~~A `parrot/` package at the repo root~~ — the source root is
   `packages/ai-parrot/src/parrot/`.
 
@@ -836,9 +879,14 @@ Verified absent from the codebase on 2026-09-02 (`grep -rn` over
   reported 0 messages and 0 tool uses. Module 6 **adds** seat detail; it
   must not remove or bypass the roll-up. `test_dual_publish.py:206-218`
   already covers the roll-up and must keep passing unchanged.
-- **`briefOf` is used by two consoles.** `index.html` has its own copy
-  (`index.html:525` shows the same `foldAction` shape). Out of scope here,
-  but do not delete shared conventions it relies on.
+- **`briefOf` is duplicated across two consoles, not shared.** `dev.html`
+  and `index.html` each carry their own copy of `briefOf`, `foldAction`,
+  `nodesForRender`, `eventRowsHtml` and `nodeMetaHtml` — there is no shared
+  JS module to edit once. Modules 8 and 9 must apply the *same* change
+  twice; a fix landing in only one console is the failure mode to guard
+  against, which is why AC7 and AC7b are separate criteria. `index.html`
+  additionally switches topology on `app.mode` (`:775`), so its seat
+  grouping must work for the `bug` topology as well as `feature`.
 - **Concurrency.** The `tool_use_id → tool_name` correlation map must be
   per-dispatch, not per-dispatcher-instance: one dispatcher instance is
   shared across concurrent seats (the reason `session_host` is a
@@ -872,9 +920,10 @@ Verified absent from the codebase on 2026-09-02 (`grep -rn` over
   foundation and must land first, sequentially. Modules 3, 4, 5 and 6 are
   then genuinely independent (different files, no shared symbols beyond the
   Module 1/2 API) and are a natural parallel wave for a dev-agent pool.
-  Module 7 depends on 3/4/5; Module 8 depends on 2/6/7.
+  Module 7 depends on 3/4/5; Module 8 depends on 2/6/7; Module 9 depends on
+  8 (it copies Module 8's resolved decisions into the second console).
 - **Cross-feature dependencies**: none. No other open spec touches
-  `dispatchers/`, `session_state.py` or `dev.html`.
+  `dispatchers/`, `session_state.py`, `dev.html` or `index.html`.
 
 ```
 Module 1 (labels + ctx)
@@ -885,6 +934,7 @@ Module 1 (labels + ctx)
          └── Module 6 (session state seats)
                └── Module 7 (pool / resolver / judges)
                      └── Module 8 (dev.html)
+                           └── Module 9 (index.html — same change, 2nd console)
 ```
 
 ---
@@ -897,16 +947,24 @@ Module 1 (labels + ctx)
       change. Reflected in §1 G7, §3 Modules 4/5/7/8 and §5 AC9.
 - [x] Process — implement now or spec first? — *Resolved by the user on
       2026-09-02*: spec only; no implementation lands with this document.
-- [ ] Should `index.html` (the bug-mode console) receive the same
+- [x] Should `index.html` (the bug-mode console) receive the same
       `briefOf`/seat treatment, or is `dev.html` the only supported
-      console going forward? — *Owner: Jesus Lara* — deferrable: it does
-      not block any module above.
-- [ ] Should `summary` be localizable / is English-only acceptable for the
-      console? — *Owner: Jesus Lara* — deferrable to implementation.
-- [ ] Is a per-seat **terminal channel** (`terminal_channel(run_id, seat)`,
+      console going forward? — *Resolved by Jesus Lara on 2026-09-02*:
+      **Yes** — `index.html` gets the identical treatment. Folded into the
+      spec as §3 Module 9, §5 AC7b, the §7 "duplicated across two
+      consoles" risk, and the `index.html` anchors in §6; removed from
+      §1 Non-Goals.
+- [x] Should `summary` be localizable / is English-only acceptable for the
+      console? — *Resolved by Jesus Lara on 2026-09-02*: **English-only**.
+      No i18n layer for `summary`; `normalize_payload` emits plain English
+      strings and nothing downstream translates them.
+- [x] Is a per-seat **terminal channel** (`terminal_channel(run_id, seat)`,
       `session_state.py`) worth wiring so the console can open a live tail
       per seat, or is the seat event list in the node card enough for v1?
-      — *Owner: Jesus Lara* — v1 assumes the node card is enough.
+      — *Resolved by Jesus Lara on 2026-09-02*: **the node card is enough
+      for v1**. No per-seat terminal channel is wired by this feature;
+      `DispatchState.seats` plus the grouped event rows are the whole
+      v1 surface.
 
 ---
 
@@ -915,3 +973,4 @@ Module 1 (labels + ctx)
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-02 | Jesus Lara | Initial draft — FEAT-496 |
+| 0.2 | 2026-09-02 | Jesus Lara | Approved. Open questions resolved: `index.html` in scope (new Module 9 + AC7b), summary English-only, no per-seat terminal channel in v1. |
