@@ -52,8 +52,8 @@ def _finding(message: str, file: str = "a.py") -> AdversarialFinding:
 
 
 @pytest.mark.asyncio
-async def test_triage_confirm_triggers_rerun(ctx):
-    """CONFIRM finding with files_modified → _run_deterministic_qa called twice."""
+async def test_triage_confirm_triggers_rerun(ctx, monkeypatch):
+    """CONFIRM finding with git-verified evidence → _run_deterministic_qa called twice."""
     finding = _finding("Off by one")
     verdict = CodeReviewVerdict(passed=False, findings=[finding])
     reviewer = _advisory_reviewer(verdict)
@@ -62,6 +62,10 @@ async def test_triage_confirm_triggers_rerun(ctx):
         update={"disposition": "confirm", "triage_reason": "valid, fixed", "finding_id": "finding-0"}
     )
     triage_report = TriageReport(findings=[confirmed], files_modified=["a.py"])
+
+    # Evidence now comes from git, not the worker's claim — the fake
+    # `worktree_path` in `ctx` isn't a real repo, so verify via git directly.
+    monkeypatch.setattr(QANode, "_paths_touched_since", AsyncMock(return_value=["a.py"]))
 
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     rerun_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
@@ -122,8 +126,8 @@ async def test_confirm_without_fix_evidence_fails_closed_to_escalate(ctx):
 
 
 @pytest.mark.asyncio
-async def test_confirm_with_fix_evidence_stays_confirmed(ctx):
-    """Sanity check: a CONFIRM backed by a real files_modified entry is NOT escalated."""
+async def test_confirm_with_fix_evidence_stays_confirmed(ctx, monkeypatch):
+    """Sanity check: a CONFIRM backed by git-verified evidence is NOT escalated."""
     finding = _finding("Off by one")
     verdict = CodeReviewVerdict(passed=False, findings=[finding])
     reviewer = _advisory_reviewer(verdict)
@@ -132,6 +136,10 @@ async def test_confirm_with_fix_evidence_stays_confirmed(ctx):
         update={"disposition": "confirm", "triage_reason": "valid, fixed", "finding_id": "finding-0"}
     )
     triage_report = TriageReport(findings=[confirmed], files_modified=["a.py"])
+
+    # Evidence now comes from git, not the worker's claim — the fake
+    # `worktree_path` in `ctx` isn't a real repo, so verify via git directly.
+    monkeypatch.setattr(QANode, "_paths_touched_since", AsyncMock(return_value=["a.py"]))
 
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     rerun_report = QAReport(passed=True, criterion_results=[], lint_passed=True)

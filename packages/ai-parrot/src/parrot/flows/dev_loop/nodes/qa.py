@@ -24,7 +24,7 @@ import os
 import re
 import shlex
 from pathlib import PurePosixPath
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -707,6 +707,97 @@ class QANode(DevLoopNode):
                 continue
         return []
 
+    # ------------------------------------------------------------------
+    # Triage evidence — git is the authority, not the worker's claim
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _git_state(worktree_path: str) -> Tuple[str, FrozenSet[str]]:
+        """The worktree's ``(HEAD sha, dirty paths)`` at this instant.
+
+        Both halves degrade to empty on any git failure, which makes
+        :meth:`_paths_touched_since` report "nothing changed" rather than
+        inventing evidence — the fail-closed direction for a gate.
+
+        Args:
+            worktree_path: The feature worktree to inspect.
+
+        Returns:
+            The HEAD commit sha (``""`` when unavailable) and the set of
+            paths with uncommitted modifications, staged or not.
+        """
+
+        async def _run(*args: str) -> str:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git",
+                    *args,
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+            except Exception:  # noqa: BLE001 - a missing worktree is not fatal
+                return ""
+            return stdout.decode() if proc.returncode == 0 else ""
+
+        head = (await _run("rev-parse", "HEAD")).strip()
+        dirty = frozenset(
+            entry
+            for line in (await _run("status", "--porcelain")).splitlines()
+            # Porcelain v1: two status chars, a space, then the path. A
+            # rename reads "R  old -> new"; the post-rename path is what a
+            # later lint/pytest run can actually open, so keep that half.
+            if (entry := line[3:].strip().split(" -> ")[-1])
+        )
+        return head, dirty
+
+    @classmethod
+    async def _paths_touched_since(
+        cls,
+        worktree_path: str,
+        before: Tuple[str, FrozenSet[str]],
+    ) -> List[str]:
+        """Every path that really changed between ``before`` and now.
+
+        A DELTA, deliberately — not an absolute diff against the base
+        branch. By the time triage runs, ``DevelopmentNode`` has already
+        committed the feature's work, so an absolute diff would "verify"
+        any claim naming a file development touched. Only what moved
+        during the triage dispatch is evidence that triage did anything.
+
+        Args:
+            worktree_path: The feature worktree to inspect.
+            before: The :meth:`_git_state` snapshot taken pre-dispatch.
+
+        Returns:
+            Sorted repo-relative paths: newly dirty files, plus everything
+            in commits the triage dispatch added.
+        """
+        before_head, before_dirty = before
+        after_head, after_dirty = await cls._git_state(worktree_path)
+
+        touched: set = set(after_dirty - before_dirty)
+
+        if before_head and after_head and before_head != after_head:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git",
+                    "diff",
+                    "--name-only",
+                    f"{before_head}..{after_head}",
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0:
+                    touched.update(p.strip() for p in stdout.decode().splitlines() if p.strip())
+            except Exception:  # noqa: BLE001 - degrade to the dirty-set delta
+                pass
+
+        return sorted(touched)
+
     @staticmethod
     def _scope_lint_to_files(command: str, files: List[str]) -> str:
         """Replace whole-repo targets (``.``) with explicit file paths.
@@ -983,6 +1074,7 @@ class QANode(DevLoopNode):
                 f for f in findings if indexed.get(f.finding_id) is None or indexed[f.finding_id].disposition is None
             ]
 
+        before_state = await self._git_state(worktree_path)
         report = await _dispatch_once()
         indexed = _index(report)
         if _missing(indexed):
@@ -998,7 +1090,21 @@ class QANode(DevLoopNode):
         ttl_seconds = conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION
         escalated_gate_ids: List[str] = []
 
-        files_modified_set = set(report.files_modified)
+        # The worker's `files_modified` is a claim, not evidence. Git is the
+        # authority — both for triggering the (expensive) deterministic
+        # re-run and for `_confirm_has_evidence`, which would otherwise be
+        # validating the worker's claim against the worker's own claim.
+        actual_modified = await self._paths_touched_since(worktree_path, before_state)
+        unverified = [p for p in report.files_modified if p not in set(actual_modified)]
+        if unverified:
+            self.logger.warning(
+                "Triage worker claimed %d modified file(s) git cannot see; "
+                "dropping the claim and using git's %d instead. Unverified: %s",
+                len(unverified),
+                len(actual_modified),
+                unverified[:20],
+            )
+        files_modified_set = set(actual_modified)
         for finding in findings:
             resolved = indexed.get(finding.finding_id)
             if resolved is None or resolved.disposition is None:
@@ -1042,15 +1148,15 @@ class QANode(DevLoopNode):
                     )
                     escalated_gate_ids.append(gate_id)
             # CONFIRM (with verified evidence): no note of its own — its fix
-            # surfaces via `report.files_modified`, which triggers the
-            # existing deterministic-QA rerun.
+            # surfaces via the git-observed `actual_modified` set, which
+            # triggers the existing deterministic-QA rerun.
 
         escalation_passed = True
         if escalated_gate_ids and session_host is not None:
             resolved_gates = await asyncio.gather(*(session_host.wait_gate(gate_id) for gate_id in escalated_gate_ids))
             escalation_passed = all(gate.status == "approved" for gate in resolved_gates)
 
-        return notes, list(report.files_modified), escalation_passed
+        return notes, list(actual_modified), escalation_passed
 
     @staticmethod
     def _confirm_has_evidence(resolved: AdversarialFinding, files_modified: set) -> bool:

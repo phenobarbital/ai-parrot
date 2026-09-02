@@ -155,6 +155,10 @@ async def test_e2e_adversarial_review_triage(codex_dispatcher, ctx, monkeypatch)
     )
     triage_report = TriageReport(findings=[confirmed, rejected], files_modified=["a.py"])
 
+    # Evidence now comes from git, not the worker's claim (FEAT-497) — `ctx`'s
+    # `worktree_path` is a plain tmp_path, not a real repo, so verify directly.
+    monkeypatch.setattr(QANode, "_paths_touched_since", AsyncMock(return_value=["a.py"]))
+
     qa_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     rerun_report = QAReport(passed=True, criterion_results=[], lint_passed=True)
     dev_dispatcher = MagicMock()
