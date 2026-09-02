@@ -283,10 +283,15 @@ class AbstractClient(EventEmitterMixin, ABC):
     # MAX_TOKENS with truncated (unparseable) JSON. The identical call on
     # gemini-2.5-pro spent 1,011 on reasoning and finished cleanly at STOP.
     #
-    # Resolution order (see _resolve_invoke_max_tokens): per-call
-    # ``invoke(max_tokens=N)`` > per-instance ``Client(invoke_max_tokens=N)`` >
-    # per-instance ``Client(max_tokens=N)`` > this class default.
-    _invoke_max_tokens: int = 8192
+    # Resolution order: see _resolve_max_tokens().
+    #
+    # ``None`` means "invoke() uses _default_max_tokens" — set this ONLY when a
+    # client wants invoke() to differ from ask(). Defaulting it to a concrete
+    # number here would silently override every client that raises
+    # _default_max_tokens for good reason (NvidiaClient's 65,536 for reasoning
+    # models, AnthropicClient's non-streaming ceiling), because a class
+    # attribute on the base always resolves before those.
+    _invoke_max_tokens: Optional[int] = None
 
     # Fallback model for capacity errors — subclasses set their own default
     # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K,
@@ -1956,75 +1961,49 @@ $backstory
         self,
         max_tokens: Optional[int] = None,
         model: Optional[str] = None,
+        *,
+        for_invoke: bool = False,
     ) -> int:
-        """Return the completion-token budget to use for a call.
+        """Return the completion-token budget for a call, in tokens.
 
-        Fallback chain, highest priority first:
+        One resolver serves both ``ask()`` and ``invoke()``; ``for_invoke``
+        selects the ``invoke()``-specific override and class default. The
+        chain, first non-``None`` wins:
 
-        1. an explicit ``max_tokens`` argument;
-        2. ``self.max_tokens``, but only when the caller actually configured it
-           (i.e. it differs from :attr:`_default_max_tokens`, which
-           :meth:`__init__` would otherwise have put there);
-        3. the model's own limit from :attr:`_model_max_tokens`, when known;
-        4. :attr:`_default_max_tokens`.
+        1. the explicit per-call ``max_tokens`` argument;
+        2. ``invoke()`` only — the per-instance ``invoke_max_tokens`` kwarg;
+        3. the per-instance ``max_tokens`` kwarg, but ONLY when the caller
+           actually passed it (or set it via a ``preset``). The framework's own
+           default must not shadow a client's class default, which is what
+           :attr:`_max_tokens_configured` exists to distinguish;
+        4. the model's own limit from :attr:`_model_max_tokens`, when known;
+        5. ``invoke()`` only — :attr:`_invoke_max_tokens`, when the client sets
+           one;
+        6. :attr:`_default_max_tokens`.
 
         Whatever wins is then clamped to the model's limit.
 
-        Step 3 is deliberate: ``max_tokens`` is a ceiling, not a reservation —
-        nothing is billed for headroom that goes unused — so when we know a
-        model's real limit, handing it the whole thing is strictly better than
-        starving it with a conservative class-wide default. That is what lets
-        ``claude-opus-5`` run at 65,536 while ``qwen3-32b``, behind the same
-        client, stays at the 16,384 it will actually accept.
+        Step 4 is deliberate. ``max_tokens`` is a ceiling, not a reservation —
+        nothing is billed for headroom that goes unused — so when a model's real
+        limit is known, handing it the whole thing beats starving it with a
+        conservative class-wide default. That is what lets ``claude-opus-5`` run
+        at 65,536 while ``qwen3-32b``, behind the same client, stays at the
+        16,384 it will actually accept. It also means a client that wants a
+        deliberately SMALLER budget for a model must express that through
+        :attr:`_invoke_max_tokens` / :attr:`_default_max_tokens` and leave the
+        model out of :attr:`_model_max_tokens`, which records provider-enforced
+        limits only.
 
-        The clamp is what makes a raised default safe at all: several providers
-        reject an over-cap ``max_tokens`` outright instead of clamping it
-        themselves, so without it a generous default turns every call to a
-        smaller model into a ``ValidationException``.
-
-        Args:
-            max_tokens: Caller-supplied budget, or ``None``.
-            model: The model the call will run against, used to find its limit.
-
-        Returns:
-            The budget to send to the provider.
-        """
-        cap = self._model_output_cap(model)
-        budget = max_tokens
-        if budget is None:
-            configured = getattr(self, "max_tokens", None)
-            if configured and configured != self._default_max_tokens:
-                budget = configured
-            else:
-                budget = cap or self._default_max_tokens
-        if cap is not None and budget > cap:
-            self.logger.debug(
-                "Clamping max_tokens %s -> %s for model %s (provider cap).",
-                budget, cap, model,
-            )
-            return cap
-        return budget
-
-    def _resolve_invoke_max_tokens(self, max_tokens: Optional[int] = None) -> int:
-        """Return the output-token budget to use for an invoke() call.
-
-        Resolution order (first non-``None`` wins):
-
-        1. the explicit per-call ``max_tokens`` argument;
-        2. the per-instance ``invoke_max_tokens`` constructor kwarg;
-        3. the per-instance ``max_tokens`` constructor kwarg, but ONLY when it
-           was explicitly passed (or set by a ``preset``) — the framework's own
-           ``max_tokens`` default must not shadow a client's
-           :attr:`_invoke_max_tokens`;
-        4. the client's :attr:`_invoke_max_tokens` class default.
-
-        The class default is deliberately generous because reasoning models bill
-        their reasoning tokens against the same budget as the answer — see the
-        comment on :attr:`_invoke_max_tokens`. Clients whose provider caps lower
-        (Groq, local backends) override the class attribute.
+        The clamp in the final step is what makes a raised default safe at all:
+        several providers reject an over-cap ``max_tokens`` outright instead of
+        clamping it themselves, so without it a generous default would turn
+        every call to a smaller model into a provider-side validation error.
 
         Args:
             max_tokens: Caller-supplied per-call override, or ``None``.
+            model: The model the call will run against, used to find its limit.
+            for_invoke: Whether this is an ``invoke()`` call, which has its own
+                per-instance override and class default.
 
         Returns:
             A positive output-token budget.
@@ -2032,26 +2011,57 @@ $backstory
         Raises:
             ValueError: If a resolved budget is not a positive integer.
         """
-        for candidate in (
+        cap = self._model_output_cap(model)
+        candidates = (
             max_tokens,
-            getattr(self, "invoke_max_tokens", None),
+            getattr(self, "invoke_max_tokens", None) if for_invoke else None,
             (
                 getattr(self, "max_tokens", None)
                 if getattr(self, "_max_tokens_configured", False)
                 else None
             ),
-            self._invoke_max_tokens,
-        ):
+            cap,
+            self._invoke_max_tokens if for_invoke else None,
+            self._default_max_tokens,
+        )
+        resolved: Optional[int] = None
+        for candidate in candidates:
             if candidate is None:
                 continue
             resolved = int(candidate)
             if resolved <= 0:
                 raise ValueError(
-                    f"invoke() max_tokens must be a positive integer, got {resolved!r}"
+                    f"max_tokens must be a positive integer, got {resolved!r}"
                 )
-            return resolved
-        # Unreachable while _invoke_max_tokens carries a positive class default.
-        raise ValueError("invoke() max_tokens could not be resolved")
+            break
+        if resolved is None:  # pragma: no cover - _default_max_tokens is always set
+            raise ValueError("max_tokens could not be resolved")
+        if cap is not None and resolved > cap:
+            self.logger.debug(
+                "Clamping max_tokens %s -> %s for model %s (provider limit).",
+                resolved, cap, model,
+            )
+            return cap
+        return resolved
+
+    def _resolve_invoke_max_tokens(
+        self,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
+    ) -> int:
+        """Backwards-compatible alias for ``invoke()``'s budget resolution.
+
+        Prefer :meth:`_resolve_max_tokens` with ``for_invoke=True``; this
+        wrapper exists so existing call sites and tests keep working.
+
+        Args:
+            max_tokens: Caller-supplied per-call override, or ``None``.
+            model: The model the call will run against.
+
+        Returns:
+            A positive output-token budget.
+        """
+        return self._resolve_max_tokens(max_tokens, model, for_invoke=True)
 
     def _build_invoke_result(
         self,

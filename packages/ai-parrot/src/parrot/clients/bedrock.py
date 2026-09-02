@@ -662,7 +662,7 @@ class BedrockConverseBase(AbstractClient):
         """
         await self._ensure_client()
         resolved_model = model or self._translate_model(self.model)
-        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
         body: Dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -1571,14 +1571,13 @@ class BedrockConverseBase(AbstractClient):
         Raises:
             InvokeError: On provider errors.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             await self._ensure_client()
 
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._translate_model(self._resolve_invoke_model(model))
-            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             if config:
                 resolved_prompt += "\n\n" + config.format_schema_instruction()

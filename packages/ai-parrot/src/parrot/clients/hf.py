@@ -609,10 +609,9 @@ class TransformersClient(AbstractClient):
         so this falls back to schema-in-system-prompt when output_type
         or structured_output is provided.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         config = self._build_invoke_structured_config(output_type, structured_output)
         resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
-        max_tokens = self._resolve_max_tokens(max_tokens, self.model_name)
+        max_tokens = self._resolve_max_tokens(max_tokens, self.model_name, for_invoke=True)
 
         response = await self.ask(
             prompt=prompt,

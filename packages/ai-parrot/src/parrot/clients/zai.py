@@ -451,7 +451,7 @@ class ZaiClient(OpenAIBaseClient):
                 ``ClientCallFailedEvent``.
         """
         resolved_model = self._model_value(model)
-        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
         messages, conversation_history, resolved_system_prompt = await self._build_messages(
@@ -1025,12 +1025,11 @@ class ZaiClient(OpenAIBaseClient):
         Raises:
             :class:`~parrot.exceptions.InvokeError`: On any provider error.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_system = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
-            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             if tools:
                 for tool_def in tools:

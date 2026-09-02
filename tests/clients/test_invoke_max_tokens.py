@@ -8,8 +8,15 @@ reasoning before any answer text was emitted — observed on
 call ended at MAX_TOKENS with truncated, unparseable JSON.
 
 The fix: ``max_tokens`` defaults to ``None`` and is resolved by
-``AbstractClient._resolve_invoke_max_tokens()`` against a per-client
-``_invoke_max_tokens`` class default.
+``AbstractClient._resolve_max_tokens()`` — one resolver for both ``ask()`` and
+``invoke()`` (``for_invoke=True`` selects invoke's own override and default).
+
+Beyond the precedence chain, the resolver is model-aware. Output limits differ
+by 8x INSIDE a single client — measured on AWS Bedrock 2026-09-03,
+``claude-opus-5`` accepts 65,536 while ``qwen3-32b`` refuses anything over
+16,384 — and Bedrock rejects an over-cap request rather than clamping it. So
+``_model_max_tokens`` both lifts a known model to its real limit and clamps
+anything above it.
 """
 from __future__ import annotations
 
@@ -98,8 +105,8 @@ class TestResolutionChain:
 
     def test_class_default_when_nothing_configured(self):
         client = _StubClient()
-        assert client._resolve_invoke_max_tokens() == 8192
-        assert client._resolve_invoke_max_tokens(None) == 8192
+        assert client._resolve_invoke_max_tokens() == AbstractClient._default_max_tokens
+        assert client._resolve_invoke_max_tokens(None) == AbstractClient._default_max_tokens
 
     def test_per_call_wins_over_everything(self):
         client = _StubClient(max_tokens=1000, invoke_max_tokens=2000)
@@ -116,14 +123,17 @@ class TestResolutionChain:
     def test_implicit_max_tokens_does_not_shadow_class_default(self):
         """The framework's own max_tokens default must not win over _invoke_max_tokens.
 
-        AbstractClient.__init__ assigns self.max_tokens = 4096 when the caller
-        passes nothing. If that value participated in the chain, every client
-        would still be capped at 4096 — the exact bug being fixed.
+        AbstractClient.__init__ assigns self.max_tokens = _default_max_tokens
+        when the caller passes nothing. If that value participated in the chain,
+        every client's invoke() would inherit ask()'s generic budget instead of
+        its own _invoke_max_tokens — the exact bug being fixed.
         """
         client = _StubClient()
-        assert client.max_tokens == 4096          # ask()'s default, untouched
+        # ask()'s default, untouched (a client-specific _default_max_tokens,
+        # no longer the old hardcoded 4096).
+        assert client.max_tokens == _StubClient._default_max_tokens
         assert client._max_tokens_configured is False
-        assert client._resolve_invoke_max_tokens() == 8192
+        assert client._resolve_invoke_max_tokens() == _StubClient._default_max_tokens
 
     def test_preset_counts_as_explicit(self):
         client = _StubClient(preset="detailed")
@@ -133,7 +143,7 @@ class TestResolutionChain:
     def test_missing_attributes_fall_back_to_class_default(self):
         """A client built via __new__ (no __init__) must still resolve."""
         client = _bare(_StubClient)
-        assert client._resolve_invoke_max_tokens() == 8192
+        assert client._resolve_invoke_max_tokens() == AbstractClient._default_max_tokens
 
     @pytest.mark.parametrize("bad", [0, -1, -4096])
     def test_non_positive_budget_rejected(self, bad):
@@ -149,16 +159,26 @@ class TestResolutionChain:
 class TestPerClientDefaults:
     """Each client declares its own budget; providers with hard caps stay low."""
 
-    def test_base_default(self):
-        assert AbstractClient._invoke_max_tokens == 8192
+    def test_base_leaves_invoke_default_unset(self):
+        """``None`` means "invoke() uses _default_max_tokens".
+
+        A concrete number here would silently override every client that raises
+        _default_max_tokens for a good reason (NvidiaClient's 65,536 for
+        reasoning models, AnthropicClient's non-streaming ceiling), because a
+        base class attribute resolves before those.
+        """
+        assert AbstractClient._invoke_max_tokens is None
+        assert AbstractClient._default_max_tokens == 16384
 
     def test_google_gets_extra_headroom_for_reasoning(self):
         from parrot.clients.google.client import GoogleGenAIClient
         assert GoogleGenAIClient._invoke_max_tokens == 16384
 
-    def test_groq_capped_at_provider_limit(self):
+    def test_groq_capped_below_the_provider_limit(self):
+        # Groq refuses max_tokens at or above 4096 — the limit is exclusive.
         from parrot.clients.groq import GroqClient
-        assert GroqClient._invoke_max_tokens == 4096
+        assert GroqClient._default_max_tokens == 4095
+        assert GroqClient()._resolve_invoke_max_tokens(None, "openai/gpt-oss-120b") < 4096
 
     @pytest.mark.parametrize("module_path,class_name", [
         ("parrot.clients.localllm", "LocalLLMClient"),
@@ -170,9 +190,16 @@ class TestPerClientDefaults:
         cls = getattr(module, class_name)
         assert cls._invoke_max_tokens == 4096
 
-    def test_anthropic_inherits_base_default(self):
-        from parrot.clients.claude import AnthropicClient
-        assert AnthropicClient._invoke_max_tokens == 8192
+    def test_client_default_is_not_shadowed_by_the_base_invoke_default(self):
+        """A client's _default_max_tokens must reach invoke(), not just ask().
+
+        Regression guard: while AbstractClient._invoke_max_tokens held a
+        concrete 8192, NvidiaClient's deliberate 65,536 (reasoning models draw
+        reasoning_content from the answer's budget) was ignored by invoke().
+        """
+        from parrot.clients.nvidia import NvidiaClient
+        assert NvidiaClient._default_max_tokens == 65536
+        assert NvidiaClient()._resolve_invoke_max_tokens(None, "openai/gpt-oss-120b") == 65536
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +278,12 @@ class TestBudgetReachesProvider:
         bind_sdk_client(client, sdk)
 
         await client.invoke("hi")
-        assert sdk.chat.completions.create.await_args.kwargs["max_tokens"] == 8192
+        # OpenAI sets no _invoke_max_tokens of its own, so invoke() picks up
+        # AbstractClient._default_max_tokens rather than a separate base value.
+        assert (
+            sdk.chat.completions.create.await_args.kwargs["max_tokens"]
+            == AbstractClient._default_max_tokens
+        )
 
     async def test_groq_stays_at_provider_cap(self, bind_sdk_client):
         from parrot.clients.groq import GroqClient
@@ -280,4 +312,133 @@ class TestBudgetReachesProvider:
         bind_sdk_client(client, sdk)
 
         await client.invoke("hi")
-        assert sdk.chat.completions.create.await_args.kwargs["max_tokens"] == 4096
+        # 4095, not 4096: Groq's limit is exclusive, and the previous value was
+        # the exact one the provider rejects.
+        sent = sdk.chat.completions.create.await_args.kwargs["max_tokens"]
+        assert sent == GroqClient._default_max_tokens
+        assert sent < 4096
+
+
+# ---------------------------------------------------------------------------
+# Model awareness: _model_max_tokens lifts a known model to its real limit and
+# clamps anything above it.
+# ---------------------------------------------------------------------------
+
+class _ModelAwareClient(_StubClient):
+    """Stub whose models have deliberately divergent limits."""
+
+    _default_max_tokens = 1000
+    _model_max_tokens = {"big": 5000, "small": 100, "big-model-v2": 7000}
+
+
+class TestModelAwareResolution:
+    """Why this exists: one number per client cannot be correct.
+
+    Measured on AWS Bedrock (us-east-1, 2026-09-03) by walking max_tokens up per
+    model until Converse rejected it — inside ONE client, claude-opus-5 accepts
+    65,536 and qwen3-32b refuses anything over 16,384. A single class-wide value
+    either starves opus or breaks qwen, and Bedrock rejects rather than clamps.
+    """
+
+    def test_known_model_is_lifted_to_its_own_limit(self):
+        # max_tokens is a ceiling, not a reservation — nothing is billed for
+        # unused headroom, so a known limit beats a conservative class default.
+        assert _ModelAwareClient()._resolve_max_tokens(None, "big") == 5000
+
+    def test_unknown_model_keeps_the_class_default(self):
+        assert _ModelAwareClient()._resolve_max_tokens(None, "unlisted") == 1000
+
+    def test_no_model_keeps_the_class_default(self):
+        assert _ModelAwareClient()._resolve_max_tokens(None, None) == 1000
+
+    def test_explicit_per_call_value_is_still_clamped(self):
+        # Otherwise the provider answers with a validation error instead.
+        assert _ModelAwareClient()._resolve_max_tokens(999_999, "small") == 100
+
+    def test_caller_configured_budget_is_clamped_too(self):
+        client = _ModelAwareClient(max_tokens=4000)
+        assert client._resolve_max_tokens(None, "small") == 100
+
+    def test_caller_configured_budget_beats_the_model_lift(self):
+        client = _ModelAwareClient(max_tokens=250)
+        assert client._resolve_max_tokens(None, "big") == 250
+
+    def test_fragment_matches_a_provider_qualified_id(self):
+        # One entry has to cover every spelling of the same model.
+        assert _ModelAwareClient()._resolve_max_tokens(None, "us.vendor.big-v1:0") == 5000
+
+    def test_matching_is_case_insensitive(self):
+        assert _ModelAwareClient()._resolve_max_tokens(None, "US.VENDOR.BIG-V1:0") == 5000
+
+    def test_longest_fragment_wins(self):
+        # "big-model-v2" also contains "big"; the specific entry must win, or a
+        # family-wide entry would shadow every member of that family.
+        assert _ModelAwareClient()._resolve_max_tokens(None, "big-model-v2") == 7000
+
+    def test_empty_table_means_no_lift_and_no_clamp(self):
+        assert _StubClient()._resolve_max_tokens(None, "big") == _StubClient._default_max_tokens
+
+    def test_the_lift_reaches_invoke_not_just_ask(self):
+        client = _ModelAwareClient()
+        assert client._resolve_max_tokens(None, "big", for_invoke=True) == 5000
+
+    def test_instance_invoke_override_applies_only_to_invoke(self):
+        client = _ModelAwareClient(invoke_max_tokens=300)
+        assert client._resolve_max_tokens(None, "big", for_invoke=True) == 300
+        assert client._resolve_max_tokens(None, "big") == 5000
+
+
+class TestMeasuredProviderLimits:
+    """Limits measured against live providers on 2026-09-03."""
+
+    def test_bedrock_lifts_opus_5(self):
+        from parrot.clients.bedrock import BedrockConverseClient
+        client = BedrockConverseClient()
+        assert client._resolve_max_tokens(None, "us.anthropic.claude-opus-5", for_invoke=True) == 65536
+
+    def test_bedrock_holds_qwen3_32b_down(self):
+        from parrot.clients.bedrock import BedrockConverseClient
+        client = BedrockConverseClient()
+        assert client._resolve_max_tokens(None, "qwen.qwen3-32b-v1:0", for_invoke=True) == 16384
+
+    def test_nova_pro_stays_under_its_10k_limit(self):
+        from parrot.clients.nova import NovaClient
+        assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-pro-v1:0", for_invoke=True) == 8192
+
+    def test_nova_2_lite_gets_its_larger_limit(self):
+        from parrot.clients.nova import NovaClient
+        assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-2-lite-v1:0", for_invoke=True) == 32768
+
+
+class TestAnthropicNonStreamingCeiling:
+    """``ask()``/``invoke()`` are non-streaming, and the SDK enforces a ceiling.
+
+    ``anthropic._base_client._calculate_nonstreaming_timeout`` raises
+    ``ValueError`` when ``3600 * max_tokens / 128_000 > 600`` — above 21,333
+    tokens — *before* sending anything. A larger default would break every
+    non-streaming Anthropic call rather than lengthen it. Raising it means
+    teaching invoke() to stream, which is a separate change.
+    """
+
+    NON_STREAMING_CEILING = 128_000 * 600 // 3600  # 21_333
+
+    def test_default_sits_at_the_sdk_ceiling(self):
+        from parrot.clients.claude import AnthropicClient
+        assert AnthropicClient._default_max_tokens == self.NON_STREAMING_CEILING
+
+    @pytest.mark.parametrize(
+        "model", ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"]
+    )
+    def test_no_model_resolves_above_the_ceiling(self, model):
+        from parrot.clients.claude import AnthropicClient
+        budget = AnthropicClient()._resolve_max_tokens(None, model, for_invoke=True)
+        assert budget <= self.NON_STREAMING_CEILING
+
+    def test_the_ceiling_is_the_transports_not_the_models(self):
+        # boto3 Converse has no such guard, so the same model gets far more room.
+        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.claude import AnthropicClient
+        assert (
+            BedrockConverseClient()._resolve_max_tokens(None, "claude-opus-5")
+            > AnthropicClient()._resolve_max_tokens(None, "claude-opus-5")
+        )

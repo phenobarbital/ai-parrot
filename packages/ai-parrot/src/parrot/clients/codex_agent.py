@@ -236,9 +236,11 @@ class OpenAICodexClient(AbstractClient):
         use_tools: bool = False,
         tools: Optional[list[Any]] = None,
     ) -> InvokeResult:
+        # Codex runs through `codex exec`, which has no max_tokens knob — the
+        # argument is accepted for AbstractClient parity and deliberately
+        # dropped here, so there is no budget to resolve.
         del max_tokens, temperature, tools
         resolved_model = self._resolve_invoke_model(model)
-        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
         structured_config = self._build_invoke_structured_config(
             output_type,
             structured_output,

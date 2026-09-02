@@ -54,6 +54,9 @@ result:
     OK            ``result.output`` is the requested Pydantic model
     STR-LEAK      ``result.output`` came back a raw ``str`` (parse failed; the
                   provider's ``invoke()`` has no recovery guard)
+    TRUNCATED     ``TruncatedResponseError`` — the response was cut at the
+                  output-token cap and the client said so (PR #1303). Same
+                  underlying failure as STR-LEAK, correctly attributed
     INVOKE-ERROR  ``invoke()`` raised (e.g. Google's post-FEAT-481 guard, or a
                   provider-side error)
     TIMEOUT       the call exceeded ``--timeout`` seconds
@@ -673,7 +676,8 @@ async def probe_cell(
             requested model is the one that runs. When ``False``, omit it and
             let ``_resolve_invoke_model`` fall back to ``_lightweight_model`` —
             the predecessor probe's call shape.
-        max_tokens: ``max_tokens`` for the call (``invoke()``'s default is 4096).
+        max_tokens: Explicit budget, or ``None`` to let the client resolve its
+            own via ``_default_max_tokens`` / ``_model_max_tokens``.
         timeout: Per-cell wall-clock budget in seconds.
 
     Returns:
@@ -682,6 +686,17 @@ async def probe_cell(
     """
     from parrot.clients.factory import LLMFactory
     from parrot.exceptions import InvokeError
+
+    # PR #1303 adds TruncatedResponseError(InvokeError), raised when the
+    # provider's finish_reason says the response was cut at the output cap.
+    # Once that lands, the rows below stop being STR-LEAK and become a named,
+    # attributable error — so distinguish it rather than folding it into the
+    # generic INVOKE-ERROR bucket. Import defensively: this harness must keep
+    # running on branches that predate the PR.
+    try:
+        from parrot.exceptions import TruncatedResponseError
+    except ImportError:
+        TruncatedResponseError = None
 
     output_type, system_prompt = SCHEMAS[schema_name]
     provider, _, model_name = spec.partition(":")
@@ -696,6 +711,7 @@ async def probe_cell(
         "pinned": pin_model,
         "seconds": None,
         "out_tokens": None,
+        "budget": None,
         "finish_reason": "",
         "thinking_tokens": None,
         "detail": "",
@@ -726,12 +742,26 @@ async def probe_cell(
     except Exception:
         row["default_invoke_model"] = "?"
 
+    # The budget the client will actually use — the number under test when
+    # --max-tokens is omitted.
+    try:
+        probe_model = model_name or row["default_invoke_model"]
+        if hasattr(client, "_translate_model"):
+            probe_model = client._translate_model(probe_model)
+        row["budget"] = client._resolve_max_tokens(max_tokens, probe_model)
+    except Exception:
+        row["budget"] = None
+
     kwargs: dict[str, Any] = {
         "output_type": output_type,
         "system_prompt": system_prompt,
         "temperature": 0.0,
-        "max_tokens": max_tokens,
     }
+    # Only pin the budget when the caller asked for one. Passing max_tokens
+    # unconditionally would defeat the very per-client defaults this run exists
+    # to exercise.
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
     if pin_model and model_name:
         kwargs["model"] = model_name
 
@@ -763,7 +793,10 @@ async def probe_cell(
         row["detail"] = f"exceeded {timeout:.0f}s"
     except InvokeError as exc:
         row["seconds"] = round(time.monotonic() - started, 1)
-        row["verdict"] = "INVOKE-ERROR"
+        truncated = TruncatedResponseError is not None and isinstance(exc, TruncatedResponseError)
+        row["verdict"] = "TRUNCATED" if truncated else "INVOKE-ERROR"
+        if truncated:
+            row["finish_reason"] = str(getattr(exc, "finish_reason", "") or "")
         # Classify on the full provider message; a provider that streams JSON
         # events (Codex) buries the real cause hundreds of characters in, so
         # truncating before classification would misfile it as a model failure.
@@ -799,6 +832,7 @@ _COLORS = {
     "OK": "\033[32m",
     "STR-LEAK": "\033[31m",
     "INVOKE-ERROR": "\033[31m",
+    "TRUNCATED": "\033[31m",
     "TIMEOUT": "\033[33m",
     "ERROR": "\033[35m",
     "UNAVAIL": "\033[90m",
@@ -810,6 +844,7 @@ _SYMBOLS = {
     "OK": "PASS",
     "STR-LEAK": "FAIL",
     "INVOKE-ERROR": "FAIL",
+    "TRUNCATED": "CUT",
     "TIMEOUT": "TIME",
     "ERROR": "ERR",
     "UNAVAIL": "n/a",
@@ -852,7 +887,7 @@ def render_table(rows: list[dict[str, Any]], schemas: list[str], *, color: bool)
     eff_w = max([len(r.get("effective_model") or "-") for r in rows] + [len("EFFECTIVE MODEL")])
     cell_w = max(10, *(len(s) for s in schemas))
 
-    head = f"  {'MODEL':<{model_w}}  {'EFFECTIVE MODEL':<{eff_w}}  "
+    head = f"  {'MODEL':<{model_w}}  {'EFFECTIVE MODEL':<{eff_w}}  {'BUDGET':>7}  "
     head += "  ".join(f"{s:<{cell_w}}" for s in schemas)
     lines = [head, "  " + "─" * (len(head) - 2)]
 
@@ -864,7 +899,8 @@ def render_table(rows: list[dict[str, Any]], schemas: list[str], *, color: bool)
         requested = first.get("requested_model", "")
         if effective != "-" and requested not in ("(provider default)", "") and requested not in effective:
             effective = f"{effective} ⚠"
-        line = f"  {spec:<{model_w}}  {effective:<{eff_w}}  "
+        budget = first.get("budget")
+        line = f"  {spec:<{model_w}}  {effective:<{eff_w}}  {(str(budget) if budget else '-'):>7}  "
         parts = []
         for schema in schemas:
             runs = cells.get(schema)
@@ -897,6 +933,8 @@ def render_details(rows: list[dict[str, Any]]) -> str:
     for row in failures:
         lines.append(f"  {row['spec']} [{row['schema']}] → {row['verdict']}")
         lines.append(f"      {row['detail']}")
+        if row.get("budget"):
+            lines.append(f"      max_tokens sent: {row['budget']}")
         if row.get("finish_reason"):
             budget = f"      finish_reason={row['finish_reason']}"
             if row.get("out_tokens"):
@@ -925,8 +963,8 @@ def render_markdown(rows: list[dict[str, Any]], schemas: list[str], meta: dict[s
         (f"- **max_tokens:** {meta['max_tokens']} · **temperature:** 0.0"
          f" · **model pinned:** {meta['pin_model']}"),
         "",
-        "| Model (requested) | Effective model | " + " | ".join(schemas) + " | Notes |",
-        "|---|---|" + "---|" * len(schemas) + "---|",
+        "| Model (requested) | Effective model | Budget | " + " | ".join(schemas) + " | Notes |",
+        "|---|---|---|" + "---|" * len(schemas) + "---|",
     ]
     by_model: dict[str, dict[str, list[dict[str, Any]]]] = {}
     order: list[str] = []
@@ -956,7 +994,8 @@ def render_markdown(rows: list[dict[str, Any]], schemas: list[str], meta: dict[s
             )
             suffix = f" {passes}/{len(runs)}" if len(runs) > 1 else ""
             verdicts.append(f"`{verdict}`{suffix}")
-        out.append(f"| `{spec}` | `{effective}` | " + " | ".join(verdicts) + f" | {note} |")
+        budget = first.get("budget") or "—"
+        out.append(f"| `{spec}` | `{effective}` | {budget} | " + " | ".join(verdicts) + f" | {note} |")
 
     out += ["", "## Failure detail", ""]
     for row in rows:
@@ -1053,7 +1092,11 @@ async def main() -> int:
     parser.add_argument("--meeting-dir", default=None, help="a real Fireflies bundle directory")
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE), help="large-summary fixture path")
     parser.add_argument("--transcript", action="store_true", help="include the transcript in the prompt")
-    parser.add_argument("--max-tokens", type=int, default=4096, help="max output tokens (invoke default: 4096)")
+    parser.add_argument("--max-tokens", type=int, default=None,
+                        help="max output tokens. Omit (the default) to send NO max_tokens at all, "
+                             "so each client resolves its own budget via _default_max_tokens / "
+                             "_model_max_tokens — which is what production does. Pass a number only "
+                             "to pin every model to the same budget for an A/B.")
     parser.add_argument("--timeout", type=float, default=300.0, help="per-cell timeout in seconds")
     parser.add_argument("--concurrency", type=int, default=4, help="cells in flight at once")
     parser.add_argument("--repeat", type=int, default=1,
@@ -1184,7 +1227,10 @@ async def main() -> int:
         print(f"  raw   : {raw_dir}")
 
     # Non-zero when something actually failed (SKIP is not a failure).
-    return 1 if any(r["verdict"] in ("STR-LEAK", "INVOKE-ERROR", "ERROR", "TIMEOUT") for r in rows) else 0
+    return 1 if any(
+        r["verdict"] in ("STR-LEAK", "INVOKE-ERROR", "TRUNCATED", "ERROR", "TIMEOUT")
+        for r in rows
+    ) else 0
 
 
 if __name__ == "__main__":

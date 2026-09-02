@@ -80,16 +80,13 @@ class GroqClient(OpenAIBaseClient):
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
     _lightweight_model: str = "kimi-k2-instruct"
-    # Groq caps completion tokens at 4096 for most hosted models; asking for
-    # more is rejected outright rather than clamped, so invoke() must not
-    # inherit AbstractClient's more generous default.
-    _invoke_max_tokens: int = 4096
-
-    # Groq rejects a max_tokens at or above 4096, so this client must pin its
-    # own budget below AbstractClient's raised default rather than inherit it.
-    # This is the ceiling case the _default_max_tokens docstring warns about:
-    # the base value is sized for providers with room to spare, and a provider
-    # with a tighter limit has to opt down.
+    # Groq caps completion tokens at 4096 for most hosted models and rejects an
+    # over-cap request outright rather than clamping it, so this client pins its
+    # own budget below AbstractClient's more generous default. 4095, not 4096:
+    # the limit is exclusive — 4096 itself is refused.
+    #
+    # ask() and invoke() share this; _invoke_max_tokens stays unset so there is
+    # a single number to keep correct.
     _default_max_tokens: int = 4095
 
     def __init__(
@@ -351,7 +348,7 @@ class GroqClient(OpenAIBaseClient):
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
         model = model.value if isinstance(model, GroqModel) else model
-        max_tokens = self._resolve_max_tokens(max_tokens, model)
+        max_tokens = self._resolve_max_tokens(max_tokens, model, for_invoke=True)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -1397,12 +1394,11 @@ Format your response clearly with these sections.
         Raises:
             :class:`InvokeError`: On provider errors.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
-            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             await self._ensure_client()
 
