@@ -32,7 +32,7 @@
       "feature_id": "FEAT-497",
       "feature": "qa-gate-evidence-and-diff-scoped-lint",
       "spec": "sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "New standalone files only (scripts/sdd/lint_new.py + tests/sdd_scripts/test_lint_new.py); shares no file or import with TASK-2735. Could run in a separate worktree, but the spec's Worktree Strategy recommends sequential execution in one worktree for three small tasks.",
       "assigned_to": null,
       "started_at": "2026-09-02T01:55:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2736-lint-new-diff-scoped-ruff.md"
+      "completed_at": "2026-09-02T02:11:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2736-lint-new-diff-scoped-ruff.md"
     },
     {
       "id": "TASK-2737",
