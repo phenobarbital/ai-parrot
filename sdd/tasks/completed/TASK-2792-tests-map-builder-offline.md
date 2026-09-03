@@ -208,10 +208,33 @@ See Implementation Notes above — that IS this task's test scaffold.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Verified all 7 spec §4 Unit Tests table (Module 1) rows are now
+covered: 4 already existed from TASK-2786/2787's own scaffolding
+(`test_basic_single_layer`, `test_marker_cluster_above_threshold`,
+`test_no_cluster_below_threshold`, `test_per_layer_threshold_override` —
+kept as-is, not renamed) and 3 were added by this task with the spec's own
+exact names: `test_build_map_document_zero_network_resources` (the
+AUTHORITATIVE live-introspection version — builds its URL list from
+`folium.Map().default_js`/`default_css` +
+`folium.plugins.MarkerCluster().default_js`/`default_css` at test time,
+unlike the pre-existing `test_zero_external_cdn_urls`/`test_data_uris_present`
+which check hardcoded domain substrings — both now coexist),
+`test_build_map_document_empty_layers` (zero-layer Map — no exception,
+non-empty document, no degradations: this did NOT reveal an implementation
+gap — `build_map_document()` already handles an empty `layers` list
+gracefully via its existing `has_layer_data` check), and
+`test_folium_map_renderer_unchanged_public_behavior` (implemented as
+`TestFoliumMapRendererUnchangedPublicBehavior.test_render_shape_unchanged`
+— asserts every `RenderedArtifact` field value AND that
+`model_fields_set` is a subset of the full known field set, guarding
+against a stray new/removed public field from the TASK-2786 extraction).
+18/18 tests in `test_folium_map.py` pass; full
+`pytest packages/ai-parrot-visualizations/tests/` suite: 234 passed.
+`ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. No implementation gap was found while
+writing `test_build_map_document_empty_layers` — flagging this explicitly
+per the task's own instruction, since the task anticipated this as a
+possible finding.

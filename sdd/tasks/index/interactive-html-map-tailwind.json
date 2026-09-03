@@ -149,7 +149,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,8 +159,8 @@
       "parallelism_notes": "Touches only test_folium_map.py; can run in parallel with TASK-2788 (Map dispatch) and the whole CSS track once TASK-2787 lands.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2792-tests-map-builder-offline.md"
+      "completed_at": "2026-09-03T20:41:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2792-tests-map-builder-offline.md"
     },
     {
       "id": "TASK-2793",
