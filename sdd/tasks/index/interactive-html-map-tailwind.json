@@ -109,7 +109,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Consumes TASK-2789's generated CSS file.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2790-design-system-tailwind-integration.md"
+      "completed_at": "2026-09-03T20:25:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2790-design-system-tailwind-integration.md"
     },
     {
       "id": "TASK-2791",
