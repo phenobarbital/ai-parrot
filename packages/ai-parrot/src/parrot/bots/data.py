@@ -420,6 +420,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         max_iterations: Optional[int] = None,
         output_routing: bool = False,
         output_routing_config: Optional[IntentRouterConfig] = None,
+        python_repl_execution_mode: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -444,10 +445,22 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 provided, it takes precedence over the ``output_routing`` flag's
                 default config (and must set ``enable_output_mode_routing=True``
                 to activate).
+            python_repl_execution_mode: Forwarded to the internal
+                ``PythonPandasTool`` as its ``execution_mode`` — ``"worker"``
+                (default, persistent sandboxed worker process) or
+                ``"inprocess"`` (escape hatch: generated code runs inside the
+                host process, no process isolation/rlimits/SIGKILL deadline;
+                see ``PythonREPLTool.__init__``). ``None`` (the default) falls
+                through to that tool's own resolution, which reads the
+                ``PYTHON_REPL_EXECUTION_MODE`` environment variable
+                (fallback ``"worker"``) — so a subclass or caller can pin a
+                mode per-agent, per-instance, without touching the deployment
+                environment.
             **kwargs: Additional configuration
         """
         self._output_routing_enabled = output_routing
         self._output_routing_config = output_routing_config
+        self._python_repl_execution_mode = python_repl_execution_mode
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -581,6 +594,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             include_sample_data=False,
             sample_rows=2,
             report_dir=report_dir,
+            # None here is a no-op — PythonREPLTool.resolve_execution_mode()
+            # falls back to PYTHON_REPL_EXECUTION_MODE / "worker" exactly as
+            # before. Only a caller passing `python_repl_execution_mode=` to
+            # PandasAgent.__init__ changes behaviour.
+            execution_mode=self._python_repl_execution_mode,
         )
 
         # Prophet forecasting tool
