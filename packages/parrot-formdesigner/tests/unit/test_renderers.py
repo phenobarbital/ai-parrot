@@ -1,4 +1,5 @@
 """Unit tests for parrot-formdesigner renderers."""
+
 import pytest
 from parrot_formdesigner.core import FormSchema, FormSection
 from parrot_formdesigner.core.schema import FormField
@@ -19,15 +20,15 @@ async def test_validator_signature_accepts_png_data_url_string():
 
     validator = FormValidator()
     field = FormField(
-        field_id="sig", field_type=FieldType.SIGNATURE, label="Sig",
-        constraints=FieldConstraints(allowed_mime_types=["image/svg+xml", "image/png"])
+        field_id="sig",
+        field_type=FieldType.SIGNATURE,
+        label="Sig",
+        constraints=FieldConstraints(allowed_mime_types=["image/svg+xml", "image/png"]),
     )
     errors = await validator.validate_field(field, "data:image/png;base64,abc")
     assert errors == [], f"Expected no errors, got: {errors}"
 
-    errors_dict = await validator.validate_field(
-        field, {"svg": "<svg/>", "png": "data:image/png;base64,abc"}
-    )
+    errors_dict = await validator.validate_field(field, {"svg": "<svg/>", "png": "data:image/png;base64,abc"})
     assert len(errors_dict) > 0
 
 
@@ -58,8 +59,7 @@ async def test_validator_nps_clamps_to_0_10():
 
     validator = FormValidator()
     field = FormField(
-        field_id="nps", field_type=FieldType.NPS, label="NPS",
-        constraints=FieldConstraints(scale_min=0, scale_max=10)
+        field_id="nps", field_type=FieldType.NPS, label="NPS", constraints=FieldConstraints(scale_min=0, scale_max=10)
     )
     errors = await validator.validate_field(field, "5")
     assert errors == [], f"NPS 5 should be valid, got: {errors}"
@@ -182,18 +182,30 @@ async def test_html5_registry_dispatch_existing_types():
 
     renderer = HTML5Renderer()
     existing_types = [
-        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
-        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
-        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
-        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
-        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+        FieldType.TEXT,
+        FieldType.TEXT_AREA,
+        FieldType.NUMBER,
+        FieldType.INTEGER,
+        FieldType.BOOLEAN,
+        FieldType.DATE,
+        FieldType.DATETIME,
+        FieldType.TIME,
+        FieldType.SELECT,
+        FieldType.MULTI_SELECT,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.COLOR,
+        FieldType.URL,
+        FieldType.EMAIL,
+        FieldType.PHONE,
+        FieldType.PASSWORD,
+        FieldType.HIDDEN,
+        FieldType.GROUP,
+        FieldType.ARRAY,
     ]
     for ft in existing_types:
         field = FormField(field_id="f1", field_type=ft, label="Test")
-        form = FormSchema(
-            form_id="test", title="T",
-            sections=[FormSection(section_id="s1", fields=[field])]
-        )
+        form = FormSchema(form_id="test", title="T", sections=[FormSection(section_id="s1", fields=[field])])
         result = await renderer.render(form)
         assert result.content is not None, f"Renderer returned None for {ft}"
 
@@ -315,11 +327,26 @@ async def test_pdf_registry_dispatch_existing_types():
 
     renderer = PdfRenderer()
     existing_types = [
-        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
-        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
-        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
-        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
-        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+        FieldType.TEXT,
+        FieldType.TEXT_AREA,
+        FieldType.NUMBER,
+        FieldType.INTEGER,
+        FieldType.BOOLEAN,
+        FieldType.DATE,
+        FieldType.DATETIME,
+        FieldType.TIME,
+        FieldType.SELECT,
+        FieldType.MULTI_SELECT,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.COLOR,
+        FieldType.URL,
+        FieldType.EMAIL,
+        FieldType.PHONE,
+        FieldType.PASSWORD,
+        FieldType.HIDDEN,
+        FieldType.GROUP,
+        FieldType.ARRAY,
     ]
     for ft in existing_types:
         assert ft in renderer._registry, f"PdfRenderer registry missing {ft}"
@@ -333,18 +360,30 @@ async def test_adaptive_card_registry_dispatch_existing_types():
 
     renderer = AdaptiveCardRenderer()
     existing_types = [
-        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
-        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
-        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
-        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
-        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+        FieldType.TEXT,
+        FieldType.TEXT_AREA,
+        FieldType.NUMBER,
+        FieldType.INTEGER,
+        FieldType.BOOLEAN,
+        FieldType.DATE,
+        FieldType.DATETIME,
+        FieldType.TIME,
+        FieldType.SELECT,
+        FieldType.MULTI_SELECT,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.COLOR,
+        FieldType.URL,
+        FieldType.EMAIL,
+        FieldType.PHONE,
+        FieldType.PASSWORD,
+        FieldType.HIDDEN,
+        FieldType.GROUP,
+        FieldType.ARRAY,
     ]
     for ft in existing_types:
         field = FormField(field_id="f1", field_type=ft, label="Test")
-        form = FormSchema(
-            form_id="test", title="T",
-            sections=[FormSection(section_id="s1", fields=[field])]
-        )
+        form = FormSchema(form_id="test", title="T", sections=[FormSection(section_id="s1", fields=[field])])
         result = await renderer.render(form)
         assert result.content is not None, f"Adaptive Card returned None for {ft}"
 
@@ -358,6 +397,7 @@ class TestAdaptiveCardRenderer:
 
 # TASK-1151: Per-type renderer coverage matrix and fallback warning tests
 
+
 @pytest.mark.asyncio
 async def test_renderer_fallback_emits_warning():
     """PDF rendering of SIGNATURE produces placeholder + appends RenderWarning."""
@@ -365,13 +405,8 @@ async def test_renderer_fallback_emits_warning():
     from parrot_formdesigner.renderers.pdf import PdfRenderer
 
     renderer = PdfRenderer()
-    sig_field = FormField(
-        field_id="sig1", field_type=FieldType.SIGNATURE, label="Signature"
-    )
-    form = FormSchema(
-        form_id="t", title="T",
-        sections=[FormSection(section_id="s", fields=[sig_field])]
-    )
+    sig_field = FormField(field_id="sig1", field_type=FieldType.SIGNATURE, label="Signature")
+    form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[sig_field])])
     result = await renderer.render(form)
     assert len(result.warnings) >= 1
     w = result.warnings[0]
@@ -387,22 +422,24 @@ async def test_renderer_coverage_matrix():
     from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
 
     new_types = [
-        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
-        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
-        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+        FieldType.SIGNATURE,
+        FieldType.DYNAMIC_SELECT,
+        FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        FieldType.LOCATION,
+        FieldType.TAGS,
+        FieldType.NPS,
+        FieldType.LIKERT,
+        FieldType.RANKING,
     ]
     for renderer in [HTML5Renderer(), JsonSchemaRenderer()]:
         for ft in new_types:
             field = FormField(field_id="f1", field_type=ft, label="Test")
-            form = FormSchema(
-                form_id="t", title="T",
-                sections=[FormSection(section_id="s", fields=[field])]
-            )
+            form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field])])
             result = await renderer.render(form)
             assert result is not None, f"{renderer.__class__.__name__} returned None for {ft}"
-            assert result.content is not None, (
-                f"{renderer.__class__.__name__} content is None for {ft}"
-            )
+            assert result.content is not None, f"{renderer.__class__.__name__} content is None for {ft}"
 
 
 @pytest.mark.asyncio
@@ -412,16 +449,20 @@ async def test_html5_new_types_render_without_error():
 
     renderer = HTML5Renderer()
     new_types = [
-        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
-        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
-        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+        FieldType.SIGNATURE,
+        FieldType.DYNAMIC_SELECT,
+        FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        FieldType.LOCATION,
+        FieldType.TAGS,
+        FieldType.NPS,
+        FieldType.LIKERT,
+        FieldType.RANKING,
     ]
     for ft in new_types:
         field = FormField(field_id="f1", field_type=ft, label="Test")
-        form = FormSchema(
-            form_id="test", title="T",
-            sections=[FormSection(section_id="s1", fields=[field])]
-        )
+        form = FormSchema(form_id="test", title="T", sections=[FormSection(section_id="s1", fields=[field])])
         result = await renderer.render(form)
         assert result.content is not None, f"HTML5Renderer returned None content for {ft}"
         assert len(result.content) > 0, f"HTML5Renderer returned empty content for {ft}"
@@ -440,15 +481,10 @@ async def test_adaptive_card_fallback_types_emit_warnings():
     ]
     for ft in fallback_types:
         field = FormField(field_id="f1", field_type=ft, label="Test")
-        form = FormSchema(
-            form_id="t", title="T",
-            sections=[FormSection(section_id="s", fields=[field])]
-        )
+        form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field])])
         result = await renderer.render(form)
         assert result.content is not None
-        assert len(result.warnings) >= 1, (
-            f"AdaptiveCardRenderer should emit warning for {ft}"
-        )
+        assert len(result.warnings) >= 1, f"AdaptiveCardRenderer should emit warning for {ft}"
         w = result.warnings[0]
         assert w.field_type == ft.value
         assert w.renderer == "adaptive_card"
@@ -474,37 +510,45 @@ async def test_jsonschema_new_types_have_format():
     }
     for ft, expected_format in new_types.items():
         field = FormField(field_id="f1", field_type=ft, label="Test")
-        form = FormSchema(
-            form_id="t", title="T",
-            sections=[FormSection(section_id="s", fields=[field])]
-        )
+        form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field])])
         result = await renderer.render(form)
         schema = result.content
         prop = schema["properties"]["f1"]
-        assert prop.get("format") == expected_format, (
-            f"JsonSchema format for {ft} should be {expected_format!r}, got {prop.get('format')!r}"
-        )
+        assert (
+            prop.get("format") == expected_format
+        ), f"JsonSchema format for {ft} should be {expected_format!r}, got {prop.get('format')!r}"
 
 
 @pytest.mark.asyncio
 async def test_telegram_new_types_classified():
     """All 10 new FieldTypes appear in either _INLINE_FIELD_TYPES or _WEBAPP_FIELD_TYPES."""
-    from parrot_formdesigner.renderers.telegram.renderer import (
-        _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
-    )
+    from parrot_formdesigner.renderers.telegram.renderer import _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
 
     new_types = [
-        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
-        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
-        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+        FieldType.SIGNATURE,
+        FieldType.DYNAMIC_SELECT,
+        FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        FieldType.LOCATION,
+        FieldType.TAGS,
+        FieldType.NPS,
+        FieldType.LIKERT,
+        FieldType.RANKING,
     ]
     inline_expected = {
-        FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
-        FieldType.LOCATION, FieldType.DYNAMIC_SELECT,
+        FieldType.NPS,
+        FieldType.LIKERT,
+        FieldType.RANKING,
+        FieldType.LOCATION,
+        FieldType.DYNAMIC_SELECT,
     }
     webapp_expected = {
-        FieldType.SIGNATURE, FieldType.TRANSFER_LIST, FieldType.REMOTE_RESPONSE,
-        FieldType.AVAILABILITY, FieldType.TAGS,
+        FieldType.SIGNATURE,
+        FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        FieldType.TAGS,
     }
     for ft in new_types:
         in_inline = ft in _INLINE_FIELD_TYPES
@@ -537,10 +581,12 @@ _TASK2337_TYPES = [
     FieldType.PLACE,
 ]
 
+
 def _task2337_form(ft: FieldType) -> FormSchema:
     field = FormField(field_id="f1", field_type=ft, label="Test")
     return FormSchema(
-        form_id="t", title="T",
+        form_id="t",
+        title="T",
         sections=[FormSection(section_id="s", fields=[field])],
     )
 
@@ -576,16 +622,21 @@ async def test_html5_task2337_native_types_recorded():
     from parrot_formdesigner.renderers.html5 import HTML5Renderer
 
     native_types = [
-        FieldType.SEARCH, FieldType.MASKED, FieldType.COLOR_PICKER,
-        FieldType.EMOJI, FieldType.CRON, FieldType.TREE_SELECT,
-        FieldType.SIGNATURE_PAD, FieldType.PLACE,
+        FieldType.SEARCH,
+        FieldType.MASKED,
+        FieldType.COLOR_PICKER,
+        FieldType.EMOJI,
+        FieldType.CRON,
+        FieldType.TREE_SELECT,
+        FieldType.SIGNATURE_PAD,
+        FieldType.PLACE,
     ]
     renderer = HTML5Renderer()
     for ft in native_types:
         result = await renderer.render(_task2337_form(ft))
-        assert not any(w.field_type == ft.value for w in result.warnings), (
-            f"{ft} should be native in html5 (no RenderWarning), got {result.warnings}"
-        )
+        assert not any(
+            w.field_type == ft.value for w in result.warnings
+        ), f"{ft} should be native in html5 (no RenderWarning), got {result.warnings}"
 
 
 @pytest.mark.asyncio
@@ -595,16 +646,18 @@ async def test_html5_task2337_fallback_types_emit_warnings():
     from parrot_formdesigner.renderers.html5 import HTML5Renderer
 
     fallback_types = [
-        FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD,
-        FieldType.AI_CAPTURE, FieldType.CREDIT_CARD,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
+        FieldType.CREDIT_CARD,
     ]
     renderer = HTML5Renderer()
     for ft in fallback_types:
         result = await renderer.render(_task2337_form(ft))
-        assert any(w.field_type == ft.value and w.renderer == "html5" for w in result.warnings), (
-            f"{ft} should emit an html5 RenderWarning"
-        )
-        assert 'disabled' in result.content
+        assert any(
+            w.field_type == ft.value and w.renderer == "html5" for w in result.warnings
+        ), f"{ft} should emit an html5 RenderWarning"
+        assert "disabled" in result.content
 
 
 @pytest.mark.asyncio
@@ -617,9 +670,7 @@ async def test_renderer_coverage_matrix_task2337():
         for ft in _TASK2337_TYPES:
             result = await renderer.render(_task2337_form(ft))
             assert result is not None, f"{renderer.__class__.__name__} returned None for {ft}"
-            assert result.content is not None, (
-                f"{renderer.__class__.__name__} content is None for {ft}"
-            )
+            assert result.content is not None, f"{renderer.__class__.__name__} content is None for {ft}"
 
 
 @pytest.mark.asyncio
@@ -645,12 +696,12 @@ async def test_jsonschema_task2337_types_have_type_and_format():
     for ft, (expected_type, expected_format) in expected.items():
         result = await renderer.render(_task2337_form(ft))
         prop = result.content["properties"]["f1"]
-        assert prop.get("type") == expected_type, (
-            f"JsonSchema type for {ft} should be {expected_type!r}, got {prop.get('type')!r}"
-        )
-        assert prop.get("format") == expected_format, (
-            f"JsonSchema format for {ft} should be {expected_format!r}, got {prop.get('format')!r}"
-        )
+        assert (
+            prop.get("type") == expected_type
+        ), f"JsonSchema type for {ft} should be {expected_type!r}, got {prop.get('type')!r}"
+        assert (
+            prop.get("format") == expected_format
+        ), f"JsonSchema format for {ft} should be {expected_format!r}, got {prop.get('format')!r}"
 
 
 @pytest.mark.asyncio
@@ -675,9 +726,7 @@ async def test_jsonschema_task2337_credit_card_and_place_have_properties():
 @pytest.mark.asyncio
 async def test_telegram_task2337_types_classified():
     """All twelve FEAT-448 types classify as WebApp-only in Telegram (AC2)."""
-    from parrot_formdesigner.renderers.telegram.renderer import (
-        _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
-    )
+    from parrot_formdesigner.renderers.telegram.renderer import _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
 
     for ft in _TASK2337_TYPES:
         assert ft in _WEBAPP_FIELD_TYPES, f"{ft} should be in _WEBAPP_FIELD_TYPES"
@@ -741,16 +790,19 @@ async def test_adaptive_card_task2337_native_types_no_warning():
     from parrot_formdesigner.renderers.adaptive_card import AdaptiveCardRenderer
 
     native_types = [
-        FieldType.SEARCH, FieldType.MASKED, FieldType.COLOR_PICKER,
-        FieldType.EMOJI, FieldType.CRON,
+        FieldType.SEARCH,
+        FieldType.MASKED,
+        FieldType.COLOR_PICKER,
+        FieldType.EMOJI,
+        FieldType.CRON,
     ]
     renderer = AdaptiveCardRenderer()
     for ft in native_types:
         result = await renderer.render(_task2337_form(ft))
         assert result.content is not None
-        assert not any(w.field_type == ft.value for w in result.warnings), (
-            f"{ft} should be native in adaptive_card (no RenderWarning)"
-        )
+        assert not any(
+            w.field_type == ft.value for w in result.warnings
+        ), f"{ft} should be native in adaptive_card (no RenderWarning)"
 
 
 @pytest.mark.asyncio
@@ -760,20 +812,25 @@ async def test_adaptive_card_task2337_fallback_types_emit_warnings():
     from parrot_formdesigner.renderers.adaptive_card import AdaptiveCardRenderer
 
     fallback_types = [
-        FieldType.TREE_SELECT, FieldType.SIGNATURE_PAD, FieldType.CREDIT_CARD,
-        FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD, FieldType.AI_CAPTURE,
+        FieldType.TREE_SELECT,
+        FieldType.SIGNATURE_PAD,
+        FieldType.CREDIT_CARD,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
         FieldType.PLACE,
     ]
     renderer = AdaptiveCardRenderer()
     for ft in fallback_types:
         result = await renderer.render(_task2337_form(ft))
         assert result.content is not None
-        assert any(w.field_type == ft.value and w.renderer == "adaptive_card" for w in result.warnings), (
-            f"{ft} should emit an adaptive_card RenderWarning"
-        )
+        assert any(
+            w.field_type == ft.value and w.renderer == "adaptive_card" for w in result.warnings
+        ), f"{ft} should emit an adaptive_card RenderWarning"
 
 
 # --- TASK-1158: API Handler AuthContext tests ---
+
 
 def test_build_auth_context_from_bearer_header():
     """Bearer token in Authorization header → AuthContext(scheme='bearer', token=...)."""
@@ -991,6 +1048,7 @@ async def test_remote_response_validator_propagates_failure():
 # FEAT-488: JSON Schema renderer content_type tests
 # ---------------------------------------------------------------------------
 
+
 class TestJsonSchemaRendererContentType:
     """Tests for JSON Schema renderer's x-content-type and x-accept-content-types (FEAT-488)."""
 
@@ -1006,10 +1064,7 @@ class TestJsonSchemaRendererContentType:
             label="Notes",
             content_type="text/markdown",
         )
-        form = FormSchema(
-            form_id="t", title="T",
-            sections=[FormSection(section_id="s", fields=[field])]
-        )
+        form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field])])
         result = await renderer.render(form)
         prop = result.content["properties"]["notes"]
         assert prop.get("x-content-type") == "text/markdown"
@@ -1025,10 +1080,7 @@ class TestJsonSchemaRendererContentType:
             field_type=FieldType.TEXT_AREA,
             label="Notes",
         )
-        form = FormSchema(
-            form_id="t", title="T",
-            sections=[FormSection(section_id="s", fields=[field])]
-        )
+        form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field])])
         result = await renderer.render(form)
         prop = result.content["properties"]["notes"]
         assert "x-content-type" not in prop
@@ -1051,13 +1103,9 @@ class TestJsonSchemaRendererContentType:
             field_type=FieldType.TEXT_AREA,
             label="Plain",
         )
-        form = FormSchema(
-            form_id="t", title="T",
-            sections=[FormSection(section_id="s", fields=[field, other_field])]
-        )
+        form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[field, other_field])])
         result = await renderer.render(form)
         prop = result.content["properties"]["answer"]
         assert prop.get("x-accept-content-types") == ["text/plain", "application/json"]
         other_prop = result.content["properties"]["plain"]
         assert "x-accept-content-types" not in other_prop
-
