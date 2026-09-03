@@ -48,6 +48,7 @@ def validate_schema_name(schema: str) -> None:
             "with a digit (identifiers are interpolated directly into SQL)."
         )
 
+
 #: Version of the ``graphindex.*`` Postgres schema. Bumped whenever
 #: ``_MIGRATION_COLUMNS`` grows a new entry.
 PG_SCHEMA_VERSION = "1"

@@ -372,9 +372,7 @@ class PostgresWikiStore(BaseWikiStore):
                     self._wiki_name,
                 )
                 old_ids = [r["concept_id"] for r in old_rows]
-                await conn.execute(
-                    f"DELETE FROM {self._schema}.symbols WHERE source_id = $1", source_id
-                )
+                await conn.execute(f"DELETE FROM {self._schema}.symbols WHERE source_id = $1", source_id)
 
                 preserved: list[tuple[str, str, str]] = []
                 if old_ids:

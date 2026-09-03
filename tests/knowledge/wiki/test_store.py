@@ -73,9 +73,7 @@ async def store(tmp_path: Path, request: pytest.FixtureRequest) -> BaseWikiStore
         )
     if request.param == "postgres":
         schema = f"graphindex_test_{uuid.uuid4().hex[:12]}"
-        wiki_store = create_wiki_store(
-            tmp_path, wiki_name="test-wiki", backend="postgres", dsn=_PG_DSN, schema=schema
-        )
+        wiki_store = create_wiki_store(tmp_path, wiki_name="test-wiki", backend="postgres", dsn=_PG_DSN, schema=schema)
         try:
             yield wiki_store
         finally:
