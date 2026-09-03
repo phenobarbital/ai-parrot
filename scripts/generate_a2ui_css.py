@@ -119,7 +119,6 @@ SELECTOR_UTILITIES: dict[str, str] = {
     ),
     "filter-label": "mr-1 text-sm font-medium text-[var(--neutral-text)]",
     "filter-summary": "mt-1 w-full text-xs text-[var(--neutral-muted)]",
-    "kpi-grid": "grid grid-cols-2 gap-[var(--density-gap)] md:grid-cols-4",
     "msf-actions": "mt-2 flex items-center justify-between gap-2",
     "msf-btn": (
         "inline-flex items-center gap-1 rounded-[var(--radius)] border "
@@ -147,6 +146,26 @@ SELECTOR_UTILITIES: dict[str, str] = {
 #: SOME rule (coverage, not curated styling) so `--check` still detects
 #: drift deterministically rather than crashing on a KeyError.
 _DEFAULT_UTILITIES = "block"
+
+#: Classes the AST scan legitimately finds (they match the `kpi-*`
+#: vocabulary) that are NOT part of spec §1 gap 2's base-primitive coverage
+#: gap this script closes — they are already deliberately styled elsewhere
+#: (`components.css` + per-layout overrides in `layout-*.css`) and must be
+#: excluded from generation entirely, not just given a different utility
+#: mapping. `kpi-grid` in particular: `components.css` keeps its base rule
+#: a STATIC `repeat(4, 1fr)` specifically "so the print layout's composed
+#: sheet never carries a responsive grid function" (its own comment) —
+#: `layout-analytics.css` then opts back into
+#: `repeat(auto-fit, minmax(...))` for screen surfaces only. A generated
+#: Tailwind `grid-cols-*` utility for this selector would inject a
+#: `minmax(...)` token into EVERY composed sheet (Tailwind's `grid-cols-N`
+#: always compiles through `minmax(0, 1fr)`), including the print layout —
+#: `_TAILWIND_CSS` sits before `layout_css` in `DesignSystem.stylesheet()`'s
+#: concatenation, so cascade order alone doesn't hide it from a substring-
+#: based test like `TestPrintLayout.test_no_auto_fit`. Verified empirically
+#: (2026-09-03) generating with `grid-cols-2 md:grid-cols-4` before this
+#: exclusion was added.
+_ALREADY_STYLED_ELSEWHERE: frozenset[str] = frozenset({"kpi-grid"})
 
 
 # ---------------------------------------------------------------------------
@@ -328,17 +347,27 @@ def generate_css(*, verbose: bool = False) -> tuple[str, set[str]]:
         verbose: If True, print the scanned class list and CLI invocation.
 
     Returns:
-        `(generated_css_text, scanned_classes)`.
+        `(generated_css_text, generated_classes)` — `generated_classes` is
+        the scanned set MINUS `_ALREADY_STYLED_ELSEWHERE` (the classes this
+        script actually writes an `@apply` rule for; TASK-2794's separate
+        coverage-audit test is what verifies the excluded ones are still
+        covered by `components.css`/`layout-*.css` instead).
     """
     classes = scan_classes(INTERACTIVE_HTML_PATH)
     if verbose:
         print(f"Scanned {len(classes)} class(es) from {INTERACTIVE_HTML_PATH}:")
         for cls in sorted(classes):
             print(f"  {cls}")
+        if _ALREADY_STYLED_ELSEWHERE & classes:
+            print(
+                "  (excluded — already styled elsewhere: "
+                f"{', '.join(sorted(_ALREADY_STYLED_ELSEWHERE & classes))})"
+            )
 
-    entry_css = _build_tailwind_entry(classes)
+    generated_classes = classes - _ALREADY_STYLED_ELSEWHERE
+    entry_css = _build_tailwind_entry(generated_classes)
     compiled_css = _run_tailwind_cli(entry_css, verbose=verbose)
-    return _GENERATED_HEADER + compiled_css, classes
+    return _GENERATED_HEADER + compiled_css, generated_classes
 
 
 # ---------------------------------------------------------------------------
