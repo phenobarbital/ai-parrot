@@ -186,4 +186,62 @@ async def test_e2e_ingest_then_retrieve(...)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `hybrid_retrieve` on `PostgresPersistence` with the normative
+spec §2 signature, plus `HybridCandidate`. One SQL statement (one `fetch`
+call, verified by `test_single_statement_execution` which monkeypatches
+`asyncpg.Connection.fetch` and asserts a call count of 1) assembled
+dynamically from three optional CTEs (graph/knn/fts), each included only
+when its corresponding param is given, joined via `UNION` into a
+`candidates` set, then LEFT-JOINed back for scoring.
+
+**Unification decision** (not fully specified by the task — the graph
+leg's "rank" needed a concrete definition): rather than a separate
+depth-decay term, the graph leg's BFS depth order becomes an ordinal rank
+(`row_number() OVER (ORDER BY depth ASC, concept_id ASC)`), so ALL THREE
+legs share literally the same `Σ w_leg/(60+rank_leg)` RRF formula (spec's
+own wording: "RRF fusion ... in SQL" — read as uniform across legs, with
+depth acting as the graph leg's ranking signal rather than a bolted-on
+multiplier). `test_rrf_fusion_math` asserts the exact formula.
+
+**CTE order per TASK-2770**: when both `seeds` and `query_embedding` are
+given, the KNN leg is restricted to the graph hood
+(`nv.concept_id IN (SELECT concept_id FROM graph_leg)`) — the spike's
+measured winner. `query_embedding` alone runs an unrestricted top-K.
+
+**query_text decision** (task asked to "decide and document"):
+`fts_terms` doubles as the re-ranking query text; the normative signature
+has no separate `query_text` param, so reranking is skipped (fused order
+returned) when a reranker is supplied without `fts_terms` — documented in
+the method docstring.
+
+**Bug found and fixed during testing** (worth flagging for future SQL
+-builder code in this codebase): initially allocated the three weight
+placeholders (`$N` for `w_graph`/`w_knn`/`w_fts`) unconditionally, but
+only referenced them in the query text conditionally per active leg. An
+allocated-but-never-referenced asyncpg parameter makes Postgres's prepare
+step fail with `IndeterminateDatatypeError` ("could not determine data
+type of parameter $N") — not a syntax error, so it only surfaced once
+live-tested with a single-leg call. Fixed by moving weight-placeholder
+allocation inside the same `if seeds:` / `if query_embedding:` /
+`if fts_terms:` blocks that reference them, and added explicit `::float8`
+/ `::int` casts throughout for parameters used only in arithmetic/LIMIT
+contexts (same class of ambiguity).
+
+Re-ranking copies `HybridPageIndexSearch._apply_reranker`'s fallback
+semantics exactly: reads full `body_ref` content via `asyncio.to_thread`
+(never blocks the loop), and falls back to fused order on either an
+exception OR a NaN `rerank_score` (the `AbstractReranker` contract's own
+internal-failure signal) — both paths covered by dedicated tests.
+
+All 14 tests pass (no-legs ValueError, each leg alone, RRF fusion math
+against the literal formula, `as_of` transversality across a version
+close, naive-datetime rejection, evidence pairs from matched edges,
+rerank success/failure/NaN-fallback, single-statement execution, E2E
+ingest→retrieve). Ran the full `tests/knowledge/graphindex/` +
+`test_postgres_store.py` + `test_extra_backends.py` suite: 806 passed, 4
+pre-existing failures in `test_meta_ontology.py`/`test_projection.py`/
+`test_schema.py` (EdgeKind enum-completeness checks) — confirmed
+unrelated via `git diff` showing zero changes to `schema.py`/
+`meta_ontology.py`/`projection.py` on this branch; not touched, not
+fixed (no scope creep). `ruff check` clean; zero SQLAlchemy imports;
+`parrot.stores.postgres` never referenced (grep-verified in the test).
