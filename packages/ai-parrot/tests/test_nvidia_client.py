@@ -22,7 +22,7 @@ from parrot.clients.nvidia import (
     NvidiaRateLimitError,
     SlidingWindowRateLimiter,
 )
-from parrot.models.nvidia import NvidiaModel
+from parrot.models.nvidia import FREE_TIER_MODELS, NvidiaModel
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
 
 
@@ -770,6 +770,10 @@ class TestNvidiaModelEnum:
         "NEMOTRON_3_NANO_OMNI_30B_REASONING": (
             "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
         ),
+        "NEMOTRON_3_5_LIGHTNING_30B": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "KIMI_K3": "moonshotai/kimi-k3",
+        "DEEPSEEK_V4_FLASH_0731": "deepseek-ai/deepseek-v4-flash-0731",
+        "GEMMA_4_31B_IT": "google/gemma-4-31b-it",
         "GLM_5_2": "z-ai/glm-5.2",
         "STEPFUN_STEP_3_7_FLASH": "stepfun-ai/step-3.7-flash",
     }
@@ -829,6 +833,47 @@ class TestNvidiaModelEnum:
             assert "/" in member.value, f"{member.name} is not vendor-prefixed"
             vendor, _, model = member.value.partition("/")
             assert vendor and model, f"{member.name} has an empty segment"
+
+    def test_free_tier_models_are_exactly_nvidias_published_list(self):
+        """FREE_TIER_MODELS matches NVIDIA's published free preview endpoints.
+
+        Pinned as an exact set: a slug silently dropping out would make the
+        40 rpm ``free_tier`` throttle look like it covers a model it does not.
+        """
+        assert FREE_TIER_MODELS == {
+            "moonshotai/kimi-k3",
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+            "deepseek-ai/deepseek-v4-flash-0731",
+            "poolside/laguna-xs-2.1",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            "google/gemma-4-31b-it",
+            "mistralai/mistral-nemotron",
+        }
+
+    def test_free_tier_models_are_all_enum_members(self):
+        """Every free-tier slug is reachable as an enum member, not a bare string."""
+        known = {member.value for member in NvidiaModel}
+        assert FREE_TIER_MODELS <= known, (
+            f"not in NvidiaModel: {sorted(FREE_TIER_MODELS - known)}"
+        )
+
+    def test_withdrawn_slugs_are_not_free_tier(self):
+        """No slug that returns 410/404 upstream is advertised as free.
+
+        ``DEEPSEEK_V4_FLASH`` and its live successor
+        ``DEEPSEEK_V4_FLASH_0731`` differ by a date suffix alone, which is
+        exactly the kind of pair that gets swapped by mistake.
+        """
+        withdrawn = {
+            NvidiaModel.DEEPSEEK_V4_FLASH.value,
+            NvidiaModel.DEEPSEEK_V4_PRO.value,
+            NvidiaModel.GLM_5_2.value,
+            NvidiaModel.LLAMA_3_3_70B_INSTRUCT.value,
+            NvidiaModel.NEMOTRON_3_NANO_30B.value,
+            NvidiaModel.STEPFUN_STEP_3_7_FLASH.value,
+            NvidiaModel.KIMI_K2_6.value,
+        }
+        assert not (FREE_TIER_MODELS & withdrawn)
 
 
 # ---------------------------------------------------------------------------

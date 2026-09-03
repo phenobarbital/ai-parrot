@@ -255,6 +255,12 @@ class NvidiaClient(OpenAIBaseClient):
         free_tier: When ``True`` (default), throttle requests to
             ``requests_per_minute``. When ``None``, the value is read from the
             ``NVIDIA_FREE_TIER`` env var, itself defaulting to ``True``.
+            :data:`~parrot.models.nvidia.FREE_TIER_MODELS` lists the models
+            NVIDIA publishes as free preview endpoints — the ones this
+            throttle exists for. Note that a free endpoint answers ``503
+            ResourceExhausted`` when it is at capacity; that is saturation,
+            not a bad model id, and the right response is to retry rather
+            than switch models.
         requests_per_minute: Requests allowed per 60s window while
             ``free_tier`` is active. Defaults to :data:`FREE_TIER_RPM` (40).
         rate_limit_max_wait: Maximum seconds to wait for a free-tier slot.
