@@ -28,15 +28,38 @@ def test_agent_module_imports_and_registers() -> None:
 
 
 def test_conf_defaults() -> None:
-    """Config defaults match spec Module 1 exactly."""
-    assert conf.WIKI_KB_LLM_STRONG == "google:gemini-2.5-pro"
-    assert conf.WIKI_KB_LLM_CHEAP == "google:gemini-2.5-flash"
-    assert conf.WIKI_KB_INGEST_CRON == "0 * * * *"
-    assert conf.WIKI_KB_ACTIVE_WINDOW_DAYS == 14
-    assert conf.WIKI_KB_RAW_ROOT == "Raw"
-    assert conf.FIREFLIES_WIKI_EMAIL_ENABLED is False
-    # Reused, not redefined (G11) — FEAT-472's overlap-days knob.
-    assert isinstance(conf.FIREFLIES_SYNC_OVERLAP_DAYS, int)
+    """The CODE defaults (fallbacks) match spec Module 1 exactly.
+
+    ``WIKI_KB_LLM_*`` (and the rest) are env-overridable per Module 1 ("exact ids
+    via env"), and ``conf`` resolves them from ``env/.env`` at import — so this test
+    must NOT depend on the operator's ambient env. It stubs the navconfig source to
+    return each key's declared ``fallback`` (i.e. "key not set anywhere"), reloads
+    ``conf``, asserts the code defaults, then restores.
+    """
+    import importlib
+
+    from navconfig import config as navconf
+    from parrot.flows.wiki_ingest import conf as conf_module
+
+    saved = (navconf.get, navconf.getint, navconf.getboolean, navconf.getlist)
+    navconf.get = lambda key, fallback=None: fallback  # type: ignore[assignment,method-assign]
+    navconf.getint = lambda key, fallback=None: fallback  # type: ignore[assignment,method-assign]
+    navconf.getboolean = lambda key, fallback=None: fallback  # type: ignore[assignment,method-assign]
+    navconf.getlist = lambda key: []  # type: ignore[assignment,method-assign]
+    try:
+        importlib.reload(conf_module)
+        assert conf_module.WIKI_KB_LLM_STRONG == "google:gemini-2.5-pro"
+        assert conf_module.WIKI_KB_LLM_CHEAP == "google:gemini-2.5-flash"
+        assert conf_module.WIKI_KB_INGEST_CRON == "0 * * * *"
+        assert conf_module.WIKI_KB_ACTIVE_WINDOW_DAYS == 14
+        assert conf_module.WIKI_KB_RAW_ROOT == "Raw"
+        assert conf_module.FIREFLIES_WIKI_EMAIL_ENABLED is False
+        assert conf_module.WIKI_KB_MAX_REPROCESS_ATTEMPTS == 3
+        # Reused, not redefined (G11) — FEAT-472's overlap-days knob.
+        assert isinstance(conf_module.FIREFLIES_SYNC_OVERLAP_DAYS, int)
+    finally:
+        navconf.get, navconf.getint, navconf.getboolean, navconf.getlist = saved  # type: ignore[method-assign]
+        importlib.reload(conf_module)  # restore env-resolved values for other tests
 
 
 @pytest.mark.asyncio

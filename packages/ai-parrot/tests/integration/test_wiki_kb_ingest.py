@@ -167,7 +167,10 @@ async def test_ingest_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert any(p.startswith("Projects/Acme Rollout/") for p in report.created)
     assert (tmp_path / "Wiki" / "Registry" / "processed-sources.md").exists()
     assert "fireflies:id-1" in (tmp_path / "Wiki" / "Registry" / "processed-sources.md").read_text()
-    assert (tmp_path / "Diary" / "Daily Notes" / "2026-08-20.md").exists()
+    # The daily note is produced; the §31 archive policy (active window, D7) may
+    # relocate an old date from Diary/Daily Notes/ to Diary/Archive/<year>/ — so
+    # assert it exists anywhere under Diary/ (avoids a fixed-date time-bomb).
+    assert list((tmp_path / "Diary").rglob("2026-08-20.md")), "daily note for 2026-08-20 not found"
     assert (tmp_path / "Wiki" / "log.md").read_text().count("ingest |") == 1
 
 
