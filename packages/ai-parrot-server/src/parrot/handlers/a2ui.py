@@ -138,7 +138,12 @@ class A2UIHandler(AgentTalk):
         if not user_id:
             return None, None, None, self.error({"error": "Authentication required."}, status=401)
 
-        return agent, user_id, session_id, None
+        # `_get_user_session` returns the identity verbatim from the auth
+        # backend, which may be non-string (navigator_auth stores an int
+        # primary key). Everything downstream — the surface store key, the
+        # `A2UICallContext`, the permission principal — expects a string, so
+        # normalize once here rather than at each use site.
+        return agent, str(user_id), session_id, None
 
     @staticmethod
     def _build_runtime(agent, user_id: str) -> tuple[A2UIRuntime, ConversationMemorySurfaceStore]:

@@ -112,6 +112,34 @@ class TestPost:
         r = await raw.post("/api/v1/agents/demo/a2ui", json=_call_agent_function())
         assert r.status == 401
 
+    async def test_int_user_id_from_session_is_coerced(self, aiohttp_client, tmp_path):
+        """An auth backend storing an integer primary key must not 500.
+
+        ``navigator_auth`` puts the DB ``user_id`` on the session as an
+        ``int``; ``A2UICallContext.user_id`` is a ``str``, so the unconverted
+        value used to raise a Pydantic ``string_type`` error out of ``post()``.
+        """
+
+        @web.middleware
+        async def _auth_int_user(request, handler):
+            request["authenticated"] = True
+            request["NAV_SESSION"] = SessionData(data={"user_id": 35})
+            return await handler(request)
+
+        agent = _make_agent(tmp_path)
+        app = web.Application(middlewares=[_auth_int_user])
+        app["bot_manager"] = _bot_manager(agent)
+        app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
+        raw = await aiohttp_client(app)
+        r = await raw.post(
+            "/api/v1/agents/demo/a2ui",
+            json=_call_agent_function(),
+            params={"session_id": "sess-1"},
+        )
+        assert r.status == 200
+        body = await r.json()
+        assert body["agentFunctionResponse"]["functionCallId"] == "fc-1"
+
     async def test_decorator_rejects_unauthenticated(self, aiohttp_client, tmp_path):
         """Without authentication, ``@is_authenticated()`` rejects before the
         handler code runs — the fix for the auth-bypass CVE.
