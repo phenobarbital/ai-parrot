@@ -15,6 +15,8 @@ explicitly needs a tighter deadline.
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from parrot.tools.pythonrepl import PythonREPLTool
@@ -33,6 +35,30 @@ async def tool(tmp_path):
     instance = PythonREPLTool(report_dir=str(tmp_path))
     yield instance
     await _shutdown(instance)
+
+
+async def test_execute_error_dict_never_blank(tmp_path, monkeypatch):
+    """FEAT-500 AC5: a message-less exception still yields a readable error.
+
+    A bare `TimeoutError()` — exactly what `_send` used to raise on the
+    5 s namespace budget — has `str() == ''`, which reached the LLM as
+    "Error executing Python code: " with an empty `ToolResult.error`.
+    """
+    tool = PythonREPLTool(report_dir=str(tmp_path))
+    try:
+
+        @contextlib.asynccontextmanager
+        async def boom():
+            raise TimeoutError()
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(tool, "_worker_session", boom)
+        out = await tool._execute("x = 1")
+        assert out["status"] == "error"
+        assert out["error"] == "TimeoutError"
+        assert out["result"].startswith("ToolError: TimeoutError: TimeoutError")
+    finally:
+        await _shutdown(tool)
 
 
 class TestExecuteContract:
@@ -139,11 +165,12 @@ class TestE2E:
         """Infinite loop -> timeout -> LLM gets a loss error with the variable
         list -> the session is still usable afterward.
 
-        `deadline_ms` must cover the freshly-spawned (not prewarmed) worker's
-        own pandas/numpy bootstrap too, since that runs before it
-        can process the first `exec` request — too tight a deadline would
-        time out the FIRST ("z = 5") call on cold start, not the intended
-        infinite loop.
+        Since FEAT-500 `deadline_ms` no longer has to cover the freshly-spawned
+        worker's own pandas/numpy bootstrap: readiness is a separate budget
+        (`WorkerConfig.bootstrap_timeout_ms`), awaited by `_send()` BEFORE the
+        deadline clock starts, so the first ("z = 5") call on a cold start can
+        no longer be mistaken for the intended infinite loop. The 4 s deadline
+        below therefore now only has to cover actual execution.
         """
         config = WorkerConfig(deadline_ms=4_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=0)
         tool = PythonREPLTool(report_dir=str(tmp_path), worker_config=config)

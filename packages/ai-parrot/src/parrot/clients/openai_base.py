@@ -24,8 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
+from typing import TYPE_CHECKING, Any, Optional
 from datamodel.parsers.json import json_decoder
 from tenacity import (
     AsyncRetrying,
@@ -73,6 +72,14 @@ class OpenAIBaseClient(AbstractClient):
     # values here — they stay None (AbstractClient defaults) so the invoke
     # chain (base.py:_resolve_invoke_model) falls through to self.model.
 
+    # SDK request timeout (seconds) used when the caller passes no ``timeout``.
+    # Subclasses override this when their endpoint routinely takes longer than
+    # a normal chat completion — reasoning models are the motivating case: a
+    # single measured NIM reasoning request took 96.8s against this base's 60s
+    # default, so every such call failed with ``APITimeoutError`` even though
+    # the endpoint was healthy and would have answered.
+    _default_timeout: float = 60.0
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -90,7 +97,8 @@ class OpenAIBaseClient(AbstractClient):
             **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
                 May include ``model`` (normalized via :meth:`_normalize_model`
                 before being forwarded) and ``timeout`` (SDK request timeout,
-                defaults to 60 seconds).
+                defaulting to this class's :attr:`_default_timeout`, which
+                subclasses raise for slower endpoints).
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -98,7 +106,7 @@ class OpenAIBaseClient(AbstractClient):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        self._timeout = kwargs.pop("timeout", 60)
+        self._timeout = kwargs.pop("timeout", self._default_timeout)
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
@@ -630,8 +638,9 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = prepared_tools
             args["tool_choice"] = "auto"
 
-        if max_tokens or self.max_tokens:
-            args["max_tokens"] = max_tokens or self.max_tokens
+        _resolved_max_tokens = self._resolve_max_tokens(max_tokens)
+        if _resolved_max_tokens is not None:
+            args["max_tokens"] = _resolved_max_tokens
         if temperature:
             args["temperature"] = temperature
 
@@ -695,10 +704,19 @@ class OpenAIBaseClient(AbstractClient):
         final_output = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=model_str)
                 if output_config.custom_parser:
                     final_output = output_config.custom_parser(response_text)
                 else:
-                    final_output = await self._parse_structured_output(response_text, output_config)
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=model_str,
+                    )
+            except InvokeError:
+                raise
             except Exception:  # noqa: BLE001 pylint: disable=broad-except
                 final_output = response_text
 
@@ -894,10 +912,12 @@ class OpenAIBaseClient(AbstractClient):
         user_id: str | None = None,
         session_id: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        use_tools: bool = True,
         structured_output: type | StructuredOutputConfig | None = None,
         lazy_loading: bool = False,
+        **kwargs,
     ) -> AsyncIterator[str | AIMessage]:
-        """Stream a response with optional conversation memory.
+        """Stream a response with tool-use support and conversation memory.
 
         Generic chat-completions streaming implementation shared by every
         ``OpenAIBaseClient`` subclass. Subclasses needing Responses-API
@@ -908,8 +928,17 @@ class OpenAIBaseClient(AbstractClient):
         SDK directly, so a subclass's funnel override applies to streaming
         too.
 
+        When the model requests tool calls during streaming, the tool-call
+        chunks are accumulated, the tools executed between rounds, and a new
+        streaming request is issued with the tool results — mirroring the
+        ``_run_tool_call_loop()`` used by :meth:`ask`.
+
         Yields successive string chunks followed by a final
         :class:`~parrot.models.responses.AIMessage`.
+
+        Args:
+            use_tools: Whether to include tool definitions and run the
+                streaming tool-call loop.  Defaults to ``True``.
 
         Raises:
             NotImplementedError: If the resolved model requires Responses-API
@@ -933,7 +962,7 @@ class OpenAIBaseClient(AbstractClient):
             model=model_str,
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=system_prompt,
-            has_tools=False,
+            has_tools=bool(self.tools) and use_tools,
             parent_trace=None,
         )
         _lc_t0 = time.perf_counter()
@@ -964,7 +993,7 @@ class OpenAIBaseClient(AbstractClient):
                 self.register_tool(tool)
 
         tools_payload = None
-        if self.tools:
+        if use_tools and self.tools:
             if lazy_loading:
                 tools_payload = self._prepare_lazy_tools()
             else:
@@ -975,7 +1004,7 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = tools_payload
             args["tool_choice"] = "auto"
 
-        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        max_tokens_value = self._resolve_max_tokens(max_tokens)
         if max_tokens_value is not None:
             args["max_tokens"] = max_tokens_value
 
@@ -989,28 +1018,131 @@ class OpenAIBaseClient(AbstractClient):
             if response_format:
                 args["response_format"] = response_format
 
-        # `.parse()` cannot reliably stream every SDK's tool-calling/plain
-        # responses; only prefer it when structured output was requested —
-        # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
-        response_stream = await self._chat_completion(
-            model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
-        )
-
+        # ── Streaming tool-call loop ──────────────────────────────────
+        # Mirrors _run_tool_call_loop() used by ask(). Each round streams
+        # text and accumulates tool-call chunks; when the model finishes
+        # with tool calls, they are executed between rounds and the
+        # conversation continues.
+        all_tool_calls: list[ToolCall] = []
         assistant_content = ""
         usage_data = None
-        async for chunk in response_stream:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                text_chunk = chunk.choices[0].delta.content
-                assistant_content += text_chunk
-                yield text_chunk
-            if hasattr(chunk, "usage") and chunk.usage is not None:
-                usage_data = chunk.usage
+        _max_tool_rounds = 25  # safety cap
+
+        for _round in range(_max_tool_rounds):
+            # `.parse()` cannot reliably stream every SDK's tool-calling/plain
+            # responses; only prefer it when structured output was requested —
+            # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
+            response_stream = await self._chat_completion(
+                model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
+            )
+
+            # Accumulate tool-call chunks by index. OpenAI streams them
+            # incrementally: first chunk carries id+name, subsequent ones
+            # carry argument fragments.
+            _tc_accum: dict[int, dict[str, str]] = {}
+            _round_content = ""
+            _finish_reason: str | None = None
+
+            async for chunk in response_stream:
+                if chunk.choices:
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    if delta and delta.content:
+                        text_chunk = delta.content
+                        _round_content += text_chunk
+                        assistant_content += text_chunk
+                        yield text_chunk
+                    # Accumulate streamed tool-call fragments.
+                    if delta and getattr(delta, "tool_calls", None):
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            if idx not in _tc_accum:
+                                _tc_accum[idx] = {
+                                    "id": getattr(tc_delta, "id", None) or "",
+                                    "name": "",
+                                    "arguments": "",
+                                }
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    _tc_accum[idx]["name"] = tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    _tc_accum[idx]["arguments"] += tc_delta.function.arguments
+                    _finish_reason = getattr(choice, "finish_reason", None) or _finish_reason
+                if hasattr(chunk, "usage") and chunk.usage is not None:
+                    usage_data = chunk.usage
+
+            # ── Tool-use round: execute and loop ──────────────────────
+            if _tc_accum and _finish_reason in ("tool_calls", "stop"):
+                # Build assistant message with tool_calls for conversation.
+                tc_serialized = []
+                for idx in sorted(_tc_accum):
+                    tc_info = _tc_accum[idx]
+                    tc_serialized.append({
+                        "id": tc_info["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc_info["name"],
+                            "arguments": tc_info["arguments"],
+                        },
+                    })
+                messages.append({
+                    "role": "assistant",
+                    "content": _round_content or None,
+                    "tool_calls": tc_serialized,
+                })
+
+                for idx in sorted(_tc_accum):
+                    tc_info = _tc_accum[idx]
+                    try:
+                        tool_args = json.loads(tc_info["arguments"]) if tc_info["arguments"] else {}
+                    except (json.JSONDecodeError, TypeError):
+                        tool_args = {}
+                    tc = ToolCall(
+                        id=tc_info["id"],
+                        name=tc_info["name"],
+                        arguments=tool_args,
+                    )
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tc_info["name"], tool_args)
+                        tc.result = tool_result
+                        tc.execution_time = time.time() - start_time
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_info["id"],
+                            "name": tc_info["name"],
+                            "content": str(tool_result),
+                        })
+                    except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = messages
+                            e.tool_call_id = tc_info["id"]
+                            e.agent_name = model_str
+                            raise
+                        tc.error = str(e)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_info["id"],
+                            "name": tc_info["name"],
+                            "content": str(e),
+                        })
+                    all_tool_calls.append(tc)
+                # Continue to next streaming round.
+            else:
+                # No tool calls — append assistant content and break.
+                if _round_content:
+                    messages.append({"role": "assistant", "content": _round_content})
+                break
 
         if usage_data is not None:
             usage = CompletionUsage.from_openai(usage_data)
         else:
             usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
+        tools_used = [tc.name for tc in all_tool_calls]
         ai_message = AIMessage(
             input=prompt,
             output=assistant_content,
@@ -1021,6 +1153,7 @@ class OpenAIBaseClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
+            tool_calls=all_tool_calls,
         )
         await self._emit_after_call(
             _lc_tc,
@@ -1029,12 +1162,11 @@ class OpenAIBaseClient(AbstractClient):
             duration_ms=(time.perf_counter() - _lc_t0) * 1000,
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
-            finish_reason=None,
+            finish_reason=_finish_reason,
         )
         yield ai_message
 
         if assistant_content:
-            messages.append({"role": "assistant", "content": assistant_content})
             await self._update_conversation_memory(
                 user_id,
                 session_id,
@@ -1044,7 +1176,7 @@ class OpenAIBaseClient(AbstractClient):
                 turn_id,
                 prompt,
                 assistant_content,
-                [],
+                tools_used,
             )
 
     async def invoke(
@@ -1055,7 +1187,7 @@ class OpenAIBaseClient(AbstractClient):
         structured_output: StructuredOutputConfig | None = None,
         model: str | None = None,
         system_prompt: str | None = None,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: list | None = None,
@@ -1075,7 +1207,9 @@ class OpenAIBaseClient(AbstractClient):
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full ``StructuredOutputConfig``; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``/``self.model``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``, then
+                ``_default_model``.
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.
@@ -1094,6 +1228,7 @@ class OpenAIBaseClient(AbstractClient):
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             messages = [
                 {"role": "system", "content": resolved_prompt},
@@ -1125,10 +1260,17 @@ class OpenAIBaseClient(AbstractClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_openai(response.usage)
             return self._build_invoke_result(output, output_type, resolved_model, usage, response)

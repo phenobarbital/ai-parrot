@@ -83,3 +83,37 @@ class InvokeError(ParrotError):
     ) -> None:
         super().__init__(message, *args, **kwargs)
         self.original: Optional[Exception] = original
+
+
+class TruncatedResponseError(InvokeError):
+    """Raised when a provider stopped generating because of the output-token limit.
+
+    A response whose ``finish_reason`` / ``stop_reason`` reports truncation
+    (``MAX_TOKENS``, ``max_tokens``, ``length``, ``REASON_MAX_LEN``, ...) is
+    known to be incomplete *before* any structured-output parse is attempted.
+    Surfacing it as an :class:`InvokeError` prevents the truncated text from
+    silently leaking to callers as a plain ``str``.
+
+    Args:
+        message: Human-readable error description.
+        *args: Forwarded to :class:`InvokeError`.
+        finish_reason: The normalised provider finish reason that triggered the error.
+        model: Model identifier used for the call, when known.
+        **kwargs: Forwarded to :class:`InvokeError`.
+
+    Attributes:
+        finish_reason: Normalised finish reason (e.g. ``"max_tokens"``).
+        model: Model identifier used for the call, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *args,
+        finish_reason: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs
+    ) -> None:
+        super().__init__(message, *args, **kwargs)
+        self.finish_reason: Optional[str] = finish_reason
+        self.model: Optional[str] = model

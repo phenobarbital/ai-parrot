@@ -6,6 +6,7 @@ code blocks, tool call panels, usage stats, and streaming live display.
 import json
 import logging
 import sys
+import time
 import traceback
 from typing import Any, List, Optional
 
@@ -16,6 +17,43 @@ from rich.table import Table
 from rich.text import Text
 
 from parrot.models.responses import AIMessage
+
+
+class _BlockingSafeFile:
+    """Thin proxy that retries writes on ``BlockingIOError``.
+
+    When ``prompt_toolkit.patch_stdout()`` puts ``sys.__stdout__`` into
+    non-blocking mode, a large ``Rich.Console.print()`` can overflow the
+    kernel pipe buffer and raise ``BlockingIOError`` (errno 11 / EAGAIN).
+    This wrapper catches the error, waits briefly for the fd to drain,
+    and retries — keeping the fd non-blocking for prompt_toolkit's own
+    I/O while making Rich writes effectively blocking.
+    """
+
+    _MAX_RETRIES: int = 200  # ~1 s total at 5 ms per retry
+
+    def __init__(self, wrapped) -> None:
+        self._wrapped = wrapped
+
+    def write(self, s: str) -> int:
+        for _ in range(self._MAX_RETRIES):
+            try:
+                return self._wrapped.write(s)
+            except BlockingIOError:
+                time.sleep(0.005)
+        # Final attempt — let it raise if still blocked.
+        return self._wrapped.write(s)
+
+    def flush(self) -> None:
+        for _ in range(self._MAX_RETRIES):
+            try:
+                return self._wrapped.flush()
+            except BlockingIOError:
+                time.sleep(0.005)
+        return self._wrapped.flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
 
 
 class ResponseRenderer:
@@ -39,7 +77,9 @@ class ResponseRenderer:
         the proxy lets Rich emit ANSI codes straight to the terminal.
         """
         self.logger = logging.getLogger(__name__)
-        self.console = Console(file=sys.__stdout__, force_terminal=True)
+        self.console = Console(
+            file=_BlockingSafeFile(sys.__stdout__), force_terminal=True
+        )
         self._stream_buffer: str = ""
 
     # ------------------------------------------------------------------

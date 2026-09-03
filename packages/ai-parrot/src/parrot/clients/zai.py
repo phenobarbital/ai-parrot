@@ -409,7 +409,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -450,7 +450,9 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
         messages, conversation_history, resolved_system_prompt = await self._build_messages(
@@ -514,7 +516,12 @@ class ZaiClient(OpenAIBaseClient):
             content = getattr(response.choices[0].message, "content", None) or ""
             parsed_output = None
             if output_config:
-                parsed_output = await self._parse_structured_output(content, output_config)
+                parsed_output = await self._parse_structured_output(
+                    content,
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
+                    model=resolved_model,
+                )
 
             response_time = time.perf_counter() - started
             ai_message = self._create_ai_message(
@@ -618,7 +625,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -661,6 +668,7 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
@@ -989,7 +997,7 @@ class ZaiClient(OpenAIBaseClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1007,8 +1015,8 @@ class ZaiClient(OpenAIBaseClient):
                 wins).
             structured_output: Full :class:`StructuredOutputConfig`.  Takes
                 precedence over *output_type*.
-            model: Model override.  Falls back to :attr:`_lightweight_model`,
-                then :attr:`model`.
+            model: Model override.  Falls back to an explicitly selected
+                :attr:`model`, then :attr:`_lightweight_model`.
             system_prompt: System prompt override.  Falls back to the default
                 :attr:`BASIC_SYSTEM_PROMPT` template.
             max_tokens: Maximum completion tokens (default ``4096``).
@@ -1028,6 +1036,7 @@ class ZaiClient(OpenAIBaseClient):
             resolved_system = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             if tools:
                 for tool_def in tools:
@@ -1064,10 +1073,17 @@ class ZaiClient(OpenAIBaseClient):
 
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage = self._usage_from_response(response)
             return self._build_invoke_result(output, output_type, resolved_model, usage, response)

@@ -5,7 +5,33 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from parrot.knowledge.wiki.languages import treesitter
+from parrot.knowledge.wiki.languages import astgrep, treesitter
+
+
+def _has_astgrep() -> bool:
+    """Whether ``ast-grep-py`` is importable (module-load-time probe)."""
+    return astgrep.is_available()
+
+
+#: Marker for tests that require the optional ``ast-grep-py`` extra —
+#: skipped (not failed) when the ``wiki-structural`` extra is absent.
+requires_astgrep = pytest.mark.skipif(not _has_astgrep(), reason="ast-grep-py not installed")
+
+
+@pytest.fixture
+def force_no_astgrep(monkeypatch):
+    """Pretend ``ast-grep-py`` is not installed for this test.
+
+    Monkeypatches :func:`parrot.knowledge.wiki.languages.astgrep.is_available`
+    to always return ``False`` and clears the ``RuleSet.load`` cache, so
+    scanners exercise their tree-sitter/heuristic tiers unconditionally
+    regardless of whether the optional ``ai-parrot[wiki-structural]``
+    extra happens to be installed in the environment running the suite.
+    """
+    monkeypatch.setattr(astgrep, "is_available", lambda: False)
+    astgrep.RuleSet.load.cache_clear()
+    yield
+    astgrep.RuleSet.load.cache_clear()
 
 
 @pytest.fixture
@@ -80,49 +106,70 @@ def polyglot_repo(tmp_path: Path) -> Path:
     per-language without any cross-language leakage.
     """
     _write(
-        tmp_path, "src/app.py",
-        '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
-        '    """Run the app."""\n',
+        tmp_path,
+        "src/app.py",
+        '"""Application entrypoint."""\n\n\ndef main() -> None:\n' '    """Run the app."""\n\n\n'
+        # FEAT-498 TASK-2752: a Python symbol every e2e assertion can
+        # anchor on (`sym:src/app.py#helper`) without depending on the
+        # entrypoint's own name.
+        "def helper() -> int:\n" '    """A tiny helper."""\n' "    return 1\n",
     )
     _write(
-        tmp_path, "src/Service.php",
+        tmp_path,
+        "src/Service.php",
         "<?php\nnamespace App;\n\nuse App\\Base\\Model;\n\n/**\n"
         " * Main application service.\n */\nclass Service extends Model {\n"
         "    /**\n     * Run the service.\n     */\n"
         "    public function run(): void { ... }\n}\n",
     )
     _write(
-        tmp_path, "composer.json",
+        tmp_path,
+        "composer.json",
         '{"autoload": {"psr-4": {"App\\\\": "src/"}}}\n',
     )
     _write(
-        tmp_path, "web/index.ts",
-        "import { helper } from './util';\n\n/**\n * Main entry.\n */\n"
-        "export function main(): void { ... }\n",
+        tmp_path,
+        "web/index.ts",
+        "import { helper } from './util';\n\n/**\n * Main entry.\n */\n" "export function main(): void { ... }\n",
     )
     _write(
-        tmp_path, "web/util/index.ts",
+        tmp_path,
+        "web/util/index.ts",
         'export function helper(): string {\n    return "ok";\n}\n',
     )
     _write(
-        tmp_path, "native/src/lib.rs",
+        tmp_path,
+        "native/src/lib.rs",
         "/// Native crate root.\npub mod parser;\n\npub fn init() {}\n",
     )
     _write(
-        tmp_path, "native/src/parser.rs",
+        tmp_path,
+        "native/src/parser.rs",
         "/// Parser module.\npub struct Parser;\n",
     )
     _write(
-        tmp_path, "public/index.html",
+        tmp_path,
+        "public/index.html",
         "<html><head><title>Public Site</title></head><body></body></html>\n",
     )
     _write(
-        tmp_path, "lib/MyApp/Schema.pm",
+        tmp_path,
+        "lib/MyApp/Schema.pm",
         "package MyApp::Schema;\n\nsub connect { }\n1;\n",
     )
     _write(
-        tmp_path, "lib/MyApp/User.pm",
+        tmp_path,
+        "lib/MyApp/User.pm",
         "package MyApp::User;\nuse MyApp::Schema;\n\n"
         "sub new {\n    my ($class) = @_;\n    return bless {}, $class;\n}\n1;\n",
+    )
+    # FEAT-498 TASK-2752: a Svelte file alongside everything else, so the
+    # e2e suite's polyglot build covers every language `all_scanners()`
+    # registers, not just the deep-scanned five. Routed through the JS/TS
+    # scanner (FEAT-396) — an isolated file, no cross-language edges.
+    _write(
+        tmp_path,
+        "src/lib/Widget.svelte",
+        '<script lang="ts">\n' "  export function render(): string { return 'x' }\n" "</script>\n" "<div>hi</div>\n",
     )
     return tmp_path

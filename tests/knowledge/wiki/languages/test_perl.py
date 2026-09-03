@@ -140,7 +140,13 @@ class TestHeuristic:
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("sub bar" in line for line in result.outline)
 
-    def test_moose_has(self, scanner: PerlScanner, moose_source: str, force_heuristic):
+    def test_moose_has(self, scanner: PerlScanner, moose_source: str, force_heuristic, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too — perl.yaml's
+        # ATTRIBUTE rule (TASK-2745) deliberately does not extract the
+        # `isa => 'Type'` suffix (finding the value tied to the specific
+        # key `isa`, as opposed to `is`, needs key/value pair matching
+        # beyond the seam's generic field/path primitives), so only the
+        # heuristic/tree-sitter tiers reproduce it.
         result = scanner.outline(moose_source, "lib/MyApp/Model/User.pm")
         assert any("has name" in line for line in result.outline)
         assert any("has email" in line for line in result.outline)
@@ -168,18 +174,14 @@ class TestHeuristic:
         assert "MyApp::Utils" in result.summary
         assert "Utility functions" in result.summary
 
-    def test_multiple_packages(
-        self, scanner: PerlScanner, multi_package_source: str, force_heuristic
-    ):
+    def test_multiple_packages(self, scanner: PerlScanner, multi_package_source: str, force_heuristic):
         result = scanner.outline(multi_package_source, "lib/Multi.pm")
         assert "package Foo" in result.outline
         assert "package Bar" in result.outline
         assert any("foo_method" in line for line in result.outline)
         assert any("bar_method" in line for line in result.outline)
 
-    def test_nested_sub_indentation(
-        self, scanner: PerlScanner, moose_source: str, force_heuristic
-    ):
+    def test_nested_sub_indentation(self, scanner: PerlScanner, moose_source: str, force_heuristic):
         result = scanner.outline(moose_source, "lib/MyApp/Model/User.pm")
         sub_lines = [line for line in result.outline if "sub validate" in line]
         assert sub_lines
@@ -206,14 +208,16 @@ class TestHeuristic:
         assert "Foo::Bar" in result.imports
         assert "Baz::Qux" in result.imports
 
-    def test_sub_params_from_my_unpack(self, scanner: PerlScanner, force_heuristic):
+    def test_sub_params_from_my_unpack(self, scanner: PerlScanner, force_heuristic, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too — perl.yaml's
+        # `function` rule (TASK-2745) reads a real signature node only
+        # (matching perl.py's tree-sitter tier); the heuristic-only
+        # `my ($self, $x) = @_` unpack fallback is not reproduced.
         source = "sub bar {\n    my ($self, $x) = @_;\n    return $x;\n}\n"
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("$self" in line and "$x" in line for line in result.outline)
 
-    def test_pragmas_and_versions_filtered_from_imports(
-        self, scanner: PerlScanner, force_heuristic
-    ):
+    def test_pragmas_and_versions_filtered_from_imports(self, scanner: PerlScanner, force_heuristic):
         source = (
             "use strict;\nuse warnings;\nuse v5.38;\nuse feature 'say';\n"
             "use 5.038;\nuse Moose;\nuse MyApp::Schema;\n"
@@ -278,23 +282,17 @@ def test_heuristic_mode_forced(scanner: PerlScanner, moose_source: str, monkeypa
 class TestImportResolution:
     def test_resolve_module_name(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "MyApp::Schema", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("MyApp::Schema", "lib/MyApp/Model/User.pm", index)
         assert resolved == "lib/MyApp/Schema.pm"
 
     def test_resolve_in_lib_dir(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "MyApp::Controller::Auth", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("MyApp::Controller::Auth", "lib/MyApp/Model/User.pm", index)
         assert resolved == "lib/MyApp/Controller/Auth.pm"
 
     def test_resolve_unresolvable(self, scanner: PerlScanner, repo_paths: list[str]):
         index = scanner.build_reference_index(repo_paths)
-        resolved = scanner.resolve_import(
-            "Some::CPAN::Module", "lib/MyApp/Model/User.pm", index
-        )
+        resolved = scanner.resolve_import("Some::CPAN::Module", "lib/MyApp/Model/User.pm", index)
         assert resolved is None
 
     def test_resolve_relative_require(self, scanner: PerlScanner):
@@ -328,7 +326,9 @@ class TestSafety:
         result = scanner.outline(garbage, "binary.pl")
         assert isinstance(result, LanguageOutline)
 
-    def test_outline_failure_degrades_empty(self, scanner: PerlScanner, monkeypatch):
+    def test_outline_failure_degrades_empty(self, scanner: PerlScanner, monkeypatch, force_no_astgrep):
+        # FEAT-498: force_no_astgrep is required too now that perl.yaml
+        # (TASK-2745) makes the ast-grep seam a real, working first tier.
         def _boom(source: str) -> tuple[str, list[str]]:
             raise RuntimeError("boom")
 

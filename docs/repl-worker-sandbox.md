@@ -64,6 +64,39 @@ there.
   returns an explicit error (see §2) — the in-process `exec()` path is
   structurally unreachable from the async execution entrypoint.
 
+### Readiness handshake (FEAT-500)
+
+A freshly spawned worker is **not** usable yet: it still has to import the
+`parrot` framework plus pandas and run the REPL bootstrap (~2.4 s on an idle
+host, 12–14 s under heavy CPU contention — see
+[`artifacts/logs/feat-500-bootstrap-profile.md`](../artifacts/logs/feat-500-bootstrap-profile.md)).
+So readiness is explicit:
+
+1. The worker writes exactly one `ReadyResponse` frame — its pid plus the
+   measured `bootstrap_ms` — as the **first** frame on the control pipe, after
+   its namespace is fully constructed and before it reads any request. It also
+   logs `repl_worker: ready in <N> ms (...), entering service loop`.
+2. Host-side, `WorkerHandle.start()` still returns as soon as the process is
+   spawned, but it arms an internal readiness future: a background read of
+   that first frame, bounded by `WorkerConfig.bootstrap_timeout_ms`.
+3. **`WorkerHandle._send()` awaits readiness before writing anything**, so
+   every caller — namespace API, `PythonPandasTool`'s DataFrame seeding,
+   `execute()` — gets it for free. No request frame can reach a
+   still-bootstrapping worker.
+4. `WorkerPool` awaits `handle.wait_ready()` before appending a spare to its
+   prewarmed list, so **"prewarmed" means ready**, not merely spawned. The
+   `WorkerPool: prewarmed worker ready (pid=..., bootstrap_ms=..., pool
+   size=...)` line is emitted only after the frame arrives.
+
+`await handle.wait_ready()` and `handle.is_ready` are available to
+integrators; awaiting readiness explicitly is optional (any request does it
+implicitly).
+
+Before FEAT-500 there was no handshake: the pool counted a still-booting
+worker as a ready spare, and the first namespace request into it timed out at
+a hard-coded 5 s and killed it — a self-sustaining restart loop on any host
+where bootstrap exceeded 5 s.
+
 ### The one exception: `execute_sync()`
 
 `PythonREPLTool.execute_sync()` is a **separate, pre-existing synchronous
@@ -91,6 +124,27 @@ always had:
 | Worker crash (segfault, OOM-killed, etc.) | Detected the next time the host tries to talk to it | `error` | `REPL worker terminated (crash: ...)` |
 | Concurrency ceiling reached | `WorkerPool.acquire()` raises immediately — no queueing | `error` (wraps `WorkerPoolExhaustedError`) | States the current ceiling and suggests raising `WorkerConfig.max_workers` |
 | Worker idle past `idle_ttl_seconds` | Killed and unmapped by the pool's background sweep; next use spawns fresh | *(not an error — the session's next call just gets a fresh, empty namespace)* | — |
+| **Bootstrap timeout** (FEAT-500) | `bootstrap_timeout_ms` expired without a `ReadyResponse` → the worker is killed (it never became a live worker) and every waiter gets a `WorkerBootstrapError` | `error` on the `execute()` path (folded into the usual namespace-loss dict); a raised `WorkerBootstrapError` on the namespace API | `REPL worker pid=<pid> did not become ready within <N> ms (<cause>); stderr tail: <...>` |
+| **Namespace-API timeout** (FEAT-500) | `namespace_timeout_ms` expired on a non-`exec` request → **`NamespaceTimeoutError`, worker left ALIVE**, namespace preserved; the late reply is parked and drained before the next request | *(raises on the namespace API — no dict)* | `repl_worker[pid=<pid>]: '<op>' request did not answer within <N>s; the worker is still alive and the late reply will be drained on the next call` |
+| **Undrained straggler on the `execute()` path** (FEAT-500) | A reply parked by an earlier non-lethal timeout had still not arrived when `execute()`'s drain step ran. The worker is **alive** and its namespace is **intact**, so this is deliberately *not* reported as a namespace loss | `error` | `repl_worker[pid=<pid>]: a reply from a previously timed-out request has still not arrived after <N>s; the worker is still alive and the reply stays queued for the next call` — note the absence of the "ALL variables were lost" wording, which would be false here |
+
+Every request is preceded by a **drain step**: if an earlier non-lethal
+timeout left a reply in flight, the next request waits for that straggler
+(bounded by its own budget) before writing, so a late reply can never be
+handed to the wrong caller. `execute()` performs this drain too — which is
+why it has its own row above — but its drain expiring never kills the worker.
+
+### Which timeouts kill the worker?
+
+Only two, by design (FEAT-500 G2): a worker is expensive to replace and its
+namespace is the session's state, so losing them must be deliberate.
+
+| Budget | Applies to | On expiry |
+|---|---|---|
+| `deadline_ms` (+250 ms grace) | `execute()` — running LLM code | **Lethal.** `SIGKILL` + namespace-loss dict (`cause="timeout"`). |
+| `bootstrap_timeout_ms` | waiting for the worker's first `ReadyResponse` | **Lethal.** A process that cannot boot is not a live worker; killed + `WorkerBootstrapError`. |
+| `namespace_timeout_ms` | `get_var`, `set_var`, `list_vars`, `snapshot`, `reset`, `inject_dataframe` | **Non-lethal.** `NamespaceTimeoutError`; process and namespace survive. |
+| `ping(timeout_s=...)` | health check only | **Non-lethal.** Returns `False`. |
 
 ### Namespace-loss error shape
 
@@ -123,13 +177,15 @@ from parrot.tools.repl_worker.protocol import WorkerConfig
 
 | Field | Default | Meaning |
 |---|---|---|
-| `rlimit_as_bytes` | **12 GiB** (`12 * 1024**3`) | Virtual address space ceiling (`RLIMIT_AS`) applied to the worker via `preexec_fn`. **Empirically calibrated** — see [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) for the measurements (peak observed VmPeak 5522.8 MB across a real bootstrap+500MB-load+merge+plot session, ×2 margin — predates FEAT-423's reduction of the REPL bootstrap import surface; actual footprint is now smaller, so this default is conservative). Re-run `scripts/sdd/calibrate_rlimit_as.py` after a pandas/numpy/pyarrow version bump (or to tighten this default post-FEAT-423). |
+| `rlimit_as_bytes` | **12 GiB** (`12 * 1024**3`) | Virtual address space ceiling (`RLIMIT_AS`) applied to the worker. Applied by the worker itself in `worker.main()` (via `apply_rlimits()`) before any heavy import runs — **not** via `Popen(preexec_fn=...)`. **Empirically calibrated** — see [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) for the measurements (peak observed VmPeak 5522.8 MB across a real bootstrap+500MB-load+merge+plot session, ×2 margin — predates FEAT-423's reduction of the REPL bootstrap import surface; actual footprint is now smaller, so this default is conservative). Re-run `scripts/sdd/calibrate_rlimit_as.py` after a pandas/numpy/pyarrow version bump (or to tighten this default post-FEAT-423). |
 | `rlimit_cpu_seconds` | `300` | `RLIMIT_CPU` — a safety net if the host's own `SIGKILL`-on-timeout somehow failed to fire. |
 | `rlimit_nofile` | `256` | `RLIMIT_NOFILE` — bounds file descriptors. |
 | `deadline_ms` | `60_000` | Host-enforced wall-clock deadline per `exec` call. On expiry: `SIGKILL` + namespace-loss error (see §2). |
 | `max_workers` | `0` (→ `max(4, cpu_count())`, capped at 16) | Concurrency ceiling across the pool. Reaching it makes `acquire()` raise immediately — no queueing. |
 | `idle_ttl_seconds` | `1800` (30 min) | A session's worker idle past this is killed and unmapped by the pool's background sweep. |
-| `prewarm_pool_size` | `2` | Idle, pre-booted spare workers (pandas/numpy already imported — the bootstrap import surface shrank as of FEAT-423) kept ready so a session's first call doesn't pay the 1–3s import cost. |
+| `prewarm_pool_size` | `2` | Idle, pre-booted spare workers (pandas/numpy already imported — the bootstrap import surface shrank as of FEAT-423) kept ready so a session's first call doesn't pay the 1–3s import cost. Since FEAT-500 a spare is only added to this pool **after** it signals readiness. |
+| `bootstrap_timeout_ms` | `30_000` | **FEAT-500.** How long the host waits for a freshly spawned worker's `ReadyResponse`. Expiry is **lethal** (see §2). Do not lower this casually: bootstrap was measured at 12–14 s under 3× CPU oversubscription, and workers boot concurrently (1 session + `prewarm_pool_size` spares). Validated `> 0`. |
+| `namespace_timeout_ms` | `30_000` | **FEAT-500.** Budget for every **non-`exec`** request (`get_var`/`set_var`/`list_vars`/`snapshot`/`reset`/`inject_dataframe`). Expiry is **non-lethal**: `NamespaceTimeoutError`, worker and namespace intact. Replaces the old hard-coded 5 s/10 s/30 s literals. Validated `> 0`. |
 
 `RLIMIT_CORE = 0` is hardcoded, non-configurable — a core dump with live
 DataFrames in memory is a data-exfiltration vector, not a tuning knob.
@@ -182,6 +238,28 @@ names = await tool.list_vars()
 snapshot = await tool.snapshot()   # full, JSON-safe(ish) dump of the namespace
 ```
 
+Any of these calls can raise **`NamespaceTimeoutError`** (FEAT-500) if the
+worker does not answer within `WorkerConfig.namespace_timeout_ms`:
+
+```python
+from parrot.tools.repl_worker import NamespaceTimeoutError, WorkerBootstrapError
+
+try:
+    value = await tool.get_var("my_dataframe")
+except NamespaceTimeoutError as exc:
+    # The worker is STILL ALIVE and its namespace is intact — retrying is
+    # legitimate. `exc` always carries a readable message naming the pid,
+    # the operation and the budget.
+    logger.warning("namespace read timed out: %s", exc)
+```
+
+It subclasses `TimeoutError`, so existing `except TimeoutError` handlers keep
+working — but unlike the bare `asyncio.TimeoutError` this used to raise, its
+`str()` is never empty. It is **non-lethal**: the process keeps running, the
+namespace is preserved, and the straggling reply is drained before the next
+request is written. `WorkerBootstrapError` (also always messaged) is raised
+instead if the worker never finished booting at all.
+
 There is **no synchronous variant** and **no compatibility dict-proxy** —
 that was explicitly rejected (round-trip-per-key semantics and "looks live
 but isn't" behavior would break silently and worse than an honest
@@ -209,6 +287,102 @@ are not automatically visible through that registry entry. This is a
 deliberate, spec-decided behavior change — a live cross-process reference
 was never possible to begin with once the namespace moved into a separate
 process.
+
+---
+
+## 4b. Restart-loop warning (FEAT-500)
+
+A session whose worker keeps dying used to burn one replacement every few
+seconds in complete silence. The pool now counts restarts per session in a
+60-second sliding window and, from the third one, logs:
+
+```
+WorkerPool: session 'pythonrepl-<uuid>' restarted 3 times in the last 60s —
+possible restart loop (last worker exit code=-9, stderr tail='...')
+```
+
+The per-session count is also readable programmatically:
+
+```python
+pool.restart_count(session_id)          # restarts in the last 60 s; observability only
+exit_code, stderr_tail = handle.death_summary()   # what the warning reports
+```
+
+Nothing branches on this value — it exists so the *cause* is visible. When you
+see it, check, in order:
+
+1. **Bootstrap time on this host** — see the procedure below. If
+   spawn→ready approaches `bootstrap_timeout_ms`, spares are being killed for
+   failing to boot; raise the budget or reduce `prewarm_pool_size` (fewer
+   workers booting concurrently).
+2. **Host load** — bootstrap is CPU/IO bound, and 12–14 s under 3× CPU
+   oversubscription is measured, not hypothetical.
+3. **The reported exit code and stderr tail** — `-9` means the host killed it
+   (deadline or bootstrap timeout); a traceback in the tail means the worker
+   died on its own (e.g. an import failure, or `RLIMIT_AS` too tight for
+   pandas/numpy to `mmap` their extensions).
+4. **The code being run** — a genuine runaway loop hitting `deadline_ms` on
+   every call is a *correct* restart loop; the warning is then telling you the
+   LLM keeps submitting non-terminating code.
+
+### A related warning: an undersized shared executor
+
+```
+WorkerPool: the shared executor has 4 thread(s) but this pool can hold up to 6
+live worker(s) (max_workers=4 + prewarm_pool_size=2), each of which can occupy
+one thread for an entire blocking pipe read. ...
+```
+
+Each live worker can hold one thread of the shared executor for a whole
+blocking pipe read — a request round-trip, or its readiness read while it
+bootstraps. When there are fewer threads than possible live workers, requests
+queue behind one another and the pool looks "slow" for reasons that have
+nothing to do with the workers. Raise `PythonREPLTool(executor_max_workers=…)`
+or lower `prewarm_pool_size`. The warning is advisory — nothing is clamped.
+
+**Process teardown is deliberately immune to this.** `WorkerHandle` kills
+workers on its own small, always-self-owned executor, never the shared one:
+dispatching the SIGKILL to the same pool whose threads are parked on blocking
+reads would mean the `deadline_ms` kill could never obtain a thread, while
+freeing a thread required that kill to run — a deadlock in which the deadline
+guarantee silently stops working. Keep that split if you refactor this class.
+
+## 4c. Measuring worker bootstrap on your host (U3b)
+
+Two independent measurements. The recorded baseline for both lives in
+[`artifacts/logs/feat-500-bootstrap-profile.md`](../artifacts/logs/feat-500-bootstrap-profile.md).
+
+**Import cost** — what the worker pays before it can serve anything:
+
+```bash
+python -X importtime -c "from parrot.tools.pythonrepl import PythonREPLTool" 2> importtime.log
+sort -t'|' -k2 -n importtime.log | tail -25
+```
+
+On the reference dev box this totals **1.41 s**, of which only ~0.22 s is
+pandas — ≈80 % is `parrot` framework init (navconfig/vault/documentdb/events/
+navigator auth) that the REPL child never uses. Trimming that surface is
+deliberately **out of scope** for FEAT-500 and tracked as a follow-up spec.
+
+**Real spawn→ready** — from a running server's logs, for one session:
+
+```bash
+grep -E "spawned worker pid=|repl_worker: ready|prewarmed worker ready|worker is dead|possible restart loop" server.log
+```
+
+A healthy cold start looks like this (one spawn, one ready, no restarts):
+
+```
+WorkerHandle: spawned worker pid=81228
+repl_worker: ready in 2412 ms (max_workers config=0), entering service loop
+WorkerPool: prewarmed worker ready (pid=81228, bootstrap_ms=2412, pool size=1)
+```
+
+`bootstrap_ms` is measured by the worker itself (monotonic, from `main()`
+entry to readiness) and reported in the `ReadyResponse` frame, so it is the
+number to compare against `bootstrap_timeout_ms` — no host-side clock
+arithmetic needed. The `WorkerHandle: spawned worker pid=` and
+`prewarmed worker ready` lines are at **DEBUG** level.
 
 ---
 
@@ -256,6 +430,18 @@ implemented in this feature.
   lifecycle, `PythonREPLTool` integration, the namespace-API port, Arrow
   DataFrame transport, and the `RLIMIT_AS` calibration this document
   reflects.
+- **FEAT-500 — readiness handshake & non-lethal namespace timeouts**: added
+  the `ReadyResponse` frame plus `WorkerHandle.wait_ready()`/`is_ready`, so a
+  worker is only used (and only counted as a prewarmed spare) once it has
+  finished bootstrapping; made every non-`exec` timeout **non-lethal**
+  (`NamespaceTimeoutError`, configurable via `namespace_timeout_ms`, replacing
+  hard-coded 5 s/10 s/30 s budgets that SIGKILLed the worker); added
+  `bootstrap_timeout_ms` and `WorkerBootstrapError`; guaranteed every worker
+  failure carries a readable message (no more `ValueError('')` reaching the
+  LLM); and made restart loops visible (`possible restart loop` warning +
+  `WorkerPool.restart_count()`). Fixes a cold-start death spiral in which a
+  host slower than the old 5 s budget could never produce a usable worker.
+  See `sdd/specs/bug-workerpool-repl.spec.md`.
 
 ## See also
 
@@ -267,5 +453,8 @@ implemented in this feature.
   `parrot.tools.executors` framework. That mechanism relocates *where*
   `_execute()` runs; this document describes what `PythonREPLTool` itself
   does *within* that call. The two can be combined.
+- [`artifacts/logs/feat-500-bootstrap-profile.md`](../artifacts/logs/feat-500-bootstrap-profile.md) —
+  the worker bootstrap profile (import breakdown + spawn→ready timings) and
+  the procedure for measuring both on your own host.
 - [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) —
   the `RLIMIT_AS` calibration evidence referenced in §3.

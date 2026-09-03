@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import sys
+import time
 import types
 from typing import Any, BinaryIO, Optional
 
@@ -40,6 +41,7 @@ from .protocol import (
     OkResponse,
     PingRequest,
     PongResponse,
+    ReadyResponse,
     ResetRequest,
     SetVarRequest,
     SnapshotRequest,
@@ -253,6 +255,7 @@ def serve(
     out_stream: BinaryIO,
     output_dir: Optional[str] = None,
     repl_kwargs: Optional[dict[str, Any]] = None,
+    started_at: float | None = None,
 ) -> None:
     """Run the worker service loop: read one framed request, write one framed reply.
 
@@ -270,9 +273,23 @@ def serve(
             this worker's internal instance (e.g. ``return_plot_as_base64``,
             TASK-1943) — session config that shapes execution behaviour,
             distinct from ``WorkerConfig``'s resource-limit/lifecycle fields.
+        started_at: ``time.monotonic()`` sampled at :func:`main` entry, used
+            to report ``bootstrap_ms`` in the readiness frame (FEAT-500).
+            ``None`` (callers invoking ``serve()`` directly, e.g. tests)
+            reports ``0``.
     """
     namespace = WorkerNamespace(output_dir=output_dir, repl_kwargs=repl_kwargs)
-    logger.info("repl_worker: ready (max_workers config=%s), entering service loop", config.max_workers)
+    # FEAT-500 (G1): announce readiness as the very FIRST frame on the control
+    # pipe, once the namespace (framework + pandas import + REPL bootstrap) is
+    # fully built. The host refuses to write any request before it has read
+    # this frame, which is what closes the cold-start death spiral.
+    bootstrap_ms = int((time.monotonic() - started_at) * 1000) if started_at is not None else 0
+    write_frame(out_stream, ReadyResponse(pid=os.getpid(), bootstrap_ms=bootstrap_ms))
+    logger.info(
+        "repl_worker: ready in %d ms (max_workers config=%s), entering service loop",
+        bootstrap_ms,
+        config.max_workers,
+    )
     while True:
         try:
             message = read_frame(in_stream)
@@ -314,6 +331,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     Args:
         argv: Command-line arguments (defaults to ``sys.argv[1:]``).
     """
+    started_at = time.monotonic()
     logging.basicConfig(level=logging.INFO)
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 3:
@@ -334,7 +352,14 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     in_stream = os.fdopen(read_fd, "rb", buffering=0)
     out_stream = os.fdopen(write_fd, "wb", buffering=0)
-    serve(config, in_stream, out_stream, output_dir=output_dir, repl_kwargs=repl_kwargs)
+    serve(
+        config,
+        in_stream,
+        out_stream,
+        output_dir=output_dir,
+        repl_kwargs=repl_kwargs,
+        started_at=started_at,
+    )
 
 
 if __name__ == "__main__":

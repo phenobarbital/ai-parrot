@@ -195,6 +195,10 @@ class AWSWorkspaceBackend:
     Args:
         aws_region: AWS region — **mandatory**.
         workspace_id: Claude-on-AWS workspace ID — **mandatory**.
+        api_key: The workspace API key (``ANTHROPIC_AWS_API_KEY``). This is a
+            DIFFERENT credential from the direct ``ANTHROPIC_API_KEY``, which
+            is not valid against a workspace.  ``None`` → the SDK falls back to
+            SigV4 with the AWS credentials below.
         aws_access_key: AWS access key ID.  ``None`` → SDK chain.
         aws_secret_key: AWS secret access key.  ``None`` → SDK chain.
         aws_session_token: Optional STS session token.  ``None`` → omitted.
@@ -205,6 +209,7 @@ class AWSWorkspaceBackend:
         self,
         aws_region: Optional[str] = None,
         workspace_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         aws_access_key: Optional[str] = None,
         aws_secret_key: Optional[str] = None,
         aws_session_token: Optional[str] = None,
@@ -212,6 +217,7 @@ class AWSWorkspaceBackend:
     ) -> None:
         self.aws_region = aws_region
         self.workspace_id = workspace_id
+        self.api_key = api_key
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.aws_session_token = aws_session_token
@@ -259,6 +265,8 @@ class AWSWorkspaceBackend:
             "aws_region": self.aws_region,
             "workspace_id": self.workspace_id,
         }
+        if self.api_key is not None:
+            kwargs["api_key"] = self.api_key
         if self.aws_access_key is not None:
             kwargs["aws_access_key"] = self.aws_access_key
         if self.aws_secret_key is not None:

@@ -556,7 +556,7 @@ class ClaudeAgentClient(AbstractClient):
         self,
         prompt: str,
         model: Optional[Union[str, Any]] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Any]] = None,
         system_prompt: Optional[str] = None,
@@ -731,7 +731,7 @@ class ClaudeAgentClient(AbstractClient):
         self,
         prompt: str,
         model: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Any]] = None,
         system_prompt: Optional[str] = None,
@@ -899,7 +899,7 @@ class ClaudeAgentClient(AbstractClient):
         structured_output: Any = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -922,7 +922,8 @@ class ClaudeAgentClient(AbstractClient):
             prompt: The user prompt.
             output_type: Pydantic model class or dataclass to parse into.
             structured_output: Pre-parsed payload, takes precedence.
-            model: Override model. Falls back to ``_lightweight_model``.
+            model: Override model. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``.
             system_prompt: Override the agent's system prompt.
             max_tokens: Accepted for parity; not propagated.
             temperature: Accepted for parity; not propagated.
@@ -945,8 +946,11 @@ class ClaudeAgentClient(AbstractClient):
                 into ``output_type``.
         """
         del max_tokens, temperature, tools  # parity-only; see docstring
+        # Same precedence as AbstractClient._resolve_invoke_model(): an
+        # explicitly selected self.model outranks the lightweight default,
+        # which is only a default for clients built without a model=.
         resolved_model = self._resolve_model(
-            model, self._lightweight_model or self._default_model
+            model, self.model or self._lightweight_model or self._default_model
         )
 
         # Effective options: default to permission_mode="plan" so invoke()
@@ -999,6 +1003,8 @@ class ClaudeAgentClient(AbstractClient):
         # Parse the assistant text into ``output_type`` when asked.
         parsed: Any = structured_output if structured_output is not None else ai_message.response
         if structured_output is None and output_type is not None and ai_message.response:
+            # Known-truncated output must not be parsed (shared guard).
+            self._raise_if_truncated(ai_message.stop_reason, model=resolved_model)
             parsed = self._parse_structured_output(ai_message.response, output_type)
 
         return InvokeResult(

@@ -58,6 +58,9 @@ class GrokClient(AbstractClient):
     client_name: str = "grok"
     _default_model: str = GrokModel.GROK_4_3.value
     _lightweight_model: str = GrokModel.GROK_4_20_NON_REASONING.value
+    # Grok models are reasoning-heavy and xAI allows large completions;
+    # preserves the budget ask()/ask_stream() hardcoded before FEAT-481.
+    _default_max_tokens: int = 16000
 
     def __init__(
         self,
@@ -189,7 +192,7 @@ class GrokClient(AbstractClient):
         self,
         prompt: str,
         model: str = None,
-        max_tokens: int = 16000,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -202,6 +205,7 @@ class GrokClient(AbstractClient):
         """
         Send a prompt to Grok and return the response.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         client = await self.get_client()
         model = model or self.model or self.default_model
         turn_id = str(uuid.uuid4())
@@ -367,10 +371,18 @@ class GrokClient(AbstractClient):
         structured_payload = None
         if output_config:
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response))
                 if output_config.custom_parser:
                     structured_payload = output_config.custom_parser(text_content)
                 else:
-                    structured_payload = await self._parse_structured_output(text_content, output_config)
+                    structured_payload = await self._parse_structured_output(
+                        text_content,
+                        output_config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                    )
+            except InvokeError:
+                raise
             except Exception:
                 pass
 
@@ -429,7 +441,7 @@ class GrokClient(AbstractClient):
         self,
         prompt: str,
         model: str = None,
-        max_tokens: int = 16000,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -446,6 +458,7 @@ class GrokClient(AbstractClient):
         Yields successive string chunks followed by a final
         :class:`~parrot.models.responses.AIMessage` with metadata.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         turn_id = str(uuid.uuid4())
         client = await self.get_client()
         model = model or self.model or self.default_model
@@ -703,7 +716,7 @@ class GrokClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -718,6 +731,7 @@ class GrokClient(AbstractClient):
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             client = await self.get_client()
 
@@ -753,16 +767,26 @@ class GrokClient(AbstractClient):
             output: Any
             if use_sdk_parse and config:
                 response, parsed = await chat.parse(config.output_type)
+                # The SDK may have parsed a truncated payload (or raised a
+                # generic error on it): attribute the failure to truncation.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 output = parsed
             else:
                 response = await chat.sample()
                 raw_text = response.content or ""
                 output = raw_text
                 if config:
+                    # Known-truncated output must not reach a custom parser either.
+                    self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                     if config.custom_parser:
                         output = config.custom_parser(raw_text)
                     else:
-                        output = await self._parse_structured_output(raw_text, config)
+                        output = await self._parse_structured_output(
+                            raw_text,
+                            config,
+                            finish_reason=self._extract_finish_reason(response),
+                            model=resolved_model,
+                        )
 
             usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
             return self._build_invoke_result(

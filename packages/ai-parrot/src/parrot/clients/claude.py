@@ -28,6 +28,7 @@ from ..conf import (
     AWS_REGION_NAME,
     AWS_SESSION_TOKEN,
     ANTHROPIC_AWS_WORKSPACE_ID,
+    ANTHROPIC_AWS_API_KEY,
     BEDROCK_AWS_REGION,
 )
 
@@ -74,8 +75,29 @@ class AnthropicClient(AbstractClient):
     _default_model: str = 'claude-sonnet-4-5'
     _fallback_model: str = 'claude-sonnet-4.5'
     _lightweight_model: str = "claude-haiku-4-5-20251001"
+    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
+    # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
+    # ask()/ask_stream() fell back to before FEAT-481.
+    _default_max_tokens: int = 16000
     # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
     _min_cache_tokens: int = 1024
+
+    # 21,333 — not a round number, and not a model limit. ``ask()`` and
+    # ``invoke()`` both go through the SDK's NON-streaming
+    # ``messages.create()``, and the SDK refuses such a request outright when
+    # ``3600 * max_tokens / 128_000 > 600`` ("Streaming is required for
+    # operations that may take longer than 10 minutes",
+    # ``_base_client.py::_calculate_nonstreaming_timeout``). That inequality
+    # solves to ``max_tokens <= 21_333``, so anything larger raises a
+    # ``ValueError`` locally before a request is ever sent — a raised default
+    # would break every call rather than lengthen it.
+    #
+    # This ceiling is the transport's, not the model's: the same Claude models
+    # accept 65,536 through :class:`~parrot.clients.bedrock.BedrockConverseClient`
+    # (boto3 Converse, verified live 2026-09-03), which is why that client sets
+    # its own, much larger values. Lifting this one means teaching ``invoke()``
+    # to stream for large budgets — a separate change.
+    _default_max_tokens: int = 21333
 
     def __init__(
         self,
@@ -94,8 +116,12 @@ class AnthropicClient(AbstractClient):
         """Initialise an Anthropic client.
 
         Args:
-            api_key: Anthropic API key (direct backend only).  Defaults to the
-                ``ANTHROPIC_API_KEY`` navconfig / env value.
+            api_key: Anthropic API key.  For the ``direct`` backend this is
+                the api.anthropic.com key, defaulting to the
+                ``ANTHROPIC_API_KEY`` navconfig / env value.  For the ``aws``
+                backend it is the Claude-on-AWS workspace key, defaulting to
+                ``ANTHROPIC_AWS_API_KEY`` (a different credential — the direct
+                key is not valid against a workspace).
             base_url: Base URL for the direct Anthropic API.
             backend: Transport backend — ``"direct"`` (default), ``"bedrock"``,
                 or ``"aws"``.
@@ -137,6 +163,11 @@ class AnthropicClient(AbstractClient):
         # For the aws-workspace backend keep using the general AWS_REGION_NAME fallback.
         _region = aws_region or AWS_REGION_NAME
         _workspace_id = workspace_id or ANTHROPIC_AWS_WORKSPACE_ID
+        # A Claude-on-AWS workspace is billed and scoped through AWS and does
+        # NOT accept the direct api.anthropic.com key, so the "aws" backend
+        # takes its own credential. Fall back to ANTHROPIC_API_KEY only as a
+        # last resort, for setups that reuse one key across both.
+        _aws_api_key = api_key or ANTHROPIC_AWS_API_KEY or self.api_key
 
         # ── Instantiate the matching backend strategy ─────────────────────────
         from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
@@ -152,6 +183,7 @@ class AnthropicClient(AbstractClient):
             self._backend = AWSWorkspaceBackend(
                 aws_region=_region,
                 workspace_id=_workspace_id,
+                api_key=_aws_api_key,
                 aws_access_key=_access_key,
                 aws_secret_key=_secret_key,
                 aws_session_token=_session_token,
@@ -244,7 +276,8 @@ class AnthropicClient(AbstractClient):
     # — the param must be omitted entirely. Mirrors the guard pattern in
     # ``GoogleGenAIClient._requires_thinking``.
     _ADAPTIVE_ONLY_PREFIXES: tuple = (
-        "claude-fable-5",
+        "claude-fable-5",       # covers fable-5 AND fable-5-1
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
     )
@@ -493,7 +526,7 @@ class AnthropicClient(AbstractClient):
 
         # Anthropic SDK requires max_tokens to be a non-None int;
         # _calculate_nonstreaming_timeout() does `int * max_tokens`.
-        _max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        _max_tokens = self._resolve_max_tokens(max_tokens)
         payload = {
             "model": model,
             "max_tokens": _max_tokens,
@@ -669,14 +702,19 @@ class AnthropicClient(AbstractClient):
                 if content_block["type"] == "text"
             )
             try:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(result.get("stop_reason"))
                 if output_config.custom_parser:
                     final_output = await output_config.custom_parser(
                         text_content
                     )
                 final_output = await self._parse_structured_output(
                     text_content,
-                    output_config
+                    output_config,
+                    finish_reason=result.get("stop_reason"),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = text_content
 
@@ -784,7 +822,7 @@ class AnthropicClient(AbstractClient):
         
         payload = {
             "model": model,
-            "max_tokens": self.max_tokens or 4096,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": self.temperature,
             "messages": messages,
             "tools": self._prepare_tools()
@@ -866,18 +904,29 @@ class AnthropicClient(AbstractClient):
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: bool = True,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
         context_1m: bool = False,
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
-        """Stream Claude's response using AsyncIterator with optional conversation memory.
+        """Stream Claude's response with tool-use support.
 
         Yields successive string chunks of the response followed by a single
         final :class:`~parrot.models.responses.AIMessage` with full metadata
         (usage, stop_reason, model, turn_id).
 
+        When the model requests a tool during streaming, the tool is executed
+        between streaming rounds: text from the current round is yielded as
+        it arrives, then the tool executes (a brief pause the caller sees as
+        a gap between chunks), and a new streaming round begins with the
+        tool result injected into the conversation.  This mirrors the
+        ``while True`` tool loop in :meth:`ask`.
+
         Args:
+            use_tools: Whether to include tool definitions and run the
+                streaming tool-call loop.  Defaults to ``True``.
             deep_research: If True, use enhanced system prompt for thorough research
             agent_config: Optional configuration (not used, for interface compatibility)
         """
@@ -915,7 +964,7 @@ class AnthropicClient(AbstractClient):
             model=_lc_model_s or "",
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=self._resolve_system_prompt(system_prompt),
-            has_tools=False,
+            has_tools=bool(self.tools) and use_tools,
             parent_trace=None,
         )
         _lc_t0_s = _lc_time_s.perf_counter()
@@ -927,10 +976,13 @@ class AnthropicClient(AbstractClient):
                 self.register_tool(tool)
 
         # Ensure max_tokens is never None (SDK multiplies it for timeout calc)
-        current_max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        current_max_tokens = self._resolve_max_tokens(max_tokens)
         retry_count = 0
         assistant_content = ""
         final_message = None
+        all_tool_calls: List[ToolCall] = []
+        _max_tool_rounds = 25  # safety cap, same depth as ask()
+
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {
@@ -950,36 +1002,98 @@ class AnthropicClient(AbstractClient):
                 if context_1m:
                     payload["betas"] = ["context-1m-2025-08-07"]
 
-                payload["tools"] = self._prepare_tools()
+                if use_tools:
+                    payload["tools"] = self._prepare_tools()
 
                 assistant_content = ""
                 max_tokens_reached = False
                 stop_reason = None
 
                 try:
-                    # Use the Anthropic SDK's streaming API
-                    async with self._sdk_stream(payload) as stream:
-                        async for text in stream.text_stream:
-                            assistant_content += text
-                            # FEAT-176: per-chunk event (short-circuited when no subscribers)
-                            if _lc_has_chunk_subs:
-                                await self.events.emit(ClientStreamChunkEvent(
-                                    trace_context=_lc_tc_s,
-                                    client_name=self._telemetry_client_name,
-                                    model=_lc_model_s or "",
-                                    chunk_index=_lc_chunk_idx,
-                                    chunk_size_bytes=len(text.encode("utf-8")),
-                                    source_type="client",
-                                    source_name="anthropic",
-                                ))
-                                _lc_chunk_idx += 1
-                            yield text
+                    # ── Streaming tool-call loop ──────────────────────
+                    # Each round streams text via text_stream, then checks
+                    # if the model stopped with stop_reason="tool_use".
+                    # If so, tools are executed between rounds and the
+                    # conversation continues with a new stream.
+                    for _tool_round in range(_max_tool_rounds):
+                        round_text = ""
+                        async with self._sdk_stream(payload) as stream:
+                            async for text in stream.text_stream:
+                                round_text += text
+                                assistant_content += text
+                                # FEAT-176: per-chunk event (short-circuited when no subscribers)
+                                if _lc_has_chunk_subs:
+                                    await self.events.emit(ClientStreamChunkEvent(
+                                        trace_context=_lc_tc_s,
+                                        client_name=self._telemetry_client_name,
+                                        model=_lc_model_s or "",
+                                        chunk_index=_lc_chunk_idx,
+                                        chunk_size_bytes=len(text.encode("utf-8")),
+                                        source_type="client",
+                                        source_name="anthropic",
+                                    ))
+                                    _lc_chunk_idx += 1
+                                yield text
 
-                        # Get the final message to check stop reason
-                        final_message = await stream.get_final_message()
-                        stop_reason = final_message.stop_reason
-                        if stop_reason == 'max_tokens':
-                            max_tokens_reached = True
+                            # Get the final message to check stop reason
+                            final_message = await stream.get_final_message()
+                            stop_reason = final_message.stop_reason
+
+                        if stop_reason == "tool_use" and use_tools:
+                            # Extract tool-use blocks from the final message
+                            result_content = final_message.model_dump().get("content", [])
+                            tool_results = []
+
+                            for content_block in result_content:
+                                if content_block.get("type") == "tool_use":
+                                    tool_name = content_block["name"]
+                                    tool_input = content_block["input"]
+                                    tool_id = content_block["id"]
+
+                                    tc = ToolCall(
+                                        id=tool_id,
+                                        name=tool_name,
+                                        arguments=tool_input,
+                                    )
+                                    try:
+                                        start_time = time.time()
+                                        tool_result = await self._execute_tool(tool_name, tool_input)
+                                        tc.result = tool_result
+                                        tc.execution_time = time.time() - start_time
+                                        tool_results.append({
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_id,
+                                            "content": str(tool_result),
+                                        })
+                                    except Exception as e:
+                                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                                        if isinstance(e, HumanInteractionInterrupt):
+                                            e.session_id = session_id
+                                            e.messages = messages + [
+                                                {"role": "assistant", "content": result_content}
+                                            ]
+                                            e.tool_call_id = tool_id
+                                            e.agent_name = model
+                                            raise
+                                        tc.error = str(e)
+                                        tool_results.append({
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_id,
+                                            "is_error": True,
+                                            "content": str(e),
+                                        })
+                                    all_tool_calls.append(tc)
+
+                            # Append assistant turn + tool results, loop.
+                            messages.append({"role": "assistant", "content": result_content})
+                            messages.append({"role": "user", "content": tool_results})
+                            payload["messages"] = messages
+                        else:
+                            # Not a tool-use stop — done streaming.
+                            if stop_reason == 'max_tokens':
+                                max_tokens_reached = True
+                            break
 
                 except Exception as e:
                     # Handle rate limits and server errors
@@ -1043,6 +1157,7 @@ class AnthropicClient(AbstractClient):
                     break
 
         # Yield final AIMessage with full metadata
+        tools_used = [tc.name for tc in all_tool_calls]
         if final_message is not None:
             ai_message = AIMessageFactory.from_claude(
                 response=final_message.model_dump(),
@@ -1051,6 +1166,7 @@ class AnthropicClient(AbstractClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+                tool_calls=all_tool_calls,
             )
         else:
             ai_message = AIMessage(
@@ -1067,6 +1183,7 @@ class AnthropicClient(AbstractClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+                tool_calls=all_tool_calls,
             )
         # Update conversation memory BEFORE yielding the final AIMessage so the
         # memory write executes even if the consumer stops iterating after receiving
@@ -1085,7 +1202,7 @@ class AnthropicClient(AbstractClient):
                 turn_id,
                 original_prompt,
                 assistant_content,
-                []  # No tools used in streaming
+                tools_used,
             )
 
         # FEAT-176: lifecycle event — AfterClientCallEvent for stream
@@ -1334,7 +1451,7 @@ class AnthropicClient(AbstractClient):
         # Prepare the payload
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(max_tokens),
             "temperature": temperature or self.temperature,
             "messages": messages
         }
@@ -1406,8 +1523,11 @@ class AnthropicClient(AbstractClient):
             try:
                 final_output = await self._parse_structured_output(
                     text_content,
-                    output_config
+                    output_config,
+                    finish_reason=result.get("stop_reason"),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = text_content
         else:
@@ -1499,7 +1619,7 @@ class AnthropicClient(AbstractClient):
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature or self.temperature,
             "messages": messages,
             "system": system_prompt
@@ -1586,7 +1706,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1656,7 +1776,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1731,7 +1851,7 @@ Format your response clearly with these sections.
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1832,7 +1952,7 @@ Provide your final answer with:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1861,7 +1981,7 @@ Provide your final answer with:
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1878,7 +1998,8 @@ Provide your final answer with:
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full :class:`StructuredOutputConfig`; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``.
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.
@@ -1895,6 +2016,7 @@ Provide your final answer with:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             # Claude: inject schema instruction into system prompt
             if config:
@@ -1932,10 +2054,17 @@ Provide your final answer with:
             # Parse structured output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(response),
+                        model=resolved_model,
+                    )
 
             usage_dict = {}
             if hasattr(response, 'usage') and response.usage:

@@ -38,6 +38,7 @@ from .protocol import (
     NamespaceLossError,
     PingRequest,
     PongResponse,
+    ReadyResponse,
     ResetRequest,
     SetVarRequest,
     SnapshotRequest,
@@ -51,6 +52,34 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerBootstrapError(RuntimeError):
+    """The worker never sent its :class:`ReadyResponse` in time (FEAT-500).
+
+    Raised by :meth:`WorkerHandle.wait_ready` (and therefore by the first
+    :meth:`WorkerHandle._send`) when a worker fails to finish bootstrapping
+    within ``WorkerConfig.bootstrap_timeout_ms``, or dies / speaks
+    out-of-protocol while doing so. The process has already been killed by
+    the time this is raised: a child that cannot boot is not a live worker
+    (spec §2, Q1). The message always names the pid, the budget, the
+    observed cause and the tail of the worker's stderr.
+    """
+
+
+class NamespaceTimeoutError(TimeoutError):
+    """A non-``exec`` request timed out; the worker is still ALIVE (FEAT-500).
+
+    Only the ``execute()`` deadline kills a worker (spec G2/U2). Every other
+    request — ``get_var``/``set_var``/``list_vars``/``snapshot``/``reset``/
+    ``inject_dataframe``/``ping`` — raises this instead: the process keeps
+    running, its namespace is preserved, and the late reply is parked and
+    drained before the next request is written. Subclasses ``TimeoutError``
+    so existing broad ``except TimeoutError`` callers keep working, but
+    unlike the bare ``asyncio.TimeoutError`` it always carries a
+    human-readable message (spec G3).
+    """
+
 
 #: Extra grace period added to `deadline_ms` before the host gives up and
 #: kills the worker, so ordinary clock skew between host and worker doesn't
@@ -111,6 +140,17 @@ class WorkerHandle:
         self._to_worker: Optional[BinaryIO] = None
         self._from_worker: Optional[BinaryIO] = None
         self._lock = asyncio.Lock()
+        #: Serializes process teardown. `_kill_process()` can be reached from
+        #: several independent paths (a lethal `execute()` deadline,
+        #: `_await_ready()`'s bootstrap-timeout branch, `_classify_death()`,
+        #: and an explicit `kill()`), and its `poll()` guard is not atomic —
+        #: two of them could observe `poll() is None` and both dispatch
+        #: `Popen.kill()`/`.wait()`, which are not documented as safe to call
+        #: concurrently from multiple threads (code-review finding). Kept
+        #: separate from `self._lock` on purpose: `kill()` must never wait on
+        #: the request lock (see its docstring), and nothing ever acquires
+        #: `self._lock` while holding this one, so the two cannot deadlock.
+        self._kill_lock = asyncio.Lock()
         self._owns_executor = executor is None
         self._executor: concurrent.futures.Executor = executor or concurrent.futures.ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="repl-worker-handle"
@@ -136,6 +176,21 @@ class WorkerHandle:
         self._stdio_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="repl-worker-stdio"
         )
+        # FEAT-500 (code review): the SIGKILL path must NEVER queue behind the
+        # very blocking reads it exists to interrupt. `_kill_process()` used to
+        # dispatch `proc.kill`/`proc.wait` to `self._executor` — the same pool
+        # that `_roundtrip()` and `_await_ready()` occupy with blocking
+        # `read_frame()` calls. Once every thread there is parked on a read,
+        # a timed-out `execute()` could never obtain a thread to run the kill,
+        # and freeing a thread required that kill to run first: a hard
+        # deadlock in which the `deadline_ms` guarantee (AC4) silently stops
+        # working and `kill()` itself hangs (reproduced with a 1-thread
+        # executor). This tiny, always-self-owned pool keeps process teardown
+        # independent of request traffic — the same split, for the same
+        # reason, as `_stdio_executor` above.
+        self._lifecycle_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="repl-worker-lifecycle"
+        )
         self._stdio_task: Optional[asyncio.Task] = None
         #: Bounded ring buffer of recent stderr lines, fed by the continuous
         #: drain task (`_drain_stdio`) — `_classify_death()` reads from this
@@ -145,6 +200,21 @@ class WorkerHandle:
         #: Cheap, names-only shadow of the worker namespace — feeds
         #: `lost_variables` in the namespace-loss error after a kill.
         self.known_vars: list[str] = []
+        #: FEAT-500 readiness handshake. `_ready` is resolved exactly once by
+        #: `_await_ready()` (created in `start()`): with the worker's
+        #: `ReadyResponse` on success, or with a `WorkerBootstrapError` if the
+        #: bootstrap budget expires / the worker dies while booting. It is a
+        #: Future rather than an Event because many callers await the SAME
+        #: outcome (the pool's prewarm top-up plus every `_send()`), and a
+        #: failure must be re-raisable to all of them.
+        self._ready: asyncio.Future | None = None
+        self._ready_task: asyncio.Task | None = None
+        #: A reply that arrived (or will arrive) after its caller already gave
+        #: up on a NON-lethal timeout. The control pipe is a strictly ordered
+        #: request/response channel, so this straggler MUST be drained before
+        #: the next request is written or every later reply would be
+        #: mis-attributed by one frame (spec §7 "Drain before write").
+        self._pending_reply: asyncio.Future | None = None
 
     @property
     def is_alive(self) -> bool:
@@ -196,6 +266,121 @@ class WorkerHandle:
         # misreported as an ordinary timeout instead of a stdio deadlock.
         self._stdio_task = loop.create_task(self._drain_stdio())
 
+        # FEAT-500 (G1): arm the readiness handshake. `start()` still returns
+        # as soon as the process is spawned — it is `_send()` and
+        # `WorkerPool._top_up_prewarmed()` that await `wait_ready()`, so no
+        # request is ever written to a still-booting worker and no spare is
+        # ever counted as prewarmed before it can serve.
+        self._ready = loop.create_future()
+        self._ready_task = loop.create_task(self._await_ready())
+
+    async def _await_ready(self) -> None:
+        """Read the worker's first frame and resolve the readiness future.
+
+        Reads exactly ONE frame — the :class:`ReadyResponse` the worker
+        writes after its ``WorkerNamespace`` is built (FEAT-500, TASK-2758) —
+        bounded by ``WorkerConfig.bootstrap_timeout_ms``. This is the only
+        reader of ``self._from_worker`` before the first ``_send()``; the two
+        can never overlap because ``_send()`` awaits :meth:`wait_ready` while
+        holding ``self._lock``.
+
+        Never raises: it is a background task, so both outcomes are recorded
+        on ``self._ready`` instead. On failure the worker is killed first — a
+        process that cannot boot is not a live worker (spec Q1).
+        """
+        loop = asyncio.get_event_loop()
+        budget_ms = self._config.bootstrap_timeout_ms
+        pid = self._proc.pid if self._proc is not None else None
+        cause: str | None = None
+        future = loop.run_in_executor(self._executor, read_frame, self._from_worker)
+        try:
+            frame = await asyncio.wait_for(future, timeout=budget_ms / 1000)
+        except asyncio.CancelledError:
+            # `kill()` cancelled us; it resolves `_ready` itself.
+            future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+            raise
+        except asyncio.TimeoutError:
+            cause = "no ready frame within the bootstrap budget"
+            # The executor thread stays blocked on the pipe until the kill
+            # below closes it; retrieve its eventual exception so Python
+            # doesn't warn about it at GC time.
+            future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+        except (EOFError, OSError, ValueError) as exc:
+            # EOFError: the worker died during bootstrap (its traceback is in
+            # the stderr tail). ValueError: an unknown `op` on the wire.
+            cause = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        else:
+            if isinstance(frame, ReadyResponse):
+                if not self._ready.done():
+                    self._ready.set_result(frame)
+                logger.debug(
+                    "WorkerHandle: worker pid=%s ready in %d ms",
+                    frame.pid,
+                    frame.bootstrap_ms,
+                )
+                return
+            cause = f"first frame was {type(frame).__name__}, expected ReadyResponse"
+
+        await self._kill_process()
+        tail = " | ".join(self._stderr_tail[-5:]) or "<empty>"
+        self._fail_ready(
+            f"REPL worker pid={pid} did not become ready within {budget_ms} ms " f"({cause}); stderr tail: {tail}"
+        )
+
+    def _fail_ready(self, message: str) -> None:
+        """Resolve the readiness future with a `WorkerBootstrapError`.
+
+        Args:
+            message: Non-empty, human-readable cause (spec G3).
+        """
+        if self._ready is None or self._ready.done():
+            return
+        self._ready.set_exception(WorkerBootstrapError(message))
+        # Mark the exception as retrieved: `wait_ready()` may legitimately
+        # never be called (e.g. the handle is killed straight away), and an
+        # unretrieved Future exception logs a spurious warning at GC time.
+        self._ready.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+
+    @property
+    def is_ready(self) -> bool:
+        """Whether the worker has signalled readiness and can serve requests."""
+        return (
+            self._ready is not None
+            and self._ready.done()
+            and not self._ready.cancelled()
+            and self._ready.exception() is None
+        )
+
+    async def wait_ready(self, timeout_s: float | None = None) -> ReadyResponse:
+        """Await the worker's readiness handshake.
+
+        Safe to call from any number of callers and any number of times: they
+        all await the same one-shot future, and a bootstrap failure is
+        re-raised to every one of them.
+
+        Args:
+            timeout_s: Optional extra ceiling on top of the handle's own
+                ``bootstrap_timeout_ms`` budget. ``None`` (the default) waits
+                for that budget to play out.
+
+        Returns:
+            The worker's :class:`ReadyResponse` (pid + measured bootstrap ms).
+
+        Raises:
+            WorkerBootstrapError: the worker never became ready (it has
+                already been killed), or ``start()`` was never called.
+            asyncio.TimeoutError: ``timeout_s`` elapsed while the worker was
+                still booting (the worker is left alone — this is the
+                caller's own ceiling, not the bootstrap budget).
+        """
+        if self._ready is None:
+            raise WorkerBootstrapError("WorkerHandle.wait_ready() called before start(): no worker has been spawned")
+        # Shield: several callers share this one future, so one caller's
+        # timeout or cancellation must never cancel it for the others.
+        if timeout_s is None:
+            return await asyncio.shield(self._ready)
+        return await asyncio.wait_for(asyncio.shield(self._ready), timeout=timeout_s)
+
     async def _drain_stdio(self) -> None:
         """Continuously read stdout/stderr into the logger (bounded per line).
 
@@ -237,48 +422,162 @@ class WorkerHandle:
         write_frame(self._to_worker, request)
         return read_frame(self._from_worker)
 
-    async def _send(self, request: Any, timeout_s: float) -> Any:
+    async def _send(self, request: Any, timeout_s: float, *, lethal: bool = False) -> Any:
         """Send ``request`` and await its reply within ``timeout_s``, serialized.
 
-        On a timeout, SIGKILLs the worker (G2/AC2) and raises
-        ``asyncio.TimeoutError``. On any protocol/process failure (worker
-        died on its own), raises the underlying exception. Callers build the
-        namespace-loss error from these two failure modes.
+        Always waits for the worker's readiness handshake first (FEAT-500
+        G1), so no frame is ever written to a still-bootstrapping worker,
+        and always drains a reply parked by an earlier non-lethal timeout
+        before writing, so replies can never shift by one frame.
+
+        Args:
+            request: The protocol message to write.
+            timeout_s: Budget for this request's reply.
+            lethal: Whether a timeout should kill the worker. ``True`` is
+                used by :meth:`execute` ONLY (the ``deadline_ms`` contract,
+                G2/AC4); every other request is non-lethal (U2) and gets a
+                :class:`NamespaceTimeoutError` while the worker — and its
+                namespace — survives.
+
+        Returns:
+            The worker's parsed reply message.
+
+        Raises:
+            WorkerBootstrapError: the worker never became ready.
+            EOFError: the worker process is not running.
+            asyncio.TimeoutError: ``lethal=True`` and the budget expired
+                (the worker has been SIGKILLed).
+            NamespaceTimeoutError: ``lethal=False`` and the budget expired
+                (the worker is still alive; the reply is parked).
         """
         loop = asyncio.get_event_loop()
         async with self._lock:
+            await self.wait_ready()
+            await self._drain_pending_reply(timeout_s)
             if not self.is_alive:
                 raise EOFError("worker process is not running")
             future = loop.run_in_executor(self._executor, self._roundtrip, request)
             try:
-                return await asyncio.wait_for(future, timeout=timeout_s)
+                # Shielded (FEAT-500): `wait_for` cancels what it waits on
+                # when the budget expires, which would leave `_pending_reply`
+                # holding an already-cancelled future — undrainable, and the
+                # executor thread would still be reading the pipe behind it.
+                # Shielding cancels only the outer wrapper, so a non-lethally
+                # timed-out reply stays genuinely pending and awaitable.
+                return await asyncio.wait_for(asyncio.shield(future), timeout=timeout_s)
+            except asyncio.CancelledError:
+                # The caller gave up (its own outer timeout, or task
+                # cancellation) — but the shielded executor thread still owns
+                # the pipe and WILL consume one reply frame. Park it exactly
+                # as a non-lethal timeout does: otherwise this method returns
+                # with `_pending_reply` empty, the next `_send()` writes while
+                # that thread is still reading, two threads read the same pipe
+                # and every subsequent reply is off by one frame. Cancellation
+                # is not a deadline breach, so the worker is never killed here
+                # (even when `lethal=True`).
+                future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+                self._pending_reply = future
+                raise
             except asyncio.TimeoutError:
-                await self._kill_process()
-                # The executor thread is still blocked reading from the (now
-                # closed) pipe and will finish in the background once it
-                # observes EOF; nobody awaits `future` after this point, so
+                # The executor thread is still blocked reading the pipe and
+                # will finish in the background; nobody awaits `future`
+                # through the normal path after this point, so
                 # retrieve/discard its eventual exception to avoid an
                 # "exception was never retrieved" warning at GC time.
                 future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
-                raise
+                if lethal:
+                    await self._kill_process()
+                    raise
+                # U2: the worker keeps running and keeps its namespace. Park
+                # the straggling reply so the next `_send()` drains it.
+                self._pending_reply = future
+                pid = self._proc.pid if self._proc is not None else None
+                raise NamespaceTimeoutError(
+                    f"repl_worker[pid={pid}]: {request.op!r} request did not answer "
+                    f"within {timeout_s:.1f}s; the worker is still alive and the late "
+                    f"reply will be drained on the next call"
+                ) from None
+
+    async def _drain_pending_reply(self, timeout_s: float) -> None:
+        """Consume a reply left over from an earlier non-lethal timeout.
+
+        Must run before any new frame is written (spec §7 "Drain before
+        write"): the control pipe carries one reply per request in order, so
+        an undrained straggler would be handed to the NEXT caller as if it
+        were its own answer.
+
+        Args:
+            timeout_s: Budget for the straggler to land.
+
+        Raises:
+            NamespaceTimeoutError: the straggler still has not landed. It
+                stays parked and the worker is left alive — draining is
+                never a reason to kill.
+        """
+        pending = self._pending_reply
+        if pending is None:
+            return
+        try:
+            # Shielded: a timeout here must leave the future parked and
+            # still running, not cancel it.
+            await asyncio.wait_for(asyncio.shield(pending), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            pid = self._proc.pid if self._proc is not None else None
+            raise NamespaceTimeoutError(
+                f"repl_worker[pid={pid}]: a reply from a previously timed-out request "
+                f"has still not arrived after {timeout_s:.1f}s; the worker is still alive "
+                f"and the reply stays queued for the next call"
+            ) from None
+        except (EOFError, OSError, ValueError) as exc:
+            # The straggler failed instead of answering (worker died in the
+            # meantime). That is not this caller's error: clear it and let
+            # the alive-check / round-trip below report the real state.
+            logger.debug("WorkerHandle: parked reply failed while draining: %s", exc)
+        self._pending_reply = None
 
     async def _kill_process(self) -> None:
         """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16).
 
         Idempotent and safe to call after the process is already reaped —
-        deliberately touches ``self._executor`` ONLY when there's actually
-        something to kill/wait for (code-review fix): a self-owned executor
-        is shut down at the end of :meth:`kill`, so an unconditional
-        post-kill ``wait()`` dispatch here would raise
-        ``RuntimeError: cannot schedule new futures after shutdown`` on a
-        second call (e.g. `_classify_death()` reached after an external
-        `kill()`, or `kill()` called twice).
+        deliberately touches its executor ONLY when there's actually
+        something to kill/wait for (code-review fix): the executor is shut
+        down at the end of :meth:`kill`, so an unconditional post-kill
+        ``wait()`` dispatch here would raise ``RuntimeError: cannot schedule
+        new futures after shutdown`` on a second call (e.g.
+        `_classify_death()` reached after an external `kill()`, or `kill()`
+        called twice).
+
+        Runs on ``self._lifecycle_executor``, never on ``self._executor``
+        (FEAT-500 code review): dispatching the kill to the same pool whose
+        threads are parked on blocking pipe reads deadlocks — see the comment
+        on that attribute in :meth:`__init__`.
         """
         if self._proc is None or self._proc.poll() is not None:
             return  # nothing alive to kill, or already reaped
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._proc.kill)
-        await loop.run_in_executor(self._executor, self._proc.wait)
+        async with self._kill_lock:
+            # Re-check under the lock: another path may have killed and reaped
+            # the process while we waited for it.
+            if self._proc is None or self._proc.poll() is not None:
+                return
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._lifecycle_executor, self._proc.kill)
+            await loop.run_in_executor(self._lifecycle_executor, self._proc.wait)
+
+    def death_summary(self) -> tuple[int | None, str]:
+        """Why this worker is (or might be) dead, for logs and diagnostics.
+
+        Public accessor added so callers — notably ``WorkerPool``'s
+        restart-loop warning — do not have to reach into ``_proc`` /
+        ``_stderr_tail`` across the module boundary (code-review finding).
+
+        Returns:
+            ``(exit_code, stderr_tail)``: the process' exit code (``None`` if
+            it was never spawned or is still running) and the most recent
+            stderr line the drain task captured (``""`` if there is none).
+        """
+        exit_code = self._proc.returncode if self._proc is not None else None
+        stderr_tail = self._stderr_tail[-1] if self._stderr_tail else ""
+        return exit_code, stderr_tail
 
     async def _classify_death(self) -> str:
         """Best-effort classification of an unexpected worker death.
@@ -348,10 +647,26 @@ class WorkerHandle:
         deadline_s = (self._config.deadline_ms + _DEADLINE_GRACE_MS) / 1000
         request = ExecRequest(code=code, debug=debug, deadline_ms=self._config.deadline_ms)
         try:
-            response: ExecResult = await self._send(request, deadline_s)
+            # The ONLY lethal caller (G2/AC4): exceeding `deadline_ms` is
+            # what SIGKILLs a worker, and nothing else does.
+            response: ExecResult = await self._send(request, deadline_s, lethal=True)
+        except NamespaceTimeoutError as exc:
+            # A reply parked by an EARLIER non-lethal timeout still had not
+            # landed when the drain step ran. The worker is alive and its
+            # namespace is intact, so this must not be dressed up as a
+            # namespace-loss error — that would falsely tell the LLM every
+            # variable was lost (and `NamespaceTimeoutError` would otherwise
+            # be caught by the clause below, since it subclasses
+            # `TimeoutError`, which IS `asyncio.TimeoutError` on 3.11+).
+            detail = str(exc)
+            return {"status": "error", "result": detail, "error": detail}
         except asyncio.TimeoutError:
             return self._build_loss_error("timeout", f"execution exceeded deadline_ms={self._config.deadline_ms}")
-        except (EOFError, OSError, ValueError) as exc:
+        except (WorkerBootstrapError, EOFError, OSError, ValueError) as exc:
+            # `WorkerBootstrapError` (FEAT-500): a fresh worker that never
+            # booted. Folded into the same G5 loss dict as any other death so
+            # the execute path never raises (AC11) — `_classify_death()` still
+            # distinguishes a bootstrap OOM ("memory") from a plain crash.
             cause = await self._classify_death()
             return self._build_loss_error(cause, str(exc))
 
@@ -393,7 +708,7 @@ class WorkerHandle:
             payload=encoded.payload,
         )
         try:
-            await self._send(request, timeout_s=30.0)
+            await self._send(request, timeout_s=self._namespace_timeout_s)
         finally:
             if encoded.shm_name is not None:
                 # Host owns the block's lifecycle: unlink only now that the
@@ -402,30 +717,40 @@ class WorkerHandle:
                 await loop.run_in_executor(self._executor, unlink_shm, encoded.shm_name)
         self.known_vars = sorted(set(self.known_vars) | {name})
 
+    @property
+    def _namespace_timeout_s(self) -> float:
+        """Budget in seconds for every non-``exec`` request (FEAT-500 G4/AC6).
+
+        Replaces the hard-coded 5 s/10 s/30 s literals that made a cold
+        worker unusable: seeding a variable into a worker still importing
+        pandas took longer than 5 s under load, and the timeout was lethal.
+        """
+        return self._config.namespace_timeout_ms / 1000
+
     async def get_var(self, name: str) -> Any:
         """Read one namespace variable from the worker."""
-        response: ValueResponse = await self._send(GetVarRequest(name=name), 5.0)
+        response: ValueResponse = await self._send(GetVarRequest(name=name), self._namespace_timeout_s)
         return decode_value(response.value)
 
     async def set_var(self, name: str, value: Any) -> None:
         """Write one namespace variable in the worker."""
-        await self._send(SetVarRequest(name=name, value=encode_value(value)), 5.0)
+        await self._send(SetVarRequest(name=name, value=encode_value(value)), self._namespace_timeout_s)
         self.known_vars = sorted(set(self.known_vars) | {name})
 
     async def list_vars(self) -> list[str]:
         """Refresh and return the cheap, names-only namespace shadow."""
-        response: ListNsResponse = await self._send(ListNsRequest(), 5.0)
+        response: ListNsResponse = await self._send(ListNsRequest(), self._namespace_timeout_s)
         self.known_vars = sorted(response.names)
         return self.known_vars
 
     async def snapshot(self) -> dict[str, Any]:
         """Return a serializable dump of the whole worker namespace."""
-        response: SnapshotResponse = await self._send(SnapshotRequest(), 10.0)
+        response: SnapshotResponse = await self._send(SnapshotRequest(), self._namespace_timeout_s)
         return {name: decode_value(value) for name, value in response.data.items()}
 
     async def reset(self) -> None:
         """Reset the worker's REPL environment (equivalent to `reset_environment()`)."""
-        await self._send(ResetRequest(), 30.0)
+        await self._send(ResetRequest(), self._namespace_timeout_s)
         self.known_vars = []
 
     async def ping(self, timeout_s: float = 10.0) -> bool:
@@ -466,6 +791,19 @@ class WorkerHandle:
         correctness; the stream-close below is opportunistic cleanup.
         """
         await self._kill_process()
+        # FEAT-500 (AC12): leave no readiness task and no parked reply behind.
+        if self._ready_task is not None:
+            self._ready_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._ready_task
+            self._ready_task = None
+        # A handle killed before it ever became ready must not leave
+        # `wait_ready()` waiting forever — resolve it with a real message.
+        self._fail_ready("REPL worker was killed before it signalled readiness")
+        if self._pending_reply is not None:
+            self._pending_reply.cancel()
+            self._pending_reply.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+            self._pending_reply = None
         if self._stdio_task is not None:
             self._stdio_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -481,6 +819,8 @@ class WorkerHandle:
         self._from_worker = None
         if self._owns_executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
-        # `_stdio_executor` is always self-owned (see `__init__`) — always
-        # shut it down here, regardless of `_owns_executor`.
+        # `_stdio_executor` and `_lifecycle_executor` are always self-owned
+        # (see `__init__`) — always shut them down here, regardless of
+        # `_owns_executor`.
         self._stdio_executor.shutdown(wait=False, cancel_futures=True)
+        self._lifecycle_executor.shutdown(wait=False, cancel_futures=True)

@@ -94,12 +94,26 @@ class TestGrokInvoke:
         assert isinstance(result.output, str)
 
     async def test_lightweight_model_default(self, mock_grok_client):
-        """invoke() uses _lightweight_model by default."""
+        """invoke() uses _lightweight_model when the caller selected no model.
+
+        ``AbstractClient.__init__`` sets ``self.model`` only from an explicit
+        ``model=`` kwarg, so ``None`` is the ``LLMFactory.create("grok")``
+        case — the one the lightweight default exists for.
+        """
+        mock_grok_client.model = None
         mock_grok_client._mock_chat.sample = AsyncMock(
             return_value=_make_mock_response("ok")
         )
         result = await mock_grok_client.invoke("test")
         assert result.model == "grok-4.20-non-reasoning"
+
+    async def test_selected_model_outranks_lightweight(self, mock_grok_client):
+        """A model selected at construction beats _lightweight_model."""
+        mock_grok_client._mock_chat.sample = AsyncMock(
+            return_value=_make_mock_response("ok")
+        )
+        result = await mock_grok_client.invoke("test")
+        assert result.model == "grok-4.3"
 
     async def test_model_override(self, mock_grok_client):
         """Explicit model param overrides _lightweight_model."""

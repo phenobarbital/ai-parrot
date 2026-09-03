@@ -10,7 +10,7 @@ environment-independent.
 from parrot.knowledge.wiki.languages import scanner_for
 from parrot.knowledge.wiki.languages.rust import RustScanner
 
-SAMPLE_RUST = '''
+SAMPLE_RUST = """
 /// A document parser.
 pub struct Parser {
     pub name: String,
@@ -39,7 +39,7 @@ pub trait Serializable {
 
 mod tests;
 use crate::utils::helpers;
-'''
+"""
 
 
 def test_rust_outline_pub_items(force_heuristic):
@@ -80,10 +80,7 @@ def test_rust_doc_survives_attribute_macro(force_heuristic):
     )
     scanner = RustScanner()
     result = scanner.outline(source, "src/config.rs")
-    assert any(
-        "Config" in line and "A configuration value." in line
-        for line in result.outline
-    )
+    assert any("Config" in line and "A configuration value." in line for line in result.outline)
 
 
 def test_rust_doc_comments(force_heuristic):
@@ -117,9 +114,7 @@ def test_rust_use_crate_resolution():
     scanner = RustScanner()
     rel_paths = ["src/lib.rs", "src/parser.rs", "src/utils/helpers.rs"]
     index = scanner.build_reference_index(rel_paths)
-    target = scanner.resolve_import(
-        "crate::utils::helpers", "src/parser.rs", index
-    )
+    target = scanner.resolve_import("crate::utils::helpers", "src/parser.rs", index)
     assert target == "src/utils/helpers.rs"
 
 
@@ -137,7 +132,9 @@ def test_rust_use_crate_without_root_returns_none():
     assert scanner.resolve_import("crate::utils::helpers", "parser.rs", index) is None
 
 
-def test_rust_parse_failure_degrades_empty(force_heuristic, monkeypatch):
+def test_rust_parse_failure_degrades_empty(force_heuristic, force_no_astgrep, monkeypatch):
+    # FEAT-498: force_no_astgrep is required too now that rust.yaml
+    # (TASK-2744) makes the ast-grep seam a real, working first tier.
     scanner = RustScanner()
 
     def _boom(source):

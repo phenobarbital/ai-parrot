@@ -80,6 +80,14 @@ class GroqClient(OpenAIBaseClient):
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
     _lightweight_model: str = "kimi-k2-instruct"
+    # Groq caps completion tokens at 4096 for most hosted models and rejects an
+    # over-cap request outright rather than clamping it, so this client pins its
+    # own budget below AbstractClient's more generous default. 4095, not 4096:
+    # the limit is exclusive — 4096 itself is refused.
+    #
+    # ask() and invoke() share this; _invoke_max_tokens stays unset so there is
+    # a single number to keep correct.
+    _default_max_tokens: int = 4095
 
     def __init__(
         self,
@@ -326,7 +334,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -339,7 +347,9 @@ class GroqClient(OpenAIBaseClient):
         use_code_interpreter: Optional[bool] = None
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
+        max_tokens = self._resolve_max_tokens(max_tokens)
         model = model.value if isinstance(model, GroqModel) else model
+        max_tokens = self._resolve_max_tokens(max_tokens, model, for_invoke=True)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -652,16 +662,21 @@ class GroqClient(OpenAIBaseClient):
             ) else structured_response.choices[0].message
 
             parsed_config = structured_output_for_later
+            _final_response = structured_response
         else:
             parsed_config = request_output_config
+            _final_response = response
 
         response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         if parsed_config:
             try:
                 final_output = await self._parse_structured_output(
                     response_text,
-                    parsed_config
+                    parsed_config,
+                    finish_reason=self._extract_finish_reason(_final_response),
                 )
+            except InvokeError:
+                raise
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
         else:
@@ -734,7 +749,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -751,6 +766,7 @@ class GroqClient(OpenAIBaseClient):
         Yields successive string chunks followed by a final
         :class:`~parrot.models.responses.AIMessage` with metadata.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -908,7 +924,9 @@ class GroqClient(OpenAIBaseClient):
         request_args = {
             "model": model,
             "messages": messages,
-            "max_tokens": 4096,
+            # Not a literal: 4096 is the exact value Groq refuses (the cap is
+            # exclusive), and a literal here also ignores a configured budget.
+            "max_tokens": self._resolve_max_tokens(None, model),
             "temperature": 0.1,
             "top_p": 0.9,
             "stream": False,
@@ -987,7 +1005,7 @@ class GroqClient(OpenAIBaseClient):
             continue_args = {
                 "model": model,
                 "messages": messages,
-                "max_tokens": 4096,
+                "max_tokens": self._resolve_max_tokens(None, model),
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "stream": False,
@@ -1018,7 +1036,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         text: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         top_p: float = 0.9,
@@ -1030,13 +1048,17 @@ class GroqClient(OpenAIBaseClient):
         Args:
             text (str): The text to be summarized.
             model (str): The Groq model to use.
-            max_tokens (int): Maximum tokens for the response.
+            max_tokens (Optional[int]): Maximum tokens for the response.
+                ``None`` (the default) resolves via ``_resolve_max_tokens()``
+                — the per-instance ``max_tokens``, then
+                ``_default_max_tokens`` (4095 for Groq).
             temperature (float): Sampling temperature.
             top_p (float): Top-p sampling.
 
         Returns:
             str: The summarized text.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = text
@@ -1111,7 +1133,7 @@ class GroqClient(OpenAIBaseClient):
         text: str,
         model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
         temperature: Optional[float] = 0.1,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         top_p: float = 0.9,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1127,6 +1149,7 @@ class GroqClient(OpenAIBaseClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         await self._ensure_client()
 
         model = model.value if isinstance(model, GroqModel) else model
@@ -1201,8 +1224,11 @@ Format your response clearly with these sections.
             try:
                 final_output = await self._parse_structured_output(
                     result.content,
-                    output_config
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
                 )
+            except InvokeError:
+                raise
             except Exception:
                 final_output = result.content
 
@@ -1242,7 +1268,7 @@ Format your response clearly with these sections.
         product_name: str,
         model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
         temperature: Optional[float] = 0.1,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         top_p: float = 0.9,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1256,11 +1282,15 @@ Format your response clearly with these sections.
             product_name (str): Name of the product being reviewed.
             model (Union[GroqModel, str]): The model to use.
             temperature (float): Sampling temperature for response generation.
-            max_tokens (int): Maximum tokens in response.
+            max_tokens (Optional[int]): Maximum tokens in response. ``None``
+                (the default) resolves via ``_resolve_max_tokens()`` — the
+                per-instance ``max_tokens``, then ``_default_max_tokens``
+                (4095 for Groq).
             top_p (float): Top-p sampling parameter.
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         await self._ensure_client()
 
         turn_id = str(uuid.uuid4())
@@ -1327,8 +1357,11 @@ Format your response clearly with these sections.
         try:
             final_output = await self._parse_structured_output(
                 result.content,
-                output_config
+                output_config,
+                finish_reason=self._extract_finish_reason(response),
             )
+        except InvokeError:
+            raise
         except Exception:
             final_output = result.content
 
@@ -1353,7 +1386,7 @@ Format your response clearly with these sections.
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list] = None,
@@ -1372,7 +1405,9 @@ Format your response clearly with these sections.
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full :class:`StructuredOutputConfig`; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model`` (``kimi-k2-instruct``).
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``
+                (``kimi-k2-instruct``).
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.
@@ -1389,6 +1424,7 @@ Format your response clearly with these sections.
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             await self._ensure_client()
 
@@ -1464,10 +1500,17 @@ Format your response clearly with these sections.
             # Parse output
             output: Any = raw_text
             if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response), model=resolved_model)
                 if config.custom_parser:
                     output = config.custom_parser(raw_text)
                 else:
-                    output = await self._parse_structured_output(raw_text, config)
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                        model=resolved_model,
+                    )
 
             usage = CompletionUsage.from_groq(final_response.usage)
             return self._build_invoke_result(

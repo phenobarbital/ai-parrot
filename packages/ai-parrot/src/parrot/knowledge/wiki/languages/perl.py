@@ -24,8 +24,9 @@ from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Any, ClassVar
 
-from parrot.knowledge.wiki.languages import treesitter
+from parrot.knowledge.wiki.languages import astgrep, treesitter
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
+from parrot.knowledge.wiki.languages.render import render_outline, structural_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,7 @@ _RE_HEAD2 = re.compile(r"^=head2[ \t]+(\w+)[ \t]*\n", re.MULTILINE)
 _RE_POD_COMMAND = re.compile(r"^=\w", re.MULTILINE)
 
 _RE_USE_PARENT_BASE = re.compile(
-    r"^\s*use\s+(?:parent|base)\s+(?:-\w+\s*,\s*)?"
-    r"(?:qw\s*\(([^)]*)\)|['\"]([\w:]+)['\"])",
+    r"^\s*use\s+(?:parent|base)\s+(?:-\w+\s*,\s*)?" r"(?:qw\s*\(([^)]*)\)|['\"]([\w:]+)['\"])",
     re.MULTILINE,
 )
 _RE_USE_MODULE = re.compile(r"^\s*use\s+(\w+(?:::\w+)*)\b", re.MULTILINE)
@@ -78,11 +78,26 @@ _LIB_DIR_NAME = "lib"
 #: filtered out of ``imports`` so they don't add resolve-to-``None`` noise
 #: on essentially every real-world Perl file (they would fail to resolve
 #: anyway; this just keeps ``LanguageOutline.imports`` meaningful).
-_PRAGMA_MODULES = frozenset({
-    "strict", "warnings", "utf8", "feature", "lib", "constant",
-    "overload", "vars", "English", "diagnostics", "integer",
-    "bytes", "if", "mro", "less", "experimental",
-})
+_PRAGMA_MODULES = frozenset(
+    {
+        "strict",
+        "warnings",
+        "utf8",
+        "feature",
+        "lib",
+        "constant",
+        "overload",
+        "vars",
+        "English",
+        "diagnostics",
+        "integer",
+        "bytes",
+        "if",
+        "mro",
+        "less",
+        "experimental",
+    }
+)
 
 
 def _is_pragma_or_version(name: str) -> bool:
@@ -157,7 +172,7 @@ def _sub_params(source: str, match: re.Match[str]) -> str:
     signature = match.group(2)
     if signature is not None:
         return signature.strip()
-    window = source[match.end():match.end() + 400]
+    window = source[match.end() : match.end() + 400]
     unpack = _RE_MY_ARGS.search(window)
     return unpack.group(1).strip() if unpack else ""
 
@@ -198,6 +213,9 @@ class PerlScanner(LanguageScanner):
 
     name: ClassVar[str] = "perl"
     suffixes: ClassVar[frozenset[str]] = frozenset({".pl", ".pm", ".t"})
+    #: ``"ast-grep"`` after the structural seam served the most recent
+    #: file, otherwise ``None`` (see :attr:`mode`). FEAT-498.
+    _last_mode: str | None = None
 
     # -- outline ------------------------------------------------------------
 
@@ -215,6 +233,18 @@ class PerlScanner(LanguageScanner):
         """
         try:
             imports = _extract_perl_imports(source)
+            if structural_enabled():
+                structural = astgrep.extract(source, "perl", rel_path)
+                if structural is not None:
+                    self._last_mode = "ast-grep"
+                    return LanguageOutline(
+                        summary=structural.summary,
+                        outline=render_outline(structural.symbols, "perl"),
+                        imports=imports,
+                        symbols=structural.symbols,
+                        refs=structural.refs,
+                    )
+            self._last_mode = None
             parser = treesitter.get_parser("perl")
             if parser is not None:
                 summary, lines = self._outline_treesitter(parser, source)
@@ -268,7 +298,7 @@ class PerlScanner(LanguageScanner):
         for match in _RE_HAS.finditer(source):
             pos, attr_name = match.start(), match.group(1)
             window_end = source.find(";", match.end())
-            window = source[match.end():window_end if window_end != -1 else len(source)]
+            window = source[match.end() : window_end if window_end != -1 else len(source)]
             isa_match = _RE_ISA.search(window)
             line = f"    has {attr_name}"
             if isa_match:
@@ -282,9 +312,7 @@ class PerlScanner(LanguageScanner):
         return summary, lines
 
     @staticmethod
-    def _owner_before(
-        containers: list[tuple[int, str, str]], pos: int
-    ) -> str | None:
+    def _owner_before(containers: list[tuple[int, str, str]], pos: int) -> str | None:
         """Name of the nearest ``package``/``class``/``role`` before ``pos``."""
         owner: str | None = None
         for cpos, _label, cname in containers:
@@ -307,9 +335,7 @@ class PerlScanner(LanguageScanner):
         lines: list[str] = []
 
         def _text(node: Any) -> str:
-            return source_bytes[node.start_byte:node.end_byte].decode(
-                "utf-8", errors="replace"
-            )
+            return source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
         def _name_of(node: Any) -> str:
             name_node = node.child_by_field_name("name")
@@ -338,7 +364,8 @@ class PerlScanner(LanguageScanner):
                 return None
             inner = node.named_children[0]
             if inner.type not in (
-                "function_call_expression", "ambiguous_function_call_expression",
+                "function_call_expression",
+                "ambiguous_function_call_expression",
             ):
                 return None
             func = inner.child_by_field_name("function")
@@ -361,11 +388,7 @@ class PerlScanner(LanguageScanner):
             return name, isa_match.group(1) if isa_match else ""
 
         def _is_field_decl(node: Any) -> bool:
-            return (
-                node.type == "variable_declaration"
-                and bool(node.children)
-                and node.children[0].type == "field"
-            )
+            return node.type == "variable_declaration" and bool(node.children) and node.children[0].type == "field"
 
         def _field_var(node: Any) -> str:
             for child in node.children:
@@ -463,9 +486,7 @@ class PerlScanner(LanguageScanner):
                         lib_dirs.add(parent.as_posix())
         return (frozenset(file_set), sorted(lib_dirs))
 
-    def resolve_import(
-        self, spec: str, from_file: str, index: Any
-    ) -> str | None:
+    def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:
         """Resolve a ``Module::Name`` or ``require:``-prefixed specifier.
 
         Args:
@@ -483,7 +504,7 @@ class PerlScanner(LanguageScanner):
         file_set, lib_dirs = index
 
         if spec.startswith("require:"):
-            rel = spec[len("require:"):]
+            rel = spec[len("require:") :]
             base = PurePosixPath(from_file).parent
             candidate = self._normalize_posix(base / rel)
             return candidate if candidate in file_set else None
@@ -515,6 +536,8 @@ class PerlScanner(LanguageScanner):
     def mode(self) -> str:
         """``"tree-sitter"`` when the optional grammar loads, else
         ``"heuristic"``."""
+        if self._last_mode == "ast-grep":
+            return "ast-grep"
         if treesitter.get_parser("perl") is not None:
             return "tree-sitter"
         return "heuristic"

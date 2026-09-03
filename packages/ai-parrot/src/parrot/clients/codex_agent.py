@@ -231,11 +231,14 @@ class OpenAICodexClient(AbstractClient):
         structured_output: Optional[StructuredOutputConfig] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.0,
         use_tools: bool = False,
         tools: Optional[list[Any]] = None,
     ) -> InvokeResult:
+        # Codex runs through `codex exec`, which has no max_tokens knob — the
+        # argument is accepted for AbstractClient parity and deliberately
+        # dropped here, so there is no budget to resolve.
         del max_tokens, temperature, tools
         resolved_model = self._resolve_invoke_model(model)
         structured_config = self._build_invoke_structured_config(
@@ -263,7 +266,12 @@ class OpenAICodexClient(AbstractClient):
             )
             parsed: Any = result.output
             if structured_config is not None:
-                parsed = await self._parse_structured_output(result.output, structured_config)
+                parsed = await self._parse_structured_output(
+                    result.output,
+                    structured_config,
+                    finish_reason=result.finish_reason,
+                    model=resolved_model,
+                )
             return InvokeResult(
                 output=parsed,
                 output_type=output_type,
