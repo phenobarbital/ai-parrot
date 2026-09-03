@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-520 (reserved at proposal time — `sdd/state/FEAT-520/`; reused here, NOT re-reserved)
 **Date**: 2026-09-03
 **Author**: Jesus Lara (proposal research: /sdd-proposal FEAT-520)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor release
 **Proposal**: `sdd/proposals/graphindex-postgres-backend.proposal.md`
 **Source brainstorm**: `sdd/proposals/claude_brainstorm-graphindex-postgres.md` (decisions D1–D8)
