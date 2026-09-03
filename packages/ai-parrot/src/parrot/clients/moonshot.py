@@ -10,9 +10,11 @@ Moonshot requires:
 - ``__init__`` resolves ``MOONSHOT_API_KEY`` and sets the Moonshot base URL.
 - ``_chat_completion`` strips fixed sampling parameters for K-series models,
   injects thinking-mode ``extra_body`` (``reasoning_effort`` for K3,
-  ``thinking`` dict for K2.6, always-on for K2.7-code), translates
-  ``max_tokens`` to ``max_completion_tokens``, and injects
-  ``prompt_cache_key`` when configured.
+  ``thinking`` dict for K2.6, always-on for K2.7-code), calls the shared
+  ``OpenAIBaseClient._adapt_completion_params()`` hook (HOTFIX
+  openai-max-completion-tokens) to translate ``max_tokens`` to
+  ``max_completion_tokens``, and injects ``prompt_cache_key`` when
+  configured.
 - ``ask`` / ``ask_stream`` accept ``thinking`` and ``reasoning_effort``
   keywords and propagate them to ``_chat_completion`` via a context
   variable (NvidiaClient pattern), and post-process the returned
@@ -117,6 +119,13 @@ class MoonshotClient(OpenAIBaseClient):
     _default_model: str = MoonshotModel.KIMI_K2_6.value
     _fallback_model: str = MoonshotModel.MOONSHOT_V1_128K.value
     _min_cache_tokens: int = 0  # automatic caching, no explicit threshold
+    #: Moonshot's chat-completions endpoint requires ``max_completion_tokens``
+    #: instead of ``max_tokens`` — handled by the shared
+    #: ``OpenAIBaseClient._adapt_completion_params()`` hook (HOTFIX
+    #: openai-max-completion-tokens). Left at the inherited ``()`` for
+    #: ``_fixed_temperature_models``: K-series temperature stripping is
+    #: already owned by ``_sanitize_params_for_model()`` below.
+    _uses_max_completion_tokens: bool = True
 
     def __init__(
         self,
@@ -202,7 +211,10 @@ class MoonshotClient(OpenAIBaseClient):
         2. Strips fixed sampling parameters for K-series models.
         3. Injects thinking-mode ``extra_body`` per the flags set by
            ``ask`` / ``ask_stream`` via the async context variable.
-        4. Translates ``max_tokens`` to ``max_completion_tokens``.
+        4. Calls the shared ``OpenAIBaseClient._adapt_completion_params()``
+           hook, which translates ``max_tokens`` to
+           ``max_completion_tokens`` (this client always opts in —
+           ``_uses_max_completion_tokens = True``).
         5. Injects ``prompt_cache_key`` when configured.
 
         Args:
@@ -243,8 +255,7 @@ class MoonshotClient(OpenAIBaseClient):
         # K2.7-code / K2.7-code-highspeed (ALWAYS_THINKING_MODELS): always-on
         # server-side — no client-supplied parameter is needed or injected.
 
-        if "max_tokens" in kwargs:
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        kwargs = self._adapt_completion_params(model, kwargs)
 
         if self.prompt_cache_key:
             kwargs.setdefault("prompt_cache_key", self.prompt_cache_key)

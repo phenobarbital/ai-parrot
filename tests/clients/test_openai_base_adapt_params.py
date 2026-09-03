@@ -105,10 +105,16 @@ async def test_chat_completion_routes_through_hook(captured_payload, stream, bin
 
 
 # NOTE: `OpenAIClient` is not a member of WIRE_SUBCLASSES (it never was —
-# see test_openai_compatible_defaults.py). `MoonshotClient` opts in via
-# HOTFIX-openai-max-completion-tokens-3, which will narrow this sweep to
-# exclude it.
-@pytest.mark.parametrize("cls", WIRE_SUBCLASSES, ids=lambda c: c.__name__)
+# see test_openai_compatible_defaults.py). `MoonshotClient` is excluded here
+# by HOTFIX-openai-max-completion-tokens-3: it opts in
+# (`_uses_max_completion_tokens = True`) as part of folding its bespoke
+# translation into this shared hook; see
+# tests/clients/test_moonshot_client.py::TestMoonshotPayloadUnchanged for its
+# own payload-parity coverage.
+_DEFAULTS_SWEEP_ROSTER = [cls for cls in WIRE_SUBCLASSES if cls.__name__ != "MoonshotClient"]
+
+
+@pytest.mark.parametrize("cls", _DEFAULTS_SWEEP_ROSTER, ids=lambda c: c.__name__)
 def test_wire_subclasses_keep_defaults(cls):
     """Guards the byte-identical-payload criterion for non-opted-in clients."""
     assert cls._uses_max_completion_tokens is False

@@ -270,6 +270,61 @@ class TestMoonshotMaxTokensTranslation:
 
 
 # ---------------------------------------------------------------------------
+# TestMoonshotPayloadUnchanged (HOTFIX-openai-max-completion-tokens-3)
+# ---------------------------------------------------------------------------
+
+
+class TestMoonshotPayloadUnchanged:
+    """Wire payload must be byte-identical to the pre-hotfix behaviour.
+
+    Before this task, ``_chat_completion`` did the max_tokens rename with a
+    two-line inline check; now it delegates to the shared
+    ``OpenAIBaseClient._adapt_completion_params()`` hook. The expected
+    payload shape is unchanged either way: the hook is a strict
+    max_tokens->max_completion_tokens rename plus a temperature drop gated
+    on ``_fixed_temperature_models`` (left at ``()`` for Moonshot — K-series
+    temperature stripping is already owned by ``_sanitize_params_for_model``
+    and is asserted separately by ``TestMoonshotParameterSanitization``).
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model, ctx, expected_extra",
+        [
+            (MoonshotModel.MOONSHOT_V1_128K.value, {}, None),
+            (
+                MoonshotModel.KIMI_K2_6.value,
+                {"thinking": True, "reasoning_effort": None},
+                {"thinking": {"type": "enabled"}},
+            ),
+            (
+                MoonshotModel.KIMI_K3.value,
+                {"thinking": None, "reasoning_effort": None},
+                {"reasoning_effort": "max"},
+            ),
+        ],
+    )
+    async def test_payload_matches_pre_change_snapshot(self, model, ctx, expected_extra):
+        client, captured = await _client_with_mock_sdk(prompt_cache_key="sess-1")
+        token = moonshot_mod._thinking_ctx.set(ctx)
+        try:
+            await client._chat_completion(
+                model=model,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=256,
+                temperature=0.3,
+            )
+        finally:
+            moonshot_mod._thinking_ctx.reset(token)
+        expected = {"max_completion_tokens": 256, "prompt_cache_key": "sess-1"}
+        if model not in K_SERIES_MODELS:
+            expected["temperature"] = 0.3
+        if expected_extra:
+            expected["extra_body"] = expected_extra
+        assert {k: v for k, v in captured.items() if k not in ("model", "messages")} == expected
+
+
+# ---------------------------------------------------------------------------
 # TestMoonshotThinkingMode
 # ---------------------------------------------------------------------------
 
