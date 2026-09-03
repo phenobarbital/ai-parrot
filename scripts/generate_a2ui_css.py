@@ -19,6 +19,7 @@ Usage:
     python scripts/generate_a2ui_css.py --check       # CI mode: exit 1 if stale
     python scripts/generate_a2ui_css.py --verbose      # Verbose output
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,9 +39,7 @@ _VIZ_SRC = WORKSPACE_ROOT / "packages" / "ai-parrot-visualizations" / "src" / "p
 
 INTERACTIVE_HTML_PATH = _VIZ_SRC / "outputs" / "a2ui_renderers" / "interactive_html.py"
 
-OUTPUT_CSS_PATH = (
-    _VIZ_SRC / "outputs" / "formats" / "assets" / "design_system" / "tailwind.generated.css"
-)
+OUTPUT_CSS_PATH = _VIZ_SRC / "outputs" / "formats" / "assets" / "design_system" / "tailwind.generated.css"
 
 #: Every literal class-name token this script's safelist covers — mirrors
 #: spec §1 gap 2's exact vocabulary (a2ui-*/ds-*/kpi-*/filter-*/msf-*).
@@ -80,8 +79,7 @@ SELECTOR_UTILITIES: dict[str, str] = {
         "px-3 py-1.5 text-sm font-medium text-[var(--on-primary)]"
     ),
     "a2ui-card": (
-        "rounded-[var(--radius)] border border-[var(--panel-border)] "
-        "bg-[var(--panel-bg)] p-[var(--density-padding)]"
+        "rounded-[var(--radius)] border border-[var(--panel-border)] " "bg-[var(--panel-bg)] p-[var(--density-padding)]"
     ),
     "a2ui-chart-wrap": "flex flex-col gap-[var(--density-gap)]",
     "a2ui-col": "flex flex-col gap-[var(--density-gap)]",
@@ -105,8 +103,7 @@ SELECTOR_UTILITIES: dict[str, str] = {
     "a2ui-table-notice": "mt-1 text-xs text-[var(--neutral-muted)]",
     "a2ui-table-pager": "mt-2 flex items-center justify-end gap-2",
     "a2ui-table-search": (
-        "w-full max-w-xs rounded-[var(--radius)] border border-[var(--panel-border)] "
-        "px-2 py-1 text-sm"
+        "w-full max-w-xs rounded-[var(--radius)] border border-[var(--panel-border)] " "px-2 py-1 text-sm"
     ),
     "a2ui-table-wrap": "flex flex-col gap-2",
     "a2ui-tabs": "mb-2 flex flex-wrap gap-1",
@@ -114,8 +111,7 @@ SELECTOR_UTILITIES: dict[str, str] = {
     "a2ui-text": "text-sm text-[var(--neutral-text)]",
     "a2ui-title": "mb-1 text-lg font-bold text-[var(--neutral-text)]",
     "filter-bar": (
-        "mb-3 flex flex-wrap items-center gap-2 rounded-[var(--radius)] "
-        "border border-[var(--panel-border)] p-2"
+        "mb-3 flex flex-wrap items-center gap-2 rounded-[var(--radius)] " "border border-[var(--panel-border)] p-2"
     ),
     "filter-label": "mr-1 text-sm font-medium text-[var(--neutral-text)]",
     "filter-summary": "mt-1 w-full text-xs text-[var(--neutral-muted)]",
@@ -132,13 +128,9 @@ SELECTOR_UTILITIES: dict[str, str] = {
     "msf-label": "font-medium",
     "msf-opt": "flex items-center gap-2 px-2 py-1 text-sm",
     "msf-panel": (
-        "absolute z-10 mt-1 rounded-[var(--radius)] border border-[var(--panel-border)] "
-        "bg-[var(--panel-bg)] p-2"
+        "absolute z-10 mt-1 rounded-[var(--radius)] border border-[var(--panel-border)] " "bg-[var(--panel-bg)] p-2"
     ),
-    "msf-search": (
-        "mb-2 w-full rounded-[var(--radius)] border border-[var(--panel-border)] "
-        "px-2 py-1 text-sm"
-    ),
+    "msf-search": ("mb-2 w-full rounded-[var(--radius)] border border-[var(--panel-border)] " "px-2 py-1 text-sm"),
 }
 
 #: Fallback for any FUTURE class the AST scan finds that isn't yet in
@@ -333,10 +325,7 @@ def _run_tailwind_cli(entry_css: str, *, verbose: bool = False) -> str:
             check=False,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                "Tailwind CLI failed "
-                f"(exit {result.returncode}):\n{result.stdout}\n{result.stderr}"
-            )
+            raise RuntimeError("Tailwind CLI failed " f"(exit {result.returncode}):\n{result.stdout}\n{result.stderr}")
         return output_path.read_text(encoding="utf-8")
 
 
@@ -360,8 +349,7 @@ def generate_css(*, verbose: bool = False) -> tuple[str, set[str]]:
             print(f"  {cls}")
         if _ALREADY_STYLED_ELSEWHERE & classes:
             print(
-                "  (excluded — already styled elsewhere: "
-                f"{', '.join(sorted(_ALREADY_STYLED_ELSEWHERE & classes))})"
+                "  (excluded — already styled elsewhere: " f"{', '.join(sorted(_ALREADY_STYLED_ELSEWHERE & classes))})"
             )
 
     generated_classes = classes - _ALREADY_STYLED_ELSEWHERE
@@ -423,9 +411,7 @@ def main() -> int:
         print(f"Wrote {OUTPUT_CSS_PATH.relative_to(WORKSPACE_ROOT)}.")
 
     if args.check:
-        print(
-            "\ntailwind.generated.css is STALE. Run: python scripts/generate_a2ui_css.py"
-        )
+        print("\ntailwind.generated.css is STALE. Run: python scripts/generate_a2ui_css.py")
         return 1
 
     return 0

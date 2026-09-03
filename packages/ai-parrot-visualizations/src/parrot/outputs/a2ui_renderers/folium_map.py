@@ -175,9 +175,7 @@ def build_map_document(
     fmap = folium.Map(location=list(center), zoom_start=zoom)
 
     layers = props.get("layers")
-    has_layer_data = isinstance(layers, list) and any(
-        isinstance(layer, dict) and "data" in layer for layer in layers
-    )
+    has_layer_data = isinstance(layers, list) and any(isinstance(layer, dict) and "data" in layer for layer in layers)
     if has_layer_data:
         # FEAT-473: multi-layer path — each layer's baked `data` is its
         # own resolved feature list (bound at /layers/<i>/features).

@@ -7,6 +7,7 @@ tests/scripts/" convention) — `scripts/generate_a2ui_css.py`'s own Test
 Specification section deferred these to this task rather than sketching
 placeholders as real tests.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -112,12 +113,7 @@ def test_generate_a2ui_css_vendor_check():
 
     sys.path.insert(
         0,
-        str(
-            REPO_ROOT
-            / "packages"
-            / "ai-parrot-visualizations"
-            / "src"
-        ),
+        str(REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"),
     )
     from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
 

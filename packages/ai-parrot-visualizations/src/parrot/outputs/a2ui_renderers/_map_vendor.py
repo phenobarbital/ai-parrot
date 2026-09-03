@@ -19,6 +19,7 @@ This module intentionally does NOT read file *contents* or build any
 (``folium_map.build_map_document()``'s offline data-URI swap). This module
 only maps ``name -> Path``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,5 +1,6 @@
 """Tests for `_map_vendor.py`'s name -> vendored-file mapping (FEAT-522,
 TASK-2785)."""
+
 from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
 
 
