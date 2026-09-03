@@ -338,10 +338,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-03
+**Notes**: Added `_uses_max_completion_tokens` / `_fixed_temperature_models`
+class attributes and `_adapt_completion_params()` to `OpenAIBaseClient`,
+called from `_chat_completion()` right after the `stream` handling and
+before the retry loop, so both `stream=False` and `stream=True` callers
+route through it. Created `tests/clients/test_openai_base_adapt_params.py`
+with the full unit suite from the task's Test Specification, importing
+`WIRE_SUBCLASSES` from `test_openai_compatible_defaults.py` for the
+defaults sweep (unfiltered — `OpenAIClient` was never a member of that
+list; task 3 will narrow it to exclude `MoonshotClient`).
+`pytest tests/clients/test_openai_base_adapt_params.py
+tests/clients/test_openai_base.py tests/clients/test_openai_compatible_defaults.py -v`
+→ 65 passed. `ruff check` clean on both files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's "Scope" bullet said to
+`self.logger.debug(...)` on rename/drop, but its own "Pattern to Follow"
+reference implementation omits any logging call, and the Test
+Specification instantiates the client via `.__new__()` (no `__init__`,
+so no `self.logger`) for every non-async test — adding the debug calls
+made those tests fail with `AttributeError: '_OptedIn' object has no
+attribute 'logger'`. Followed the Pattern to Follow code verbatim (no
+logging) since it is unambiguous and matches the given Test
+Specification; flagging the inconsistency here per the "when in doubt,
+note it" rule rather than guessing. Also updated
+`test_chat_completion_routes_through_hook` to bind the fake SDK via the
+`bind_sdk_client` fixture (`tests/conftest.py:122`) instead of direct
+`c.client = ...` assignment — direct assignment now raises
+`AttributeError` under `AbstractClient`'s loop-local `client` property
+(FEAT-112), which postdates the task's `feb5a5a6a` Codebase Contract
+snapshot.
