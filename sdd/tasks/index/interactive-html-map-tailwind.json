@@ -169,7 +169,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -180,8 +180,8 @@
       "parallelism_notes": "Four of its five tests only need TASK-2788; the fifth (test_all_a2ui_classes_have_css_rule) needs TASK-2790's DesignSystem integration too, so the task as a whole waits on both.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2793-tests-map-dispatch-integration.md"
+      "completed_at": "2026-09-03T20:44:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2793-tests-map-dispatch-integration.md"
     },
     {
       "id": "TASK-2794",
