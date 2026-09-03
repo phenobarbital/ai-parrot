@@ -108,7 +108,7 @@ def resolve_regconfig(namespace: str) -> str:
 #: Extensions required by the schema. Failure to create either surfaces a
 #: clear, actionable error instead of a cryptic ``UndefinedObjectError``
 #: deep inside a later ``CREATE TABLE``.
-_REQUIRED_EXTENSIONS = ("vector", "btree_gist")
+_REQUIRED_EXTENSIONS = ("vector", "btree_gist", "pg_trgm")
 
 
 def _ddl(schema: str) -> str:
@@ -250,10 +250,12 @@ CREATE TABLE IF NOT EXISTS {schema}.commit_items (
 #: Columns added after v1 shipped. ``CREATE TABLE IF NOT EXISTS`` silently
 #: skips existing tables/columns, so ``ensure_schema`` ALTERs these in when
 #: missing (idempotent, no data rewrite) — same shape as
-#: ``wiki/store.py:166`` / ``persist_sqlite.py:109``. Empty in v1; the
-#: machinery is in place for post-v1 additions (e.g. Module 8's symbol FTS
-#: columns).
-_MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {}
+#: ``wiki/store.py:166`` / ``persist_sqlite.py:109``. Module 8 (TASK-2772)
+#: adds the symbol FTS column here — ``simple`` regconfig only, never
+#: language-stemmed (D7: code/symbols never get stemming).
+_MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "symbols": [("search_tsv", "tsvector")],
+}
 
 
 async def _ensure_extensions(conn: asyncpg.Connection) -> None:
@@ -319,6 +321,17 @@ async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) 
         async with conn.transaction():
             await conn.execute(_ddl(schema))
             await _migrate(conn, schema)
+            # Post-migration indexes on migrated columns (search_tsv must
+            # already exist — guaranteed by _migrate() above).
+            await conn.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS symbols_search_tsv_idx ON {schema}.symbols USING gin (search_tsv);
+                CREATE INDEX IF NOT EXISTS symbols_qualname_trgm_idx
+                    ON {schema}.symbols USING gin (qualname gin_trgm_ops);
+                CREATE INDEX IF NOT EXISTS symbols_name_trgm_idx
+                    ON {schema}.symbols USING gin (name gin_trgm_ops);
+                """
+            )
             await conn.execute(
                 f"""
                 INSERT INTO {schema}.meta (key, value) VALUES ('schema_version', $1)

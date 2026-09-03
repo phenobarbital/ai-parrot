@@ -69,8 +69,32 @@ from parrot.knowledge.wiki.store import (
     WikiPageRecord,
     estimate_tokens,
 )
+from parrot.knowledge.wiki.symbols import SymbolKind, SymbolRecord, sym_concept_id
 
 logger = logging.getLogger(__name__)
+
+
+def _row_to_symbol_record(row: asyncpg.Record) -> SymbolRecord:
+    """Rehydrate a :class:`SymbolRecord` from a ``graphindex.symbols`` row."""
+    return SymbolRecord(
+        rel_path=row["rel_path"],
+        language=row["language"],
+        kind=SymbolKind(row["kind"]),
+        name=row["name"],
+        qualname=row["qualname"],
+        parent=row["parent"],
+        signature=row["signature"] or "",
+        doc=row["doc"] or "",
+        exported=bool(row["exported"]),
+        is_async=bool(row["is_async"]),
+        start_line=row["start_line"],
+        end_line=row["end_line"],
+        start_byte=row["start_byte"],
+        end_byte=row["end_byte"],
+        node_kind=row["node_kind"] or "",
+        content_hash=row["content_hash"] or "",
+        depth=row["depth"],
+    )
 
 
 def _parse_updated_at(value: Optional[str]) -> datetime:
@@ -818,3 +842,176 @@ class PostgresWikiStore(BaseWikiStore):
         for row in rows:
             out[row["concept_id"]] = row["content_hash"]
         return out
+
+    # ------------------------------------------------------------------
+    # Symbol surface (schema v2, Module 8) — non-abstract on BaseWikiStore,
+    # this backend opts IN with a native graphindex.symbols table.
+    # ------------------------------------------------------------------
+
+    async def upsert_symbols(
+        self,
+        symbols: list[SymbolRecord],
+        source_id: Optional[str] = None,
+    ) -> int:
+        """Insert or update rows in the native ``symbols`` table + FTS/trigram columns.
+
+        Args:
+            symbols: Symbol records to persist.
+            source_id: Originating source id, stamped on every row.
+
+        Returns:
+            Number of symbols written.
+        """
+        if not symbols:
+            return 0
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for sym in symbols:
+                    concept_id = sym_concept_id(sym.rel_path, sym.qualname)
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self._schema}.symbols
+                            (concept_id, rel_path, language, kind, name, qualname, parent,
+                             signature, doc, exported, is_async, depth, start_line, end_line,
+                             start_byte, end_byte, node_kind, content_hash, source_id, search_tsv)
+                        VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                            $15, $16, $17, $18, $19,
+                            to_tsvector('simple', $5 || ' ' || $6 || ' ' || coalesce($9, '') || ' ' || coalesce($8, ''))
+                        )
+                        ON CONFLICT (concept_id) DO UPDATE SET
+                            rel_path = EXCLUDED.rel_path, language = EXCLUDED.language,
+                            kind = EXCLUDED.kind, name = EXCLUDED.name, qualname = EXCLUDED.qualname,
+                            parent = EXCLUDED.parent, signature = EXCLUDED.signature, doc = EXCLUDED.doc,
+                            exported = EXCLUDED.exported, is_async = EXCLUDED.is_async, depth = EXCLUDED.depth,
+                            start_line = EXCLUDED.start_line, end_line = EXCLUDED.end_line,
+                            start_byte = EXCLUDED.start_byte, end_byte = EXCLUDED.end_byte,
+                            node_kind = EXCLUDED.node_kind, content_hash = EXCLUDED.content_hash,
+                            source_id = EXCLUDED.source_id, search_tsv = EXCLUDED.search_tsv
+                        """,
+                        concept_id,
+                        sym.rel_path,
+                        sym.language,
+                        sym.kind.value,
+                        sym.name,
+                        sym.qualname,
+                        sym.parent,
+                        sym.signature,
+                        sym.doc,
+                        sym.exported,
+                        sym.is_async,
+                        sym.depth,
+                        sym.start_line,
+                        sym.end_line,
+                        sym.start_byte,
+                        sym.end_byte,
+                        sym.node_kind,
+                        sym.content_hash,
+                        source_id,
+                    )
+        return len(symbols)
+
+    async def symbols_for(self, rel_path: str) -> list[SymbolRecord]:
+        """List every symbol row extracted from one file, ordered by ``start_line``.
+
+        Args:
+            rel_path: POSIX path relative to the repository root.
+
+        Returns:
+            Decoded :class:`SymbolRecord` list.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT * FROM {self._schema}.symbols WHERE rel_path = $1 ORDER BY start_line",
+                rel_path,
+            )
+        return [_row_to_symbol_record(row) for row in rows]
+
+    async def find_symbols(
+        self,
+        name: Optional[str] = None,
+        qualname_prefix: Optional[str] = None,
+        kind: Optional[str] = None,
+        language: Optional[str] = None,
+        path_prefix: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[SymbolRecord]:
+        """Find symbols in the native ``symbols`` table by filter.
+
+        Args:
+            name: Exact local-name filter.
+            qualname_prefix: Qualname must start with this prefix.
+            kind: Exact :class:`SymbolKind` value filter.
+            language: Exact scanner-name filter.
+            path_prefix: ``rel_path`` must start with this prefix.
+            limit: Maximum results.
+
+        Returns:
+            Matching symbol records, ordered by ``rel_path``, ``qualname``
+            (SQLite-sibling parity).
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if name is not None:
+            params.append(name)
+            clauses.append(f"name = ${len(params)}")
+        if qualname_prefix is not None:
+            params.append(f"{qualname_prefix}%")
+            clauses.append(f"qualname LIKE ${len(params)}")
+        if kind is not None:
+            params.append(kind)
+            clauses.append(f"kind = ${len(params)}")
+        if language is not None:
+            params.append(language)
+            clauses.append(f"language = ${len(params)}")
+        if path_prefix is not None:
+            params.append(f"{path_prefix}%")
+            clauses.append(f"rel_path LIKE ${len(params)}")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT * FROM {self._schema}.symbols {where} ORDER BY rel_path, qualname LIMIT ${len(params)}",
+                *params,
+            )
+        return [_row_to_symbol_record(row) for row in rows]
+
+    async def search_symbols_fts(self, query: str, limit: int = 20) -> list[SymbolRecord]:
+        """Lexical + trigram search over symbols (D7: ``simple`` regconfig, never stemmed).
+
+        Combines a word-level ``simple``-regconfig ``tsvector`` match with
+        ``pg_trgm`` similarity on ``name``/``qualname`` — identifier
+        fragments (e.g. partial camelCase/snake_case matches) are findable
+        without any language-stemming artifacts.
+
+        Args:
+            query: Free-form query text.
+            limit: Maximum results.
+
+        Returns:
+            Symbol records ranked by the best of the two signals.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *,
+                       GREATEST(
+                           ts_rank_cd(search_tsv, plainto_tsquery('simple', $1)),
+                           similarity(qualname, $1),
+                           similarity(name, $1)
+                       ) AS score
+                FROM {self._schema}.symbols
+                WHERE search_tsv @@ plainto_tsquery('simple', $1)
+                   OR qualname % $1
+                   OR name % $1
+                ORDER BY score DESC
+                LIMIT $2
+                """,
+                query,
+                limit,
+            )
+        return [_row_to_symbol_record(row) for row in rows]

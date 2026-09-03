@@ -45,6 +45,19 @@ surface is fresh and may still move).
   symbol tests (find and port the relevant test file —
   `grep -rn "upsert_symbols" packages/ai-parrot/tests/` first).
 
+  > **CONTRACT CORRECTION (agent, verified 2026-09-03):**
+  > `grep -rln "upsert_symbols\|SymbolRecord\|symbols_for\|find_symbols\|
+  > search_symbols_fts" packages/ai-parrot/tests/` finds NO SQLite symbol
+  > test suite anywhere in this codebase to port from — the schema-v2
+  > symbol surface (TASK-2742..2751) shipped without its own dedicated
+  > test file. Per the "when in doubt" anti-hallucination rule: rather
+  > than inventing a SQLite test suite that doesn't exist (out of this
+  > task's scope — `persist_sqlite.py`/SQLite `wiki/store.py` are
+  > untouched), `test_postgres_symbols.py` is written directly against
+  > the SQLite method DOCSTRINGS/signatures at `wiki/store.py:577-708`
+  > and `:1323-1509` (the "living reference" the task calls out) as
+  > full, self-contained behavioral coverage.
+
 **NOT in scope**: symbol EXTRACTION (ast-grep pipeline — exists upstream),
 `sym:` page ingestion logic, StructuralService.
 
