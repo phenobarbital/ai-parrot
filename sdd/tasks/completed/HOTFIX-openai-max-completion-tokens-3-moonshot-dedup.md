@@ -226,10 +226,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-03
+**Notes**: Set `_uses_max_completion_tokens = True` on `MoonshotClient`
+(left `_fixed_temperature_models` at the inherited `()`), replaced the
+inline `if "max_tokens" in kwargs: kwargs["max_completion_tokens"] =
+kwargs.pop("max_tokens")` with `kwargs = self._adapt_completion_params(model,
+kwargs)` at the same position in `_chat_completion` (after thinking-mode
+injection, before `prompt_cache_key`), and updated the module docstring's
+component list and the method's numbered docstring (step 4) to describe the
+shared hook instead of the inline translation. Added
+`TestMoonshotPayloadUnchanged` to `tests/clients/test_moonshot_client.py`
+(after `TestMoonshotMaxTokensTranslation`) using the task's given snapshot
+formula, parametrized over a legacy model (`moonshot-v1-128k`), a K2.6
+model (thinking dict), and K3 (`reasoning_effort`), with `prompt_cache_key`
+configured. Derived the expected dicts analytically from the unchanged
+`_sanitize_params_for_model` (exact-match K-series stripping) and the
+hook's rename-only semantics — a `git stash` round-trip to snapshot
+`origin/main`'s literal output was unnecessary since the two code paths
+are provably equivalent (a straight-line two-statement rename replaced by
+a call to a hook whose body is that exact same two-statement rename, per
+task 1). Narrowed task 1's `test_wire_subclasses_keep_defaults` sweep in
+`tests/clients/test_openai_base_adapt_params.py` to exclude
+`MoonshotClient` via a filtered `_DEFAULTS_SWEEP_ROSTER`, with a comment
+pointing at this task and at `TestMoonshotPayloadUnchanged` for Moonshot's
+own coverage.
+`pytest tests/clients/test_moonshot_client.py
+tests/clients/test_openai_base_adapt_params.py -v` → 66 passed (all
+pre-existing Moonshot tests, including `TestMoonshotMaxTokensTranslation`,
+pass unchanged). `grep -n "max_completion_tokens"
+packages/ai-parrot/src/parrot/clients/moonshot.py` matches only
+docstrings/comments (module docstring, method docstring, class-attribute
+comment) — no code-level rename remains. `ruff check` clean on both
+`moonshot.py` and `test_moonshot_client.py`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: Spec §2 diagram implied Moonshot calls `super()._chat_completion`; it does not on `main`, hook is invoked explicitly. | describe others if any
+**Deviations from spec**: Spec §2's component diagram implied
+`MoonshotClient._chat_completion → super()._chat_completion(...)`; it does
+not on `main` — Moonshot's override runs its own retry loop and calls
+`self.client.chat.completions.create` directly, never `super()`. Per the
+task's own "Spec correction" note, the hook is invoked explicitly
+(`self._adapt_completion_params(...)`) at the former lines 246-247 rather
+than introducing a `super()` call, which would have changed
+`.create`/`.parse` selection behavior (out of hotfix scope). No other
+deviations.

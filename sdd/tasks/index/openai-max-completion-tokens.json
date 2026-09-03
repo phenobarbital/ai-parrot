@@ -56,7 +56,7 @@
       "jira_issue_key": null,
       "feature": "openai-max-completion-tokens",
       "spec": "sdd/specs/openai-max-completion-tokens.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -65,9 +65,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on task 1. Touches moonshot.py only, but shares the defaults-sweep test file with task 2 — sequential by spec decision.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-openai-max-completion-tokens-3-moonshot-dedup.md"
+      "started_at": "2026-09-03T01:05:57+00:00",
+      "completed_at": "2026-09-03T01:05:57+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-3-moonshot-dedup.md"
     },
     {
       "id": "HOTFIX-openai-max-completion-tokens-4",
