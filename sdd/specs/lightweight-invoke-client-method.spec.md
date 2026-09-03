@@ -18,7 +18,9 @@ The current `ask()` method on all LLM clients is a heavy-weight operation that l
 Developers need a **fast, minimal, stateless call** (`invoke()`) that:
 - Skips conversation history, prompt builder, and retry logic entirely.
 - Returns structured output directly via a lightweight `InvokeResult` (not `AIMessage`).
-- Uses a cheaper/faster model by default (`_lightweight_model` per provider).
+- Uses a cheaper/faster model by default (`_lightweight_model` per provider)
+  — see the amendment below: "by default" means *when the caller selected no
+  model*, not "in preference to the caller's selection".
 - Supports `StructuredOutputConfig` including `custom_parser`.
 
 ### Goals
@@ -367,8 +369,53 @@ def mock_openai_client():
 
 ---
 
+## Amendment — `_resolve_invoke_model()` precedence (2026-09-03)
+
+**As shipped**, `_resolve_invoke_model()` ranked
+`model=` > `_lightweight_model` > `self.model`. That made
+`_lightweight_model` an *override* rather than a *default*: because
+`AbstractClient.__init__` sets `self.model` from `kwargs.get('model')` and
+leaves it `None` otherwise, a caller who explicitly selected a model —
+`LLMFactory.create("google:gemini-2.5-pro")` — had that selection silently
+discarded by `invoke()`.
+
+**Cost of the defect**: in the FEAT-481 structured-output probe,
+`gemini-2.5-pro`, `-flash` and `-flash-lite` produced byte-identical
+failures. They were all really `gemini-3.1-flash-lite`. The identical output
+was read as evidence of a schema-level defect; it was evidence of this
+precedence bug.
+
+**Corrected chain**:
+
+```
+model= argument  >  self.model  >  _lightweight_model  >  _default_model
+```
+
+`self.model` is only truthy when the caller passed `model=`, so this changes
+nothing for `LLMFactory.create("google")` — the lightweight default still
+applies to every client built without an explicit model, which is the case
+this spec was written for. The terminal `_default_model` step additionally
+closes a gap where clients that set neither (`NvidiaClient` and the other
+`OpenAIBaseClient` subclasses) resolved to `None` and sent `model=None` to
+the provider.
+
+Also corrected: `ClaudeAgentClient.invoke()` resolved its own chain inline
+(`self._lightweight_model or self._default_model`) and skipped `self.model`
+entirely.
+
+Regression coverage: `tests/unit/test_invoke_helpers.py::TestResolveInvokeModel`
+(`test_selected_model_outranks_lightweight`,
+`test_falls_back_to_default_model_when_nothing_set`), a
+`test_selected_model_outranks_lightweight` case per client suite, and the
+live assertion in
+`packages/ai-parrot/tests/clients/test_structured_output_live_matrix.py::test_invoke_honours_selected_model`
+(previously a non-strict `xfail` recording the defect).
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-03-30 | Jesus Lara | Initial draft from brainstorm Option D |
+| 0.2 | 2026-09-03 | Jesus Lara | Amendment: `_resolve_invoke_model()` precedence — `self.model` now outranks `_lightweight_model`; terminal `_default_model` fallback |
