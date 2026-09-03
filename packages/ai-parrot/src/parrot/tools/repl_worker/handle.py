@@ -27,9 +27,9 @@ import os
 import subprocess
 import sys
 import threading
-from pathlib import Path
 from typing import Any, BinaryIO, Optional
 
+from .observer import read_proc_cpu_seconds, read_proc_status, read_proc_wchan
 from .protocol import (
     ExecRequest,
     ExecResult,
@@ -65,6 +65,11 @@ def probe_process_state(pid: int | None) -> str:
     kernel wait channel (``S`` + ``wchan``), starved of CPU (``R`` with a
     tiny ``cpu=``), or thrashing (huge ``VmPeak``). Never raises.
 
+    The ``/proc`` parsing itself moved to ``observer.py`` (FEAT-521 TASK-2775,
+    reused by ``ProcessObserver``'s continuous sampling); this function is now
+    a thin compatibility wrapper preserving its original signature and
+    return-value contract for existing callers.
+
     Args:
         pid: The process to inspect; ``None`` or a non-Linux host yields
             ``""``.
@@ -76,30 +81,18 @@ def probe_process_state(pid: int | None) -> str:
     if pid is None or sys.platform != "linux":
         return ""
     try:
-        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8", errors="replace")
-        fields = {}
-        for line in status.splitlines():
-            key, sep, value = line.partition(":")
-            if sep:
-                fields[key.strip()] = " ".join(value.split())
-        try:
-            wchan = Path(f"/proc/{pid}/wchan").read_text(encoding="utf-8", errors="replace").strip() or "0"
-        except OSError:
-            wchan = "?"
-        cpu = "?"
-        try:
-            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
-            after_comm = stat.rsplit(")", 1)[1].split()
-            ticks = os.sysconf("SC_CLK_TCK") or 100
-            cpu = f"{(int(after_comm[11]) + int(after_comm[12])) / ticks:.2f}s"
-        except (OSError, ValueError, IndexError):
-            pass
-        return (
-            f"state={fields.get('State', '?')} threads={fields.get('Threads', '?')} "
-            f"vmpeak={fields.get('VmPeak', '?')} wchan={wchan} cpu={cpu}"
-        )
+        fields = read_proc_status(pid)
     except OSError:
         return ""
+    wchan = read_proc_wchan(pid) or "?"
+    try:
+        cpu = f"{read_proc_cpu_seconds(pid):.2f}s"
+    except (OSError, ValueError, IndexError):
+        cpu = "?"
+    return (
+        f"state={fields.get('State', '?')} threads={fields.get('Threads', '?')} "
+        f"vmpeak={fields.get('VmPeak', '?')} wchan={wchan} cpu={cpu}"
+    )
 
 
 class WorkerBootstrapError(RuntimeError):

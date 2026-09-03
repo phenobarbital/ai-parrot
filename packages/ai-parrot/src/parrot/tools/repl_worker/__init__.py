@@ -13,6 +13,7 @@ Arrow DataFrame transport (``inject_dataframe``) lands in TASK-1945.
 
 from .handle import NamespaceTimeoutError, WorkerBootstrapError, WorkerHandle
 from .inprocess import InProcessHandle
+from .observer import ProcessObserver
 from .pool import WorkerPool, WorkerPoolExhaustedError
 from .protocol import (
     ErrorResponse,
@@ -56,6 +57,7 @@ __all__ = [
     "OkResponse",
     "PingRequest",
     "PongResponse",
+    "ProcessObserver",
     "ProcessSample",
     "ReadyResponse",
     "ResetRequest",
