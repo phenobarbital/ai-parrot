@@ -1,0 +1,25 @@
+{
+  "feat_id": "FEAT-520",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "generated_at": "2026-09-03T00:00:00Z",
+  "rationale": "The source is a mature brainstorm with 8 closed decisions. Research targets its explicit VERIFY markers and codebase-answerable open questions: (a) the GraphIndex backend contract and whether it shares a seam with BaseWikiStore (OQ1), (b) the exact ground_claim signature for evidence_ref (OQ2), (c) the existing BM25/re-ranking seam over pgvector that hybrid_search must plug into, (d) whether the store contract test suite is backend-parametrized (OQ4), (e) SQLite store port surface (WIKI_SCHEMA_SQL, _MIGRATION_COLUMNS, SCHEMA_VERSION), (f) asyncpg pool/schema conventions for a new graphindex.* schema.",
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "target": "GraphIndex backend store contract upsert_nodes traverse", "intent": "Locate the GraphIndex storage seam; answer whether it has its own backend contract or reuses BaseWikiStore (OQ1)", "priority": 1},
+    {"id": "Q002", "type": "wiki_query", "target": "BaseWikiStore wiki store sqlite arango schema", "intent": "Confirm the wiki store contract surface and its two existing backends", "priority": 1},
+    {"id": "Q003", "type": "wiki_query", "target": "pgvector store full text search BM25 hybrid ranking", "intent": "Find the existing BM25/FTS seam over PgVector that hybrid_search must reuse (VERIFY in §1)", "priority": 1},
+    {"id": "Q004", "type": "wiki_query", "target": "reranker cross-encoder huggingface rerank search results", "intent": "Locate the re-ranking seam (D6 step 4) — parrot/rerankers factory and local/llm backends", "priority": 1},
+    {"id": "Q005", "type": "grep", "target": "ground_claim|find_references", "params": {"path": "packages/", "glob": "*.py"}, "intent": "Exact signature of ground_claim → destino de evidence_ref (OQ2)", "priority": 1},
+    {"id": "Q006", "type": "read", "target": "packages/ai-parrot/src/parrot/knowledge/graphindex/schema.py", "intent": "EdgeKind, provenance/asserted_by fields, node/edge models the Postgres schema must represent", "priority": 1},
+    {"id": "Q007", "type": "read", "target": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py", "params": {"focus": "BaseWikiStore contract + WIKI_SCHEMA_SQL + _MIGRATION_COLUMNS + SCHEMA_VERSION"}, "intent": "Port surface for Sprint 1 (SQLite is the declared starting point)", "priority": 1},
+    {"id": "Q008", "type": "grep", "target": "hybrid_search|search_fts", "params": {"path": "packages/", "glob": "*.py"}, "intent": "Confirm no hybrid_search exists in any store contract; map search_fts implementations", "priority": 2},
+    {"id": "Q009", "type": "grep", "target": "parametrize.*store|STORE_BACKENDS|backend_fixture", "params": {"path": "tests/ packages/", "glob": "*.py"}, "intent": "Is the store contract test suite backend-parametrized? (OQ4 / Sprint-1 prerequisite)", "priority": 2},
+    {"id": "Q010", "type": "grep", "target": "asyncpg", "params": {"path": "packages/", "glob": "*.py", "mode": "files-with-matches"}, "intent": "asyncpg pool conventions + existing Postgres store to share pool/config patterns with (D8)", "priority": 2},
+    {"id": "Q011", "type": "read", "target": "packages/ai-parrot-embeddings/src/parrot/stores/pgvector.py", "params": {"focus": "FTS/BM25 ranking, metadata filters, KNN entrypoints"}, "intent": "Verify the seam hybrid_search plugs into; embedding metadata support for (concept_id, version_id) temporal filter", "priority": 2},
+    {"id": "Q012", "type": "read", "target": "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py", "params": {"focus": "class + method surface only"}, "intent": "Contract parity checklist + shape of data for OQ6 migration", "priority": 3},
+    {"id": "Q013", "type": "git_log", "target": "packages/ai-parrot/src/parrot/knowledge/graphindex/ packages/ai-parrot/src/parrot/knowledge/wiki/", "params": {"since": "8 weeks"}, "intent": "Recent activity — detect in-flight work that would collide with this feature", "priority": 3},
+    {"id": "Q014", "type": "tree", "target": "packages/ai-parrot/src/parrot/knowledge/graphindex/", "intent": "Module inventory: where a postgres backend file would live", "priority": 2},
+    {"id": "Q015", "type": "grep", "target": "GraphIndexBuilder|GraphPublisher|graph_backend|store_backend", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/", "glob": "*.py"}, "intent": "How backends are selected/dispatched today — registration point for the third backend", "priority": 2}
+  ],
+  "budget_profile": "default"
+}
