@@ -1,8 +1,10 @@
 """Unit tests for the A2UI Agent Functions runtime models (TASK-2568)."""
 
+import uuid
 from datetime import UTC
 
 import pytest
+from pydantic import ValidationError
 from parrot.outputs.a2ui.runtime.models import (
     A2UICallContext,
     A2UIErrorCode,
@@ -70,6 +72,36 @@ class TestRuntimeModels:
             permission_context=object(),
         )
         assert ctx.permission_context is not None
+
+    def test_call_context_coerces_int_user_id(self):
+        """An auth backend handing back an int primary key must not 500."""
+        ctx = A2UICallContext(
+            agent_id="a",
+            user_id=35,
+            session_id="s",
+            transport="http",
+        )
+        assert ctx.user_id == "35"
+
+    def test_call_context_coerces_uuid_session_id(self):
+        session = uuid.uuid4()
+        ctx = A2UICallContext(
+            agent_id="a",
+            session_id=session,
+            surface_id=7,
+            transport="http",
+        )
+        assert ctx.session_id == str(session)
+        assert ctx.surface_id == "7"
+
+    def test_call_context_still_rejects_non_scalar_user_id(self):
+        with pytest.raises(ValidationError):
+            A2UICallContext(
+                agent_id="a",
+                user_id={"id": 35},
+                session_id="s",
+                transport="http",
+            )
 
     def test_dispatch_result_defaults_empty(self):
         r = DispatchResult()
