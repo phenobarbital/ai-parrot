@@ -6,7 +6,7 @@
   "type": "hotfix",
   "base_branch": "main",
   "created_at": "2026-09-03T00:00:00Z",
-  "completed_at": "2026-09-03T01:26:03+00:00",
+  "completed_at": "2026-09-03T01:57:09+00:00",
   "tasks": [
     {
       "id": "HOTFIX-openai-max-completion-tokens-1",
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T00:57:40+00:00",
       "completed_at": "2026-09-03T00:57:40+00:00",
-      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-1-adapt-completion-params-hook.md"
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-1-adapt-completion-params-hook.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-openai-max-completion-tokens-2",
@@ -46,7 +47,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T01:02:53+00:00",
       "completed_at": "2026-09-03T01:02:53+00:00",
-      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-2-openai-client-opt-in.md"
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-2-openai-client-opt-in.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-openai-max-completion-tokens-3",
@@ -67,7 +69,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T01:05:57+00:00",
       "completed_at": "2026-09-03T01:05:57+00:00",
-      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-3-moonshot-dedup.md"
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-3-moonshot-dedup.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-openai-max-completion-tokens-4",
@@ -89,7 +92,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T01:26:03+00:00",
       "completed_at": "2026-09-03T01:26:03+00:00",
-      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-4-live-verification-and-docs.md"
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-4-live-verification-and-docs.md",
+      "verification": "verified-with-issues"
     }
   ]
 }
