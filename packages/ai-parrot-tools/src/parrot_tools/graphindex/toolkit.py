@@ -233,6 +233,7 @@ class GraphIndexToolkit(AbstractToolkit):
         if not isinstance(payload, dict):
             return None
         from parrot.knowledge.graphindex.schema import UniversalNode
+
         try:
             return UniversalNode(
                 node_id=payload["node_id"],
@@ -270,6 +271,7 @@ class GraphIndexToolkit(AbstractToolkit):
         if self.publisher is None:
             return {}
         from parrot.knowledge.graphindex.schema import GraphUpdate
+
         try:
             update = GraphUpdate(
                 nodes=list(nodes or []),
@@ -498,6 +500,7 @@ class GraphIndexToolkit(AbstractToolkit):
             degree = len(self.graph.out_edges(node_idx)) + len(self.graph.in_edges(node_idx))
             # Combined score: semantic similarity + log(1 + degree)
             import math
+
             combined = float(distance) + 0.1 * math.log1p(degree)
             results.append(
                 {
@@ -513,9 +516,7 @@ class GraphIndexToolkit(AbstractToolkit):
         results.sort(key=lambda x: x["combined_score"], reverse=True)
         return results[:top_k]
 
-    async def find_central_nodes(
-        self, top_k: int = 10, metric: str = "betweenness"
-    ) -> list[dict]:
+    async def find_central_nodes(self, top_k: int = 10, metric: str = "betweenness") -> list[dict]:
         """Return top-K most central nodes by the specified centrality metric.
 
         Args:
@@ -557,9 +558,7 @@ class GraphIndexToolkit(AbstractToolkit):
         result.sort(key=lambda x: x["centrality_score"], reverse=True)
         return result[:top_k]
 
-    async def export_graph_html(
-        self, output_dir: str, top_k_god_nodes: int = 15
-    ) -> dict:
+    async def export_graph_html(self, output_dir: str, top_k_god_nodes: int = 15) -> dict:
         """Export an interactive ``graph.html`` map plus ``graph.json``.
 
         Renders the current in-memory graph as a self-contained, clickable
@@ -601,9 +600,7 @@ class GraphIndexToolkit(AbstractToolkit):
             logger.error("export_graph_html failed: %s", exc)
             return {"error": str(exc)}
 
-        community_count = (
-            len(communities.communities) if communities is not None else 0
-        )
+        community_count = len(communities.communities) if communities is not None else 0
         return {
             "graph_html": str(html_path),
             "graph_json": str(json_path),
@@ -664,10 +661,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
         if self.client is None:
             # Fallback: return structured description without LLM
-            return (
-                f"Node '{title}' (kind: {kind}) has {degree} connections. "
-                f"{summary}"
-            ).strip()
+            return (f"Node '{title}' (kind: {kind}) has {degree} connections. " f"{summary}").strip()
 
         prompt = (
             f"You are an expert knowledge graph analyst. Explain the role of the "
@@ -688,10 +682,7 @@ class GraphIndexToolkit(AbstractToolkit):
             return str(response)
         except Exception as exc:
             logger.warning("explain() LLM call failed: %s", exc)
-            return (
-                f"Node '{title}' (kind: {kind}) has {degree} connections. "
-                f"{summary}"
-            ).strip()
+            return (f"Node '{title}' (kind: {kind}) has {degree} connections. " f"{summary}").strip()
 
     # ==================================================================
     # WRITE tools (require assembler + embedder)
@@ -756,6 +747,7 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": "create_node: title must be a non-empty string"}
 
         from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+
         try:
             kind_enum = NodeKind(kind)
         except ValueError:
@@ -825,16 +817,17 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": "link_nodes: unknown source_id or target_id"}
 
         from parrot.knowledge.graphindex.schema import (
-            EdgeKind, Provenance, UniversalEdge,
+            EdgeKind,
+            Provenance,
+            UniversalEdge,
         )
+
         try:
             kind_enum = EdgeKind(kind)
         except ValueError:
             return {"error": f"link_nodes: unknown edge kind {kind!r}"}
 
-        provenance = (
-            Provenance.INFERRED if confidence is not None else Provenance.EXTRACTED
-        )
+        provenance = Provenance.INFERRED if confidence is not None else Provenance.EXTRACTED
 
         try:
             edge = UniversalEdge(
@@ -889,11 +882,13 @@ class GraphIndexToolkit(AbstractToolkit):
                 try:
                     self.graph.remove_edge(s, t)
                     removed += 1
-                    removed_triples.append((
-                        payload.get("source_id"),
-                        payload.get("target_id"),
-                        payload.get("kind"),
-                    ))
+                    removed_triples.append(
+                        (
+                            payload.get("source_id"),
+                            payload.get("target_id"),
+                            payload.get("kind"),
+                        )
+                    )
                 except Exception:
                     pass
                 # Also clean the assembler's edge_index_map entry.
@@ -920,9 +915,7 @@ class GraphIndexToolkit(AbstractToolkit):
             "removed": removed,
             "status": "unlinked",
         }
-        result.update(
-            await self._persist_write("unlink_nodes", removed_edges=removed_triples)
-        )
+        result.update(await self._persist_write("unlink_nodes", removed_edges=removed_triples))
         return result
 
     def _edges_between(self, src_idx: int, tgt_idx: int):
@@ -958,16 +951,16 @@ class GraphIndexToolkit(AbstractToolkit):
                 await self.embedder.embed_nodes([node])
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "attach_summary: re-embed failed for %s: %s", node_id, exc,
+                    "attach_summary: re-embed failed for %s: %s",
+                    node_id,
+                    exc,
                 )
 
         self._invalidate_community_cache()
         result = {"node_id": node_id, "summary": summary, "status": "updated"}
         model = self._model_from_graph(node_id)
         if model is not None:
-            result.update(
-                await self._persist_write("attach_summary", nodes=[model])
-            )
+            result.update(await self._persist_write("attach_summary", nodes=[model]))
         return result
 
     async def tag_node(self, node_id: str, key: str, value: Any) -> dict:
@@ -1025,9 +1018,7 @@ class GraphIndexToolkit(AbstractToolkit):
         # Capture the duplicate's identity before any mutation so the
         # merge stays additive and inspectable (alias retention).
         dup_payload = self.graph[dup_idx]
-        dup_title = (
-            dup_payload.get("title") if isinstance(dup_payload, dict) else None
-        )
+        dup_title = dup_payload.get("title") if isinstance(dup_payload, dict) else None
         dup_aliases: list[str] = []
         if isinstance(dup_payload, dict):
             tags = dup_payload.get("domain_tags") or {}
@@ -1035,19 +1026,17 @@ class GraphIndexToolkit(AbstractToolkit):
                 dup_aliases = [str(a) for a in tags.get("aliases", [])]
 
         # Collect every (other_id, payload, direction) before we mutate.
-        out_edges: list[dict] = list(
-            payload for _s, _t, payload in self.graph.out_edges(dup_idx)
-        )
-        in_edges: list[dict] = list(
-            payload for _s, _t, payload in self.graph.in_edges(dup_idx)
-        )
+        out_edges: list[dict] = list(payload for _s, _t, payload in self.graph.out_edges(dup_idx))
+        in_edges: list[dict] = list(payload for _s, _t, payload in self.graph.in_edges(dup_idx))
 
         existing_keys = self._existing_edge_keys(canonical_idx)
         redirected = 0
         redirected_edges: list = []
 
         from parrot.knowledge.graphindex.schema import (
-            EdgeKind, Provenance, UniversalEdge,
+            EdgeKind,
+            Provenance,
+            UniversalEdge,
         )
 
         for payload in out_edges:
@@ -1145,9 +1134,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 edges=redirected_edges,
                 removed_nodes=[duplicate_id],
                 reason=(
-                    f"merged {duplicate_id!r}"
-                    + (f" ({dup_title})" if dup_title else "")
-                    + f" into {canonical_id!r}"
+                    f"merged {duplicate_id!r}" + (f" ({dup_title})" if dup_title else "") + f" into {canonical_id!r}"
                 ),
             )
         )
@@ -1158,16 +1145,15 @@ class GraphIndexToolkit(AbstractToolkit):
         currently incident on ``node_idx``."""
         keys: set[tuple] = set()
         for _s, _t, payload in self.graph.out_edges(node_idx):
-            keys.add((payload.get("source_id"), payload.get("target_id"),
-                      payload.get("kind")))
+            keys.add((payload.get("source_id"), payload.get("target_id"), payload.get("kind")))
         for _s, _t, payload in self.graph.in_edges(node_idx):
-            keys.add((payload.get("source_id"), payload.get("target_id"),
-                      payload.get("kind")))
+            keys.add((payload.get("source_id"), payload.get("target_id"), payload.get("kind")))
         return keys
 
     @staticmethod
     def _mint_node_id(kind: str, title: str, summary: str) -> str:
         import hashlib
+
         raw = f"{kind}::{title}::{summary}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()[:16]
 
@@ -1217,10 +1203,7 @@ class GraphIndexToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             return {"error": f"revert_write: {exc}"}
         if "error" not in result:
-            result["note"] = (
-                "durable plane reverted; reload the toolkit to refresh the"
-                " in-memory graph"
-            )
+            result["note"] = "durable plane reverted; reload the toolkit to refresh the" " in-memory graph"
         return result
 
     # ------------------------------------------------------------------
@@ -1549,11 +1532,7 @@ class GraphIndexToolkit(AbstractToolkit):
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
-        return [
-            c.model_dump()
-            for c in cached.communities
-            if c.size >= min_size
-        ]
+        return [c.model_dump() for c in cached.communities if c.size >= min_size]
 
     async def find_community(self, node_id: str) -> dict:
         """Return the Community containing ``node_id`` (FEAT-191)."""
@@ -1724,11 +1703,10 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_isolated_nodes as _find,
         )
+
         return _find(self.graph, self.nodes, max_degree=max_degree)
 
-    async def find_sparse_communities(
-        self, min_size: int = 3, max_cohesion: float = 0.15
-    ) -> list[dict]:
+    async def find_sparse_communities(self, min_size: int = 3, max_cohesion: float = 0.15) -> list[dict]:
         """Find Louvain communities with low internal cohesion.
 
         Communities that are large enough to be meaningful but poorly
@@ -1746,6 +1724,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_sparse_communities as _find,
         )
+
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
@@ -1770,6 +1749,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_bridge_nodes as _find,
         )
+
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
@@ -1792,6 +1772,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             dismiss_insight as _dismiss,
         )
+
         analytics = self._get_or_compute_analytics()
         if analytics is None:
             return {"error": "analytics module not available"}
@@ -1816,6 +1797,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             list_unreviewed_insights as _list,
         )
+
         analytics = self._get_or_compute_analytics()
         if analytics is None:
             return []
@@ -1857,8 +1839,7 @@ class GraphIndexToolkit(AbstractToolkit):
                     arr = arr.reshape(1, -1)
                 if arr.shape[1] != dim:
                     raise ValueError(
-                        f"_encode_query: embedder returned dim {arr.shape[1]} "
-                        f"but FAISS index dim is {dim}"
+                        f"_encode_query: embedder returned dim {arr.shape[1]} " f"but FAISS index dim is {dim}"
                     )
                 # Normalise — FAISS IndexFlatIP / IndexFlatL2 read
                 # better with unit vectors.
@@ -1867,8 +1848,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 return (arr / norms).astype(np.float32)
             except Exception as exc:  # noqa: BLE001 — surface fallback path
                 self.logger.warning(
-                    "_encode_query: embedder failed (%s); falling back to "
-                    "placeholder hash encoder",
+                    "_encode_query: embedder failed (%s); falling back to " "placeholder hash encoder",
                     exc,
                 )
 

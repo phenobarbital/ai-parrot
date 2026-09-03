@@ -97,7 +97,9 @@ async def test_append_only_correction(pg_persistence, ctx):
     node = make_node("n1")
     await pg_persistence.persist_graph(ctx, [node], [])
 
-    changed = UniversalNode(node_id="n1", kind=NodeKind.DOCUMENT, title="Node n1", source_uri="test.txt", summary="changed")
+    changed = UniversalNode(
+        node_id="n1", kind=NodeKind.DOCUMENT, title="Node n1", source_uri="test.txt", summary="changed"
+    )
     await pg_persistence.persist_graph(ctx, [changed], [])
 
     pool = await pg_persistence._ensure_pool()
@@ -105,10 +107,8 @@ async def test_append_only_correction(pg_persistence, ctx):
         count = await conn.fetchval(
             f"SELECT COUNT(*) FROM {pg_persistence._schema}.node_versions WHERE concept_id = 'n1'"
         )
-        open_count = await conn.fetchval(
-            f"""SELECT COUNT(*) FROM {pg_persistence._schema}.node_versions
-                WHERE concept_id = 'n1' AND upper_inf(validity)"""
-        )
+        open_count = await conn.fetchval(f"""SELECT COUNT(*) FROM {pg_persistence._schema}.node_versions
+                WHERE concept_id = 'n1' AND upper_inf(validity)""")
     assert count == 2
     assert open_count == 1
 
@@ -195,10 +195,8 @@ async def test_fts_lang_per_namespace(pg_persistence, ctx):
     pool = await pg_persistence._ensure_pool()
     async with pool.acquire() as conn:
         lang = await conn.fetchval(f"SELECT lang FROM {pg_persistence._schema}.nodes WHERE concept_id = 'n1'")
-        hit = await conn.fetchval(
-            f"""SELECT fts @@ to_tsquery('spanish', 'arrendamiento')
-                FROM {pg_persistence._schema}.node_versions WHERE concept_id = 'n1'"""
-        )
+        hit = await conn.fetchval(f"""SELECT fts @@ to_tsquery('spanish', 'arrendamiento')
+                FROM {pg_persistence._schema}.node_versions WHERE concept_id = 'n1'""")
     assert lang == "spanish"
     assert hit is True
 

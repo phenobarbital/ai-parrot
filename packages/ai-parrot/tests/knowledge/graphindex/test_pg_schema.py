@@ -38,9 +38,7 @@ async def test_migration_idempotent(pg_pool, tmp_schema):
     await pg_schema.ensure_schema(pg_pool, schema=tmp_schema)
 
     async with pg_pool.acquire() as conn:
-        value = await conn.fetchval(
-            f"SELECT value FROM {tmp_schema}.meta WHERE key = 'schema_version'"
-        )
+        value = await conn.fetchval(f"SELECT value FROM {tmp_schema}.meta WHERE key = 'schema_version'")
         tables = {
             row["table_name"]
             for row in await conn.fetch(

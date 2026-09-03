@@ -295,10 +295,17 @@ async def bench_semantic_to_graph(
             query_vec,
             k,
         )
-    return {"depth": depth, "median_s": median_s, "samples_s": samples, "explain": "\n".join(r["QUERY PLAN"] for r in explain_rows)}
+    return {
+        "depth": depth,
+        "median_s": median_s,
+        "samples_s": samples,
+        "explain": "\n".join(r["QUERY PLAN"] for r in explain_rows),
+    }
 
 
-async def bench_ann_index_type(pool: asyncpg.Pool, schema: str, query_vec: list[float], k: int, runs: int) -> dict[str, Any]:
+async def bench_ann_index_type(
+    pool: asyncpg.Pool, schema: str, query_vec: list[float], k: int, runs: int
+) -> dict[str, Any]:
     """Compare HNSW vs IVFFlat unfiltered top-K query latency (+ build time)."""
     results: dict[str, Any] = {}
     for kind in ("hnsw", "ivfflat"):
@@ -368,8 +375,12 @@ async def main() -> int:
     pool = await create_pg_pool(dsn, schema=schema)
     try:
         await ensure_schema(pool, schema=schema)
-        print(f"Seeding synthetic corpus: {args.corpus_size} concepts, seed={args.seed}, dim={GRAPHINDEX_EMBEDDING_DIM}")
-        corpus_stats = await seed_corpus(pool, schema, corpus_size=args.corpus_size, dim=GRAPHINDEX_EMBEDDING_DIM, rng=rng)
+        print(
+            f"Seeding synthetic corpus: {args.corpus_size} concepts, seed={args.seed}, dim={GRAPHINDEX_EMBEDDING_DIM}"
+        )
+        corpus_stats = await seed_corpus(
+            pool, schema, corpus_size=args.corpus_size, dim=GRAPHINDEX_EMBEDDING_DIM, rng=rng
+        )
         print(f"Corpus seeded: {corpus_stats}")
 
         query_vec = _random_vector(rng, GRAPHINDEX_EMBEDDING_DIM)
@@ -445,7 +456,8 @@ def render_report(
     g2s_wins = sum(
         1
         for d in depths
-        if d in g2s_by_depth and d in s2g_by_depth
+        if d in g2s_by_depth
+        and d in s2g_by_depth
         and statistics.mean(g2s_by_depth[d]) <= statistics.mean(s2g_by_depth[d])
     )
     comparable_depths = [d for d in depths if d in g2s_by_depth and d in s2g_by_depth]

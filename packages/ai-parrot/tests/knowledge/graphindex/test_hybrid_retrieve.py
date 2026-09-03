@@ -109,9 +109,7 @@ async def _seed_small_corpus(pg_persistence, ctx):
     ]
     edges = [make_edge("a", "b"), make_edge("b", "c")]
     await pg_persistence.persist_graph(ctx, nodes, edges)
-    await pg_persistence.upsert_embeddings(
-        ctx, [("a", _vec(0.1)), ("b", _vec(0.2)), ("c", _vec(0.9))]
-    )
+    await pg_persistence.upsert_embeddings(ctx, [("a", _vec(0.1)), ("b", _vec(0.2)), ("c", _vec(0.9))])
 
 
 async def test_no_legs_raises(pg_persistence, ctx):
@@ -191,12 +189,8 @@ async def test_naive_as_of_rejected(pg_persistence, ctx):
 
 
 async def test_evidence_pairs(pg_persistence, ctx):
-    edge_with_evidence = make_edge(
-        "a", "b", domain_tags={"evidence_ref": {"body_ref": "doc.md", "byte_offset": 7}}
-    )
-    await pg_persistence.persist_graph(
-        ctx, [make_node("a"), make_node("b")], [edge_with_evidence]
-    )
+    edge_with_evidence = make_edge("a", "b", domain_tags={"evidence_ref": {"body_ref": "doc.md", "byte_offset": 7}})
+    await pg_persistence.persist_graph(ctx, [make_node("a"), make_node("b")], [edge_with_evidence])
     results = await pg_persistence.hybrid_retrieve(ctx, seeds=["a"])
     by_id = {r.concept_id: r for r in results}
     assert by_id["b"].evidence == [{"body_ref": "doc.md", "byte_offset": 7}]
@@ -214,18 +208,14 @@ async def test_rerank_replaces_order(pg_persistence, ctx):
 async def test_rerank_failure_falls_back(pg_persistence, ctx):
     await _seed_small_corpus(pg_persistence, ctx)
     fused = await pg_persistence.hybrid_retrieve(ctx, fts_terms="alpha")
-    reranked = await pg_persistence.hybrid_retrieve(
-        ctx, fts_terms="alpha", reranker=_StubReranker(fail=True)
-    )
+    reranked = await pg_persistence.hybrid_retrieve(ctx, fts_terms="alpha", reranker=_StubReranker(fail=True))
     assert [r.concept_id for r in reranked] == [r.concept_id for r in fused][: len(reranked)]
 
 
 async def test_rerank_nan_falls_back(pg_persistence, ctx):
     await _seed_small_corpus(pg_persistence, ctx)
     fused = await pg_persistence.hybrid_retrieve(ctx, fts_terms="alpha")
-    reranked = await pg_persistence.hybrid_retrieve(
-        ctx, fts_terms="alpha", reranker=_StubReranker(nan=True)
-    )
+    reranked = await pg_persistence.hybrid_retrieve(ctx, fts_terms="alpha", reranker=_StubReranker(nan=True))
     assert [r.concept_id for r in reranked] == [r.concept_id for r in fused][: len(reranked)]
 
 

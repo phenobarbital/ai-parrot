@@ -110,9 +110,7 @@ class _HashingModel:
         """Encode texts into a ``(len(texts), dim)`` float32 matrix."""
         if not texts:
             return np.zeros((0, self.dim), dtype=np.float32)
-        return np.vstack([_embed_text(t, self.dim) for t in texts]).astype(
-            np.float32
-        )
+        return np.vstack([_embed_text(t, self.dim) for t in texts]).astype(np.float32)
 
 
 class HashingGraphEmbedder:
@@ -141,9 +139,7 @@ class HashingGraphEmbedder:
         self._node_id_map: list[str] = []
         self._vectors: dict[str, np.ndarray] = {}
 
-    async def embed_nodes(
-        self, nodes: list[UniversalNode], batch_size: int = 64
-    ) -> list[UniversalNode]:
+    async def embed_nodes(self, nodes: list[UniversalNode], batch_size: int = 64) -> list[UniversalNode]:
         """Embed (or re-embed) nodes, keeping FAISS positions stable.
 
         New node ids are appended; an already-embedded node id has its
@@ -177,9 +173,7 @@ class HashingGraphEmbedder:
         """Return the stored vector for a node id, or ``None``."""
         return self._vectors.get(node_id)
 
-    async def search_similar(
-        self, query: str, top_k: int = 10
-    ) -> list[tuple[str, float]]:
+    async def search_similar(self, query: str, top_k: int = 10) -> list[tuple[str, float]]:
         """FAISS L2 search over the embedded nodes.
 
         Args:
@@ -264,9 +258,7 @@ async def build_graph_memory_toolkit(
 
         persistence = PostgresPersistence(dsn, schema=schema)
     else:
-        raise ValueError(
-            f"build_graph_memory_toolkit: unknown backend {backend!r} — expected 'sqlite' or 'postgres'"
-        )
+        raise ValueError(f"build_graph_memory_toolkit: unknown backend {backend!r} — expected 'sqlite' or 'postgres'")
     publisher = GraphPublisher(persistence, ctx)
 
     nodes, edges = await persistence.load_graph(ctx)

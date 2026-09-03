@@ -148,9 +148,7 @@ async def test_add_edges_with_provenance(pg_wiki_store):
 
 
 async def test_replace_source_slice_atomic(pg_wiki_store):
-    await pg_wiki_store.upsert_pages(
-        [make_page("p1", source_id="doc://a"), make_page("p2", source_id="doc://a")]
-    )
+    await pg_wiki_store.upsert_pages([make_page("p1", source_id="doc://a"), make_page("p2", source_id="doc://a")])
     result = await pg_wiki_store.replace_source_slice("doc://a", [make_page("p3", source_id="doc://a")])
     assert result["pages_deleted"] == 2
     assert result["pages_written"] == 1

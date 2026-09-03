@@ -171,9 +171,7 @@ async def test_revert_merge_restores_duplicate_and_edges(publisher, persistence,
     await publisher.publish(
         make_update(nodes=[make_node("a"), make_node("b"), make_node("dup")], edges=[make_edge("dup", "b")])
     )
-    merge = await publisher.publish(
-        make_update(edges=[make_edge("a", "b")], removed_nodes=["dup"], op="merge_nodes")
-    )
+    merge = await publisher.publish(make_update(edges=[make_edge("a", "b")], removed_nodes=["dup"], op="merge_nodes"))
     nodes, edges = await persistence.load_graph(ctx)
     assert {n.node_id for n in nodes} == {"a", "b"}
     assert ("dup", "b") not in [(e.source_id, e.target_id) for e in edges]
@@ -220,9 +218,7 @@ async def test_revert_unknown_commit(publisher):
 
 
 async def test_receipt_includes_removed_and_implicit_edges(publisher):
-    await publisher.publish(
-        make_update(nodes=[make_node("a"), make_node("dup")], edges=[make_edge("dup", "a")])
-    )
+    await publisher.publish(make_update(nodes=[make_node("a"), make_node("dup")], edges=[make_edge("dup", "a")]))
     receipt = await publisher.publish(make_update(removed_nodes=["dup"], op="merge_nodes"))
     assert "dup" in receipt.node_ids
     assert ("dup", "a", "references") in receipt.edge_keys
@@ -233,12 +229,8 @@ async def test_commit_doc_written_with_seq(publisher, persistence):
     r2 = await publisher.publish(make_update(nodes=[make_node("b")]))
     pool = await persistence._ensure_pool()
     async with pool.acquire() as conn:
-        seq1 = await conn.fetchval(
-            f"SELECT seq FROM {persistence._schema}.commits WHERE commit_id = $1", r1.commit_id
-        )
-        seq2 = await conn.fetchval(
-            f"SELECT seq FROM {persistence._schema}.commits WHERE commit_id = $1", r2.commit_id
-        )
+        seq1 = await conn.fetchval(f"SELECT seq FROM {persistence._schema}.commits WHERE commit_id = $1", r1.commit_id)
+        seq2 = await conn.fetchval(f"SELECT seq FROM {persistence._schema}.commits WHERE commit_id = $1", r2.commit_id)
     assert seq1 == 1
     assert seq2 == 2
 
@@ -289,13 +281,9 @@ async def test_removed_node_closes_validity_not_delete(persistence, ctx):
 
     pool = await persistence._ensure_pool()
     async with pool.acquire() as conn:
-        total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM {persistence._schema}.node_versions WHERE concept_id = 'a'"
-        )
-        open_count = await conn.fetchval(
-            f"""SELECT COUNT(*) FROM {persistence._schema}.node_versions
-                WHERE concept_id = 'a' AND upper_inf(validity)"""
-        )
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM {persistence._schema}.node_versions WHERE concept_id = 'a'")
+        open_count = await conn.fetchval(f"""SELECT COUNT(*) FROM {persistence._schema}.node_versions
+                WHERE concept_id = 'a' AND upper_inf(validity)""")
     assert total == 1  # the row still exists (tombstone-by-range, not DELETE)
     assert open_count == 0  # but its validity range is closed
 

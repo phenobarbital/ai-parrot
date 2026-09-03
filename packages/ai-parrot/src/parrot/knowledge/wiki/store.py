@@ -1862,7 +1862,5 @@ def create_wiki_store(
         )
     if backend in _EXTRA_BACKENDS:
         return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
-    known = ", ".join(
-        ["'sqlite'", "'memory'", "'arangodb'", "'postgres'", *(repr(b) for b in _EXTRA_BACKENDS)]
-    )
+    known = ", ".join(["'sqlite'", "'memory'", "'arangodb'", "'postgres'", *(repr(b) for b in _EXTRA_BACKENDS)])
     raise ValueError(f"Unknown wiki storage backend {backend!r} — expected one of {known}")

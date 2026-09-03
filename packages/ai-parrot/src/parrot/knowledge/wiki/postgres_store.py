@@ -540,9 +540,7 @@ class PostgresWikiStore(BaseWikiStore):
             )
         return [self._fmt_row(dict(row)) for row in rows]
 
-    async def search_fts(
-        self, query: str, category: Optional[str] = None, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_fts(self, query: str, category: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]:
         """Lexical search over title/summary/body via the shared ``fts`` column.
 
         Args:
@@ -703,12 +701,10 @@ class PostgresWikiStore(BaseWikiStore):
         """
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
+            rows = await conn.fetch(f"""
                 SELECT src, dst, rel FROM {self._schema}.edges
                 WHERE upper_inf(validity) ORDER BY src, dst, rel
-                """
-            )
+                """)
         return [dict(row) for row in rows]
 
     async def stats(self) -> dict[str, Any]:
@@ -790,16 +786,14 @@ class PostgresWikiStore(BaseWikiStore):
         """CURRENT edges whose destination is not a CURRENT page."""
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
+            rows = await conn.fetch(f"""
                 SELECT e.src, e.dst, e.rel FROM {self._schema}.edges e
                 WHERE upper_inf(e.validity)
                   AND NOT EXISTS (
                     SELECT 1 FROM {self._schema}.node_versions nv
                     WHERE nv.concept_id = e.dst AND upper_inf(nv.validity)
                   )
-                """
-            )
+                """)
         return [dict(row) for row in rows]
 
     async def missing_bodies(self) -> list[str]:

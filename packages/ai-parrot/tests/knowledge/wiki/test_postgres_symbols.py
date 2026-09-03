@@ -155,9 +155,7 @@ async def test_page_hashes_covers_symbol_pages(pg_wiki_store):
     content_hash the same as any other page."""
     from parrot.knowledge.wiki.store import WikiPageRecord
 
-    await pg_wiki_store.upsert_pages(
-        [WikiPageRecord(concept_id="sym:a.py#foo", title="foo", content_hash="abc123")]
-    )
+    await pg_wiki_store.upsert_pages([WikiPageRecord(concept_id="sym:a.py#foo", title="foo", content_hash="abc123")])
     hashes = await pg_wiki_store.page_hashes(["sym:a.py#foo", "unknown"])
     assert hashes == {"sym:a.py#foo": "abc123", "unknown": None}
 

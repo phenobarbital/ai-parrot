@@ -292,8 +292,7 @@ async def _migrate(conn: asyncpg.Connection, schema: str) -> None:
         existing = {
             row["column_name"]
             for row in await conn.fetch(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = $1 AND table_name = $2",
+                "SELECT column_name FROM information_schema.columns " "WHERE table_schema = $1 AND table_name = $2",
                 schema,
                 table,
             )
@@ -301,9 +300,7 @@ async def _migrate(conn: asyncpg.Connection, schema: str) -> None:
         for column, ddl_type in columns:
             if column in existing:
                 continue
-            await conn.execute(
-                f"ALTER TABLE {schema}.{table} ADD COLUMN IF NOT EXISTS {column} {ddl_type}"
-            )
+            await conn.execute(f"ALTER TABLE {schema}.{table} ADD COLUMN IF NOT EXISTS {column} {ddl_type}")
 
 
 async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) -> None:
@@ -323,15 +320,13 @@ async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) 
             await _migrate(conn, schema)
             # Post-migration indexes on migrated columns (search_tsv must
             # already exist — guaranteed by _migrate() above).
-            await conn.execute(
-                f"""
+            await conn.execute(f"""
                 CREATE INDEX IF NOT EXISTS symbols_search_tsv_idx ON {schema}.symbols USING gin (search_tsv);
                 CREATE INDEX IF NOT EXISTS symbols_qualname_trgm_idx
                     ON {schema}.symbols USING gin (qualname gin_trgm_ops);
                 CREATE INDEX IF NOT EXISTS symbols_name_trgm_idx
                     ON {schema}.symbols USING gin (name gin_trgm_ops);
-                """
-            )
+                """)
             await conn.execute(
                 f"""
                 INSERT INTO {schema}.meta (key, value) VALUES ('schema_version', $1)

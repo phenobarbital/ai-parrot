@@ -651,27 +651,23 @@ class PostgresPersistence:
         nodes: list[UniversalNode] = []
         edges: list[UniversalEdge] = []
         async with pool.acquire() as conn:
-            node_rows = await conn.fetch(
-                f"""
+            node_rows = await conn.fetch(f"""
                 SELECT n.concept_id, n.category, nv.title, nv.summary, nv.body_ref,
                        nv.source_id, nv.provenance, nv.assertion, nv.domain_tags
                 FROM {self._schema}.nodes n
                 JOIN {self._schema}.node_versions nv ON nv.concept_id = n.concept_id
                 WHERE upper_inf(nv.validity)
-                """
-            )
+                """)
             for row in node_rows:
                 node = self._row_to_node(row)
                 if node is not None:
                     nodes.append(node)
 
-            edge_rows = await conn.fetch(
-                f"""
+            edge_rows = await conn.fetch(f"""
                 SELECT src, dst, rel, provenance, confidence, assertion, evidence_ref
                 FROM {self._schema}.edges
                 WHERE upper_inf(validity)
-                """
-            )
+                """)
             for row in edge_rows:
                 edge = self._row_to_edge(row)
                 if edge is not None:
@@ -697,9 +693,7 @@ class PostgresPersistence:
         )
         return dict(row) if row is not None else None
 
-    async def _edge_pre_image(
-        self, conn: asyncpg.Connection, src: str, dst: str, rel: str
-    ) -> Optional[dict[str, Any]]:
+    async def _edge_pre_image(self, conn: asyncpg.Connection, src: str, dst: str, rel: str) -> Optional[dict[str, Any]]:
         """Capture the current edge state as a revertible pre-image."""
         row = await conn.fetchrow(
             f"""
@@ -820,8 +814,7 @@ class PostgresPersistence:
                     (node_id, "node_removed") for node_id in update.removed_nodes
                 ]
                 node_items = [
-                    (node_id, item_type, await self._node_pre_image(conn, node_id))
-                    for node_id, item_type in node_keys
+                    (node_id, item_type, await self._node_pre_image(conn, node_id)) for node_id, item_type in node_keys
                 ]
 
                 implicit_removed: list[tuple[str, str, str]] = []
@@ -838,9 +831,9 @@ class PostgresPersistence:
 
                 removed_edge_set = {tuple(t) for t in update.removed_edges} | set(implicit_removed)
 
-                edge_triples = [
-                    (e.source_id, e.target_id, e.kind.value) for e in update.edges
-                ] + sorted(removed_edge_set)
+                edge_triples = [(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(
+                    removed_edge_set
+                )
                 edge_items = []
                 for src, tgt, kind in edge_triples:
                     prior = await self._edge_pre_image(conn, src, tgt, kind)
@@ -927,8 +920,7 @@ class PostgresPersistence:
             commit_id=commit_id,
             op=update.op,
             node_ids=[n.node_id for n in update.nodes] + list(update.removed_nodes),
-            edge_keys=[(e.source_id, e.target_id, e.kind.value) for e in update.edges]
-            + sorted(removed_edge_set),
+            edge_keys=[(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(removed_edge_set),
             committed_at=committed_at.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
             warnings=warnings,
         )
@@ -947,9 +939,7 @@ class PostgresPersistence:
         """
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"SELECT * FROM {self._schema}.commits WHERE commit_id = $1", commit_id
-            )
+            row = await conn.fetchrow(f"SELECT * FROM {self._schema}.commits WHERE commit_id = $1", commit_id)
             if row is None:
                 return None
             commit = dict(row)
@@ -1498,9 +1488,7 @@ class PostgresPersistence:
                 ``seeds`` is given, or ``as_of`` is a naive datetime.
         """
         if not (query_embedding or fts_terms or seeds):
-            raise ValueError(
-                "hybrid_retrieve: at least one of query_embedding / fts_terms / seeds must be provided"
-            )
+            raise ValueError("hybrid_retrieve: at least one of query_embedding / fts_terms / seeds must be provided")
         if as_of is not None:
             self._require_aware(as_of)
         as_of_t = as_of or datetime.now(tz=timezone.utc)
@@ -1520,8 +1508,7 @@ class PostgresPersistence:
         if seeds:
             seeds_ph = ph(list(seeds))
             max_depth_ph = ph(max_depth)
-            cte_parts.append(
-                f"""
+            cte_parts.append(f"""
                 hood AS (
                     SELECT s AS concept_id, 0 AS depth, NULL::jsonb AS evidence_ref
                     FROM unnest({seeds_ph}::text[]) AS s
@@ -1541,19 +1528,15 @@ class PostgresPersistence:
                            row_number() OVER (ORDER BY depth ASC, concept_id ASC) AS rnk
                     FROM hood_dedup
                 )
-                """
-            )
+                """)
             candidate_sources.append("SELECT concept_id FROM graph_leg")
 
         if query_embedding:
             validate_embedding_dim(query_embedding)
             qvec_ph = ph(query_embedding)
             knn_limit_ph = ph(max(limit * 5, 50))
-            hood_filter = (
-                "AND nv.concept_id IN (SELECT concept_id FROM graph_leg)" if seeds else ""
-            )
-            cte_parts.append(
-                f"""
+            hood_filter = "AND nv.concept_id IN (SELECT concept_id FROM graph_leg)" if seeds else ""
+            cte_parts.append(f"""
                 knn_leg AS (
                     SELECT nv.concept_id, emb.embedding <=> {qvec_ph} AS dist,
                            row_number() OVER (ORDER BY emb.embedding <=> {qvec_ph}) AS rnk
@@ -1563,8 +1546,7 @@ class PostgresPersistence:
                     {hood_filter}
                     ORDER BY dist LIMIT {knn_limit_ph}::int
                 )
-                """
-            )
+                """)
             candidate_sources.append("SELECT concept_id FROM knn_leg")
 
         if fts_terms:
@@ -1573,8 +1555,7 @@ class PostgresPersistence:
             reg_ph = ph(regconfig)
             terms_ph = ph(fts_terms)
             fts_limit_ph = ph(max(limit * 5, 50))
-            cte_parts.append(
-                f"""
+            cte_parts.append(f"""
                 fts_leg AS (
                     SELECT nv.concept_id,
                            ts_rank_cd(nv.fts, websearch_to_tsquery({reg_ph}::regconfig, {terms_ph})) AS raw_score,
@@ -1586,8 +1567,7 @@ class PostgresPersistence:
                       AND nv.fts @@ websearch_to_tsquery({reg_ph}::regconfig, {terms_ph})
                     ORDER BY raw_score DESC LIMIT {fts_limit_ph}::int
                 )
-                """
-            )
+                """)
             candidate_sources.append("SELECT concept_id FROM fts_leg")
 
         candidates_sql = " UNION ".join(candidate_sources)
