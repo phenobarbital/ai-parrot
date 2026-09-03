@@ -91,6 +91,19 @@ class OpenAIClient(OpenAIBaseClient):
     _lightweight_model: str = "gpt-4.1"
     # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
     _min_cache_tokens: int = 1024
+    #: OpenAI rejects ``max_tokens`` on gpt-5*/o-series
+    #: ("Unsupported parameter: 'max_tokens' ... Use 'max_completion_tokens'
+    #: instead.") and accepts ``max_completion_tokens`` on every
+    #: chat-completions model, reasoning or not.
+    _uses_max_completion_tokens: bool = True
+    #: Reasoning models only honour the default temperature
+    #: ("Unsupported value: 'temperature' does not support 0.0 with this
+    #: model. Only the default (1) value is supported"). Fragments, not
+    #: dated ids — each one live-verified before being added. `o1`/`o3`/`o4`
+    #: are expected to share the constraint but were NOT verified live
+    #: (no OPENAI_API_KEY available in this session); do not add them on
+    #: speculation (spec §7, §8).
+    _fixed_temperature_models: tuple[str, ...] = ("gpt-5",)
 
     def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", **kwargs):
         # FEAT-438: resolve the OpenAI-specific API-key env default here,
