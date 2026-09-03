@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.tools.repl_worker.protocol import (
+    _MESSAGE_TYPES,
     ErrorResponse,
     ExecRequest,
     ExecResult,
@@ -18,10 +19,12 @@ from parrot.tools.repl_worker.protocol import (
     InjectDfRequest,
     ListNsRequest,
     ListNsResponse,
+    MemoryVerdict,
     NamespaceLossError,
     OkResponse,
     PingRequest,
     PongResponse,
+    ProcessSample,
     ReadyResponse,
     ResetRequest,
     SetVarRequest,
@@ -86,6 +89,89 @@ def test_worker_config_new_fields_defaults_and_validation():
         WorkerConfig(bootstrap_timeout_ms=0)
     with pytest.raises(ValidationError):
         WorkerConfig(namespace_timeout_ms=-1)
+
+
+class TestFeat521ConfigFields:
+    """Spec §2 Data Models — observation/interrupt/memory `WorkerConfig` fields
+    added by FEAT-521 (TASK-2774), plus the cross-field validators and the
+    host-local `ProcessSample`/`MemoryVerdict` models (TASK-2780).
+    """
+
+    def test_defaults_match_spec(self):
+        cfg = WorkerConfig()
+        assert cfg.observer_poll_ms == 500
+        assert cfg.stall_window_ms == 5_000
+        assert cfg.bootstrap_stall_ms == 0
+        assert cfg.interrupt_before_kill is True
+        assert cfg.interrupt_grace_ms == 2_000
+        assert cfg.memory_soft_limit_bytes == 4 * 1024**3
+        assert cfg.memory_hard_limit_bytes == 8 * 1024**3
+        assert cfg.host_memory_reserve_bytes == 2 * 1024**3
+
+    def test_zero_disables_soft_limit(self):
+        cfg = WorkerConfig(memory_soft_limit_bytes=0)
+        assert cfg.memory_soft_limit_bytes == 0
+        assert cfg.memory_hard_limit_bytes == 8 * 1024**3  # untouched, still enabled
+
+    def test_zero_disables_hard_limit(self):
+        cfg = WorkerConfig(memory_hard_limit_bytes=0)
+        assert cfg.memory_hard_limit_bytes == 0
+        assert cfg.memory_soft_limit_bytes == 4 * 1024**3  # untouched, still enabled
+
+    def test_zero_disables_both_memory_limits(self):
+        cfg = WorkerConfig(memory_soft_limit_bytes=0, memory_hard_limit_bytes=0)
+        assert cfg.memory_soft_limit_bytes == 0
+        assert cfg.memory_hard_limit_bytes == 0
+
+    def test_hard_below_soft_raises(self):
+        with pytest.raises(ValidationError):
+            WorkerConfig(memory_soft_limit_bytes=8 * 1024**3, memory_hard_limit_bytes=4 * 1024**3)
+
+    def test_hard_equal_to_soft_is_allowed(self):
+        cfg = WorkerConfig(memory_soft_limit_bytes=4 * 1024**3, memory_hard_limit_bytes=4 * 1024**3)
+        assert cfg.memory_hard_limit_bytes == cfg.memory_soft_limit_bytes
+
+    def test_hard_above_rlimit_as_raises(self):
+        with pytest.raises(ValidationError):
+            WorkerConfig(
+                rlimit_as_bytes=1 * 1024**3,
+                memory_soft_limit_bytes=0,
+                memory_hard_limit_bytes=2 * 1024**3,
+            )
+
+    def test_hard_at_rlimit_as_is_allowed(self):
+        cfg = WorkerConfig(
+            rlimit_as_bytes=2 * 1024**3,
+            memory_soft_limit_bytes=0,
+            memory_hard_limit_bytes=2 * 1024**3,
+        )
+        assert cfg.memory_hard_limit_bytes == cfg.rlimit_as_bytes
+
+    def test_interrupt_grace_equal_to_deadline_raises(self):
+        with pytest.raises(ValidationError):
+            WorkerConfig(deadline_ms=1_000, interrupt_grace_ms=1_000)
+
+    def test_interrupt_grace_above_deadline_raises(self):
+        with pytest.raises(ValidationError):
+            WorkerConfig(deadline_ms=1_000, interrupt_grace_ms=2_000)
+
+    def test_interrupt_grace_below_deadline_is_allowed(self):
+        cfg = WorkerConfig(deadline_ms=1_000, interrupt_grace_ms=999)
+        assert cfg.interrupt_grace_ms == 999
+
+    def test_host_local_models_are_not_wire_messages(self):
+        """`ProcessSample`/`MemoryVerdict` never cross the control pipe (TASK-2774)."""
+        assert ProcessSample not in _MESSAGE_TYPES.values()
+        assert MemoryVerdict not in _MESSAGE_TYPES.values()
+
+    def test_process_sample_defaults(self):
+        sample = ProcessSample(t=1.0, cpu_s=0.5, rss=100, state="running")
+        assert sample.wchan == ""
+        assert sample.threads == 0
+
+    def test_memory_verdict_cause_is_fixed(self):
+        verdict = MemoryVerdict(rss=100, limit=50)
+        assert verdict.cause == "memory"
 
 
 def test_read_frame_raises_eoferror_on_empty_stream():

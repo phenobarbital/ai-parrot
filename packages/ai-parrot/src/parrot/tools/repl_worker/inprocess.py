@@ -113,6 +113,21 @@ class InProcessHandle:
         """No process, so no exit code and no stderr tail."""
         return None, ""
 
+    def verdict(self) -> str:
+        """Always ``"unavailable"`` — there is no child process to observe (FEAT-521).
+
+        ``execution_mode="inprocess"`` runs on the host's own thread pool
+        (no ``ProcessObserver``, no idle/busy/hung classification, no
+        memory guardrails — see the module docstring's "What you give
+        up"). Exposing the same ``verdict()`` shape as
+        ``WorkerHandle.observer.verdict()`` lets callers branch uniformly
+        instead of special-casing this handle type.
+
+        Returns:
+            The literal string ``"unavailable"``.
+        """
+        return "unavailable"
+
     async def kill(self) -> None:
         """Mark the handle dead. The host namespace is left untouched."""
         self._alive = False

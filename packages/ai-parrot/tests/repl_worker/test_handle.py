@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import importlib
 import sys
 import time
 
@@ -21,6 +22,8 @@ from parrot.tools.repl_worker.handle import (
 )
 from parrot.tools.repl_worker.protocol import ReadyResponse, WorkerConfig
 
+abstract_module = importlib.import_module("parrot.tools.abstract")
+
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="rlimits are POSIX-only")
 
 #: Delays the WORKER's own bootstrap deterministically (FEAT-500 tests):
@@ -31,6 +34,21 @@ SLOW_BOOTSTRAP = {"setup_code": "import time\ntime.sleep(3)"}
 
 
 @pytest.fixture
+def report_dir(tmp_path, monkeypatch):
+    """A per-test report dir that passes `AbstractTool`'s output_dir guard.
+
+    Both halves are needed: `abstract_module.STATIC_DIR` is patched for THIS
+    (parent/test) process, and the `STATIC_DIR` env var is set for any
+    spawned WORKER subprocess (which re-imports `parrot.conf` fresh and
+    inherits the parent's environment), so its own `AbstractTool.__init__`
+    guard check passes too (FEAT-521 TASK-2781 finding — see completion note).
+    """
+    monkeypatch.setattr(abstract_module, "STATIC_DIR", tmp_path)
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    return str(tmp_path)
+
+
+@pytest.fixture
 def real_worker_config():
     """Generous AS (spec default ~4 GiB) so the real worker can actually boot."""
     return WorkerConfig(deadline_ms=5_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0)
@@ -38,8 +56,21 @@ def real_worker_config():
 
 @pytest.fixture
 def fast_deadline_config():
-    """Same generous AS, but a short deadline so timeout tests stay quick."""
-    return WorkerConfig(deadline_ms=1_500, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0)
+    """Same generous AS, but a short deadline so timeout tests stay quick.
+
+    FEAT-521: `interrupt_before_kill=False` — these deadline tests use a
+    plain `while True: pass` specifically to exercise the deterministic
+    SIGKILL path (AC2/AC4 from FEAT-380/500); interrupt-before-kill
+    behavior now has its own dedicated coverage in `test_interrupt.py`.
+    """
+    return WorkerConfig(
+        deadline_ms=1_500,
+        interrupt_grace_ms=500,  # unused when interrupt_before_kill=False, but still validated
+        interrupt_before_kill=False,
+        max_workers=2,
+        idle_ttl_seconds=5,
+        prewarm_pool_size=0,
+    )
 
 
 @pytest.fixture
@@ -55,16 +86,28 @@ def tiny_as_config():
     allocation racing against CPython's own clean `MemoryError` handling
     (which frequently does NOT crash the process — see this task's
     Completion Note for the full reasoning).
+
+    FEAT-521: `memory_soft/hard_limit_bytes=0` — this test is specifically
+    about the pre-existing `RLIMIT_AS` crash-at-import mechanism, not the
+    new host-side RSS guardrails (whose default `memory_hard_limit_bytes`
+    would otherwise exceed this deliberately tiny `rlimit_as_bytes` and
+    fail `WorkerConfig`'s own `hard <= rlimit_as_bytes` validator).
     """
     return WorkerConfig(
-        rlimit_as_bytes=512 * 1024**2, deadline_ms=5_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0
+        rlimit_as_bytes=512 * 1024**2,
+        memory_soft_limit_bytes=0,
+        memory_hard_limit_bytes=0,
+        deadline_ms=5_000,
+        max_workers=2,
+        idle_ttl_seconds=5,
+        prewarm_pool_size=0,
     )
 
 
 class TestDeadline:
-    async def test_deadline_sigkill(self, fast_deadline_config, tmp_path):
+    async def test_deadline_sigkill(self, fast_deadline_config, report_dir):
         """Infinite loop -> killed at deadline; handle reports not alive (AC2)."""
-        handle = WorkerHandle(fast_deadline_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(fast_deadline_config, output_dir=report_dir)
         await handle.start()
         try:
             result = await handle.execute("while True:\n    pass")
@@ -75,10 +118,10 @@ class TestDeadline:
         finally:
             await handle.kill()
 
-    async def test_namespace_loss_error_shape(self, real_worker_config, tmp_path):
+    async def test_namespace_loss_error_shape(self, real_worker_config, report_dir):
         """After a kill: {status, result, error} dict, cause differentiated,
         previously-created variable names listed, instruction to recreate state (AC11)."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         ok = await handle.execute("y = 42")
         assert isinstance(ok, str)
@@ -95,14 +138,14 @@ class TestDeadline:
         assert "crash" in result["result"].lower() or "cause" not in result["result"].lower()
 
     @posix_only
-    async def test_memory_limit_kills_worker(self, tiny_as_config, tmp_path):
+    async def test_memory_limit_kills_worker(self, tiny_as_config, report_dir):
         """A too-small RLIMIT_AS kills the worker only; cause != timeout (AC3).
 
         Reported cause is "memory" (stderr shows the mmap failure) — see
         `tiny_as_config` for why this uses an import-time crash rather than
         a runtime allocation.
         """
-        handle = WorkerHandle(tiny_as_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(tiny_as_config, output_dir=report_dir)
         await handle.start()
         result = await handle.execute("x = 1")
 
@@ -115,25 +158,25 @@ class TestDeadline:
 
 
 class TestPing:
-    async def test_ping_true_when_alive(self, real_worker_config, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_ping_true_when_alive(self, real_worker_config, report_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             assert await handle.ping() is True
         finally:
             await handle.kill()
 
-    async def test_ping_false_after_kill(self, real_worker_config, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_ping_false_after_kill(self, real_worker_config, report_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         await handle.kill()
         assert await handle.ping() is False
 
 
 class TestNamespaceAPI:
-    async def test_execute_contract_invariant(self, real_worker_config, tmp_path):
+    async def test_execute_contract_invariant(self, real_worker_config, report_dir):
         """G5: str-shaped success / dict-shaped error, matching the in-process REPL."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             ok = await handle.execute("x = 1 + 1")
@@ -145,8 +188,8 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_get_set_var_round_trip(self, real_worker_config, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_get_set_var_round_trip(self, real_worker_config, report_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             await handle.set_var("answer", 42)
@@ -156,8 +199,8 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_list_vars_and_snapshot(self, real_worker_config, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_list_vars_and_snapshot(self, real_worker_config, report_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             await handle.execute("greeting = 'hi'")
@@ -170,8 +213,8 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_reset_clears_known_vars(self, real_worker_config, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_reset_clears_known_vars(self, real_worker_config, report_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             await handle.execute("temp = 1")
@@ -181,13 +224,13 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_inject_dataframe(self, real_worker_config, tmp_path):
+    async def test_inject_dataframe(self, real_worker_config, report_dir):
         """Arrow IPC/shm transport (TASK-1945) — see test_transport.py for
         full roundtrip/fallback/shm-leak coverage; this is a handle-level
         smoke test that the API works end-to-end."""
         import pandas as pd
 
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             df = pd.DataFrame({"a": [1, 2, 3]})
@@ -201,9 +244,9 @@ class TestNamespaceAPI:
 class TestReadiness:
     """FEAT-500 G1/AC1-AC2: the readiness handshake."""
 
-    async def test_handle_wait_ready_success(self, real_worker_config, tmp_path):
+    async def test_handle_wait_ready_success(self, real_worker_config, report_dir):
         """After `start()`, the handle resolves the worker's ReadyResponse."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
             ready = await handle.wait_ready()
@@ -215,7 +258,7 @@ class TestReadiness:
         finally:
             await handle.kill()
 
-    async def test_handle_bootstrap_timeout_kills_and_reports(self, tmp_path):
+    async def test_handle_bootstrap_timeout_kills_and_reports(self, report_dir):
         """AC2: budget expiry kills the worker and reports pid + budget."""
         config = WorkerConfig(
             deadline_ms=5_000,
@@ -224,7 +267,7 @@ class TestReadiness:
             prewarm_pool_size=0,
             bootstrap_timeout_ms=500,
         )
-        handle = WorkerHandle(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        handle = WorkerHandle(config, output_dir=report_dir, repl_kwargs=SLOW_BOOTSTRAP)
         await handle.start()
         pid = handle._proc.pid
         try:
@@ -237,13 +280,13 @@ class TestReadiness:
         finally:
             await handle.kill()
 
-    async def test_handle_send_waits_for_ready(self, real_worker_config, tmp_path):
+    async def test_handle_send_waits_for_ready(self, real_worker_config, report_dir):
         """AC1/AC6: seeding a still-booting worker no longer times out at 5 s.
 
         This is the exact call that used to kill the worker: `set_var()` on a
         worker whose bootstrap outlasts the old hard-coded 5 s budget.
         """
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir, repl_kwargs=SLOW_BOOTSTRAP)
         await handle.start()
         try:
             await handle.set_var("x", 1)
@@ -252,7 +295,7 @@ class TestReadiness:
         finally:
             await handle.kill()
 
-    async def test_fresh_spawn_bootstrap_failure_returns_loss_dict(self, tmp_path):
+    async def test_fresh_spawn_bootstrap_failure_returns_loss_dict(self, report_dir):
         """AC2/AC11: on the execute path a bootstrap failure is a G5 dict, never a raise."""
         config = WorkerConfig(
             deadline_ms=5_000,
@@ -261,7 +304,7 @@ class TestReadiness:
             prewarm_pool_size=0,
             bootstrap_timeout_ms=500,
         )
-        handle = WorkerHandle(config, output_dir=str(tmp_path), repl_kwargs=SLOW_BOOTSTRAP)
+        handle = WorkerHandle(config, output_dir=report_dir, repl_kwargs=SLOW_BOOTSTRAP)
         await handle.start()
         try:
             result = await handle.execute("x = 1")
@@ -276,7 +319,7 @@ class TestReadiness:
 class TestNonLethalTimeouts:
     """FEAT-500 G2/U2/AC3: only the execute deadline kills."""
 
-    async def test_namespace_timeout_is_non_lethal(self, tmp_path, monkeypatch):
+    async def test_namespace_timeout_is_non_lethal(self, report_dir, monkeypatch):
         """A namespace-request timeout is messaged, keeps the worker, and drains."""
         config = WorkerConfig(
             deadline_ms=5_000,
@@ -285,7 +328,7 @@ class TestNonLethalTimeouts:
             prewarm_pool_size=0,
             namespace_timeout_ms=200,
         )
-        handle = WorkerHandle(config, output_dir=str(tmp_path))
+        handle = WorkerHandle(config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         real_roundtrip = handle._roundtrip
@@ -312,7 +355,7 @@ class TestNonLethalTimeouts:
         finally:
             await handle.kill()
 
-    async def test_namespace_api_after_soft_timeout_keeps_state(self, tmp_path, monkeypatch):
+    async def test_namespace_api_after_soft_timeout_keeps_state(self, report_dir, monkeypatch):
         """AC3: state set before a non-lethal timeout is still there afterwards."""
         config = WorkerConfig(
             deadline_ms=5_000,
@@ -321,7 +364,7 @@ class TestNonLethalTimeouts:
             prewarm_pool_size=0,
             namespace_timeout_ms=200,
         )
-        handle = WorkerHandle(config, output_dir=str(tmp_path))
+        handle = WorkerHandle(config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         try:
@@ -342,9 +385,9 @@ class TestNonLethalTimeouts:
         finally:
             await handle.kill()
 
-    async def test_execute_deadline_is_still_lethal(self, fast_deadline_config, tmp_path):
+    async def test_execute_deadline_is_still_lethal(self, fast_deadline_config, report_dir):
         """AC4: the execute deadline remains the one lethal budget."""
-        handle = WorkerHandle(fast_deadline_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(fast_deadline_config, output_dir=report_dir)
         await handle.start()
         try:
             result = await handle.execute("while True:\n    pass")
@@ -355,9 +398,9 @@ class TestNonLethalTimeouts:
         finally:
             await handle.kill()
 
-    async def test_kill_leaves_no_ready_task_or_pending_reply(self, real_worker_config, tmp_path):
+    async def test_kill_leaves_no_ready_task_or_pending_reply(self, real_worker_config, report_dir):
         """AC12: `kill()` tears down the readiness task and any parked reply."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         await handle.kill()
@@ -365,9 +408,9 @@ class TestNonLethalTimeouts:
         assert handle._pending_reply is None
         assert handle.is_alive is False
 
-    async def test_wait_ready_after_kill_reports_a_message(self, real_worker_config, tmp_path):
+    async def test_wait_ready_after_kill_reports_a_message(self, real_worker_config, report_dir):
         """AC5: a handle killed before readiness never leaves `wait_ready()` hanging."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         await handle.kill()
         with pytest.raises(WorkerBootstrapError) as excinfo:
@@ -378,7 +421,7 @@ class TestNonLethalTimeouts:
 class TestConcurrencyRegressions:
     """Code-review findings (FEAT-500): cancellation and drain edge cases."""
 
-    async def test_cancelled_send_parks_the_reply(self, real_worker_config, tmp_path, monkeypatch):
+    async def test_cancelled_send_parks_the_reply(self, real_worker_config, report_dir, monkeypatch):
         """A cancelled caller must not leave the pipe owned by an untracked thread.
 
         `_send()` shields its executor round-trip, so cancelling the awaiting
@@ -387,7 +430,7 @@ class TestConcurrencyRegressions:
         thread is still reading — two readers on one pipe, and every later
         reply shifted by a frame.
         """
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         real_roundtrip = handle._roundtrip
@@ -418,7 +461,7 @@ class TestConcurrencyRegressions:
         finally:
             await handle.kill()
 
-    async def test_execute_after_undrained_timeout_is_not_reported_as_loss(self, tmp_path, monkeypatch):
+    async def test_execute_after_undrained_timeout_is_not_reported_as_loss(self, report_dir, monkeypatch):
         """A drain timeout inside `execute()` must not claim the namespace was lost.
 
         `NamespaceTimeoutError` subclasses `TimeoutError` (== `asyncio.
@@ -432,12 +475,13 @@ class TestConcurrencyRegressions:
         # test needs the drain to actually expire).
         config = WorkerConfig(
             deadline_ms=1_000,
+            interrupt_grace_ms=500,
             max_workers=2,
             idle_ttl_seconds=5,
             prewarm_pool_size=0,
             namespace_timeout_ms=200,
         )
-        handle = WorkerHandle(config, output_dir=str(tmp_path))
+        handle = WorkerHandle(config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         try:
@@ -467,7 +511,7 @@ class TestConcurrencyRegressions:
         finally:
             await handle.kill()
 
-    async def test_deadline_kill_survives_a_saturated_executor(self, tmp_path):
+    async def test_deadline_kill_survives_a_saturated_executor(self, report_dir):
         """AC4/AC12: the SIGKILL path must not queue behind the reads it interrupts.
 
         `_kill_process()` runs on a dedicated `_lifecycle_executor`. If it
@@ -476,10 +520,21 @@ class TestConcurrencyRegressions:
         `execute()` could never get a thread to run the kill — while freeing a
         thread required that kill. Reproduced as a hard hang (execute() never
         returning and `kill()` hanging too) with the one-thread executor below.
+
+        FEAT-521: `interrupt_before_kill=False` — this test is specifically
+        about the deterministic SIGKILL path, not interrupt-before-kill
+        (covered separately in `test_interrupt.py`).
         """
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="saturated")
-        config = WorkerConfig(deadline_ms=1_000, max_workers=2, idle_ttl_seconds=5, prewarm_pool_size=0)
-        handle = WorkerHandle(config, output_dir=str(tmp_path), executor=executor)
+        config = WorkerConfig(
+            deadline_ms=1_000,
+            interrupt_grace_ms=500,  # unused when interrupt_before_kill=False, but still validated
+            interrupt_before_kill=False,
+            max_workers=2,
+            idle_ttl_seconds=5,
+            prewarm_pool_size=0,
+        )
+        handle = WorkerHandle(config, output_dir=report_dir, executor=executor)
         await handle.start()
         await handle.wait_ready()
         try:
@@ -493,9 +548,9 @@ class TestConcurrencyRegressions:
             await asyncio.wait_for(handle.kill(), timeout=10.0)
             executor.shutdown(wait=False, cancel_futures=True)
 
-    async def test_death_summary_reports_exit_code_and_stderr(self, real_worker_config, tmp_path):
+    async def test_death_summary_reports_exit_code_and_stderr(self, real_worker_config, report_dir):
         """The public accessor the pool uses instead of reading private attrs."""
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         exit_code, stderr_tail = handle.death_summary()
         assert exit_code is None  # never spawned
         assert stderr_tail == ""
@@ -508,7 +563,7 @@ class TestConcurrencyRegressions:
         assert exit_code is not None  # reaped by kill()
         assert isinstance(stderr_tail, str)
 
-    async def test_concurrent_kills_are_serialized(self, real_worker_config, tmp_path):
+    async def test_concurrent_kills_are_serialized(self, real_worker_config, report_dir):
         """`_kill_process()`'s poll() guard is not atomic — a lock serializes it.
 
         Several independent paths can race to tear the process down (a lethal
@@ -516,7 +571,7 @@ class TestConcurrencyRegressions:
         `kill()`), and `Popen.kill()`/`.wait()` are not documented as safe to
         call concurrently from multiple threads.
         """
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         await handle.wait_ready()
         try:

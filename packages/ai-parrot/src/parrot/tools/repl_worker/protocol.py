@@ -25,7 +25,7 @@ import struct
 import types
 from typing import Any, BinaryIO, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # 4-byte, big-endian, unsigned length prefix — never newline-delimited JSON,
 # since REPL output frequently embeds newlines (Key Constraint).
@@ -399,6 +399,113 @@ class WorkerConfig(BaseModel):
     # 30 s by default (spec §7 "Prewarm contention").
     bootstrap_timeout_ms: int = Field(default=30_000, gt=0)
     namespace_timeout_ms: int = Field(default=30_000, gt=0)
+
+    # ------------------------------------------------------------------
+    # FEAT-521 — observation, interrupt-before-kill, and memory guardrails.
+    # These never cross the wire (worker.py never sees a WorkerConfig
+    # frame); they only configure host-side ProcessObserver/WorkerHandle/
+    # WorkerPool behavior.
+    # ------------------------------------------------------------------
+
+    #: How often (ms) the host samples a live worker's process stats.
+    observer_poll_ms: int = Field(default=500, gt=0)
+    #: CPU flat for this long (ms) while a request is in-flight -> "stalled".
+    stall_window_ms: int = Field(default=5_000, gt=0)
+    #: 0 = never fail bootstrap early on a "stalled" verdict.
+    bootstrap_stall_ms: int = Field(default=0, ge=0)
+
+    #: Whether `execute()` sends SIGINT before SIGKILL on deadline expiry.
+    interrupt_before_kill: bool = True
+    #: How long (ms) the host waits for the interrupted reply frame.
+    interrupt_grace_ms: int = Field(default=2_000, gt=0)
+
+    #: Per-worker RSS guardrails, in bytes. 0 disables that threshold.
+    memory_soft_limit_bytes: int = Field(default=4 * 1024**3, ge=0)
+    memory_hard_limit_bytes: int = Field(default=8 * 1024**3, ge=0)
+    #: Host `psutil.virtual_memory().available` reserve below which the
+    #: pool refuses to spawn/prewarm new workers.
+    host_memory_reserve_bytes: int = Field(default=2 * 1024**3, ge=0)
+
+    @model_validator(mode="after")
+    def _validate_feat521_fields(self) -> "WorkerConfig":
+        """Cross-field invariants for the FEAT-521 tunables.
+
+        Raises:
+            ValueError: ``memory_hard_limit_bytes`` is below
+                ``memory_soft_limit_bytes`` while both are enabled;
+                ``memory_hard_limit_bytes`` exceeds ``rlimit_as_bytes``
+                while enabled; or ``interrupt_grace_ms`` is not strictly
+                less than ``deadline_ms``.
+        """
+        if (
+            self.memory_soft_limit_bytes > 0
+            and self.memory_hard_limit_bytes > 0
+            and self.memory_hard_limit_bytes < self.memory_soft_limit_bytes
+        ):
+            raise ValueError(
+                "memory_hard_limit_bytes "
+                f"({self.memory_hard_limit_bytes}) must be >= "
+                f"memory_soft_limit_bytes ({self.memory_soft_limit_bytes}) "
+                "when both are enabled (non-zero)"
+            )
+        if self.memory_hard_limit_bytes > 0 and self.memory_hard_limit_bytes > self.rlimit_as_bytes:
+            raise ValueError(
+                f"memory_hard_limit_bytes ({self.memory_hard_limit_bytes}) must be "
+                f"<= rlimit_as_bytes ({self.rlimit_as_bytes})"
+            )
+        if self.interrupt_grace_ms >= self.deadline_ms:
+            raise ValueError(
+                f"interrupt_grace_ms ({self.interrupt_grace_ms}) must be < " f"deadline_ms ({self.deadline_ms})"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# FEAT-521 — host-local observation models.
+#
+# These are consumed by ProcessObserver/WorkerHandle/WorkerPool only. They
+# never cross the control pipe, so they are deliberately NOT registered in
+# `_MESSAGE_TYPES` below.
+# ---------------------------------------------------------------------------
+
+
+class ProcessSample(BaseModel):
+    """One point-in-time reading of a worker process' vitals.
+
+    Attributes:
+        t: ``time.monotonic()`` timestamp of the sample.
+        cpu_s: Cumulative user + system CPU seconds at sample time.
+        rss: Resident set size, in bytes.
+        state: `psutil` process status (``"running"``, ``"sleeping"``, ...).
+        wchan: Linux-only kernel wait channel (``/proc/<pid>/wchan``); empty
+            elsewhere or when unavailable.
+        threads: Live thread count.
+    """
+
+    t: float
+    cpu_s: float
+    rss: int
+    state: str
+    wchan: str = ""
+    threads: int = 0
+
+
+#: Busy/idle/health verdict derived by `ProcessObserver` from its sample ring.
+Verdict = Literal["booting", "settled", "computing", "stalled", "unavailable"]
+
+
+class MemoryVerdict(BaseModel):
+    """Recorded by `ProcessObserver` when a worker crosses the hard RSS limit.
+
+    Attributes:
+        cause: Always ``"memory"`` — matches `NamespaceLossError.cause`.
+        rss: Measured RSS, in bytes, at the moment of the breach.
+        limit: The `memory_hard_limit_bytes` that was crossed.
+    """
+
+    cause: Literal["memory"] = "memory"
+    rss: int
+    limit: int
 
 
 #: Every concrete message type, keyed by its ``op`` literal — used to parse

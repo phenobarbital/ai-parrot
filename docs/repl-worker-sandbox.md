@@ -121,8 +121,10 @@ always had:
 | Cause | What happens | `status` | `result`/`error` text |
 |---|---|---|---|
 | Code denied by the host or worker gate | Rejected before/without running | `done_with_errors` | The `SecurityError:`/`BlockedOperationError:` message (unchanged from before this feature) |
-| Runaway loop / hang | Host's `deadline_ms` timer fires → `SIGKILL` (POSIX) / `TerminateProcess` (Windows) | `error` | `REPL worker terminated (timeout: ...)` — see below |
+| Runaway loop / hang, **interruptible** (FEAT-521) | Host's `deadline_ms` timer fires → SIGINT first (`interrupt_before_kill=True`, the default) → the worker converts it into a bounded reply and **keeps its namespace** | `error` | `interrupted: exceeded deadline_ms=<N>; namespace preserved (partial side effects possible)` — **not** a namespace-loss dict; `known_vars` is untouched |
+| Runaway loop / hang, **SIGINT-resistant or disabled** | The SIGINT above gets no reply within `interrupt_grace_ms` (native code holding the GIL, or `interrupt_before_kill=False`) → deterministic `SIGKILL` (POSIX) / `TerminateProcess` (Windows) | `error` | `REPL worker terminated (timeout: ...)` — see below; names the observer's verdict and last sample (§2c) |
 | Allocation over `rlimit_as_bytes` | Worker dies (often at import time under a very tight limit; see the calibration note in §3) | `error` | `REPL worker terminated (memory: ...)` |
+| RSS over `memory_hard_limit_bytes` (FEAT-521) | The host-side observer kills the worker deterministically, independent of `rlimit_as_bytes`/stderr — see §3c | `error` | `REPL worker terminated (memory: RSS <measured> exceeded memory_hard_limit_bytes=<N>...)` |
 | Worker crash (segfault, OOM-killed, etc.) | Detected the next time the host tries to talk to it | `error` | `REPL worker terminated (crash: ...)` |
 | Concurrency ceiling reached | `WorkerPool.acquire()` raises immediately — no queueing | `error` (wraps `WorkerPoolExhaustedError`) | States the current ceiling and suggests raising `WorkerConfig.max_workers` |
 | Worker idle past `idle_ttl_seconds` | Killed and unmapped by the pool's background sweep; next use spawns fresh | *(not an error — the session's next call just gets a fresh, empty namespace)* | — |
@@ -143,10 +145,89 @@ namespace is the session's state, so losing them must be deliberate.
 
 | Budget | Applies to | On expiry |
 |---|---|---|
-| `deadline_ms` (+250 ms grace) | `execute()` — running LLM code | **Lethal.** `SIGKILL` + namespace-loss dict (`cause="timeout"`). |
-| `bootstrap_timeout_ms` | waiting for the worker's first `ReadyResponse` | **Lethal.** A process that cannot boot is not a live worker; killed + `WorkerBootstrapError`. |
+| `deadline_ms` (+`interrupt_grace_ms` when `interrupt_before_kill=True`, +250 ms grace) | `execute()` — running LLM code | **Two-stage as of FEAT-521** (see §2c "Two-stage deadline" below). Interrupt first if enabled and the worker is actually busy; `SIGKILL` + namespace-loss dict (`cause="timeout"`) only as the fallback. |
+| `bootstrap_timeout_ms` | waiting for the worker's first `ReadyResponse` | **Lethal.** A process that cannot boot is not a live worker; killed + `WorkerBootstrapError`. FEAT-521: an optional `bootstrap_stall_ms` can fail this **earlier** — see §2c. |
 | `namespace_timeout_ms` | `get_var`, `set_var`, `list_vars`, `snapshot`, `reset`, `inject_dataframe` | **Non-lethal.** `NamespaceTimeoutError`; process and namespace survive. |
 | `ping(timeout_s=...)` | health check only | **Non-lethal.** Returns `False`. |
+| `memory_hard_limit_bytes` (FEAT-521) | continuous, independent of any in-flight request | **Lethal.** The observer kills the worker the poll cycle it crosses the limit — see §3c. |
+
+## 2c. Observation & verdicts (FEAT-521)
+
+Every live `WorkerHandle` owns a **`ProcessObserver`** (`repl_worker/observer.py`),
+started right after the stdio drain task in `start()` and torn down in
+`kill()`. It samples the child (CPU time, RSS, `/proc` state/wchan on
+Linux, thread count) every `observer_poll_ms` (default 500 ms) via
+`psutil` — **host-side only**; it never reads or writes the control pipe,
+so no protocol reordering is possible (there is no heartbeat frame).
+
+### Verdicts
+
+`handle.observer.verdict()` returns one of:
+
+| Verdict | Meaning |
+|---|---|
+| `booting` | The observer has not yet been told the worker is ready (`mark_idle()` hasn't run) — the initial state for every worker. |
+| `settled` | No request is in flight and CPU is flat — the worker is idle. |
+| `computing` | A request is in flight and CPU has advanced within the trailing `stall_window_ms` window. |
+| `stalled` | A request is in flight and CPU has been flat for the **entire** `stall_window_ms` window — busy is indistinguishable from hung until this fires. |
+| `unavailable` | Non-POSIX host, or `psutil` could not resolve/read the process. Never blocks or fails a request — every codepath that consults the observer treats `None`/`unavailable` as "no information," not an error. |
+
+`handle.observer.describe()` renders the current verdict plus the last
+sample (`cpu=`, `rss=`, `state=`, `wchan=`, `threads=`) as one line — this
+is what gets folded into every namespace-loss error and bootstrap-failure
+message, so **no error is ever blank about what the worker was doing**.
+
+### Two-stage deadline (interrupt-before-kill)
+
+On `deadline_ms` expiry, `execute()` no longer jumps straight to `SIGKILL`
+when `interrupt_before_kill=True` (the default):
+
+1. **SIGINT first** — sent via `Popen.send_signal()` on a dedicated
+   lifecycle executor (never the pipe-reading one). Skipped entirely if
+   the process is already dead, the host is non-POSIX, or the observer's
+   verdict shows the worker isn't actually busy (`settled`/`booting`/
+   `unavailable` — nothing to interrupt).
+2. The worker's service loop converts the resulting `KeyboardInterrupt`
+   into a bounded `ExecResult(status="error")` — **the namespace survives**
+   (partial side effects from the interrupted snippet are possible and the
+   message says so), and the reply lands on the same in-flight round-trip
+   `execute()` is already waiting on (no second pipe read).
+3. If that reply doesn't land within `interrupt_grace_ms` (native code
+   holding the GIL, or a pathological allowlisted snippet) — deterministic
+   `SIGKILL` follows, exactly as before FEAT-521.
+
+The caller is always answered within `deadline_ms + interrupt_grace_ms +
+250 ms` grace, whichever path is taken — the same bound guarantee as
+before, just with an extra namespace-preserving branch tried first. Set
+`interrupt_before_kill=False` to restore the pre-FEAT-521 immediate-kill
+behavior for every deadline breach.
+
+### Bootstrap diagnostics read from the observer, not a one-shot probe
+
+`_await_ready()`'s timeout message no longer takes a one-shot `/proc`
+snapshot at the moment of the kill — it reads the observer's sample ring,
+which has been sampling since `start()`:
+
+```
+REPL worker pid=31958 did not become ready within 30000 ms
+  (no ready frame within the bootstrap budget;
+   booting, cpu advanced 0.40 s in 30.0 s (starved));
+  stderr tail: ...
+```
+
+vs. a genuinely stuck child:
+
+```
+  (no ready frame within the bootstrap budget;
+   booting, cpu flat since last sample, state=sleeping wchan=futex_wait_queue (stalled));
+```
+
+An optional `bootstrap_stall_ms` (default `0` = disabled) fails the
+bootstrap **earlier** than `bootstrap_timeout_ms` once the observer sees
+a sustained CPU-flat stall — a separate background task
+(`_watch_bootstrap_stall()`) races the ordinary timeout path and resolves
+`WorkerBootstrapError` first if it wins; both paths are safe to race since
+resolving readiness is idempotent.
 
 ### Namespace-loss error shape
 
@@ -188,6 +269,14 @@ from parrot.tools.repl_worker.protocol import WorkerConfig
 | `prewarm_pool_size` | `2` | Idle, pre-booted spare workers (pandas/numpy already imported — the bootstrap import surface shrank as of FEAT-423) kept ready so a session's first call doesn't pay the 1–3s import cost. Since FEAT-500 a spare is only added to this pool **after** it signals readiness. |
 | `bootstrap_timeout_ms` | `30_000` | **FEAT-500.** How long the host waits for a freshly spawned worker's `ReadyResponse`. Expiry is **lethal** (see §2). Do not lower this casually: bootstrap was measured at 12–14 s under 3× CPU oversubscription, and workers boot concurrently (1 session + `prewarm_pool_size` spares). Validated `> 0`. |
 | `namespace_timeout_ms` | `30_000` | **FEAT-500.** Budget for every **non-`exec`** request (`get_var`/`set_var`/`list_vars`/`snapshot`/`reset`/`inject_dataframe`). Expiry is **non-lethal**: `NamespaceTimeoutError`, worker and namespace intact. Replaces the old hard-coded 5 s/10 s/30 s literals. Validated `> 0`. |
+| `observer_poll_ms` | `500` | **FEAT-521.** How often the host samples a live worker's CPU/RSS/state via `psutil` (§2c). Never blocks a request — a disabled/`unavailable` observer just means less diagnostic detail. |
+| `stall_window_ms` | `5_000` | **FEAT-521.** How long CPU must stay flat while a request is in flight before the verdict becomes `stalled` (§2c). |
+| `bootstrap_stall_ms` | `0` (disabled) | **FEAT-521.** Fails the bootstrap early once the observer sees this many ms of CPU-flat stall — see §2c "Bootstrap diagnostics". `0` waits out the full `bootstrap_timeout_ms` as before. |
+| `interrupt_before_kill` | `True` | **FEAT-521.** Try SIGINT before `SIGKILL` on a `deadline_ms` breach (§2c "Two-stage deadline"). `False` restores the pre-FEAT-521 immediate-kill behavior. |
+| `interrupt_grace_ms` | `2_000` | **FEAT-521.** How long the host waits for the SIGINT'd worker's reply before falling back to `SIGKILL`. Validated `< deadline_ms` (checked even when `interrupt_before_kill=False`). |
+| `memory_soft_limit_bytes` | **4 GiB** (`4 * 1024**3`) | **FEAT-521.** RSS threshold above which the next `execute()` result gets a one-line hint appended and the observer logs one WARNING per episode (§3c). `0` disables the soft limit. |
+| `memory_hard_limit_bytes` | **8 GiB** (`8 * 1024**3`) | **FEAT-521.** RSS threshold above which the observer kills the worker deterministically, cause `memory` (§3c). `0` disables the hard limit. Validated `>= memory_soft_limit_bytes` (when both enabled) and `<= rlimit_as_bytes` (when enabled) — **empirically calibrated**, see [`artifacts/logs/feat-521-memory-calibration.md`](../artifacts/logs/feat-521-memory-calibration.md). |
+| `host_memory_reserve_bytes` | **2 GiB** (`2 * 1024**3`) | **FEAT-521.** `WorkerPool` refuses to spawn or prewarm a new worker while `psutil.virtual_memory().available` (capped by cgroup v2 `memory.max - memory.current` when readable) is below this — §3c "Host memory reserve". |
 
 `RLIMIT_CORE = 0` is hardcoded, non-configurable — a core dump with live
 DataFrames in memory is a data-exfiltration vector, not a tuning knob.
@@ -273,6 +362,82 @@ tool = PythonREPLTool(
 
 ---
 
+## 3c. Memory guardrails (FEAT-521)
+
+`rlimit_as_bytes`/`RLIMIT_AS` bounds *virtual* address space; it says
+nothing about **resident** memory, and Linux does not enforce `RLIMIT_RSS`
+at all — a cross join or a growing list of large arrays can inflate RSS
+into the gigabytes while staying comfortably under the VA ceiling, driving
+the *host* into swap. `memory_soft_limit_bytes`/`memory_hard_limit_bytes`
+close that gap by having the host-side `ProcessObserver` watch RSS
+directly (`psutil.Process(pid).memory_info().rss`), independent of
+`rlimit_as_bytes`.
+
+**Soft breach** (`memory_soft_limit_bytes`, default 4 GiB): the *next*
+`execute()` result — whether a plain string or the `result` field of an
+error dict — gets exactly one trailing line appended:
+
+```
+[REPL memory] RSS 4.30 GiB exceeds the 4.00 GiB soft limit — delete
+DataFrames you no longer need (del name) before continuing.
+```
+
+(The `error` field itself is left unsuffixed — only `result` carries the
+hint, so log/alerting code that keys off `error` sees the plain message.)
+The observer also logs one WARNING per breach *episode* — re-armed only
+once RSS drops below **90 %** of the soft limit, so a worker sitting right
+at the threshold doesn't spam a warning on every poll.
+
+**Hard breach** (`memory_hard_limit_bytes`, default 8 GiB): the observer
+kills the worker within one `observer_poll_ms` cycle. `_classify_death()`
+consults the observer's recorded verdict **before** falling back to the
+stderr-marker heuristic, so the `memory` cause is deterministic — it does
+not depend on the killed process having written anything to stderr. An
+**idle** worker over the hard limit is killed too (a leaked namespace is
+still host memory); the pool's next `acquire()` for that session
+transparently restarts it (a crash restart, cause named in the restart-loop
+warning — see §4b).
+
+Both defaults are **empirically calibrated** — see
+[`artifacts/logs/feat-521-memory-calibration.md`](../artifacts/logs/feat-521-memory-calibration.md)
+for the measurements and the reconciliation with the approved 4 GiB soft /
+8 GiB hard values.
+
+### Host memory reserve
+
+`WorkerPool` also protects the *host* as a whole, independent of any
+single worker's own limits: `_top_up_prewarmed()` and the spawn branch of
+`acquire()` both check the **effective** available memory —
+`psutil.virtual_memory().available`, capped by cgroup v2's
+`memory.max - memory.current` when `/sys/fs/cgroup/memory.max` is readable
+and not `"max"` (unlimited) — against `host_memory_reserve_bytes` (default
+2 GiB):
+
+- Below the reserve, prewarm top-up silently skips (DEBUG log) and
+  `acquire()` raises `WorkerPoolExhaustedError` naming the pressure — but
+  **only when it would spawn**. An existing live session and consuming an
+  already-booted prewarmed spare are never blocked (neither one spawns
+  anything new).
+- The maintenance sweep additionally **evicts prewarmed spares** (never
+  bound sessions) while under pressure, and logs the pool's aggregate RSS
+  (`WorkerPool.memory_summary()`) at INFO every sweep whenever any worker
+  is over its own soft limit.
+
+```python
+summary = pool.memory_summary()
+# {"workers": 3, "rss_total": 2415919104, "host_available": 8589934592}
+```
+
+### Not covered
+
+- `execution_mode="inprocess"` (§3b) has **no** memory or observation
+  guardrails — nothing can be measured or killed per snippet without
+  process isolation. `InProcessHandle.verdict()` always reports
+  `"unavailable"`, and a debug log names the ignored `WorkerConfig` fields
+  the first time such a handle is built, so misconfiguration is visible
+  without implying enforcement that doesn't exist.
+- Windows: see §5 below.
+
 ## 4. Namespace API (for integrators)
 
 `tool.locals` / `tool.globals` are **no longer the source of truth** for
@@ -355,6 +520,16 @@ WorkerPool: session 'pythonrepl-<uuid>' restarted 3 times in the last 60s —
 possible restart loop (last worker exit code=-9, stderr tail='...')
 ```
 
+**FEAT-521**: when the observer recorded a hard RSS breach on the dead
+worker, the warning names it explicitly instead of leaving you to guess
+from the exit code alone:
+
+```
+WorkerPool: session 'pythonrepl-<uuid>' restarted 3 times in the last 60s —
+possible restart loop (last worker exit code=-9, stderr tail='...',
+memory cause: rss=8993459200 limit=8589934592)
+```
+
 The per-session count is also readable programmatically:
 
 ```python
@@ -371,10 +546,11 @@ see it, check, in order:
    workers booting concurrently).
 2. **Host load** — bootstrap is CPU/IO bound, and 12–14 s under 3× CPU
    oversubscription is measured, not hypothetical.
-3. **The reported exit code and stderr tail** — `-9` means the host killed it
-   (deadline or bootstrap timeout); a traceback in the tail means the worker
-   died on its own (e.g. an import failure, or `RLIMIT_AS` too tight for
-   pandas/numpy to `mmap` their extensions).
+3. **The reported exit code, stderr tail, and memory cause** — `-9` means the
+   host killed it (deadline, bootstrap timeout, or a FEAT-521 hard RSS
+   breach — check for a `memory cause:` suffix, §3c); a traceback in the
+   tail means the worker died on its own (e.g. an import failure, or
+   `RLIMIT_AS` too tight for pandas/numpy to `mmap` their extensions).
 4. **The code being run** — a genuine runaway loop hitting `deadline_ms` on
    every call is a *correct* restart loop; the warning is then telling you the
    LLM keeps submitting non-terminating code.
@@ -453,6 +629,10 @@ document otherwise describes.**
 | CPU ceiling (`RLIMIT_CPU`) | ✅ | ❌ **not enforced at all** |
 | File-descriptor ceiling (`RLIMIT_NOFILE`) | ✅ | ❌ **not enforced at all** |
 | No core dumps (`RLIMIT_CORE=0`) | ✅ | N/A (no Windows core-dump equivalent applied) |
+| Process observation / verdicts (FEAT-521, §2c) | ✅ | ❌ `ProcessObserver.verdict()` always reports `"unavailable"` |
+| Interrupt-before-kill (FEAT-521, §2c) | ✅ (`interrupt_before_kill=True` default) | ❌ `interrupt()` always returns `False` without sending anything — `SIGINT` semantics on Windows need a shared console and are unreliable; every `deadline_ms` breach goes straight to `TerminateProcess`, same as `interrupt_before_kill=False` on POSIX |
+| Memory guardrails — soft hint / hard kill (FEAT-521, §3c) | ✅ | ❌ **not enforced** — no observer means no RSS sampling to trigger either one |
+| Host memory reserve (FEAT-521, §3c) | ✅ (`psutil.virtual_memory()`, optionally cgroup v2) | ✅ `psutil.virtual_memory()` works cross-platform — this ONE guardrail still functions on Windows even though the per-worker ones above do not (cgroup v2 is Linux-only and silently contributes nothing there) |
 
 `resource.setrlimit()` is POSIX-only. On import failure, the worker logs a
 visible `logger.warning` ("rlimits are POSIX-only... running WITHOUT
@@ -503,16 +683,39 @@ implemented in this feature.
   `WorkerBootstrapError` with the child's `/proc` state, a thread-starvation
   cause, the stdout tail, and worker-side stage markers on stderr (§6
   "Reading a `WorkerBootstrapError`").
+- **FEAT-521 — idle/busy detection & memory guardrails**: added
+  `ProcessObserver` (§2c) giving every live worker a continuous, host-side
+  busy/hung verdict (`booting`/`settled`/`computing`/`stalled`/
+  `unavailable`) instead of the previous binary "reply arrived or deadline
+  expired" signal. Made the `deadline_ms` breach **interruptible**: SIGINT
+  first (namespace-preserving), `SIGKILL` only as the fallback
+  (`interrupt_before_kill`, default `True`). Replaced the RLIMIT_AS-only
+  memory story with **RSS-based** soft/hard guardrails
+  (`memory_soft_limit_bytes`/`memory_hard_limit_bytes`, §3c) — a soft
+  breach hints the LLM to free memory, a hard breach kills the worker
+  deterministically (no more stderr-substring guessing for the `memory`
+  cause). Added a host-wide memory reserve + prewarm-spare eviction under
+  pressure (`host_memory_reserve_bytes`, cgroup v2-aware). Bootstrap
+  diagnostics now read from the observer's continuous ring instead of a
+  one-shot `/proc` snapshot, and an optional `bootstrap_stall_ms` can fail
+  a stalled bootstrap early. See
+  `sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md` and
+  [`artifacts/logs/feat-521-memory-calibration.md`](../artifacts/logs/feat-521-memory-calibration.md).
 
 ### Reading a `WorkerBootstrapError`
 
 Since the diagnostics pass that followed FEAT-500, the message a worker that
-never sent its ready frame produces carries three extra facts:
+never sent its ready frame produces carries three extra facts. **FEAT-521
+changed the middle one**: the process-state snapshot used to be a one-shot
+`/proc` read taken at the moment of the kill; it now comes from the
+observer's continuous sample ring (see §2c "Bootstrap diagnostics"), so it
+can distinguish "never got CPU at all" (`starved`) from "got CPU, then
+stopped advancing" (`stalled`) — a one-shot snapshot cannot tell those apart:
 
 ```
 REPL worker pid=31958 did not become ready within 30000 ms
   (no ready frame within the bootstrap budget;
-   process: state=S (sleeping) threads=13 vmpeak=1234567 kB wchan=pipe_read cpu=1.20s);
+   booting, cpu flat since last sample, state=sleeping wchan=futex_wait_queue (stalled));
   stderr tail: repl_worker[pid=31958] rlimits applied (...) | repl_worker[pid=31958] building namespace (...)
 ```
 
@@ -521,11 +724,14 @@ REPL worker pid=31958 did not become ready within 30000 ms
   read never got an executor thread — all N thread(s) ... were busy`): in
   the second case the worker may be perfectly healthy and the fix is
   `executor_max_workers` / `prewarm_pool_size`, not the worker.
-- **`process:`** is a `/proc/<pid>` snapshot taken *before* the kill
-  (Linux only): `state=T` means stopped (SIGSTOP/SIGTTOU/debugger),
-  `state=S` + `wchan` names what it sleeps on, `state=R` with a tiny `cpu=`
-  means it never got scheduled, a huge `vmpeak` means it is thrashing
-  against `rlimit_as_bytes`.
+- **The observer progress note** (FEAT-521, replaces the old one-shot
+  `process:` snapshot) is one of two shapes: `booting, cpu advanced <N> s
+  in <M> s (starved)` — the child never got scheduled — or `booting, cpu
+  flat since last sample, state=<psutil status> wchan=<wchan> (stalled)`
+  (Linux `wchan` only) — it ran, then stopped making progress. A huge
+  `vmpeak` in the earlier VA-based diagnostics meant thrashing against
+  `rlimit_as_bytes`; that check still exists (see §3) but is now
+  independent of this line.
 - **`stderr tail`** now always contains the worker's own stage markers
   (`interpreter up` → `rlimits applied` → `building namespace` →
   `namespace built ... sending ready frame`), written unbuffered to stderr
@@ -548,3 +754,10 @@ REPL worker pid=31958 did not become ready within 30000 ms
   the procedure for measuring both on your own host.
 - [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) —
   the `RLIMIT_AS` calibration evidence referenced in §3.
+- `sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md` — the
+  FEAT-521 spec (observer design, two-stage deadline, memory guardrails,
+  acceptance criteria) referenced throughout §2c/§3/§3c.
+- [`artifacts/logs/feat-521-memory-calibration.md`](../artifacts/logs/feat-521-memory-calibration.md) —
+  the `memory_soft_limit_bytes`/`memory_hard_limit_bytes` calibration
+  evidence referenced in §3c, plus the observation-overhead measurements
+  for AC2.
