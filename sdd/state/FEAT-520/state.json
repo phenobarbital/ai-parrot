@@ -40,7 +40,7 @@
     },
     "output": {
       "proposal_path": "sdd/proposals/graphindex-postgres-backend.proposal.md",
-      "commit_sha": "13983c6ce"
+      "commit_sha": "9c06c3c22"
     }
   },
   "budget": {
