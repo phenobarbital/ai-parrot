@@ -100,6 +100,7 @@ from ._semantics import (
 )
 from ._shell import document_shell
 from ._table_format import format_cell_html
+from .folium_map import build_map_document
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ _SURFACE_NAME = "interactive-html"
 
 #: Components intercepted BEFORE lowering — their real (graphics/nested)
 #: rendering is this renderer's own job, not their catalog `lower()`.
-_INTERCEPTED = {"Chart", "DataTable", "Infographic"}
+_INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map"}
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -556,6 +557,7 @@ def _esc(value: Any) -> str:
             "Chart",
             "DataTable",
             "Infographic",
+            "Map",
         },
     ),
 )
@@ -686,6 +688,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             return self._render_datatable(comp)
         if name == "Infographic":
             return self._render_infographic(comp)
+        if name == "Map":
+            return self._render_map(comp)
         node = self._reconstruct(comp["id"], by_id)
         return self._render_basic(node, degradations)
 
@@ -697,6 +701,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             return self._render_chart(properties)
         if name == "DataTable":
             return self._render_datatable(properties)
+        if name == "Map":
+            return self._render_map(properties)
         try:
             entry = get_component(name)
         except KeyError:
@@ -956,7 +962,31 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         label_html = f'<span class="a2ui-field-label">{_esc(label)}</span>' if label else ""
         return f'<div class="a2ui-field">{label_html}<span class="a2ui-field-value">{_esc(value)}</span></div>'
 
-    # -- Chart / DataTable / Infographic (graphics-needing, intercepted) ----
+    # -- Chart / DataTable / Infographic / Map (graphics-needing, intercepted) -
+
+    def _render_map(self, props: dict[str, Any]) -> str:
+        """Render a live, offline-safe Leaflet map ``<iframe>`` from RESOLVED
+        Map properties (FEAT-522).
+
+        Bypasses catalog lowering entirely (``MapComponent.lower()``
+        intentionally degrades to a text layer-summary — real map rendering
+        is a renderer concern, same precedent as ``_render_chart``/
+        ``_render_datatable``). ``props`` is the baked component's own
+        top-level dict (v1.0 — never nested under a "properties" key),
+        mirroring :meth:`_render_chart`'s exact shape.
+
+        Calls the shared, synchronous
+        :func:`~parrot.outputs.a2ui_renderers.folium_map.build_map_document`
+        directly — never ``await FoliumMapRenderer().render(...)``, since
+        this class's entire internal render chain
+        (``_render_top``/``_render_descriptor``) is synchronous (spec §2).
+        By this point the document is already offline-safe (every folium
+        default CDN resource swapped for an inlined ``data:`` URI —
+        TASK-2787), so embedding it in an ``iframe srcdoc`` leaks nothing.
+        """
+        document, _ = build_map_document(props, cluster_threshold=500)
+        escaped = html.escape(document.decode("utf-8"))
+        return f'<iframe sandbox="allow-scripts allow-popups" srcdoc="{escaped}"></iframe>'
 
     def _render_chart(self, props: dict[str, Any]) -> str:
         """Render a live Chart.js ``<canvas>`` from RESOLVED Chart properties.
