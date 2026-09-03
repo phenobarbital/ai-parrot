@@ -51,6 +51,29 @@ GRAPHINDEX_FTS_REGCONFIG: dict[str, str] = {
     "sym:": "simple",
 }
 
+#: ANN index type for ``graphindex.embeddings``. Provisional default
+#: ``"hnsw"`` (pgvector >=0.5.0) — the final choice is TASK-2770's spike
+#: output; config-overridable in the meantime (``"hnsw"`` or ``"ivfflat"``).
+GRAPHINDEX_ANN_INDEX_KIND: str = config.get("GRAPHINDEX_ANN_INDEX_KIND", fallback="hnsw")
+
+
+def validate_embedding_dim(vector: list[float], *, dim: Optional[int] = None) -> None:
+    """Reject a vector whose length does not match the configured dimension.
+
+    Args:
+        vector: The embedding to validate.
+        dim: Expected dimension; defaults to ``GRAPHINDEX_EMBEDDING_DIM``.
+
+    Raises:
+        ValueError: When ``len(vector) != dim``.
+    """
+    expected = dim if dim is not None else GRAPHINDEX_EMBEDDING_DIM
+    if len(vector) != expected:
+        raise ValueError(
+            f"Embedding dimension mismatch: expected {expected}, got {len(vector)} "
+            "(GRAPHINDEX_EMBEDDING_DIM configures the fixed column width)."
+        )
+
 
 def resolve_regconfig(namespace: str) -> str:
     """Resolve the FTS regconfig for a namespace via longest-prefix match.
@@ -298,6 +321,47 @@ async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) 
                 PG_SCHEMA_VERSION,
             )
     logger.info("graphindex Postgres schema '%s' ensured at version %s", schema, PG_SCHEMA_VERSION)
+
+
+async def ensure_ann_index(
+    pool: asyncpg.Pool,
+    *,
+    schema: str = GRAPHINDEX_PG_SCHEMA,
+    kind: str = GRAPHINDEX_ANN_INDEX_KIND,
+) -> None:
+    """Idempotently create the ANN index on ``graphindex.embeddings.embedding``.
+
+    Config-driven, not called by :func:`ensure_schema` automatically —
+    building an ANN index is a deliberate operational step (ivfflat in
+    particular benefits from running after data is loaded), and its
+    final index-type choice is TASK-2770's spike output. ``kind`` is
+    provisional (``"hnsw"``, pgvector >=0.5.0) until then.
+
+    Args:
+        pool: An asyncpg connection pool.
+        schema: The target schema name.
+        kind: ``"hnsw"`` or ``"ivfflat"``.
+
+    Raises:
+        ValueError: For an unknown ``kind``.
+    """
+    index_name = f"embeddings_{kind}_idx"
+    if kind == "hnsw":
+        ddl = (
+            f"CREATE INDEX IF NOT EXISTS {index_name} ON {schema}.embeddings "
+            "USING hnsw (embedding vector_cosine_ops)"
+        )
+    elif kind == "ivfflat":
+        ddl = (
+            f"CREATE INDEX IF NOT EXISTS {index_name} ON {schema}.embeddings "
+            "USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+        )
+    else:
+        raise ValueError(f"Unknown ANN index kind {kind!r} — expected 'hnsw' or 'ivfflat'")
+
+    async with pool.acquire() as conn:
+        await conn.execute(ddl)
+    logger.info("graphindex Postgres ANN index '%s' (%s) ensured on schema '%s'", index_name, kind, schema)
 
 
 async def create_pg_pool(

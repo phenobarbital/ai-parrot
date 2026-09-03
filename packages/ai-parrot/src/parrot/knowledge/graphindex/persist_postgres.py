@@ -47,6 +47,12 @@ FEAT-520 Module 4 adds the temporal READ contract (``as_of``/``history``/
 ``diff``, spec D5) — Postgres-only in v1. ``SQLitePersistence`` and
 ``GraphIndexPersistence`` do NOT grow these methods; callers feature
 -detect via ``hasattr``.
+
+FEAT-520 Module 6 adds ``upsert_embeddings`` — in-schema embeddings keyed
+``(version_id, model)`` (spec U4: ``PgVectorStore`` is explicitly NOT
+involved; zero ``parrot.stores.*`` imports). This gives TASK-2771's
+hybrid retrieval a KNN leg inside the same transaction snapshot as the
+graph and FTS legs.
 """
 
 from __future__ import annotations
@@ -66,6 +72,7 @@ from parrot.knowledge.graphindex.pg_schema import (
     create_pg_pool,
     ensure_schema,
     resolve_regconfig,
+    validate_embedding_dim,
 )
 from parrot.knowledge.graphindex.schema import (
     AssertionMeta,
@@ -1240,3 +1247,72 @@ class PostgresPersistence:
             edges_added=[dict(row) for row in edges_added],
             edges_removed=[dict(row) for row in edges_removed],
         )
+
+    # ------------------------------------------------------------------
+    # In-schema embeddings (Module 6) — KNN leg feeds TASK-2771's hybrid SQL
+    # ------------------------------------------------------------------
+
+    async def upsert_embeddings(
+        self,
+        ctx: TenantContext,
+        items: list[tuple[str, list[float]]],
+        *,
+        model: str = "",
+    ) -> int:
+        """Batch-upsert embeddings for the CURRENT version of each concept.
+
+        The seam the graphindex embed stage (``embed.py``) writes
+        through: ``(concept_id, vector)`` pairs, keyed in storage by
+        ``(version_id, model)`` with ``concept_id`` denormalized (spec
+        §3 Module 6). Concept ids with no current version are skipped
+        (not an error — the embed stage may race a not-yet-persisted
+        node; callers persist the graph first).
+
+        Args:
+            ctx: Tenant context (unused — see ``load_graph``).
+            items: ``(concept_id, vector)`` pairs.
+            model: Embedding model identifier.
+
+        Returns:
+            Number of embedding rows actually written.
+
+        Raises:
+            ValueError: When any vector's length does not match
+                ``GRAPHINDEX_EMBEDDING_DIM``.
+        """
+        if not items:
+            return 0
+        for _, vector in items:
+            validate_embedding_dim(vector)
+
+        pool = await self._ensure_pool()
+        written = 0
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for concept_id, vector in items:
+                    version_id = await conn.fetchval(
+                        f"""
+                        SELECT version_id FROM {self._schema}.node_versions
+                        WHERE concept_id = $1 AND upper_inf(validity)
+                        """,
+                        concept_id,
+                    )
+                    if version_id is None:
+                        logger.warning(
+                            "PostgresPersistence.upsert_embeddings: no current version for %r, skipped",
+                            concept_id,
+                        )
+                        continue
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self._schema}.embeddings (concept_id, version_id, model, embedding)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (version_id, model) DO UPDATE SET embedding = EXCLUDED.embedding
+                        """,
+                        concept_id,
+                        version_id,
+                        model,
+                        vector,
+                    )
+                    written += 1
+        return written

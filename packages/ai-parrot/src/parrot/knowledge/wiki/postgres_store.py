@@ -41,6 +41,12 @@ closed per spec): :meth:`orphan_sources` always returns ``[]`` (there is
 no registry to check "produced no pages" against), and :meth:`dump_edges`
 is not namespace-scoped (``graphindex.edges`` has no ``namespace`` column
 — same limitation the graph plane lives with).
+
+FEAT-520 Module 6 (TASK-2769) upgrades :meth:`search_vector` from the
+TASK-2768 interim (brute-force :func:`~parrot.knowledge.wiki.store.
+rank_by_cosine`) to a native pgvector KNN query (``<=>`` cosine distance,
+joined to CURRENT versions only), and adds a dimension guard to both
+:meth:`upsert_embedding` and :meth:`search_vector`.
 """
 
 from __future__ import annotations
@@ -56,26 +62,15 @@ from parrot.knowledge.graphindex.pg_schema import (
     create_pg_pool,
     ensure_schema,
     resolve_regconfig,
+    validate_embedding_dim,
 )
 from parrot.knowledge.wiki.store import (
     BaseWikiStore,
     WikiPageRecord,
     estimate_tokens,
-    rank_by_cosine,
 )
 
 logger = logging.getLogger(__name__)
-
-#: Page stub columns shared by list_pages/search_fts/neighbors-style reads.
-_STUB_COLUMNS = (
-    "concept_id",
-    "node_id",
-    "title",
-    "category",
-    "summary",
-    "source_id",
-    "token_count",
-)
 
 
 def _parse_updated_at(value: Optional[str]) -> datetime:
@@ -411,7 +406,12 @@ class PostgresWikiStore(BaseWikiStore):
             concept_id: Page the vector belongs to.
             vector: Embedding as a list of floats.
             model: Identifier of the embedding model used.
+
+        Raises:
+            ValueError: When ``len(vector)`` does not match
+                ``GRAPHINDEX_EMBEDDING_DIM``.
         """
+        validate_embedding_dim(vector)
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             version_id = await conn.fetchval(
@@ -561,36 +561,45 @@ class PostgresWikiStore(BaseWikiStore):
         return [dict(row) for row in rows]
 
     async def search_vector(self, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
-        """Cosine-similarity search over stored page embeddings.
+        """Cosine-similarity KNN search over stored page embeddings (pgvector).
 
-        Brute-force in-process ranking via the shared
-        :func:`~parrot.knowledge.wiki.store.rank_by_cosine` helper —
-        interim path until TASK-2769 lands the native KNN leg.
+        Native ``<=>`` (cosine distance) ANN operator, joined to CURRENT
+        versions only (spec D3) — the KNN leg TASK-2769 lands, superseding
+        the brute-force :func:`~parrot.knowledge.wiki.store.rank_by_cosine`
+        path TASK-2768 shipped as an interim.
 
         Args:
             embedding: Query vector.
             limit: Maximum results.
 
         Returns:
-            Stub dicts with a ``score`` key in [-1, 1] (cosine).
+            Stub dicts with a ``score`` key in [-1, 1] (``1 - cosine
+            distance``, matching :func:`rank_by_cosine`'s scale),
+            nearest-first.
+
+        Raises:
+            ValueError: When ``len(embedding)`` does not match
+                ``GRAPHINDEX_EMBEDDING_DIM``.
         """
+        validate_embedding_dim(embedding)
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 f"""
-                SELECT emb.embedding, n.concept_id, n.node_id, nv.title, n.category,
-                       nv.summary, nv.source_id, nv.token_count
+                SELECT n.concept_id, n.node_id, nv.title, n.category, nv.summary,
+                       nv.source_id, nv.token_count, 1 - (emb.embedding <=> $1) AS score
                 FROM {self._schema}.embeddings emb
                 JOIN {self._schema}.node_versions nv ON nv.version_id = emb.version_id
                 JOIN {self._schema}.nodes n ON n.concept_id = nv.concept_id
-                WHERE upper_inf(nv.validity) AND n.namespace = $1
+                WHERE upper_inf(nv.validity) AND n.namespace = $2
+                ORDER BY emb.embedding <=> $1
+                LIMIT $3
                 """,
+                embedding,
                 self._wiki_name,
+                limit,
             )
-        candidates: list[tuple[dict[str, Any], list[float]]] = [
-            ({k: row[k] for k in _STUB_COLUMNS}, list(row["embedding"])) for row in rows
-        ]
-        return rank_by_cosine(embedding, candidates, limit=limit)
+        return [dict(row) for row in rows]
 
     async def neighbors(
         self,
