@@ -1033,3 +1033,31 @@ class TestJsonSchemaRendererContentType:
         prop = result.content["properties"]["notes"]
         assert "x-content-type" not in prop
 
+    @pytest.mark.asyncio
+    async def test_jsonschema_emits_accept_content_types(self):
+        """x-accept-content-types present (as the declared list) when field
+        declares accept_content_types; absent when it does not."""
+        from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+
+        renderer = JsonSchemaRenderer()
+        field = FormField(
+            field_id="answer",
+            field_type=FieldType.TEXT_AREA,
+            label="Answer",
+            accept_content_types=["text/plain", "application/json"],
+        )
+        other_field = FormField(
+            field_id="plain",
+            field_type=FieldType.TEXT_AREA,
+            label="Plain",
+        )
+        form = FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="s", fields=[field, other_field])]
+        )
+        result = await renderer.render(form)
+        prop = result.content["properties"]["answer"]
+        assert prop.get("x-accept-content-types") == ["text/plain", "application/json"]
+        other_prop = result.content["properties"]["plain"]
+        assert "x-accept-content-types" not in other_prop
+

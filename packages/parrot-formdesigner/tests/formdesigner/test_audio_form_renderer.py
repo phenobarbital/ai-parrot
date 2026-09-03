@@ -270,6 +270,53 @@ class TestRender:
 
 
 # ---------------------------------------------------------------------------
+# FEAT-488: audio renderer propagates accept_content_types for submission shape
+# ---------------------------------------------------------------------------
+
+
+class TestAudioRendererContentType:
+    """Tests for AudioFormRenderer propagating FormField.accept_content_types
+    onto AudioQuestion (FEAT-488)."""
+
+    @pytest.mark.asyncio
+    async def test_audio_renderer_accept_content_types(
+        self, renderer: AudioFormRenderer
+    ) -> None:
+        """AudioQuestion.accept_content_types mirrors the field's declared
+        list so the client knows it may submit a dict answer; absent
+        (None) when the field declares nothing."""
+        form = FormSchema(
+            form_id="test-content-type",
+            title="Content Type Form",
+            sections=[
+                FormSection(
+                    section_id="s1",
+                    fields=[
+                        FormField(
+                            field_id="voice_answer",
+                            field_type=FieldType.TEXT_AREA,
+                            label="Say something",
+                            accept_content_types=["text/plain", "application/json"],
+                        ),
+                        FormField(
+                            field_id="plain_answer",
+                            field_type=FieldType.TEXT_AREA,
+                            label="Plain",
+                        ),
+                    ],
+                )
+            ],
+        )
+        result = await renderer.render(form)
+        questions = {q["field_id"]: q for q in result.content["questions"]}
+        assert questions["voice_answer"]["accept_content_types"] == [
+            "text/plain",
+            "application/json",
+        ]
+        assert questions["plain_answer"]["accept_content_types"] is None
+
+
+# ---------------------------------------------------------------------------
 # FEAT-236 TASK-1540: voice-mode classification + SuperTonic-first synthesizer
 # ---------------------------------------------------------------------------
 
