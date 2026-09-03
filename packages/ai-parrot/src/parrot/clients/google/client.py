@@ -131,6 +131,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ``combined_call_prefixes``. Gemini 3.x models listed here have been
     # validated by upstream evaluation to accept both simultaneously.
     _default_combined_call_prefixes: tuple[str, ...] = (
+        "gemini-3.8-flash",
         "gemini-3.7-flash",
         "gemini-3.7-pro",
         "gemini-3.6-flash",

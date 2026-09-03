@@ -658,7 +658,9 @@ class BedrockConverseBase(AbstractClient):
                 [{"type": "text", "text": ...}]}``).
             model: Bedrock model ID (already translated). Falls back to
                 ``self.model`` translated via :meth:`_translate_model`.
-            max_tokens: Maximum completion tokens.
+            max_tokens: Maximum completion tokens. ``None`` (the default)
+                resolves via :meth:`_resolve_max_tokens` — the per-instance
+                ``max_tokens``, then :attr:`_default_max_tokens` (4096).
             temperature: Sampling temperature.
             system_prompt: Optional system prompt string.
 
@@ -666,6 +668,7 @@ class BedrockConverseBase(AbstractClient):
             The decoded Anthropic-native response body (``dict``) — NOT the
             Converse envelope shape.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         await self._ensure_client()
         resolved_model = model or self._translate_model(self.model)
         max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)

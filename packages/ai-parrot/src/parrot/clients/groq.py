@@ -924,7 +924,9 @@ class GroqClient(OpenAIBaseClient):
         request_args = {
             "model": model,
             "messages": messages,
-            "max_tokens": 4096,
+            # Not a literal: 4096 is the exact value Groq refuses (the cap is
+            # exclusive), and a literal here also ignores a configured budget.
+            "max_tokens": self._resolve_max_tokens(None, model),
             "temperature": 0.1,
             "top_p": 0.9,
             "stream": False,
@@ -1003,7 +1005,7 @@ class GroqClient(OpenAIBaseClient):
             continue_args = {
                 "model": model,
                 "messages": messages,
-                "max_tokens": 4096,
+                "max_tokens": self._resolve_max_tokens(None, model),
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "stream": False,
@@ -1034,7 +1036,7 @@ class GroqClient(OpenAIBaseClient):
         self,
         text: str,
         model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.1,
         system_prompt: Optional[str] = None,
         top_p: float = 0.9,
@@ -1046,13 +1048,17 @@ class GroqClient(OpenAIBaseClient):
         Args:
             text (str): The text to be summarized.
             model (str): The Groq model to use.
-            max_tokens (int): Maximum tokens for the response.
+            max_tokens (Optional[int]): Maximum tokens for the response.
+                ``None`` (the default) resolves via ``_resolve_max_tokens()``
+                — the per-instance ``max_tokens``, then
+                ``_default_max_tokens`` (4095 for Groq).
             temperature (float): Sampling temperature.
             top_p (float): Top-p sampling.
 
         Returns:
             str: The summarized text.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = text
@@ -1127,7 +1133,7 @@ class GroqClient(OpenAIBaseClient):
         text: str,
         model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
         temperature: Optional[float] = 0.1,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         top_p: float = 0.9,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1143,6 +1149,7 @@ class GroqClient(OpenAIBaseClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         await self._ensure_client()
 
         model = model.value if isinstance(model, GroqModel) else model
@@ -1261,7 +1268,7 @@ Format your response clearly with these sections.
         product_name: str,
         model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
         temperature: Optional[float] = 0.1,
-        max_tokens: int = 1024,
+        max_tokens: Optional[int] = None,
         top_p: float = 0.9,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1275,11 +1282,15 @@ Format your response clearly with these sections.
             product_name (str): Name of the product being reviewed.
             model (Union[GroqModel, str]): The model to use.
             temperature (float): Sampling temperature for response generation.
-            max_tokens (int): Maximum tokens in response.
+            max_tokens (Optional[int]): Maximum tokens in response. ``None``
+                (the default) resolves via ``_resolve_max_tokens()`` — the
+                per-instance ``max_tokens``, then ``_default_max_tokens``
+                (4095 for Groq).
             top_p (float): Top-p sampling parameter.
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         await self._ensure_client()
 
         turn_id = str(uuid.uuid4())

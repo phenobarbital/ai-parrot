@@ -101,6 +101,45 @@ def test_max_tokens_defaults_to_none(module_path, class_name, method):
     )
 
 
+@pytest.mark.parametrize("module_path,class_name", CLIENT_PATHS)
+def test_no_method_hardcodes_a_numeric_max_tokens(module_path, class_name):
+    """Sweep EVERY method, not just the three public entrypoints.
+
+    The convenience methods are where this bug keeps reappearing: they build a
+    provider payload directly, so a hardcoded default silently shadows both the
+    constructor's ``max_tokens`` and the client's ``_default_max_tokens``. Two
+    rounds of this fix missed them --- ``AnthropicClient``'s five summarize /
+    translate / key-points / sentiment / review helpers passed
+    ``self.max_tokens`` straight through, and ``GroqClient``'s three helpers
+    pinned 1024 --- because the entrypoint-only check above never looked at
+    them.
+
+    A required parameter (no default) is fine; only a numeric default is not.
+    """
+    module = pytest.importorskip(module_path)
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        pytest.skip(f"{class_name} not available")
+
+    offenders = []
+    for name, func in inspect.getmembers(cls, inspect.isfunction):
+        # Only methods this project defines --- skip inherited third-party ones.
+        if not getattr(func, "__module__", "").startswith("parrot.clients"):
+            continue
+        param = inspect.signature(func).parameters.get("max_tokens")
+        if param is None:
+            continue
+        if isinstance(param.default, (int, float)) and not isinstance(param.default, bool):
+            offenders.append(f"{name}(max_tokens={param.default!r})")
+
+    assert not offenders, (
+        f"{class_name} hardcodes a numeric max_tokens default in: "
+        + ", ".join(sorted(offenders))
+        + ". Default it to None and resolve via _resolve_max_tokens() so the "
+        "constructor's max_tokens and the client's _default_max_tokens are honoured."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resolution chain
 # ---------------------------------------------------------------------------
