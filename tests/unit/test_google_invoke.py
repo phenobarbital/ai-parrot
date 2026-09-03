@@ -252,3 +252,121 @@ class TestGoogleInvoke:
         )
         assert msg2.output == ""
 
+
+
+def _make_extractable_response(text: str, finish_reason: str = "STOP"):
+    """A mock response whose text ``_safe_extract_text`` can actually read.
+
+    The shared ``_make_mock_response`` builds parts as bare ``SimpleNamespace``
+    objects with no ``thought`` attribute. ``_safe_extract_text`` evaluates
+    ``part.thought is True`` inside a guarded block, so that raises and the
+    extractor returns ``""`` — which is why tests built on it never exercise
+    real parsing. Giving the part ``thought``/``function_call`` fixes that.
+    """
+    part = SimpleNamespace(text=text, thought=False, function_call=None)
+    content = SimpleNamespace(parts=[part])
+    candidate = SimpleNamespace(content=content, finish_reason=finish_reason)
+    usage_metadata = SimpleNamespace(
+        prompt_token_count=10, candidates_token_count=5, total_token_count=15
+    )
+    return SimpleNamespace(candidates=[candidate], text=text, usage_metadata=usage_metadata)
+
+
+class TestGoogleInvokeReformatRecovery:
+    """invoke() must never hand back a raw ``str`` for a structured request.
+
+    ``_parse_structured_output`` returns the input text verbatim when the
+    response is not valid JSON. Before this recovery existed, invoke() passed
+    that string straight through as ``.output``, so a caller that asked for a
+    Pydantic model received a ``str`` and crashed far from the cause. The
+    recovery mirrors the streaming/tool path's ``isinstance(parsed, str)``
+    fallback: reformat via a second call, and raise if that also fails.
+    """
+
+    async def test_working_model_is_untouched(self, mock_google_client):
+        """A response that parses cleanly must not trigger a reformat call.
+
+        Blast-radius guard: every model that satisfies the schema today keeps
+        its exact behaviour, with no extra LLM call.
+        """
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_extractable_response('{"entities": ["Alice"], "count": 1}')
+        )
+        mock_google_client._reformat_to_structured = AsyncMock(
+            side_effect=AssertionError("reformat must not run when the parse succeeds")
+        )
+        result = await mock_google_client.invoke(
+            "extract", output_type=ExtractedData, model="gemini-2.5-flash"
+        )
+        assert isinstance(result.output, ExtractedData)
+        assert result.output.count == 1
+        mock_google_client._reformat_to_structured.assert_not_called()
+
+    async def test_raw_string_triggers_reformat_recovery(self, mock_google_client):
+        """A parse that leaks a raw string is recovered via a reformat call."""
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_extractable_response("I could not produce JSON, sorry.")
+        )
+        recovered = ExtractedData(entities=["Alice"], count=1)
+        mock_google_client._reformat_to_structured = AsyncMock(return_value=recovered)
+
+        result = await mock_google_client.invoke(
+            "extract", output_type=ExtractedData, model="gemini-2.5-flash"
+        )
+
+        assert result.output is recovered
+        mock_google_client._reformat_to_structured.assert_awaited_once()
+        # The raw model text — not the prompt — is what gets reformatted.
+        assert (
+            mock_google_client._reformat_to_structured.await_args.args[0]
+            == "I could not produce JSON, sorry."
+        )
+
+    async def test_reformat_still_failing_raises_invoke_error(self, mock_google_client):
+        """When reformat also returns text, invoke() raises instead of leaking it."""
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_extractable_response("still not json")
+        )
+        mock_google_client._reformat_to_structured = AsyncMock(
+            return_value="still not json either"
+        )
+
+        with pytest.raises(InvokeError, match="even after reformat recovery"):
+            await mock_google_client.invoke(
+                "extract", output_type=ExtractedData, model="gemini-2.5-flash"
+            )
+
+    async def test_empty_response_does_not_trigger_reformat(self, mock_google_client):
+        """A blank extraction must not burn a second call on nothing.
+
+        An empty response also parses to ``""``, which is a ``str`` — but there
+        is no text for a reformat call to work from, so recovery is skipped.
+        """
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_extractable_response("   ")
+        )
+        mock_google_client._reformat_to_structured = AsyncMock(
+            side_effect=AssertionError("must not reformat an empty response")
+        )
+        result = await mock_google_client.invoke(
+            "extract", output_type=ExtractedData, model="gemini-2.5-flash"
+        )
+        assert isinstance(result.output, str)
+        mock_google_client._reformat_to_structured.assert_not_called()
+
+    async def test_custom_parser_path_skips_recovery(self, mock_google_client):
+        """A caller-supplied custom_parser owns its own return type."""
+        from parrot.models.outputs import StructuredOutputConfig
+
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_extractable_response("anything")
+        )
+        mock_google_client._reformat_to_structured = AsyncMock(
+            side_effect=AssertionError("custom_parser results must not be reformatted")
+        )
+        cfg = StructuredOutputConfig(
+            output_type=ExtractedData, custom_parser=lambda text: f"parsed:{text}"
+        )
+        result = await mock_google_client.invoke("x", structured_output=cfg)
+        assert result.output == "parsed:anything"
+        mock_google_client._reformat_to_structured.assert_not_called()

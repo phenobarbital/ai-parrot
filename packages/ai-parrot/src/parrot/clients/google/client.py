@@ -5709,6 +5709,44 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         finish_reason=self._extract_finish_reason(final_response),
                         model=resolved_model,
                     )
+                    if isinstance(output, str) and output.strip():
+                        # Malformed JSON despite response_schema. Recover via a
+                        # reformat call — mirrors the streaming/tool path's
+                        # ``isinstance(parsed, str)`` recovery — so invoke() honours
+                        # its documented contract that ``.output`` is the parsed model
+                        # for a structured request, never a bare string.
+                        #
+                        # NOTE: this is unreachable for a response truncated at the
+                        # output cap. ``_raise_if_truncated`` above raises
+                        # ``TruncatedResponseError`` before the parser runs, so a
+                        # model that degenerates until it hits ``max_tokens`` (e.g.
+                        # gemini-3.1-flash-lite on this schema) never arrives here —
+                        # verified live 2026-09-03 at 4096/16384/65536 budgets. This
+                        # path is for a response that finished at STOP but still
+                        # failed to parse.
+                        #
+                        # The ``output.strip()`` guard matters: an empty extraction
+                        # also parses to ``""``, and there is nothing for a reformat
+                        # call to work from — recovering there would just burn a
+                        # second request. Same idiom as the combined-mode path.
+                        self.logger.warning(
+                            "invoke(): structured parse returned raw text for %s — "
+                            "falling back to a reformat call.",
+                            resolved_model,
+                        )
+                        output = await self._reformat_to_structured(
+                            raw_text,
+                            config,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                        if isinstance(output, str):
+                            raise InvokeError(
+                                "GoogleGenAIClient.invoke(): structured output "
+                                f"({getattr(config, 'output_type', None) or output_type!r}) "
+                                f"requested but {resolved_model} returned unparseable "
+                                "text even after reformat recovery."
+                            )
 
             # Extract usage
             usage_dict: Dict[str, Any] = {}
