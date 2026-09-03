@@ -91,7 +91,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Sequential after TASK-2777 because both modify handle.py; also requires child-side SIGINT behavior from TASK-2776.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2778-handle-two-stage-deadline-interrupt.md"
+      "completed_at": "2026-09-03T14:28:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2778-handle-two-stage-deadline-interrupt.md"
     },
     {
       "id": "TASK-2779",
