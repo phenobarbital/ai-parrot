@@ -1,0 +1,94 @@
+# FEAT-498 TASK-2742 — TypeScript / TSX / JavaScript / Svelte <script> rules.
+#
+# Served ast-grep languages: typescript (this file's `language`), tsx and
+# javascript (via `aliases`). Svelte components are pre-extracted to their
+# <script> body by JavaScriptScanner._extract_script_blocks() before this
+# file ever sees them — there is no "svelte" ast-grep grammar.
+#
+# Kind names verified against ast-grep-py 0.45.3's built-in typescript
+# grammar (design §4.3). Class methods are extracted at depth 2 for the
+# symbol plane but are NEVER rendered into the outline (render.py's
+# _JS_RENDERED_KINDS excludes "method") — matches the walker, which only
+# ever emits top-level class/function/interface/type/const lines.
+language: typescript
+aliases: [tsx, javascript]
+summary: first_heading_comment
+
+symbols:
+  - id: class
+    rule: { kind: class_declaration }
+    name: { field: name }
+    doc: leading_comment_exported
+    exported: { inside: export_statement }
+    depth: 1
+
+  - id: function
+    rule: { kind: function_declaration }
+    name: { field: name }
+    doc: leading_comment_exported
+    exported: { inside: export_statement }
+    depth: 1
+
+  # method_definition inside a class_body — depth 2, `parent` resolved to
+  # the enclosing class_declaration's name. Not rendered by render.py.
+  - id: method
+    rule: { kind: method_definition, inside: { kind: class_body } }
+    name: { field: name }
+    doc: leading_comment
+    parent: { ancestor: class_declaration, name: { field: name } }
+    depth: 2
+
+  - id: interface
+    rule: { kind: interface_declaration }
+    name: { field: name }
+    doc: leading_comment_exported
+    exported: { inside: export_statement }
+    depth: 1
+
+  - id: type
+    rule: { kind: type_alias_declaration }
+    name: { field: name }
+    doc: leading_comment_exported
+    exported: { inside: export_statement }
+    depth: 1
+
+  # `export const NAME = ...;` — matched at the lexical_declaration level.
+  # Deliberately plain `leading_comment` (NOT `leading_comment_exported`):
+  # the JS/TS walker's own doc lookup for `lexical_declaration` has no
+  # export-wrapper-probing fallback, so an exported const's doc comment
+  # is a byte-parity casualty in the walker too (verified) — reproducing
+  # that asymmetry, not fixing it, is the parity contract. The name is
+  # the sole `identifier` inside the declaration's `variable_declarator`
+  # (a numeric/string initializer never contains one, so the `path`
+  # traversal cannot pick up the wrong node). Every match here is
+  # already export-wrapped by the `rule` itself, so `exported` is
+  # unconditionally true.
+  - id: const
+    rule: { kind: lexical_declaration, inside: { kind: export_statement } }
+    name: { path: [variable_declarator, identifier] }
+    doc: leading_comment
+    exported: always
+    depth: 1
+
+refs:
+  - rel: calls
+    rule: { kind: call_expression }
+    target: { field: function }
+    scope: { ancestor: [function_declaration, method_definition, class_declaration] }
+
+  # extends_clause/implements_clause are two distinct child kinds of
+  # class_heritage, with two distinct target-identifier kinds
+  # (`identifier` vs `type_identifier`) — verified against the grammar,
+  # hence two separate ref specs rather than one over class_heritage.
+  - rel: extends
+    rule: { kind: extends_clause }
+    target: { each: identifier }
+    scope: { ancestor: [class_declaration] }
+
+  - rel: implements
+    rule: { kind: implements_clause }
+    target: { each: type_identifier }
+    scope: { ancestor: [class_declaration] }
+
+imports:
+  - rule: { kind: import_statement }

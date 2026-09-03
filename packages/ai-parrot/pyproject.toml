@@ -254,6 +254,15 @@ wiki-languages = [
     "tree-sitter-perl>=0.23",
 ]
 
+# Optional declarative structural backend (FEAT-498): ast-grep-py powers
+# `languages/astgrep.py`, a seam slotted in front of every tree-sitter
+# scanner. Every scanner degrades unchanged to its tree-sitter/heuristic
+# tiers when this extra is not installed (`force_no_astgrep` fixture
+# covers the absent case in CI).
+wiki-structural = [
+    "ast-grep-py>=0.45",
+]
+
 # Leiden community detection for GraphIndex (FEAT-401) — guarantees
 # internally well-connected communities, unlike Louvain. `python-igraph`
 # is a C library (~15 MB installed); kept opt-in like `graphindex` and
@@ -267,7 +276,7 @@ leiden = [
 # Full wiki stack: graph indexing + accurate tree-sitter language grammars
 # + Leiden community detection. One-shot install for `wikitoolkit build`.
 wiki = [
-    "ai-parrot[graphindex,wiki-languages,leiden]",
+    "ai-parrot[graphindex,wiki-languages,wiki-structural,leiden]",
     "pymupdf>=1.27",
 ]
 
@@ -764,6 +773,9 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 # parrot.outputs.formats.assets moved to ai-parrot-visualizations (FEAT-200)
 "parrot.openapi" = ["*.yaml"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
+# FEAT-498: one ast-grep RuleSet YAML per language, loaded via
+# importlib.resources by parrot.knowledge.wiki.languages.astgrep.RuleSet.
+"parrot.knowledge.wiki.languages.rules" = ["*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 # FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader

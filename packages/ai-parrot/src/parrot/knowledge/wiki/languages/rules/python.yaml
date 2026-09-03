@@ -1,0 +1,36 @@
+# FEAT-498 TASK-2746 — Python refs + imports ONLY.
+#
+# Resolved decision (TASK-2741): Python symbols come from stdlib `ast`,
+# never from this seam — `symbols: []` is intentional and schema-tested.
+# `PythonScanner.outline()` merges ONLY `refs` from this file's
+# extraction into its `ast`-derived `LanguageOutline`; `imports` here are
+# never read by the scanner (which computes its own from `ast.Import`/
+# `ast.ImportFrom`, matching every other wired language in this feature)
+# but are still declared for schema completeness.
+#
+# Kind names verified against ast-grep-py 0.45.3's built-in python
+# grammar (design §4.3).
+language: python
+summary: none
+symbols: []
+
+refs:
+  # A decorator's own call (`@helper(1)`) is never a `calls` ref — only
+  # calls made from inside the decorated function's body are.
+  - rel: calls
+    rule: { kind: call, not: { inside: { kind: decorator } } }
+    target: { field: function }
+    scope: python_call_scope
+
+  # `class_definition.superclasses` is an `argument_list` field — matched
+  # directly (not the whole `class_definition`) so `each: identifier`
+  # only sees the superclass names, never the class's own name or
+  # anything in its body.
+  - rel: extends
+    rule: { kind: argument_list, inside: { kind: class_definition, field: superclasses } }
+    target: { each: identifier }
+    scope: { ancestor: [class_definition] }
+
+imports:
+  - rule: { kind: import_statement }
+  - rule: { kind: import_from_statement }

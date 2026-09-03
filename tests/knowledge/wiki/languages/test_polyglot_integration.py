@@ -101,7 +101,9 @@ def test_stats_languages_block():
     assert "javascript" in languages
     assert "rust" in languages
     assert "perl" in languages
-    assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic"}
+    # FEAT-498: "ast-grep" joins the set once a scanner's rule file (e.g.
+    # typescript.yaml, TASK-2742) has served at least one file this session.
+    assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic", "ast-grep"}
 
 
 def test_polyglot_svelte_alongside_python(tmp_path):
@@ -111,14 +113,11 @@ def test_polyglot_svelte_alongside_python(tmp_path):
     `.svelte` for the JS scanner must not let a Svelte import resolve
     into a Python page, nor vice versa.
     """
-    _write(
-        tmp_path, "svelte.config.js", "export default { kit: {} }\n"
-    )
+    _write(tmp_path, "svelte.config.js", "export default { kit: {} }\n")
     _write(
         tmp_path,
         "src/app.py",
-        '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
-        '    """Run the app."""\n',
+        '"""Application entrypoint."""\n\n\ndef main() -> None:\n' '    """Run the app."""\n',
     )
     _write(tmp_path, "src/lib/util.ts", "export function helper() {}\n")
     _write(

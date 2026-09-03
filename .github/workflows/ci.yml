@@ -84,6 +84,46 @@ jobs:
       - name: Run core tests
         run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
 
+  test-wiki-extras:
+    name: "Test wikitoolkit with wiki-languages + wiki-structural extras"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # FEAT-498: `test-core` above runs the whole suite WITHOUT these
+      # extras (proving the seams degrade cleanly — `force_no_astgrep`/
+      # tree-sitter-absent fallbacks), so this job is the one place that
+      # exercises the ast-grep-py structural seam and the tree-sitter
+      # grammar wheels together. Scoped to `tests/knowledge/wiki` — the
+      # only area either extra affects — rather than re-running the
+      # whole `tests/` suite a second time.
+      - name: Sync core package with wiki-languages + wiki-structural
+        run: uv sync --package ai-parrot --extra wiki-languages --extra wiki-structural
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Run wiki tests with both extras installed
+        run: uv run pytest tests/knowledge/wiki/ -q --tb=short --continue-on-collection-errors
+
   test-navrules:
     name: "Test navrules (rust=${{ matrix.rust }})"
     runs-on: ubuntu-latest

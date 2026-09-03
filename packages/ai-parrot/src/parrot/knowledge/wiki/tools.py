@@ -6,6 +6,7 @@ a `StdioMCPServer` (core) and appear as first-class MCP tools at
 tool-selection time — equal standing with Grep/Read instead of competing
 via a Bash-invoked CLI.
 """
+
 import asyncio
 import hashlib
 from datetime import UTC, datetime
@@ -79,11 +80,13 @@ def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
 def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
     """Message for a ``namespace`` argument the store does not serve."""
     known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
-    return (
-        f"Unknown namespace {namespace!r}. Known: {known} "
-        "(plus 'all', 'local')."
-    )
+    return f"Unknown namespace {namespace!r}. Known: {known} " "(plus 'all', 'local')."
 
+
+#: search_fts() over-fetch multiplier for wiki_query (FEAT-498): 3x
+#: search_fts's own default limit (10), so filtering out sym: stubs by
+#: default still leaves a full page of non-symbol results.
+_QUERY_FETCH_LIMIT = 30
 
 #: Shared description of the optional ``namespace`` argument (FEAT-450).
 _NAMESPACE_DESC = (
@@ -97,15 +100,21 @@ class WikiQueryInput(BaseModel):
     question: str = Field(..., description="Search question for the knowledge graph")
     budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, description="Token budget for results")
     namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
+    include_symbols: bool = Field(
+        default=False,
+        description=(
+            "Include sym: (function/class/method) stubs in results "
+            "(FEAT-498). Off by default — use wiki_symbol_lookup for "
+            "symbol-specific search; set True to see symbols mixed in "
+            "with files/concepts here."
+        ),
+    )
 
 
 class WikiPageInput(BaseModel):
     page_id: str = Field(
         ...,
-        description=(
-            "Page ID from wiki_query results; may carry a namespace "
-            "prefix (ns::file:a.py)"
-        ),
+        description=("Page ID from wiki_query results; may carry a namespace " "prefix (ns::file:a.py)"),
     )
     namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
@@ -113,10 +122,7 @@ class WikiPageInput(BaseModel):
 class WikiRelatedInput(BaseModel):
     page_id: str = Field(
         ...,
-        description=(
-            "Page ID to find related pages for; may carry a namespace "
-            "prefix (ns::dir:pkg)"
-        ),
+        description=("Page ID to find related pages for; may carry a namespace " "prefix (ns::dir:pkg)"),
     )
     namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
@@ -177,12 +183,19 @@ class WikiQueryTool(AbstractTool):
         question: str,
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         namespace: str | None = None,
+        include_symbols: bool = False,
     ) -> str:
         try:
             store = _scoped_store(self._store, namespace)
         except KeyError:
             return _unknown_namespace_error(self._store, str(namespace))
-        results = await store.search_fts(question)
+        # FEAT-498: sym: pages share the pages_fts index, so a plain
+        # search_fts() would mix them into every wiki_query result.
+        # Over-fetch (limit*3) to compensate for the ones dropped, so a
+        # question with few non-symbol hits doesn't come back thin.
+        results = await store.search_fts(question, limit=_QUERY_FETCH_LIMIT)
+        if not include_symbols:
+            results = [r for r in results if r.get("category") != "symbol"]
         packed = pack_results(results, budget_tokens=budget_tokens)
         return packed.text
 
@@ -203,20 +216,22 @@ class WikiPageTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(
-        self, page_id: str, namespace: str | None = None
-    ) -> ToolResult:
+    async def _execute(self, page_id: str, namespace: str | None = None) -> ToolResult:
         try:
             store = _scoped_store(self._store, namespace)
         except KeyError:
             return ToolResult(
-                success=False, status="error", result=None,
+                success=False,
+                status="error",
+                result=None,
                 error=_unknown_namespace_error(self._store, str(namespace)),
             )
         page = await store.get_page(page_id, include_body=True)
         if page is None:
             return ToolResult(
-                success=False, status="error", result=None,
+                success=False,
+                status="error",
+                result=None,
                 error=f"Page not found: {page_id}",
             )
         return ToolResult(result=page)
@@ -238,14 +253,14 @@ class WikiRelatedTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(
-        self, page_id: str, namespace: str | None = None
-    ) -> ToolResult:
+    async def _execute(self, page_id: str, namespace: str | None = None) -> ToolResult:
         try:
             store = _scoped_store(self._store, namespace)
         except KeyError:
             return ToolResult(
-                success=False, status="error", result=None,
+                success=False,
+                status="error",
+                result=None,
                 error=_unknown_namespace_error(self._store, str(namespace)),
             )
         neighbors = await store.neighbors(page_id)
@@ -284,36 +299,32 @@ class WikiRememberTool(AbstractTool):
         if link_page_id:
             refusal = _reject_foreign_id(self._store, link_page_id)
             if refusal:
-                return ToolResult(
-                    success=False, status="error", result=None, error=refusal
-                )
+                return ToolResult(success=False, status="error", result=None, error=refusal)
 
         # Deterministic id from title+category (mirrors cli.py:remember —
         # re-remembering the same thing updates rather than duplicates).
         resolved_title = (title or fact.strip().splitlines()[0][:80]).strip()
-        page_id = "mem-" + hashlib.sha1(
-            f"{resolved_title}::{category}".encode()
-        ).hexdigest()[:12]
+        page_id = "mem-" + hashlib.sha1(f"{resolved_title}::{category}".encode()).hexdigest()[:12]
 
-        await self._store.upsert_pages([
-            WikiPageRecord(
-                concept_id=page_id,
-                node_id=page_id,
-                title=resolved_title,
-                category=category,
-                summary=fact[:300],
-                body=fact,
-                token_count=estimate_tokens(fact),
-                origin="memory",
-                asserted_by="agent:mcp",
-            )
-        ])
+        await self._store.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id=page_id,
+                    node_id=page_id,
+                    title=resolved_title,
+                    category=category,
+                    summary=fact[:300],
+                    body=fact,
+                    token_count=estimate_tokens(fact),
+                    origin="memory",
+                    asserted_by="agent:mcp",
+                )
+            ]
+        )
 
         linked = False
         if link_page_id:
-            await self._store.add_edges(
-                [(page_id, link_page_id, rel or "references", "asserted")]
-            )
+            await self._store.add_edges([(page_id, link_page_id, rel or "references", "asserted")])
             linked = True
 
         if self._storage_dir is not None:
@@ -325,20 +336,19 @@ class WikiRememberTool(AbstractTool):
                 WikiBookkeeper().log_operation(
                     self._storage_dir,
                     "REMEMBER",
-                    f"page_id: {page_id}, title: {resolved_title!r}, "
-                    f"category: {category}, by: agent:mcp",
+                    f"page_id: {page_id}, title: {resolved_title!r}, " f"category: {category}, by: agent:mcp",
                 )
             except OSError as exc:
-                self.logger.warning(
-                    "Failed to log REMEMBER to wiki audit trail: %s", exc
-                )
+                self.logger.warning("Failed to log REMEMBER to wiki audit trail: %s", exc)
 
-        return ToolResult(result={
-            "page_id": page_id,
-            "title": resolved_title,
-            "category": category,
-            "linked": linked,
-        })
+        return ToolResult(
+            result={
+                "page_id": page_id,
+                "title": resolved_title,
+                "category": category,
+                "linked": linked,
+            }
+        )
 
 
 class WikiNoteTool(AbstractTool):
@@ -359,35 +369,37 @@ class WikiNoteTool(AbstractTool):
         page = await self._store.get_page(page_id, include_body=True)
         if page is None:
             return ToolResult(
-                success=False, status="error", result=None,
+                success=False,
+                status="error",
+                result=None,
                 error=f"Page not found: {page_id}",
             )
         # A federated read returns the page with its id QUALIFIED; writing
         # that straight back would be a write into a foreign namespace.
         refusal = _reject_foreign_id(self._store, str(page["concept_id"]))
         if refusal:
-            return ToolResult(
-                success=False, status="error", result=None, error=refusal
-            )
+            return ToolResult(success=False, status="error", result=None, error=refusal)
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         body = str(page.get("body") or "")
         body += f"\n\n> **Note ({stamp}, agent:mcp):** {text}"
 
-        await self._store.upsert_pages([
-            WikiPageRecord(
-                concept_id=page["concept_id"],
-                node_id=page.get("node_id"),
-                title=page.get("title") or page["concept_id"],
-                category=page.get("category") or "concept",
-                summary=page.get("summary") or "",
-                body=body,
-                source_id=page.get("source_id"),
-                token_count=estimate_tokens(body),
-                origin=page.get("origin") or "ingest",
-                asserted_by="agent:mcp",
-            )
-        ])
+        await self._store.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id=page["concept_id"],
+                    node_id=page.get("node_id"),
+                    title=page.get("title") or page["concept_id"],
+                    category=page.get("category") or "concept",
+                    summary=page.get("summary") or "",
+                    body=body,
+                    source_id=page.get("source_id"),
+                    token_count=estimate_tokens(body),
+                    origin=page.get("origin") or "ingest",
+                    asserted_by="agent:mcp",
+                )
+            ]
+        )
 
         if self._storage_dir is not None:
             # Same rationale as WikiRememberTool — an audit-log failure
@@ -399,9 +411,7 @@ class WikiNoteTool(AbstractTool):
                     f"page_id: {page['concept_id']}, by: agent:mcp",
                 )
             except OSError as exc:
-                self.logger.warning(
-                    "Failed to log NOTE to wiki audit trail: %s", exc
-                )
+                self.logger.warning("Failed to log NOTE to wiki audit trail: %s", exc)
 
         return ToolResult(result={"page_id": page["concept_id"], "status": "noted"})
 
@@ -484,10 +494,7 @@ class VaultIngestTool(AbstractTool):
                     success=False,
                     status="error",
                     result=None,
-                    error=(
-                        "Another wiki writer (build/upsert) is in progress "
-                        "— retry once it finishes."
-                    ),
+                    error=("Another wiki writer (build/upsert) is in progress " "— retry once it finishes."),
                 )
             scan, stats = await asyncio.to_thread(
                 scan_vault,
@@ -496,17 +503,13 @@ class VaultIngestTool(AbstractTool):
                 self._config.max_file_kb * 1024,
             )
             sources = _open_sources(self._root, self._config, store=self._store)
-            counts = await _ingest_files(
-                self._store, sources, vault, scan, force=force
-            )
+            counts = await _ingest_files(self._store, sources, vault, scan, force=force)
             await self._store.upsert_pages(scan.dir_records)
             await self._store.add_edges(scan.dir_edges)
             # scope="root": this plane may also hold the repo's own
             # codebase pages — prune only what lives under the vault
             # (FEAT-450, D4.4).
-            removed = await _prune_removed(
-                self._store, sources, vault, scan, scope="root"
-            )
+            removed = await _prune_removed(self._store, sources, vault, scan, scope="root")
             store_stats = await self._store.stats()
 
         try:
@@ -518,24 +521,24 @@ class VaultIngestTool(AbstractTool):
                 f"by: agent:mcp",
             )
         except OSError as exc:
-            self.logger.warning(
-                "Failed to log VAULT_INGEST to wiki audit trail: %s", exc
-            )
+            self.logger.warning("Failed to log VAULT_INGEST to wiki audit trail: %s", exc)
 
-        return ToolResult(result={
-            "vault": str(vault),
-            "notes": stats.notes,
-            "tags": stats.tags,
-            "wikilink_edges": stats.wikilink_edges,
-            "embed_edges": stats.embed_edges,
-            "unresolved_links": len(stats.unresolved_links),
-            "ingested": counts.get("written", 0),
-            "unchanged": counts.get("unchanged", 0),
-            "removed": removed,
-            "skipped": len(scan.skipped),
-            "pages_total": store_stats.get("pages", 0),
-            "edges_total": store_stats.get("edges", 0),
-        })
+        return ToolResult(
+            result={
+                "vault": str(vault),
+                "notes": stats.notes,
+                "tags": stats.tags,
+                "wikilink_edges": stats.wikilink_edges,
+                "embed_edges": stats.embed_edges,
+                "unresolved_links": len(stats.unresolved_links),
+                "ingested": counts.get("written", 0),
+                "unchanged": counts.get("unchanged", 0),
+                "removed": removed,
+                "skipped": len(scan.skipped),
+                "pages_total": store_stats.get("pages", 0),
+                "edges_total": store_stats.get("edges", 0),
+            }
+        )
 
 
 def create_wiki_tools(
@@ -557,9 +560,7 @@ def create_wiki_tools(
         The six `AbstractTool` instances: wiki_query, wiki_page,
         wiki_related, wiki_remember, wiki_note, wiki_status.
     """
-    storage_dir = (
-        config.storage_path(root) if root is not None and config is not None else None
-    )
+    storage_dir = config.storage_path(root) if root is not None and config is not None else None
     return [
         WikiQueryTool(store),
         WikiPageTool(store),
