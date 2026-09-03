@@ -23,6 +23,25 @@ outside this task's file scope. Likewise ``UniversalEdge`` has no
 from/written to ``edge.domain_tags["evidence_ref"]``, the exact
 extensibility seam the model's own docstring describes for domain-specific
 data (FEAT-392 precedent).
+
+FEAT-520 Module 3 adds the graph commit protocol (``apply_update``/
+``get_commit``/``list_commits``/``revert_commit``), mirroring
+``GraphIndexPersistence``/``SQLitePersistence`` behaviorally
+(``tests/knowledge/graphindex/test_persist_commit_protocol.py`` is the
+parity bar). Deviation from the ArangoDB sibling, worth calling out: on
+Postgres the pre-image capture, the ``commits``/``commit_items`` rows, and
+every mutation happen inside ONE ``conn.transaction()`` — a mid-apply
+crash rolls back everything, including the audit trail itself. Arango's
+"visible in audit trail even on partial failure" compromise does not
+apply here; the engine's transaction IS the atomicity guarantee, so no
+per-tenant ``asyncio.Lock`` is needed (matches sibling ``seq`` ordering
+via the ``commits.seq`` IDENTITY column). "Removal" (``removed_nodes``/
+``removed_edges``) never physically deletes — it closes the ``validity``
+range (tombstone-by-range), so history/temporal reads (TASK-2767) still
+see it; ``revert_commit`` restores a pre-image by inserting a FRESH
+version row (never re-opening a past range, which would violate the
+append-only/EXCLUDE invariant), the same close-and-insert discipline as
+every other write path in this module.
 """
 
 from __future__ import annotations
@@ -30,6 +49,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -43,6 +63,8 @@ from parrot.knowledge.graphindex.pg_schema import (
 )
 from parrot.knowledge.graphindex.schema import (
     AssertionMeta,
+    CommitReceipt,
+    GraphUpdate,
     UniversalEdge,
     UniversalNode,
 )
@@ -53,6 +75,11 @@ logger = logging.getLogger(__name__)
 #: Private key nesting ``parent_id``/``embedding_ref`` inside the
 #: ``node_versions.domain_tags`` jsonb blob (see module docstring).
 _PG_EXTRA_KEY = "_pg_extra"
+
+
+def _edge_key(source_id: str, target_id: str, kind: str) -> str:
+    """Compose the canonical ``item_key`` string for an edge (sibling parity)."""
+    return f"{source_id}|{target_id}|{kind}"
 
 
 def _assertion_json(item: UniversalNode | UniversalEdge) -> Optional[str]:
@@ -569,3 +596,441 @@ class PostgresPersistence:
                     edges.append(edge)
 
         return nodes, edges
+
+    # ------------------------------------------------------------------
+    # Agent write path — GraphUpdate commits (durable graph memory, Module 3)
+    # ------------------------------------------------------------------
+
+    async def _node_pre_image(self, conn: asyncpg.Connection, concept_id: str) -> Optional[dict[str, Any]]:
+        """Capture the current node identity+state as a revertible pre-image."""
+        row = await conn.fetchrow(
+            f"""
+            SELECT n.namespace, n.category, n.lang, nv.title, nv.summary, nv.body, nv.body_ref,
+                   nv.source_id, nv.content_hash, nv.provenance, nv.assertion, nv.domain_tags
+            FROM {self._schema}.nodes n
+            JOIN {self._schema}.node_versions nv ON nv.concept_id = n.concept_id
+            WHERE n.concept_id = $1 AND upper_inf(nv.validity)
+            """,
+            concept_id,
+        )
+        return dict(row) if row is not None else None
+
+    async def _edge_pre_image(
+        self, conn: asyncpg.Connection, src: str, dst: str, rel: str
+    ) -> Optional[dict[str, Any]]:
+        """Capture the current edge state as a revertible pre-image."""
+        row = await conn.fetchrow(
+            f"""
+            SELECT provenance, confidence, assertion, evidence_ref, source_id
+            FROM {self._schema}.edges
+            WHERE src = $1 AND dst = $2 AND rel = $3 AND upper_inf(validity)
+            """,
+            src,
+            dst,
+            rel,
+        )
+        return dict(row) if row is not None else None
+
+    async def _restore_node(self, conn: asyncpg.Connection, concept_id: str, prior: dict[str, Any]) -> None:
+        """Restore a node's pre-image as a fresh version row (revert helper)."""
+        await conn.execute(
+            f"""
+            INSERT INTO {self._schema}.nodes (concept_id, namespace, category, lang)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (concept_id) DO UPDATE
+                SET namespace = EXCLUDED.namespace, category = EXCLUDED.category, lang = EXCLUDED.lang
+            """,
+            concept_id,
+            prior.get("namespace") or "",
+            prior["category"],
+            prior.get("lang") or "simple",
+        )
+        await conn.execute(
+            f"""
+            UPDATE {self._schema}.node_versions
+            SET validity = tstzrange(lower(validity), now())
+            WHERE concept_id = $1 AND upper_inf(validity)
+            """,
+            concept_id,
+        )
+        await conn.execute(
+            f"""
+            INSERT INTO {self._schema}.node_versions
+                (concept_id, title, summary, body, body_ref, source_id,
+                 content_hash, fts, provenance, assertion, domain_tags)
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                to_tsvector($8::regconfig, $2 || ' ' || coalesce($3, '') || ' ' || coalesce($4, '')),
+                $9, $10::jsonb, $11::jsonb
+            )
+            """,
+            concept_id,
+            prior["title"],
+            prior["summary"],
+            prior["body"],
+            prior["body_ref"],
+            prior["source_id"],
+            prior["content_hash"],
+            prior.get("lang") or "simple",
+            prior["provenance"],
+            prior["assertion"],
+            prior["domain_tags"],
+        )
+
+    async def _restore_edge(
+        self, conn: asyncpg.Connection, src: str, dst: str, rel: str, prior: dict[str, Any]
+    ) -> None:
+        """Restore an edge's pre-image as a fresh row (revert helper)."""
+        await conn.execute(
+            f"""
+            UPDATE {self._schema}.edges
+            SET validity = tstzrange(lower(validity), now())
+            WHERE src = $1 AND dst = $2 AND rel = $3 AND upper_inf(validity)
+            """,
+            src,
+            dst,
+            rel,
+        )
+        await conn.execute(
+            f"""
+            INSERT INTO {self._schema}.edges
+                (src, dst, rel, provenance, confidence, assertion, evidence_ref, source_id)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
+            """,
+            src,
+            dst,
+            rel,
+            prior["provenance"],
+            prior["confidence"],
+            prior["assertion"],
+            prior["evidence_ref"],
+            prior["source_id"],
+        )
+
+    async def apply_update(self, ctx: TenantContext, update: GraphUpdate) -> CommitReceipt:
+        """Apply a :class:`GraphUpdate` in one audited transaction.
+
+        Captures the pre-image of every touched node/edge (including
+        implicit incident edges of ``removed_nodes``) into
+        ``commit_items``, records the commit row, then applies the
+        writes: node/edge upserts reuse the TASK-2765 close-and-insert
+        helpers; removals close the ``validity`` range rather than
+        deleting (tombstone-by-range — history stays intact for
+        TASK-2767's temporal reads). See the module docstring for the
+        "one transaction" deviation from the ArangoDB sibling.
+
+        Args:
+            ctx: Tenant context.
+            update: The validated update batch to apply.
+
+        Returns:
+            A :class:`CommitReceipt` describing the recorded commit.
+        """
+        commit_id = uuid.uuid4().hex[:16]
+        committed_at = datetime.now(tz=timezone.utc)
+        warnings: list[str] = []
+        pool = await self._ensure_pool()
+
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # --- capture pre-images (BEFORE any mutation) -----------
+                node_keys = [(n.node_id, "node") for n in update.nodes] + [
+                    (node_id, "node_removed") for node_id in update.removed_nodes
+                ]
+                node_items = [
+                    (node_id, item_type, await self._node_pre_image(conn, node_id))
+                    for node_id, item_type in node_keys
+                ]
+
+                implicit_removed: list[tuple[str, str, str]] = []
+                for node_id in update.removed_nodes:
+                    incident = await conn.fetch(
+                        f"""
+                        SELECT src, dst, rel FROM {self._schema}.edges
+                        WHERE (src = $1 OR dst = $1) AND upper_inf(validity)
+                        """,
+                        node_id,
+                    )
+                    for row in incident:
+                        implicit_removed.append((row["src"], row["dst"], row["rel"]))
+
+                removed_edge_set = {tuple(t) for t in update.removed_edges} | set(implicit_removed)
+
+                edge_triples = [
+                    (e.source_id, e.target_id, e.kind.value) for e in update.edges
+                ] + sorted(removed_edge_set)
+                edge_items = []
+                for src, tgt, kind in edge_triples:
+                    prior = await self._edge_pre_image(conn, src, tgt, kind)
+                    item_type = "edge_removed" if (src, tgt, kind) in removed_edge_set else "edge"
+                    edge_items.append(((src, tgt, kind), item_type, prior))
+
+                # --- record the commit + items ---------------------------
+                payload_json = orjson.dumps(update.model_dump(mode="json")).decode()
+                await conn.execute(
+                    f"""
+                    INSERT INTO {self._schema}.commits
+                        (commit_id, op, agent_id, run_id, asserted_by, reason, committed_at, payload)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+                    """,
+                    commit_id,
+                    update.op,
+                    update.agent_id,
+                    update.run_id,
+                    update.asserted_by,
+                    update.reason,
+                    committed_at,
+                    payload_json,
+                )
+                for node_id, item_type, prior in node_items:
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self._schema}.commit_items (commit_id, item_type, item_key, prior)
+                        VALUES ($1, $2, $3, $4::jsonb)
+                        ON CONFLICT (commit_id, item_type, item_key) DO UPDATE SET prior = EXCLUDED.prior
+                        """,
+                        commit_id,
+                        item_type,
+                        node_id,
+                        orjson.dumps(prior).decode() if prior is not None else None,
+                    )
+                for (src, tgt, kind), item_type, prior in edge_items:
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self._schema}.commit_items (commit_id, item_type, item_key, prior)
+                        VALUES ($1, $2, $3, $4::jsonb)
+                        ON CONFLICT (commit_id, item_type, item_key) DO UPDATE SET prior = EXCLUDED.prior
+                        """,
+                        commit_id,
+                        item_type,
+                        _edge_key(src, tgt, kind),
+                        orjson.dumps(prior).decode() if prior is not None else None,
+                    )
+
+                # --- apply writes -----------------------------------------
+                for node in update.nodes:
+                    await self._upsert_node(conn, ctx, node)
+                for edge in update.edges:
+                    await self._upsert_edge(conn, edge)
+                for src, tgt, kind in sorted(removed_edge_set):
+                    await conn.execute(
+                        f"""
+                        UPDATE {self._schema}.edges
+                        SET validity = tstzrange(lower(validity), now())
+                        WHERE src = $1 AND dst = $2 AND rel = $3 AND upper_inf(validity)
+                        """,
+                        src,
+                        tgt,
+                        kind,
+                    )
+                for node_id in update.removed_nodes:
+                    await conn.execute(
+                        f"""
+                        UPDATE {self._schema}.node_versions
+                        SET validity = tstzrange(lower(validity), now())
+                        WHERE concept_id = $1 AND upper_inf(validity)
+                        """,
+                        node_id,
+                    )
+
+        logger.info(
+            "PostgresPersistence.apply_update: commit %s (%s) — %d nodes, %d edges, %d removed",
+            commit_id,
+            update.op,
+            len(update.nodes),
+            len(update.edges),
+            len(removed_edge_set),
+        )
+        return CommitReceipt(
+            commit_id=commit_id,
+            op=update.op,
+            node_ids=[n.node_id for n in update.nodes] + list(update.removed_nodes),
+            edge_keys=[(e.source_id, e.target_id, e.kind.value) for e in update.edges]
+            + sorted(removed_edge_set),
+            committed_at=committed_at.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            warnings=warnings,
+        )
+
+    async def get_commit(self, ctx: TenantContext, commit_id: str) -> Optional[dict[str, Any]]:
+        """Return a recorded commit with its decoded payload and items.
+
+        Args:
+            ctx: Tenant context (unused — the schema is shared, not
+                per-tenant partitioned in v1).
+            commit_id: The commit to fetch.
+
+        Returns:
+            A dict with the commit row, decoded ``payload``, and its
+            ``items``, or ``None`` when unknown.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT * FROM {self._schema}.commits WHERE commit_id = $1", commit_id
+            )
+            if row is None:
+                return None
+            commit = dict(row)
+            commit["payload"] = orjson.loads(commit["payload"])
+            items = await conn.fetch(
+                f"""
+                SELECT item_type, item_key, collection, prior FROM {self._schema}.commit_items
+                WHERE commit_id = $1
+                """,
+                commit_id,
+            )
+            commit["items"] = [dict(r) for r in items]
+            return commit
+
+    async def list_commits(
+        self,
+        ctx: TenantContext,
+        run_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List recorded commits, newest (highest ``seq``) first.
+
+        Args:
+            ctx: Tenant context (unused — see ``get_commit``).
+            run_id: Optional filter on the producing run.
+            agent_id: Optional filter on the producing agent.
+            limit: Maximum rows returned.
+
+        Returns:
+            Commit summary rows (payload omitted) as dicts; ``[]`` when
+            the schema has no commits yet.
+        """
+        pool = await self._ensure_pool()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_id is not None:
+            params.append(run_id)
+            clauses.append(f"run_id = ${len(params)}")
+        if agent_id is not None:
+            params.append(agent_id)
+            clauses.append(f"agent_id = ${len(params)}")
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT commit_id, op, agent_id, run_id, asserted_by, reason, committed_at, reverted_at
+                FROM {self._schema}.commits{where}
+                ORDER BY seq DESC LIMIT ${len(params)}
+                """,
+                *params,
+            )
+        return [dict(r) for r in rows]
+
+    async def revert_commit(self, ctx: TenantContext, commit_id: str) -> dict[str, Any]:
+        """Restore the pre-images captured by a commit.
+
+        Refused when a LATER, non-reverted commit (higher ``seq``)
+        touched any of the same item keys — reverting would silently
+        clobber the newer write.
+
+        Args:
+            ctx: Tenant context.
+            commit_id: The commit to revert.
+
+        Returns:
+            ``{"status": "reverted", ...}`` on success or
+            ``{"error": ...}`` on refusal/unknown commit.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                commit_row = await conn.fetchrow(
+                    f"SELECT seq, reverted_at FROM {self._schema}.commits WHERE commit_id = $1",
+                    commit_id,
+                )
+                if commit_row is None:
+                    return {"error": f"revert_commit: unknown commit {commit_id!r}"}
+                if commit_row["reverted_at"] is not None:
+                    return {"error": f"revert_commit: {commit_id!r} already reverted"}
+
+                items = await conn.fetch(
+                    f"""
+                    SELECT item_type, item_key, prior FROM {self._schema}.commit_items
+                    WHERE commit_id = $1
+                    """,
+                    commit_id,
+                )
+                if not items:
+                    return {"error": f"revert_commit: commit {commit_id!r} has no items"}
+
+                conflicts: list[str] = []
+                for item in items:
+                    later = await conn.fetchval(
+                        f"""
+                        SELECT count(*) FROM {self._schema}.commit_items i
+                        JOIN {self._schema}.commits c ON c.commit_id = i.commit_id
+                        WHERE i.item_key = $1 AND i.commit_id != $2
+                          AND c.reverted_at IS NULL AND c.seq > $3
+                        """,
+                        item["item_key"],
+                        commit_id,
+                        commit_row["seq"],
+                    )
+                    if later:
+                        conflicts.append(item["item_key"])
+                if conflicts:
+                    return {
+                        "error": "revert_commit: later commits touched the same items",
+                        "conflicts": sorted(set(conflicts)),
+                    }
+
+                restored = deleted = 0
+                for item in items:
+                    prior = orjson.loads(item["prior"]) if item["prior"] else None
+                    if item["item_type"] in ("node", "node_removed"):
+                        if prior is None:
+                            await conn.execute(
+                                f"""
+                                UPDATE {self._schema}.node_versions
+                                SET validity = tstzrange(lower(validity), now())
+                                WHERE concept_id = $1 AND upper_inf(validity)
+                                """,
+                                item["item_key"],
+                            )
+                            deleted += 1
+                        else:
+                            await self._restore_node(conn, item["item_key"], prior)
+                            restored += 1
+                    else:  # edge / edge_removed
+                        src, tgt, kind = item["item_key"].split("|", 2)
+                        if prior is None:
+                            await conn.execute(
+                                f"""
+                                UPDATE {self._schema}.edges
+                                SET validity = tstzrange(lower(validity), now())
+                                WHERE src = $1 AND dst = $2 AND rel = $3 AND upper_inf(validity)
+                                """,
+                                src,
+                                tgt,
+                                kind,
+                            )
+                            deleted += 1
+                        else:
+                            await self._restore_edge(conn, src, tgt, kind, prior)
+                            restored += 1
+
+                await conn.execute(
+                    f"UPDATE {self._schema}.commits SET reverted_at = $1 WHERE commit_id = $2",
+                    datetime.now(tz=timezone.utc),
+                    commit_id,
+                )
+
+        logger.info(
+            "PostgresPersistence.revert_commit: %s — %d restored, %d deleted",
+            commit_id,
+            restored,
+            deleted,
+        )
+        return {
+            "status": "reverted",
+            "commit_id": commit_id,
+            "restored": restored,
+            "deleted": deleted,
+        }
