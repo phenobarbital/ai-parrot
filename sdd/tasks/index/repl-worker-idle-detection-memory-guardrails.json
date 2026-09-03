@@ -14,7 +14,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Independent foundation; can run alongside TASK-2776. TASK-2775 and later observer work wait for this task.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2774-config-observation-memory-models.md"
+      "completed_at": "2026-09-03T13:53:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2774-config-observation-memory-models.md"
     },
     {
       "id": "TASK-2775",
