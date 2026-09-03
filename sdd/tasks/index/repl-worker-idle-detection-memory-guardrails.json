@@ -156,7 +156,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -168,8 +168,8 @@
       "parallelism_notes": "Uses interrupt/handle test files and can run alongside TASK-2779 or the disjoint observer and memory test tracks.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2781-interrupt-handle-integration-tests.md"
+      "completed_at": "2026-09-03T15:06:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2781-interrupt-handle-integration-tests.md"
     },
     {
       "id": "TASK-2782",
