@@ -258,12 +258,59 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-03
+**Notes**: Set `_uses_max_completion_tokens = True` and
+`_fixed_temperature_models = ("gpt-5",)` on `OpenAIClient`, with a comment
+citing the two 400 error texts. Added
+`tests/clients/test_openai_reasoning_params.py` with `test_openai_client_opts_in`
+plus a three-path (`ask`/`ask_stream`/`invoke`) parametrized payload-capture
+suite using the `bind_sdk_client` fixture (real `__init__`, fake
+`chat.completions.create` distinguishing streaming vs. non-streaming by the
+`stream` kwarg) — this exercises the real method bodies through the actual
+`_chat_completion` funnel, not a monkeypatched shortcut. Did not touch
+`tests/clients/test_openai_base_adapt_params.py`: `OpenAIClient` was never a
+member of `WIRE_SUBCLASSES` (verified by reading
+`test_openai_compatible_defaults.py` before editing), so there was nothing
+to narrow for this task.
+`pytest tests/clients/test_openai_base_adapt_params.py
+tests/clients/test_openai_reasoning_params.py tests/unit/test_openai_invoke.py
+tests/clients/test_openai_compatible_defaults.py -v` → 71 passed. `ruff check
+packages/ai-parrot/src/parrot/clients/gpt.py` reports one PRE-EXISTING,
+unrelated finding (`F401 InvokeResult imported but unused` at line 24,
+confirmed via `git diff` to already exist before this task's edit) — not
+fixed, out of scope (Cardinal Rule 5). `ruff check
+tests/clients/test_openai_reasoning_params.py` clean. Responses API path
+(`gpt.py:486-489` per spec numbering) untouched — `git diff` shows only the
+two new class attributes.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Probe results** (model → status): **No live probe was performed.**
+`OPENAI_API_KEY` is not set in this environment/session (verified: `env |
+grep -i openai` empty, no `.env` with real credentials in the worktree or
+main repo root). Per the task's explicit instruction ("probe each ... before
+adding; add none on speculation") and spec §7 ("empty credit balances /
+missing credentials produce no evidence"), `o1`/`o3`/`o4` fragments were
+**not** added. `_fixed_temperature_models` is limited to `("gpt-5",)`,
+which is already live-verified per the spec's own §1/§2 evidence tables
+(captured 2026-09-03 by the spec's author, prior to this task). This open
+question (spec §8, bullet 2) remains open for a future session with live
+credentials.
 
-**Probe results** (model → status):
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's literal Test Specification used
+`temperature=0.0` for both the "dropped" and "kept" parametrized cases.
+`OpenAIClient.ask()` has a pre-existing, unrelated bug: `if temperature:
+args["temperature"] = temperature` (gpt.py) is a truthiness check, so an
+explicit `temperature=0.0` is *never* forwarded into the request args for
+`ask()` specifically — on every model, today, independent of this hotfix.
+(`ask_stream()` and `invoke()` correctly use `is not None`.) Testing with
+`0.0` would have made `test_gpt41_payload_keeps_temperature[ask]` fail for
+a reason unrelated to `_adapt_completion_params()`, and would have made
+`test_gpt5_payload_uses_max_completion_tokens_and_drops_temperature[ask]`
+pass for the wrong reason (temperature never reaching the hook at all,
+rather than the hook dropping it). Used `temperature=0.2`/`0.5`
+(non-zero) instead, which correctly isolates the hook's behavior across
+all three paths without touching the unrelated `ask()` bug — fixing that
+bug is out of this hotfix's scope per the spec's Non-Goals and this
+task's "NOT in scope" list (no edit to `gpt.py` beyond the two
+attributes). Flagging it here rather than silently reinterpreting the
+test, per the "when in doubt, note it" rule.
