@@ -494,9 +494,12 @@ persistence exposes them.
 ### Test data / fixtures
 
 ```python
-# All Postgres tests are live-DB-gated, Arango precedent:
-GRAPHINDEX_PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN")
-pytestmark = pytest.mark.skipif(not GRAPHINDEX_PG_DSN, reason="needs live Postgres")
+# All Postgres tests are live-DB-gated on the RESOLVED DSN — env/navconfig
+# override first, then the parrot.conf default (the local Postgres with the
+# vector/btree_gist/pg_trgm extensions). Skip only when both are unset:
+from parrot.conf import default_dsn                     # conf.py:72 (None when DB config absent, :76)
+PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN") or default_dsn
+pytestmark = pytest.mark.skipif(not PG_DSN, reason="needs live Postgres")
 
 @pytest.fixture
 async def pg_persistence(tmp_schema):    # per-test schema name → parallel-safe, DROP SCHEMA CASCADE teardown
@@ -579,6 +582,8 @@ from parrot.knowledge.wiki.store import (
 )
 from parrot.knowledge.wiki.symbols import SymbolRecord       # symbols.py:56
 from parrot.rerankers.abstract import AbstractReranker       # abstract.py:35
+from parrot.conf import default_dsn   # conf.py:72 — 'postgres://…' local DSN; None when DB config absent (:76);
+                                      # fallback pattern precedent: CREW_RESULT_STORAGE_PG_DSN at conf.py:302
 import asyncpg    # already used in core: parrot/core/hooks/postgres.py, parrot/eval/sink.py,
                   # parrot/knowledge/retrieval/pin.py, parrot/knowledge/ontology/concept_catalog/seed.py
 ```
@@ -734,7 +739,7 @@ HybridPageIndexSearch._apply_reranker    # SearchResult docs → reranker.rerank
 
 | Key (proposed) | Purpose |
 |---|---|
-| `GRAPHINDEX_PG_DSN` | asyncpg DSN for the backend (also gates live tests) |
+| `GRAPHINDEX_PG_DSN` | asyncpg DSN for the backend (also gates live tests). **Default: `default_dsn` from `parrot.conf`** (`conf.py:72` — the local Postgres, which carries the `vector`/`btree_gist`/`pg_trgm` extensions); resolve via `config.get("GRAPHINDEX_PG_DSN", fallback=default_dsn)`, the exact pattern of `CREW_RESULT_STORAGE_PG_DSN` at `conf.py:302` |
 | `GRAPHINDEX_PG_SCHEMA` | schema name, default `graphindex` |
 | `GRAPHINDEX_EMBEDDING_DIM` | vector column dimension / ANN index creation |
 | `GRAPHINDEX_FTS_REGCONFIG` | namespace-prefix → regconfig map (e.g. `legal:* → spanish`, `sym:* → simple`) (D7) |
