@@ -67,8 +67,25 @@ index (TASK-2769), federation/sync changes (none needed — LWW works via
 |---|---|---|
 | `packages/ai-parrot/src/parrot/knowledge/wiki/postgres_store.py` | CREATE | `PostgresWikiStore` |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `postgres` branch in `create_wiki_store` (:1830-1852 block) |
-| `packages/ai-parrot/tests/knowledge/wiki/test_store.py` | MODIFY | fixture param (:29) |
-| `packages/ai-parrot/tests/knowledge/wiki/test_postgres_store.py` | CREATE | postgres-specific tests (updated_at, mapping) |
+| `packages/ai-parrot/tests/knowledge/wiki/test_postgres_store.py` | CREATE | postgres-specific tests (full abstract surface, updated_at, mapping) |
+
+> **CONTRACT CORRECTION (agent, verified 2026-09-03 against this worktree):**
+> `packages/ai-parrot/tests/knowledge/wiki/test_store.py` — referenced
+> throughout this task (§Scope, §Codebase Contract, §Acceptance Criteria,
+> §Test Specification) as an existing parametrized `store` fixture
+> suite (`@pytest.fixture(params=["sqlite", "memory"])`) to extend with a
+> `postgres` param — **does NOT exist in this codebase.**
+> `grep`/`find` across `packages/ai-parrot/tests/knowledge/wiki/` and
+> `tests/knowledge/wiki/test_factory_arango.py` (also referenced) confirm
+> neither file is present; there is no existing cross-backend behavioral
+> contract suite for `BaseWikiStore` to extend. Per the "when in doubt"
+> anti-hallucination rule: rather than inventing a new shared suite that
+> would also exercise (and risk regressing) the untouched SQLite/memory/
+> Arango backends — out of this task's scope — full abstract-surface
+> coverage is provided in the CREATE'd `test_postgres_store.py` instead.
+> The acceptance criterion "`tests/knowledge/wiki/test_store.py` green
+> with `postgres` param" is satisfied in substance (every abstract method
+> covered against Postgres) via that file. See its Completion Note.
 
 ---
 

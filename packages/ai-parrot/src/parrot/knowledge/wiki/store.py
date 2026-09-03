@@ -1807,18 +1807,21 @@ def create_wiki_store(
         storage_dir: Wiki storage root.  ``sqlite`` uses
             ``{storage_dir}/wiki.db``; ``memory`` uses the OKF bundle
             directory ``{storage_dir}/pages/``.  Unused by ``arangodb``
-            (server-hosted — no local directory).
+            and ``postgres`` (server-hosted — no local directory).
         wiki_name: Wiki name recorded by the backend.
         backend: ``"sqlite"`` (single-file SQLite plane), ``"memory"``
-            (in-memory indexes + OKF markdown directory), or
-            ``"arangodb"`` (server-hosted, shared retrieval plane).
+            (in-memory indexes + OKF markdown directory), ``"arangodb"``
+            (server-hosted, shared retrieval plane), or ``"postgres"``
+            (server-hosted, shared ``graphindex.*`` schema — FEAT-520).
         **kwargs: Backend-specific extras. For ``"arangodb"``:
             ``arango_params`` (connection params dict for
             ``AsyncDB("arangodb", ...)`` — see
             :func:`parrot.knowledge.wiki.project.resolve_arango_params`),
             ``database`` (target database name, defaults to
             ``wiki_{wiki_name}``), and ``text_analyzer`` (ArangoSearch
-            text analyzer, defaults to ``"text_en"``).
+            text analyzer, defaults to ``"text_en"``). For ``"postgres"``:
+            ``dsn`` (defaults to ``pg_schema.GRAPHINDEX_PG_DSN``) and
+            ``schema`` (defaults to ``"graphindex"``).
 
     Returns:
         A :class:`BaseWikiStore` implementation.
@@ -1846,7 +1849,20 @@ def create_wiki_store(
             wiki_name=wiki_name,
             text_analyzer=kwargs.get("text_analyzer", "text_en"),
         )
+    if backend == "postgres":
+        # Imported lazily — postgres_store imports asyncpg, an optional
+        # dependency not needed by the sqlite/memory paths (FEAT-520).
+        from parrot.knowledge.graphindex.pg_schema import GRAPHINDEX_PG_DSN
+        from parrot.knowledge.wiki.postgres_store import PostgresWikiStore
+
+        return PostgresWikiStore(
+            dsn=kwargs.get("dsn") or GRAPHINDEX_PG_DSN,
+            wiki_name=wiki_name,
+            schema=kwargs.get("schema", "graphindex"),
+        )
     if backend in _EXTRA_BACKENDS:
         return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
-    known = ", ".join(["'sqlite'", "'memory'", "'arangodb'", *(repr(b) for b in _EXTRA_BACKENDS)])
+    known = ", ".join(
+        ["'sqlite'", "'memory'", "'arangodb'", "'postgres'", *(repr(b) for b in _EXTRA_BACKENDS)]
+    )
     raise ValueError(f"Unknown wiki storage backend {backend!r} — expected one of {known}")
