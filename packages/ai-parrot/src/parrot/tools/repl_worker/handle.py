@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -294,6 +295,12 @@ class WorkerHandle:
         #: the next request is written or every later reply would be
         #: mis-attributed by one frame (spec §7 "Drain before write").
         self._pending_reply: asyncio.Future | None = None
+        #: FEAT-521: the round-trip future currently in flight inside
+        #: `_send()` (set for the duration of one call, cleared in its
+        #: `finally`) — lets `interrupt()` await the SAME already-ordered
+        #: reply a lethal deadline is waiting on, without dispatching a
+        #: second read against the control pipe.
+        self._inflight_reply: asyncio.Future | None = None
 
     @property
     def is_alive(self) -> bool:
@@ -656,6 +663,9 @@ class WorkerHandle:
             if self.observer is not None:
                 self.observer.mark_busy()
             future = loop.run_in_executor(self._executor, self._roundtrip, request)
+            # FEAT-521: exposed so `interrupt()` can await this SAME
+            # already-ordered reply (never a second read against the pipe).
+            self._inflight_reply = future
             try:
                 try:
                     # Shielded (FEAT-500): `wait_for` cancels what it waits
@@ -688,6 +698,17 @@ class WorkerHandle:
                     # "exception was never retrieved" warning at GC time.
                     future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
                     if lethal:
+                        # FEAT-521 G3 (two-stage deadline): try SIGINT before
+                        # SIGKILL. The worker's service loop converts a
+                        # KeyboardInterrupt into a bounded ExecResult and
+                        # keeps its namespace (TASK-2776) — `interrupt()`
+                        # awaits the SAME `future` up to
+                        # `interrupt_grace_ms`; a reply landing there is
+                        # returned normally (not a loss error, `known_vars`
+                        # untouched). Only the deterministic SIGKILL fallback
+                        # follows when the worker never answers the SIGINT.
+                        if self._config.interrupt_before_kill and await self.interrupt():
+                            return future.result()
                         await self._kill_process()
                         raise
                     # U2: the worker keeps running and keeps its namespace.
@@ -701,6 +722,7 @@ class WorkerHandle:
                         f"reply will be drained on the next call"
                     ) from None
             finally:
+                self._inflight_reply = None
                 if self.observer is not None:
                     self.observer.mark_idle()
 
@@ -740,6 +762,69 @@ class WorkerHandle:
             # the alive-check / round-trip below report the real state.
             logger.debug("WorkerHandle: parked reply failed while draining: %s", exc)
         self._pending_reply = None
+
+    async def interrupt(self) -> bool:
+        """Send SIGINT and wait up to ``interrupt_grace_ms`` for the reply (spec G3).
+
+        Namespace-preserving alternative to an immediate SIGKILL on a
+        ``deadline_ms`` breach: signals go through ``_lifecycle_executor``,
+        never the pipe-reading ``_executor`` (same rule as
+        :meth:`_kill_process` — the kill/signal path must never queue
+        behind a blocked read). Awaits ``self._inflight_reply`` — the SAME
+        round-trip future :meth:`_send` is already waiting on — rather than
+        issuing a second read against the control pipe, which the strictly
+        ordered protocol does not allow.
+
+        Never sends SIGINT on a non-POSIX host (``send_signal(SIGINT)`` is
+        unreliable there without a shared console — spec AC11: "interrupt
+        disabled" off-POSIX), when the process is already dead, or when the
+        observer's verdict shows the worker is not actually busy
+        (``"settled"``/``"booting"``/``"unavailable"``) — a worker that
+        isn't mid-request has nothing productive to interrupt.
+
+        Returns:
+            ``True`` if a reply frame arrived within ``interrupt_grace_ms``
+            (the worker's namespace survives); ``False`` if SIGINT was
+            skipped, the grace period elapsed, or the worker died instead
+            of answering — the caller should fall back to
+            :meth:`_kill_process`.
+        """
+        if sys.platform == "win32":
+            return False
+        if self._proc is None or self._proc.poll() is not None:
+            return False
+        if self.observer is not None and self.observer.verdict() in ("settled", "booting", "unavailable"):
+            logger.debug(
+                "WorkerHandle: pid=%s skipping SIGINT — observer verdict=%s (not busy)",
+                self._proc.pid,
+                self.observer.verdict(),
+            )
+            return False
+        future = self._inflight_reply
+        if future is None:
+            return False
+        loop = asyncio.get_event_loop()
+        pid = self._proc.pid
+        logger.info("WorkerHandle: pid=%s sending SIGINT (interrupt-before-kill)", pid)
+        await loop.run_in_executor(self._lifecycle_executor, self._proc.send_signal, signal.SIGINT)
+        grace_s = self._config.interrupt_grace_ms / 1000
+        try:
+            # Shielded: a caller giving up on THIS wait must never cancel
+            # the underlying round-trip future — `_send()`'s own `finally`
+            # still owns cleaning it up.
+            await asyncio.wait_for(asyncio.shield(future), timeout=grace_s)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "WorkerHandle: pid=%s SIGINT did not produce a reply within interrupt_grace_ms=%d",
+                pid,
+                self._config.interrupt_grace_ms,
+            )
+            return False
+        except (EOFError, OSError, ValueError):
+            # The worker died instead of answering the interrupt — not a
+            # reply; the caller falls back to the deterministic kill path.
+            return False
+        return True
 
     async def _kill_process(self) -> None:
         """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16).
