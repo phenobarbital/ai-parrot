@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T00:00:00+00:00",
-  "completed_at": "2026-09-01T04:53:32+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-2660",
@@ -378,6 +378,24 @@
       "completed_at": "2026-09-01T04:53:32+00:00",
       "file": "sdd/tasks/completed/TASK-2675-contract-conformance-suite.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-2784",
+      "slug": "failure-quarantine-rollback-reprocess",
+      "title": "Failure quarantine, rollback & reprocess (Module 17 fallback)",
+      "feature_id": "FEAT-481",
+      "feature": "fireflies-wiki-knowledgebase-agent",
+      "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Sole new task for this spec (Module 17); extends the already-implemented Modules 2/3/6/12. Nothing to parallelize \u2014 the other 16 tasks are done.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2784-failure-quarantine-rollback-reprocess.md"
     }
   ]
 }
