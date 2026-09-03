@@ -157,3 +157,69 @@ class TestBuildMapDocumentOffline:
         text = document.decode("utf-8")
         assert "data:text/javascript;base64," in text
         assert "data:text/css;base64," in text
+
+    def test_build_map_document_zero_network_resources(self):
+        """FEAT-522 TASK-2792: spec §4's authoritative version of the offline
+        check — introspects the CURRENTLY INSTALLED folium/folium.plugins
+        package live (not a hardcoded URL list), so this stays correct even
+        if a future folium version changes its exact CDN URLs (Module 6/
+        TASK-2791's CI gate is what catches the vendoring falling behind)."""
+        import folium
+        import folium.plugins as fp
+
+        m = folium.Map()
+        mc = fp.MarkerCluster()
+        urls = [u for _, u in [*m.default_js, *m.default_css, *mc.default_js, *mc.default_css]]
+        assert urls  # sanity: folium actually declares some defaults
+
+        points = [{"lat": float(i), "lon": float(i)} for i in range(fm.DEFAULT_CLUSTER_THRESHOLD + 1)]
+        props = {"layers": [{"layer": "stores", "data": points}]}
+        document, _ = fm.build_map_document(props)
+        text = document.decode("utf-8")
+        for url in urls:
+            assert url not in text
+        # Every corresponding data: URI IS present (both JS and CSS tracks).
+        assert "data:text/javascript;base64," in text
+        assert "data:text/css;base64," in text
+
+    def test_build_map_document_empty_layers(self):
+        """A zero-layer Map renders an empty-state map card, no exception —
+        mirrors Chart/DataTable's existing empty-data degradation (spec §7
+        Known Risks)."""
+        props = {"layers": []}
+        document, degradations = fm.build_map_document(props)  # must not raise
+        assert document
+        assert degradations == []
+
+
+class TestFoliumMapRendererUnchangedPublicBehavior:
+    """FEAT-522 TASK-2792: regression guard on TASK-2786's extraction —
+    FoliumMapRenderer.render()'s public signature and RenderedArtifact
+    output shape must be byte-for-byte the same fields/structure it had
+    before build_map_document() was extracted out of its body."""
+
+    async def test_render_shape_unchanged(self):
+        art = await fm.FoliumMapRenderer().render(_map_envelope())
+
+        assert art.artifact_id == f"{fm._SURFACE_NAME}-main"
+        assert art.mime_type == "text/html"
+        assert isinstance(art.content, bytes)
+        assert art.filename == "main.html"
+        assert art.title == "Stores"
+        assert art.surface == fm._SURFACE_NAME
+        assert art.metadata == {}  # no sibling degradations for a single-Map envelope
+
+        # Same field set as before the TASK-2786 extraction — a stray new/
+        # removed field would be a public-surface regression.
+        assert set(art.model_fields_set) <= {
+            "artifact_id",
+            "mime_type",
+            "content",
+            "path",
+            "filename",
+            "title",
+            "surface",
+            "source_envelope_ref",
+            "deep_links",
+            "metadata",
+        }
