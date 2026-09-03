@@ -112,7 +112,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Requires the completed observer/handle surface before pool summaries, pressure eviction, and restart causes are wired.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2779-pool-host-memory-pressure.md"
+      "completed_at": "2026-09-03T14:32:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2779-pool-host-memory-pressure.md"
     },
     {
       "id": "TASK-2780",
