@@ -142,7 +142,16 @@ class FirefliesWikiKBAgent(Agent):
             lookback_days=lookback_days,
             agent=self,
         )
-        return await run_ingest(ctx)
+        if self.strong_client is None or self.cheap_client is None:
+            raise RuntimeError("FirefliesWikiKBAgent.ingest() called before configure()")
+        # Open the tier clients for the run. The runner's nodes call
+        # ``client.invoke(...)``, which requires the per-loop SDK client to be
+        # entered — unlike ``complete()``, ``invoke()`` does NOT auto-enter and
+        # raises "not initialised" otherwise. Opening here (inside the run's own
+        # event loop) makes the agent self-contained, so the scheduler/daemon and
+        # any direct caller work without having to pre-open the clients.
+        async with self.strong_client, self.cheap_client:
+            return await run_ingest(ctx)
 
     async def query(self, question: str) -> Any:
         """Run the §28 query workflow (GraphIndex retrieval → Obsidian verify).
@@ -166,7 +175,10 @@ class FirefliesWikiKBAgent(Agent):
 
         wiki_toolkit = await build_wiki_kb_graph_toolkit(conf.WIKI_KB_VAULT_PATH)
         vault_toolkit = vault.build_vault_toolkit(conf.WIKI_KB_VAULT_PATH)
-        return await run_query(self.strong_client, wiki_toolkit, vault_toolkit, question)
+        # Open the strong-tier client — run_query issues client.invoke(), which
+        # requires an entered client (see the note in ingest()).
+        async with self.strong_client:
+            return await run_query(self.strong_client, wiki_toolkit, vault_toolkit, question)
 
     async def health(self) -> Any:
         """Run the §29 fast operational health check.

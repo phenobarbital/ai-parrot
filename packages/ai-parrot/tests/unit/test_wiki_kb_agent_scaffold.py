@@ -96,3 +96,97 @@ async def test_ingest_delegates_to_runner(monkeypatch: pytest.MonkeyPatch) -> No
     assert report.processed == 1
     assert captured_ctx["ctx"].agent is agent
     assert captured_ctx["ctx"].limit == 5
+
+
+class _CtxClient:
+    """Minimal async-context client that records enter/exit (no network / SDK).
+
+    Stands in for a tier LLM client to prove the agent opens it: the real
+    runner calls ``client.invoke()``, which raises unless the per-loop client is
+    entered — so the intents MUST open their clients (Module 1 lifecycle fix).
+    """
+
+    def __init__(self) -> None:
+        self.entered = False
+        self.enter_count = 0
+        self.exit_count = 0
+
+    async def __aenter__(self) -> "_CtxClient":
+        self.entered = True
+        self.enter_count += 1
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        self.entered = False
+        self.exit_count += 1
+        return False
+
+
+@pytest.mark.asyncio
+async def test_ingest_opens_both_tier_clients(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``ingest()`` opens BOTH tier clients for the duration of the run and closes
+    them after — so the runner's ``client.invoke()`` calls never hit the
+    "not initialised" guard (regression test for the client-lifecycle fix)."""
+    from parrot.flows.wiki_ingest import runner as runner_module
+
+    agent = FirefliesWikiKBAgent()
+    strong, cheap = _CtxClient(), _CtxClient()
+    agent.strong_client = strong  # type: ignore[assignment]
+    agent.cheap_client = cheap  # type: ignore[assignment]
+
+    seen: dict[str, bool] = {}
+
+    async def _fake_run_ingest(ctx: object) -> object:
+        # The clients must be OPEN at the moment the runner uses them.
+        seen["strong"] = ctx.agent.strong_client.entered  # type: ignore[attr-defined]
+        seen["cheap"] = ctx.agent.cheap_client.entered  # type: ignore[attr-defined]
+        return runner_module.IngestReport(processed=1)
+
+    monkeypatch.setattr(runner_module, "run_ingest", _fake_run_ingest)
+
+    report = await agent.ingest(limit=1)
+
+    assert report.processed == 1
+    assert seen == {"strong": True, "cheap": True}
+    assert strong.enter_count == 1 and cheap.enter_count == 1
+    assert strong.exit_count == 1 and cheap.exit_count == 1  # closed after the run
+
+
+@pytest.mark.asyncio
+async def test_ingest_before_configure_raises_clear_error() -> None:
+    """``ingest()`` before ``configure()`` (clients unset) raises a clear error,
+    not an opaque 'not initialised' from deep inside the pipeline."""
+    agent = FirefliesWikiKBAgent()
+    with pytest.raises(RuntimeError, match="called before configure"):
+        await agent.ingest(limit=1)
+
+
+@pytest.mark.asyncio
+async def test_query_opens_strong_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``query()`` opens the strong-tier client for the run and closes it after."""
+    from unittest.mock import AsyncMock
+
+    from parrot.flows.wiki_ingest import graph as graph_module
+    from parrot.flows.wiki_ingest import vault as vault_module
+    from parrot.flows.wiki_ingest.nodes import query as query_module
+
+    agent = FirefliesWikiKBAgent()
+    strong = _CtxClient()
+    agent.strong_client = strong  # type: ignore[assignment]
+
+    monkeypatch.setattr(graph_module, "build_wiki_kb_graph_toolkit", AsyncMock(return_value=object()))
+    monkeypatch.setattr(vault_module, "build_vault_toolkit", lambda _vp: object())
+
+    seen: dict[str, bool] = {}
+
+    async def _fake_run_query(client: object, _wiki: object, _vault: object, _question: str) -> str:
+        seen["entered"] = client.entered  # type: ignore[attr-defined]
+        return "answer"
+
+    monkeypatch.setattr(query_module, "run_query", _fake_run_query)
+
+    result = await agent.query("what did we decide?")
+
+    assert result == "answer"
+    assert seen["entered"] is True
+    assert strong.enter_count == 1 and strong.exit_count == 1
