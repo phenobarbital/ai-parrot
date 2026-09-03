@@ -14,7 +14,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation — every other task imports pg_schema.py.",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2764-pg-schema-and-pool.md"
+      "completed_at": "2026-09-03T11:53:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2764-pg-schema-and-pool.md"
     },
     {
       "id": "TASK-2765",
