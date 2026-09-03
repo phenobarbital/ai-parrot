@@ -170,6 +170,13 @@ Fireflies MCP ──listing──▶ [FetchGate]  (reuse MeetingRegistry:
      Query(§28): GraphIndex retrieval (primary) → read Obsidian pages (verify + provenance)
 ```
 
+> **Fallback (Module 17):** the `⇒ rollback compiled, queue review, no log` branch above fires
+> not only on a §34 validation failure but on **any LLM-compile failure/exception** in the
+> per-meeting pipeline (the model cannot produce valid structured output). In that case the
+> raw bundle is additionally **quarantined to `Raw/Failed/` and left un-processed**
+> (reprocessable, bounded auto-retry), and the vault is cleaned back to its exact pre-meeting
+> state so no partial pages survive.
+
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
@@ -254,7 +261,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 1: Subsystem scaffolding, config, agent façade
 - **Path**: `parrot/flows/wiki_ingest/{__init__,agent,definition,factories,runner,conf}.py` (**own `conf.py` — do NOT touch `parrot/agents/conf.py`**)
-- **Responsibility**: `parrot/flows/wiki_ingest/` package (dev_loop-shaped); `@register_agent("fireflies_wiki_kb")` façade (`Agent` subclass) with the six intents; a self-contained `conf.py`: `WIKI_KB_VAULT_PATH` (external vault), `WIKI_KB_PARTICIPANTS` (fetch allowlist), `WIKI_KB_LLM_STRONG` / `WIKI_KB_LLM_CHEAP` (`provider:model` strings; default `google:gemini-2.5-pro` / `google:gemini-2.5-flash`, exact ids via env; may be set to `anthropic:…` or `openai-codex:…`), `WIKI_KB_INGEST_CRON` (default `"0 * * * *"`, hourly), `WIKI_KB_INGEST_LIMIT` (per-run cap), `WIKI_KB_MAX_CATCHUP_DAYS` (large-backlog guard), `FIREFLIES_SYNC_OVERLAP_DAYS` (reuse FEAT-472), `WIKI_KB_ACTIVE_WINDOW_DAYS=14`, `WIKI_KB_RAW_ROOT`, `FIREFLIES_WIKI_EMAIL_ENABLED=false`.
+- **Responsibility**: `parrot/flows/wiki_ingest/` package (dev_loop-shaped); `@register_agent("fireflies_wiki_kb")` façade (`Agent` subclass) with the six intents; a self-contained `conf.py`: `WIKI_KB_VAULT_PATH` (external vault), `WIKI_KB_PARTICIPANTS` (fetch allowlist), `WIKI_KB_LLM_STRONG` / `WIKI_KB_LLM_CHEAP` (`provider:model` strings; default `google:gemini-2.5-pro` / `google:gemini-2.5-flash`, exact ids via env; may be set to `anthropic:…` or `openai-codex:…`), `WIKI_KB_INGEST_CRON` (default `"0 * * * *"`, hourly), `WIKI_KB_INGEST_LIMIT` (per-run cap), `WIKI_KB_MAX_CATCHUP_DAYS` (large-backlog guard), `FIREFLIES_SYNC_OVERLAP_DAYS` (reuse FEAT-472), `WIKI_KB_ACTIVE_WINDOW_DAYS=14`, `WIKI_KB_RAW_ROOT`, `WIKI_KB_MAX_REPROCESS_ATTEMPTS` (default `3` — Module 17 quarantine auto-retry cap), `FIREFLIES_WIKI_EMAIL_ENABLED=false`.
 - **Depends on**: `parrot.registry`, `parrot.scheduler` (`add_cron`/`@schedule`), `LLMFactory`, FEAT-472 conf (imported, not edited).
 
 ### Module 2: Fetch-gate + scheduling (reuse FEAT-472, additive)
@@ -264,7 +271,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 3: Raw bundle layer (§13/§14/§27 spine)
 - **Path**: `parrot/flows/wiki_ingest/nodes/raw_bundle.py`
-- **Responsibility**: drop `transcript`/`summary`/`metadata` into `Raw/Incoming/`; pair by strongest key (§13); SHA-256 hash (§14.2); immutable move to `Raw/Processed/<client>/<project>/YYYY/MM/<source-id>/` with pre/post hash verify; `Duplicates/`/`Uncategorized/` routing (§14.3/§15.5). Raw bytes never edited.
+- **Responsibility**: drop `transcript`/`summary`/`metadata` into `Raw/Incoming/`; pair by strongest key (§13); SHA-256 hash (§14.2); immutable move to `Raw/Processed/<client>/<project>/YYYY/MM/<source-id>/` with pre/post hash verify; `Duplicates/`/`Uncategorized/` routing (§14.3/§15.5); **`Raw/Failed/<source-id>/` quarantine routing** for bundles the pipeline could not compile — the promote-to-`Processed` step is *deferred until compilation + §34 succeed*, so a failed bundle is moved to `Raw/Failed/` instead of `Raw/Processed/` (Module 17), with the same pre/post hash verify. Raw bytes never edited.
 - **Depends on**: Module 2.
 
 ### Module 4: Vault access layer + §11 init + §25 mirror (own toolkit instance)
@@ -279,7 +286,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 6: Ingest orchestrator (§27, chronological, catch-up-aware)
 - **Path**: `parrot/flows/wiki_ingest/runner.py`, `.../nodes/__init__.py`
-- **Responsibility**: the §27 ordered pipeline; **sort the whole batch oldest→newest by `meeting_date`** (G5) — so an hourly run and a large post-downtime catch-up both reconcile in temporal order; process in bounded chunks (`WIKI_KB_INGEST_LIMIT`) so a big backlog spans several runs without one giant transaction; read operating context (§12); **apply the §31 archive policy as ingest step 22** (invokes Module 14's archive; the manual `archive` intent shares that code); on §34 failure roll back compiled changes (never raw), queue a review item, write no success registry/log entry; print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
+- **Responsibility**: the §27 ordered pipeline; **sort the whole batch oldest→newest by `meeting_date`** (G5) — so an hourly run and a large post-downtime catch-up both reconcile in temporal order; process in bounded chunks (`WIKI_KB_INGEST_LIMIT`) so a big backlog spans several runs without one giant transaction; read operating context (§12); **apply the §31 archive policy as ingest step 22** (invokes Module 14's archive; the manual `archive` intent shares that code); on §34 failure **or any LLM-compile failure/exception** (the model cannot return valid structured output — `InvokeError`, unparseable/degenerate output, or a raised exception anywhere in the per-meeting compile) invoke the **Module 17 fallback**: roll back *all* compiled changes for that meeting (never raw), quarantine the raw bundle to `Raw/Failed/<source-id>/`, **leave the id UN-processed in `MeetingRegistry`** (so it is reprocessable — never a success/permanent-skip), queue a `failed-processing` review item, and write no success registry/log entry; the batch continues with the next meeting (one meeting's failure never aborts the run); print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
 - **Depends on**: Modules 2–5, 7–13.
 
 ### Module 7: Summary-first classification (§15)
@@ -309,7 +316,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 
 ### Module 12: Daily diary + indexes/overview + review queue + log
 - **Path**: `parrot/flows/wiki_ingest/nodes/{daily,indexes,review_queue,log}.py`
-- **Responsibility**: §23 daily synthesis (not concatenation); §24 index/overview maintenance; §26 Review Queue (allowed types minus `source-revision`); §33 append-only log (ops minus `revision-detected`).
+- **Responsibility**: §23 daily synthesis (not concatenation); §24 index/overview maintenance; §26 Review Queue (allowed types minus `source-revision`, plus the Module 17 quarantine types `failed-processing` and `reprocess-exhausted`); §33 append-only log (ops minus `revision-detected`).
 - **Depends on**: Module 5.
 
 ### Module 13: GraphIndex derived rebuild + Query (§28)
@@ -331,6 +338,17 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 - **Path**: `tests/integration/test_wiki_kb_contract.py`
 - **Responsibility**: executable checks mapping contract §34/§36 to assertions over a fixture vault; the acceptance oracle for §5.
 - **Depends on**: all.
+
+### Module 17: Failure quarantine, rollback & reprocess (fallback)
+- **Path**: `parrot/flows/wiki_ingest/nodes/quarantine.py` (new); integrates with Module 3 (raw routing), Module 6 (orchestrator), Module 12 (review queue), Module 2 (fetch-gate).
+- **Motivation**: a meeting the LLM cannot compile into valid structured output (observed: flash-tier models degenerating on the large `MeetingPageExtraction` schema — `InvokeError` / unparseable-truncated JSON) must never (a) leave partial pages in the vault, nor (b) be silently marked processed and thereby lost. This module makes each per-meeting compile **transactional** and provides a bounded self-healing retry.
+- **Responsibility**:
+  - **Transactional per-meeting compile (rollback / vault clean-up).** Track every vault artifact created or modified while compiling one meeting (meeting source page, project-page edits, entity/concept pages, daily note, index/overview/log/registry-mirror touches). On §34 failure **or any compile exception**, undo them all — delete pages this meeting created; restore pages it modified to their pre-meeting content (capture the prior bytes before the first edit); leave the vault byte-identical to its pre-meeting state (integrity preserved). Never touch raw bytes.
+  - **Quarantine (not "processed").** Move the raw bundle to **`Raw/Failed/<source-id>/`** (Module 3 routing) with pre/post hash verify. The `source_id` is **not** written to `MeetingRegistry` as processed and is **not** a §14.3 permanent-skip — it stays eligible for reprocessing. Record a small sidecar `Raw/Failed/<source-id>/failure.json` = `{ source_id, attempts, last_error, first_failed_at, last_failed_at, models{strong,cheap} }`.
+  - **Review-queue surfacing.** Write a `failed-processing` Review Queue item (§26) linking the quarantined bundle and the last error, so the failure is human-visible.
+  - **Bounded auto-retry (self-heal).** On each subsequent ingest, before fetching new meetings the fetch-gate (Module 2) also enumerates `Raw/Failed/` and re-submits each quarantined bundle to the normal compile path (no re-download — the bytes are already local), incrementing `attempts`. A successful retry compiles normally, promotes the bundle `Raw/Failed/ → Raw/Processed/`, marks the id processed, and **clears** the Review Queue item. After `WIKI_KB_MAX_REPROCESS_ATTEMPTS` (default 3) the bundle is **parked**: its Review Queue item is re-typed `reprocess-exhausted` and it is skipped by the auto-retry loop until a human acts (manual re-drop / a future `reprocess` intent) — no infinite retry, no repeated token burn.
+  - **Idempotence.** A retry re-runs the same transactional compile, so a mid-retry failure rolls back cleanly and re-quarantines (attempts already incremented).
+- **Depends on**: Modules 2, 3, 5, 6, 12.
 
 ---
 
@@ -458,6 +476,8 @@ def sample_bundle():
 - [ ] **Contradictions (§22):** materially incompatible claims produce a linked contradiction page; never resolved by recency.
 - [ ] **Boundaries (§2 #1):** `Private/` is never read/listed/traversed; `.obsidian/` untouched; §34 asserts both.
 - [ ] **Post-op gate (§34):** no registry/log success entry is written unless validation passes; failures roll back compiled changes only.
+- [ ] **Fallback quarantine & rollback (Module 17):** a meeting the LLM cannot compile (InvokeError / unparseable-degenerate output / any compile exception) leaves the vault **byte-identical to its pre-meeting state** — every page that meeting created is deleted and every page it modified is restored (no partial artifacts); the raw bundle is quarantined to `Raw/Failed/<source-id>/` (bytes intact, pre/post hash verified) with a `failure.json` sidecar; the id is **not** marked processed in `MeetingRegistry`; a `failed-processing` Review Queue item is written; no success log/registry entry; and the batch continues with the next meeting.
+- [ ] **Bounded reprocess (Module 17):** a quarantined bundle is auto-retried from `Raw/Failed/` on subsequent ingests (no re-download) up to `WIKI_KB_MAX_REPROCESS_ATTEMPTS` (default 3); a successful retry compiles normally, promotes `Raw/Failed/ → Raw/Processed/`, marks the id processed, and clears the Review Queue item; after the cap the bundle is parked as `reprocess-exhausted` and not retried again until a human intervenes (no infinite retry).
 - [ ] **Contract conformance suite** (Module 16) passes — the §34/§36 oracle.
 - [ ] **Email disabled (G9):** digests present but do not send unless `FIREFLIES_WIKI_EMAIL_ENABLED=true`.
 - [ ] **Additive-only (G11):** no existing agent/toolkit file is modified; the existing suites for `agents/obsidian.py`, `agents/fireflies_wiki.py`, and `tools/obsidian.py` stay green.
