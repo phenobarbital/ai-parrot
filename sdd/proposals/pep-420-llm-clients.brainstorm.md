@@ -6,9 +6,9 @@ type: feature
 base_branch: dev
 ---
 
-# Brainstorm: PEP 420 LLM Client Satellite Packages
+# Brainstorm: PEP 420 LLM Client Extraction
 
-**Date**: 2026-09-03
+**Date**: 2026-09-04
 **Author**: Jesus Lara
 **Status**: exploration
 **Recommended Option**: Option A
@@ -17,106 +17,131 @@ base_branch: dev
 
 ## Problem Statement
 
-Every LLM client (`parrot.clients`) ships inside the core `ai-parrot`
-distribution, regardless of whether the user needs or installs the
-corresponding SDK dependency. The `clients/` directory currently contains
-**34,671 lines** across 34 files covering ~20 distinct LLM providers.
+The core `ai-parrot` package bundles **all 20+ LLM client modules** (~34,700
+lines, 3 MB of source) in `parrot/clients/`, alongside their SDK dependencies
+(`anthropic`, `openai`, `google-genai`, `groq`, `aioboto3`, `xai-sdk`,
+`zai-sdk`, `claude-agent-sdk`, …).
 
-**Who is affected:** developers installing `ai-parrot` who only need a
-subset of providers (the common case). They carry ~13 kLoC of unused client
-code in their environment, and the `pyproject.toml` already lists per-provider
-extras for the SDK dependencies (`ai-parrot[openai]`, `ai-parrot[groq]`, etc.)
-— but those extras install only the *dependency*, not the *code*, because the
-code is already always present.
+This causes three concrete pain points:
 
-**Why now:** the client roster keeps growing — Grok/xAI, Moonshot/Kimi, NVIDIA
+1. **Dependency bloat**: installing `ai-parrot` for one provider (e.g.
+   Anthropic) still makes available the import machinery for every other
+   provider. The `[llms]` extra already gates the *SDK* installs, but the
+   *client code* — 34K lines of it — ships in every wheel.
+
+2. **SDK version conflicts**: providers ship breaking SDK changes at different
+   cadences. Pinning `openai==3.3.1` in the core package means every
+   downstream consumer inherits that pin, even if they only use Claude.
+
+3. **Third-party extensibility barrier**: adding a new provider requires a PR
+   to the core package. There is no plugin mechanism for client contributions
+   beyond manually registering in `factory.py`'s `SUPPORTED_CLIENTS` dict.
+
+**Who is affected**: downstream application developers who install `ai-parrot`
+as a dependency, CI pipelines that pull heavy SDK trees, and community
+contributors wanting to add new LLM providers.
+
+**Why now**: the client roster keeps growing — Grok/xAI, Moonshot/Kimi, NVIDIA
 NIM, BedrockMantle, OpenAI Codex, and Gemma4 were all added in the last 6
-months. Each new provider adds ~500–2,000 lines to core. The
-`ai-parrot-embeddings` refactor (FEAT-201) already proved the PEP 420
-satellite pattern works well and reduces core install size. Applying the same
-pattern to LLM clients is the natural next step.
-
-**The unsolved question:** `SUPPORTED_CLIENTS` in `factory.py` is a static
-dict that hard-codes every provider→class mapping. Moving client code to
-satellite packages means the factory can no longer statically import them.
-The discovery mechanism must become dynamic — specifically,
-`importlib.metadata.entry_points`-based — so that each satellite registers its
-clients at install time and the factory discovers them at runtime.
+months. The `ai-parrot-embeddings` refactor (FEAT-201) already proved the
+PEP 420 satellite pattern works well. Applying the same pattern to LLM
+clients is the natural next step.
 
 ## Constraints & Requirements
 
-- **Backward compatibility**: `from parrot.clients.openai import OpenAIClient`
-  (and equivalent for every provider) must keep working when the satellite is
-  installed. PEP 420 namespace merging provides this natively; a `sys.meta_path`
-  finder acts as a fallback.
-- **Core must remain self-sufficient**: Anthropic (Claude), Google
-  (GenAI + VertexAI + Live), and Ollama (local/vLLM) stay in core because
-  internal tools and defaults depend on them.
-- **No import-time overhead**: the factory must not attempt to import all
-  satellites eagerly. Entry points are metadata-only until explicitly loaded.
-- **Existing extras pattern preserved**: `ai-parrot[openai]` must now pull in
-  *both* the SDK (`openai==3.3.1`) and the satellite package
-  (`ai-parrot-llm-openai`). A new `ai-parrot[llms]` meta-extra pulls all
-  satellite LLM packages.
-- **OpenAIBaseClient stays in core**: it is the shared base class for
-  LocalLLMClient (core) and multiple satellite clients (Groq, NVIDIA, etc.).
-  Satellites import from `parrot.clients.openai_base`.
-- **One package per provider**: each satellite is independently versionable and
-  installable, following the user's decision in discovery.
+- **Zero breaking changes**: `from parrot.clients.claude import AnthropicClient`
+  (and equivalent for every provider) MUST continue to work when the satellite
+  is installed. PEP 420 namespace merging provides this natively; a
+  `sys.meta_path` finder acts as a fallback.
+- **OpenAI client stays in core**: as the reference implementation and base
+  class for many OpenAI-compatible providers (`OpenAIBaseClient`). `OpenAIClient`
+  (gpt.py) stays alongside `OpenAIBaseClient` (openai_base.py) in core.
+- **`ai-parrot[llms]` meta-extra preserved**: the existing
+  `pip install ai-parrot[llms]` must install all client packages (rewritten
+  to pull satellite package dependencies).
+- **Family-based grouping**: clients sharing the same SDK dependency family
+  ship in the same satellite package (e.g. all Google clients share
+  `google-genai`, all Amazon clients share `aioboto3`).
+- **Dual discovery**: client registration via
+  `[project.entry-points."parrot.clients"]` in `pyproject.toml` (primary),
+  with a `sys.meta_path` finder as fallback for import-path compatibility.
+- **uv workspace**: all new packages live under `packages/` and are declared
+  as workspace members in the root `pyproject.toml`.
 
 ---
 
 ## Options Explored
 
-### Option A: Per-Provider PEP 420 Satellites + Entry-Point Discovery
+### Option A: Family-Based Satellite Packages + Dual Discovery
 
-Each non-core LLM provider gets its own distribution under `packages/`. The
-satellite contributes its client module(s) to the `parrot.clients` namespace
-via PEP 420 implicit namespace packages (no `__init__.py` at `src/parrot/` or
-`src/parrot/clients/`). Each satellite declares a
-`[project.entry-points."parrot.llm_providers"]` group in its `pyproject.toml`
-that maps provider keys to the client class.
+Extract clients into **~9 satellite packages** grouped by SDK dependency
+family, plus a handful of standalone single-provider packages.
 
-**`factory.py` changes**: `SUPPORTED_CLIENTS` starts with only core clients
-(Claude, Google, Ollama). At first access (lazy singleton), it merges clients
-discovered via `importlib.metadata.entry_points(group="parrot.llm_providers")`.
-Each entry point's `load()` returns the client class. The existing lazy-loader
-closure pattern is replaced by the entry-point loader which is inherently lazy.
+**Satellite packages:**
 
-**Satellite packages (9 total):**
-
-| Package | Files Moved | Providers Registered | Lines |
+| Package | Clients Moved | SDK Dependencies | ~Lines |
 |---|---|---|---|
-| `ai-parrot-llm-openai` | `gpt.py`, `codex_agent.py`, `codex_tool_bridge.py` | `openai`, `codex-agent`, `openai-codex`, `codex-code` | ~3,250 |
-| `ai-parrot-llm-groq` | `groq.py` | `groq` | ~1,522 |
-| `ai-parrot-llm-grok` | `grok.py` | `grok`, `xai` | ~798 |
-| `ai-parrot-llm-openrouter` | `openrouter.py` | `openrouter` | ~202 |
-| `ai-parrot-llm-nvidia` | `nvidia.py` | `nvidia` | ~695 |
-| `ai-parrot-llm-moonshot` | `moonshot.py` | `moonshot`, `kimi` | ~372 |
-| `ai-parrot-llm-zai` | `zai.py` | `zai`, `z.ai` | ~1,098 |
-| `ai-parrot-llm-bedrock` | `bedrock.py`, `nova/` | `bedrock-converse`, `nova`, `bedrock-mantle`, `mantle` | ~3,733 |
-| `ai-parrot-llm-huggingface` | `hf.py`, `gemma4.py` | `transformers`, `gemma4` | ~1,538 |
-| **Total** | **17 files** | **~20 keys** | **~13,208** |
+| **Core** (`ai-parrot`) | `AbstractClient`, `OpenAIBaseClient`, `OpenAIClient`, `OpenRouterClient`, `MoonshotClient`, `LLMFactory` | `openai` | stays |
+| `ai-parrot-client-anthropic` | `AnthropicClient` (claude.py), `ClaudeAgentClient` (claude_agent.py), `ClaudeAgentBridge` (claude_agent_bridge.py), `anthropic_backends.py` | `anthropic[aiohttp]`, `claude-agent-sdk` | ~5,100 |
+| `ai-parrot-client-google` | `GoogleGenAIClient` (google/), `Gemma4Client` (gemma4.py), `GeminiLiveClient` (live.py) | `google-genai`, `google-api-python-client`, `google-cloud-texttospeech` | ~16,000 |
+| `ai-parrot-client-amazon` | `BedrockConverseClient` (bedrock.py), Nova clients (nova/), `BedrockMantleClient` (nova/mantle.py) | `aioboto3`, `anthropic[aiohttp,aws]` | ~4,400 |
+| `ai-parrot-client-groq` | `GroqClient` (groq.py) | `groq` | ~1,500 |
+| `ai-parrot-client-grok` | `GrokClient` (grok.py) | `xai-sdk` | ~800 |
+| `ai-parrot-client-zai` | `ZaiClient` (zai.py) | `zai-sdk` | ~1,100 |
+| `ai-parrot-client-nvidia` | `NvidiaClient` (nvidia.py) | (none — uses `openai`) | ~700 |
+| `ai-parrot-client-local` | `LocalLLMClient` (localllm.py), `vLLMClient` (vllm.py) | (none — uses `openai`) | ~900 |
+| `ai-parrot-client-hf` | `TransformersClient` (hf.py) | `transformers`, `sentence-transformers` | ~650 |
 
-**sys.meta_path fallback**: a `_ClientRedirector` (modeled on
-`_ParrotToolsRedirector` in `parrot/tools/__init__.py`) intercepts
-`parrot.clients.<name>` imports when namespace merging fails (editable installs,
-mono-repo dev mode). It tries `import parrot_llm_<provider>.<name>` as a last
-resort.
+**What stays in core:**
+- `AbstractClient` (base.py) — the abstract base class
+- `OpenAIBaseClient` (openai_base.py) — shared base for OpenAI-compatible clients
+- `OpenAIClient` (gpt.py) — the reference implementation
+- `OpenRouterClient` (openrouter.py, 6.8K) — thin wrapper, no new SDK
+- `MoonshotClient` (moonshot.py, 15.4K) — thin wrapper, no new SDK
+- `LLMFactory` (factory.py) — refactored with entry-point discovery
+- `models.py`, `protocols.py` — shared types
+
+**Discovery mechanism:**
+
+Each satellite declares entry points in `pyproject.toml`:
+```toml
+# ai-parrot-client-anthropic/pyproject.toml
+[project.entry-points."parrot.clients"]
+claude = "parrot.clients.claude:AnthropicClient"
+anthropic = "parrot.clients.claude:AnthropicClient"
+claude-agent = "parrot.clients.claude_agent:ClaudeAgentClient"
+```
+
+`LLMFactory` discovers them via:
+```python
+# At first use (lazy, cached)
+from importlib.metadata import entry_points
+eps = entry_points(group="parrot.clients")
+for ep in eps:
+    SUPPORTED_CLIENTS[ep.name] = ep  # lazy — ep.load() on first use
+```
+
+A `_ParrotClientsRedirector` MetaPathFinder (modeled on
+`_ParrotToolsRedirector`) provides import-path backward compatibility.
 
 ✅ **Pros:**
-- Maximum granularity — install only what you need
-- Independent versioning and release cycles per provider
-- Mirrors the proven `ai-parrot-embeddings` pattern
-- Entry points are the standard Python plugin mechanism
-- Core shrinks by ~13 kLoC (38% of `clients/`)
-- Each satellite can pin its own SDK version independently
+- Matches SDK dependency boundaries — install only the SDKs you need
+- ~9 packages is manageable (vs. 12–15 for fully granular)
+- Natural grouping: Google family shares `google-genai`, Amazon family
+  shares `aioboto3`, Anthropic family shares `anthropic`
+- Follows the proven `ai-parrot-embeddings` (FEAT-201) migration pattern
+- Core package drops from 3 MB to ~600 KB of client code
+- Third parties can add providers by publishing their own
+  `ai-parrot-client-<provider>` package with an entry point
+- Independent versioning per family
 
 ❌ **Cons:**
 - 9 new packages to maintain (pyproject.toml, CI, releases)
-- uv workspace grows from 8 to 17 members
-- Satellites that wrap a single ~200-line file (openrouter) have high
-  packaging overhead relative to code
+- uv workspace grows from 12 to ~21 members
+- Cross-family dependencies need care (e.g., Amazon Bedrock uses
+  `anthropic[aws]` — pins `anthropic` independently from
+  `ai-parrot-client-anthropic`)
+- `LLMFactory` needs rewrite to support dynamic discovery
 - Entry-point discovery adds ~5–10ms at first factory call (one-time)
 
 📊 **Effort:** High
@@ -124,162 +149,131 @@ resort.
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `importlib.metadata` | Entry-point discovery | stdlib, Python 3.9+ |
-| `setuptools` / `hatchling` | Build backend with entry-point support | already used |
-| `uv` | Workspace member management | already used |
+| `importlib.metadata` | Entry-point discovery | stdlib, Python 3.11+ |
+| `setuptools` | Build backend for satellites | existing build system |
+| PEP 420 | Implicit namespace packages | no runtime dependency |
 
 🔗 **Existing Code to Reuse:**
-- `packages/ai-parrot-embeddings/` — full PEP 420 satellite template (directory structure, pyproject.toml, `.gitkeep` pattern)
-- `parrot/tools/__init__.py:50-136` — `_ParrotToolsRedirector` sys.meta_path finder pattern
-- `parrot/clients/factory.py:16-104` — lazy-loader closures (conceptual ancestor of entry-point loading)
+- `packages/ai-parrot-embeddings/` — complete PEP 420 satellite template
+  (directory structure, pyproject.toml, workspace integration)
+- `parrot/tools/__init__.py:50-136` — `_ParrotToolsRedirector` MetaPathFinder
+  pattern (the template for `_ParrotClientsRedirector`)
+- `parrot/clients/factory.py` — `LLMFactory` and `SUPPORTED_CLIENTS` dict
+  to refactor
 
 ---
 
-### Option B: SDK-Grouped Satellites + Entry-Point Discovery
+### Option B: Single Satellite Package (ai-parrot-clients)
 
-Instead of one package per provider, group clients by their underlying SDK
-dependency. Providers sharing the same SDK ship together.
+Move ALL non-core client implementations into one `ai-parrot-clients`
+satellite package, with per-provider optional extras.
 
-**Satellite packages (4 total):**
+```
+packages/ai-parrot-clients/src/parrot/clients/
+├── claude.py
+├── google/
+├── bedrock.py
+├── groq.py
+├── ...
+```
 
-| Package | Clients | Shared SDK |
-|---|---|---|
-| `ai-parrot-llm-openai-compat` | OpenAI, Groq, NVIDIA, Moonshot, Zai, OpenRouter, Codex | `openai` SDK |
-| `ai-parrot-llm-aws` | BedrockConverse, Nova, BedrockMantle | `aioboto3` / AWS SDK |
-| `ai-parrot-llm-xai` | Grok | `xai-sdk` |
-| `ai-parrot-llm-huggingface` | Transformers, Gemma4 | `torch`, `transformers` |
-
-Same entry-point discovery mechanism as Option A. The only difference is
-the packaging granularity.
+Install: `pip install ai-parrot-clients[claude,google]`
 
 ✅ **Pros:**
-- Only 4 packages instead of 9 — less CI/release overhead
-- SDK version pinning is centralized per group
-- Smaller providers (OpenRouter, Moonshot) don't carry packaging overhead
+- Simplest to maintain — one package, one release cycle
+- Still achieves dependency isolation via per-provider extras
+- `LLMFactory` can remain simpler (one import source)
+- Lowest migration effort
 
 ❌ **Cons:**
-- Violates one-package-per-provider decision from discovery
-- Installing `ai-parrot-llm-openai-compat` pulls in 7 client modules when
-  you might only want one (defeats the purpose of reducing installed code)
-- Groq and OpenRouter have different SDK-level deps despite sharing
-  `OpenAIBaseClient` (Groq has `groq` SDK, not just `openai`)
-- Adding a new OpenAI-compat provider forces a release of the umbrella package
-- xAI alone as a satellite feels odd (single-file package)
+- All client *code* still ships together (even if SDKs are optional)
+- No independent versioning per provider — a Google-specific breaking
+  change forces a version bump that affects Anthropic users
+- Third-party providers would need to contribute to this one package
+  (same friction as today, just moved)
+- Doesn't match the user's stated goal of family-based packages
 
 📊 **Effort:** Medium
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `importlib.metadata` | Entry-point discovery | stdlib |
+| PEP 420 | Implicit namespace | same as Option A |
+| `importlib.metadata` | Entry-point discovery | optional, could skip |
+
+🔗 **Existing Code to Reuse:**
+- Same as Option A, but simpler — one `pyproject.toml` with many extras
+
+---
+
+### Option C: Fully Granular — One Package Per Client Module
+
+Every client file becomes its own package: `ai-parrot-client-claude`,
+`ai-parrot-client-claude-agent`, `ai-parrot-client-google`,
+`ai-parrot-client-gemma4`, `ai-parrot-client-live`,
+`ai-parrot-client-groq`, `ai-parrot-client-grok`,
+`ai-parrot-client-bedrock`, `ai-parrot-client-nova`,
+`ai-parrot-client-mantle`, `ai-parrot-client-nvidia`,
+`ai-parrot-client-zai`, `ai-parrot-client-hf`,
+`ai-parrot-client-ollama`, `ai-parrot-client-vllm`,
+`ai-parrot-client-codex` — ~15–17 packages total.
+
+✅ **Pros:**
+- Maximum isolation — each provider has its own version, release cycle
+- Absolute minimum install for any given provider
+- Third parties are on equal footing with built-in providers
+
+❌ **Cons:**
+- **Maintenance burden**: 15+ packages × (pyproject.toml + CI matrix +
+  changelog + release) = significant overhead for a small team
+- Packages sharing an SDK (Google family) duplicate the dep declaration
+  or need inter-package dependencies
+- `ai-parrot-client-gemma4` depends on `google-genai` just like
+  `ai-parrot-client-google` — no real isolation gained by separating them
+- Thin wrappers like `BedrockMantleClient` (200 lines) don't justify
+  their own package
+
+📊 **Effort:** Very High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| Same as A | Entry points + PEP 420 | More packages to declare |
 
 🔗 **Existing Code to Reuse:**
 - Same as Option A
 
 ---
 
-### Option C: Single Satellite (ai-parrot-llm) with Per-Provider Extras
-
-One satellite distribution (`ai-parrot-llm`) holds all non-core clients. Each
-provider is exposed via an optional extra:
-`pip install ai-parrot-llm[openai,groq]`.
-
-All client code lives in a single `packages/ai-parrot-llm/` member. Extras
-control only the SDK dependency, not which `.py` files are installed — all
-client modules are always present in the satellite (same as the current
-situation, but the code is in a separate distribution).
-
-✅ **Pros:**
-- Simplest packaging: 1 new package instead of 9
-- Easiest migration: one `pyproject.toml`, one CI pipeline
-- `ai-parrot[llms]` just depends on `ai-parrot-llm[all]`
-- Single version to track
-
-❌ **Cons:**
-- Core size reduction is all-or-nothing: either you install the satellite
-  (and get ALL client code) or you don't
-- Does not achieve the stated goal of "install only what you need" at the
-  code level — only at the SDK dependency level
-- Adding a new provider still grows the satellite, approaching the same
-  problem at a different level
-- Cannot version providers independently
-
-📊 **Effort:** Low
-
-📦 **Libraries / Tools:**
-| Package | Purpose | Notes |
-|---|---|---|
-| `importlib.metadata` | Entry-point discovery | stdlib |
-
-🔗 **Existing Code to Reuse:**
-- Same as Option A, but only one satellite to scaffold
-
----
-
-### Option D: Lazy-Import Guard Only (No Code Movement)
-
-Do not move any code. Instead, wrap every non-core client in a try-import
-guard that raises an actionable `ImportError` when the SDK is missing. Make
-all non-core clients lazy-loaded in `factory.py` (extend the existing
-`_lazy_*` pattern to ALL non-core clients).
-
-This eliminates import-time failures and startup overhead from unused clients
-without changing the package structure.
-
-✅ **Pros:**
-- Zero packaging changes — no new distributions
-- No entry-point mechanism needed
-- No risk of namespace-merging edge cases
-- Trivially reversible
-- Already partially implemented (6 of 20 clients use lazy loaders)
-
-❌ **Cons:**
-- Does NOT reduce installed code size (the stated goal)
-- `parrot.clients` keeps growing with every new provider
-- Not aligned with the PEP 420 satellite strategy established by FEAT-201
-- Users still carry ~13 kLoC they cannot use
-
-📊 **Effort:** Low
-
-📦 **Libraries / Tools:**
-| Package | Purpose | Notes |
-|---|---|---|
-| (none) | All stdlib | — |
-
-🔗 **Existing Code to Reuse:**
-- `parrot/clients/factory.py:16-104` — existing `_lazy_*` closures
-
----
-
 ## Recommendation
 
-**Option A** is recommended because:
+**Option A (Family-Based Satellite Packages)** is recommended because:
 
-1. **It fully solves the stated problem**: code that is not needed is not
-   installed. This is the only option that achieves true code-level
-   modularity, not just dependency-level modularity.
+1. **Matches SDK dependency boundaries**: the grouping criterion is "which
+   SDK do these clients share?" — Google clients share `google-genai`,
+   Amazon clients share `aioboto3`, Anthropic clients share `anthropic`.
+   Splitting within a family gains nothing: `Gemma4Client` and
+   `GoogleGenAIClient` both require the same SDK.
 
-2. **It follows the proven pattern**: `ai-parrot-embeddings` (FEAT-201)
-   established PEP 420 satellites as the project's standard for decomposing
-   the monolith. Doing the same for clients is a natural, predictable
-   extension that developers already understand.
+2. **Manageable scope**: 9 new packages is a meaningful increase but stays
+   well within what the existing workspace infrastructure supports (12
+   packages today → ~21). Each package has a clear owner and boundary.
 
-3. **Entry points are the right discovery mechanism**: they are the stdlib
-   standard for plugin registration, metadata-only at rest (no import until
-   `load()` is called), and supported by all modern build backends. This
-   replaces the static `SUPPORTED_CLIENTS` dict with a discoverable,
-   extensible registry — opening the door for third-party LLM client plugins
-   in the future.
+3. **Proven pattern**: `ai-parrot-embeddings` (FEAT-201) already demonstrated
+   the PEP 420 migration path with zero breaking changes. The
+   `_ParrotToolsRedirector` MetaPathFinder in `parrot/tools/__init__.py`
+   is the exact template for import-path backward compatibility.
 
-4. **The packaging overhead is manageable**: 9 packages sounds like a lot, but
-   each satellite is a minimal `pyproject.toml` + 1-3 `.py` files + entry-point
-   declarations. CI can use a matrix build. The uv workspace already manages 8
-   members; 17 is routine for a workspace this size.
+4. **Dual discovery for extensibility**: the `importlib.metadata` entry-point
+   group (`parrot.clients`) allows third parties to publish
+   `ai-parrot-client-<provider>` packages that are automatically discovered
+   by `LLMFactory` — no PR to core required. The `sys.meta_path` fallback
+   guarantees import-path compatibility.
 
-**What we're trading off**: release coordination complexity (9 satellites to
-version) and slightly more CI infrastructure. This is acceptable because each
-satellite changes infrequently (LLM client code is stable once written) and
-can be released independently.
+The tradeoff is **higher initial migration effort** (9 new `pyproject.toml`
+files, CI matrix updates, the `LLMFactory` refactor) vs. Option B's
+simplicity. But Option B doesn't solve the "install only what you need"
+goal at the code level or enable independent versioning per family.
 
 ---
 
@@ -287,75 +281,81 @@ can be released independently.
 
 ### User-Facing Behavior
 
-**Installing with specific providers:**
+**Before** (current state):
 ```bash
-# Only need Claude and OpenAI
-pip install ai-parrot ai-parrot-llm-openai
-
-# Need everything
-pip install ai-parrot[llms]
-
-# Or the old way (still works — extras now pull satellite packages)
-pip install ai-parrot[openai,groq]
+pip install ai-parrot         # gets ALL client code (3 MB)
+pip install ai-parrot[llms]   # gates only SDK installs
 ```
 
-**Import paths remain unchanged:**
-```python
-# These all work when ai-parrot-llm-openai is installed:
-from parrot.clients.gpt import OpenAIClient          # PEP 420 namespace
-from parrot.clients.factory import LLMFactory
-client = LLMFactory.create("openai:gpt-5-mini")      # entry-point discovery
+**After** (this feature):
+```bash
+pip install ai-parrot                       # AbstractClient + OpenAI ref only
+pip install ai-parrot-client-anthropic      # Claude + ClaudeAgent
+pip install ai-parrot-client-google         # Google GenAI + Gemma4 + Live
+pip install ai-parrot-client-amazon         # Bedrock + Nova + Mantle
+pip install ai-parrot[llms]                 # meta-extra → all client packages
+pip install ai-parrot[claude]               # alias → ai-parrot-client-anthropic
 ```
 
-**Clear error when a satellite is not installed:**
-```python
->>> from parrot.clients.gpt import OpenAIClient
-ImportError: parrot.clients.gpt requires the 'ai-parrot-llm-openai' package.
-Install with: pip install ai-parrot-llm-openai
-  (or: pip install ai-parrot[openai])
-```
+Import paths are **unchanged** — code that does
+`from parrot.clients.claude import AnthropicClient` continues to work
+via PEP 420 namespace merging and the MetaPathFinder fallback.
+
+`LLMFactory.create("claude:claude-sonnet-4-20250514")` continues to work —
+the factory discovers `AnthropicClient` via the `parrot.clients` entry-point
+group at import time.
 
 ### Internal Behavior
 
-1. **At install time**: each satellite's `pyproject.toml` declares entry points
-   in the `parrot.llm_providers` group. `uv`/`pip` writes these to the
-   distribution's `dist-info/entry_points.txt`.
+1. **Build time**: each satellite declares
+   `[project.entry-points."parrot.clients"]` in its `pyproject.toml`:
+   ```toml
+   [project.entry-points."parrot.clients"]
+   claude = "parrot.clients.claude:AnthropicClient"
+   anthropic = "parrot.clients.claude:AnthropicClient"
+   claude-agent = "parrot.clients.claude_agent:ClaudeAgentClient"
+   ```
 
-2. **At first `LLMFactory.create()` call** (or explicit
-   `LLMFactory.discover()`):
-   - Start with core clients (hardcoded: claude, anthropic, bedrock,
-     anthropic-aws, google, local, localllm, ollama, vllm, llamacpp).
-   - Call `importlib.metadata.entry_points(group="parrot.llm_providers")`.
-   - For each entry point, register its `name → entry_point` (not yet loaded)
-     in the `SUPPORTED_CLIENTS` dict.
-   - On first use of a discovered key, call `entry_point.load()` to import
-     the class.
+2. **Import time**: `parrot/clients/__init__.py` installs a
+   `_ParrotClientsRedirector` (modeled on `_ParrotToolsRedirector`) that
+   redirects `parrot.clients.<x>` to the satellite's namespace-merged
+   module when the standard namespace merge doesn't resolve it.
 
-3. **At import time** (namespace merging):
-   - When `ai-parrot-llm-openai` is installed, its
-     `src/parrot/clients/gpt.py` is visible under the `parrot.clients`
-     namespace because both core and satellite contribute to the same
-     implicit namespace package.
-   - The `_ClientRedirector` meta_path finder catches edge cases where
-     namespace merging fails (editable mode, certain installer behaviors).
+3. **Factory time**: `LLMFactory.create()` loads `SUPPORTED_CLIENTS` via
+   `importlib.metadata.entry_points(group="parrot.clients")` at first use
+   (lazy, cached). Core-shipped clients (OpenAI, OpenRouter, Moonshot)
+   remain eagerly imported as today. Satellite clients are lazy-loaded
+   via entry-point callables — `ep.load()` is called only on first use
+   of that provider key.
 
-4. **PROVIDER_BACKEND mapping**: stays in core `factory.py` — it only
-   applies to `AnthropicClient` backends (core).
+4. **Fallback**: if a client name is not in `SUPPORTED_CLIENTS` (neither
+   core nor entry-point-discovered), the factory raises `ValueError` with
+   an actionable message listing available providers and suggesting
+   `pip install ai-parrot-client-<provider>`.
 
 ### Edge Cases & Error Handling
 
-- **Satellite not installed + direct import**: `ImportError` with actionable
-  message (which package to install, which extra to use).
-- **Satellite not installed + factory create**: `ValueError` listing only
-  *installed* providers, plus a hint about available satellites.
-- **Multiple satellites registering the same key**: last-installed wins (same
-  as entry-point semantics). Log a warning.
+- **Missing satellite**: `LLMFactory.create("claude:...")` when
+  `ai-parrot-client-anthropic` is not installed → clear `ImportError`:
+  `"AnthropicClient requires package 'ai-parrot-client-anthropic'. Install
+  with: pip install ai-parrot-client-anthropic (or pip install ai-parrot[claude])"`
+- **SDK missing but package installed**: satellite is installed but its
+  SDK dependency is not (editable install without extras) → the existing
+  `ImportError` from the SDK itself propagates, wrapped with a hint.
+- **Version mismatch**: satellite depends on `ai-parrot>=X.Y` but an older
+  core is installed → pip's dependency resolver catches this at install time.
+- **Duplicate registration**: two packages declare the same entry-point
+  key → first one wins (deterministic per `importlib.metadata` ordering),
+  logged as a warning.
+- **`SUPPORTED_CLIENTS` merge**: core-shipped clients take precedence over
+  entry-point-discovered ones. An entry point that shadows a core client
+  logs a warning and is skipped.
+- **`PROVIDER_BACKEND` mapping**: stays in core `factory.py` — it only
+  applies to `AnthropicClient` backends and will need to handle the case
+  where `AnthropicClient` is not yet imported (lazy via entry point).
 - **Editable installs (uv workspace dev mode)**: PEP 420 namespace merging
   works with `uv pip install -e` because `uv` sets up `.pth` files. The
-  meta_path finder is a safety net.
-- **OpenAIBaseClient dependency**: satellites that extend `OpenAIBaseClient`
-  import it from `parrot.clients.openai_base` (core). This is a cross-package
-  dependency but it's stable and abstract — the base class changes rarely.
+  MetaPathFinder is a safety net.
 - **Circular import risk**: none — satellites import FROM core (base classes),
   core never imports FROM satellites (discovery is metadata-only until load).
 
@@ -364,13 +364,18 @@ Install with: pip install ai-parrot-llm-openai
 ## Capabilities
 
 ### New Capabilities
-- `llm-client-satellites`: PEP 420 satellite packages for non-core LLM clients
-- `llm-provider-entry-points`: entry-point-based dynamic discovery of LLM providers
-- `client-namespace-redirector`: sys.meta_path fallback finder for `parrot.clients` namespace
+- `pep-420-client-extraction`: extract LLM clients into PEP 420 satellite
+  packages grouped by SDK family
+- `client-entry-point-discovery`: `importlib.metadata` entry-point-based
+  client auto-discovery in `LLMFactory`
+- `client-metapath-finder`: `sys.meta_path` finder for backward-compatible
+  import-path resolution of satellite client modules
 
 ### Modified Capabilities
-- `parrot.clients.factory` — `SUPPORTED_CLIENTS` becomes a hybrid static+discovered dict
-- `pyproject.toml` extras — `[openai]`, `[groq]`, etc. now pull satellite packages alongside SDK deps
+- `llm-factory`: refactored to merge core `SUPPORTED_CLIENTS` with
+  entry-point-discovered clients
+- `ai-parrot-extras`: `[llms]`, `[claude]`, `[google]`, `[bedrock]`,
+  `[groq]` extras rewritten to pull satellite package dependencies
 
 ---
 
@@ -378,16 +383,19 @@ Install with: pip install ai-parrot-llm-openai
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `parrot/clients/factory.py` | modifies | SUPPORTED_CLIENTS becomes dynamic; LLMFactory.create() calls discover() |
-| `parrot/clients/__init__.py` | modifies | Add `_ClientRedirector` meta_path finder |
-| `packages/ai-parrot/pyproject.toml` | modifies | Extras updated to include satellite packages; workspace gains 9 members |
-| `parrot/server/ui/catalog.py` | modifies | `_dedup_llm_providers()` must handle discovered (not-yet-loaded) entries |
-| `parrot/handlers/llm.py` | verifies | Uses `SUPPORTED_CLIENTS` — should work unchanged after discovery |
+| `parrot/clients/__init__.py` | modifies | Add `_ParrotClientsRedirector` MetaPathFinder |
+| `parrot/clients/factory.py` | modifies | Merge entry-point discovery into `SUPPORTED_CLIENTS` |
+| `pyproject.toml` (core) | modifies | Rewrite extras, remove extracted client deps |
+| `pyproject.toml` (root) | modifies | Add new workspace members |
+| `packages/ai-parrot-client-*` | new | 9 new satellite packages |
+| `parrot/server/ui/catalog.py` | verifies | `_dedup_llm_providers()` uses `SUPPORTED_CLIENTS` |
+| `parrot/handlers/llm.py` | verifies | Uses `SUPPORTED_CLIENTS` — should work after discovery |
 | `parrot/handlers/studio/catalog.py` | verifies | Same as above |
 | `parrot/handlers/studio/byok.py` | verifies | Same as above |
-| `parrot/advisors/mixin.py` | verifies | Lazy imports SUPPORTED_CLIENTS — should work unchanged |
-| `parrot_pipelines/abstract.py` | verifies | Uses SUPPORTED_CLIENTS for validation |
-| CI pipelines | extends | Matrix build for satellite packages |
+| `parrot/advisors/mixin.py` | verifies | Lazy imports `SUPPORTED_CLIENTS` |
+| `parrot_pipelines/abstract.py` | verifies | Uses `SUPPORTED_CLIENTS` for validation |
+| CI/CD | extends | Build matrix for satellite packages |
+| Docs | extends | Installation guide update |
 
 ---
 
@@ -399,50 +407,101 @@ No code snippets provided by the user during discovery.
 
 ### Verified Codebase References
 
-#### Classes & Signatures
+#### Client Hierarchy
 ```python
-# From parrot/clients/base.py:230
+# From packages/ai-parrot/src/parrot/clients/base.py:230
 class AbstractClient(EventEmitterMixin, ABC):
-    client_type: str = "generic"      # line 233
-    client_name: str = "generic"      # line 234
-    def __init__(self, conversation_memory=None, preset=None, tools=None,
-                 use_tools=False, debug=True, tool_manager=None, **kwargs):  # line 360
+    ...
 
-# From parrot/clients/openai_base.py (base for satellite clients)
+# From packages/ai-parrot/src/parrot/clients/openai_base.py:59
 class OpenAIBaseClient(AbstractClient):
-    # Extended by: OpenAIClient, GroqClient, NvidiaClient, ZaiClient,
-    #              MoonshotClient, OpenRouterClient, LocalLLMClient, BedrockMantleClient
+    ...
 
-# From parrot/clients/factory.py:161
-class LLMFactory:
-    @staticmethod
-    def parse_llm_string(llm: str) -> Tuple[str, Optional[str]]:  # line 171
-    @staticmethod
-    def create(llm: str, model_args=None, tool_manager=None, **kwargs) -> AbstractClient:  # line 193
+# From packages/ai-parrot/src/parrot/clients/gpt.py:81
+class OpenAIClient(OpenAIBaseClient):
+    ...
 ```
 
-#### SUPPORTED_CLIENTS (factory.py:107-149)
+#### All Concrete Client Classes
 ```python
+# CORE (stays):
+# packages/ai-parrot/src/parrot/clients/gpt.py:81
+class OpenAIClient(OpenAIBaseClient):        # reference implementation
+
+# packages/ai-parrot/src/parrot/clients/openrouter.py:26
+class OpenRouterClient(OpenAIBaseClient):     # thin wrapper, stays
+
+# packages/ai-parrot/src/parrot/clients/moonshot.py:74
+class MoonshotClient(OpenAIBaseClient):       # thin wrapper, stays
+
+# ANTHROPIC FAMILY (→ ai-parrot-client-anthropic):
+# packages/ai-parrot/src/parrot/clients/claude.py:69
+class AnthropicClient(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/claude_agent.py:265
+class ClaudeAgentClient(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/claude_agent_bridge.py (bridge)
+# packages/ai-parrot/src/parrot/clients/anthropic_backends.py (backend selection)
+
+# GOOGLE FAMILY (→ ai-parrot-client-google):
+# packages/ai-parrot/src/parrot/clients/google/client.py:95
+class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
+
+# packages/ai-parrot/src/parrot/clients/gemma4.py:48
+class Gemma4Client(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/live.py:498
+class GeminiLiveClient(AbstractClient):
+
+# AMAZON FAMILY (→ ai-parrot-client-amazon):
+# packages/ai-parrot/src/parrot/clients/bedrock.py:138
+class BedrockConverseBase(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/bedrock.py:1647
+class BedrockConverseClient(BedrockConverseBase):
+
+# packages/ai-parrot/src/parrot/clients/nova/ (client.py, audio.py, generation.py, mantle.py)
+
+# STANDALONE (→ individual packages):
+# packages/ai-parrot/src/parrot/clients/groq.py:50
+class GroqClient(OpenAIBaseClient):
+
+# packages/ai-parrot/src/parrot/clients/grok.py:53
+class GrokClient(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/zai.py:22
+class ZaiClient(OpenAIBaseClient):
+
+# packages/ai-parrot/src/parrot/clients/nvidia.py:222
+class NvidiaClient(OpenAIBaseClient):
+
+# packages/ai-parrot/src/parrot/clients/localllm.py:26
+class LocalLLMClient(OpenAIBaseClient):
+
+# packages/ai-parrot/src/parrot/clients/vllm.py:52
+class vLLMClient(LocalLLMClient):
+
+# packages/ai-parrot/src/parrot/clients/hf.py:53
+class TransformersClient(AbstractClient):
+
+# packages/ai-parrot/src/parrot/clients/codex_agent.py:69
+class OpenAICodexClient(AbstractClient):
+```
+
+#### Factory and Registration
+```python
+# From packages/ai-parrot/src/parrot/clients/factory.py (SUPPORTED_CLIENTS, line ~107)
 SUPPORTED_CLIENTS = {
-    # Core (stays):
     "claude": AnthropicClient,
     "anthropic": AnthropicClient,
-    "bedrock": AnthropicClient,
+    "bedrock": AnthropicClient,         # FEAT-232 backend injection
     "anthropic-aws": AnthropicClient,
-    "google": GoogleGenAIClient,
-    "local": LocalLLMClient,
-    "localllm": LocalLLMClient,
-    "ollama": LocalLLMClient,
-    "vllm": vLLMClient,
-    "llamacpp": LocalLLMClient,
-    # Lazy-loaded core (stays):
-    "claude-agent": _lazy_claude_agent,
-    "claude-code": _lazy_claude_agent,
-    # Move to satellites:
     "bedrock-converse": _lazy_bedrock_converse,
     "nova": _lazy_nova,
     "bedrock-mantle": _lazy_bedrock_mantle,
     "mantle": _lazy_bedrock_mantle,
+    "google": GoogleGenAIClient,
     "openai": OpenAIClient,
     "groq": GroqClient,
     "grok": GrokClient,
@@ -453,51 +512,98 @@ SUPPORTED_CLIENTS = {
     "nvidia": NvidiaClient,
     "moonshot": MoonshotClient,
     "kimi": MoonshotClient,
+    "local": LocalLLMClient,
+    "localllm": LocalLLMClient,
+    "ollama": LocalLLMClient,
+    "vllm": vLLMClient,
+    "llamacpp": LocalLLMClient,
     "gemma4": _lazy_gemma4,
+    "claude-agent": _lazy_claude_agent,
+    "claude-code": _lazy_claude_agent,
     "codex-agent": _lazy_openai_codex,
     "openai-codex": _lazy_openai_codex,
     "codex-code": _lazy_openai_codex,
 }
-```
 
-#### PROVIDER_BACKEND (factory.py:155-158)
-```python
-PROVIDER_BACKEND: Dict[str, str] = {
+PROVIDER_BACKEND: Dict[str, str] = {   # line ~155
     "bedrock": "bedrock",
     "anthropic-aws": "aws",
 }
+
+class LLMFactory:                        # line ~161
+    @staticmethod
+    def parse_llm_string(llm: str) -> Tuple[str, Optional[str]]:  # line 171
+    @staticmethod
+    def create(llm: str, model_args=None, tool_manager=None, **kwargs) -> AbstractClient:  # line 193
 ```
 
-#### Meta_path Finder Pattern (parrot/tools/__init__.py:50-136)
+#### MetaPathFinder Pattern (existing reference)
 ```python
+# From packages/ai-parrot/src/parrot/tools/__init__.py:50-136
 class _ParrotToolsRedirector(importlib.abc.MetaPathFinder):
-    # Intercepts parrot.tools.<name> → parrot_tools.<name>
-    # Uses _AliasLoader (line 31) to alias sys.modules entries
-    # Synchronizes parrot_tools.* → parrot.tools.* in sys.modules
+    _PREFIX = "parrot.tools."
+    _RESOLVING: set = set()
+    _loader = _AliasLoader()
+
+    def find_spec(self, fullname, path, target=None):
+        # Redirects parrot.tools.<x> → parrot_tools.<x> → plugins.tools.<x>
+        # Guards: skips core submodules, prevents recursion
+        # Synchronizes all parrot_tools.* aliases in sys.modules
+        ...
 ```
 
-#### PEP 420 Pattern (ai-parrot-embeddings)
+#### PEP 420 Pattern (ai-parrot-embeddings reference)
 ```
-packages/ai-parrot-embeddings/src/parrot/          # NO __init__.py (only .gitkeep)
-packages/ai-parrot-embeddings/src/parrot/stores/   # NO __init__.py (only .gitkeep)
-packages/ai-parrot-embeddings/src/parrot/embeddings/  # NO __init__.py
-# pyproject.toml:
+packages/ai-parrot-embeddings/src/parrot/          # NO __init__.py (PEP 420)
+packages/ai-parrot-embeddings/src/parrot/stores/   # has .gitkeep, no __init__.py
+packages/ai-parrot-embeddings/src/parrot/embeddings/  # has .gitkeep, no __init__.py
+```
+```toml
+# packages/ai-parrot-embeddings/pyproject.toml
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel>=0.44.0"]
+
+[project]
+name = "ai-parrot-embeddings"
+dependencies = ["ai-parrot"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["parrot*"]
 namespaces = true
 ```
 
-#### Existing Extras (pyproject.toml)
+#### Google Client Subpackage
+```
+packages/ai-parrot/src/parrot/clients/google/
+├── __init__.py  (177B)
+├── analysis.py  (76.7K)
+├── client.py    (278.2K) — GoogleGenAIClient
+└── generation.py (111.5K)
+```
+
+#### Nova Client Subpackage
+```
+packages/ai-parrot/src/parrot/clients/nova/
+├── __init__.py   (351B)
+├── audio.py      (61.6K)
+├── client.py     (8.5K)
+├── generation.py (15.4K)
+└── mantle.py     (5.6K)
+```
+
+#### Existing Extras in Core pyproject.toml
 ```toml
-# Already exist — will be updated to include satellite packages:
-openai = ["openai==3.3.1", "tiktoken==0.9.0"]          # line 527
-groq = ["groq==0.33.0"]                                 # line 539
-zai = ["zai-sdk>=0.2.3"]                                # line 543
-llms = ["google-genai>=2.18.1", "openai==3.3.1", ...]   # line 547
-claude-agent = ["claude-agent-sdk>=0.1.68"]              # line 516
-codex-agent = ["openai-codex>=0.1.0", ...]               # line 520
-google = ["google-genai>=2.18.1", ...]                   # line 532
+anthropic = ["anthropic[aiohttp]>=0.109.0,<1.0.0"]
+bedrock = ["anthropic[aiohttp,aws]>=0.109.0,<1.0.0"]
+claude-agent = ["claude-agent-sdk>=0.1.68"]
+openai = ["openai==3.3.1", "tiktoken==0.9.0"]
+google = ["google-api-python-client>=2.166.0,<=2.177.0",
+          "google-cloud-texttospeech==2.27.0", "google-genai>=2.18.1"]
+groq = ["groq==0.33.0"]
+llms = ["google-genai>=2.18.1", "openai==3.3.1", "groq==0.33.0",
+        "ai-parrot[anthropic,bedrock]", "claude-agent-sdk>=0.1.68",
+        "xai-sdk>=1.12.0", "zai-sdk>=0.2.3"]
 ```
 
 #### Consumers of SUPPORTED_CLIENTS
@@ -510,21 +616,32 @@ google = ["google-genai>=2.18.1", ...]                   # line 532
 # parrot_pipelines/abstract.py:14
 ```
 
+#### __init__.py Exports (stays in core)
+```python
+# From packages/ai-parrot/src/parrot/clients/__init__.py
+from .base import LLM_PRESETS, AbstractClient, StreamingRetryConfig
+from .openai_base import OpenAIBaseClient
+from .zai import ZaiClient  # TODO: will move to satellite
+```
+
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`LLM_PROVIDERS`~~ — does not exist anywhere in the codebase. The concept
-  is called `SUPPORTED_CLIENTS` in `factory.py`.
-- ~~`parrot.clients.registry`~~ — no registry module exists; registration is
-  purely static in `SUPPORTED_CLIENTS`.
-- ~~`AbstractClient.__init_subclass__`~~ — no auto-registration metaclass or
-  hook exists on `AbstractClient`.
-- ~~`[project.entry-points]`~~ — no entry-point declarations exist in any
-  current package's `pyproject.toml`.
-- ~~`parrot/clients/vertexai.py`~~ — VertexAI is NOT a separate client file;
-  it is handled inside `parrot/clients/google/client.py` via the
-  `google-cloud-aiplatform` SDK.
+- ~~`parrot.clients.registry`~~ — no client registry module exists;
+  registration is purely static in `SUPPORTED_CLIENTS`
+- ~~`[project.entry-points."parrot.clients"]`~~ — no entry points are
+  used for client discovery anywhere in the project today
+- ~~`parrot.clients.vertex`~~ — there is no standalone Vertex AI client;
+  Vertex support is handled through `GoogleGenAIClient` (the `google-genai`
+  SDK supports both AI Studio and Vertex natively)
+- ~~`parrot.clients.ollama`~~ — there is no `ollama.py` module; Ollama
+  support is handled by `LocalLLMClient` in `localllm.py` via
+  OpenAI-compatible API
 - ~~`parrot/clients/openai.py`~~ — the OpenAI client file is named `gpt.py`,
-  not `openai.py`.
+  not `openai.py`
+- ~~`AbstractClient.__init_subclass__`~~ — no auto-registration metaclass
+  or hook exists on `AbstractClient`
+- ~~`ai-parrot-embeddings` entry points~~ — the embeddings satellite does
+  NOT use entry points today; it relies solely on PEP 420 namespace merging
 
 ---
 
@@ -533,8 +650,9 @@ google = ["google-genai>=2.18.1", ...]                   # line 532
 - **Internal parallelism**: **High**. Each satellite package is completely
   independent — different files, different `pyproject.toml`, different entry
   points. All 9 satellites can be scaffolded in parallel worktrees. The only
-  serial dependency is the factory.py refactor (must land first so satellites
-  have an entry-point group to register into).
+  serial dependency is the `factory.py` + `__init__.py` refactor (must land
+  first so satellites have an entry-point group to register into and a
+  MetaPathFinder to fall back on).
 
 - **Cross-feature independence**: The factory.py changes touch
   `SUPPORTED_CLIENTS` which is consumed by 6 other modules (listed above).
@@ -542,10 +660,10 @@ google = ["google-genai>=2.18.1", ...]                   # line 532
   existing consumers work without modification. No conflicts with in-flight
   specs expected.
 
-- **Recommended isolation**: **mixed** — the factory refactor + meta_path
-  finder is one task in the main worktree. Each satellite package can be
-  developed independently (even in parallel worktrees if desired, though
-  sequential is fine given the mechanical nature of the scaffolding).
+- **Recommended isolation**: **mixed** — the factory refactor + MetaPathFinder
+  is one sequential task in the main worktree. Each satellite package can be
+  developed in parallel worktrees (the scaffolding is mechanical: move file,
+  create pyproject.toml, add entry point, verify import).
 
 - **Rationale**: The factory refactor is the architectural core — it must be
   correct and tested before satellites make sense. But the satellite packages
@@ -557,11 +675,9 @@ google = ["google-genai>=2.18.1", ...]                   # line 532
 
 ## Open Questions
 
-- [ ] Should `GeminiLiveClient` (live.py, 1,776 lines) stay in core alongside the other Google clients, or move to its own satellite since it has specialized voice dependencies? — *Owner: Jesus*
-- [ ] How should the `all` extra in root `pyproject.toml` be updated — should it transitively pull `ai-parrot[llms]` which pulls all satellites, or list each satellite explicitly? — *Owner: Jesus*
-- [ ] Should we provide a `parrot.clients.discover()` public API that users can call to get a list of installed providers (useful for UIs, CLI help, etc.)? — *Owner: Jesus*
-- [ ] For the meta_path fallback: should satellites have a top-level `parrot_llm_<provider>` package name (like `parrot_tools`) or rely purely on PEP 420 namespace contribution? — *Owner: Jesus*
-- [x] How should `SUPPORTED_CLIENTS` / LLM_PROVIDERS work with dynamic discovery? — *Owner: Jesus*: Entry-point group `parrot.llm_providers`; factory discovers at first use via `importlib.metadata.entry_points()`, merges into the core-only static dict.
-- [x] Which clients stay in core? — *Owner: Jesus*: Claude/Anthropic (+ ClaudeAgent), Google (GenAI + VertexAI + Live), Ollama/local (+ vLLM).
-- [x] Naming convention? — *Owner: Jesus*: `ai-parrot-llm-{provider}`, one per provider.
-- [x] Backward compatibility strategy? — *Owner: Jesus*: PEP 420 namespace primary, sys.meta_path fallback.
+- [ ] Where does `OpenAICodexClient` (codex_agent.py + codex_tool_bridge.py) go — into `ai-parrot-client-anthropic` (it's a code-agent tool), its own `ai-parrot-client-codex`, or stays in core? — *Owner: Jesus*
+- [ ] Should `PROVIDER_BACKEND` (bedrock/anthropic-aws backend injection) move to `ai-parrot-client-anthropic` or stay in core's `LLMFactory`? If it stays in core, the factory needs to handle the case where `AnthropicClient` is an unresolved entry point — *Owner: Jesus*
+- [ ] What's the versioning strategy for satellite packages — lock-step with core (`ai-parrot`), or independent semver? — *Owner: Jesus*
+- [ ] Should the `ZaiClient` import in `parrot/clients/__init__.py` be removed or replaced with a lazy import when `zai` moves to a satellite? — *Owner: Jesus*
+- [ ] Should we provide a `LLMFactory.list_providers()` public API that returns installed+available providers (useful for UIs, CLI help)? — *Owner: Jesus*
+- [ ] How should the `all` extra in root `pyproject.toml` be updated — should it transitively pull `ai-parrot[llms]` (which pulls all satellites), or list each satellite explicitly? — *Owner: Jesus*
