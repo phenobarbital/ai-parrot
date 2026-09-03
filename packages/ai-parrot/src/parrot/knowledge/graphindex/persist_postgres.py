@@ -42,6 +42,11 @@ see it; ``revert_commit`` restores a pre-image by inserting a FRESH
 version row (never re-opening a past range, which would violate the
 append-only/EXCLUDE invariant), the same close-and-insert discipline as
 every other write path in this module.
+
+FEAT-520 Module 4 adds the temporal READ contract (``as_of``/``history``/
+``diff``, spec D5) — Postgres-only in v1. ``SQLitePersistence`` and
+``GraphIndexPersistence`` do NOT grow these methods; callers feature
+-detect via ``hasattr``.
 """
 
 from __future__ import annotations
@@ -55,6 +60,7 @@ from typing import Any, Optional
 
 import asyncpg
 import orjson
+from pydantic import BaseModel, Field
 
 from parrot.knowledge.graphindex.pg_schema import (
     create_pg_pool,
@@ -71,6 +77,37 @@ from parrot.knowledge.graphindex.schema import (
 from parrot.knowledge.ontology.schema import TenantContext
 
 logger = logging.getLogger(__name__)
+
+
+class NodeVersionRow(BaseModel):
+    """One row of ``graphindex.node_versions``, as returned by ``history()``/``as_of()``."""
+
+    version_id: int
+    concept_id: str
+    valid_from: datetime
+    valid_to: Optional[datetime] = None  # None == open range (current)
+    tx_from: datetime
+    title: str
+    summary: str = ""
+    body: Optional[str] = None  # wiki plane
+    body_ref: Optional[str] = None  # graph plane (markdown on disk)
+    provenance: str = "extracted"
+    derived: bool = False
+
+
+class TemporalDiff(BaseModel):
+    """Structured output of ``diff(concept_id, t1, t2)`` — LLM-consumable.
+
+    Never "compare these two texts": ``version_changes``/``edges_added``/
+    ``edges_removed`` are structured rows, not prose.
+    """
+
+    concept_id: str
+    t1: datetime
+    t2: datetime
+    version_changes: list[dict] = Field(default_factory=list)
+    edges_added: list[dict] = Field(default_factory=list)
+    edges_removed: list[dict] = Field(default_factory=list)
 
 #: Private key nesting ``parent_id``/``embedding_ref`` inside the
 #: ``node_versions.domain_tags`` jsonb blob (see module docstring).
@@ -1034,3 +1071,172 @@ class PostgresPersistence:
             "restored": restored,
             "deleted": deleted,
         }
+
+    # ------------------------------------------------------------------
+    # Temporal contract (Module 4, spec D5) — Postgres-only in v1
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _require_aware(t: datetime) -> None:
+        """Reject naive datetimes — every temporal param is ``timestamptz``.
+
+        Args:
+            t: The datetime to validate.
+
+        Raises:
+            ValueError: When ``t`` has no timezone info.
+        """
+        if t.tzinfo is None:
+            raise ValueError("Temporal API requires timezone-aware datetimes (got a naive datetime)")
+
+    async def as_of(
+        self,
+        ctx: TenantContext,
+        t: datetime,
+    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+        """Return the graph snapshot valid at time ``t``.
+
+        A caller can swap ``load_graph()`` for ``as_of(now())`` transparently
+        — both filter on the same ``validity`` predicate, just expressed
+        differently (``upper_inf(validity)`` vs. ``validity @> $t``).
+
+        Args:
+            ctx: Tenant context (unused — see ``load_graph``).
+            t: The point in time to snapshot (must be timezone-aware).
+
+        Returns:
+            ``(nodes, edges)`` valid at ``t``.
+        """
+        self._require_aware(t)
+        pool = await self._ensure_pool()
+        nodes: list[UniversalNode] = []
+        edges: list[UniversalEdge] = []
+        async with pool.acquire() as conn:
+            node_rows = await conn.fetch(
+                f"""
+                SELECT n.concept_id, n.category, nv.title, nv.summary, nv.body_ref,
+                       nv.source_id, nv.provenance, nv.assertion, nv.domain_tags
+                FROM {self._schema}.nodes n
+                JOIN {self._schema}.node_versions nv ON nv.concept_id = n.concept_id
+                WHERE nv.validity @> $1::timestamptz
+                """,
+                t,
+            )
+            for row in node_rows:
+                node = self._row_to_node(row)
+                if node is not None:
+                    nodes.append(node)
+
+            edge_rows = await conn.fetch(
+                f"""
+                SELECT src, dst, rel, provenance, confidence, assertion, evidence_ref
+                FROM {self._schema}.edges
+                WHERE validity @> $1::timestamptz
+                """,
+                t,
+            )
+            for row in edge_rows:
+                edge = self._row_to_edge(row)
+                if edge is not None:
+                    edges.append(edge)
+
+        return nodes, edges
+
+    async def history(self, ctx: TenantContext, concept_id: str) -> list[NodeVersionRow]:
+        """Return every version row of a concept, ordered oldest first.
+
+        Args:
+            ctx: Tenant context (unused — see ``load_graph``).
+            concept_id: The concept to list version history for.
+
+        Returns:
+            Ordered ``NodeVersionRow`` list (including closed ranges);
+            ``[]`` for an unknown ``concept_id``.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT version_id, concept_id, lower(validity) AS valid_from,
+                       upper(validity) AS valid_to, tx_from, title, summary,
+                       body, body_ref, provenance, derived
+                FROM {self._schema}.node_versions
+                WHERE concept_id = $1
+                ORDER BY lower(validity), version_id
+                """,
+                concept_id,
+            )
+        return [NodeVersionRow(**dict(row)) for row in rows]
+
+    async def diff(
+        self,
+        ctx: TenantContext,
+        concept_id: str,
+        t1: datetime,
+        t2: datetime,
+    ) -> TemporalDiff:
+        """Return a structured diff of a concept between two points in time.
+
+        LLM-consumable: version rows and edge deltas, never raw-text
+        comparison.
+
+        Args:
+            ctx: Tenant context (unused — see ``load_graph``).
+            concept_id: The concept to diff.
+            t1: Start of the comparison window (timezone-aware).
+            t2: End of the comparison window (timezone-aware).
+
+        Returns:
+            A :class:`TemporalDiff` with version changes and incident
+            edge deltas.
+        """
+        self._require_aware(t1)
+        self._require_aware(t2)
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            version_rows = await conn.fetch(
+                f"""
+                SELECT version_id, lower(validity) AS valid_from, upper(validity) AS valid_to,
+                       title, summary
+                FROM {self._schema}.node_versions
+                WHERE concept_id = $1
+                  AND (
+                    (lower(validity) > $2::timestamptz AND lower(validity) <= $3::timestamptz)
+                    OR (upper(validity) IS NOT NULL
+                        AND upper(validity) > $2::timestamptz AND upper(validity) <= $3::timestamptz)
+                  )
+                ORDER BY lower(validity)
+                """,
+                concept_id,
+                t1,
+                t2,
+            )
+            edges_added = await conn.fetch(
+                f"""
+                SELECT src, dst, rel FROM {self._schema}.edges
+                WHERE (src = $1 OR dst = $1)
+                  AND validity @> $3::timestamptz AND NOT validity @> $2::timestamptz
+                """,
+                concept_id,
+                t1,
+                t2,
+            )
+            edges_removed = await conn.fetch(
+                f"""
+                SELECT src, dst, rel FROM {self._schema}.edges
+                WHERE (src = $1 OR dst = $1)
+                  AND validity @> $2::timestamptz AND NOT validity @> $3::timestamptz
+                """,
+                concept_id,
+                t1,
+                t2,
+            )
+
+        return TemporalDiff(
+            concept_id=concept_id,
+            t1=t1,
+            t2=t2,
+            version_changes=[dict(row) for row in version_rows],
+            edges_added=[dict(row) for row in edges_added],
+            edges_removed=[dict(row) for row in edges_removed],
+        )
