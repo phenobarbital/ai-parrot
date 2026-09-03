@@ -93,8 +93,20 @@ Read the spec and re-verify `protocol.py:277-423` plus `__init__.py:14-70` befor
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: Added `observer_poll_ms`, `stall_window_ms`, `bootstrap_stall_ms`,
+`interrupt_before_kill`, `interrupt_grace_ms`, `memory_soft_limit_bytes`,
+`memory_hard_limit_bytes`, `host_memory_reserve_bytes` to `WorkerConfig` with
+a `model_validator(mode="after")` enforcing `hard >= soft` (when both
+enabled), `hard <= rlimit_as_bytes` (when enabled), and
+`interrupt_grace_ms < deadline_ms`. Added `ProcessSample`, `Verdict`,
+`MemoryVerdict` to `protocol.py` (kept out of `_MESSAGE_TYPES`) and exported
+all five new symbols from `repl_worker/__init__.py`. Manually verified
+defaults, zero-disables-threshold behavior, each invalid-combination
+`ValidationError`, and unchanged `_MESSAGE_TYPES` membership (16 entries)
+via a `PYTHONPATH`-scoped script against the worktree source (the shared
+venv's editable install points at the main repo, not this worktree).
+`ruff check` and `black --target-version py312` clean on both touched files.
 
 **Deviations from spec**: none

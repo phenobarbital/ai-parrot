@@ -92,8 +92,45 @@ Confirm TASK-2774 and TASK-2775 are completed and verify their public API before
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: Added a `TestFeat521ConfigFields` class to `test_protocol.py`
+covering every new `WorkerConfig` field's default, each validator's
+raise/pass boundary (`hard < soft`, `hard == soft` allowed, `hard >
+rlimit_as_bytes`, `hard == rlimit_as_bytes` allowed, `interrupt_grace_ms >=
+deadline_ms` in both the equal and greater cases, below-deadline allowed),
+zero-disables-either/both-thresholds, `ProcessSample`/`MemoryVerdict`
+defaults, and confirmed both host-local models are absent from
+`_MESSAGE_TYPES`.
 
-**Deviations from spec**: none
+Created `test_observer.py` (32 tests) with two complementary strategies: (1)
+direct synthetic-ring injection (`obs._ring.append(...)`, `obs._busy_since =
+...`) for the five verdict values, `cpu_progress()` window-boundary math,
+`last()`/`describe()`, `mark_busy()`/`mark_idle()` transition semantics, and
+the soft/hard memory-pressure helpers — fully deterministic, no sleeps,
+matching the Implementation Notes; (2) a scripted `psutil.Process` fake
+(`_ScriptedProcess`/`_RaisingProcess`) monkeypatched in to drive the REAL
+`run()` loop end-to-end for `NoSuchProcess`/`AccessDenied`/non-POSIX
+degradation, an unexpected-exception recovery, the soft-limit
+one-warning-per-episode hysteresis (asserts `caplog` WARNING record COUNT,
+not just content, per the Implementation Notes), and the hard-breach
+callback firing exactly once with the measured RSS/limit before `run()`
+returns on its own. Included the spec §4 `tight_config` fixture verbatim.
+
+Caught and fixed two of my own test-authoring bugs before finalizing: (1)
+`test_cpu_tick_resets_stalled_to_computing`'s synthetic sample timestamps
+(0.0s/0.6s against a 500ms window) placed the earlier sample just outside
+`cpu_progress()`'s trailing-window boundary, degenerating progress to 0 —
+fixed by tightening the tick interval so both samples fall inside the
+window; (2) the "unexpected sampling error" fake process gated its
+one-shot `RuntimeError` on the shared sample cursor, which never advances
+while the fake keeps raising, causing an infinite loop — fixed with an
+explicit call counter. Verified stable across 3 repeated full runs (no
+flakiness) and confirmed 8/8 pytest-asyncio "marked with asyncio but not
+async" warnings disappeared after switching from a module-level
+`pytestmark = pytest.mark.asyncio` to relying on this package's
+`asyncio_mode = "auto"` (`pyproject.toml`), which needs no marker at all.
+`ruff check` and `black --target-version py312` clean; `pytest
+test_protocol.py test_observer.py -v` — 79 passed.
+
+**Deviations from spec**: none.

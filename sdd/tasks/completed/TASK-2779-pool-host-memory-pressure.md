@@ -91,8 +91,46 @@ Confirm dependencies are completed. Re-read pool locking and post-spawn ceiling 
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: Added `_cgroup_v2_available_bytes()` (reads `/sys/fs/cgroup/
+memory.max`/`memory.current`, returns `None` on any missing/unreadable/
+malformed/unlimited condition) and `_effective_host_available_bytes()`
+(`psutil.virtual_memory().available`, capped by the cgroup figure when
+present) as module-level helpers — the ~20-line cgroup v2 addition from
+spec §8 Q3. `_top_up_prewarmed()`'s existing ceiling-check block (inside
+`self._lock`) now also skips (DEBUG log) under `host_memory_reserve_bytes`
+pressure. `acquire()`'s spawn branch (`else:` after the `if
+self._prewarmed:` check) raises `WorkerPoolExhaustedError` under the same
+pressure condition — consuming a prewarmed spare is explicitly exempted
+(it converts an existing worker into a session slot, spawning nothing).
+Added `_evict_under_pressure()` (kills every prewarmed spare — and ONLY
+spares, never `self._sessions` — when under pressure, INFO-logged) wired
+into `_maintenance_loop()` right after `_evict_idle()`; added
+`memory_summary()` (`{"workers", "rss_total", "host_available"}`, summing
+each live worker's `observer.last().rss`) and
+`_log_aggregate_rss_if_pressured()` (INFO-logs the aggregate only when at
+least one worker's `observer.memory_pressure` is set), also called each
+maintenance sweep. `_record_restart()`'s existing restart-loop WARNING now
+appends `", memory cause: rss=... limit=..."` when the dead handle's
+`observer.memory_verdict` was recorded.
 
-**Deviations from spec**: none
+Verified end-to-end (real subprocess workers, `unittest.mock.patch` only
+for `_effective_host_available_bytes` itself to force a deterministic
+pressure condition without needing an actually-starved host): (1)
+`acquire()` raises `WorkerPoolExhaustedError` naming the reserve when
+spawning is required and the host is short; (2) `memory_summary()` returns
+the correct shape and a positive `host_available` with zero live workers;
+(3) `_evict_under_pressure()` clears a real prewarmed spare while the
+concurrently-held session's worker stays alive and mapped; (4) a
+subsequent `_top_up_prewarmed()` call under the same simulated pressure
+is a no-op (spares stay at 0).
+
+**Regression check**: `test_pool.py` shows the identical 4 pre-existing
+failures established in TASK-2777/2778's baseline comparisons
+(`test_pool_prewarm`, `test_crash_restart`,
+`test_pool_spare_not_ready_until_ready_frame`,
+`test_pool_restart_loop_warning` — all `report_dir=tmp_path` output_dir
+guard breakage, spec §7 risks) — no new failures.
+
+**Deviations from spec**: none.

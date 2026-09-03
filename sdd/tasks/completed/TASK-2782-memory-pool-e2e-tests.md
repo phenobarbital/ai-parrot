@@ -97,8 +97,49 @@ Confirm dependency tasks are completed. Reuse existing real-worker fixtures and 
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: Created `test_memory_guardrails.py` (8 tests, all real subprocess,
+reusing the combined `report_dir` fixture pattern established in
+TASK-2781): `TestHardLimit` (deterministic kill, cause `memory`, no stderr
+dependence, `verdict=` folded in), `TestSoftLimit` (hint on a STRING
+result, on the `result` field of a dict result — NOT the `error` field,
+matching the exact spec wording "the next execute() result... gets a
+trailing line" — and 90%-hysteresis clearing), `TestE2EMemoryBomb`
+(host RSS delta < 100 MiB, session transparently restarted on the next
+call). Discovered empirically that a freshly-booted worker's OWN baseline
+RSS (pandas/numpy/matplotlib imported) is ~248 MiB — the initial 200 MiB
+soft-limit test config was below that baseline and fired unconditionally;
+retuned to 320 MiB soft / 150 MiB extra allocation (clears the baseline,
+crosses the limit only after the deliberate allocation).
 
-**Deviations from spec**: none
+`test_pool.py`: added the SAME combined `report_dir` fixture (STATIC_DIR
+module patch + env var) and applied it file-wide via a scoped
+find/replace — brought the file's existing 16 tests from partial-pass to
+16/16 as a direct side effect (matching TASK-2781's established pattern).
+Added `TestCgroupV2Availability` (6 tests: finite/unlimited/missing/
+malformed cgroup files via monkeypatched `Path` module attributes, plus
+the psutil/cgroup min() combination), `TestHostMemoryReserve` (4: spawn
+blocked at `acquire()`, prewarm skip with DEBUG log, reserve does NOT
+block an existing session or consuming a spare), `TestPressureEviction`
+(2: spares evicted/sessions untouched, no eviction above reserve), and
+`TestMemoryTelemetry` (4: `memory_summary()` shape, aggregate INFO log
+only when pressured, `_record_restart()`'s WARNING naming the memory
+cause after 3 genuine hard-breach deaths). One fixture-usage bug caught
+and fixed: `_top_up_prewarmed()` no-ops silently before `self._started`
+is set — the reserve-skip test needed `pool._started = True` set directly
+(bypassing the full `_ensure_started()` background-task machinery) to
+reach the code path under test.
+
+`test_integration.py`: added `test_e2e_memory_restart_preserves_envelope_contract`
+to `TestE2E` — the memory-cause counterpart to TASK-2781's
+`test_e2e_runaway_loop_keeps_namespace`, asserting the G5
+`{status, result, error}` envelope shape is exactly preserved (AC9) and
+the session transparently gets a restarted worker on the next call.
+
+**Regression check**: ran `test_memory_guardrails.py` + `test_pool.py` +
+`test_integration.py` together twice — 48/48 passed both times (no
+flakiness). `ruff check` and `black --target-version py312` clean on all
+3 touched files.
+
+**Deviations from spec**: none.

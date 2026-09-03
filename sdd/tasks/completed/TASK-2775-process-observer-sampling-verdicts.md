@@ -88,8 +88,36 @@ Confirm TASK-2774 is completed. Re-read `handle.py:59-102` before moving parsing
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: Created `observer.py` with the exact `ProcessObserver` public API
+from spec §2, plus reusable `/proc` parsing helpers (`read_proc_status`,
+`read_proc_wchan`, `read_proc_cpu_seconds`) used both by the sampler and by
+`handle.probe_process_state()`, which is now a thin compatibility wrapper
+(exact same signature/return-value contract; all 6 pre-existing
+`test_bootstrap_diagnostics.py` tests pass unmodified). Verdict derivation
+uses a trailing `stall_window_ms` CPU-progress check gated by an explicit
+`_busy_since` timestamp (set on the idle→busy `mark_busy()` transition) so
+"stalled" requires the *current* busy period — not the ring's overall
+historical span — to have lasted the full window; caught and fixed this via
+manual synthetic-sample testing before committing. Soft-limit hysteresis
+(90% re-arm) and the one-shot, run()-terminating hard-breach callback were
+verified manually (real self-process sampling + synthetic ring
+manipulation), including the "unavailable" paths (nonexistent pid,
+simulated non-POSIX `os.name`) and never-raises behavior. The `"booting"`
+verdict is derived from whether `mark_busy()`/`mark_idle()` has ever been
+called (documented in the class docstring) since `ProcessObserver` has no
+visibility into the `ReadyResponse` handshake by design (observation is
+host-side/pipe-independent) — TASK-2777 wires the handle to call
+`mark_idle()` once readiness resolves. Removed the now-unused `pathlib.Path`
+import from `handle.py` (flagged by `ruff`) as a direct consequence of
+relocating the parsing logic. `ruff check` and `black --target-version
+py312` clean on all three touched files. Also fixed two pre-existing,
+unrelated environment issues blocking any test run in this worktree (not
+task-scoped changes — no tracked files touched): reinstalled a corrupted
+`aiohttp-cors` install in the shared venv, and copied the gitignored,
+pre-built Cython `.so` extensions from the main checkout into this worktree
+(the `.pyx` sources are byte-identical; these are build artifacts, never
+part of the task's file list).
 
 **Deviations from spec**: none

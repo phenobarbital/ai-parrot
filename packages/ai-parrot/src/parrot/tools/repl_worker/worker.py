@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import sys
 import time
 import types
@@ -187,13 +188,34 @@ class WorkerNamespace:
 
         Returns:
             An :class:`ExecResult` mirroring ``PythonREPLTool._execute()``'s
-            return-contract classification (G5).
+            return-contract classification (G5). A ``KeyboardInterrupt``
+            (host-side SIGINT on ``deadline_ms`` expiry, spec G3) is caught
+            here and converted into a bounded ``status="error"`` result
+            instead of propagating — the worker process, and its namespace,
+            survive the interruption.
         """
         pre_keys = set(self._tool.locals.keys())
-        # enforce_security=True: the allowlist gate + AST denylist walk both
-        # run here, in the worker — defence in depth alongside the host's
-        # own (separate) gate check before it ever sends code over (G6/AC6).
-        output = self._tool._execute_code(request.code, debug=request.debug, enforce_security=True)
+        try:
+            # enforce_security=True: the allowlist gate + AST denylist walk
+            # both run here, in the worker — defence in depth alongside the
+            # host's own (separate) gate check before it ever sends code
+            # over (G6/AC6).
+            output = self._tool._execute_code(request.code, debug=request.debug, enforce_security=True)
+        except KeyboardInterrupt:
+            # G3 (interrupt-before-kill): the host's execute() sends SIGINT
+            # first on deadline_ms expiry, then waits interrupt_grace_ms for
+            # this exact reply before falling back to SIGKILL. Converting the
+            # interrupt into a bounded ExecResult (rather than letting it
+            # propagate and kill the worker) is what lets the namespace
+            # survive. `status` stays "error" — never "interrupted", which
+            # is not a value this contract defines.
+            new_vars = sorted(set(self._tool.locals.keys()) - pre_keys)
+            message = (
+                f"interrupted: exceeded deadline_ms={request.deadline_ms}; "
+                "namespace preserved (partial side effects possible)"
+            )
+            logger.warning("repl_worker: exec interrupted by SIGINT (deadline_ms=%s)", request.deadline_ms)
+            return ExecResult(status="error", result=message, error=message, new_vars=new_vars)
         new_vars = sorted(set(self._tool.locals.keys()) - pre_keys)
         if self._tool._is_error_output(output):
             return ExecResult(status="done_with_errors", result=output, error=output, new_vars=new_vars)
@@ -270,6 +292,33 @@ def _dispatch(namespace: WorkerNamespace, message: Any) -> Any:
     return ErrorResponse(message=f"Unhandled message type: {type(message).__name__}")
 
 
+def _write_response(out_stream: BinaryIO, response: Any) -> None:
+    """Write one response frame, guaranteed to finish even if SIGINT races it.
+
+    A stray ``KeyboardInterrupt`` landing mid-write must never leave a
+    partial frame on the wire — ``write_frame()`` issues two separate
+    ``stream.write()`` calls (length header, then payload), and an
+    interrupt between them would desync the length-prefixed protocol for
+    every subsequent message. On POSIX, SIGINT is blocked for the duration
+    of the write via ``signal.pthread_sigmask`` and unblocked immediately
+    after, so the write always completes and any interrupt that arrived
+    during it is delivered right afterwards instead of being lost (spec §3
+    Module 3: "or while writing a frame (finish the write)").
+
+    Args:
+        out_stream: Binary stream carrying worker -> host frames.
+        response: The Pydantic protocol response to write.
+    """
+    if sys.platform == "win32":
+        write_frame(out_stream, response)
+        return
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        write_frame(out_stream, response)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
 def serve(
     config: WorkerConfig,
     in_stream: BinaryIO,
@@ -319,12 +368,30 @@ def serve(
         except EOFError:
             logger.info("repl_worker: input stream closed, shutting down")
             return
+        except KeyboardInterrupt:
+            # A deadline-triggered SIGINT can race a reply that already
+            # landed and arrive here instead, while the worker is genuinely
+            # idle (blocked waiting for the NEXT request) — harmless (spec
+            # §3 Module 3 / §7 Known Risks "SIGINT while idle"): log and
+            # keep serving instead of dying.
+            logger.info("repl_worker: SIGINT received while idle (blocked in read_frame); ignoring")
+            continue
+
         try:
             response = _dispatch(namespace, message)
+        except KeyboardInterrupt:
+            # Only ExecRequest converts an in-flight interrupt into a
+            # bounded ExecResult inside WorkerNamespace.exec(); any other
+            # request type interrupted mid-dispatch still gets exactly one
+            # bounded reply rather than crashing the service loop out from
+            # under the host (Key Constraint: exactly one response per
+            # request, control-pipe ordering preserved).
+            logger.warning("repl_worker: SIGINT interrupted dispatch of %r", message)
+            response = ErrorResponse(message="interrupted: request cancelled by SIGINT")
         except Exception as exc:  # noqa: BLE001 - never let one bad request kill the worker
             logger.exception("repl_worker: unhandled error dispatching %r", message)
             response = ErrorResponse(message=f"{type(exc).__name__}: {exc}")
-        write_frame(out_stream, response)
+        _write_response(out_stream, response)
 
 
 def main(argv: Optional[list[str]] = None) -> None:

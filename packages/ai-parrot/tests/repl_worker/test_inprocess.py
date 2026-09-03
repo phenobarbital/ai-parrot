@@ -75,6 +75,24 @@ def test_inprocess_logs_warning(report_dir, caplog):
     assert any("execution_mode='inprocess'" in rec.getMessage() for rec in caplog.records)
 
 
+def test_inprocess_verdict_is_unavailable(inprocess_tool):
+    """FEAT-521: no process to observe in-process — `verdict()` always says so."""
+    handle = inprocess_tool._get_inprocess_handle()
+    assert handle.verdict() == "unavailable"
+
+
+def test_inprocess_logs_ignored_guardrails(report_dir, caplog):
+    """FEAT-521: observer/interrupt/memory `WorkerConfig` fields are debug-logged
+    as ignored (no in-process enforcement implied) when a handle is built."""
+    config = WorkerConfig(memory_soft_limit_bytes=123, memory_hard_limit_bytes=456)
+    tool = PythonREPLTool(report_dir=report_dir, execution_mode="inprocess", worker_config=config)
+    with caplog.at_level("DEBUG"):
+        tool._get_inprocess_handle()
+    messages = [rec.getMessage() for rec in caplog.records]
+    assert any("guardrails" in m and "ignored" in m for m in messages)
+    assert any("unavailable" in m for m in messages)
+
+
 async def test_inprocess_executes_without_a_pool(inprocess_tool):
     out = await inprocess_tool._execute("x = 40 + 2\nprint(x)")
     assert out == "42\n"
@@ -108,7 +126,7 @@ async def test_inprocess_deadline_returns_bounded_error(report_dir):
     tool = PythonREPLTool(
         report_dir=report_dir,
         execution_mode="inprocess",
-        worker_config=WorkerConfig(deadline_ms=300),
+        worker_config=WorkerConfig(deadline_ms=300, interrupt_grace_ms=100),
     )
     started = time.monotonic()
     out = await tool._execute("import time\ntime.sleep(1.5)\nz = 1")

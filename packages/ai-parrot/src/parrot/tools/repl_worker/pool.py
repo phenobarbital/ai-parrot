@@ -33,7 +33,10 @@ import contextlib
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any, Optional
+
+import psutil
 
 from .handle import WorkerBootstrapError, WorkerHandle
 from .protocol import WorkerConfig
@@ -50,6 +53,48 @@ _RESTART_LOOP_THRESHOLD = 3
 #: Floor on the effective ceiling when `max_workers` is left at its
 #: auto-detect default (0).
 _CEILING_FLOOR = 4
+
+#: cgroup v2 unified-hierarchy memory files (FEAT-521 §7 Q3). Absent on
+#: cgroup v1 hosts, containers without a memory controller, and non-Linux —
+#: all treated as "no cgroup data", falling back to `psutil` alone.
+_CGROUP_MEMORY_MAX = Path("/sys/fs/cgroup/memory.max")
+_CGROUP_MEMORY_CURRENT = Path("/sys/fs/cgroup/memory.current")
+
+
+def _cgroup_v2_available_bytes() -> Optional[int]:
+    """Remaining cgroup v2 memory headroom, or `None` if unavailable.
+
+    Returns:
+        ``memory.max - memory.current`` in bytes (never negative), or
+        ``None`` when the cgroup v2 files are absent, unreadable,
+        malformed, or ``memory.max`` reads ``"max"`` (no limit set — the
+        host-wide `psutil` figure is then authoritative on its own).
+    """
+    try:
+        raw_max = _CGROUP_MEMORY_MAX.read_text(encoding="utf-8").strip()
+        if raw_max == "max":
+            return None
+        limit = int(raw_max)
+        current = int(_CGROUP_MEMORY_CURRENT.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return max(0, limit - current)
+
+
+def _effective_host_available_bytes() -> int:
+    """Effective host memory availability (spec §7 Q3: container-aware).
+
+    Returns:
+        ``psutil.virtual_memory().available``, capped by the cgroup v2
+        remaining headroom when that data is readable and finite (the
+        smaller of the two — a cgroup limit can be tighter than the host's
+        own free memory, and vice versa).
+    """
+    available = psutil.virtual_memory().available
+    cgroup_available = _cgroup_v2_available_bytes()
+    if cgroup_available is not None:
+        available = min(available, cgroup_available)
+    return available
 
 
 class WorkerPoolExhaustedError(RuntimeError):
@@ -213,6 +258,19 @@ class WorkerPool:
                     total = len(self._sessions) + len(self._prewarmed)
                     if len(self._prewarmed) >= self._config.prewarm_pool_size or total >= self._ceiling:
                         return
+                    # FEAT-521 G5: never grow the prewarmed pool while the
+                    # host is below its memory reserve — protecting the
+                    # host takes priority over keeping spares topped up.
+                    if self._config.host_memory_reserve_bytes > 0:
+                        available = _effective_host_available_bytes()
+                        if available < self._config.host_memory_reserve_bytes:
+                            logger.debug(
+                                "WorkerPool: skipping prewarm top-up — host available memory "
+                                "%d bytes is below host_memory_reserve_bytes=%d",
+                                available,
+                                self._config.host_memory_reserve_bytes,
+                            )
+                            return
                 handle = None
                 try:
                     handle = await self._spawn_handle()
@@ -290,6 +348,11 @@ class WorkerPool:
             while True:
                 await asyncio.sleep(interval)
                 await self._evict_idle()
+                # FEAT-521 G5: pressure eviction runs every sweep, after idle
+                # TTL eviction — both only ever remove workers that are not
+                # bound to a live session.
+                await self._evict_under_pressure()
+                self._log_aggregate_rss_if_pressured()
         except asyncio.CancelledError:
             raise
 
@@ -312,6 +375,77 @@ class WorkerPool:
             logger.info("WorkerPool: evicting idle session %r (TTL exceeded)", session_id)
             await handle.kill()
 
+    async def _evict_under_pressure(self) -> None:
+        """Kill prewarmed spares — never bound sessions — while host memory is short.
+
+        Spec G5: "the pool ... evicts idle spares first under pressure".
+        Only ``self._prewarmed`` is ever touched here; a session's worker,
+        however memory-hungry, is left alone by this sweep (its own
+        per-worker hard RSS limit, if configured, is what protects the
+        host from THAT worker specifically — see `WorkerHandle.observer`).
+        """
+        if self._config.host_memory_reserve_bytes <= 0:
+            return
+        available = _effective_host_available_bytes()
+        if available >= self._config.host_memory_reserve_bytes:
+            return
+        async with self._lock:
+            spares = list(self._prewarmed)
+            self._prewarmed.clear()
+        if not spares:
+            return
+        logger.info(
+            "WorkerPool: host available memory %d bytes is below host_memory_reserve_bytes=%d — "
+            "evicting %d prewarmed spare(s) (sessions are never evicted for memory pressure alone)",
+            available,
+            self._config.host_memory_reserve_bytes,
+            len(spares),
+        )
+        for handle in spares:
+            await handle.kill()
+
+    def memory_summary(self) -> dict[str, int]:
+        """Aggregate memory telemetry across every live worker (spec §2).
+
+        Returns:
+            ``{"workers": n, "rss_total": bytes, "host_available": bytes}``
+            — ``rss_total`` sums each live worker's last observed RSS
+            sample (0 for a worker whose observer has no sample yet, e.g.
+            still booting, or is ``"unavailable"``); ``host_available`` is
+            the same cgroup-aware figure the reserve checks use.
+        """
+        workers = list(self._sessions.values()) + list(self._prewarmed)
+        rss_total = 0
+        for handle in workers:
+            if handle.observer is not None:
+                last = handle.observer.last()
+                if last is not None:
+                    rss_total += last.rss
+        return {
+            "workers": len(workers),
+            "rss_total": rss_total,
+            "host_available": _effective_host_available_bytes(),
+        }
+
+    def _log_aggregate_rss_if_pressured(self) -> None:
+        """INFO-log the pool's aggregate RSS when any live worker is over its soft limit.
+
+        Spec §3 Module 5: "logs the aggregate RSS of all live workers at
+        INFO every sweep when any soft limit is breached" — a no-op sweep
+        (no log) when nothing is under soft pressure.
+        """
+        workers = list(self._sessions.values()) + list(self._prewarmed)
+        if not any(h.observer is not None and h.observer.memory_pressure is not None for h in workers):
+            return
+        summary = self.memory_summary()
+        logger.info(
+            "WorkerPool: aggregate RSS %d bytes across %d worker(s) (host available %d bytes) "
+            "— at least one worker is over its memory_soft_limit_bytes",
+            summary["rss_total"],
+            summary["workers"],
+            summary["host_available"],
+        )
+
     def _record_restart(self, session_id: str, dead: WorkerHandle) -> None:
         """Count one worker restart for ``session_id`` and warn on a loop.
 
@@ -319,7 +453,9 @@ class WorkerPool:
         seconds in complete silence (FEAT-500 G5). Restarts are kept in a
         `_RESTART_WINDOW_S` sliding window; crossing
         `_RESTART_LOOP_THRESHOLD` logs one warning naming the session and the
-        dead worker's exit code / stderr tail so the real cause is visible.
+        dead worker's exit code / stderr tail — and, when the observer
+        recorded one, its memory cause (FEAT-521) — so the real cause is
+        visible.
 
         Called under ``self._lock``.
 
@@ -334,14 +470,19 @@ class WorkerPool:
         if len(recent) < _RESTART_LOOP_THRESHOLD:
             return
         exit_code, stderr_tail = dead.death_summary()
+        memory_note = ""
+        if dead.observer is not None and dead.observer.memory_verdict is not None:
+            verdict = dead.observer.memory_verdict
+            memory_note = f", memory cause: rss={verdict.rss} limit={verdict.limit}"
         logger.warning(
             "WorkerPool: session %r restarted %d times in the last %ds — possible "
-            "restart loop (last worker exit code=%s, stderr tail=%r)",
+            "restart loop (last worker exit code=%s, stderr tail=%r%s)",
             session_id,
             len(recent),
             int(_RESTART_WINDOW_S),
             exit_code,
             stderr_tail,
+            memory_note,
         )
 
     def restart_count(self, session_id: str) -> int:
@@ -415,9 +556,23 @@ class WorkerPool:
                     )
 
             if self._prewarmed:
+                # Consuming a spare never spawns anything, so the host
+                # reserve check below does not apply here (spec G5).
                 handle = self._prewarmed.pop(0)
                 logger.debug("WorkerPool: session %r bound to a prewarmed worker", session_id)
             else:
+                # FEAT-521 G5: refuse to SPAWN below the host memory
+                # reserve — an existing prewarmed spare (branch above) or
+                # live session is never blocked by this check.
+                if self._config.host_memory_reserve_bytes > 0:
+                    available = _effective_host_available_bytes()
+                    if available < self._config.host_memory_reserve_bytes:
+                        raise WorkerPoolExhaustedError(
+                            f"WorkerPool: host available memory ({available} bytes) is below "
+                            f"host_memory_reserve_bytes={self._config.host_memory_reserve_bytes}; "
+                            "refusing to spawn a new worker. Free host memory, retry once "
+                            "pressure clears, or raise WorkerConfig.host_memory_reserve_bytes."
+                        )
                 handle = await self._spawn_handle()
                 logger.debug("WorkerPool: session %r spawned a fresh worker", session_id)
 

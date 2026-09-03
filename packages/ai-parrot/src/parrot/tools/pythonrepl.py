@@ -972,8 +972,24 @@ print("Use 'execution_results' dict to store intermediate results.")
             self._bootstrap()
             handle = None
         if handle is None or not handle.is_alive:
-            deadline_ms = (self._worker_config or WorkerConfig()).deadline_ms
-            handle = InProcessHandle(self, executor=self._repl_executor, deadline_ms=deadline_ms)
+            config = self._worker_config or WorkerConfig()
+            # FEAT-521: the observer/interrupt/memory guardrails only exist
+            # for the spawned-process path — nothing can be measured or
+            # killed per snippet without process isolation (spec Non-Goals).
+            # Debug-log once per handle so an operator who set these on a
+            # `WorkerConfig` shared with `execution_mode="inprocess"` can see
+            # why they have no effect, without implying in-process enforcement.
+            self.logger.debug(
+                "PythonREPLTool: execution_mode='inprocess' — WorkerConfig's observer/"
+                "interrupt/memory guardrails (observer_poll_ms=%s, memory_soft_limit_bytes=%s, "
+                "memory_hard_limit_bytes=%s, interrupt_before_kill=%s) are ignored; "
+                "InProcessHandle.verdict() always reports 'unavailable'.",
+                config.observer_poll_ms,
+                config.memory_soft_limit_bytes,
+                config.memory_hard_limit_bytes,
+                config.interrupt_before_kill,
+            )
+            handle = InProcessHandle(self, executor=self._repl_executor, deadline_ms=config.deadline_ms)
             self._inprocess_handle = handle
         return handle
 
