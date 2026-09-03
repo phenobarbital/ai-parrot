@@ -14,7 +14,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Pure asset addition under formats/assets/ + pyproject.toml package-data glob; no code dependency on TASK-2786's folium_map.py refactor.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2785-vendor-offline-map-assets.md"
+      "completed_at": "2026-09-03T20:08:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2785-vendor-offline-map-assets.md"
     },
     {
       "id": "TASK-2786",
