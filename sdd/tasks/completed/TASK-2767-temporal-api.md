@@ -149,4 +149,30 @@ async def test_current_path_uses_partial_index(pg_persistence, ctx): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `NodeVersionRow`/`TemporalDiff` Pydantic models (field lists copied
+verbatim from spec §2) and `as_of`/`history`/`diff` to `PostgresPersistence`
+(same file, Module 4). `as_of` reuses the TASK-2765 `_row_to_node`/
+`_row_to_edge` rehydration helpers unchanged — only the WHERE predicate
+differs (`validity @> $t` vs. `upper_inf(validity)`), so `as_of(now())`
+and `load_graph()` are verified byte-identical. `diff`'s version-changes
+predicate uses explicit bound comparisons (opened/closed strictly within
+`(t1, t2]`) rather than range overlap (`&&`), matching the spec's literal
+"closed/opened between t1 and t2" wording — overlap would also match
+long-lived unchanged versions spanning the window. Edge deltas use the
+spec's literal `validity @> t2 AND NOT validity @> t1` / inverse formula.
+Naive datetimes rejected via a shared `_require_aware` guard on every
+temporal entry point. `SQLitePersistence`/`GraphIndexPersistence`
+untouched, per D5.
+
+D3 EXPLAIN test: the planner may pick either the plain `nv_current`
+partial index or the EXCLUDE constraint's own `(concept_id, validity)`
+GiST index for `WHERE concept_id = $1 AND upper_inf(validity)` — both are
+valid current-path outcomes (indexed, not a full historical scan); the
+test asserts "no Seq Scan" plus "one of the two expected index names"
+rather than a single hardcoded index name, documented inline as to why.
+
+All 7 tests pass (as_of≡load_graph, past snapshot, history ordering +
+contiguous ranges, unknown-concept empty history, structured diff with
+version+edge deltas, naive-datetime ValueError, EXPLAIN index-scan
+check). Ran the full graphindex-postgres suite together: 42/42 green.
+`ruff check` clean.
