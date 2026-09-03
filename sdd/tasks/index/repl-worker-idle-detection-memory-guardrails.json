@@ -32,7 +32,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "After TASK-2774, this observer track can proceed in parallel with independent worker-side TASK-2776.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2775-process-observer-sampling-verdicts.md"
+      "completed_at": "2026-09-03T14:02:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2775-process-observer-sampling-verdicts.md"
     },
     {
       "id": "TASK-2776",
