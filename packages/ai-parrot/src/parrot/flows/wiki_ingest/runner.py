@@ -39,6 +39,7 @@ from .nodes import indexes as indexes_node
 from .nodes import log as log_node
 from .nodes import meeting_page as meeting_page_node
 from .nodes import project_reconcile as project_reconcile_node
+from .nodes import quarantine as quarantine_node
 from .nodes import raw_bundle as raw_bundle_node
 from .nodes import review_queue as review_queue_node
 from .render.project import parse_project_page
@@ -217,6 +218,91 @@ async def _queue_review_item(
     queue_content = review_queue_node.append_review_item(queue_content, entry)
     await toolkit.update_note("Wiki/Review Queue.md", queue_content, preserve_frontmatter=False)
     report.review_items.append(issue)
+
+
+async def _handle_meeting_failure(
+    toolkit: Any,
+    report: IngestReport,
+    vault_path: str,
+    meeting: fetch_gate_node.GatedMeeting,
+    *,
+    error: str,
+    prior_attempts: int,
+    cap: int,
+) -> None:
+    """Module 17 — quarantine a failed meeting and surface it in the Review Queue.
+
+    The caller has already rolled back this meeting's compiled writes. This moves the
+    raw bundle to ``Raw/Failed/`` (the id is never marked processed, so it stays
+    reprocessable) and queues a ``failed-processing`` item — or ``reprocess-exhausted``
+    once ``attempts`` reaches ``cap``.
+
+    Args:
+        toolkit: The vault toolkit.
+        report: The run's :class:`IngestReport` (``failed``/``errors`` updated).
+        vault_path: Obsidian vault root.
+        meeting: The gated meeting whose compile failed.
+        error: The failure message.
+        prior_attempts: Attempts before this failure (0 first time; the quarantine's
+            recorded count on a retry).
+        cap: :data:`conf.WIKI_KB_MAX_REPROCESS_ATTEMPTS`.
+    """
+    report.failed += 1
+    report.errors.append(f"{meeting.source_id}: {error}")
+    models = {"strong": conf.WIKI_KB_LLM_STRONG, "cheap": conf.WIKI_KB_LLM_CHEAP}
+    try:
+        attempts = await asyncio.to_thread(
+            quarantine_node.quarantine,
+            vault_path,
+            meeting,
+            error=error,
+            models=models,
+            prior_attempts=prior_attempts,
+        )
+    except Exception:  # noqa: BLE001 — quarantine must never crash the batch
+        logger.exception("Quarantine failed for %s", meeting.source_id)
+        attempts = prior_attempts + 1
+    if attempts >= cap:
+        review_type = "reprocess-exhausted"
+        action = (
+            f"Auto-retry exhausted after {attempts} attempt(s). Inspect "
+            f"Raw/Failed/{meeting.fireflies_id}/ and reprocess manually."
+        )
+    else:
+        review_type = "failed-processing"
+        action = f"Quarantined to Raw/Failed/{meeting.fireflies_id}/; will auto-retry (attempt {attempts}/{cap})."
+    await _queue_review_item(
+        toolkit,
+        report,
+        review_type=review_type,
+        title=f"LLM could not process {meeting.title}",
+        source_id=meeting.source_id,
+        issue="Meeting compilation failed (LLM could not produce valid structured output)",
+        evidence=error[:300],
+        recommended_action=action,
+    )
+
+
+async def _resolve_quarantine_items(toolkit: Any, source_id: str) -> None:
+    """Mark a source's Module 17 quarantine review items ``Resolved`` after a good retry.
+
+    Args:
+        toolkit: The vault toolkit.
+        source_id: The reprocessed meeting's source id.
+    """
+    try:
+        queue_note = await toolkit.read_note("Wiki/Review Queue.md")
+    except FileNotFoundError:
+        return
+    updated = review_queue_node.resolve_items_for_source(
+        queue_note["content"],
+        source_id,
+        resolution="Reprocessed successfully (Module 17 auto-retry).",
+        resolved_at=now_iso(),
+        only_types=frozenset({"failed-processing", "reprocess-exhausted"}),
+    )
+    if updated != queue_note["content"]:
+        await toolkit.update_note("Wiki/Review Queue.md", updated, preserve_frontmatter=False)
 
 
 async def _process_one_meeting(
@@ -612,19 +698,30 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     await vault.initialize_vault(toolkit)
 
     raw_processed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Processed"
+    raw_failed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Failed"
+
+    # Module 17 — build the retry batch (quarantined bundles with attempts < cap)
+    # BEFORE the fetch, from local bytes (no Fireflies re-download). The fetch-gate
+    # is told about Raw/Failed/ so those ids are treated as known and not re-fetched.
+    reprocess_cap = conf.WIKI_KB_MAX_REPROCESS_ATTEMPTS
+    retry_batch = await asyncio.to_thread(quarantine_node.build_retry_batch, vault_path, cap=reprocess_cap)
+    retry_prior: dict[str, int] = {m.fireflies_id: prior for m, prior in retry_batch}
+
     gated = await fetch_gate_node.run_fetch_gate(
         agent,
         registry=registry,
         raw_processed_root=raw_processed_root,
+        raw_failed_root=raw_failed_root,
         limit=ctx.limit if ctx.limit is not None else conf.WIKI_KB_INGEST_LIMIT,
         force_refetch=ctx.force_refetch,
         since=ctx.since,
         lookback_days=ctx.lookback_days,
     )
 
-    # G5 — sort the WHOLE batch oldest → newest before processing anything.
-    to_process = sorted((m for m in gated if m.outcome == "fetch"), key=lambda m: m.meeting_date)
-    skipped = len(gated) - len(to_process)
+    # G5 — sort the WHOLE batch (freshly-fetched + Module 17 retries) oldest → newest.
+    fetched = [m for m in gated if m.outcome == "fetch"]
+    to_process = sorted(fetched + [m for m, _ in retry_batch], key=lambda m: m.meeting_date)
+    skipped = len([m for m in gated if m.outcome != "fetch"])
 
     report = IngestReport(skipped=skipped)
     all_projects_touched: set[str] = set()
@@ -651,33 +748,45 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
         await toolkit.update_note("Wiki/log.md", log_content, preserve_frontmatter=False)
 
     for meeting in to_process:
+        is_retry = meeting.fireflies_id in retry_prior
+        prior_attempts = retry_prior.get(meeting.fireflies_id, 0)
+        if is_retry:
+            # _process_one_meeting re-materialises the bundle into Raw/Incoming from
+            # the in-memory meeting; drop the stale quarantine dir first (the fetch-gate
+            # already scanned Raw/Failed/ so this id is not re-downloaded).
+            await asyncio.to_thread(quarantine_node.discard_failed_dir, vault_path, meeting.fireflies_id)
+
         try:
             outcome = await _process_one_meeting(agent, toolkit, registry, vault_path, meeting)
         except Exception as exc:
             logger.exception("Ingest failed for %s", meeting.source_id)
-            report.failed += 1
-            report.errors.append(f"{meeting.source_id}: {exc}")
+            # Module 17 — _process_one_meeting already rolled back its compiled writes;
+            # quarantine the raw bundle (never mark it processed) + surface it.
+            await _handle_meeting_failure(
+                toolkit,
+                report,
+                vault_path,
+                meeting,
+                error=str(exc),
+                prior_attempts=prior_attempts,
+                cap=reprocess_cap,
+            )
             continue
 
         if not outcome.validation_passed:
             await _rollback(toolkit, outcome.writes)
-            report.failed += 1
-            report.errors.extend(outcome.validation_failures)
-            # Exactly one validation-failure entry, independent of
-            # `outcome.review_items` — a §34 gate failure with no other
-            # collected review item must still be surfaced (previously
-            # silently dropped); several unrelated review items must not
-            # duplicate this entry once per item (previously did).
-            await _queue_review_item(
+            # Module 17 — §34 failure OR compile failure: rollback (above) + quarantine
+            # to Raw/Failed/ (id stays reprocessable) + queue review + no success log.
+            await _handle_meeting_failure(
                 toolkit,
                 report,
-                review_type="unsupported-format",
-                title=f"Validation failed for {meeting.title}",
-                source_id=meeting.source_id,
-                issue="§34 post-operation validation failed",
-                evidence="; ".join(outcome.validation_failures),
-                recommended_action="Review the failure and re-run ingest for this meeting.",
+                vault_path,
+                meeting,
+                error="; ".join(outcome.validation_failures) or "§34 post-operation validation failed",
+                prior_attempts=prior_attempts,
+                cap=reprocess_cap,
             )
+            # Preserve any other review items this meeting collected before failing.
             for item in outcome.review_items:
                 await _queue_review_item(
                     toolkit,
@@ -690,6 +799,10 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
                     recommended_action="See issue/evidence above.",
                 )
             continue
+
+        # §34 passed — if this was a Module 17 retry, clear its quarantine review items.
+        if is_retry:
+            await _resolve_quarantine_items(toolkit, meeting.source_id)
 
         # §34 passed — persist review items (best-effort, not gated) + registry + log.
         for item in outcome.review_items:

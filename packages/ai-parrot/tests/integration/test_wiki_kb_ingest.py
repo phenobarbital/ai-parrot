@@ -237,7 +237,7 @@ async def test_ingest_validation_failure_rolls_back(tmp_path: Path, monkeypatch:
 
     assert report.failed == 1
     assert report.processed == 0
-    assert "forced failure for test" in report.errors
+    assert any("forced failure for test" in e for e in report.errors)
 
     # Compiled meeting page was rolled back (created, so deleted).
     meetings_dir = tmp_path / "Wiki" / "Sources" / "Meetings"
@@ -248,19 +248,21 @@ async def test_ingest_validation_failure_rolls_back(tmp_path: Path, monkeypatch:
     if log_path.exists():
         assert "ingest |" not in log_path.read_text()
 
-    # Raw bytes untouched — still present under Raw/Processed, never deleted.
+    # Module 17 — raw bytes preserved but QUARANTINED to Raw/Failed (not Processed),
+    # never deleted; the id stays reprocessable.
     processed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Processed"
-    transcript_files = list(processed_root.rglob("transcript.md"))
-    assert len(transcript_files) == 1
+    failed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Failed"
+    assert not list(processed_root.rglob("id-1/transcript.md"))
+    assert (failed_root / "id-1" / "transcript.md").is_file()
+    assert (failed_root / "id-1" / "failure.json").is_file()
 
-    # A §34 validation failure always queues exactly one review item —
-    # never zero (previously silently dropped when no other review item
-    # pre-existed) and never one per unrelated pre-existing review item
-    # (previously duplicated the same "Validation failed" entry).
+    # Module 17 — a §34 validation failure quarantines + queues exactly one
+    # failed-processing review item (attempt 1 < cap).
     queue_path = tmp_path / "Wiki" / "Review Queue.md"
     assert queue_path.exists()
     queue_content = queue_path.read_text()
-    assert queue_content.count("Validation failed for") == 1
+    assert queue_content.count("failed-processing") == 1
+    assert "`fireflies:id-1`" in queue_content
 
 
 @pytest.mark.asyncio
@@ -309,12 +311,13 @@ async def test_ingest_mid_pipeline_exception_rolls_back_and_stays_recoverable(
     assert queue_path.exists()
     assert "boom mid-pipeline" in queue_path.read_text()
 
-    # Raw bytes are still present (immutable regardless of outcome) — but
-    # crucially the meeting was never marked "processed" in the registry,
-    # so a re-run with the same fetch-gate can still surface it for review
-    # rather than the source being silently, permanently lost.
+    # Module 17 — raw bytes preserved, but QUARANTINED to Raw/Failed (not
+    # Processed) and never marked processed in the registry, so the meeting is
+    # auto-retried on a subsequent ingest rather than silently lost.
     processed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Processed"
-    assert list(processed_root.rglob("transcript.md"))
+    failed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Failed"
+    assert not list(processed_root.rglob("id-1/transcript.md"))
+    assert (failed_root / "id-1" / "transcript.md").is_file()
 
 
 @pytest.mark.asyncio

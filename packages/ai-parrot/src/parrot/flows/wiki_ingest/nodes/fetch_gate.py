@@ -266,6 +266,7 @@ async def run_fetch_gate(
     *,
     registry: MeetingRegistry,
     raw_processed_root: Path | None = None,
+    raw_failed_root: Path | None = None,
     limit: int | None = None,
     force_refetch: bool = False,
     since: str | None = None,
@@ -288,6 +289,9 @@ async def run_fetch_gate(
             Module 4's ``build_meeting_registry()``).
         raw_processed_root: The vault's ``Raw/Processed/`` directory, for
             the ∪ scan. ``None`` skips the scan (e.g. a fresh vault).
+        raw_failed_root: The vault's ``Raw/Failed/`` directory (Module 17).
+            Quarantined ids found here are treated as known (never
+            re-downloaded); the orchestrator retries them from local bytes.
         limit: Max meetings to fetch, total across pages (default: no
             cap beyond the API's own page size).
         force_refetch: Bypass the cheap-skip path and always refetch +
@@ -321,6 +325,10 @@ async def run_fetch_gate(
     effective_limit = limit if limit is not None else conf.WIKI_KB_INGEST_LIMIT
 
     raw_known_ids = _scan_raw_processed_ids(raw_processed_root) if raw_processed_root is not None else set()
+    # Module 17 — a quarantined id (Raw/Failed/) is "known": never re-download it.
+    # The orchestrator retries it separately from the local bytes (build_retry_batch).
+    if raw_failed_root is not None:
+        raw_known_ids |= _scan_raw_processed_ids(raw_failed_root)
 
     listing: list[dict[str, Any]] = []
     skip = 0

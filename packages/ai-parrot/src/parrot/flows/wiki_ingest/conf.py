@@ -32,6 +32,7 @@ __all__ = (
     "WIKI_KB_LLM_CHEAP",
     "WIKI_KB_LLM_STRONG",
     "WIKI_KB_MAX_CATCHUP_DAYS",
+    "WIKI_KB_MAX_REPROCESS_ATTEMPTS",
     "WIKI_KB_PARTICIPANTS",
     "WIKI_KB_RAW_ROOT",
     "WIKI_KB_VAULT_PATH",
@@ -96,6 +97,12 @@ WIKI_KB_INGEST_LIMIT: int | None = config.getint("WIKI_KB_INGEST_LIMIT", fallbac
 #: Large-backlog guard: a manual wide-window ``ingest(lookback_days=…)``
 #: is bounded by this many days to avoid an unbounded catch-up run.
 WIKI_KB_MAX_CATCHUP_DAYS: int = config.getint("WIKI_KB_MAX_CATCHUP_DAYS", fallback=90)
+
+#: Module 17 quarantine auto-retry cap. A meeting the LLM cannot compile is
+#: quarantined to ``Raw/Failed/<source-id>/`` and auto-retried on subsequent
+#: ingests up to this many total attempts; after the cap it is parked as
+#: ``reprocess-exhausted`` for a human (no infinite retry).
+WIKI_KB_MAX_REPROCESS_ATTEMPTS: int = config.getint("WIKI_KB_MAX_REPROCESS_ATTEMPTS", fallback=3)
 
 
 # ---------------------------------------------------------------------------
