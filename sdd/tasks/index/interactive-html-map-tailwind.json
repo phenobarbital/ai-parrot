@@ -190,7 +190,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Final CSS-track task; needs the script, the DesignSystem integration, and the CI wiring all present to test against.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2794-tests-tailwind-css-generation.md"
+      "completed_at": "2026-09-03T20:47:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2794-tests-tailwind-css-generation.md"
     }
   ]
 }
