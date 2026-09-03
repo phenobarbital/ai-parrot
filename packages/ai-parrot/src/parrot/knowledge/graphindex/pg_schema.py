@@ -51,10 +51,16 @@ GRAPHINDEX_FTS_REGCONFIG: dict[str, str] = {
     "sym:": "simple",
 }
 
-#: ANN index type for ``graphindex.embeddings``. Provisional default
-#: ``"hnsw"`` (pgvector >=0.5.0) — the final choice is TASK-2770's spike
-#: output; config-overridable in the meantime (``"hnsw"`` or ``"ivfflat"``).
-GRAPHINDEX_ANN_INDEX_KIND: str = config.get("GRAPHINDEX_ANN_INDEX_KIND", fallback="hnsw")
+#: ANN index type for ``graphindex.embeddings``. Default ``"ivfflat"`` —
+#: TASK-2770's OQ3 spike (``artifacts/logs/feat-520-oq3-spike.md``)
+#: measured ivfflat beating hnsw on BOTH build time (~0.8s vs ~22.8s) and
+#: query latency (~0.01s vs ~0.07s) at a 5k-row synthetic corpus on
+#: pgvector 0.5.0, contradicting TASK-2769's provisional ``"hnsw"``
+#: default. Config-overridable (``"hnsw"`` or ``"ivfflat"``); re-run the
+#: spike before trusting this at a materially different corpus size,
+#: dimension, or once the deployment target runs pgvector >=0.8 (iterative
+#: scan changes hnsw's filtered-query economics).
+GRAPHINDEX_ANN_INDEX_KIND: str = config.get("GRAPHINDEX_ANN_INDEX_KIND", fallback="ivfflat")
 
 
 def validate_embedding_dim(vector: list[float], *, dim: Optional[int] = None) -> None:
@@ -333,9 +339,10 @@ async def ensure_ann_index(
 
     Config-driven, not called by :func:`ensure_schema` automatically —
     building an ANN index is a deliberate operational step (ivfflat in
-    particular benefits from running after data is loaded), and its
-    final index-type choice is TASK-2770's spike output. ``kind`` is
-    provisional (``"hnsw"``, pgvector >=0.5.0) until then.
+    particular benefits from running after data is loaded). ``kind``
+    defaults to ``"ivfflat"`` per TASK-2770's OQ3 spike measurements
+    (``artifacts/logs/feat-520-oq3-spike.md``); ``"hnsw"`` remains
+    available and config-selectable.
 
     Args:
         pool: An asyncpg connection pool.
