@@ -135,7 +135,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "Touches only protocol/observer tests and can run alongside later handle, worker, or pool work after its dependencies land.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2780-observer-config-unit-tests.md"
+      "completed_at": "2026-09-03T14:38:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2780-observer-config-unit-tests.md"
     },
     {
       "id": "TASK-2781",
