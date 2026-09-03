@@ -73,6 +73,14 @@ class OpenAIBaseClient(AbstractClient):
     # values here — they stay None (AbstractClient defaults) so the invoke
     # chain (base.py:_resolve_invoke_model) falls through to self.model.
 
+    #: When True, send ``max_completion_tokens`` instead of ``max_tokens``.
+    #: Off by default: only endpoints verified to accept the newer key opt in.
+    _uses_max_completion_tokens: bool = False
+
+    #: Model-id fragments whose provider rejects a non-default ``temperature``.
+    #: Matched case-insensitively as substrings of the resolved model id.
+    _fixed_temperature_models: tuple[str, ...] = ()
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -250,9 +258,31 @@ class OpenAIBaseClient(AbstractClient):
             method = getattr(self.client.chat.completions, "parse", self.client.chat.completions.create)
         if stream:
             kwargs["stream"] = True
+        kwargs = self._adapt_completion_params(model, kwargs)
         async for attempt in retry_policy:
             with attempt:
                 return await method(model=model, messages=messages, **kwargs)
+
+    def _adapt_completion_params(self, model: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Rewrite request kwargs for the quirks of the resolved model.
+
+        Args:
+            model: The resolved model identifier being called.
+            kwargs: The chat-completions request kwargs, as assembled by the caller.
+
+        Returns:
+            The kwargs to send. Callers must use the return value; the input
+            mapping is not mutated in place.
+        """
+        adapted = dict(kwargs)
+        if self._uses_max_completion_tokens and "max_tokens" in adapted:
+            adapted["max_completion_tokens"] = adapted.pop("max_tokens")
+        lowered = (model or "").lower()
+        if "temperature" in adapted and any(
+            frag.lower() in lowered for frag in self._fixed_temperature_models
+        ):
+            adapted.pop("temperature")
+        return adapted
 
     @staticmethod
     def _extract_completion_usage(response_obj: Any) -> tuple:
