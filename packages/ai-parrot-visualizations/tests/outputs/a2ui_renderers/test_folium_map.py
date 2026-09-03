@@ -223,3 +223,27 @@ class TestFoliumMapRendererUnchangedPublicBehavior:
             "deep_links",
             "metadata",
         }
+
+
+class TestFoliumMapSurfaceOffline:
+    """FEAT-522 TASK-2793: closes the SAME offline gap on the standalone
+    `folium_map` surface itself (not just the `interactive-html`-embedded
+    case, which TestMapDispatch in test_interactive_html.py covers) —
+    exercises the full FoliumMapRenderer.render() path end-to-end, not just
+    build_map_document() directly (that's TASK-2792's job)."""
+
+    async def test_folium_map_surface_zero_external_resources(self):
+        import folium
+        import folium.plugins as fp
+
+        m = folium.Map()
+        mc = fp.MarkerCluster()
+        urls = [u for _, u in [*m.default_js, *m.default_css, *mc.default_js, *mc.default_css]]
+        assert urls
+
+        art = await fm.FoliumMapRenderer().render(_map_envelope())
+        text = art.content.decode("utf-8")
+        for url in urls:
+            assert url not in text
+        assert "data:text/javascript;base64," in text
+        assert "data:text/css;base64," in text

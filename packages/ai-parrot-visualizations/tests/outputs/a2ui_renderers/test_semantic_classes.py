@@ -3,6 +3,7 @@ resolution precedence (FEAT-493, TASK-2710)."""
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -206,3 +207,36 @@ class TestTailwindCoverageIntegration:
             assert ".a2ui-col" not in sheet  # the Tailwind-only rule is gone
         finally:
             DesignSystem._cache.clear()
+
+
+def _generate_a2ui_css_module():
+    """Import `scripts/generate_a2ui_css.py` as a module (FEAT-522 TASK-2793).
+
+    `scripts/` isn't part of any installed package's import path — mirrors
+    `tests/scripts/test_generate_tool_registry.py`'s own
+    `sys.path.insert(0, str(Path(__file__).resolve().parents[N] / "scripts"))`
+    pattern so this test reuses the REAL AST-scanning logic (never a
+    hand-duplicated copy that could drift from the actual generator).
+    """
+    scripts_dir = str(_REPO_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import generate_a2ui_css
+
+    return generate_a2ui_css
+
+
+class TestTailwindClassCoverage:
+    """FEAT-522 TASK-2793: coverage-audit — every class
+    `interactive_html.py` can emit has a real CSS rule somewhere in
+    `DesignSystem.stylesheet()`'s output (not necessarily from the
+    Tailwind-generated file specifically — `kpi-grid` is deliberately
+    excluded from Tailwind generation, TASK-2788's follow-up fix, but is
+    still covered via `components.css`/`layout-*.css`)."""
+
+    def test_all_a2ui_classes_have_css_rule(self):
+        gen = _generate_a2ui_css_module()
+        classes = gen.scan_classes(gen.INTERACTIVE_HTML_PATH)
+        sheet = DesignSystem.stylesheet()
+        missing = sorted(cls for cls in classes if f".{cls}" not in sheet)
+        assert not missing, f"Classes with no CSS rule in DesignSystem.stylesheet(): {missing}"
