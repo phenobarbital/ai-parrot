@@ -52,7 +52,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Independent child-side protocol-preserving work; can run alongside TASK-2774 and TASK-2775.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2776-worker-sigint-interruptible-exec.md"
+      "completed_at": "2026-09-03T14:06:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2776-worker-sigint-interruptible-exec.md"
     },
     {
       "id": "TASK-2777",

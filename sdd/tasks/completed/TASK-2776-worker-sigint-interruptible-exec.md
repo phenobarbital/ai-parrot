@@ -87,8 +87,33 @@ Re-read `worker.py:182-200` and `worker.py:273-327`. Preserve all FEAT-380/500 s
 
 ## Completion Note
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**: `WorkerNamespace.exec()` now catches `KeyboardInterrupt` around the
+`_execute_code()` call and returns a bounded `ExecResult(status="error",
+result=<msg>, error=<msg>)` naming `deadline_ms` and "namespace preserved
+(partial side effects possible)", with `new_vars` computed from whatever
+made it into `locals` before the interrupt. `serve()`'s loop now has two
+explicit `except KeyboardInterrupt` branches: one around `read_frame()`
+(idle SIGINT — log and `continue`, no reply expected since there was no
+request) and one around `_dispatch()` (any non-exec op interrupted
+mid-dispatch still gets exactly one bounded `ErrorResponse`, preserving the
+"one response per request" invariant). Added a new `_write_response()`
+helper that blocks SIGINT via `signal.pthread_sigmask` for the duration of
+`write_frame()` (POSIX only, no-op on `win32`) and unblocks immediately
+after — this guarantees a response frame is never left half-written (which
+would desync the length-prefixed protocol for every later message), and any
+SIGINT that arrived during the write is delivered right after instead of
+lost. Left rlimits, `PR_SET_PDEATHSIG`, framing, and `_execute_code()`
+completely untouched. Verified end-to-end against a real subprocess via
+`WorkerHandle` (idle `os.kill(pid, SIGINT)` → next `ping()` still succeeds;
+mid-exec SIGINT during a runaway `while True: pass` → bounded interrupted
+result with the correct `deadline_ms` in the message → a variable bound
+before the interrupt (`x = 42`) still readable via `get_var()` afterwards).
+Confirmed the `test_worker.py` subprocess-test failures are pre-existing at
+baseline (identical failure set with and without this change, verified via
+a scoped `git stash`) — the spec's documented `report_dir=tmp_path` /
+`AbstractTool` output_dir guard issue (§7 risks), not a regression from
+this task. `ruff check` and `black --target-version py312` clean.
 
 **Deviations from spec**: none
