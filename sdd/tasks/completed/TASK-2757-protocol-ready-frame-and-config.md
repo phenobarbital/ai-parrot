@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -168,8 +168,33 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- `ReadyResponse` added to `protocol.py` next to `ErrorResponse` (worker -> host
+  response block) with `op: Literal["ready"]`, `pid: int`,
+  `bootstrap_ms: int = Field(ge=0)` and a Google-style docstring; registered in
+  `_MESSAGE_TYPES` under `"ready"`.
+- `WorkerConfig` gained `bootstrap_timeout_ms` and `namespace_timeout_ms`, both
+  `Field(default=30_000, gt=0)`. The class docstring now documents the
+  lethal (bootstrap) vs. non-lethal (namespace) semantics, per the task's
+  requirement that the field docs state them.
+- `ReadyResponse` exported from `parrot/tools/repl_worker/__init__.py` (import +
+  `__all__`). Per the task's stated preference, `NamespaceTimeoutError` /
+  `WorkerBootstrapError` exports were left to TASK-2759, which defines them.
+- Tests: `ReadyResponse(pid=1, bootstrap_ms=10)` added to the parametrized
+  `ALL_MESSAGES` round-trip list, plus the two tests from the Test
+  Specification (`test_ready_response_roundtrip`,
+  `test_worker_config_new_fields_defaults_and_validation`).
+- Verification: `pytest packages/ai-parrot/tests/repl_worker/test_protocol.py`
+  -> 33 passed. `ruff check` on the three changed files reports exactly the
+  same 5 findings as the pre-change baseline (verified via `git stash`): 4
+  pre-existing in `protocol.py` (RUF100, 3x UP045) and 1 pre-existing I001 in
+  `test_protocol.py`. No new lint findings introduced; pre-existing ones left
+  alone (out of task scope).
+- Worktree test env note: the worktree needs
+  `PYTHONPATH=$(ls -d packages/*/src | tr '\n' ':')` and the compiled
+  `parrot/utils/types*.so` + `parrot/utils/parsers/toml*.so` copied from the
+  main checkout (untracked build artifacts, not committed).
 
 **Deviations from spec**: none

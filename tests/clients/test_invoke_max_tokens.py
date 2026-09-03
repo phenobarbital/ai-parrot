@@ -70,6 +70,7 @@ CLIENT_PATHS = [
     ("parrot.clients.claude", "AnthropicClient"),
     ("parrot.clients.google.client", "GoogleGenAIClient"),
     ("parrot.clients.openai_base", "OpenAIBaseClient"),
+    ("parrot.clients.gpt", "OpenAIClient"),
     ("parrot.clients.groq", "GroqClient"),
     ("parrot.clients.grok", "GrokClient"),
     ("parrot.clients.zai", "ZaiClient"),
@@ -83,16 +84,20 @@ CLIENT_PATHS = [
 
 
 @pytest.mark.parametrize("module_path,class_name", CLIENT_PATHS)
-def test_invoke_max_tokens_defaults_to_none(module_path, class_name):
-    """No client may hardcode a max_tokens default in invoke()'s signature."""
+@pytest.mark.parametrize("method", ["ask", "ask_stream", "invoke"])
+def test_max_tokens_defaults_to_none(module_path, class_name, method):
+    """No client may hardcode a numeric max_tokens default in a public entrypoint."""
     module = pytest.importorskip(module_path)
     cls = getattr(module, class_name, None)
     if cls is None:
         pytest.skip(f"{class_name} not available")
-    param = inspect.signature(cls.invoke).parameters["max_tokens"]
-    assert param.default is None, (
-        f"{class_name}.invoke() hardcodes max_tokens={param.default!r}; "
-        "it must default to None and resolve via _resolve_invoke_max_tokens()"
+    params = inspect.signature(getattr(cls, method)).parameters
+    if "max_tokens" not in params:
+        pytest.skip(f"{class_name}.{method}() takes no max_tokens")
+    default = params["max_tokens"].default
+    assert default is None, (
+        f"{class_name}.{method}() hardcodes max_tokens={default!r}; it must "
+        "default to None and resolve via _resolve_max_tokens()"
     )
 
 
@@ -121,17 +126,17 @@ class TestResolutionChain:
         assert client._resolve_invoke_max_tokens() == 32000
 
     def test_implicit_max_tokens_does_not_shadow_class_default(self):
-        """The framework's own max_tokens default must not win over _invoke_max_tokens.
+        """An unconfigured max_tokens must not win over _invoke_max_tokens.
 
-        AbstractClient.__init__ assigns self.max_tokens = _default_max_tokens
-        when the caller passes nothing. If that value participated in the chain,
-        every client's invoke() would inherit ask()'s generic budget instead of
-        its own _invoke_max_tokens — the exact bug being fixed.
+        ``AbstractClient.__init__`` leaves ``self.max_tokens`` at ``None`` when
+        the caller passes nothing — a framework-wide default assigned eagerly
+        would be indistinguishable from a deliberate caller choice and would
+        shadow every per-client default downstream. ``_max_tokens_configured``
+        records that distinction for the preset case, where a preset may or may
+        not carry a budget of its own.
         """
         client = _StubClient()
-        # ask()'s default, untouched (a client-specific _default_max_tokens,
-        # no longer the old hardcoded 4096).
-        assert client.max_tokens == _StubClient._default_max_tokens
+        assert client.max_tokens is None  # "not configured", not a silent default
         assert client._max_tokens_configured is False
         assert client._resolve_invoke_max_tokens() == _StubClient._default_max_tokens
 
@@ -153,11 +158,107 @@ class TestResolutionChain:
 
 
 # ---------------------------------------------------------------------------
+# ask() / ask_stream() resolution chain — the same resolver, for_invoke=False
+# ---------------------------------------------------------------------------
+
+class TestAskResolutionChain:
+    """_resolve_max_tokens() precedence rules on the ask() side."""
+
+    def test_class_default_when_nothing_configured(self):
+        client = _StubClient()
+        assert client._resolve_max_tokens() == _StubClient._default_max_tokens
+        assert client._resolve_max_tokens(None) == _StubClient._default_max_tokens
+
+    def test_per_call_wins(self):
+        client = _StubClient(max_tokens=1000)
+        assert client._resolve_max_tokens(512) == 512
+
+    def test_constructor_wins_over_class_default(self):
+        client = _StubClient(max_tokens=32000)
+        assert client._resolve_max_tokens() == 32000
+
+    def test_preset_supplies_the_budget(self):
+        client = _StubClient(preset="detailed")
+        assert client._resolve_max_tokens() == 8000
+
+    def test_invoke_max_tokens_does_not_leak_into_ask(self):
+        """``invoke_max_tokens`` is invoke()'s alone; ask() must ignore it."""
+        client = _StubClient(invoke_max_tokens=2000)
+        assert client._resolve_max_tokens() == _StubClient._default_max_tokens
+        assert client._resolve_invoke_max_tokens() == 2000
+
+    def test_none_class_default_means_let_provider_decide(self):
+        """``_default_max_tokens = None`` on the ask() path sends no cap at all.
+
+        GoogleGenAIClient does exactly this, so Gemini applies its own (much
+        larger) per-model ceiling instead of a number this framework invented.
+        """
+        class _NoCapClient(_StubClient):
+            _default_max_tokens = None
+
+        client = _NoCapClient()
+        assert client._resolve_max_tokens() is None
+        assert client._resolve_max_tokens(4096) == 4096
+
+    def test_invoke_never_returns_none(self):
+        """Unlike ask(), invoke() always yields a concrete cap."""
+        class _NoCapClient(_StubClient):
+            _default_max_tokens = None
+            _invoke_max_tokens = 4096
+
+        assert _NoCapClient()._resolve_invoke_max_tokens() == 4096
+
+    def test_missing_attributes_fall_back_to_class_default(self):
+        """A client built via __new__ (no __init__) must still resolve."""
+        assert _bare(_StubClient)._resolve_max_tokens() == _StubClient._default_max_tokens
+
+    @pytest.mark.parametrize("bad", [0, -1, -4096])
+    def test_non_positive_budget_rejected(self, bad):
+        client = _StubClient()
+        with pytest.raises(ValueError, match="positive integer"):
+            client._resolve_max_tokens(bad)
+
+
+# ---------------------------------------------------------------------------
 # Per-client class defaults
 # ---------------------------------------------------------------------------
 
 class TestPerClientDefaults:
     """Each client declares its own budget; providers with hard caps stay low."""
+
+    def test_google_omits_the_cap_for_ask_but_pads_invoke(self):
+        from parrot.clients.google.client import GoogleGenAIClient
+
+        # None => let Gemini apply its own (much larger) per-model ceiling.
+        assert GoogleGenAIClient._default_max_tokens is None
+        assert GoogleGenAIClient._invoke_max_tokens == 16384
+
+    def test_anthropic_default_is_non_none(self):
+        """The Anthropic SDK multiplies max_tokens for its timeout calc."""
+        from parrot.clients.claude import AnthropicClient
+
+        assert AnthropicClient._default_max_tokens is not None
+        assert _bare(AnthropicClient)._resolve_max_tokens() is not None
+
+    def test_bedrock_keeps_conservative_converse_cap(self):
+        bedrock = pytest.importorskip("parrot.clients.bedrock")
+        assert bedrock.BedrockConverseBase._default_max_tokens == 4096
+
+    def test_grok_preserves_its_large_budget(self):
+        from parrot.clients.grok import GrokClient
+
+        assert GrokClient._default_max_tokens == 16000
+
+    @pytest.mark.parametrize("module_path,class_name,expected", [
+        ("parrot.clients.localllm", "LocalLLMClient", 4096),
+        ("parrot.clients.hf", "TransformersClient", 512),
+        ("parrot.clients.gemma4", "Gemma4Client", 512),
+    ])
+    def test_local_backends_ask_budget_stays_conservative(
+        self, module_path, class_name, expected
+    ):
+        module = pytest.importorskip(module_path)
+        assert getattr(module, class_name)._default_max_tokens == expected
 
     def test_base_leaves_invoke_default_unset(self):
         """``None`` means "invoke() uses _default_max_tokens".
@@ -442,3 +543,82 @@ class TestAnthropicNonStreamingCeiling:
             BedrockConverseClient()._resolve_max_tokens(None, "claude-opus-5")
             > AnthropicClient()._resolve_max_tokens(None, "claude-opus-5")
         )
+
+
+# ---------------------------------------------------------------------------
+# Google invoke(): reasoning is switched off where it earns nothing
+# ---------------------------------------------------------------------------
+
+def _google_client(model="gemini-3.1-pro-preview"):
+    from parrot.clients.google.client import GoogleGenAIClient
+
+    client = _bare(
+        GoogleGenAIClient,
+        model=model,
+        _lightweight_model=model,
+        _fallback_model=None,
+        logger=MagicMock(),
+        _clients_by_loop={},
+        _locks_by_loop={},
+    )
+    client._tool_manager = MagicMock()
+    client._tool_manager.get_tool_schemas.return_value = []
+    _init_json(client)
+    return client
+
+
+def _google_response(text="hello"):
+    part = SimpleNamespace(text=text)
+    content = SimpleNamespace(parts=[part])
+    candidate = SimpleNamespace(content=content, finish_reason="STOP")
+    um = SimpleNamespace(
+        prompt_token_count=1, candidates_token_count=1, total_token_count=2
+    )
+    return SimpleNamespace(candidates=[candidate], text=text, usage_metadata=um)
+
+
+class TestGoogleInvokeThinkingBudget:
+    """Gemini bills reasoning against max_output_tokens — don't pay it needlessly."""
+
+    @pytest.mark.parametrize(
+        "model,structured,expect_off",
+        [
+            # Structured extraction: schema is supplied, nothing to reason about.
+            ("gemini-3.5-flash", True, True),
+            # Flash-lite is chosen for mechanical, low-latency work.
+            ("gemini-3.1-flash-lite", False, True),
+            ("gemini-3.1-flash-lite", True, True),
+            # Free-form on a full-size model: leave the provider default alone.
+            ("gemini-3.5-flash", False, False),
+            # Thinking-only models reject budget=0 — never send it.
+            ("gemini-3.1-pro-preview", True, False),
+            ("gemini-2.5-pro", True, False),
+        ],
+    )
+    def test_thinking_config_selection(self, model, structured, expect_off):
+        client = _google_client(model)
+        cfg = client._invoke_thinking_config(model, structured=structured)
+        if expect_off:
+            assert cfg is not None and cfg.thinking_budget == 0
+        else:
+            assert cfg is None
+
+    async def test_structured_invoke_disables_thinking(self, bind_sdk_client):
+        from pydantic import BaseModel
+
+        class Person(BaseModel):
+            name: str
+
+        client = _google_client("gemini-3.5-flash")
+        captured: dict = {}
+
+        async def _generate(**kwargs):
+            captured.update(kwargs)
+            return _google_response('{"name": "John"}')
+
+        sdk = MagicMock()
+        sdk.aio.models.generate_content = _generate
+        bind_sdk_client(client, sdk)
+
+        await client.invoke("Extract: John", output_type=Person)
+        assert captured["config"].thinking_config.thinking_budget == 0

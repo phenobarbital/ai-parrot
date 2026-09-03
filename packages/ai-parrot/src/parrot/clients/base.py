@@ -1,16 +1,5 @@
 from __future__ import annotations
-from typing import (
-    AsyncIterator,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Union,
-    TypedDict,
-    Any,
-    Callable,
-    FrozenSet,
-)
+from typing import AsyncIterator, Dict, List, Optional, Sequence, Union, TypedDict, Any, Callable, FrozenSet
 from parrot._imports import lazy_import
 from datetime import datetime
 import inspect
@@ -27,11 +16,7 @@ from abc import ABC, abstractmethod
 from weakref import ref as weakref_ref, ReferenceType
 import io
 import yaml
-from pydantic import (
-    BaseModel,
-    ValidationError,
-    TypeAdapter
-)
+from pydantic import BaseModel, ValidationError, TypeAdapter
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder, JSONContent  # pylint: disable=E0611 # noqa
 import pandas as pd
@@ -44,25 +29,19 @@ from ..memory import (
     ConversationMemory,
     InMemoryConversation,
     FileConversationMemory,
-    RedisConversation
+    RedisConversation,
 )
 from ..tools.pythonrepl import PythonREPLTool
-from ..models import (
-    AIMessage,
-    StructuredOutputConfig,
-    OutputFormat
-)
+from ..models import AIMessage, StructuredOutputConfig, OutputFormat
 from ..models.responses import InvokeResult
 from ..models.basic import CompletionUsage
 from ..exceptions import InvokeError, TruncatedResponseError
 from ..tools.abstract import AbstractTool, ToolResult
-from ..tools.manager import (
-    ToolManager,
-    ToolFormat,
-    ToolDefinition
-)
+from ..tools.manager import ToolManager, ToolFormat, ToolDefinition
+
 # FEAT-176: Lifecycle Events System
 import hashlib
+
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
 # imported here via the parrot.core.events.lifecycle re-export facade.
 from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext
@@ -73,18 +52,19 @@ from parrot.core.events.lifecycle.events import (
     # FEAT-397: Per-Round Token Usage Observability
     ClientRoundEvent,
 )
+
 # FEAT-397: used by _emit_round_event()'s has_subscribers() fallback check —
 # hoisted to module scope (not re-imported per round) since sys.modules
 # caching aside, this runs on every tool round once MetricsSubscriber is
 # wired globally.
 from navigator_eventbus.lifecycle.global_registry import get_global_registry
+
 # FEAT-228: per-agent cost/usage metrics — read invoking agent's identity at event build time
 from parrot.observability.context import (
     current_agent_name,
     current_session_id,
     current_user_id,
 )
-
 
 LLM_PRESETS = {
     "analytical": {"temperature": 0.1, "max_tokens": 4000},
@@ -97,7 +77,7 @@ LLM_PRESETS = {
     "summarization": {"temperature": 0.2, "max_tokens": 3000},
     "translation": {"temperature": 0.1, "max_tokens": 5000},
     "inspiration": {"temperature": 0.8, "max_tokens": 7000},
-    "default": {"temperature": 0.1, "max_tokens": 1024}
+    "default": {"temperature": 0.1, "max_tokens": 1024},
 }
 
 
@@ -131,13 +111,15 @@ def register_python_tool(
             "Use extended_json.dumps(obj)/extended_json.loads(bytes) for JSON operations."
         ),
         input_schema=tool.get_schema(),
-        function=tool
+        function=tool,
     )
 
     return tool
 
+
 class MessageResponse(TypedDict):
     """Response structure for LLM messages."""
+
     id: str
     type: str
     role: str
@@ -147,9 +129,11 @@ class MessageResponse(TypedDict):
     stop_sequence: Optional[str]
     usage: Dict[str, int]
 
+
 @dataclass
 class RetryConfig:
     """Configuration for MAX_TOKENS retry behavior."""
+
     max_retries: int = 1
     token_increase_threshold: int = 1024
     new_token_limit: int = 8192
@@ -157,12 +141,8 @@ class RetryConfig:
 
     def __post_init__(self):
         if self.error_patterns is None:
-            self.error_patterns = [
-                r"MAX_TOKENS?",
-                r"TOKEN.*LIMIT",
-                r"CONTEXT.*LENGTH",
-                r"TOO.*MANY.*TOKENS"
-            ]
+            self.error_patterns = [r"MAX_TOKENS?", r"TOKEN.*LIMIT", r"CONTEXT.*LENGTH", r"TOO.*MANY.*TOKENS"]
+
 
 class TokenRetryMixin:
     """Mixin class to add token retry functionality to any LLM client."""
@@ -175,16 +155,12 @@ class TokenRetryMixin:
         """Check if the error is related to token limits."""
         error_message = str(error).upper()
 
-        return any(
-            re.search(pattern, error_message)
-            for pattern in self.retry_config.error_patterns
-        )
+        return any(re.search(pattern, error_message) for pattern in self.retry_config.error_patterns)
 
     def should_retry_with_more_tokens(self, current_tokens: int, retry_count: int) -> bool:
         """Determine if we should retry with increased tokens."""
         return (
-            retry_count < self.retry_config.max_retries and
-            current_tokens <= self.retry_config.token_increase_threshold
+            retry_count < self.retry_config.max_retries and current_tokens <= self.retry_config.token_increase_threshold
         )
 
     def get_increased_token_limit(self, current_tokens: int) -> int:
@@ -198,15 +174,18 @@ class TokenRetryMixin:
         else:
             return min(current_tokens * 2, 16384)  # Cap at 16k tokens
 
+
 @dataclass
 class BatchRequest:
     """Data structure for batch request."""
+
     custom_id: str
     params: Dict[str, Any]
 
 
 class StreamingRetryConfig:
     """Configuration for streaming retry behavior."""
+
     def __init__(
         self,
         max_retries: int = 3,
@@ -217,7 +196,7 @@ class StreamingRetryConfig:
         auto_retry_on_max_tokens: bool = True,
         token_increase_factor: float = 1.5,
         retry_on_rate_limit: bool = True,
-        retry_on_server_error: bool = True
+        retry_on_server_error: bool = True,
     ):
         self.max_retries = max_retries
         self.base_delay = base_delay
@@ -250,12 +229,13 @@ class _LoopClientEntry:
 
 class AbstractClient(EventEmitterMixin, ABC):
     """Abstract base Class for LLM models."""
+
     version: str = "0.1.0"
     base_headers: Dict[str, str] = {
         "Content-Type": "application/json",
     }
     client_type: str = "generic"
-    client_name: str = 'generic'
+    client_name: str = "generic"
     use_session: bool = False
 
     # Wire format used for tool schemas. ``None`` means "derive it from
@@ -275,6 +255,18 @@ class AbstractClient(EventEmitterMixin, ABC):
     # the caller asked for. None means "no cheap default for this client".
     # See _resolve_invoke_model() for the full chain.
     _lightweight_model: Optional[str] = None
+
+    # Default output-token budget for ask() / ask_stream() when neither the
+    # caller nor the constructor supplied one. ``None`` means "send no cap and
+    # let the provider apply its own default" — the right choice for providers
+    # whose native ceiling is far above anything we would hardcode
+    # (GoogleGenAIClient). Subclasses override this where the provider caps
+    # lower (GroqClient: 4096) or where generation is locally expensive
+    # (TransformersClient / Gemma4Client: 512, LocalLLMClient: 4096).
+    #
+    # Resolution order (see _resolve_max_tokens): per-call ``ask(max_tokens=N)``
+    # > per-instance ``Client(max_tokens=N)`` / ``preset`` > this class default.
+    _default_max_tokens: Optional[int] = 8192
 
     # Default output-token budget for invoke(). Subclasses override this where
     # the provider caps lower (GroqClient: 4096, local backends: 4096) or where
@@ -373,58 +365,60 @@ $backstory
         use_tools: bool = False,
         debug: bool = True,
         tool_manager: Optional[ToolManager] = None,
-        **kwargs
+        **kwargs,
     ):
         self.__name__ = self.__class__.__name__
-        self.model: str = kwargs.get('model', None)
+        self.model: str = kwargs.get("model", None)
         # Per-loop client cache: keyed by id(asyncio.get_running_loop()).
         # Each entry holds the SDK client instance and a weakref to the loop.
         self._clients_by_loop: dict[int, _LoopClientEntry] = {}
         # Per-loop locks: asyncio.Lock() is loop-bound, so one per loop.
         self._locks_by_loop: dict[int, asyncio.Lock] = {}
         self.session: Optional[aiohttp.ClientSession] = None
-        self.use_session: bool = kwargs.get('use_session', self.use_session)
+        self.use_session: bool = kwargs.get("use_session", self.use_session)
         if preset:
-            preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
+            preset_config = LLM_PRESETS.get(preset, LLM_PRESETS["default"])
             # define temp, top_k, top_p, max_tokens from selected preset:
             self.temperature = preset_config.get('temperature', 0.4)
             self.top_k = preset_config.get('top_k', 30)
             self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens', self._default_max_tokens)
+            self.max_tokens = preset_config.get('max_tokens')
         else:
             # define default values from preset default:
             self.temperature = kwargs.get('temperature', 0)
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
-            self.max_tokens = kwargs.get('max_tokens', self._default_max_tokens)
+            # ``None`` means "not configured" — the per-client
+            # _default_max_tokens / _invoke_max_tokens defaults take over. Do
+            # NOT reintroduce a literal here: a framework-wide default assigned
+            # eagerly is indistinguishable from a deliberate caller choice, and
+            # would shadow every per-client default downstream.
+            self.max_tokens = kwargs.get("max_tokens")
         # Whether max_tokens was EXPLICITLY configured by the caller (directly
-        # or via a preset) rather than inherited from ``_default_max_tokens``
-        # above. invoke() only honours an explicit value, so that a client's
-        # _invoke_max_tokens default is never shadowed by ask()'s generic one.
+        # or via a preset) rather than left unset above. invoke() only honours
+        # an explicit value, so that a client's _invoke_max_tokens default is
+        # never shadowed by ask()'s generic one.
         self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
-        # Per-instance override for invoke()'s output-token budget. ``None``
-        # means "fall back to an explicit self.max_tokens, then the class
-        # default" (see _resolve_invoke_max_tokens).
+        # Per-instance override for invoke()'s output-token budget specifically.
+        # ``None`` means "fall back to an explicit self.max_tokens, then the
+        # class default" (see _resolve_max_tokens).
         self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
         self.conversation_memory = conversation_memory or InMemoryConversation()
-        self.base_headers.update(kwargs.get('headers', {}))
-        self.api_key = kwargs.get('api_key', None)
-        self.version = kwargs.get('version', self.version)
+        self.base_headers.update(kwargs.get("headers", {}))
+        self.api_key = kwargs.get("api_key", None)
+        self.version = kwargs.get("version", self.version)
         self._config = config
         self.logger: logging.Logger = logging.getLogger(self.__name__)
         self._json: Any = JSONContent()
-        self.client_type: str = kwargs.get('client_type', self.client_type)
+        self.client_type: str = kwargs.get("client_type", self.client_type)
         self._debug: bool = debug
-        self._program: str = kwargs.get('program', 'parrot')  # Default program slug
+        self._program: str = kwargs.get("program", "parrot")  # Default program slug
         # Use provided tool_manager or create a new one
         # This allows Agent to pass its tool_manager as a reference
         if tool_manager is not None:
             self._tool_manager = tool_manager
         else:
-            self._tool_manager = ToolManager(
-                logger=self.logger,
-                debug=self._debug
-            )
+            self._tool_manager = ToolManager(logger=self.logger, debug=self._debug)
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         self.enable_tools: bool = use_tools
         # FEAT-438 G5: only create an instance attribute when the caller
@@ -433,8 +427,8 @@ $backstory
         # class-level _fallback_model default on every instance (the
         # class attribute declared above, :~272, is the fallback when no
         # instance attribute is created).
-        if 'fallback_model' in kwargs:
-            self._fallback_model = kwargs.pop('fallback_model')
+        if "fallback_model" in kwargs:
+            self._fallback_model = kwargs.pop("fallback_model")
         # Initialize tools if provided
         if use_tools and tools:
             self._tool_manager.default_tools(tools)
@@ -791,9 +785,9 @@ $backstory
         """
         if value is not None:
             import warnings
+
             warnings.warn(
-                "Direct assignment of AbstractClient.client is deprecated; "
-                "override get_client() instead.",
+                "Direct assignment of AbstractClient.client is deprecated; " "override get_client() instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -884,24 +878,17 @@ $backstory
             if entry is not None and not self._client_invalid_for_current(entry.client, **hints):
                 return entry.client
 
-            self.logger.info(
-                "Per-loop cache miss: building new SDK client for loop %s", loop_id
-            )
+            self.logger.info("Per-loop cache miss: building new SDK client for loop %s", loop_id)
             new_client = await self.get_client(**self._filter_get_client_hints(**hints))
 
             # Prune dead-loop entries on every build to prevent unbounded growth
             # when each background task runs on a short-lived event loop.
             # This runs on the rare build path, never on the hot cache-hit path.
-            dead_ids = [
-                lid for lid, e in self._clients_by_loop.items()
-                if e.loop_ref() is None
-            ]
+            dead_ids = [lid for lid, e in self._clients_by_loop.items() if e.loop_ref() is None]
             for dead_id in dead_ids:
                 self._clients_by_loop.pop(dead_id, None)
                 self._locks_by_loop.pop(dead_id, None)
-                self.logger.debug(
-                    "Per-loop cache: pruned stale entry for GC'd loop %s.", dead_id
-                )
+                self.logger.debug("Per-loop cache: pruned stale entry for GC'd loop %s.", dead_id)
 
             self._clients_by_loop[loop_id] = _LoopClientEntry(
                 client=new_client,
@@ -961,9 +948,7 @@ $backstory
             return
         await self._safe_close_entry(entry, is_current_loop=True)
 
-    async def _safe_close_entry(
-        self, entry: "_LoopClientEntry", *, is_current_loop: bool
-    ) -> None:
+    async def _safe_close_entry(self, entry: "_LoopClientEntry", *, is_current_loop: bool) -> None:
         """Close a single ``_LoopClientEntry`` safely.
 
         Skips ``await`` for entries whose loop is dead or foreign to avoid
@@ -978,9 +963,7 @@ $backstory
         if target_loop is None or not is_current_loop:
             # Loop is dead or belongs to a different running context —
             # do NOT schedule coroutines on it.
-            self.logger.debug(
-                "Dropping SDK client for dead/foreign loop without awaiting close()"
-            )
+            self.logger.debug("Dropping SDK client for dead/foreign loop without awaiting close()")
             return
         client = entry.client
         if client is None or not hasattr(client, "close"):
@@ -992,14 +975,12 @@ $backstory
             elif callable(close_method):
                 close_method()
         except Exception as exc:  # noqa: BLE001
-            self.logger.debug(
-                "Error closing SDK client for loop %s: %s", id(target_loop), exc
-            )
+            self.logger.debug("Error closing SDK client for loop %s: %s", id(target_loop), exc)
 
     @property
     def default_model(self) -> str:
         """Return the default model for the client."""
-        return getattr(self, '_default_model', None)
+        return getattr(self, "_default_model", None)
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Check if error indicates a capacity/availability issue.
@@ -1009,9 +990,15 @@ $backstory
         """
         error_text = str(error).lower()
         capacity_markers = (
-            "429", "503", "rate limit", "rate_limit",
-            "unavailable", "overloaded", "high demand",
-            "too many requests", "service unavailable",
+            "429",
+            "503",
+            "rate limit",
+            "rate_limit",
+            "unavailable",
+            "overloaded",
+            "high demand",
+            "too many requests",
+            "service unavailable",
         )
         return any(marker in error_text for marker in capacity_markers)
 
@@ -1042,9 +1029,7 @@ $backstory
         ``_ensure_client()``.
         """
         if self.use_session:
-            self.session = aiohttp.ClientSession(
-                headers=self.base_headers
-            )
+            self.session = aiohttp.ClientSession(headers=self.base_headers)
         await self._ensure_client()
         return self
 
@@ -1101,10 +1086,7 @@ $backstory
             await self.__aenter__()
         try:
             resolved_model = (
-                model
-                or self.model
-                or getattr(self, "default_model", None)
-                or getattr(self, "_default_model", None)
+                model or self.model or getattr(self, "default_model", None) or getattr(self, "_default_model", None)
             )
             kwargs: Dict[str, Any] = {"prompt": prompt, "model": resolved_model}
             if system_prompt is not None:
@@ -1120,10 +1102,7 @@ $backstory
 
         text = self._extract_text(response)
         if not text:
-            raise RuntimeError(
-                f"LLM returned no extractable text "
-                f"(response type: {type(response).__name__})"
-            )
+            raise RuntimeError(f"LLM returned no extractable text " f"(response type: {type(response).__name__})")
         return text
 
     @staticmethod
@@ -1186,7 +1165,7 @@ $backstory
         self._locks_by_loop.clear()
 
     def __repr__(self):
-        return f'<{self.__name__} model={self.model} client_type={self.client_type}>'
+        return f"<{self.__name__} model={self.model} client_type={self.client_type}>"
 
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the client."""
@@ -1194,7 +1173,7 @@ $backstory
 
     def _get_chatbot_key(self, chatbot_id: Optional[str] = None) -> Optional[str]:
         """Resolve chatbot identifier for memory operations."""
-        key = chatbot_id or getattr(self, 'chatbot_id', None)
+        key = chatbot_id or getattr(self, "chatbot_id", None)
         return None if key is None else str(key)
 
     async def start_conversation(
@@ -1206,70 +1185,39 @@ $backstory
     ) -> ConversationHistory:
         """Start a new conversation session."""
         return await self.conversation_memory.create_history(
-            user_id,
-            session_id,
-            metadata=metadata,
-            chatbot_id=self._get_chatbot_key(chatbot_id)
+            user_id, session_id, metadata=metadata, chatbot_id=self._get_chatbot_key(chatbot_id)
         )
 
     async def get_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get an existing conversation session."""
         if not self.conversation_memory:
             return None
         return await self.conversation_memory.get_history(
-            user_id,
-            session_id,
-            chatbot_id=self._get_chatbot_key(chatbot_id)
+            user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id)
         )
 
-    async def clear_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> bool:
+    async def clear_conversation(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Clear conversation history for a session."""
         if not self.conversation_memory:
             return False
-        await self.conversation_memory.clear_history(
-            user_id,
-            session_id,
-            chatbot_id=self._get_chatbot_key(chatbot_id)
-        )
+        await self.conversation_memory.clear_history(user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id))
         return True
 
-    async def delete_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> bool:
+    async def delete_conversation(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Delete conversation history entirely."""
         if not self.conversation_memory:
             return False
         return await self.conversation_memory.delete_history(
-            user_id,
-            session_id,
-            chatbot_id=self._get_chatbot_key(chatbot_id)
+            user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id)
         )
 
-    async def list_user_conversations(
-        self,
-        user_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> List[str]:
+    async def list_user_conversations(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all conversation sessions for a user."""
         if not self.conversation_memory:
             return []
-        return await self.conversation_memory.list_sessions(
-            user_id,
-            chatbot_id=self._get_chatbot_key(chatbot_id)
-        )
+        return await self.conversation_memory.list_sessions(user_id, chatbot_id=self._get_chatbot_key(chatbot_id))
 
     def set_tools(self, tools: List[Union[str, AbstractTool]]) -> None:
         """Set complete list of tools, replacing existing."""
@@ -1297,17 +1245,10 @@ $backstory
     ) -> None:
         """Register a Python function as a tool for LLM to call."""
         self.tool_manager.register_tool(
-            tool=tool,
-            name=name,
-            description=description,
-            input_schema=input_schema,
-            function=function
+            tool=tool, name=name, description=description, input_schema=input_schema, function=function
         )
 
-    def register_tools(
-        self,
-        tools: List[Union[ToolDefinition, AbstractTool]]
-    ) -> None:
+    def register_tools(self, tools: List[Union[ToolDefinition, AbstractTool]]) -> None:
         """Register multiple tools at once."""
         self.tool_manager.register_tools(tools)
         self.enable_tools = True
@@ -1357,9 +1298,7 @@ $backstory
         """Clear all registered tools."""
         self.tool_manager.clear_tools()
         self.tools.clear()
-        self.logger.info(
-            "Cleared all tools"
-        )
+        self.logger.info("Cleared all tools")
 
     def _encode_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Encode file for API upload."""
@@ -1367,15 +1306,11 @@ $backstory
         mime_type, _ = mimetypes.guess_type(str(path))
 
         with open(path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode('utf-8')
+            encoded = base64.b64encode(f.read()).decode("utf-8")
 
         return {
             "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": mime_type or "application/octet-stream",
-                "data": encoded
-            }
+            "source": {"type": "base64", "media_type": mime_type or "application/octet-stream", "data": encoded},
         }
 
     def _make_openai_strict_tool(self, schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -1422,6 +1357,7 @@ $backstory
         try:
             # Result should be a JSON string of list of dicts
             import json
+
             found_tools = json.loads(tool_result_content)
             if isinstance(found_tools, list):
                 return [t.get("name") for t in found_tools if isinstance(t, dict) and "name" in t]
@@ -1466,10 +1402,10 @@ $backstory
             return self.tool_format
 
         return {
-            'openai': ToolFormat.OPENAI,
-            'google': ToolFormat.GOOGLE,
-            'groq': ToolFormat.GROQ,
-            'vertex': ToolFormat.VERTEX,
+            "openai": ToolFormat.OPENAI,
+            "google": ToolFormat.GOOGLE,
+            "groq": ToolFormat.GROQ,
+            "vertex": ToolFormat.VERTEX,
         }.get(self.client_type, ToolFormat.ANTHROPIC)
 
     def _prepare_tools(self, filter_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -1485,9 +1421,9 @@ $backstory
         for tool_schema in manager_tools:
             # Remove the _tool_instance for API formatting
             clean_schema = tool_schema.copy()
-            clean_schema.pop('_tool_instance', None)
+            clean_schema.pop("_tool_instance", None)
 
-            tool_name = clean_schema.get('name')
+            tool_name = clean_schema.get("name")
 
             # FILTERING LOGIC
             if filter_names is not None and tool_name not in filter_names:
@@ -1502,20 +1438,18 @@ $backstory
                         "function": {
                             "name": clean_schema["name"],
                             "description": clean_schema["description"],
-                            "parameters": clean_schema.get("parameters", {})
-                        }
+                            "parameters": clean_schema.get("parameters", {}),
+                        },
                     }
                     if provider_format is ToolFormat.OPENAI:
                         # strict mode is an OpenAI extension; Groq rejects it
-                        formatted_schema = self._make_openai_strict_tool(
-                            formatted_schema
-                        )
+                        formatted_schema = self._make_openai_strict_tool(formatted_schema)
                 else:
                     # Claude/Anthropic and others use direct format
                     formatted_schema = {
                         "name": clean_schema["name"],
                         "description": clean_schema["description"],
-                        "input_schema": clean_schema.get("parameters", {})
+                        "input_schema": clean_schema.get("parameters", {}),
                     }
 
                 tool_schemas.append(formatted_schema)
@@ -1548,7 +1482,7 @@ $backstory
         Telegram/Teams/etc. user who triggered the conversation.
         """
         try:
-            ctx = tool_context or getattr(self, '_tool_context', None)
+            ctx = tool_context or getattr(self, "_tool_context", None)
             if ctx:
                 # Only inject context keys the target tool actually accepts —
                 # otherwise tools whose signature does not declare
@@ -1564,19 +1498,18 @@ $backstory
                 merged = {**filtered_ctx, **parameters}
             else:
                 merged = parameters
-            perm_ctx = getattr(self, '_permission_context', None)
-            result = await self.tool_manager.execute_tool(
-                tool_name, merged, permission_context=perm_ctx
-            )
+            perm_ctx = getattr(self, "_permission_context", None)
+            result = await self.tool_manager.execute_tool(tool_name, merged, permission_context=perm_ctx)
             if isinstance(result, ToolResult):
                 if result.status == "error":
-                    raise ValueError(result.error)
+                    # FEAT-500 (G3/AC5): `ValueError('')` told the LLM
+                    # nothing. A tool that errors without a message still
+                    # gets a readable one here.
+                    raise ValueError(result.error or f"Tool {tool_name} returned status=error without a message")
                 return result.result
             return result
         except Exception as e:
-            self.logger.error(
-                f"Error executing tool {tool_name}: {e}"
-            )
+            self.logger.error(f"Error executing tool {tool_name}: {e}")
             raise
 
     def _tool_param_names(self, tool_name: str) -> Optional[set]:
@@ -1591,13 +1524,13 @@ $backstory
             from parrot.tools.manager import ToolDefinition
         except Exception:
             return None
-        tool = self.tool_manager._tools.get(tool_name) if hasattr(self, 'tool_manager') else None
+        tool = self.tool_manager._tools.get(tool_name) if hasattr(self, "tool_manager") else None
         if tool is None:
             # Request-scoped tools (passed via ``ask(tools=[...])``) live in
             # ``self._request_tools`` and are not registered in the
             # ToolManager — check the per-call overlay so subclasses that
             # support request-scoped tools still get context filtering.
-            request_tools = getattr(self, '_request_tools', None) or {}
+            request_tools = getattr(self, "_request_tools", None) or {}
             tool = request_tools.get(tool_name)
         if tool is None:
             return None
@@ -1608,12 +1541,12 @@ $backstory
             # MCP tools expose their accepted params via input_schema
             # rather than a bound_method — use schema properties when
             # available so context keys get filtered correctly.
-            schema = getattr(tool, 'input_schema', None)
+            schema = getattr(tool, "input_schema", None)
             if schema and isinstance(schema, dict):
-                props = schema.get('properties')
+                props = schema.get("properties")
                 if props and isinstance(props, dict):
                     return set(props.keys())
-            fn = getattr(tool, 'bound_method', None)
+            fn = getattr(tool, "bound_method", None)
         if fn is None:
             return None
         try:
@@ -1626,17 +1559,15 @@ $backstory
         return {
             name
             for name, p in sig.parameters.items()
-            if name != 'self'
-            and p.kind in (
+            if name != "self"
+            and p.kind
+            in (
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 inspect.Parameter.KEYWORD_ONLY,
             )
         }
 
-    async def _execute_tool_call(
-        self,
-        content_block: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _execute_tool_call(self, content_block: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool call and return the result."""
         tool_name = content_block["name"]
         tool_input = content_block["input"]
@@ -1644,24 +1575,11 @@ $backstory
 
         try:
             tool_result = await self._execute_tool(tool_name, tool_input)
-            return {
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "content": str(tool_result)
-            }
+            return {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
         except Exception as e:
-            return {
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "is_error": True,
-                "content": str(e)
-            }
+            return {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
 
-    def _prepare_messages(
-        self,
-        prompt: str,
-        files: Optional[List[Union[str, Path]]] = None
-    ) -> List[Dict[str, Any]]:
+    def _prepare_messages(self, prompt: str, files: Optional[List[Union[str, Path]]] = None) -> List[Dict[str, Any]]:
         """Prepare message content with optional file attachments."""
         content = [{"type": "text", "text": prompt}]
 
@@ -1676,24 +1594,16 @@ $backstory
         return all(field in response for field in required_fields)
 
     def _get_structured_config(
-        self,
-        structured_output: Union[type, StructuredOutputConfig, None]
+        self, structured_output: Union[type, StructuredOutputConfig, None]
     ) -> Optional[StructuredOutputConfig]:
         """Get structured output configuration."""
         if isinstance(structured_output, StructuredOutputConfig):
             return structured_output
         elif structured_output:
-            return StructuredOutputConfig(
-                output_type=structured_output,
-                format=OutputFormat.JSON
-            )
+            return StructuredOutputConfig(output_type=structured_output, format=OutputFormat.JSON)
         return None
 
-    def _ensure_json_instruction(
-        self,
-        messages: List[Dict[str, Any]],
-        instruction: str
-    ) -> None:
+    def _ensure_json_instruction(self, messages: List[Dict[str, Any]], instruction: str) -> None:
         """Ensure the latest user message explicitly requests JSON output."""
         if not instruction:
             return
@@ -1722,10 +1632,7 @@ $backstory
             content.append({"type": "text", "text": instruction})
             return
 
-        messages.append({
-            "role": "user",
-            "content": [{"type": "text", "text": instruction}]
-        })
+        messages.append({"role": "user", "content": [{"type": "text", "text": instruction}]})
 
     @abstractmethod
     async def ask(
@@ -1750,7 +1657,10 @@ $backstory
         Args:
             prompt: The input prompt for the model
             model: The model to use
-            max_tokens: Maximum number of tokens in the response
+            max_tokens: Maximum number of tokens in the response. ``None`` (the
+                default) resolves via :meth:`_resolve_max_tokens` — the
+                per-instance ``max_tokens``, then the client's
+                :attr:`_default_max_tokens`.
             temperature: Sampling temperature for response generation
             files: Optional files to include in the request
             system_prompt: Optional system prompt to guide the model
@@ -1770,7 +1680,7 @@ $backstory
         self,
         prompt: str,
         model: str = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1795,23 +1705,19 @@ $backstory
         raise NotImplementedError("Subclasses must implement this method.")
 
     @abstractmethod
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: Dict[str, Any]
-    ) -> MessageResponse:
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> MessageResponse:
         """Resume a suspended model execution.
-        
+
         Args:
             session_id: The session ID
             user_input: The user's input to inject as tool result
             state: The suspended state containing messages and tool_call_id
-            
+
         Returns:
             MessageResponse: The response from the LLM
         """
         raise NotImplementedError("Subclasses must implement this method.")
+
     async def batch_ask(self, requests: List[Any]) -> List[Any]:
         """Process multiple requests in batch."""
         raise NotImplementedError("Subclasses must implement batch processing.")
@@ -1869,9 +1775,7 @@ $backstory
     # Shared invoke() helper methods — concrete, called by all clients    #
     # ------------------------------------------------------------------ #
 
-    def _resolve_invoke_system_prompt(
-        self, system_prompt: Optional[str] = None
-    ) -> str:
+    def _resolve_invoke_system_prompt(self, system_prompt: Optional[str] = None) -> str:
         """Return the system prompt to use for an invoke() call.
 
         If ``system_prompt`` is provided, return it unchanged.  Otherwise render
@@ -1888,11 +1792,11 @@ $backstory
             return system_prompt
         template = _string.Template(self.BASIC_SYSTEM_PROMPT)
         return template.safe_substitute(
-            name=getattr(self, 'name', 'AI'),
-            role=getattr(self, 'role', 'AI Assistant'),
-            capabilities=getattr(self, 'capabilities', ''),
-            goal=getattr(self, 'goal', ''),
-            backstory=getattr(self, 'backstory', ''),
+            name=getattr(self, "name", "AI"),
+            role=getattr(self, "role", "AI Assistant"),
+            capabilities=getattr(self, "capabilities", ""),
+            goal=getattr(self, "goal", ""),
+            backstory=getattr(self, "backstory", ""),
         )
 
     def _build_invoke_structured_config(
@@ -1988,7 +1892,7 @@ $backstory
         model: Optional[str] = None,
         *,
         for_invoke: bool = False,
-    ) -> int:
+    ) -> Optional[int]:
         """Return the completion-token budget for a call, in tokens.
 
         One resolver serves both ``ask()`` and ``invoke()``; ``for_invoke``
@@ -2031,10 +1935,16 @@ $backstory
                 per-instance override and class default.
 
         Returns:
-            A positive output-token budget.
+            A positive output-token budget, or ``None`` for an ``ask()`` call
+            on a client whose :attr:`_default_max_tokens` is ``None`` — that
+            combination means "send no cap and let the provider apply its own
+            default", and callers that must hand their SDK a concrete integer
+            should treat ``None`` accordingly. An ``invoke()`` call
+            (``for_invoke=True``) always resolves to an integer.
 
         Raises:
-            ValueError: If a resolved budget is not a positive integer.
+            ValueError: If a resolved budget is not a positive integer, or if
+                an ``invoke()`` call resolves to nothing at all.
         """
         cap = self._model_output_cap(model)
         candidates = (
@@ -2059,8 +1969,12 @@ $backstory
                     f"max_tokens must be a positive integer, got {resolved!r}"
                 )
             break
-        if resolved is None:  # pragma: no cover - _default_max_tokens is always set
-            raise ValueError("max_tokens could not be resolved")
+        if resolved is None:
+            if for_invoke:  # pragma: no cover - _invoke/_default is always set
+                raise ValueError("max_tokens could not be resolved")
+            # ask() on a client that deliberately sets ``_default_max_tokens =
+            # None``: send no cap rather than inventing one.
+            return None
         if cap is not None and resolved > cap:
             self.logger.debug(
                 "Clamping max_tokens %s -> %s for model %s (provider limit).",
@@ -2280,13 +2194,11 @@ $backstory
         self._raise_if_truncated(finish_reason, model=model)
 
         text_content = "".join(
-            content_block["text"]
-            for content_block in result["content"]
-            if content_block["type"] == "text"
+            content_block["text"] for content_block in result["content"] if content_block["type"] == "text"
         )
 
         try:
-            if not hasattr(structured_output, '__annotations__'):
+            if not hasattr(structured_output, "__annotations__"):
                 return structured_output(text_content)
             parsed = json_decoder(text_content)
             return self._coerce_mapping_to_type(structured_output, parsed)
@@ -2308,7 +2220,7 @@ $backstory
                 return data
             return data
 
-        if hasattr(output_type, '__annotations__'):
+        if hasattr(output_type, "__annotations__"):
             if isinstance(data, list):
                 coerced = []
                 for item in data:
@@ -2329,11 +2241,7 @@ $backstory
         return data
 
     async def _process_tool_calls(
-        self,
-        initial_result: Dict[str, Any],
-        messages: List[Dict[str, Any]],
-        payload: Dict[str, Any],
-        endpoint: str
+        self, initial_result: Dict[str, Any], messages: List[Dict[str, Any]], payload: Dict[str, Any], endpoint: str
     ) -> Dict[str, Any]:
         """Handle tool calls in a loop until completion."""
         result = initial_result
@@ -2365,7 +2273,7 @@ $backstory
         user_id: Optional[str],
         session_id: Optional[str],
         system_prompt: Optional[str],
-        stateless: bool = False
+        stateless: bool = False,
     ) -> tuple[List[Dict[str, Any]], Optional[ConversationHistory], Optional[str]]:
         """Prepare conversation context and return messages, session, and system prompt.
 
@@ -2401,15 +2309,11 @@ $backstory
 
         if user_id and session_id:
             conversation_history = await self.conversation_memory.get_history(
-                user_id,
-                session_id,
-                chatbot_id=self._get_chatbot_key()
+                user_id, session_id, chatbot_id=self._get_chatbot_key()
             )
             if not conversation_history:
                 conversation_history = await self.conversation_memory.create_history(
-                    user_id,
-                    session_id,
-                    chatbot_id=self._get_chatbot_key()
+                    user_id, session_id, chatbot_id=self._get_chatbot_key()
                 )
 
         # Get recent conversation messages for context (historical turns
@@ -2423,9 +2327,7 @@ $backstory
         # live here duplicated ``get_messages_for_api()`` above and has been
         # removed.
         if conversation_history and not stateless:
-            self.logger.debug(
-                f"Found {len(conversation_history.turns)} previous turns"
-            )
+            self.logger.debug(f"Found {len(conversation_history.turns)} previous turns")
             if not system_prompt and len(conversation_history.turns) > 0:
                 # Create a summary of the conversation context
                 recent_context = []
@@ -2459,9 +2361,7 @@ $backstory
                     if path_obj.exists():
                         safe_files.append(file_path)
                     else:
-                        self.logger.error(
-                            f"Error processing file {file_path}: file does not exist"
-                        )
+                        self.logger.error(f"Error processing file {file_path}: file does not exist")
                 except Exception as e:
                     self.logger.error(f"Error processing file {file_path}: {e}")
             safe_files = safe_files or None
@@ -2482,7 +2382,7 @@ $backstory
         turn_id: str,
         original_prompt: str,
         assistant_response: str,
-        tools_used: List[str] = None
+        tools_used: List[str] = None,
     ) -> None:
         """Update conversation memory with the latest turn."""
         if not (user_id and session_id and conversation_history and self.conversation_memory):
@@ -2499,25 +2399,18 @@ $backstory
             metadata={
                 "message_count": len(messages),
                 "has_system_prompt": bool(system_prompt),
-                "provider": getattr(self, 'client_type', 'unknown')
-            }
+                "provider": getattr(self, "client_type", "unknown"),
+            },
         )
 
         # Add turn to conversation history
-        await self.conversation_memory.add_turn(
-            user_id,
-            session_id,
-            turn,
-            chatbot_id=self._get_chatbot_key()
-        )
+        await self.conversation_memory.add_turn(user_id, session_id, turn, chatbot_id=self._get_chatbot_key())
 
-    def _extract_json_from_response(
-        self, text: str, output_type: type = None
-    ) -> str:
+    def _extract_json_from_response(self, text: str, output_type: type = None) -> str:
         """Extract JSON from LLM response, handling markdown code blocks,
         extra prose, and multiple concatenated JSON documents."""
         # First, try to find JSON in markdown code blocks
-        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        json_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
         match = re.search(json_pattern, text, re.DOTALL)
         if match:
             return match.group(1).strip()
@@ -2527,7 +2420,7 @@ $backstory
         # (e.g. a chart config followed by a PandasAgentResponse),
         # we need to split them and pick the best match.
         candidates = self._extract_all_json_objects(text)
-        if candidates and output_type and hasattr(output_type, 'model_validate'):
+        if candidates and output_type and hasattr(output_type, "model_validate"):
             # Pick the first candidate that validates against output_type
             for candidate in candidates:
                 try:
@@ -2544,13 +2437,13 @@ $backstory
             return candidates[0]
 
         # Fallback: greedy match for a single JSON object
-        json_object_pattern = r'\{.*\}'
+        json_object_pattern = r"\{.*\}"
         match = re.search(json_object_pattern, text, re.DOTALL)
         if match:
             return match.group(0).strip()
 
         # Try to find JSON array in the text (looking for [ ... ])
-        json_array_pattern = r'\[.*\]'
+        json_array_pattern = r"\[.*\]"
         match = re.search(json_array_pattern, text, re.DOTALL)
         if match:
             return match.group(0).strip()
@@ -2568,7 +2461,7 @@ $backstory
         i = 0
         n = len(text)
         while i < n:
-            if text[i] == '{':
+            if text[i] == "{":
                 depth = 0
                 in_string = False
                 escape = False
@@ -2577,17 +2470,17 @@ $backstory
                     ch = text[i]
                     if escape:
                         escape = False
-                    elif ch == '\\' and in_string:
+                    elif ch == "\\" and in_string:
                         escape = True
                     elif ch == '"' and not escape:
                         in_string = not in_string
                     elif not in_string:
-                        if ch == '{':
+                        if ch == "{":
                             depth += 1
-                        elif ch == '}':
+                        elif ch == "}":
                             depth -= 1
                             if depth == 0:
-                                objects.append(text[start:i + 1].strip())
+                                objects.append(text[start : i + 1].strip())
                                 i += 1
                                 break
                     i += 1
@@ -2618,7 +2511,7 @@ $backstory
             # Only unwrap if the nested value is a dict
             if isinstance(nested_value, dict):
                 # Try to validate the nested value against the expected type
-                if hasattr(output_type, 'model_validate'):
+                if hasattr(output_type, "model_validate"):
                     try:
                         # If this succeeds, the nested value is the correct structure
                         output_type.model_validate(nested_value)
@@ -2626,7 +2519,7 @@ $backstory
                     except (ValidationError, Exception):
                         # If validation fails, return original
                         pass
-                elif hasattr(output_type, '__annotations__'):
+                elif hasattr(output_type, "__annotations__"):
                     # For dataclasses, check if fields match
                     expected_fields = set(output_type.__annotations__.keys())
                     nested_fields = set(nested_value.keys())
@@ -2671,9 +2564,7 @@ $backstory
         try:
             output_type = structured_output.output_type
             if not output_type:
-                raise ValueError(
-                    "Output type is not specified in structured output config."
-                )
+                raise ValueError("Output type is not specified in structured output config.")
             # default to JSON parsing if no specific schema is provided
             if structured_output.format == OutputFormat.JSON:
                 # Current JSON logic
@@ -2681,9 +2572,9 @@ $backstory
                     # first, try to remove backsticks (markdown code blocks) if any:
                     # This is the right way to do it.
                     response_text = response_text.strip()
-                    if response_text.startswith('```json'):
+                    if response_text.startswith("```json"):
                         response_text = response_text[7:-3]
-                    if hasattr(output_type, 'model_validate_json') or hasattr(output_type, 'model_validate'):
+                    if hasattr(output_type, "model_validate_json") or hasattr(output_type, "model_validate"):
                         # For model_validate_json, we need to parse first to unwrap
                         if not isinstance(output_type, type):
                             output_type = output_type.__class__
@@ -2710,81 +2601,68 @@ $backstory
                     else:
                         parsed_json = self._json.loads(response_text)
                         parsed_json = self._unwrap_nested_response(parsed_json, output_type)
-                        if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                        if is_dataclass(output_type) or hasattr(output_type, "__annotations__"):
                             return self._coerce_mapping_to_type(output_type, parsed_json)
                         return parsed_json
                 except (ParserError, ValidationError, json.JSONDecodeError) as e:
                     self.logger.warning(f"Standard parsing failed: {e}. Payload start: {response_text[:50]!r}")
                     try:
                         # Try fallback with field mapping
-                        json_text = self._extract_json_from_response(
-                            response_text, output_type=output_type
-                        )
+                        json_text = self._extract_json_from_response(response_text, output_type=output_type)
                         parsed_json = self._json.loads(json_text)
                         parsed_json = self._unwrap_nested_response(parsed_json, output_type)
-                        if hasattr(output_type, 'model_validate'):
+                        if hasattr(output_type, "model_validate"):
                             return output_type.model_validate(parsed_json)
-                        if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                        if is_dataclass(output_type) or hasattr(output_type, "__annotations__"):
                             return self._coerce_mapping_to_type(output_type, parsed_json)
                         return parsed_json
                     except (ParserError, ValidationError, json.JSONDecodeError) as e:
-                        self.logger.warning(
-                            f"Fallback parsing failed: {e}. Payload start: {json_text[:50]!r}"
-                        )
+                        self.logger.warning(f"Fallback parsing failed: {e}. Payload start: {json_text[:50]!r}")
                         return response_text
             elif structured_output.format == OutputFormat.TEXT:
                 # Parse natural language text into structured format
-                return await self._parse_text_to_structure(
-                    response_text,
-                    output_type
-                )
+                return await self._parse_text_to_structure(response_text, output_type)
             elif structured_output.format == OutputFormat.CSV:
                 df = pd.read_csv(io.StringIO(response_text))
                 return df if output_type == pd.DataFrame else df
             elif structured_output.format == OutputFormat.YAML:
                 data = yaml.safe_load(response_text)
-                if hasattr(output_type, 'model_validate'):
+                if hasattr(output_type, "model_validate"):
                     return output_type.model_validate(data)
-                if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                if is_dataclass(output_type) or hasattr(output_type, "__annotations__"):
                     return self._coerce_mapping_to_type(output_type, data)
                 return data
             elif structured_output.format == OutputFormat.CUSTOM:
                 if structured_output.custom_parser:
                     return structured_output.custom_parser(response_text)
             else:
-                raise ValueError(
-                    f"Unsupported output format: {structured_output.format}"
-                )
+                raise ValueError(f"Unsupported output format: {structured_output.format}")
         except (ParserError, ValueError) as exc:
             self.logger.error(f"Error parsing structured output: {exc}")
             # Fallback to raw text if parsing fails
             return response_text
         except Exception as exc:
-            self.logger.error(
-                f"Unexpected error during structured output parsing: {exc}"
-            )
+            self.logger.error(f"Unexpected error during structured output parsing: {exc}")
             # Fallback to raw text
             return response_text
 
     async def _parse_text_to_structure(self, text: str, output_type: type) -> Any:
         """Parse natural language text into a structured format using AI."""
         # Option 1: Use regex/NLP parsing for simple cases
-        if hasattr(output_type, '__annotations__'):
+        if hasattr(output_type, "__annotations__"):
             annotations = output_type.__annotations__
 
             # Simple extraction for common patterns
-            if 'addition_result' in annotations and 'multiplication_result' in annotations:
+            if "addition_result" in annotations and "multiplication_result" in annotations:
 
                 # Extract numbers from text like "12 + 8 = 20" and "6 * 9 = 54"
-                addition_match = re.search(r'(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)', text)
-                multiplication_match = re.search(r'(\d+)\s*\*\s*(\d+)\s*=\s*(\d+)', text)
+                addition_match = re.search(r"(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)", text)
+                multiplication_match = re.search(r"(\d+)\s*\*\s*(\d+)\s*=\s*(\d+)", text)
 
                 data = {
-                    'addition_result': float(addition_match.group(3)) if addition_match else 0.0,
-                    'multiplication_result': float(
-                        multiplication_match.group(3)
-                    ) if multiplication_match else 0.0,
-                    'explanation': text
+                    "addition_result": float(addition_match.group(3)) if addition_match else 0.0,
+                    "multiplication_result": float(multiplication_match.group(3)) if multiplication_match else 0.0,
+                    "explanation": text,
                 }
 
                 return output_type(**data)
@@ -2792,12 +2670,7 @@ $backstory
         # Fallback: return text if parsing fails
         return text
 
-    def _save_image(
-        self,
-        image: Any,
-        output_directory: Path,
-        prefix: str = 'generated_image_'
-    ) -> Path:
+    def _save_image(self, image: Any, output_directory: Path, prefix: str = "generated_image_") -> Path:
         """Save a PIL image to the specified directory."""
         output_directory.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2812,10 +2685,11 @@ $backstory
         """
         _pydub = lazy_import("pydub", extra="audio")
         AudioSegment = _pydub.AudioSegment
-        import wave # pylint: disable=C0415 # noqa
+        import wave  # pylint: disable=C0415 # noqa
+
         if mime_format == "audio/wav":
             # Save as WAV using the wave module
-            output_path = output_path.with_suffix('.wav')
+            output_path = output_path.with_suffix(".wav")
             with wave.open(str(output_path), mode="wb") as wf:
                 # Mono
                 wf.setnchannels(1)  # pylint: disable=E1101 # noqa
@@ -2828,16 +2702,11 @@ $backstory
         elif mime_format in ("audio/mpeg", "audio/webm"):
             # choose extension and pydub format name
             ext = "mp3" if mime_format == "audio/mpeg" else "webm"
-            fp = output_path.with_suffix(f'.{ext}')
+            fp = output_path.with_suffix(f".{ext}")
 
             # wrap raw PCM bytes in a BytesIO so pydub can read them
             raw = io.BytesIO(audio_data)
-            seg = AudioSegment.from_raw(
-                raw,
-                sample_width=2,
-                frame_rate=24000,
-                channels=1
-            )
+            seg = AudioSegment.from_raw(raw, sample_width=2, frame_rate=24000, channels=1)
             # export using the appropriate container/codec
             seg.export(str(fp), format=ext)
 
@@ -2849,8 +2718,8 @@ $backstory
         mp4_bytes,
         output_dir: Path,
         video_number: int = 1,
-        mime_format: str = 'video/mp4',
-        prefix: str = 'generated_video_'
+        mime_format: str = "video/mp4",
+        prefix: str = "generated_video_",
     ) -> Path:
         """
         Download the GenAI video (always MP4), then either:
@@ -2860,47 +2729,43 @@ $backstory
 
         """
         import ffmpeg  # pylint: disable=C0415 # noqa
+
         # 1) Prep output path
         output_dir.mkdir(parents=True, exist_ok=True)
-        ext = mimetypes.guess_extension(mime_format) or '.mp4'
+        ext = mimetypes.guess_extension(mime_format) or ".mp4"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = output_dir / f"{prefix}{timestamp}_{video_number}{ext}"
 
         # 3) Straight-dump for MP4
         if mime_format == "video/mp4":
             out_path.write_bytes(mp4_bytes)
-            self.logger.info(
-                f"Saved MP4 to {out_path}"
-            )
+            self.logger.info(f"Saved MP4 to {out_path}")
             return out_path
 
         # 4) Transcode via ffmpeg for other formats
         try:
-            if mime_format == 'video/avi':
-                video_format = 'avi'
-                vcodec = 'libxvid'  # H.264 codec for AVI
-                acodec = 'mp2'       # MP2 audio codec for AVI
-            elif mime_format == 'video/webm':
-                video_format = 'webm'
-                vcodec = 'libvpx'  # VP8 video codec for WebM
-                acodec = 'libopus'
-            elif mime_format == 'video/mpeg':
-                video_format = 'mpeg'
-                vcodec = 'mpeg2video'  # MPEG-2 video codec
-                acodec = 'mp2'       # MP2 audio codec
+            if mime_format == "video/avi":
+                video_format = "avi"
+                vcodec = "libxvid"  # H.264 codec for AVI
+                acodec = "mp2"  # MP2 audio codec for AVI
+            elif mime_format == "video/webm":
+                video_format = "webm"
+                vcodec = "libvpx"  # VP8 video codec for WebM
+                acodec = "libopus"
+            elif mime_format == "video/mpeg":
+                video_format = "mpeg"
+                vcodec = "mpeg2video"  # MPEG-2 video codec
+                acodec = "mp2"  # MP2 audio codec
             else:
-                raise ValueError(
-                    f"Unsupported mime_format for video transcoding: {mime_format!r}"
-                )
+                raise ValueError(f"Unsupported mime_format for video transcoding: {mime_format!r}")
             # 1. Set up the FFmpeg process
             process = (
-                ffmpeg  # pylint: disable=E1101 # noqa
-                .input('pipe:', format='mp4')  # pylint: disable=E1101 # noqa
+                ffmpeg.input("pipe:", format="mp4")  # pylint: disable=E1101 # noqa  # pylint: disable=E1101 # noqa
                 .output(
-                    'pipe:',
+                    "pipe:",
                     format=video_format,  # Output container format
-                    vcodec=vcodec,      # video codec
-                    acodec=acodec      # audio codec
+                    vcodec=vcodec,  # video codec
+                    acodec=acodec,  # audio codec
                 )
                 .run_async(pipe_stdin=True, pipe_stdout=True, pipe_stderr=True)
             )
@@ -2909,23 +2774,16 @@ $backstory
             process.wait()
             if err:
                 self.logger.error("FFmpeg Error:", err.decode())
-            with open(out_path, 'wb') as f:
+            with open(out_path, "wb") as f:
                 f.write(out_bytes)
-            self.logger.info(
-                f"Saved {mime_format} to {out_path}"
-            )
+            self.logger.info(f"Saved {mime_format} to {out_path}")
             return out_path
         except Exception as e:
-            self.logger.error(
-                f"Error saving {mime_format} to {out_path}: {e}"
-            )
+            self.logger.error(f"Error saving {mime_format} to {out_path}: {e}")
             return None
 
     @staticmethod
-    def create_conversation_memory(
-        memory_type: str = "memory",
-        **kwargs
-    ) -> ConversationMemory:
+    def create_conversation_memory(memory_type: str = "memory", **kwargs) -> ConversationMemory:
         """Factory method to create a conversation memory instance."""
         if memory_type == "memory":
             return InMemoryConversation()
@@ -2934,20 +2792,15 @@ $backstory
         elif memory_type == "file":
             return FileConversationMemory(**kwargs)
         else:
-            raise ValueError(
-                f"Unsupported memory type: {memory_type}"
-            )
+            raise ValueError(f"Unsupported memory type: {memory_type}")
 
     async def _wait_with_backoff(self, retry_count: int, config: StreamingRetryConfig) -> None:
         """Wait with exponential backoff before retry."""
-        delay = min(
-            config.base_delay * (config.backoff_factor ** (retry_count - 1)),
-            config.max_delay
-        )
+        delay = min(config.base_delay * (config.backoff_factor ** (retry_count - 1)), config.max_delay)
 
         if config.jitter:
             # Add random jitter to avoid thundering herd
-            delay *= (0.5 + random.random() * 0.5)
+            delay *= 0.5 + random.random() * 0.5
 
         await asyncio.sleep(delay)
 
@@ -2970,6 +2823,7 @@ $backstory
         - Always sets additionalProperties=false on objects.
         - Optionally forces required to include all properties.
         """
+
         def visit(node):
             if isinstance(node, dict):
                 t = node.get("type")

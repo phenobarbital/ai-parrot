@@ -731,7 +731,7 @@ class ClaudeAgentClient(AbstractClient):
         self,
         prompt: str,
         model: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Any]] = None,
         system_prompt: Optional[str] = None,

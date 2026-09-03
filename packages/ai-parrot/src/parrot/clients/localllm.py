@@ -68,6 +68,8 @@ class LocalLLMClient(OpenAIBaseClient):
     # windows and generation is wall-clock expensive, so keep invoke()'s budget
     # conservative. Raise per-instance with ``invoke_max_tokens=``.
     _invoke_max_tokens: int = 4096
+    # Same conservative budget for ask()/ask_stream().
+    _default_max_tokens: int = 4096
 
     def __init__(
         self,

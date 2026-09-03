@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2757
@@ -169,8 +169,42 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
+- `worker.py`: `time` and `ReadyResponse` added to the existing import blocks.
+  `serve()` gained `started_at: float | None = None` (PEP 604, as written in the
+  task scope) plus a docstring entry. Immediately after
+  `namespace = WorkerNamespace(...)` and before the `while True` loop it now
+  writes `ReadyResponse(pid=os.getpid(), bootstrap_ms=...)` to `out_stream`,
+  where `bootstrap_ms` is `int((monotonic() - started_at) * 1000)` or `0` when
+  `started_at is None` (direct `serve()` callers / tests). The pre-existing
+  `logger.info("repl_worker: ready ...")` line now reports `bootstrap_ms`.
+- `main()` samples `started_at = time.monotonic()` as its first statement (before
+  `logging.basicConfig`) and forwards it to `serve()`.
+- `WorkerNamespace` construction failures still propagate untouched — no
+  try/except was added, so the process keeps exiting non-zero and the host's
+  bootstrap-timeout/EOF path (TASK-2759) is what reports it.
+- `test_worker.py`: added `SpawnedWorker.recv_ready()` (asserts the first frame
+  is a `ReadyResponse` and returns it) and the new
+  `TestWorkerSubprocess::test_worker_first_frame_is_ready` from the Test
+  Specification, using the harness' actual read helper name (`recv()`, not
+  `read()`). The three pre-existing subprocess tests
+  (`test_bootstrap_per_worker`, `test_ping_pong_over_real_subprocess`,
+  `test_exec_over_real_subprocess`) now consume the readiness frame via
+  `recv_ready()` before sending their request — required, since the ready frame
+  is legitimately first on the wire now.
+- Verification: `pytest packages/ai-parrot/tests/repl_worker/test_worker.py
+  test_protocol.py` -> 43 passed. `ruff check` on both changed files reports
+  exactly the baseline findings (6 in `worker.py`, 2 in `test_worker.py`, all
+  pre-existing; verified via `git stash`). An intermediate
+  `Optional[float]` annotation did add one new UP045 finding, so it was
+  switched to the task's own `float | None` spelling.
+- **Test-environment prerequisite (not a code issue)**: the spawning tests need
+  `STATIC_DIR` and `OUTPUT_DIR` to cover pytest's `tmp_path`, otherwise
+  `AbstractTool.__init__` / `PythonREPLTool` reject it with
+  "output_dir escapes allowed directories". Running with
+  `STATIC_DIR=/tmp OUTPUT_DIR=/tmp` makes all 10 tests in the file pass; without
+  it, 6 of them fail identically on unmodified `dev` (baseline verified).
 
 **Deviations from spec**: none

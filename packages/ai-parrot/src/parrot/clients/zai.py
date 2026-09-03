@@ -450,6 +450,7 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
         max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
         turn_id = str(uuid.uuid4())
@@ -624,7 +625,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -667,6 +668,7 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()

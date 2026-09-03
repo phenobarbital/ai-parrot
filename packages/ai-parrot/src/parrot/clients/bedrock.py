@@ -151,6 +151,12 @@ class BedrockConverseBase(AbstractClient):
     §2/§3 Module 1).
     """
 
+    # Converse rejects maxTokens above a model's own ceiling, and several
+    # Bedrock-hosted models cap at 4096 — keep the pre-existing default rather
+    # than the framework's 8192, and let callers raise it per-instance with
+    # ``max_tokens=``.
+    _default_max_tokens: int = 4096
+
     def __init__(
         self,
         aws_id: Optional[str] = None,
@@ -516,7 +522,7 @@ class BedrockConverseBase(AbstractClient):
             The ``inferenceConfig`` dict for the Converse payload.
         """
         config: Dict[str, Any] = {
-            "maxTokens": max_tokens if max_tokens is not None else (self.max_tokens or 4096),
+            "maxTokens": self._resolve_max_tokens(max_tokens),
         }
         if not rejects_sampling_params(model_id):
             config["temperature"] = temperature if temperature is not None else self.temperature

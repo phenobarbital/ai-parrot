@@ -551,6 +551,18 @@ def _spawn_worker(config, output_dir) -> SpawnedWorker   # :129
 - [ ] **Q1 — Bootstrap timeout stays lethal?** — *Owner: Jesus Lara*. This spec kills a worker that never sends `ready` within `bootstrap_timeout_ms` (it is not a live worker). If you want strictly "only execute kills", the alternative is to keep waiting and let the caller's own budget fail softly — decide before Module 3; default here is *kill*.
 - [ ] **Q2 — Default for `namespace_timeout_ms`** — *Owner: implementer*. 30 000 chosen to cover large `get_var`/`snapshot` pickles on a loaded host; can be tuned during Module 6 from measured test timings. Not blocking.
 - [ ] **Q3 — Should `WorkerPool.acquire()` prefer the *readiest* spare or keep FIFO?** — *Owner: implementer*. With readiness-gated spares FIFO is already safe; deferred (non-blocking).
+- [ ] **Q4 — AC9's "`ruff check` clean on changed files" is not literally
+  checkable in this repo** — *Owner: Jesus Lara* (raised by code review during
+  implementation, 2026-09-02). There is no `[tool.ruff]`/`ruff.toml` config
+  anywhere in the repo and no CI job invoking ruff, so `ruff check` runs its
+  full default rule set: files this feature never touched already fail it
+  (e.g. `repl_worker/transport.py` reports 3 findings), and the changed-file
+  set reports ~360, none of them on a line this feature added. AC9 was
+  therefore verified as **"no new findings versus `dev`"** (baseline captured
+  per file with `git stash` / `git checkout dev -- <paths>` and compared;
+  counts identical). Recommend either committing a repo `ruff.toml` pinning
+  the intended rule subset, or restating this AC as "no new ruff findings
+  versus the base branch" so it is mechanically verifiable. *Blocks*: nothing.
 
 ---
 

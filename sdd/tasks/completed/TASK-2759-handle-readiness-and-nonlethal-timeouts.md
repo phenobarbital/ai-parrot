@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-500 — REPL Worker Readiness Handshake & Non-Lethal Namespace Timeouts
 **Spec**: `sdd/specs/bug-workerpool-repl.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2757, TASK-2758
@@ -270,8 +270,124 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-02
 **Notes**:
 
-**Deviations from spec**: none
+*Implementation*
+- `handle.py`: `WorkerBootstrapError(RuntimeError)` and
+  `NamespaceTimeoutError(TimeoutError)` defined at module level above
+  `_DEADLINE_GRACE_MS`, both exported from `repl_worker/__init__.py`
+  (import + `__all__`).
+- Readiness: `__init__` gained `_ready`, `_ready_task`, `_pending_reply` (all
+  `None`). `start()` creates `self._ready = loop.create_future()` then
+  `self._ready_task = loop.create_task(self._await_ready())` right after the
+  stdio drain task; `start()` itself still returns immediately after spawning.
+- `_await_ready()` reads exactly one frame via
+  `run_in_executor(self._executor, read_frame, self._from_worker)` under
+  `asyncio.wait_for(..., bootstrap_timeout_ms / 1000)`. `ReadyResponse` ->
+  resolves the future + `logger.debug("WorkerHandle: worker pid=%s ready in %d
+  ms")`. Timeout / `EOFError` / `OSError` / `ValueError` / a non-`ReadyResponse`
+  first frame -> `await self._kill_process()` then a `WorkerBootstrapError`
+  naming pid, budget, cause and the last <=5 stderr lines. It never raises
+  (background task) except to propagate `CancelledError` from `kill()`.
+- Added a small `_fail_ready(message)` helper (not named in the task) so the
+  three places that must resolve the future with an error do it identically and
+  mark the exception retrieved, avoiding spurious "exception was never
+  retrieved" warnings when nobody calls `wait_ready()`.
+- `wait_ready(timeout_s=None)` + `is_ready` property. Both `wait_ready` paths
+  await `asyncio.shield(self._ready)` so one caller's timeout/cancellation can
+  never cancel the shared one-shot future for the others (pool + first
+  `_send()` both wait on it).
+- `_send(request, timeout_s, *, lethal=False)`: under `self._lock` ->
+  `await self.wait_ready()` -> `await self._drain_pending_reply(timeout_s)` ->
+  alive check -> round-trip. On timeout: `lethal=True` kills and re-raises
+  (unchanged); `lethal=False` parks the future in `self._pending_reply` and
+  raises `NamespaceTimeoutError` naming pid, `request.op` and the budget.
+- `_drain_pending_reply()` extracted as its own method (the drain is ~25 lines
+  with its own error semantics; inlining it made `_send` unreadable). Awaits the
+  parked future shielded, clears it on success, keeps it parked and raises
+  `NamespaceTimeoutError` if it still has not landed, and logs+clears if the
+  straggler failed instead of answering.
+- `execute()` passes `lethal=True` and `WorkerBootstrapError` was added to the
+  existing `except (EOFError, OSError, ValueError)` tuple (as the task
+  specifies) rather than a dedicated clause — see "Deviations" below for why
+  that detail matters.
+- Budgets: new `_namespace_timeout_s` property (`namespace_timeout_ms / 1000`)
+  now feeds `get_var`/`set_var`/`list_vars`/`snapshot`/`reset`/
+  `inject_dataframe`, all non-lethal. `ping(timeout_s=10.0)` keeps its explicit
+  argument and its "any failure -> False" behaviour. Verified: the only numeric
+  literal left in `handle.py` is `ping`'s default arg (AC6).
+- `kill()`: cancels `_ready_task` (suppressing `CancelledError`), calls
+  `_fail_ready(...)` so a handle killed before readiness cannot leave
+  `wait_ready()` hanging forever, and cancels + drops `_pending_reply`. The
+  documented "does NOT take `self._lock`" rule was preserved.
+
+*One real bug found while testing (worth the reviewer's attention)*
+- The task's suggested pattern parks the future straight from
+  `asyncio.wait_for(future, ...)`. That does not work: `wait_for` **cancels**
+  what it awaits when the budget expires, so `_pending_reply` ended up holding
+  an already-cancelled future and the next `_send()` blew up with a raw
+  `CancelledError` (reproduced by `test_namespace_timeout_is_non_lethal`).
+  Fixed by shielding the round-trip: `await asyncio.wait_for(
+  asyncio.shield(future), timeout=timeout_s)`. Only the outer wrapper is
+  cancelled, so the parked reply stays genuinely pending and drainable — which
+  is what AC3 actually requires. The lethal path is unaffected.
+
+*Tests* (`test_handle.py`, +7 tests, 19 total in the file, all passing)
+- `TestReadiness`: `test_handle_wait_ready_success` (also asserts the second
+  waiter gets the same object), `test_handle_bootstrap_timeout_kills_and_reports`
+  (500 ms budget vs 3 s `setup_code`; asserts pid, budget, stderr tail,
+  `is_alive is False`), `test_handle_send_waits_for_ready` (the exact call that
+  used to die: `set_var` on a slow-booting worker),
+  `test_fresh_spawn_bootstrap_failure_returns_loss_dict`.
+- `TestNonLethalTimeouts`: `test_namespace_timeout_is_non_lethal`,
+  `test_namespace_api_after_soft_timeout_keeps_state` (spec §4 integration row,
+  cheap to do at handle level), `test_execute_deadline_is_still_lethal`,
+  `test_kill_leaves_no_ready_task_or_pending_reply` (AC12),
+  `test_wait_ready_after_kill_reports_a_message`.
+- Module-level `SLOW_BOOTSTRAP = {"setup_code": "import time\ntime.sleep(3)"}`
+  delays the worker's own bootstrap — no test hook in production code.
+
+*Verification*
+- `pytest packages/ai-parrot/tests/repl_worker/test_handle.py` -> 19 passed;
+  `test_handle.py` + `test_pool.py` -> 26 passed; the whole
+  `tests/repl_worker/` directory -> 92 passed, 1 failed.
+- The single failure is `test_e2e.py::test_e2e_data_analysis_session`
+  (`NameError: name 'plt' is not defined`, a matplotlib-preload environment
+  issue). It is **pre-existing**: at baseline (`git stash`) that file failed 3
+  tests; with this change only 1 fails — `test_e2e_concurrent_sessions` and
+  `test_share_dataframe_delivers_into_worker_namespace` now PASS, which is the
+  readiness handshake doing its job.
+- `ruff check`: UP045 and I001/RUF100 counts are back to exactly the baseline.
+  Two new `UP041` findings remain (`except asyncio.TimeoutError` in
+  `_await_ready` / `_drain_pending_reply`, which ruff wants spelled
+  `TimeoutError`). Kept deliberately: the Codebase Contract says to "catch
+  `asyncio.TimeoutError` as the code does today", and the file's two
+  pre-existing clauses are spelled the same way — mixing both spellings in one
+  file would be worse. Behaviourally identical on the project's >=3.11 floor.
+- Test-env prerequisite unchanged from TASK-2758: run with
+  `STATIC_DIR=/tmp OUTPUT_DIR=/tmp` (+ the worktree `PYTHONPATH`), otherwise
+  `tmp_path` is rejected as an output dir.
+
+**Deviations from spec**: two, both minor and deliberate.
+1. `asyncio.shield` around the round-trip future in `_send` — required for the
+   parked-reply drain to work at all (see the bug note above); the task's
+   suggested snippet would have shipped a `CancelledError` regression.
+2. `WorkerBootstrapError` was folded into the existing
+   `except (EOFError, OSError, ValueError)` tuple, so its `cause` comes from
+   `_classify_death()` rather than being hard-coded to `"crash"` as the task's
+   parenthetical says. This is required to keep the pre-existing
+   `test_memory_limit_kills_worker` green: a worker killed by `RLIMIT_AS`
+   during bootstrap now fails via the readiness path, and hard-coding
+   `"crash"` would report a memory death as a crash. `_classify_death()` still
+   returns `"crash"` for an ordinary bootstrap failure, so the specified
+   outcome holds in the normal case.
+
+*Observation for the reviewer (not fixed — no spec mandate)*: if a
+`NamespaceTimeoutError` from the drain step surfaces inside `execute()`, it is
+caught by `execute()`'s `except asyncio.TimeoutError` clause (they are the same
+class on >=3.11) and reported as "execution exceeded deadline_ms". The dict is
+still non-empty (AC5 holds) but the message misattributes the cause. Left
+alone deliberately: adding an unspecified branch to `execute()` is outside this
+task's scope.
