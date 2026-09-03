@@ -451,6 +451,31 @@ Verified via `grep -rn "class .*(OpenAIBaseClient)"`:
 - [ ] Does `ask_stream()` need separate live coverage, or is the unit-level
       payload assertion sufficient given all three paths share the funnel? —
       *Owner: implementer*.
+- [ ] **CRITICAL — `OpenAIClient.ask_to_image()` and `.image_identification()`
+      bypass the funnel entirely and are NOT fixed by this hotfix.** Found by
+      independent adversarial code review (2026-09-03) and confirmed by
+      reading the code directly: both methods call
+      `self.client.chat.completions.create(...)` on their own, never
+      `self._chat_completion(...)`, so `_adapt_completion_params()` never
+      runs for them. `ask_to_image()`'s own signature default is
+      `model: str = OpenAIModel.GPT5_MINI.value` (`gpt.py:1504`) — calling
+      `LLMFactory.create("openai").ask_to_image(prompt, image)` with no
+      model override reproduces **the exact 400 this hotfix's Motivation
+      section documents as the headline bug**, unchanged by this diff.
+      `image_identification()` (`gpt.py:1895`, same bypass) defaults to
+      `gpt-4.1-mini`, so its default path is unaffected, but any caller
+      passing a `gpt-5*`/o-series model there is still broken too. This
+      contradicts §2's Component Diagram / Integration Points framing that
+      `_chat_completion()` is "the one method every path reaches" — that
+      claim is true only for the paths this spec's Module Breakdown (§3)
+      actually covers (`ask`/`ask_stream`/`invoke`); it does not extend to
+      the two vision methods. **Not fixed here** — routing two large,
+      untested-for-this-purpose vision methods through the funnel is a
+      real behavior-change risk (different `.create`-vs-`.parse` selection,
+      multimodal content shape, `response_format` handling) that should not
+      be done inside an already-shipped hotfix without its own dedicated
+      task and test coverage. *Owner: needs a decision — a fast-follow
+      hotfix, or an amendment to this one's scope before merge.*
 
 ---
 
@@ -479,3 +504,4 @@ Verified via `grep -rn "class .*(OpenAIBaseClient)"`:
 |---|---|---|---|
 | 0.1 | 2026-09-03 | Jesus Lara | Initial draft — live-verified against `main` `ab932a93d` |
 | 0.2 | 2026-09-03 | Jesus Lara | Approved; no Jira ticket (user decision); decomposed into 4 `HOTFIX-openai-max-completion-tokens-N` tasks on branch `hotfix-openai-max-completion-tokens` |
+| 0.3 | 2026-09-03 | sdd-worker (Claude) | All 4 tasks implemented and committed. Adversarial code review (Claude `code-reviewer` subagent + `codex`) found and this pass fixed one real regression (`tests/clients/test_invoke_max_tokens.py` stale `max_tokens` assertion). Added §8 Open Question flagging that `ask_to_image()`/`image_identification()` bypass the funnel and remain unfixed by this hotfix — see that entry for full detail. |
