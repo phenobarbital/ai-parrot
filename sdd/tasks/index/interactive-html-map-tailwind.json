@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-03T18:55:48Z",
-  "completed_at": null,
+  "completed_at": "2026-09-03T21:10:02+00:00",
   "tasks": [
     {
       "id": "TASK-2785",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Pure asset addition under formats/assets/ + pyproject.toml package-data glob; no code dependency on TASK-2786's folium_map.py refactor.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2785-vendor-offline-map-assets.md"
+      "completed_at": "2026-09-03T20:08:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2785-vendor-offline-map-assets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2786",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Pure folium_map.py refactor + clustering logic; independent of the vendoring task's asset files (offline swap that consumes them is TASK-2787).",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2786-extract-build-map-document-marker-cluster.md"
+      "completed_at": "2026-09-03T20:11:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2786-extract-build-map-document-marker-cluster.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2787",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Consumes both TASK-2785's vendored files and TASK-2786's build_map_document() body directly.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2787-offline-data-uri-swap.md"
+      "completed_at": "2026-09-03T20:23:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2787-offline-data-uri-swap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2788",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +84,9 @@
       "parallelism_notes": "Calls build_map_document() from interactive_html.py; must land after the offline swap so the shipped dispatch is offline-safe from the start.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2788-interactive-html-map-dispatch.md"
+      "completed_at": "2026-09-03T20:39:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2788-interactive-html-map-dispatch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2789",
@@ -91,7 +95,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -99,8 +103,9 @@
       "parallelism_notes": "CSS/Tailwind track, entirely disjoint files from the Map track (TASK-2785-2788). Only shared touchpoint is design_system/__init__.py, a one-line addition in TASK-2790.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2789-generate-a2ui-tailwind-css-script.md"
+      "completed_at": "2026-09-03T20:20:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2789-generate-a2ui-tailwind-css-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2790",
@@ -109,7 +114,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -119,8 +124,9 @@
       "parallelism_notes": "Consumes TASK-2789's generated CSS file.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2790-design-system-tailwind-integration.md"
+      "completed_at": "2026-09-03T20:25:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2790-design-system-tailwind-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2791",
@@ -129,7 +135,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,8 +145,9 @@
       "parallelism_notes": "Only touches .github/workflows/ci.yml; can run in parallel with TASK-2790 once TASK-2789's --check mode exists.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2791-ci-freshness-gate.md"
+      "completed_at": "2026-09-03T20:32:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2791-ci-freshness-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2792",
@@ -149,7 +156,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,8 +166,9 @@
       "parallelism_notes": "Touches only test_folium_map.py; can run in parallel with TASK-2788 (Map dispatch) and the whole CSS track once TASK-2787 lands.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2792-tests-map-builder-offline.md"
+      "completed_at": "2026-09-03T20:41:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2792-tests-map-builder-offline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2793",
@@ -169,7 +177,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -180,8 +188,9 @@
       "parallelism_notes": "Four of its five tests only need TASK-2788; the fifth (test_all_a2ui_classes_have_css_rule) needs TASK-2790's DesignSystem integration too, so the task as a whole waits on both.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2793-tests-map-dispatch-integration.md"
+      "completed_at": "2026-09-03T20:44:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2793-tests-map-dispatch-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2794",
@@ -190,7 +199,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,8 +211,9 @@
       "parallelism_notes": "Final CSS-track task; needs the script, the DesignSystem integration, and the CI wiring all present to test against.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2794-tests-tailwind-css-generation.md"
+      "completed_at": "2026-09-03T20:47:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2794-tests-tailwind-css-generation.md",
+      "verification": "verified"
     }
   ]
 }

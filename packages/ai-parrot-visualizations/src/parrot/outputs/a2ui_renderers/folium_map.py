@@ -21,7 +21,9 @@ single-layer path — this is a pure additive extension, not a rewrite.
 
 from __future__ import annotations
 
+import base64
 import logging
+from pathlib import Path
 from typing import Any
 
 import parrot.outputs.a2ui.catalog.basic
@@ -36,16 +38,29 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record
+from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
 
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "folium_map"
 _MAP_EXTRA = "ai-parrot-visualizations[a2ui,map]"
 
+#: Default marker-count threshold above which a layer's markers are wrapped
+#: in a `folium.plugins.MarkerCluster` (FEAT-522, spec §8 resolved: 500,
+#: per-layer overridable via `cluster_threshold_by_layer`).
+DEFAULT_CLUSTER_THRESHOLD: int = 500
+
 
 def _import_folium():
-    """Import ``folium`` (indirection point so tests can force failure)."""
+    """Import ``folium`` (indirection point so tests can force failure).
+
+    Also imports ``folium.plugins`` (ships with ``folium>=0.14``, no new
+    pyproject dependency — spec §6 "Verified Imports") so
+    ``folium.plugins.MarkerCluster`` is reachable off the returned module
+    without a separate lazy-import call site.
+    """
     import folium
+    import folium.plugins  # noqa: F401 — binds `folium.plugins` as an attribute
 
     return folium
 
@@ -58,6 +73,190 @@ def _load_folium():
         raise ImportError(
             "The A2UI folium_map renderer requires 'folium'. " f"Install it with: pip install {_MAP_EXTRA}"
         ) from exc
+
+
+def _data_uri(path: Path, mime: str) -> str:
+    """Build a base64-encoded ``data:`` URI from a vendored asset file.
+
+    Args:
+        path: The vendored file's local path (from
+            ``_map_vendor.VENDORED_ASSET_PATHS``).
+        mime: The MIME type to embed (``"text/javascript"`` for ``.js``,
+            ``"text/css"`` for ``.css``).
+
+    Returns:
+        A ``data:{mime};base64,{...}`` URI string.
+    """
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+def _build_offline_url_map() -> dict[str, str]:
+    """Build the ``{cdn_url: data_uri}`` swap table (FEAT-522, TASK-2787).
+
+    Introspects ``folium.Map().default_js``/``default_css`` and
+    ``folium.plugins.MarkerCluster().default_js``/``default_css`` LIVE
+    (never a hardcoded URL list) so a future ``folium`` bump that keeps the
+    same resource ``name`` but changes its pinned CDN URL is still matched
+    correctly — the swap is keyed by the CURRENT url, looked up via each
+    resource's stable ``name`` against
+    ``_map_vendor.VENDORED_ASSET_PATHS`` (spec §7 Known Risks: "folium
+    version drift").
+
+    Read ONCE at import time (module-level ``_OFFLINE_URL_MAP`` below) —
+    mirrors this codebase's established ``_CHART_JS_SOURCE``/``_BASE_CSS``
+    "read once, never per-render" convention; base64-encoding ~13 small-to-
+    medium vendored files is a one-time, bounded cost.
+
+    Returns:
+        A mapping from each verified folium/MarkerCluster default resource
+        URL to its locally-vendored ``data:`` URI equivalent.
+
+    Raises:
+        ImportError: If ``folium`` is unavailable (via ``_load_folium()``,
+            same actionable "pip install ..." message as every other
+            folium-requiring entry point in this module — post-review
+            fix: this used to import ``folium`` directly, bypassing that
+            actionable error).
+    """
+    folium = _load_folium()
+
+    pairs: dict[str, str] = {}
+    m = folium.Map()
+    mc = folium.plugins.MarkerCluster()
+    for name, url in [*m.default_js, *mc.default_js]:
+        pairs[url] = _data_uri(VENDORED_ASSET_PATHS[name], "text/javascript")
+    for name, url in [*m.default_css, *mc.default_css]:
+        pairs[url] = _data_uri(VENDORED_ASSET_PATHS[name], "text/css")
+    return pairs
+
+
+#: Read ONCE at import time (not per-render) — see `_build_offline_url_map`.
+_OFFLINE_URL_MAP: dict[str, str] = _build_offline_url_map()
+
+
+def build_map_document(
+    props: dict[str, Any],
+    *,
+    cluster_threshold: int = DEFAULT_CLUSTER_THRESHOLD,
+    cluster_threshold_by_layer: dict[str, int] | None = None,
+) -> tuple[bytes, list[dict[str, Any]]]:
+    """Build one folium HTML document from baked Map properties.
+
+    Synchronous by design (FEAT-522, spec §2 "Why a new shared builder"):
+    ``InteractiveHTMLRenderer``'s internal render chain
+    (``_render_top``/``_render_descriptor``) is fully synchronous, so this
+    function — shared by both :class:`FoliumMapRenderer` (a thin async
+    wrapper around it) and ``InteractiveHTMLRenderer._render_map`` — must
+    not be ``async`` and must not ``await`` anything.
+
+    Args:
+        props: The single baked ``Map`` component's own top-level props
+            dict (what :meth:`FoliumMapRenderer.render` calls ``map_comp``).
+        cluster_threshold: Default marker-count threshold above which a
+            layer's markers are wrapped in ``folium.plugins.MarkerCluster``.
+        cluster_threshold_by_layer: Optional per-layer threshold override,
+            keyed by layer name — renderer-internal only, never LLM-settable
+            (spec §2 Data Models / Non-Goals).
+
+    Returns:
+        ``(document_bytes, degradations)`` — ``degradations`` is always
+        ``[]`` today (reserved for a future layer-level-skip case; the
+        caller's own sibling-component degradations are built separately,
+        since they need the full baked component list, not just ``props``).
+    """
+    folium = _load_folium()
+    viewport = props.get("viewport") or {}
+    center = viewport.get("center") or [0.0, 0.0]
+    # Bug fix (post-review): `viewport.get("zoom", 2)` only falls back
+    # to 2 when the "zoom" KEY is absent — a real STRUCTURED_MAP
+    # viewport (`_compute_viewport`, which only derives bbox/center,
+    # never zoom) dumps an explicit `"zoom": null` key, so `.get()`
+    # returned `None` and `folium.Map(zoom_start=None)` produced a map
+    # with a center but no usable zoom level.
+    zoom = viewport.get("zoom")
+    if zoom is None:
+        zoom = 2
+
+    fmap = folium.Map(location=list(center), zoom_start=zoom)
+
+    layers = props.get("layers")
+    has_layer_data = isinstance(layers, list) and any(isinstance(layer, dict) and "data" in layer for layer in layers)
+    if has_layer_data:
+        # FEAT-473: multi-layer path — each layer's baked `data` is its
+        # own resolved feature list (bound at /layers/<i>/features).
+        for i, layer in enumerate(layers):
+            if not isinstance(layer, dict):
+                continue
+            layer_name = str(layer.get("layer") or f"layer-{i}")
+            group = folium.FeatureGroup(name=layer_name)
+            marker_color = layer.get("markerColor")
+            tooltip_template = layer.get("tooltipTemplate")
+            label_field = layer.get("labelField")
+            geodesic = bool(layer.get("geodesic"))
+            features = FoliumMapRenderer._iter_layer_features(layer.get("data"))
+
+            effective_threshold = (
+                cluster_threshold_by_layer.get(layer_name, cluster_threshold)
+                if cluster_threshold_by_layer
+                else cluster_threshold
+            )
+            # FEAT-522: above threshold, markers wrap in a MarkerCluster
+            # (added to the layer's FeatureGroup); below threshold,
+            # unchanged individual-marker behavior straight on the group.
+            if len(features) > effective_threshold:
+                target = folium.plugins.MarkerCluster()
+                target.add_to(group)
+            else:
+                target = group
+
+            for feature in features:
+                FoliumMapRenderer._add_feature(
+                    folium,
+                    target,
+                    feature,
+                    marker_color=marker_color,
+                    tooltip_template=tooltip_template,
+                    label_field=label_field,
+                    geodesic=geodesic,
+                )
+            group.add_to(fmap)
+    else:
+        # Legacy single-layer path (pre-FEAT-473 envelopes): a single
+        # top-level `data` binding of flat {"lat", "lon", "popup"} points.
+        # FEAT-522 (post-review): this path has no named layer to key
+        # `cluster_threshold_by_layer` against (it predates the concept of
+        # a "layer" entirely) — only the flat `cluster_threshold` applies
+        # here, same as the multi-layer path's own default.
+        points = FoliumMapRenderer._iter_points(props.get("data"))
+        if len(points) > cluster_threshold:
+            target = folium.plugins.MarkerCluster()
+            target.add_to(fmap)
+        else:
+            target = fmap
+        for feature in points:
+            lat = feature.get("lat")
+            lon = feature.get("lon")
+            if lat is None or lon is None:
+                continue
+            folium.Marker(
+                location=[lat, lon],
+                popup=str(feature.get("popup", "")) or None,
+            ).add_to(target)
+
+    document = fmap.get_root().render()
+    # FEAT-522 (TASK-2787): swap every one of folium's default CDN URLs for
+    # an inlined `data:` URI built from a locally vendored copy of that
+    # exact file — a plain string `.replace()` pass over the ALREADY-
+    # rendered HTML, never `add_js_link()`/`add_css_link()` (spec §2: those
+    # mutate a shared, class-level mutable list on `JSCSSMixin` that every
+    # `folium.Map`/`MarkerCluster` instance in the process shares). A
+    # `.replace()` on a URL that isn't present in this particular render
+    # (e.g. MarkerCluster's resources when clustering wasn't triggered) is
+    # a harmless no-op, so all pairs are applied unconditionally.
+    for cdn_url, data_uri in _OFFLINE_URL_MAP.items():
+        document = document.replace(cdn_url, data_uri)
+    return document.encode("utf-8"), []
 
 
 @register_a2ui_renderer(
@@ -95,7 +294,6 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             ValueError: If the envelope contains no ``Map`` component.
             ImportError: If ``folium`` is unavailable (names the extra).
         """
-        folium = _load_folium()
         baked = bake_envelope(envelope)
         map_comp = next((c for c in baked if c["component"] == "Map"), None)
         if map_comp is None:
@@ -110,67 +308,13 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             if item is not map_comp
         ]
 
-        props = map_comp
-        viewport = props.get("viewport") or {}
-        center = viewport.get("center") or [0.0, 0.0]
-        # Bug fix (post-review): `viewport.get("zoom", 2)` only falls back
-        # to 2 when the "zoom" KEY is absent — a real STRUCTURED_MAP
-        # viewport (`_compute_viewport`, which only derives bbox/center,
-        # never zoom) dumps an explicit `"zoom": null` key, so `.get()`
-        # returned `None` and `folium.Map(zoom_start=None)` produced a map
-        # with a center but no usable zoom level.
-        zoom = viewport.get("zoom")
-        if zoom is None:
-            zoom = 2
-
-        fmap = folium.Map(location=list(center), zoom_start=zoom)
-
-        layers = props.get("layers")
-        has_layer_data = isinstance(layers, list) and any(
-            isinstance(layer, dict) and "data" in layer for layer in layers
-        )
-        if has_layer_data:
-            # FEAT-473: multi-layer path — each layer's baked `data` is its
-            # own resolved feature list (bound at /layers/<i>/features).
-            for i, layer in enumerate(layers):
-                if not isinstance(layer, dict):
-                    continue
-                group = folium.FeatureGroup(name=str(layer.get("layer") or f"layer-{i}"))
-                marker_color = layer.get("markerColor")
-                tooltip_template = layer.get("tooltipTemplate")
-                label_field = layer.get("labelField")
-                geodesic = bool(layer.get("geodesic"))
-                for feature in self._iter_layer_features(layer.get("data")):
-                    self._add_feature(
-                        folium,
-                        group,
-                        feature,
-                        marker_color=marker_color,
-                        tooltip_template=tooltip_template,
-                        label_field=label_field,
-                        geodesic=geodesic,
-                    )
-                group.add_to(fmap)
-        else:
-            # Legacy single-layer path (pre-FEAT-473 envelopes): a single
-            # top-level `data` binding of flat {"lat", "lon", "popup"} points.
-            for feature in self._iter_points(props.get("data")):
-                lat = feature.get("lat")
-                lon = feature.get("lon")
-                if lat is None or lon is None:
-                    continue
-                folium.Marker(
-                    location=[lat, lon],
-                    popup=str(feature.get("popup", "")) or None,
-                ).add_to(fmap)
-
-        document = fmap.get_root().render()
+        document, _ = build_map_document(map_comp, cluster_threshold=DEFAULT_CLUSTER_THRESHOLD)
         return RenderedArtifact(
             artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
             mime_type="text/html",
-            content=document.encode("utf-8"),
+            content=document,
             filename=f"{envelope.surface_id}.html",
-            title=props.get("title") or envelope.surface_id,
+            title=map_comp.get("title") or envelope.surface_id,
             surface=_SURFACE_NAME,
             metadata={"degraded": degradations} if degradations else {},
         )
@@ -246,8 +390,8 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             return [(c[1], c[0]) for c in coords if isinstance(c, (list, tuple)) and len(c) >= 2]
         return None
 
+    @staticmethod
     def _add_feature(
-        self,
         folium_mod: Any,
         group: Any,
         feature: dict[str, Any],
@@ -272,12 +416,12 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             geodesic: Whether this layer's path features render as polylines.
         """
         if geodesic:
-            line_coords = self._extract_line_coords(feature)
+            line_coords = FoliumMapRenderer._extract_line_coords(feature)
             if line_coords:
                 folium_mod.PolyLine(locations=line_coords, color=marker_color or "blue").add_to(group)
                 return
 
-        latlon = self._extract_lat_lon(feature)
+        latlon = FoliumMapRenderer._extract_lat_lon(feature)
         if latlon is None:
             return
         lat, lon = latlon

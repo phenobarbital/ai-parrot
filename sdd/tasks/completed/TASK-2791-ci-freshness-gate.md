@@ -186,10 +186,50 @@ wires that already-tested behavior into the workflow YAML).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Added two new steps (plus a Node.js setup step) to the existing
+`lint-and-registry` job in `ci.yml`, positioned after "Check registry
+freshness" and before "Check SDD TASK-ID collisions" — no other step/job
+touched (verified via `git diff` scope). (1) `actions/setup-node@v4`
+(`node-version: "24"`, matching `release.yml`'s pinned major version) since
+`generate_a2ui_css.py` shells out to the Tailwind v4 CLI via `npm install`,
+and this job otherwise only provisions Python/uv. (2) "Check A2UI Tailwind
+CSS freshness" runs `generate_a2ui_css.py --check` (TASK-2789's output,
+unmodified — no `--check` extension was needed there). (3) Per spec §3
+Module 6, added the vendored-asset-staleness sub-check as "a second,
+adjacent CI step" (the task's own sanctioned alternative to extending
+`generate_a2ui_css.py --check` itself) rather than modifying that script —
+this kept the change scoped to exactly the one file
+(`.github/workflows/ci.yml`) TASK-2791's own Files-to-Modify table lists.
+That step first syncs `ai-parrot-visualizations[map]` explicitly (folium is
+an optional extra, not part of the workspace-wide `uv sync --all-packages`),
+then runs an inline `uv run python -c "..."` script that introspects the
+CI runner's actually-installed `folium`/`MarkerCluster`'s live
+`default_js`/`default_css` names against `_map_vendor.VENDORED_ASSET_PATHS`
+and exits 1 with a clear per-name message on any gap — same assertion shape
+as TASK-2785's `test_all_folium_default_resources_have_a_vendored_path`
+unit test, but as a CI gate that also catches a pure `folium` version bump
+with zero code change. Verified end-to-end: (a) `python -c "import yaml;
+yaml.safe_load(...)"` confirms the file parses as valid YAML and the
+embedded Python block's indentation survives YAML's block-scalar
+de-indentation correctly (confirmed by extracting `run:` step content and
+`bash -n`-checking it, then executing it directly against this venv with
+folium installed — exits 0, prints "Vendored map assets are up to date.");
+(b) a simulated-drift run (empty vendored-mapping) exits 1 and names every
+missing resource; (c) no `yamllint`/equivalent is configured anywhere in
+this repo (verified — AC's "if configured" caveat does not apply). No
+Cargo.build side effects landed in this commit (an earlier local `uv run`
+verification pass accidentally regenerated `packages/navrules/rust/Cargo.lock`
+and created a stray project-local `.venv/` in the worktree from `uv run`
+building a fresh environment instead of using the pre-activated main-repo
+venv — both were caught and reverted/discarded before this commit;
+documented as a lesson for future `uv run` invocations in this worktree
+setup).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One implementation choice the task
+explicitly offered as an alternative: the vendored-asset staleness
+sub-check was added as "a second, adjacent CI step" rather than folded
+into `generate_a2ui_css.py --check` itself (both were explicitly sanctioned
+by the task text) — chosen specifically to respect this task's own
+Files-to-Modify table, which lists only `.github/workflows/ci.yml`.

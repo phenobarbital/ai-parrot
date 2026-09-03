@@ -236,10 +236,43 @@ class TestBuildMapDocumentOffline:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Added `_data_uri()`, `_build_offline_url_map()`, and the
+module-level `_OFFLINE_URL_MAP: dict[str, str]` constant (built once at
+import time, per the given pattern) to `folium_map.py`, plus the
+`VENDORED_ASSET_PATHS` import from TASK-2785's `_map_vendor.py`.
+`_build_offline_url_map()` introspects `folium.Map().default_js`/
+`default_css` and `folium.plugins.MarkerCluster().default_js`/`default_css`
+live (never a hardcoded URL list), keyed by each resource's stable `name`
+against `VENDORED_ASSET_PATHS`. Confirmed 13 entries at runtime (matches
+spec §6's verified count exactly — no drift in the currently-installed
+`folium==0.20.0`). `build_map_document()` now applies all 13
+`document.replace(cdn_url, data_uri)` swaps unconditionally right after
+`fmap.get_root().render()`, before `.encode("utf-8")`. Verified no
+`open()`/`read_bytes()`/`base64.b64encode()` calls exist inside
+`build_map_document()`'s own body (grep confirms zero matches) — all I/O is
+confined to the one-time `_build_offline_url_map()` call at module import.
+Added `TestBuildMapDocumentOffline` (2 tests, matching the task's Test
+Specification exactly) to `test_folium_map.py`. All 19 tests in
+`test_folium_map.py` + `test_folium_layers.py` pass (17 pre-existing +
+2 new). `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One design note worth flagging per the
+task's own "flag it, don't silently patch around it" instruction: per the
+Codebase Contract's literal "Pattern to Follow", `_build_offline_url_map()`
+calls `import folium`/`import folium.plugins as fp` directly (not through
+`_load_folium()`'s actionable-error wrapper), and it now runs at
+`folium_map.py`'s own MODULE IMPORT time (not lazily, matching the
+explicit acceptance criterion "`_OFFLINE_URL_MAP` is built once at import
+time"). This means importing `folium_map.py` in an environment without
+`folium` installed now raises a raw `ImportError` at import time (previously
+this only happened when `.render()` was actually called, via the friendlier
+`_load_folium()` message). This is a real, if narrow, behavior change
+confined to this module; today nothing else in `src/` imports
+`folium_map` at module scope (verified via grep), so no other module is
+currently affected — but TASK-2788 (`interactive_html.py`'s Map dispatch)
+should keep its own import of `folium_map`/`build_map_document` scoped
+inside `_render_map()` (deferred, not at `interactive_html.py`'s top level)
+to avoid making `folium` a hard, unconditional import-time dependency of
+the whole `interactive-html` renderer surface.

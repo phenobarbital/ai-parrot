@@ -294,10 +294,28 @@ class TestBuildMapDocument:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Added `DEFAULT_CLUSTER_THRESHOLD = 500` and module-level, synchronous
+`build_map_document()` in `folium_map.py`, extracting the previously-inline
+viewport/layer/legacy-marker logic verbatim (including the `zoom is None`
+bug-fix comment, preserved). Added `folium.plugins.MarkerCluster` wrapping:
+above the effective per-layer threshold (`cluster_threshold_by_layer` override
+else `cluster_threshold`), a layer's features are added to a `MarkerCluster`
+(added to the layer's `FeatureGroup`) instead of directly to the group.
+`FoliumMapRenderer.render()` is now a thin wrapper calling
+`build_map_document()`. One necessary adjustment beyond the task's literal
+text: `_add_feature` was converted from an instance method to `@staticmethod`
+(its parameter list is unchanged — only the implicit, unused `self` was
+dropped) since it needed to be callable from the module-level
+`build_map_document()` without an instance; `_iter_points`/`_iter_layer_features`
+were already `@staticmethod` and needed no change. Also added
+`import folium.plugins` inside `_import_folium()` so `folium.plugins.MarkerCluster`
+is reachable off the module `_load_folium()` returns. All 17 tests in
+`test_folium_map.py` + `test_folium_layers.py` pass (13 pre-existing regression
+tests unmodified + 4 new `TestBuildMapDocument` tests). `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_add_feature` changed from instance method to
+`@staticmethod` (dropping the unused `self` parameter) — necessary so the new
+module-level `build_map_document()` could call it without instantiating
+`FoliumMapRenderer`. No other parameter changed; behavior is identical.
