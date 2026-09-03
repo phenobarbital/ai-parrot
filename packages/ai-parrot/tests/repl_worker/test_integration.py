@@ -263,3 +263,33 @@ class TestE2E:
             assert elapsed < 8.0
         finally:
             await _shutdown(tool)
+
+    async def test_e2e_memory_restart_preserves_envelope_contract(self, report_dir):
+        """FEAT-521: a memory-triggered death still returns the same G5
+        `{status, result, error}` envelope shape (AC9 — unmodified contract),
+        and the tool transparently restarts the session's worker on the next
+        call — the memory-cause counterpart to
+        `test_e2e_runaway_loop_keeps_namespace`'s timeout/interrupt case.
+        """
+        config = WorkerConfig(
+            deadline_ms=20_000,
+            max_workers=2,
+            idle_ttl_seconds=30,
+            prewarm_pool_size=0,
+            observer_poll_ms=100,
+            memory_soft_limit_bytes=0,
+            memory_hard_limit_bytes=300 * 1024 * 1024,
+        )
+        tool = PythonREPLTool(report_dir=report_dir, worker_config=config)
+        try:
+            result = await tool._execute("x = bytearray(350 * 1024 * 1024)")
+            assert isinstance(result, dict)
+            assert set(result.keys()) == {"status", "result", "error"}
+            assert result["status"] == "error"
+            assert "memory" in result["error"]
+
+            recovered = await tool._execute("y = 5\nprint(y)")
+            assert isinstance(recovered, str)
+            assert "5" in recovered
+        finally:
+            await _shutdown(tool)
