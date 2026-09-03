@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-03T18:55:48Z",
-  "completed_at": null,
+  "completed_at": "2026-09-03T21:10:02+00:00",
   "tasks": [
     {
       "id": "TASK-2785",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:08:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2785-vendor-offline-map-assets.md"
+      "file": "sdd/tasks/completed/TASK-2785-vendor-offline-map-assets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2786",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:11:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2786-extract-build-map-document-marker-cluster.md"
+      "file": "sdd/tasks/completed/TASK-2786-extract-build-map-document-marker-cluster.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2787",
@@ -62,7 +64,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:23:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2787-offline-data-uri-swap.md"
+      "file": "sdd/tasks/completed/TASK-2787-offline-data-uri-swap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2788",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:39:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2788-interactive-html-map-dispatch.md"
+      "file": "sdd/tasks/completed/TASK-2788-interactive-html-map-dispatch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2789",
@@ -100,7 +104,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:20:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2789-generate-a2ui-tailwind-css-script.md"
+      "file": "sdd/tasks/completed/TASK-2789-generate-a2ui-tailwind-css-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2790",
@@ -120,7 +125,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:25:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2790-design-system-tailwind-integration.md"
+      "file": "sdd/tasks/completed/TASK-2790-design-system-tailwind-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2791",
@@ -140,7 +146,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:32:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2791-ci-freshness-gate.md"
+      "file": "sdd/tasks/completed/TASK-2791-ci-freshness-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2792",
@@ -160,7 +167,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:41:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2792-tests-map-builder-offline.md"
+      "file": "sdd/tasks/completed/TASK-2792-tests-map-builder-offline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2793",
@@ -181,7 +189,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:44:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2793-tests-map-dispatch-integration.md"
+      "file": "sdd/tasks/completed/TASK-2793-tests-map-dispatch-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2794",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
       "completed_at": "2026-09-03T20:47:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2794-tests-tailwind-css-generation.md"
+      "file": "sdd/tasks/completed/TASK-2794-tests-tailwind-css-generation.md",
+      "verification": "verified"
     }
   ]
 }
