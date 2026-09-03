@@ -133,7 +133,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Benchmark artifact; gates 2771 (its decisions fix CTE order + ANN index).",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2770-oq3-knn-spike.md"
+      "completed_at": "2026-09-03T12:33:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2770-oq3-knn-spike.md"
     },
     {
       "id": "TASK-2771",
