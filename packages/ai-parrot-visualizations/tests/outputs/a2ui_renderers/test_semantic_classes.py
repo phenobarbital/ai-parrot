@@ -182,3 +182,27 @@ class TestGoldensUntouched:
         # `filterbar` module in its import list is the one other
         # unavoidable touch — every new catalog component requires it.
         assert all("filterbar" in c or c.endswith("catalog/parrot/__init__.py") for c in changed), changed
+
+
+class TestTailwindCoverageIntegration:
+    """FEAT-522 TASK-2790: DesignSystem.stylesheet() folds in the generated
+    Tailwind CSS (design_system/tailwind.generated.css, TASK-2789's output)."""
+
+    def test_stylesheet_includes_tailwind_generated_rules(self):
+        sheet = DesignSystem.stylesheet()
+        assert ".a2ui-col" in sheet  # a known base-primitive selector from TASK-2789's output
+
+    def test_stylesheet_degrades_gracefully_if_tailwind_css_missing(self, monkeypatch):
+        """`_read_asset()`'s existing missing-file contract (None -> `""`)
+        must keep `stylesheet()` returning a normal, non-empty sheet — never
+        raising — even if `tailwind.generated.css` is absent."""
+        import parrot.outputs.formats.assets.design_system as design_system_module
+
+        monkeypatch.setattr(design_system_module, "_TAILWIND_CSS", "")
+        DesignSystem._cache.clear()
+        try:
+            sheet = DesignSystem.stylesheet()
+            assert sheet  # base/components CSS + theme vars still present
+            assert ".a2ui-col" not in sheet  # the Tailwind-only rule is gone
+        finally:
+            DesignSystem._cache.clear()
