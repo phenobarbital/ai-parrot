@@ -386,14 +386,14 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Sole new task for this spec (Module 17); extends the already-implemented Modules 2/3/6/12. Nothing to parallelize \u2014 the other 16 tasks are done.",
+      "parallelism_notes": "Sole new task for this spec (Module 17); extends the already-implemented Modules 2/3/6/12. Nothing to parallelize — the other 16 tasks are done.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-03T14:45:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2784-failure-quarantine-rollback-reprocess.md"
     }
