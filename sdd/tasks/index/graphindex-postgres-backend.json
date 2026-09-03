@@ -92,7 +92,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Wiki-plane lane: owns wiki/postgres_store.py + wiki/store.py factory branch + wiki tests — no file overlap with 2766/2767 (graph-plane lane); both lanes depend only on 2765.",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2768-postgres-wiki-store.md"
+      "completed_at": "2026-09-03T12:16:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2768-postgres-wiki-store.md"
     },
     {
       "id": "TASK-2769",
