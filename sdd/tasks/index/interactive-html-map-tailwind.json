@@ -32,7 +32,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Pure folium_map.py refactor + clustering logic; independent of the vendoring task's asset files (offline swap that consumes them is TASK-2787).",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2786-extract-build-map-document-marker-cluster.md"
+      "completed_at": "2026-09-03T20:11:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2786-extract-build-map-document-marker-cluster.md"
     },
     {
       "id": "TASK-2787",
