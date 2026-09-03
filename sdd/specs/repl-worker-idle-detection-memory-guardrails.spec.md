@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-521
 **Date**: 2026-09-03
 **Author**: Jesus Lara (jesuslarag@gmail.com) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (ships with the next release from `dev`)
 **Related**: `sdd/specs/sandbox-hardening.spec.md` (FEAT-380), `sdd/specs/bug-workerpool-repl.spec.md` (FEAT-500), `docs/repl-worker-sandbox.md`
 **Inspiration**: [posit-dev/mcp-repl](https://github.com/posit-dev/mcp-repl) — "the server knows precisely when the interpreter is idle and has settled"; "on Unix, a memory guardrail kills the worker if it exceeds threshold"; interrupt keeps the session, reset escalates from a graceful window to forceful termination.
@@ -621,26 +621,26 @@ class PythonREPLTool:
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Q1 — Default `memory_soft_limit_bytes` / `memory_hard_limit_bytes`.
+- [x] Q1 — Default `memory_soft_limit_bytes` / `memory_hard_limit_bytes`.
   Proposed 4 GiB / 8 GiB (hard = 2/3 of `rlimit_as_bytes`); the FEAT-380
   calibration measured a 5.5 GB *VmPeak* for a bootstrap + 500 MB DataFrame
   + merge/groupby + plot session, so RSS was lower but unmeasured. Resolve
   by extending `scripts/sdd/calibrate_rlimit_as.py` (Module 7) and reading
-  peak RSS before shipping. — *Owner: Jesus Lara*
-- [ ] Q2 — Should an **idle** worker over the hard limit be killed
+  peak RSS before shipping. — *Owner: Jesus Lara*: 8 GiB
+- [x] Q2 — Should an **idle** worker over the hard limit be killed
   immediately (proposed: yes, it is host memory either way) or only at the
   next `acquire()`? Killing idle workers means the LLM learns about the
-  loss one call later, via the crash-restart path. — *Owner: Jesus Lara*
-- [ ] Q3 — Container awareness for the host reserve: read cgroup v2
+  loss one call later, via the crash-restart path. — *Owner: Jesus Lara*: proposed
+- [x] Q3 — Container awareness for the host reserve: read cgroup v2
   `memory.max`/`memory.current` in addition to `psutil.virtual_memory()`?
-  Proposed: yes if under ~30 lines, else defer to a follow-up. — *Owner: implementer*
-- [ ] Q4 — `interrupt_before_kill` default `True`? It changes the observable
+  Proposed: yes if under ~30 lines, else defer to a follow-up. — *Owner: implementer*: yes as proposed
+- [x] Q4 — `interrupt_before_kill` default `True`? It changes the observable
   outcome of a deadline breach (namespace kept instead of lost) for every
   existing caller. Proposed: `True`, since keeping the namespace is
-  strictly more useful and the error is still bounded. — *Owner: Jesus Lara*
-- [ ] Q5 — Should the soft-limit hint go to the LLM (result suffix, as
+  strictly more useful and the error is still bounded. — *Owner: Jesus Lara*: True
+- [x] Q5 — Should the soft-limit hint go to the LLM (result suffix, as
   proposed) or only to logs? The suffix is the only channel the model
-  reads. — *Owner: Jesus Lara*
+  reads. — *Owner: Jesus Lara*: as proposed
 - [x] Q6 — Heartbeat frames on the control pipe? — *Resolved in this
   spec*: no; observation is host-side only (Non-Goals) to keep the
   request/response ordering guarantee from FEAT-500.
