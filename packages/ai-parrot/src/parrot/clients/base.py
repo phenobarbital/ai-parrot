@@ -347,7 +347,7 @@ $backstory
             # NOT reintroduce a literal here: a framework-wide default assigned
             # eagerly is indistinguishable from a deliberate caller choice, and
             # would shadow every per-client default downstream.
-            self.max_tokens = kwargs.get('max_tokens')
+            self.max_tokens = kwargs.get("max_tokens")
         # Per-instance override for invoke()'s output-token budget specifically.
         # ``None`` means "fall back to self.max_tokens, then the class default"
         # (see _resolve_invoke_max_tokens).
