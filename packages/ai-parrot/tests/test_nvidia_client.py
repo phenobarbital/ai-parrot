@@ -699,10 +699,12 @@ class TestNvidiaRateLimitIntegration:
         rate limiter — previously only reachable via ask()/ask_stream() —
         now covers invoke() too, with no extra code on NvidiaClient's part.
 
-        Passes model= explicitly: NvidiaClient never sets self.model, and
-        _resolve_invoke_model() falls back to self.model (not
-        _default_model) when no model is given — a pre-existing,
-        unrelated gap, not something this task's rebase changes."""
+        Passes model= explicitly, though it no longer has to: NvidiaClient
+        never sets self.model and declares no _lightweight_model, and
+        _resolve_invoke_model() used to bottom out at self.model (None)
+        rather than _default_model. That gap is closed — the chain now ends
+        at _default_model — but pinning the model keeps this test about the
+        rate limiter and nothing else."""
         async with mocked_sdk(client):
             await client.invoke("hello", model="minimaxai/minimax-m3")
 
