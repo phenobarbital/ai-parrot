@@ -187,6 +187,98 @@ their native SDKs.
 
 ---
 
+## Per-Model Request Adaptation
+
+Some OpenAI-compatible endpoints reject standard chat-completions
+parameters for specific models. OpenAI's reasoning-model family
+(`gpt-5*`, o-series) is the motivating case (HOTFIX
+`openai-max-completion-tokens`, no `FEAT-<NNN>` — a bugfix reserves no
+feature id, FEAT-466):
+
+```
+400 invalid_request_error
+Unsupported parameter: 'max_tokens' is not supported with this model.
+Use 'max_completion_tokens' instead.
+```
+
+and, once the parameter name is fixed, a second 400 on the same models for
+any non-default `temperature`:
+
+```
+400 invalid_request_error
+Unsupported value: 'temperature' does not support 0.0 with this model.
+Only the default (1) value is supported.
+```
+
+`OpenAIBaseClient` carries two class attributes plus a hook that adapt the
+request kwargs for exactly the models that need it, without touching every
+other endpoint's payload:
+
+```python
+class OpenAIBaseClient(AbstractClient):
+    #: When True, send ``max_completion_tokens`` instead of ``max_tokens``.
+    #: Off by default: only endpoints verified to accept the newer key opt in.
+    _uses_max_completion_tokens: bool = False
+
+    #: Model-id fragments whose provider rejects a non-default ``temperature``.
+    #: Matched case-insensitively as substrings of the resolved model id.
+    _fixed_temperature_models: tuple[str, ...] = ()
+
+    def _adapt_completion_params(self, model: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Rewrite request kwargs for the quirks of the resolved model."""
+```
+
+`_adapt_completion_params()` is called from `_chat_completion()` — the
+funnel — right before SDK dispatch, so it applies to `ask()`,
+`ask_stream()`, and `invoke()` alike without a per-call-site edit. It
+returns a **new** mapping; the caller's kwargs are never mutated in place
+(some callers, e.g. `ask()`'s fallback-model retry, reuse their `args`
+dict for a second attempt).
+
+**When to set `_uses_max_completion_tokens = True`:** only once you have
+live-verified that the target endpoint accepts `max_completion_tokens` on
+the chat-completions wire call. It is safe to leave on for every model on
+that endpoint (OpenAI accepts the newer key for non-reasoning models too),
+but it must not be flipped on speculation for an endpoint that has not
+been probed — a 403/429/billing failure is not evidence either way; it
+means the call never reached parameter validation.
+
+**When to add a fragment to `_fixed_temperature_models`:** only after a
+live call confirms the provider rejects a non-default `temperature` for
+that model family. Use a fragment (`"gpt-5"`), never a dated model id
+(`"gpt-5-mini-2026-01-01"`) — dated ids rot, per the model-list drift
+documented in `sdd/specs/openai-model-deprecation.spec.md`.
+
+**Evidence table** (live-verified 2026-09-03, spec §2):
+
+| Endpoint | `max_tokens` | `max_completion_tokens` |
+|---|---|---|
+| OpenAI `gpt-5-mini` | 400 | 200 OK |
+| OpenAI `gpt-4.1` | 200 OK | 200 OK |
+| NVIDIA NIM `openai/gpt-oss-120b` | 200 OK | 200 OK |
+| Groq | inconclusive — 403 (Cloudflare) on both | inconclusive |
+| Z.ai, vLLM, LocalLLM, OpenRouter, Bedrock Mantle | not tested | not tested |
+
+**Opt-in roster today:**
+
+| Client | `_uses_max_completion_tokens` | `_fixed_temperature_models` |
+|---|---|---|
+| `OpenAIClient` | `True` | `("gpt-5",)` |
+| `MoonshotClient` | `True` | `()` — K-series temperature stripping is owned by `_sanitize_params_for_model()`, not this hook |
+| everyone else (`GroqClient`, `ZaiClient`, `NvidiaClient`, `LocalLLMClient`, `OpenRouterClient`, `BedrockMantleClient`, `vLLMClient`) | `False` (inherited default) | `()` (inherited default) |
+
+**The no-`super()` caveat:** the hook only runs automatically for
+subclasses whose `_chat_completion()` override calls `super()._chat_completion(...)`.
+`MoonshotClient` and `NvidiaClient` fully replace the wire call (their own
+retry loop, calling `self.client.chat.completions.create` directly) and
+never call `super()`. If your override does the same, you must invoke
+`self._adapt_completion_params(model, kwargs)` yourself at the point where
+you assemble the final kwargs — see `MoonshotClient._chat_completion` for
+the worked example (it replaced its own two-line `max_tokens` →
+`max_completion_tokens` rename with a single call to the shared hook).
+
+---
+
 ## The No-`gpt-*`-Defaults Rule
 
 **`OpenAIBaseClient` and every direct subclass of it (i.e. everything except
@@ -258,6 +350,11 @@ every wire subclass (`WIRE_SUBCLASSES` in that file).
 7. **Add a smoke script** in `examples/clients/smoke/` (see below) and a doc
    page if the provider has enough provider-specific surface to warrant one
    (follow `docs/clients/bedrock-mantle.md`'s structure).
+
+8. **Leave `_uses_max_completion_tokens` and `_fixed_temperature_models` at
+   their inherited defaults (`False` / `()`) until your endpoint is
+   live-probed.** See "Per-Model Request Adaptation" above — flipping either
+   on speculation risks trading one vendor's 400 for another's.
 
 ---
 
