@@ -314,3 +314,20 @@ bug is out of this hotfix's scope per the spec's Non-Goals and this
 task's "NOT in scope" list (no edit to `gpt.py` beyond the two
 attributes). Flagging it here rather than silently reinterpreting the
 test, per the "when in doubt, note it" rule.
+
+**Post-hoc addendum (code review, 2026-09-03):** An independent `codex`
+review (adversarial second opinion, `artifacts/review/codex-review.txt`)
+found that `tests/clients/test_invoke_max_tokens.py::TestBudgetReachesProvider::
+test_openai_base_sends_resolved_max_tokens` — a pre-existing test this
+task's own file list did not name — asserted the stale key
+(`sdk.chat.completions.create.await_args.kwargs["max_tokens"] == 8192`)
+for `OpenAIClient.invoke()`. Verified independently (reproduced the
+failure with `pytest tests/clients/test_invoke_max_tokens.py -q` before
+touching it: `1 failed, 32 passed`) — CONFIRMED as a genuine regression
+directly caused by this task's `_uses_max_completion_tokens = True`
+opt-in. Fixed by updating the assertion to
+`kwargs["max_completion_tokens"] == 8192` plus an explicit
+`"max_tokens" not in kwargs` check, and added a short docstring
+explaining why. The sibling `test_groq_stays_at_provider_cap` in the same
+file is untouched (Groq is not opted in). Re-ran
+`pytest tests/clients/test_invoke_max_tokens.py -q` → 33 passed.

@@ -226,6 +226,10 @@ class TestBudgetReachesProvider:
         assert captured["config"].max_output_tokens == 1234
 
     async def test_openai_base_sends_resolved_max_tokens(self, bind_sdk_client):
+        """OpenAIClient opts into max_completion_tokens (HOTFIX
+        openai-max-completion-tokens) — the resolved budget still reaches
+        the SDK, just under the renamed key.
+        """
         from parrot.clients.gpt import OpenAIClient
 
         client = _bare(
@@ -251,7 +255,8 @@ class TestBudgetReachesProvider:
         bind_sdk_client(client, sdk)
 
         await client.invoke("hi")
-        assert sdk.chat.completions.create.await_args.kwargs["max_tokens"] == 8192
+        assert sdk.chat.completions.create.await_args.kwargs["max_completion_tokens"] == 8192
+        assert "max_tokens" not in sdk.chat.completions.create.await_args.kwargs
 
     async def test_groq_stays_at_provider_cap(self, bind_sdk_client):
         from parrot.clients.groq import GroqClient
