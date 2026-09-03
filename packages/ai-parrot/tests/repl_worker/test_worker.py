@@ -47,10 +47,21 @@ def worker_config():
     `apply_rlimits` directly in a bare helper script) — see
     ``real_worker_config`` below for anything that spawns the actual
     `repl_worker.worker` entrypoint.
+
+    FEAT-521: `memory_soft/hard_limit_bytes=0` — this fixture is
+    specifically about the pre-existing `RLIMIT_AS` mechanism at a
+    deliberately tiny value; the new host-side RSS guardrails' default
+    `memory_hard_limit_bytes` (8 GiB) would otherwise exceed this tiny
+    `rlimit_as_bytes` and fail `WorkerConfig`'s own `hard <=
+    rlimit_as_bytes` validator (same fix as `test_handle.py`'s
+    `tiny_as_config`).
     """
     return WorkerConfig(
         rlimit_as_bytes=512 * 1024**2,
+        memory_soft_limit_bytes=0,
+        memory_hard_limit_bytes=0,
         deadline_ms=2_000,
+        interrupt_grace_ms=500,
         max_workers=2,
         idle_ttl_seconds=5,
         prewarm_pool_size=0,

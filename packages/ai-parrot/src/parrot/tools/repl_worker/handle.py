@@ -793,13 +793,15 @@ class WorkerHandle:
             return False
         if self._proc is None or self._proc.poll() is not None:
             return False
-        if self.observer is not None and self.observer.verdict() in ("settled", "booting", "unavailable"):
-            logger.debug(
-                "WorkerHandle: pid=%s skipping SIGINT — observer verdict=%s (not busy)",
-                self._proc.pid,
-                self.observer.verdict(),
-            )
-            return False
+        if self.observer is not None:
+            verdict = self.observer.verdict()
+            if verdict in ("settled", "booting", "unavailable"):
+                logger.debug(
+                    "WorkerHandle: pid=%s skipping SIGINT — observer verdict=%s (not busy)",
+                    self._proc.pid,
+                    verdict,
+                )
+                return False
         future = self._inflight_reply
         if future is None:
             return False
