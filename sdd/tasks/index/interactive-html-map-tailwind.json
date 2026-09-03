@@ -91,7 +91,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -99,8 +99,8 @@
       "parallelism_notes": "CSS/Tailwind track, entirely disjoint files from the Map track (TASK-2785-2788). Only shared touchpoint is design_system/__init__.py, a one-line addition in TASK-2790.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2789-generate-a2ui-tailwind-css-script.md"
+      "completed_at": "2026-09-03T20:20:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2789-generate-a2ui-tailwind-css-script.md"
     },
     {
       "id": "TASK-2790",
