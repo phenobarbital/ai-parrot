@@ -52,7 +52,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Same file as 2765/2767 (persist_postgres.py) — sequential within the graph-plane lane.",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2766-commit-protocol-pg.md"
+      "completed_at": "2026-09-03T12:04:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2766-commit-protocol-pg.md"
     },
     {
       "id": "TASK-2767",
