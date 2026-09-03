@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-03T00:00:00+00:00",
-  "completed_at": "2026-09-03T12:58:58+00:00",
+  "completed_at": "2026-09-03T13:29:23+00:00",
   "tasks": [
     {
       "id": "TASK-2764",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T11:53:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2764-pg-schema-and-pool.md"
+      "file": "sdd/tasks/completed/TASK-2764-pg-schema-and-pool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2765",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T11:58:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2765-postgres-persistence-parity.md"
+      "file": "sdd/tasks/completed/TASK-2765-postgres-persistence-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2766",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:04:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2766-commit-protocol-pg.md"
+      "file": "sdd/tasks/completed/TASK-2766-commit-protocol-pg.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2767",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:07:19+00:00",
-      "file": "sdd/tasks/completed/TASK-2767-temporal-api.md"
+      "file": "sdd/tasks/completed/TASK-2767-temporal-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2768",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:16:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2768-postgres-wiki-store.md"
+      "file": "sdd/tasks/completed/TASK-2768-postgres-wiki-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2769",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:21:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2769-embeddings-knn.md"
+      "file": "sdd/tasks/completed/TASK-2769-embeddings-knn.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2770",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:33:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2770-oq3-knn-spike.md"
+      "file": "sdd/tasks/completed/TASK-2770-oq3-knn-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2771",
@@ -167,7 +174,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:42:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2771-hybrid-retrieve.md"
+      "file": "sdd/tasks/completed/TASK-2771-hybrid-retrieve.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2772",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:48:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2772-wiki-symbols-pg.md"
+      "file": "sdd/tasks/completed/TASK-2772-wiki-symbols-pg.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2773",
@@ -209,7 +218,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
       "completed_at": "2026-09-03T12:58:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2773-factory-toolkit-docs.md"
+      "file": "sdd/tasks/completed/TASK-2773-factory-toolkit-docs.md",
+      "verification": "verified"
     }
   ]
 }
