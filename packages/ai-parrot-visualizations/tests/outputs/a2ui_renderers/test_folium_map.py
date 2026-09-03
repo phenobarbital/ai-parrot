@@ -109,3 +109,31 @@ class TestSiblingDegradationRecorded:
     async def test_single_map_no_degradations(self):
         art = await fm.FoliumMapRenderer().render(_map_envelope())
         assert art.metadata.get("degraded", []) == []
+
+
+class TestBuildMapDocument:
+    """FEAT-522 TASK-2786: build_map_document() extraction + MarkerCluster."""
+
+    def test_basic_single_layer(self):
+        props = {"layers": [{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}]}
+        document, degradations = fm.build_map_document(props)
+        assert b"<html" in document.lower() or b"<!doctype" in document.lower()
+        assert degradations == []
+
+    def test_marker_cluster_above_threshold(self):
+        points = [{"lat": float(i), "lon": float(i)} for i in range(fm.DEFAULT_CLUSTER_THRESHOLD + 1)]
+        props = {"layers": [{"layer": "stores", "data": points}]}
+        document, _ = fm.build_map_document(props)
+        assert b"markerClusterGroup" in document or b"MarkerCluster" in document
+
+    def test_no_cluster_below_threshold(self):
+        points = [{"lat": float(i), "lon": float(i)} for i in range(10)]
+        props = {"layers": [{"layer": "stores", "data": points}]}
+        document, _ = fm.build_map_document(props)
+        assert b"markerClusterGroup" not in document
+
+    def test_per_layer_threshold_override(self):
+        points = [{"lat": float(i), "lon": float(i)} for i in range(20)]
+        props = {"layers": [{"layer": "stores", "data": points}]}
+        document, _ = fm.build_map_document(props, cluster_threshold_by_layer={"stores": 10})
+        assert b"markerClusterGroup" in document
