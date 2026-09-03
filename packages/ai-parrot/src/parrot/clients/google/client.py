@@ -264,6 +264,61 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             or GoogleGenAIClient._is_computer_use_model(model)
         )
 
+    @staticmethod
+    def _rejects_zero_thinking_budget(model: str) -> bool:
+        """Check if a model rejects an explicit ``thinking_budget=0``.
+
+        A superset of :meth:`_requires_thinking` in effect, but kept separate
+        because the two answer different questions. ``_requires_thinking`` also
+        drives *positive* choices elsewhere — an 8192 budget and a 0.7
+        temperature — and those are deliberate policy for the Pro family that
+        should not be inherited by a cheap flash tier. This predicate answers
+        only "would sending 0 be rejected?", so the caller can omit the budget
+        and leave the provider default in place.
+
+        ``gemini-3.5-flash-lite`` is the one non-Pro model in this set. Verified
+        2026-09-03 by raw REST against ``generativelanguage.googleapis.com``
+        (no ``google-genai`` in the path), one-field schema:
+        ``thinkingBudget: 0`` → ``400 INVALID_ARGUMENT``; omitted, ``-1`` and
+        ``512`` → ``200 OK``. Every other Gemini flash tier tested
+        (2.5-flash, 2.5-flash-lite, 3.1-flash-lite, 3.5-flash, 3.8-flash)
+        accepts 0. Note it reports the generic "Request contains an invalid
+        argument", not the Pro family's explicit "Budget 0 is invalid. This
+        model only works in thinking mode" — same cause, worse message.
+
+        Args:
+            model: Model identifier — plain string, GoogleModel enum, or None.
+
+        Returns:
+            True if an explicit zero thinking budget would be rejected.
+        """
+        model = GoogleGenAIClient._as_model_str(model)
+        if not model:
+            return False
+        return GoogleGenAIClient._requires_thinking(model) or model.lower().startswith(
+            "gemini-3.5-flash-lite"
+        )
+
+    @classmethod
+    def _thinking_off(cls, model: str, **kwargs) -> "Optional[ThinkingConfig]":
+        """Return a ThinkingConfig disabling reasoning, or ``None`` if unsupported.
+
+        Every site that wants "no reasoning for this call" must go through
+        here: a model in :meth:`_rejects_zero_thinking_budget` answers 400 to
+        an explicit zero, so for those the budget is omitted entirely and the
+        provider default stands.
+
+        Args:
+            model: The resolved model identifier for this call.
+            **kwargs: Extra ThinkingConfig fields (e.g. ``include_thoughts``).
+
+        Returns:
+            ``ThinkingConfig(thinking_budget=0, **kwargs)``, or ``None``.
+        """
+        if cls._rejects_zero_thinking_budget(model):
+            return None
+        return ThinkingConfig(thinking_budget=0, **kwargs)
+
     def _invoke_thinking_config(self, model: str, *, structured: bool) -> "Optional[ThinkingConfig]":
         """Return a ThinkingConfig that disables reasoning, or ``None`` to leave it default.
 
@@ -290,7 +345,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             ``ThinkingConfig(thinking_budget=0)``, or ``None`` to leave the
             provider default in place.
         """
-        if self._requires_thinking(model):
+        if self._rejects_zero_thinking_budget(model):
             return None
         normalised = (self._as_model_str(model) or "").lower()
         if structured or "flash-lite" in normalised:
@@ -1038,7 +1093,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # `_requires_thinking` is False for flash-preview, so
         # budget=0 is accepted. Do NOT remove this.
         reformat_model = self._reformat_model
-        if not self._requires_thinking(reformat_model):
+        if not self._rejects_zero_thinking_budget(reformat_model):
             structured_config["thinking_config"] = ThinkingConfig(thinking_budget=0)
 
         # Create a new client call without tools for structured output
@@ -3202,11 +3257,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
         elif "flash" in model.lower():
             # Flash puede deshabilitarse con budget=0
-            thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
+            thinking_config = self._thinking_off(model, include_thoughts=False)
         elif use_tools:
             # Gemini 2.5 Pro + thinking + tool schemas → MALFORMED_FUNCTION_CALL.
             # Disable thinking when tools are active to ensure reliable function calls.
-            thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
+            thinking_config = self._thinking_off(model, include_thoughts=False)
         else:
             thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
         # Use AUTO: let Gemini decide whether a tool call is needed.
@@ -3527,7 +3582,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # has no structural decisions to make.
                     # `_requires_thinking` is False for flash-preview, so
                     # budget=0 is accepted. Do NOT remove this.
-                    if not self._requires_thinking(reformat_model):
+                    if not self._rejects_zero_thinking_budget(reformat_model):
                         structured_config["thinking_config"] = ThinkingConfig(thinking_budget=0)
                     # Create a new client call without tools for structured output
                     format_prompt = (
@@ -3997,9 +4052,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             elif _requires_thinking:
                 thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
             elif "flash" in model.lower():
-                thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
+                thinking_config = self._thinking_off(model, include_thoughts=False)
             elif _use_tools:
-                thinking_config = ThinkingConfig(thinking_budget=0, include_thoughts=False)
+                thinking_config = self._thinking_off(model, include_thoughts=False)
             else:
                 thinking_config = ThinkingConfig(thinking_budget=8192, include_thoughts=False)
 
@@ -4321,7 +4376,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 self._apply_structured_output_schema(struct_cfg, schema_config)
 
                             reformat_model = self._reformat_model
-                            if not self._requires_thinking(reformat_model):
+                            if not self._rejects_zero_thinking_budget(reformat_model):
                                 struct_cfg["thinking_config"] = ThinkingConfig(thinking_budget=0)
 
                             format_prompt = (
@@ -5049,9 +5104,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         chat = self.client.aio.chats.create(model=model, history=history)
         # Disable thinking for image tasks (reduces latency).
         # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
-        _thinking_budget = 8192 if self._requires_thinking(model) else 0
+        _thinking = (
+            ThinkingConfig(thinking_budget=8192)
+            if self._requires_thinking(model)
+            else self._thinking_off(model)
+        )
         final_config = GenerateContentConfig(
-            **generation_config, thinking_config=ThinkingConfig(thinking_budget=_thinking_budget)
+            **generation_config,
+            **({"thinking_config": _thinking} if _thinking is not None else {}),
         )
 
         # Make the primary multi-modal call with retry for transient 503 errors
