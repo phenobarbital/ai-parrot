@@ -178,7 +178,7 @@
       "feature_id": "FEAT-521",
       "feature": "repl-worker-idle-detection-memory-guardrails",
       "spec": "sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,8 @@
       "parallelism_notes": "After pool implementation, this memory-focused test track can run alongside TASK-2780, TASK-2781, and documentation work.",
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2782-memory-pool-e2e-tests.md"
+      "completed_at": "2026-09-03T15:19:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2782-memory-pool-e2e-tests.md"
     },
     {
       "id": "TASK-2783",
