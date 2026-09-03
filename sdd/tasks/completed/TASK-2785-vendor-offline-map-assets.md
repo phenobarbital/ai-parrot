@@ -247,10 +247,15 @@ class TestMapVendor:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Re-verified the installed `folium==0.20.0` `default_js`/`default_css`
+pairs live (matched the Codebase Contract exactly). Downloaded all 13 vendored
+files from their exact upstream CDN URLs into `formats/assets/`, added
+`VENDORED_LICENSES.md`, added `_map_vendor.py`'s `VENDORED_ASSET_PATHS`
+name→path mapping, and extended `pyproject.toml`'s package-data glob from
+`["*.js"]` to `["*.js", "*.css"]` for `parrot.outputs.formats.assets`.
+Verified via `python -m build --wheel` that all 13 files land in the built
+wheel. `ruff check` clean; both tests in `test_map_vendor.py` pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

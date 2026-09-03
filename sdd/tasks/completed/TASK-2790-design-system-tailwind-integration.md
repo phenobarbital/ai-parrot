@@ -173,10 +173,24 @@ class TestTailwindCoverageIntegration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Added `_TAILWIND_CSS: str = _read_asset("tailwind.generated.css") or
+""` alongside `_BASE_CSS`/`_COMPONENTS_CSS` in `design_system/__init__.py`,
+and inserted `_TAILWIND_CSS` into `stylesheet()`'s `sheet = "\n\n".join(...)`
+tuple between `_COMPONENTS_CSS` and `layout_css`. Verified the existing
+`"parrot.outputs.formats.assets.design_system" = ["*.css"]` package-data
+glob already covers `tailwind.generated.css` — no `pyproject.toml` change
+needed (confirmed by grep, per the task's own instruction to verify rather
+than assume). Added `TestTailwindCoverageIntegration` (2 tests) to
+`test_semantic_classes.py`: the task's own specified
+`test_stylesheet_includes_tailwind_generated_rules`, plus a graceful-
+degradation regression test (`test_stylesheet_degrades_gracefully_if_tailwind_css_missing`)
+that monkeypatches `_TAILWIND_CSS` to `""`, clears `DesignSystem._cache`,
+and confirms `stylesheet()` still returns a normal non-empty sheet (never
+raises) with the Tailwind-only selector absent. All 16 tests in
+`test_semantic_classes.py` pass (14 pre-existing + 2 new); `test_document_shell.py`
++ `test_interactive_html.py` (21 tests) also verified unaffected. `ruff check`
+clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

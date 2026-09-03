@@ -233,10 +233,54 @@ depend on/mutate the real `interactive_html.py`.)*
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Created `scripts/generate_a2ui_css.py` mirroring
+`generate_tool_registry.py`'s CLI shape (`--check`/`--dry-run`/`--verbose`).
+AST-scan walks every `ast.Constant` string (including f-strings' literal
+segments, reached via `ast.walk`'s natural recursion into `ast.JoinedStr`)
+and regex-extracts `a2ui-*`/`ds-*`/`kpi-*`/`filter-*`/`msf-*` tokens embedded
+anywhere inside the string — module/class/function docstrings are excluded
+via an explicit docstring-node-id set, since a prose docstring phrase like
+"a live filter-state summary" would otherwise false-positive as the literal
+class token `filter-state` (verified this exclusion was necessary: the naive
+scan without it found 44 "classes", one of which was never actually emitted
+markup). Found 43 real classes in the current `interactive_html.py`. Curated
+a `SELECTOR_UTILITIES` per-class `@apply` mapping (Tailwind v4 utilities,
+referencing the design system's own existing CSS custom properties —
+`--panel-bg`, `--neutral-text`, `--density-gap`, etc. — via arbitrary-value
+syntax for visual consistency with `_BASE_CSS`/`_COMPONENTS_CSS`), plus a
+`_DEFAULT_UTILITIES = "block"` fallback so any future unmapped class still
+gets a deterministic rule (guarantees `--check` never crashes on drift, only
+reports it). The Tailwind v4 CSS-first entry imports only
+`"tailwindcss/theme"` + `"tailwindcss/utilities"` (NOT the full
+`@import "tailwindcss";`, which also pulls in a global `preflight` reset
+that would duplicate/conflict with this design system's own `_BASE_CSS`
+reset — verified this by direct experimentation: the full import emits a
+~150-line preflight block, the theme+utilities-only import does not).
+`tailwindcss@^4`/`@tailwindcss/cli@^4` are installed on demand into an
+isolated `tempfile.TemporaryDirectory()` (never the repo's own
+`node_modules`) so `@import "tailwindcss/theme"` resolves regardless of
+ambient Node setup; the locally-installed CLI binary is then invoked
+directly. Manually verified all four AC behaviors end-to-end: (1) full run
+writes `tailwind.generated.css` with `@apply`-derived rules for all 43
+classes, (2) `--check` on the freshly-generated file exits 0, (3) `--check`
+after appending a new literal class string to a scratch copy of
+`interactive_html.py` (restored immediately after) exits 1 and names the
+drifted class (`+ new class(es) not yet covered: a2ui-brand-new-test-class`),
+(4) `--dry-run` leaves the committed file's SHA-256 unchanged. Existing
+markup-substring tests (`test_document_shell.py`, `test_interactive_html.py`,
+`test_semantic_classes.py`) pass unmodified (35/35) — no class name was
+renamed. `ruff check scripts/generate_a2ui_css.py` clean. Per the task's own
+"NOT in scope" note, the vendored-asset-name staleness sub-check (spec §3
+Module 6) is deferred entirely to TASK-2791, not started here.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One implementation note not spelled out in
+the task text: `_run_tailwind_cli()` installs the Tailwind v4 npm packages
+into an isolated temp directory per invocation (documented in the
+function's own docstring) rather than assuming a pre-installed global/repo
+`node_modules` — this was necessary because no `tailwindcss` installation
+exists anywhere in this repo today (verified), and installing into the
+repo's own `node_modules`/lockfiles would have violated the "never a
+runtime or install-time dependency of `ai-parrot-visualizations`"
+constraint (spec §7).

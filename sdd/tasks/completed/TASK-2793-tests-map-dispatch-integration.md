@@ -210,10 +210,40 @@ See Implementation Notes above — that IS this task's test scaffold.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: TASK-2789/2790 were both already complete when this task started,
+so all 5 spec §4 Integration Tests table rows were implemented in one pass:
+(1) `test_map_top_level_renders_iframe` and (2)
+`test_map_nested_in_infographic_renders_iframe` in a new `TestMapDispatch`
+class in `test_interactive_html.py` — the nested-Map fixture uses the REAL
+`sections: [{"heading": ..., "components": [{"component": "Map",
+"properties": {...}}]}]` shape (verified against `_render_infographic`'s
+actual code and the existing `test_infographic_nested_chart_and_datatable`
+precedent in the same file — NOT the task's own illustrative snippet, which
+nested `Map` directly under `sections`). (3)
+`test_map_iframe_srcdoc_has_zero_external_resources` regex-extracts the
+`srcdoc="..."` attribute value and `html.unescape()`s it BEFORE asserting
+`href="http`/`src="http` are absent — genuinely closes the escaping
+loophole (verified by first confirming the OLD substring approach against
+the raw, still-escaped outer document would have passed vacuously). (4)
+`test_folium_map_surface_zero_external_resources` added to `test_folium_map.py`
+as `TestFoliumMapSurfaceOffline` — calls `FoliumMapRenderer().render()`
+directly (the full end-to-end path, not `build_map_document()` alone, per
+the task's explicit "deliberately a SEPARATE test from TASK-2792's"
+instruction), live-introspects `folium`/`MarkerCluster` for its URL list.
+(5) `test_all_a2ui_classes_have_css_rule` added to `test_semantic_classes.py`
+as `TestTailwindClassCoverage` — imports `scripts/generate_a2ui_css.py` as a
+real module (via the same `sys.path.insert(scripts_dir)` pattern
+`tests/scripts/test_generate_tool_registry.py` already establishes for this
+exact repo, reusing `_REPO_ROOT` already defined in this file), calls its
+REAL `scan_classes()` (never a hand-duplicated copy), and asserts every
+scanned class has a `.{class}` rule somewhere in `DesignSystem.stylesheet()`'s
+output — passes, including `kpi-grid` (excluded from Tailwind generation by
+TASK-2788's follow-up fix, but still covered via `components.css`).
+`pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/ -v`:
+all pass; full `packages/ai-parrot-visualizations/tests/` suite: 239 passed.
+`ruff check` clean on all 3 modified test files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. No genuine implementation gap was found
+while writing any of the 5 tests.

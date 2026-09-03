@@ -166,10 +166,46 @@ See Implementation Notes above — that IS this task's test scaffold.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Read TASK-2789's Completion Note (it explicitly deferred a test
+file — none was created, per this task's own scope) and TASK-2791's (its
+vendored-asset check landed as a raw inline Python block in `ci.yml`, not
+an importable function). Created `tests/scripts/test_generate_a2ui_css.py`,
+mirroring `tests/scripts/test_generate_tool_registry.py`'s exact location
+convention. All 3 tests import `scripts/generate_a2ui_css.py` as a real
+module (via `sys.path.insert`) rather than `subprocess`, per the task's own
+preference — faster and gives precise assertions. (1)
+`test_generate_a2ui_css_check_mode_clean`: calls `gen.main()` with
+`sys.argv` patched to `--check` against the REAL, already-fresh committed
+files — exits 0. (2) `test_generate_a2ui_css_check_mode_stale`:
+monkeypatches `gen.INTERACTIVE_HTML_PATH`/`gen.OUTPUT_CSS_PATH` (module-level
+constants, resolved dynamically at call time, no CLI override flag exists —
+noted as the implementation shape rather than a gap, since monkeypatching
+achieves the same test isolation without needing one) to temp copies (the
+source temp copy seeded from the real file + one new literal class; the
+CSS temp copy seeded from the real, fresh committed content) — `--check`
+exits 1, and a final assertion confirms the REAL committed
+`interactive_html.py` was never touched. (3) `test_generate_a2ui_css_vendor_check`:
+since TASK-2791's vendor-freshness check is inline CI YAML with no
+production function to import, this test exercises the SAME detection
+logic (folium/MarkerCluster live names vs. `_map_vendor.VENDORED_ASSET_PATHS`)
+against a deliberately-corrupted copy of the mapping, covering BOTH failure
+modes (missing name entirely, and mapped-but-file-missing-on-disk) plus a
+positive case against the real, current mapping — documented explicitly in
+the test's own docstring as the resolution to this ambiguity. All 3 tests
+guarded by `pytest.mark.skipif(not shutil.which("npm"), ...)` per the Key
+Constraints (tests 1-2 invoke the real Tailwind CLI; test 3 does not, but
+was left in the same skip group for consistency/simplicity since `npm` is
+available in every environment these tests are expected to run in). Ran
+`pytest tests/scripts/` (10 passed, includes the pre-existing
+`test_generate_tool_registry.py`) and the full
+`packages/ai-parrot-visualizations/tests/` suite (239 passed) as final
+verification. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The `INTERACTIVE_HTML_PATH`/`OUTPUT_CSS_PATH`
+"design gap" the task anticipated flagging turned out not to be a real
+blocker — monkeypatching the module-level constants achieved full test
+isolation without needing a CLI override flag added to
+`generate_a2ui_css.py` (which is explicitly out of this task's own scope
+to add anyway).

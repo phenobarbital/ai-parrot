@@ -1,6 +1,7 @@
 """Unit tests for the interactive-HTML renderer (FEAT-324, Module 7;
 rewritten to v1.0 by FEAT-470 TASK-2544)."""
 
+import html
 import json
 import re
 
@@ -274,3 +275,116 @@ class TestTASK2544:
         doc = art.content.decode()
         assert "no renderer" in doc.lower() or "not supported" in doc.lower()
         assert len(art.metadata["degraded"]) == 1
+
+
+class TestMapDispatch:
+    """FEAT-522 TASK-2793: Map dispatch integration — top-level, Infographic-
+    nested, and the offline srcdoc escaping-loophole guardrail."""
+
+    async def test_map_top_level_renders_iframe(self):
+        env = _envelope(
+            Component(
+                id="map1",
+                component="Map",
+                title="Stores",
+                layers=[{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}],
+                viewport={"center": [1.0, 2.0], "zoom": 6},
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert '<iframe sandbox="allow-scripts allow-popups"' in doc
+        assert "stores | label=" not in doc  # old text-degradation marker absent
+
+    async def test_map_nested_in_infographic_renders_iframe(self):
+        """Mirrors flex_dashboard.py's Proximity Staffing section shape: a Map
+        nested inside an Infographic section's `components` descriptor list —
+        the exact `_render_descriptor` code path (not `_render_top`)."""
+        env = _envelope(
+            Component(
+                id="info1",
+                component="Infographic",
+                title="Proximity Staffing",
+                sections=[
+                    {
+                        "heading": "Store Coverage",
+                        "components": [
+                            {
+                                "component": "Map",
+                                "properties": {
+                                    "layers": [{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}],
+                                    "viewport": {"center": [1.0, 2.0], "zoom": 6},
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert '<iframe sandbox="allow-scripts allow-popups"' in doc
+        assert "stores | label=" not in doc
+
+    async def test_map_iframe_srcdoc_has_zero_external_resources(self):
+        """Closes the escaping loophole in test_document_shell.py's existing
+        `test_self_contained_invariant` guardrail: that test only inspects the
+        OUTER, still-HTML-escaped document — `<script src=` never appears
+        literally there even with a CDN leak inside the iframe, since
+        HTML-escaping turns `<` into `&lt;`. This test decodes the `srcdoc`
+        attribute value first, THEN asserts."""
+        env = _envelope(
+            Component(
+                id="map1",
+                component="Map",
+                layers=[{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        m = re.search(r'srcdoc="([^"]*)"', doc)
+        assert m, "expected an iframe srcdoc attribute"
+        decoded = html.unescape(m.group(1))
+
+        assert '<script src="http' not in decoded
+        assert 'href="http' not in decoded
+        assert 'src="http' not in decoded
+        # Positive control: the decoded content really is a full folium
+        # document (not an empty/truncated match) and DOES use offline
+        # data: URIs for its own resources.
+        assert "data:text/javascript;base64," in decoded
+        assert "data:text/css;base64," in decoded
+
+    def test_interactive_html_importable_without_folium(self, monkeypatch):
+        """Post-review regression guard: `folium_map.py` builds its
+        `_OFFLINE_URL_MAP` eagerly at ITS OWN import time (requires
+        `folium`). A top-level `from .folium_map import build_map_document`
+        in THIS module would make `folium` a hard, unconditional
+        import-time dependency of the whole `interactive-html` surface —
+        breaking Chart/DataTable/Infographic-only users without the
+        optional `map` extra. `build_map_document` must be imported
+        lazily, inside `_render_map()` only."""
+        import builtins
+        import importlib
+        import sys
+
+        real_import = builtins.__import__
+
+        def _blocked_import(name, *args, **kwargs):
+            if name == "folium" or name.startswith("folium."):
+                raise ImportError("folium blocked for this test")
+            return real_import(name, *args, **kwargs)
+
+        for mod_name in ("parrot.outputs.a2ui_renderers.interactive_html", "parrot.outputs.a2ui_renderers.folium_map"):
+            sys.modules.pop(mod_name, None)
+
+        monkeypatch.setattr(builtins, "__import__", _blocked_import)
+        try:
+            reimported = importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")
+            assert reimported.InteractiveHTMLRenderer is not None
+        finally:
+            monkeypatch.undo()
+            sys.modules.pop("parrot.outputs.a2ui_renderers.interactive_html", None)
+            sys.modules.pop("parrot.outputs.a2ui_renderers.folium_map", None)
+            importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")
