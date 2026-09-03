@@ -152,4 +152,30 @@ async def test_removed_node_closes_validity_not_delete(pg_persistence, ctx): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `apply_update`/`get_commit`/`list_commits`/`revert_commit` to
+`PostgresPersistence` (same file as TASK-2765). Pre-image capture,
+`commits`/`commit_items` inserts, and every mutation happen inside ONE
+`conn.transaction()` — documented in the module docstring as a deliberate
+deviation from the ArangoDB sibling's weaker "visible in audit trail even
+on partial failure" guarantee. No `asyncio.Lock` needed: `commits.seq`
+(IDENTITY) gives natural ordering, and the transaction itself is the
+atomicity boundary — confirmed against the ported test's expectations,
+which are purely sequential (no concurrency requirement).
+
+Removals (`removed_nodes`/`removed_edges`, including implicit incident
+edges of removed nodes) close the `validity` range rather than deleting
+(tombstone-by-range), preserving history for TASK-2767. `revert_commit`
+restores a pre-image via `_restore_node`/`_restore_edge`, which insert a
+FRESH version row rather than re-opening the old range — reopening would
+violate the append-only EXCLUDE invariant. Refusal-on-conflict uses
+`commits.seq` (not timestamp resolution) for correct ordering, matching
+the sibling's rowid-based approach.
+
+All 19 ported/added tests pass (publish/load, assertion round-trip,
+commit history + filtering, revert scenarios incl. merge/unwind/
+double-revert/unknown, receipt+implicit-edges, `seq` ordering,
+transactional-rollback-on-forced-PK-collision, tombstone-not-delete, and
+a `GraphPublisher` smoke test — the spec's explicit integration-point
+AC). Ran the full graphindex-postgres suite (pg_schema + persist +
+commit protocol) together: 35/35 green. `ruff check` clean, zero
+SQLAlchemy imports (grep-verified).

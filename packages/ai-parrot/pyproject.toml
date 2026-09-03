@@ -241,6 +241,13 @@ graphindex = [
     "tree-sitter-languages>=1.10",
 ]
 
+# GraphIndex Postgres backend (FEAT-520) — bitemporal graph + wiki plane over
+# asyncpg. Zero SQLAlchemy (U4/D8); PgVectorStore is explicitly excluded.
+graphindex-postgres = [
+    "asyncpg>=0.29",
+    "pgvector>=0.2",
+]
+
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
 # tree-sitter outlines for PHP/JS/TS/Rust `wikitoolkit build` plugins.
 # Optional: every plugin degrades to a stdlib-only heuristic when this

@@ -140,4 +140,39 @@ async def test_dimension_guard(pg_persistence, ctx): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Read `graphindex/embed.py` first per instructions: its
+`_persist_to_pgvector` is a logging-only stub today (no real seam wired
+yet), so this task built the persistence-side write/read surface without
+modifying `embed.py` (not in file scope; embedding *generation*/wiring is
+explicitly out of scope).
+
+Added `PostgresPersistence.upsert_embeddings(ctx, items, *, model="")` —
+batch `(concept_id, vector)` upsert keyed `(version_id, model)` with
+`concept_id` denormalized, resolving each concept's CURRENT version;
+unknown/no-current-version concept_ids are skipped with a warning (not an
+error — the embed stage may race a not-yet-persisted node). Added
+`validate_embedding_dim()` to `pg_schema.py` (shared by both the
+persistence and wiki-store write/read paths) and `ensure_ann_index(pool,
+*, kind, schema)` — provisional `"hnsw"` default (pgvector `>=0.5.0`,
+confirmed installed: `0.5.0` on the resolved dev DSN), config-overridable
+via `GRAPHINDEX_ANN_INDEX_KIND`, NOT called automatically by
+`ensure_schema` (deliberate — building an ANN index is an operational
+step, and the final type is TASK-2770's output).
+
+Upgraded `PostgresWikiStore.search_vector` from TASK-2768's interim
+brute-force `rank_by_cosine` to a native pgvector KNN query (`ORDER BY
+embedding <=> $1`, joined to `upper_inf(validity)` current versions only
+— spec D3), returning `score = 1 - cosine_distance` on the same [-1, 1]
+scale `rank_by_cosine` used, so the stub-dict shape is unchanged for
+callers. Both `upsert_embedding` and `search_vector` now reject
+dimension-mismatched vectors via the shared guard.
+
+All 8 new tests pass (KNN nearest-first roundtrip, closed-version
+exclusion from the current-path KNN join, wiki `search_vector` stub shape
++ score bounds, dimension guards on both the graph and wiki write/read
+paths, `ensure_ann_index` idempotency + unknown-kind rejection,
+no-SQLAlchemy grep across all three touched modules). Ran the full
+graphindex-postgres + wiki-store suite together: 74/74 green (no
+regression from the `search_vector` rewrite — the existing
+`test_upsert_embedding_and_search_vector` test from TASK-2768 still
+passes unchanged against the new KNN implementation). `ruff check` clean.

@@ -175,4 +175,32 @@ def test_resolve_regconfig_mapping(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `pg_schema.py` with the normative DDL (nodes/node_versions with
+the bitemporal EXCLUDE constraint, edges with the confidence⇔inferred CHECK,
+embeddings/symbols/files/commits/commit_items, `meta` version stamp),
+`ensure_schema()` (idempotent, extension bootstrap with clear errors,
+`_MIGRATION_COLUMNS` machinery left empty), `create_pg_pool()` (pgvector
+codec registration + search_path), and `resolve_regconfig()`
+(longest-prefix namespace match). DSN/schema/dim/regconfig settings resolve
+via navconfig with `default_dsn` fallback exactly per the codebase
+contract. Added a `graphindex-postgres` pip extra (`asyncpg`, `pgvector`)
+to `pyproject.toml`.
+
+All 7 live-DB-gated tests pass against the resolved local Postgres DSN
+(migration idempotency, exclusion-constraint rejection, edge CHECK
+constraint, vector roundtrip, regconfig resolution, no-SQLAlchemy grep,
+DSN fallback). `ruff check` clean.
+
+Environment note (not feature-scoped, fixed to unblock testing): the
+shared venv's editable installs for several sibling packages (notably
+`ai-parrot-server`, source of `parrot.mcp.transports`) pointed at a
+deleted worktree (`feat-493-html-renderer-design-system`), breaking any
+import touching `parrot.mcp.integration` repo-wide. Ran `uv sync
+--inexact` from the main repo to restore the venv to the committed
+`uv.lock` state (verified `uv.lock`/`pyproject.toml` unmodified — this
+only re-pointed editable installs, no dependency version changes were
+introduced by this feature). Also copied the two worktree-missing
+compiled `.so` build artifacts (`utils/types`, `utils/parsers/toml`) from
+the main repo into this worktree so tests can import `parrot.utils` —
+standard practice for testing in worktrees per repo precedent (these
+`.so` files are gitignored build artifacts, not tracked/committed).

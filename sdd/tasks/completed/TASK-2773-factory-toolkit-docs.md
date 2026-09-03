@@ -152,4 +152,66 @@ async def test_graph_diff_tool_smoke(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Read `factory.py` and `toolkit.py` in full before modifying, per
+instructions.
+
+**Factory**: extended `build_graph_memory_toolkit` additively — `db_dir`
+became `Optional[Path | str] = None` (raises `ValueError` when
+`backend="sqlite"` and omitted, preserving existing positional/keyword
+callers unchanged) and added `backend: str = "sqlite"`, `dsn`, `schema`
+kwargs. `backend="postgres"` lazily imports `PostgresPersistence` (keeps
+the sqlite-only path free of an asyncpg/pgvector dependency, same lazy
+-import seam as the existing `GraphIndexToolkit` import). Zero breaking
+changes — verified by re-running every existing caller
+(`test_context_builder.py`, `test_grounding.py`, `test_llm_extractor.py`,
+`test_memory.py`, `test_toolkit_persistence.py`): all green.
+
+**Toolkit naming collision found and resolved**: the task's suggested
+tool name `graph_history(concept_id)` ALREADY EXISTS on
+`GraphIndexToolkit` — it lists durable WRITE commits (`publisher.
+list_commits`), not per-concept bitemporal version history. Defining a
+second method with the same name would have silently shadowed the
+existing tool (illegal duplicate in Python, and a real behavioral
+regression for `list_commits`-based callers). Renamed to
+`graph_concept_history` — documented in the module docstring, the tool's
+own docstring, and here. `graph_as_of`/`graph_diff`/`graph_hybrid_retrieve`
+had no collisions and kept the task's suggested names.
+
+**Feature-detection mechanism decision**: `AbstractToolkit._generate_tools()`
+inspects `dir(self)` + `self.exclude_tools` at INSTANCE construction time
+(read the base class first) — so "registered ONLY when the bound
+persistence exposes the temporal surface" is implemented by computing
+`self.exclude_tools = (*self.exclude_tools, *_TEMPORAL_TOOL_NAMES)` in
+`__init__` when `_temporal_persistence()` (hasattr-based, spec D5) returns
+`None`. This EXCLUDES the tools from generation entirely (not merely
+returning an error) — the stronger, correct reading of the AC. Each tool
+also independently guards against direct method calls that bypass
+`exclude_tools` (defensive, matching the existing `graph_history`/
+`revert_write` pattern of returning `{"error": ...}`).
+
+`graph_hybrid_retrieve`'s tool schema exposes only `query`/`seeds` —
+weights/limit/reranker are fixed module-level constants
+(`_HYBRID_RETRIEVE_WEIGHTS`/`_HYBRID_RETRIEVE_LIMIT`), verified via
+`inspect.signature`. The semantic/KNN leg is NOT wired from this tool
+(embedding generation is a separate concern, out of scope) — documented
+in the docstring; the tool wraps the graph+FTS legs only.
+
+Docs: added Temporal API + Hybrid Retrieval sections, a 3-row backend
+matrix (bitemporal/hybrid columns), the FEAT-520 config keys table, the
+`backend="postgres"` factory example, and the 4-tool toolkit table
+section to `docs/graphindex.md`. CHANGELOG `[Unreleased]` entry added.
+
+All 5 new toolkit tests pass (absent-on-sqlite via `list_tool_names()`,
+schema-has-no-weights via signature inspection, present-on-postgres,
+`graph_diff`/`graph_concept_history`/`graph_as_of` smoke over a live
+store, direct-call defensive error). Ran the full regression sweep: 132
+passed in `packages/ai-parrot` (all touched graphindex-postgres suites +
+every existing `build_graph_memory_toolkit` caller), 79 passed in
+`packages/ai-parrot-tools` (33 errors + 1 failure are pre-existing —
+confirmed byte-identical on the unmodified main repo: an
+`asyncio.get_event_loop()` fixture bug in `test_toolkit_write_and_
+signals.py` when run outside the full suite, and a `rustworkx`
+extras-check test unrelated to graphindex-postgres). `ruff check` clean
+on every touched file; zero SQLAlchemy imports (grep-verified).
+
+FEAT-520 — all 10 tasks complete.

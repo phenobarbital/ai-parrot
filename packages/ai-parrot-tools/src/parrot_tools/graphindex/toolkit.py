@@ -35,17 +35,39 @@ Tool surface:
   # DURABLE MEMORY (requires publisher=GraphPublisher)
   graph_history, revert_write
 
+  # TEMPORAL + HYBRID (FEAT-520 — Postgres-backed durable plane ONLY;
+  # excluded from tool generation, not just error-returning, when the
+  # bound persistence lacks the surface — feature-detected via hasattr,
+  # never isinstance, spec D5)
+  graph_as_of, graph_concept_history, graph_diff, graph_hybrid_retrieve
+
 When a ``GraphPublisher`` is injected, every write tool ALSO persists
 its mutation as an audited, revertible commit stamped with the agent's
 identity and run — the graph becomes durable cross-session memory
 ("the agent forgets, the graph does not"). Persistence failures never
 fail the tool call; they surface as ``persist_warning`` in the result.
+
+FEAT-520: when the injected ``publisher``'s bound persistence is
+Postgres-backed (``PostgresPersistence``, duck-typed via ``hasattr``,
+never ``isinstance`` — spec D5), four additional mono-purpose tools are
+registered: ``graph_as_of``/``graph_concept_history``/``graph_diff``
+(temporal reads) and ``graph_hybrid_retrieve`` (one-pass graph+KNN+FTS
+retrieval). They are deliberately excluded from tool generation — not
+merely error-returning — on SQLite/ArangoDB-backed toolkits, via
+``exclude_tools`` computed in ``__init__``. Fusion weights and result
+limits are fixed operator configuration (``_HYBRID_RETRIEVE_WEIGHTS``/
+``_HYBRID_RETRIEVE_LIMIT`` below), never LLM-controlled parameters — "el
+agente elige tools, nunca pesos ni modos" (brainstorm D6). NOTE:
+``graph_concept_history`` is named to avoid colliding with the EXISTING
+``graph_history`` tool above (commit/write history, unrelated to a
+concept's bitemporal VERSION history — spec D5's `history(concept_id)`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
@@ -67,6 +89,22 @@ logger = logging.getLogger(__name__)
 
 # Number of surprising connections returned by _get_or_compute_analytics.
 DEFAULT_ANALYTICS_TOP_K = 10
+
+#: FEAT-520 — names of the temporal/hybrid tools, only registered when the
+#: bound persistence exposes the temporal surface (``hasattr(persistence,
+#: "as_of")`` — spec D5 duck-typing rule).
+_TEMPORAL_TOOL_NAMES = (
+    "graph_as_of",
+    "graph_concept_history",
+    "graph_diff",
+    "graph_hybrid_retrieve",
+)
+
+#: Fixed ``hybrid_retrieve`` fusion config for the ``graph_hybrid_retrieve``
+#: tool. Operator configuration, never LLM-controlled — "el agente elige
+#: tools, nunca pesos ni modos" (brainstorm D6).
+_HYBRID_RETRIEVE_LIMIT = 20
+_HYBRID_RETRIEVE_WEIGHTS = {"graph": 1.0, "knn": 1.0, "fts": 1.0}
 
 
 class GraphIndexToolkit(AbstractToolkit):
@@ -145,6 +183,11 @@ class GraphIndexToolkit(AbstractToolkit):
         self._analytics_cache: Optional[Any] = None  # FEAT-215
         self._encoder_warning_emitted = False
         self.logger = logging.getLogger(__name__)
+        # FEAT-520: temporal/hybrid tools are excluded from tool generation
+        # entirely (not merely error-returning) unless the bound persistence
+        # exposes the temporal surface — duck-typed via hasattr, spec D5.
+        if self._temporal_persistence() is None:
+            self.exclude_tools = (*self.exclude_tools, *_TEMPORAL_TOOL_NAMES)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -190,6 +233,7 @@ class GraphIndexToolkit(AbstractToolkit):
         if not isinstance(payload, dict):
             return None
         from parrot.knowledge.graphindex.schema import UniversalNode
+
         try:
             return UniversalNode(
                 node_id=payload["node_id"],
@@ -227,6 +271,7 @@ class GraphIndexToolkit(AbstractToolkit):
         if self.publisher is None:
             return {}
         from parrot.knowledge.graphindex.schema import GraphUpdate
+
         try:
             update = GraphUpdate(
                 nodes=list(nodes or []),
@@ -246,6 +291,21 @@ class GraphIndexToolkit(AbstractToolkit):
             self.logger.warning("%s: durable persist failed: %s", op, exc)
             return {"persisted": False, "persist_warning": str(exc)}
 
+    def _temporal_persistence(self) -> Optional[Any]:
+        """Return the bound persistence IFF it exposes the temporal surface.
+
+        Duck-typed via ``hasattr`` (spec D5) — never ``isinstance``, so any
+        backend that grows ``as_of``/``history``/``diff`` later is picked
+        up automatically. Returns ``None`` when no publisher is configured
+        or the persistence is SQLite/ArangoDB-backed (no temporal API).
+
+        Returns:
+            The persistence object, or ``None``.
+        """
+        persistence = getattr(self.publisher, "persistence", None)
+        if persistence is not None and hasattr(persistence, "as_of"):
+            return persistence
+        return None
 
     # ------------------------------------------------------------------
     # Public agent tools
@@ -440,6 +500,7 @@ class GraphIndexToolkit(AbstractToolkit):
             degree = len(self.graph.out_edges(node_idx)) + len(self.graph.in_edges(node_idx))
             # Combined score: semantic similarity + log(1 + degree)
             import math
+
             combined = float(distance) + 0.1 * math.log1p(degree)
             results.append(
                 {
@@ -455,9 +516,7 @@ class GraphIndexToolkit(AbstractToolkit):
         results.sort(key=lambda x: x["combined_score"], reverse=True)
         return results[:top_k]
 
-    async def find_central_nodes(
-        self, top_k: int = 10, metric: str = "betweenness"
-    ) -> list[dict]:
+    async def find_central_nodes(self, top_k: int = 10, metric: str = "betweenness") -> list[dict]:
         """Return top-K most central nodes by the specified centrality metric.
 
         Args:
@@ -499,9 +558,7 @@ class GraphIndexToolkit(AbstractToolkit):
         result.sort(key=lambda x: x["centrality_score"], reverse=True)
         return result[:top_k]
 
-    async def export_graph_html(
-        self, output_dir: str, top_k_god_nodes: int = 15
-    ) -> dict:
+    async def export_graph_html(self, output_dir: str, top_k_god_nodes: int = 15) -> dict:
         """Export an interactive ``graph.html`` map plus ``graph.json``.
 
         Renders the current in-memory graph as a self-contained, clickable
@@ -543,9 +600,7 @@ class GraphIndexToolkit(AbstractToolkit):
             logger.error("export_graph_html failed: %s", exc)
             return {"error": str(exc)}
 
-        community_count = (
-            len(communities.communities) if communities is not None else 0
-        )
+        community_count = len(communities.communities) if communities is not None else 0
         return {
             "graph_html": str(html_path),
             "graph_json": str(json_path),
@@ -606,10 +661,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
         if self.client is None:
             # Fallback: return structured description without LLM
-            return (
-                f"Node '{title}' (kind: {kind}) has {degree} connections. "
-                f"{summary}"
-            ).strip()
+            return (f"Node '{title}' (kind: {kind}) has {degree} connections. " f"{summary}").strip()
 
         prompt = (
             f"You are an expert knowledge graph analyst. Explain the role of the "
@@ -630,10 +682,7 @@ class GraphIndexToolkit(AbstractToolkit):
             return str(response)
         except Exception as exc:
             logger.warning("explain() LLM call failed: %s", exc)
-            return (
-                f"Node '{title}' (kind: {kind}) has {degree} connections. "
-                f"{summary}"
-            ).strip()
+            return (f"Node '{title}' (kind: {kind}) has {degree} connections. " f"{summary}").strip()
 
     # ==================================================================
     # WRITE tools (require assembler + embedder)
@@ -698,6 +747,7 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": "create_node: title must be a non-empty string"}
 
         from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+
         try:
             kind_enum = NodeKind(kind)
         except ValueError:
@@ -767,16 +817,17 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": "link_nodes: unknown source_id or target_id"}
 
         from parrot.knowledge.graphindex.schema import (
-            EdgeKind, Provenance, UniversalEdge,
+            EdgeKind,
+            Provenance,
+            UniversalEdge,
         )
+
         try:
             kind_enum = EdgeKind(kind)
         except ValueError:
             return {"error": f"link_nodes: unknown edge kind {kind!r}"}
 
-        provenance = (
-            Provenance.INFERRED if confidence is not None else Provenance.EXTRACTED
-        )
+        provenance = Provenance.INFERRED if confidence is not None else Provenance.EXTRACTED
 
         try:
             edge = UniversalEdge(
@@ -831,11 +882,13 @@ class GraphIndexToolkit(AbstractToolkit):
                 try:
                     self.graph.remove_edge(s, t)
                     removed += 1
-                    removed_triples.append((
-                        payload.get("source_id"),
-                        payload.get("target_id"),
-                        payload.get("kind"),
-                    ))
+                    removed_triples.append(
+                        (
+                            payload.get("source_id"),
+                            payload.get("target_id"),
+                            payload.get("kind"),
+                        )
+                    )
                 except Exception:
                     pass
                 # Also clean the assembler's edge_index_map entry.
@@ -862,9 +915,7 @@ class GraphIndexToolkit(AbstractToolkit):
             "removed": removed,
             "status": "unlinked",
         }
-        result.update(
-            await self._persist_write("unlink_nodes", removed_edges=removed_triples)
-        )
+        result.update(await self._persist_write("unlink_nodes", removed_edges=removed_triples))
         return result
 
     def _edges_between(self, src_idx: int, tgt_idx: int):
@@ -900,16 +951,16 @@ class GraphIndexToolkit(AbstractToolkit):
                 await self.embedder.embed_nodes([node])
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "attach_summary: re-embed failed for %s: %s", node_id, exc,
+                    "attach_summary: re-embed failed for %s: %s",
+                    node_id,
+                    exc,
                 )
 
         self._invalidate_community_cache()
         result = {"node_id": node_id, "summary": summary, "status": "updated"}
         model = self._model_from_graph(node_id)
         if model is not None:
-            result.update(
-                await self._persist_write("attach_summary", nodes=[model])
-            )
+            result.update(await self._persist_write("attach_summary", nodes=[model]))
         return result
 
     async def tag_node(self, node_id: str, key: str, value: Any) -> dict:
@@ -967,9 +1018,7 @@ class GraphIndexToolkit(AbstractToolkit):
         # Capture the duplicate's identity before any mutation so the
         # merge stays additive and inspectable (alias retention).
         dup_payload = self.graph[dup_idx]
-        dup_title = (
-            dup_payload.get("title") if isinstance(dup_payload, dict) else None
-        )
+        dup_title = dup_payload.get("title") if isinstance(dup_payload, dict) else None
         dup_aliases: list[str] = []
         if isinstance(dup_payload, dict):
             tags = dup_payload.get("domain_tags") or {}
@@ -977,19 +1026,17 @@ class GraphIndexToolkit(AbstractToolkit):
                 dup_aliases = [str(a) for a in tags.get("aliases", [])]
 
         # Collect every (other_id, payload, direction) before we mutate.
-        out_edges: list[dict] = list(
-            payload for _s, _t, payload in self.graph.out_edges(dup_idx)
-        )
-        in_edges: list[dict] = list(
-            payload for _s, _t, payload in self.graph.in_edges(dup_idx)
-        )
+        out_edges: list[dict] = list(payload for _s, _t, payload in self.graph.out_edges(dup_idx))
+        in_edges: list[dict] = list(payload for _s, _t, payload in self.graph.in_edges(dup_idx))
 
         existing_keys = self._existing_edge_keys(canonical_idx)
         redirected = 0
         redirected_edges: list = []
 
         from parrot.knowledge.graphindex.schema import (
-            EdgeKind, Provenance, UniversalEdge,
+            EdgeKind,
+            Provenance,
+            UniversalEdge,
         )
 
         for payload in out_edges:
@@ -1087,9 +1134,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 edges=redirected_edges,
                 removed_nodes=[duplicate_id],
                 reason=(
-                    f"merged {duplicate_id!r}"
-                    + (f" ({dup_title})" if dup_title else "")
-                    + f" into {canonical_id!r}"
+                    f"merged {duplicate_id!r}" + (f" ({dup_title})" if dup_title else "") + f" into {canonical_id!r}"
                 ),
             )
         )
@@ -1100,16 +1145,15 @@ class GraphIndexToolkit(AbstractToolkit):
         currently incident on ``node_idx``."""
         keys: set[tuple] = set()
         for _s, _t, payload in self.graph.out_edges(node_idx):
-            keys.add((payload.get("source_id"), payload.get("target_id"),
-                      payload.get("kind")))
+            keys.add((payload.get("source_id"), payload.get("target_id"), payload.get("kind")))
         for _s, _t, payload in self.graph.in_edges(node_idx):
-            keys.add((payload.get("source_id"), payload.get("target_id"),
-                      payload.get("kind")))
+            keys.add((payload.get("source_id"), payload.get("target_id"), payload.get("kind")))
         return keys
 
     @staticmethod
     def _mint_node_id(kind: str, title: str, summary: str) -> str:
         import hashlib
+
         raw = f"{kind}::{title}::{summary}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()[:16]
 
@@ -1159,11 +1203,141 @@ class GraphIndexToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             return {"error": f"revert_write: {exc}"}
         if "error" not in result:
-            result["note"] = (
-                "durable plane reverted; reload the toolkit to refresh the"
-                " in-memory graph"
-            )
+            result["note"] = "durable plane reverted; reload the toolkit to refresh the" " in-memory graph"
         return result
+
+    # ------------------------------------------------------------------
+    # FEAT-520: temporal + hybrid tools (Postgres-backed durable plane only
+    # — see _temporal_persistence() and the module docstring)
+    # ------------------------------------------------------------------
+
+    async def graph_as_of(self, timestamp: str) -> dict:
+        """Snapshot the durable graph as it existed at a point in time.
+
+        Only available when the durable graph plane is Postgres-backed
+        (bitemporal storage — FEAT-520). Repealed/superseded nodes and
+        edges are excluded exactly as they were at ``timestamp``.
+
+        Args:
+            timestamp: ISO-8601, timezone-aware timestamp (e.g.
+                ``"2026-06-01T00:00:00+00:00"``).
+
+        Returns:
+            ``{"nodes": [...], "edges": [...]}`` at that snapshot, or
+            ``{"error": ...}`` when unavailable or the timestamp is
+            malformed/naive.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_as_of: no temporal-capable durable graph plane configured"}
+        try:
+            t = datetime.fromisoformat(timestamp)
+        except ValueError as exc:
+            return {"error": f"graph_as_of: invalid timestamp {timestamp!r}: {exc}"}
+        try:
+            nodes, edges = await persistence.as_of(self.publisher.ctx, t)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_as_of: {exc}"}
+        return {
+            "nodes": [n.model_dump(mode="json") for n in nodes],
+            "edges": [e.model_dump(mode="json") for e in edges],
+        }
+
+    async def graph_concept_history(self, concept_id: str) -> dict:
+        """List every version of a concept over time (bitemporal version history).
+
+        Distinct from ``graph_history`` above (which lists durable WRITE
+        commits) — this lists a single CONCEPT's content versions,
+        including repealed ones. Only available on a Postgres-backed
+        durable plane (FEAT-520).
+
+        Args:
+            concept_id: The concept to list version history for.
+
+        Returns:
+            ``{"versions": [...]}`` ordered oldest-first, or
+            ``{"error": ...}`` when unavailable.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_concept_history: no temporal-capable durable graph plane configured"}
+        try:
+            rows = await persistence.history(self.publisher.ctx, concept_id)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_concept_history: {exc}"}
+        return {"versions": [row.model_dump(mode="json") for row in rows]}
+
+    async def graph_diff(self, concept_id: str, t1: str, t2: str) -> dict:
+        """Structured diff of a concept between two points in time.
+
+        Reports version changes plus incident edges added/removed between
+        ``t1`` and ``t2`` — structured data for the LLM to reason over,
+        never a raw-text comparison. Only available on a Postgres-backed
+        durable plane (FEAT-520).
+
+        Args:
+            concept_id: The concept to diff.
+            t1: Start ISO-8601, timezone-aware timestamp.
+            t2: End ISO-8601, timezone-aware timestamp.
+
+        Returns:
+            The structured diff as a dict, or ``{"error": ...}``.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_diff: no temporal-capable durable graph plane configured"}
+        try:
+            t1_dt = datetime.fromisoformat(t1)
+            t2_dt = datetime.fromisoformat(t2)
+        except ValueError as exc:
+            return {"error": f"graph_diff: invalid timestamp: {exc}"}
+        try:
+            diff = await persistence.diff(self.publisher.ctx, concept_id, t1_dt, t2_dt)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_diff: {exc}"}
+        return diff.model_dump(mode="json")
+
+    async def graph_hybrid_retrieve(
+        self,
+        query: Optional[str] = None,
+        seeds: Optional[list[str]] = None,
+    ) -> dict:
+        """Retrieve relevant concepts via combined graph + lexical search.
+
+        Fuses temporal graph expansion (from ``seeds``) with full-text
+        search (over ``query``) in one ranked result set. Fusion weights
+        and the result limit are FIXED operator configuration — never
+        exposed as parameters here, so the agent picks WHAT to search
+        for, never HOW (brainstorm D6). Only available on a Postgres
+        -backed durable plane (FEAT-520); the semantic/KNN leg is not
+        wired from this tool (query embedding generation is a separate
+        concern outside this toolkit's scope) — this wraps the graph and
+        FTS legs only.
+
+        Args:
+            query: Free-form natural-language query for the lexical leg.
+            seeds: Optional concept_ids to seed graph expansion from.
+
+        Returns:
+            ``{"candidates": [...]}`` ranked results, or ``{"error": ...}``
+            when unavailable or neither ``query`` nor ``seeds`` is given.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None or not hasattr(persistence, "hybrid_retrieve"):
+            return {"error": "graph_hybrid_retrieve: no hybrid-capable durable graph plane configured"}
+        if not query and not seeds:
+            return {"error": "graph_hybrid_retrieve: provide query and/or seeds"}
+        try:
+            candidates = await persistence.hybrid_retrieve(
+                self.publisher.ctx,
+                fts_terms=query,
+                seeds=seeds,
+                limit=_HYBRID_RETRIEVE_LIMIT,
+                weights=_HYBRID_RETRIEVE_WEIGHTS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_hybrid_retrieve: {exc}"}
+        return {"candidates": [c.model_dump(mode="json") for c in candidates]}
 
     async def ground_claim(self, claim: str) -> dict:
         """Check whether the graph evidences a claim (grounding layer).
@@ -1358,11 +1532,7 @@ class GraphIndexToolkit(AbstractToolkit):
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
-        return [
-            c.model_dump()
-            for c in cached.communities
-            if c.size >= min_size
-        ]
+        return [c.model_dump() for c in cached.communities if c.size >= min_size]
 
     async def find_community(self, node_id: str) -> dict:
         """Return the Community containing ``node_id`` (FEAT-191)."""
@@ -1533,11 +1703,10 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_isolated_nodes as _find,
         )
+
         return _find(self.graph, self.nodes, max_degree=max_degree)
 
-    async def find_sparse_communities(
-        self, min_size: int = 3, max_cohesion: float = 0.15
-    ) -> list[dict]:
+    async def find_sparse_communities(self, min_size: int = 3, max_cohesion: float = 0.15) -> list[dict]:
         """Find Louvain communities with low internal cohesion.
 
         Communities that are large enough to be meaningful but poorly
@@ -1555,6 +1724,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_sparse_communities as _find,
         )
+
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
@@ -1579,6 +1749,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             find_bridge_nodes as _find,
         )
+
         cached = self._get_or_compute_communities()
         if cached is None:
             return [{"error": "FEAT-191 communities module not available"}]
@@ -1601,6 +1772,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             dismiss_insight as _dismiss,
         )
+
         analytics = self._get_or_compute_analytics()
         if analytics is None:
             return {"error": "analytics module not available"}
@@ -1625,6 +1797,7 @@ class GraphIndexToolkit(AbstractToolkit):
         from parrot.knowledge.graphindex.analytics import (
             list_unreviewed_insights as _list,
         )
+
         analytics = self._get_or_compute_analytics()
         if analytics is None:
             return []
@@ -1666,8 +1839,7 @@ class GraphIndexToolkit(AbstractToolkit):
                     arr = arr.reshape(1, -1)
                 if arr.shape[1] != dim:
                     raise ValueError(
-                        f"_encode_query: embedder returned dim {arr.shape[1]} "
-                        f"but FAISS index dim is {dim}"
+                        f"_encode_query: embedder returned dim {arr.shape[1]} " f"but FAISS index dim is {dim}"
                     )
                 # Normalise — FAISS IndexFlatIP / IndexFlatL2 read
                 # better with unit vectors.
@@ -1676,8 +1848,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 return (arr / norms).astype(np.float32)
             except Exception as exc:  # noqa: BLE001 — surface fallback path
                 self.logger.warning(
-                    "_encode_query: embedder failed (%s); falling back to "
-                    "placeholder hash encoder",
+                    "_encode_query: embedder failed (%s); falling back to " "placeholder hash encoder",
                     exc,
                 )
 

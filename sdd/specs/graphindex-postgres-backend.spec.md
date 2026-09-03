@@ -800,17 +800,28 @@ HybridPageIndexSearch._apply_reranker    # SearchResult docs → reranker.rerank
 
 ### Unresolved
 
-- [ ] **OQ3 — KNN filtered by graph subset**: spike with a realistic corpus,
-  both directions, before freezing `hybrid_retrieve` CTE order — *Owner:
-  Module 7, first task*. Mitigations pre-approved: pgvector ≥ 0.8 iterative
-  scan; exact scan for depth ≤ 3 hoods; invert CTE order by cardinality.
 - [ ] **OQ5 (inherited, legal wiki) — extracting `valid_from` from sources
   that don't state it** — *Owner: legal ingest (Sprint-4 scope, outside this
   spec's modules)*. Interim rule stands and is representable today:
   `valid_from = tx_from`, row marked `derived = true` — never unattributed.
-- [ ] **ANN index type default (HNSW vs IVFFlat) and build timing** —
-  *Owner: Module 6*, decide with the OQ3 spike data; config-driven either
-  way.
+
+### Resolved (TASK-2770 OQ3 spike, 2026-09-03)
+
+- [x] **OQ3 — KNN filtered by graph subset**: spiked against a 5,000-concept
+  synthetic scale-free corpus (pgvector 0.5.0, no iterative-scan GUCs
+  available). Answer: **graph→semantic** (recursive CTE hood first, exact
+  KNN scan restricted to the hood) beat semantic→graph (unfiltered ANN
+  top-K, then hood-membership check) at every tested depth (1–3) —
+  `hybrid_retrieve` (TASK-2771) should default to that CTE order,
+  cardinality-dependent per the artifact's caveats. See
+  `artifacts/logs/feat-520-oq3-spike.md` for the full numbers, EXPLAIN
+  excerpts, and reproduction seed.
+- [x] **ANN index type default (HNSW vs IVFFlat) and build timing** —
+  same spike: **ivfflat** beat hnsw on both build time (~0.8s vs ~22.8s)
+  and query latency (~0.01s vs ~0.07s) at this corpus size, contradicting
+  TASK-2769's provisional `hnsw` default. `pg_schema.py`'s
+  `GRAPHINDEX_ANN_INDEX_KIND` default was updated to `"ivfflat"`
+  accordingly (config-overridable either way). See the same artifact.
 
 ---
 

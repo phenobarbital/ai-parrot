@@ -67,8 +67,25 @@ index (TASK-2769), federation/sync changes (none needed — LWW works via
 |---|---|---|
 | `packages/ai-parrot/src/parrot/knowledge/wiki/postgres_store.py` | CREATE | `PostgresWikiStore` |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `postgres` branch in `create_wiki_store` (:1830-1852 block) |
-| `packages/ai-parrot/tests/knowledge/wiki/test_store.py` | MODIFY | fixture param (:29) |
-| `packages/ai-parrot/tests/knowledge/wiki/test_postgres_store.py` | CREATE | postgres-specific tests (updated_at, mapping) |
+| `packages/ai-parrot/tests/knowledge/wiki/test_postgres_store.py` | CREATE | postgres-specific tests (full abstract surface, updated_at, mapping) |
+
+> **CONTRACT CORRECTION (agent, verified 2026-09-03 against this worktree):**
+> `packages/ai-parrot/tests/knowledge/wiki/test_store.py` — referenced
+> throughout this task (§Scope, §Codebase Contract, §Acceptance Criteria,
+> §Test Specification) as an existing parametrized `store` fixture
+> suite (`@pytest.fixture(params=["sqlite", "memory"])`) to extend with a
+> `postgres` param — **does NOT exist in this codebase.**
+> `grep`/`find` across `packages/ai-parrot/tests/knowledge/wiki/` and
+> `tests/knowledge/wiki/test_factory_arango.py` (also referenced) confirm
+> neither file is present; there is no existing cross-backend behavioral
+> contract suite for `BaseWikiStore` to extend. Per the "when in doubt"
+> anti-hallucination rule: rather than inventing a new shared suite that
+> would also exercise (and risk regressing) the untouched SQLite/memory/
+> Arango backends — out of this task's scope — full abstract-surface
+> coverage is provided in the CREATE'd `test_postgres_store.py` instead.
+> The acceptance criterion "`tests/knowledge/wiki/test_store.py` green
+> with `postgres` param" is satisfied in substance (every abstract method
+> covered against Postgres) via that file. See its Completion Note.
 
 ---
 
@@ -203,4 +220,56 @@ def test_factory_postgres_branch(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `PostgresWikiStore(BaseWikiStore)` in `postgres_store.py`
+covering the full abstract surface + `page_hashes` override, mapped per
+spec §2's U1 table: `body`-in-DB (never `body_ref`), `origin`/
+`asserted_by`/`updated_at` (caller-preserving, never conflated with
+`tx_from`), `provenance` left at its schema default and never written by
+this plane. Wired `create_wiki_store(backend="postgres")` as an explicit,
+lazy-imported branch (arangodb precedent) and extended the unknown
+-backend error message to list `'postgres'`.
+
+**Contract correction** (documented in this task file above): the spec's
+and this task's references to an existing parametrized
+`tests/knowledge/wiki/test_store.py` `store` fixture do not correspond to
+anything in this codebase — verified absent by `find`/`grep` across
+`tests/knowledge/wiki/`. Rather than inventing a new cross-backend suite
+(risking the untouched SQLite/memory/Arango backends, out of scope), full
+abstract-surface coverage lives in the CREATE'd `test_postgres_store.py`
+(24 tests) instead — satisfying the acceptance criterion in substance.
+
+Two design decisions not fully specified by the task, made and documented
+in the module docstring:
+1. **Namespace scoping**: `nodes.namespace` is used as this store's
+   `wiki_name` scope. Enumeration reads (`list_pages`, `dump_pages`,
+   `stats`, `missing_bodies`) filter on `namespace = wiki_name` so
+   multiple wikis sharing one schema don't bleed into each other;
+   identity reads (`get_page`) are namespace-agnostic by design
+   (`concept_id` is the shared, globally-unique key) — verified by the
+   `test_planes_coexist` test.
+2. **`orphan_sources()` always `[]`**: the shared `graphindex.*` schema
+   (TASK-2764, out of this task's file scope) has no `sources` registry
+   table, so there is nothing to check "produced no pages" against —
+   documented, not silently wrong.
+3. **`dump_edges()` is not namespace-scoped**: `graphindex.edges` has no
+   `namespace` column — same limitation the graph plane lives with.
+
+`load_graph`/wiki-plane coexistence (spec AC): verified that a wiki page
+whose `category` is NOT a valid `NodeKind` string (e.g. `"summary"`) is
+excluded from `load_graph` via the TASK-2765 skip-and-warn tolerance; the
+AC's own wording accepts that a wiki category colliding with a real
+`NodeKind` value (e.g. `"concept"`) would show up — decided as the
+boundary of this filter, not further mitigated, and documented inline.
+
+All 24 tests pass (roundtrip, `include_body=False`, `node_id` fallback,
+unknown id, `updated_at` caller-preserved/now-stamped, close-and-insert
+versioning cross-checked via TASK-2767's `history()`, edges + neighbors +
+provenance, atomic `replace_source_slice` incl. deleted-count, tombstone
+`delete_page`, embedding upsert + cosine search, `list_pages`
+category/origin filters, FTS archive-exclusion, dumps, `stats`,
+`orphan_sources`/`broken_edges`/`missing_bodies`/`page_hashes`,
+planes-coexist, factory branch + unknown-backend listing, no-SQLAlchemy
+grep). Ran the full graphindex-postgres suite (pg_schema + persist +
+commit protocol + temporal + wiki store) plus the existing
+`test_extra_backends.py` together: 75/75 green, zero regressions in the
+untouched sqlite/memory/arango wiki backends. `ruff check` clean.
