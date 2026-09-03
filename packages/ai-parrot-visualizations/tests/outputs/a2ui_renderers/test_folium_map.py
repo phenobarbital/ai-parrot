@@ -138,6 +138,23 @@ class TestBuildMapDocument:
         document, _ = fm.build_map_document(props, cluster_threshold_by_layer={"stores": 10})
         assert b"markerClusterGroup" in document
 
+    def test_legacy_single_layer_path_clusters_above_threshold(self):
+        """Post-review fix: the legacy `props["data"]` (pre-FEAT-473, no
+        `layers` key) path was missed during the original TASK-2786
+        implementation — TASK-2786's own task text explicitly scoped
+        clustering into "the legacy single-layer path" too, not just the
+        `layers` path."""
+        points = [{"lat": float(i), "lon": float(i)} for i in range(fm.DEFAULT_CLUSTER_THRESHOLD + 1)]
+        props = {"data": points}
+        document, _ = fm.build_map_document(props)
+        assert b"markerClusterGroup" in document
+
+    def test_legacy_single_layer_path_no_cluster_below_threshold(self):
+        points = [{"lat": float(i), "lon": float(i)} for i in range(10)]
+        props = {"data": points}
+        document, _ = fm.build_map_document(props)
+        assert b"markerClusterGroup" not in document
+
 
 class TestBuildMapDocumentOffline:
     """FEAT-522 TASK-2787: offline data-URI swap for folium's default CDN resources."""

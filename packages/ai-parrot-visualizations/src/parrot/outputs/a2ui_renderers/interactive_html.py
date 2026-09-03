@@ -100,7 +100,16 @@ from ._semantics import (
 )
 from ._shell import document_shell
 from ._table_format import format_cell_html
-from .folium_map import build_map_document
+
+# NOTE (post-review, FEAT-522): deliberately NOT a top-level `from .folium_map
+# import build_map_document`. `folium_map.py` builds its `_OFFLINE_URL_MAP`
+# constant eagerly at ITS OWN import time, which requires `folium` to be
+# installed — a top-level import here would make `folium` a hard,
+# unconditional import-time dependency of the ENTIRE `interactive-html`
+# renderer surface (breaking `import interactive_html` for anyone using only
+# Chart/DataTable/Infographic rendering without the optional `map` extra).
+# `build_map_document` is imported lazily inside `_render_map()` instead, so
+# that cost is paid only when a Map component is actually rendered.
 
 logger = logging.getLogger(__name__)
 
@@ -983,7 +992,12 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         By this point the document is already offline-safe (every folium
         default CDN resource swapped for an inlined ``data:`` URI —
         TASK-2787), so embedding it in an ``iframe srcdoc`` leaks nothing.
+
+        Imports ``folium_map`` lazily (here, not at module top level) — see
+        the note above the module's imports for why.
         """
+        from .folium_map import build_map_document
+
         document, _ = build_map_document(props, cluster_threshold=500)
         escaped = html.escape(document.decode("utf-8"))
         return f'<iframe sandbox="allow-scripts allow-popups" srcdoc="{escaped}"></iframe>'

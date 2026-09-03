@@ -236,7 +236,14 @@ class TestTailwindClassCoverage:
 
     def test_all_a2ui_classes_have_css_rule(self):
         gen = _generate_a2ui_css_module()
-        classes = gen.scan_classes(gen.INTERACTIVE_HTML_PATH)
+        # Post-review fix: union in the curated `a2ui-<role>` classes too
+        # (`_render_prim_Text`'s `f"a2ui-{role}"` is a dynamically-
+        # interpolated, non-literal class the plain AST scan alone can
+        # never see — see `scan_dynamic_role_classes()`'s docstring).
+        # Without this union, this test would be self-referentially blind
+        # to the exact same gap `generate_a2ui_css.py`'s generator has,
+        # rather than actually verifying the renderer's real output.
+        classes = gen.scan_classes(gen.INTERACTIVE_HTML_PATH) | gen.scan_dynamic_role_classes(gen.SEMANTICS_PATH)
         sheet = DesignSystem.stylesheet()
         missing = sorted(cls for cls in classes if f".{cls}" not in sheet)
         assert not missing, f"Classes with no CSS rule in DesignSystem.stylesheet(): {missing}"

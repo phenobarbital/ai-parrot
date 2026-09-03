@@ -355,3 +355,36 @@ class TestMapDispatch:
         # data: URIs for its own resources.
         assert "data:text/javascript;base64," in decoded
         assert "data:text/css;base64," in decoded
+
+    def test_interactive_html_importable_without_folium(self, monkeypatch):
+        """Post-review regression guard: `folium_map.py` builds its
+        `_OFFLINE_URL_MAP` eagerly at ITS OWN import time (requires
+        `folium`). A top-level `from .folium_map import build_map_document`
+        in THIS module would make `folium` a hard, unconditional
+        import-time dependency of the whole `interactive-html` surface —
+        breaking Chart/DataTable/Infographic-only users without the
+        optional `map` extra. `build_map_document` must be imported
+        lazily, inside `_render_map()` only."""
+        import builtins
+        import importlib
+        import sys
+
+        real_import = builtins.__import__
+
+        def _blocked_import(name, *args, **kwargs):
+            if name == "folium" or name.startswith("folium."):
+                raise ImportError("folium blocked for this test")
+            return real_import(name, *args, **kwargs)
+
+        for mod_name in ("parrot.outputs.a2ui_renderers.interactive_html", "parrot.outputs.a2ui_renderers.folium_map"):
+            sys.modules.pop(mod_name, None)
+
+        monkeypatch.setattr(builtins, "__import__", _blocked_import)
+        try:
+            reimported = importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")
+            assert reimported.InteractiveHTMLRenderer is not None
+        finally:
+            monkeypatch.undo()
+            sys.modules.pop("parrot.outputs.a2ui_renderers.interactive_html", None)
+            sys.modules.pop("parrot.outputs.a2ui_renderers.folium_map", None)
+            importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")

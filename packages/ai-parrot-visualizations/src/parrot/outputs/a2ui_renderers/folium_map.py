@@ -111,13 +111,19 @@ def _build_offline_url_map() -> dict[str, str]:
     Returns:
         A mapping from each verified folium/MarkerCluster default resource
         URL to its locally-vendored ``data:`` URI equivalent.
+
+    Raises:
+        ImportError: If ``folium`` is unavailable (via ``_load_folium()``,
+            same actionable "pip install ..." message as every other
+            folium-requiring entry point in this module — post-review
+            fix: this used to import ``folium`` directly, bypassing that
+            actionable error).
     """
-    import folium
-    import folium.plugins as fp
+    folium = _load_folium()
 
     pairs: dict[str, str] = {}
     m = folium.Map()
-    mc = fp.MarkerCluster()
+    mc = folium.plugins.MarkerCluster()
     for name, url in [*m.default_js, *mc.default_js]:
         pairs[url] = _data_uri(VENDORED_ASSET_PATHS[name], "text/javascript")
     for name, url in [*m.default_css, *mc.default_css]:
@@ -218,7 +224,17 @@ def build_map_document(
     else:
         # Legacy single-layer path (pre-FEAT-473 envelopes): a single
         # top-level `data` binding of flat {"lat", "lon", "popup"} points.
-        for feature in FoliumMapRenderer._iter_points(props.get("data")):
+        # FEAT-522 (post-review): this path has no named layer to key
+        # `cluster_threshold_by_layer` against (it predates the concept of
+        # a "layer" entirely) — only the flat `cluster_threshold` applies
+        # here, same as the multi-layer path's own default.
+        points = FoliumMapRenderer._iter_points(props.get("data"))
+        if len(points) > cluster_threshold:
+            target = folium.plugins.MarkerCluster()
+            target.add_to(fmap)
+        else:
+            target = fmap
+        for feature in points:
             lat = feature.get("lat")
             lon = feature.get("lon")
             if lat is None or lon is None:
@@ -226,7 +242,7 @@ def build_map_document(
             folium.Marker(
                 location=[lat, lon],
                 popup=str(feature.get("popup", "")) or None,
-            ).add_to(fmap)
+            ).add_to(target)
 
     document = fmap.get_root().render()
     # FEAT-522 (TASK-2787): swap every one of folium's default CDN URLs for
