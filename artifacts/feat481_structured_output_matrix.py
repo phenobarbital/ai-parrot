@@ -478,13 +478,17 @@ def install_parse_capture() -> None:
 
     original = AbstractClient._parse_structured_output
 
-    async def _capturing(self, response_text, structured_output):  # type: ignore[no-untyped-def]
-        result = await original(self, response_text, structured_output)
-        self._feat481_last_parse = {  # type: ignore[attr-defined]
-            "raw_text": response_text,
-            "returned_str": isinstance(result, str),
-        }
-        return result
+    async def _capturing(self, response_text, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Signature-agnostic on purpose: the parse helper grows keyword
+        # arguments over time (PR #1303 added finish_reason= and model=), and a
+        # wrapper that pins today's signature turns every call into a
+        # TypeError that looks like a model failure in the matrix.
+        try:
+            return await original(self, response_text, *args, **kwargs)
+        finally:
+            self._feat481_last_parse = {  # type: ignore[attr-defined]
+                "raw_text": response_text,
+            }
 
     AbstractClient._parse_structured_output = _capturing  # type: ignore[method-assign]
     AbstractClient._feat481_capture_installed = True  # type: ignore[attr-defined]
