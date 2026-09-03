@@ -8,6 +8,7 @@ calls that returned a 400 on ``main`` before this hotfix now succeed. They
 are skipped unless both ``PARROT_TEST_REAL_LLM=1`` (repo-wide gate,
 ``packages/ai-parrot/tests/conftest.py``) and ``OPENAI_API_KEY`` are set.
 """
+
 import os
 
 import pytest
@@ -57,9 +58,7 @@ async def test_gpt5_ask_stream_succeeds():
 async def test_gpt5_invoke_structured_succeeds():
     """invoke() with a Pydantic output_type returns the typed model."""
     client = LLMFactory.create("openai:gpt-5-mini")
-    result = await client.invoke(
-        "Answer with a short verdict.", output_type=_Verdict
-    )
+    result = await client.invoke("Answer with a short verdict.", output_type=_Verdict)
     assert isinstance(result.output, _Verdict)
 
 

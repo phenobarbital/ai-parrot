@@ -941,20 +941,22 @@ class OpenAIClient(OpenAIBaseClient):
                 duration_ms=duration_ms,
             )
 
-        result, response, all_tool_calls, _lc_accumulated_usage_gpt, _lc_round_number_gpt = await self._run_tool_call_loop(
-            result=result,
-            response=response,
-            messages=messages,
-            model_str=model_str,
-            use_tools=_use_tools,
-            args=args,
-            session_id=session_id,
-            call_completion=_continue_call,
-            lazy_loading=lazy_loading,
-            active_tool_names=active_tool_names,
-            track_usage=True,
-            initial_duration_ms=_lc_round_duration_gpt,
-            on_round=_on_round,
+        result, response, all_tool_calls, _lc_accumulated_usage_gpt, _lc_round_number_gpt = (
+            await self._run_tool_call_loop(
+                result=result,
+                response=response,
+                messages=messages,
+                model_str=model_str,
+                use_tools=_use_tools,
+                args=args,
+                session_id=session_id,
+                call_completion=_continue_call,
+                lazy_loading=lazy_loading,
+                active_tool_names=active_tool_names,
+                track_usage=True,
+                initial_duration_ms=_lc_round_duration_gpt,
+                on_round=_on_round,
+            )
         )
 
         # ---------- Finalization (unchanged) ----------
@@ -1381,11 +1383,13 @@ class OpenAIClient(OpenAIBaseClient):
                     oai_tool_calls = []
                     for idx in sorted(_tc_accum):
                         acc = _tc_accum[idx]
-                        oai_tool_calls.append({
-                            "id": acc["id"],
-                            "type": "function",
-                            "function": {"name": acc["name"], "arguments": acc["arguments"]},
-                        })
+                        oai_tool_calls.append(
+                            {
+                                "id": acc["id"],
+                                "type": "function",
+                                "function": {"name": acc["name"], "arguments": acc["arguments"]},
+                            }
+                        )
                     assistant_msg: Dict[str, Any] = {"role": "assistant", "content": assistant_content or None}
                     assistant_msg["tool_calls"] = oai_tool_calls
                     messages.append(assistant_msg)
@@ -1403,11 +1407,13 @@ class OpenAIClient(OpenAIBaseClient):
                             tool_result = await self._execute_tool(tool_name, tool_args)
                             tc.result = tool_result
                             tc.execution_time = time.time() - start_t
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc_entry["id"],
-                                "content": str(tool_result),
-                            })
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc_entry["id"],
+                                    "content": str(tool_result),
+                                }
+                            )
                         except Exception as e:
                             from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -1418,11 +1424,13 @@ class OpenAIClient(OpenAIBaseClient):
                                 e.agent_name = model_str
                                 raise
                             tc.error = str(e)
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc_entry["id"],
-                                "content": f"Error: {e}",
-                            })
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc_entry["id"],
+                                    "content": f"Error: {e}",
+                                }
+                            )
                         all_tool_calls.append(tc)
 
                     # Reset text accumulator for the next round (tool result
@@ -1477,7 +1485,7 @@ class OpenAIClient(OpenAIBaseClient):
                 turn_id,
                 prompt,
                 assistant_content,
-                tools_used if 'tools_used' in dir() else [],
+                tools_used if "tools_used" in dir() else [],
             )
 
     # batch_ask() moved to OpenAIBaseClient (FEAT-438 Module 2) — the

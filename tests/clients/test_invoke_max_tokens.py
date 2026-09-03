@@ -11,6 +11,7 @@ The fix: ``max_tokens`` defaults to ``None`` and is resolved by
 ``AbstractClient._resolve_invoke_max_tokens()`` against a per-client
 ``_invoke_max_tokens`` class default.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -23,6 +24,7 @@ from parrot.clients.base import AbstractClient
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _bare(cls, **attrs):
     """Build a client without running __init__ (mirrors tests/integration/test_invoke.py)."""
@@ -93,6 +95,7 @@ def test_invoke_max_tokens_defaults_to_none(module_path, class_name):
 # Resolution chain
 # ---------------------------------------------------------------------------
 
+
 class TestResolutionChain:
     """_resolve_invoke_max_tokens() precedence rules."""
 
@@ -121,7 +124,7 @@ class TestResolutionChain:
         would still be capped at 4096 — the exact bug being fixed.
         """
         client = _StubClient()
-        assert client.max_tokens == 4096          # ask()'s default, untouched
+        assert client.max_tokens == 4096  # ask()'s default, untouched
         assert client._max_tokens_configured is False
         assert client._resolve_invoke_max_tokens() == 8192
 
@@ -146,6 +149,7 @@ class TestResolutionChain:
 # Per-client class defaults
 # ---------------------------------------------------------------------------
 
+
 class TestPerClientDefaults:
     """Each client declares its own budget; providers with hard caps stay low."""
 
@@ -154,17 +158,22 @@ class TestPerClientDefaults:
 
     def test_google_gets_extra_headroom_for_reasoning(self):
         from parrot.clients.google.client import GoogleGenAIClient
+
         assert GoogleGenAIClient._invoke_max_tokens == 16384
 
     def test_groq_capped_at_provider_limit(self):
         from parrot.clients.groq import GroqClient
+
         assert GroqClient._invoke_max_tokens == 4096
 
-    @pytest.mark.parametrize("module_path,class_name", [
-        ("parrot.clients.localllm", "LocalLLMClient"),
-        ("parrot.clients.hf", "TransformersClient"),
-        ("parrot.clients.gemma4", "Gemma4Client"),
-    ])
+    @pytest.mark.parametrize(
+        "module_path,class_name",
+        [
+            ("parrot.clients.localllm", "LocalLLMClient"),
+            ("parrot.clients.hf", "TransformersClient"),
+            ("parrot.clients.gemma4", "Gemma4Client"),
+        ],
+    )
     def test_local_backends_stay_conservative(self, module_path, class_name):
         module = pytest.importorskip(module_path)
         cls = getattr(module, class_name)
@@ -172,6 +181,7 @@ class TestPerClientDefaults:
 
     def test_anthropic_inherits_base_default(self):
         from parrot.clients.claude import AnthropicClient
+
         assert AnthropicClient._invoke_max_tokens == 8192
 
 
@@ -179,8 +189,10 @@ class TestPerClientDefaults:
 # End-to-end: the resolved budget reaches the provider payload
 # ---------------------------------------------------------------------------
 
+
 def _init_json(client):
     from datamodel.parsers.json import JSONContent
+
     client._json = JSONContent()
 
 
@@ -209,9 +221,7 @@ class TestBudgetReachesProvider:
             part = SimpleNamespace(text="hello")
             content = SimpleNamespace(parts=[part])
             candidate = SimpleNamespace(content=content, finish_reason="STOP")
-            um = SimpleNamespace(
-                prompt_token_count=1, candidates_token_count=1, total_token_count=2
-            )
+            um = SimpleNamespace(prompt_token_count=1, candidates_token_count=1, total_token_count=2)
             return SimpleNamespace(candidates=[candidate], text="hello", usage_metadata=um)
 
         sdk = MagicMock()

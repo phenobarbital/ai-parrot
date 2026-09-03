@@ -39,6 +39,7 @@ the other fixed sampling params) for K-series models — so the former
 no longer overridden at all (inherited from ``OpenAIBaseClient`` unchanged)
 and K-series models now work through it instead of raising.
 """
+
 import contextvars
 from typing import Any, AsyncIterator, Dict, Optional, Union
 
@@ -63,14 +64,18 @@ from ..models.moonshot import (
 # ask / ask_stream down to _chat_completion without altering the parent's
 # call signatures. Using a ContextVar is safe for concurrent async calls
 # because each asyncio Task inherits an isolated copy of the context.
-_thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
-    "_moonshot_thinking_ctx", default={}
-)
+_thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("_moonshot_thinking_ctx", default={})
 
 # Fixed sampling parameters that K-series models reject.
-_PARAMS_TO_STRIP = frozenset({
-    "temperature", "top_p", "n", "presence_penalty", "frequency_penalty",
-})
+_PARAMS_TO_STRIP = frozenset(
+    {
+        "temperature",
+        "top_p",
+        "n",
+        "presence_penalty",
+        "frequency_penalty",
+    }
+)
 
 
 class MoonshotClient(OpenAIBaseClient):
@@ -246,9 +251,7 @@ class MoonshotClient(OpenAIBaseClient):
             if thinking_val is not None:
                 extra = dict(kwargs.get("extra_body") or {})
                 if isinstance(thinking_val, bool):
-                    extra["thinking"] = {
-                        "type": "enabled" if thinking_val else "disabled"
-                    }
+                    extra["thinking"] = {"type": "enabled" if thinking_val else "disabled"}
                 elif isinstance(thinking_val, dict):
                     extra["thinking"] = thinking_val
                 kwargs["extra_body"] = extra
@@ -261,9 +264,7 @@ class MoonshotClient(OpenAIBaseClient):
             kwargs.setdefault("prompt_cache_key", self.prompt_cache_key)
 
         retry_policy = AsyncRetrying(
-            retry=retry_if_exception_type(
-                (APIConnectionError, RateLimitError, APIError)
-            ),
+            retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(3),
             reraise=True,
@@ -310,9 +311,7 @@ class MoonshotClient(OpenAIBaseClient):
             ``_capture_reasoning_content``).
         """
         kwargs.setdefault("model", self.model or self._default_model)
-        token = _thinking_ctx.set(
-            {"thinking": thinking, "reasoning_effort": reasoning_effort}
-        )
+        token = _thinking_ctx.set({"thinking": thinking, "reasoning_effort": reasoning_effort})
         try:
             result = await super().ask(prompt, **kwargs)
         finally:
@@ -362,9 +361,7 @@ class MoonshotClient(OpenAIBaseClient):
         """
         kwargs.setdefault("model", self.model or self._default_model)
 
-        token = _thinking_ctx.set(
-            {"thinking": thinking, "reasoning_effort": reasoning_effort}
-        )
+        token = _thinking_ctx.set({"thinking": thinking, "reasoning_effort": reasoning_effort})
         try:
             async for chunk in super().ask_stream(prompt, **kwargs):
                 if isinstance(chunk, AIMessage):

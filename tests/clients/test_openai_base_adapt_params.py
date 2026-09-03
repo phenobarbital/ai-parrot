@@ -3,6 +3,7 @@
 Hotfix ``openai-max-completion-tokens`` (no Jira ticket, FEAT-466) — see
 ``sdd/specs/openai-max-completion-tokens.spec.md`` §3 Module 1.
 """
+
 from types import SimpleNamespace
 from typing import Any
 
@@ -97,9 +98,7 @@ async def test_chat_completion_routes_through_hook(captured_payload, stream, bin
     c = _OptedIn.__new__(_OptedIn)
     sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fake)))
     bind_sdk_client(c, sdk)
-    await c._chat_completion(
-        "gpt-5-mini", [], use_tools=True, stream=stream, max_tokens=64, temperature=0.0
-    )
+    await c._chat_completion("gpt-5-mini", [], use_tools=True, stream=stream, max_tokens=64, temperature=0.0)
     assert seen["max_completion_tokens"] == 64
     assert "max_tokens" not in seen and "temperature" not in seen
 

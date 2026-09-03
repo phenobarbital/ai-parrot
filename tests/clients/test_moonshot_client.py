@@ -8,6 +8,7 @@ prompt_cache_key injection, model enum values, and LLMFactory registration.
 
 No live Moonshot API calls are made.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -61,9 +62,7 @@ def _make_mock_response():
     mock_choice.stop_reason = "stop"
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
-    mock_response.usage = MagicMock(
-        prompt_tokens=1, completion_tokens=1, total_tokens=2
-    )
+    mock_response.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
     mock_response.dict = MagicMock(return_value={})
     return mock_response
 
@@ -150,9 +149,7 @@ def env_key(monkeypatch):
     monkeypatch.setattr(
         moonshot_mod.config,
         "get",
-        lambda key, default=None: (
-            "env-moonshot-key" if key == "MOONSHOT_API_KEY" else default
-        ),
+        lambda key, default=None: ("env-moonshot-key" if key == "MOONSHOT_API_KEY" else default),
     )
     return "env-moonshot-key"
 
@@ -530,19 +527,26 @@ class TestMoonshotModelEnum:
         for member_name, expected_value in self.EXPECTED.items():
             member = MoonshotModel[member_name]
             assert member.value == expected_value, (
-                f"MoonshotModel.{member_name}.value expected {expected_value!r}, "
-                f"got {member.value!r}"
+                f"MoonshotModel.{member_name}.value expected {expected_value!r}, " f"got {member.value!r}"
             )
 
     def test_k_series_models_frozenset(self):
-        assert K_SERIES_MODELS == frozenset({
-            "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6",
-        })
+        assert K_SERIES_MODELS == frozenset(
+            {
+                "kimi-k3",
+                "kimi-k2.7-code",
+                "kimi-k2.7-code-highspeed",
+                "kimi-k2.6",
+            }
+        )
 
     def test_always_thinking_models_frozenset(self):
-        assert ALWAYS_THINKING_MODELS == frozenset({
-            "kimi-k2.7-code", "kimi-k2.7-code-highspeed",
-        })
+        assert ALWAYS_THINKING_MODELS == frozenset(
+            {
+                "kimi-k2.7-code",
+                "kimi-k2.7-code-highspeed",
+            }
+        )
 
     def test_reasoning_effort_models_frozenset(self):
         assert REASONING_EFFORT_MODELS == frozenset({"kimi-k3"})
@@ -551,10 +555,16 @@ class TestMoonshotModelEnum:
         assert THINKING_DICT_MODELS == frozenset({"kimi-k2.6"})
 
     def test_vision_models_frozenset(self):
-        assert VISION_MODELS == frozenset({
-            "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6",
-            "moonshot-v1-8k-vision-preview", "moonshot-v1-128k-vision-preview",
-        })
+        assert VISION_MODELS == frozenset(
+            {
+                "kimi-k3",
+                "kimi-k2.7-code",
+                "kimi-k2.7-code-highspeed",
+                "kimi-k2.6",
+                "moonshot-v1-8k-vision-preview",
+                "moonshot-v1-128k-vision-preview",
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -599,9 +609,7 @@ class TestMoonshotReasoningContentCapture:
 
         async def fake_ask(self, prompt, **kwargs):
             return _make_ai_message(
-                raw_response={
-                    "choices": [{"message": {"reasoning_content": "step by step"}}]
-                },
+                raw_response={"choices": [{"message": {"reasoning_content": "step by step"}}]},
             )
 
         with patch("parrot.clients.openai_base.OpenAIBaseClient.ask", new=fake_ask):
@@ -617,11 +625,7 @@ class TestMoonshotReasoningContentCapture:
             yield "chunk"
             yield _make_ai_message(
                 model="moonshot-v1-128k",
-                raw_response={
-                    "choices": [
-                        {"message": {"reasoning_content": "final answer reasoning"}}
-                    ]
-                },
+                raw_response={"choices": [{"message": {"reasoning_content": "final answer reasoning"}}]},
             )
 
         with patch("parrot.clients.openai_base.OpenAIBaseClient.ask_stream", new=fake_ask_stream):
@@ -648,9 +652,7 @@ class TestMoonshotAskStreamFunnelCoverage:
 
     @pytest.mark.asyncio
     async def test_ask_stream_strips_temperature_for_k_series_via_funnel(self):
-        client, captured = await _client_with_mock_stream_sdk(
-            model=MoonshotModel.KIMI_K3.value
-        )
+        client, captured = await _client_with_mock_stream_sdk(model=MoonshotModel.KIMI_K3.value)
 
         chunks = [chunk async for chunk in client.ask_stream("hi") if isinstance(chunk, str)]
 
@@ -661,9 +663,7 @@ class TestMoonshotAskStreamFunnelCoverage:
 
     @pytest.mark.asyncio
     async def test_ask_stream_leaves_temperature_for_legacy_models(self):
-        client, captured = await _client_with_mock_stream_sdk(
-            model=MoonshotModel.MOONSHOT_V1_128K.value
-        )
+        client, captured = await _client_with_mock_stream_sdk(model=MoonshotModel.MOONSHOT_V1_128K.value)
 
         [chunk async for chunk in client.ask_stream("hi") if isinstance(chunk, str)]
 

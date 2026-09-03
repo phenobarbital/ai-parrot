@@ -3,6 +3,7 @@
 Hotfix ``openai-max-completion-tokens`` (no Jira ticket, FEAT-466) — see
 ``sdd/specs/openai-max-completion-tokens.spec.md`` §3 Module 2.
 """
+
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
