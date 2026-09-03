@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-03T13:39:26Z",
-  "completed_at": "2026-09-03T15:30:13+00:00",
+  "completed_at": "2026-09-03T16:17:08+00:00",
   "tasks": [
     {
       "id": "TASK-2774",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T13:53:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2774-config-observation-memory-models.md"
+      "file": "sdd/tasks/completed/TASK-2774-config-observation-memory-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2775",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:02:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2775-process-observer-sampling-verdicts.md"
+      "file": "sdd/tasks/completed/TASK-2775-process-observer-sampling-verdicts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2776",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:06:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2776-worker-sigint-interruptible-exec.md"
+      "file": "sdd/tasks/completed/TASK-2776-worker-sigint-interruptible-exec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2777",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:20:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2777-handle-observer-lifecycle-diagnostics.md"
+      "file": "sdd/tasks/completed/TASK-2777-handle-observer-lifecycle-diagnostics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2778",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:28:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2778-handle-two-stage-deadline-interrupt.md"
+      "file": "sdd/tasks/completed/TASK-2778-handle-two-stage-deadline-interrupt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2779",
@@ -126,7 +131,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:32:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2779-pool-host-memory-pressure.md"
+      "file": "sdd/tasks/completed/TASK-2779-pool-host-memory-pressure.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2780",
@@ -147,7 +153,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T14:38:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2780-observer-config-unit-tests.md"
+      "file": "sdd/tasks/completed/TASK-2780-observer-config-unit-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2781",
@@ -169,7 +176,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T15:06:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2781-interrupt-handle-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2781-interrupt-handle-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2782",
@@ -191,7 +199,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T15:19:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2782-memory-pool-e2e-tests.md"
+      "file": "sdd/tasks/completed/TASK-2782-memory-pool-e2e-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2783",
@@ -215,7 +224,8 @@
       "assigned_to": null,
       "started_at": "2026-09-03T13:50:52+00:00",
       "completed_at": "2026-09-03T15:30:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2783-docs-memory-calibration.md"
+      "file": "sdd/tasks/completed/TASK-2783-docs-memory-calibration.md",
+      "verification": "verified"
     }
   ]
 }
