@@ -180,10 +180,23 @@ async def test_retry_cap_parks_reprocess_exhausted(tmp_vault, monkeypatch):
 6. Fill in the Completion Note.
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.8 (session_01TjfZ6UfPbX4WyuHHunavQe)
+**Date**: 2026-09-03
+**Notes**: Built on the existing `runner._rollback`/`_write_note` backbone (no
+reinvention). New `nodes/quarantine.py` handles the `Raw/Processed → Raw/Failed`
+move + `failure.json` + retry-batch build + discard. `runner.run_ingest` now builds
+a retry batch (from local bytes, no re-download) before the fetch, passes
+`raw_failed_root` to the fetch-gate (so quarantined ids aren't re-fetched), routes
+both the exception and §34-failure paths through `_handle_meeting_failure`
+(quarantine + failed-processing/reprocess-exhausted review item; id never marked
+processed), and clears the quarantine review item on a successful retry via
+`_resolve_quarantine_items`. Added `conf.WIKI_KB_MAX_REPROCESS_ATTEMPTS` (3) and two
+review-queue types. Tests: `tests/integration/test_wiki_kb_quarantine.py` (4 tests —
+rollback+quarantine, auto-retry success, retry-cap parking, attempts tracking) all
+pass; updated two existing ingest tests to the new quarantine behavior. ruff + mypy
+clean on all changed files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. (Scope note: the manual `reprocess` intent was
+explicitly out of scope; auto-retry + human re-drop cover v1.) Pre-existing,
+unrelated: `test_wiki_kb_ingest.py::test_ingest_end_to_end` fails on the dev-merge
+baseline (a daily-note date regression), independent of this task.
