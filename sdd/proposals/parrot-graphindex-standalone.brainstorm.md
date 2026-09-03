@@ -629,7 +629,7 @@ from parrot.knowledge.pageindex.okf.projection import ...                   # pa
 - ~~`parrot_tools.wiki`~~ — does not exist; wiki toolkits live in `parrot/knowledge/wiki/tools.py`, `toolkit.py`, `structural/`.
 - ~~`.mcp.json` at repo root~~ — CLAUDE.md mentions it, but the file is absent; the `wikitoolkit` MCP entry is in `.claude/settings.local.json`.
 - ~~`parrot/knowledge/__init__.py` imports~~ — the file exists but has no imports (PEP 420-like root, import-clean).
-- ~~`HashingGraphEmbedder` as a class in `embed.py`~~ — it is referenced from `wiki/cli.py:3168,3513`; its definition location must be verified during FEAT-A (not in `embed.py`'s class list, which only has `GraphIndexEmbedder`).
+- ~~`HashingGraphEmbedder` in `embed.py`~~ — it is defined in `graphindex/factory.py:118`, not in `embed.py` (which only has `GraphIndexEmbedder`).
 - ~~`hyperscan` / `google-re2` as parrot dependencies~~ — they are optional `pathspec` backends auto-detected at import; do not declare them.
 - ~~A `parrot.stores.models` dependency-free path~~ — importing `parrot.stores.models` executes `parrot/stores/__init__.py` (eager `AbstractStore`) today.
 - ~~`ai-parrot-tools` as a leaf package~~ — it depends on `ai-parrot`; the "top-level package" precedent covers naming and the finder, **not** dependency direction.
@@ -668,10 +668,10 @@ from parrot.knowledge.pageindex.okf.projection import ...                   # pa
 - [x] Versioning — *Owner: Jesus Lara*: workspace member, lockstep with `/release`.
 - [x] Phasing — *Owner: Jesus Lara*: two FEATs (seams in core, then physical move).
 - [x] navconfig — *Owner: Jesus Lara*: kept as optional lazy credential provider, dependency of `[postgres]`/`[arangodb]` only; `parrot.conf` never enters the standalone.
-- [ ] Where is `HashingGraphEmbedder` defined today (referenced from `wiki/cli.py:3168`)? Verify before writing the `Embedder` Protocol task. — *Owner: FEAT-A planner*
-- [ ] `pageindex/hybrid_search.py` uses `parrot._imports.lazy_import`; does it move (needs a local `lazy_import`) or stay? — *Owner: FEAT-A planner*
+- [x] Where is `HashingGraphEmbedder` defined today? — *Owner: FEAT-A planner*: `parrot/knowledge/graphindex/factory.py:118`; it moves to the standalone as the default `Embedder`.
+- [x] `pageindex/hybrid_search.py` uses `parrot._imports.lazy_import` (`hybrid_search.py:28`, defined at `parrot/_imports.py:110`) — *Owner: FEAT-A planner*: it moves; the standalone carries its own small `lazy_import` helper (no `parrot.*` import allowed).
 - [ ] Should core's extras `graphindex` / `wiki-languages` / `wiki-structural` / `leiden` / `wiki` be kept as forwards (`ai-parrot[wiki]` → `parrot-graphindex[all]`) or removed with a deprecation note? — *Owner: Jesus Lara*
 - [ ] Entry-point group name for providers (`parrot_graphindex.providers`) and whether backends also register through it or keep `register_wiki_backend()` import-time registration (FEAT-449 M7). — *Owner: FEAT-B planner*
 - [ ] CI: does the GitHub build matrix need an explicit order (build `parrot-graphindex` wheel before `ai-parrot`) or does `uv build --all-packages` resolve it from `[tool.uv.sources]`? — *Owner: FEAT-B planner*
-- [ ] Obsidian: does `parrot.interfaces.obsidian` have consumers outside wiki (e.g. `parrot.loaders.obsidian`, `parrot.tools.obsidian`) that would then depend on the standalone's `[obsidian]` extra? — *Owner: FEAT-B planner*
+- [x] Obsidian: does `parrot.interfaces.obsidian` have consumers outside wiki? — *Owner: FEAT-B planner*: yes — `parrot/agents/obsidian.py`, `parrot/loaders/obsidian/{__init__,loader,graph_bridge}.py`, `parrot/tools/obsidian.py`, `parrot/interfaces/jira/{__init__,errors}.py`, `parrot_tools/audio_note_capture.py`, plus `tests/loaders/obsidian/*`. Recommendation: move the parser/models/index (`interfaces/obsidian`) into the standalone **base** (marko + python-frontmatter are small, no extra gating) so every consumer gets it transitively via the finder; keep `[obsidian]` for vault sync / MCP-only bits. Final call: Jesus Lara.
 - [ ] Jira v2: once `LLMCaller` exists, should `interfaces.jira` (aiohttp + pydantic) also move behind a `[jira]` extra so `ingest-jira` works standalone with a registered caller? — *Owner: Jesus Lara*
