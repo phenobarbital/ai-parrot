@@ -87,9 +87,10 @@ from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence   #
 ## Implementation Notes
 
 ### Key Constraints
-- Run with `ENV=prod`? NO — this spike needs a scratch Postgres
-  (`GRAPHINDEX_PG_DSN`), never a shared/production database; the throwaway
-  schema is created and dropped by the script.
+- Run with `ENV=prod`? NO — this spike runs against the local Postgres
+  (resolved `GRAPHINDEX_PG_DSN`, defaulting to `parrot.conf.default_dsn`),
+  never a shared/production database; the throwaway schema is created and
+  dropped by the script.
 - Seeded RNG; print the seed into the report for reproducibility.
 - Time with `\timing`-equivalent (Python monotonic around fetch), median of
   ≥5 runs per cell.

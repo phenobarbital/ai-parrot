@@ -37,14 +37,22 @@ registration. **asyncpg is mandatory — zero SQLAlchemy** (spec U4/D8).
     callback that registers the pgvector codec
     (`pgvector.asyncpg.register_vector`) and sets `search_path` to the
     configured schema.
-  - navconfig-backed settings: `GRAPHINDEX_PG_DSN`, `GRAPHINDEX_PG_SCHEMA`
+  - navconfig-backed settings: `GRAPHINDEX_PG_DSN` — **default:
+    `default_dsn` from `parrot.conf`** (`conf.py:72`, the local Postgres
+    carrying the `vector`/`btree_gist`/`pg_trgm` extensions); resolve as
+    `config.get("GRAPHINDEX_PG_DSN", fallback=default_dsn)`, the exact
+    pattern of `CREW_RESULT_STORAGE_PG_DSN` at `conf.py:302`. Plus
+    `GRAPHINDEX_PG_SCHEMA`
     (default `graphindex`), `GRAPHINDEX_EMBEDDING_DIM`,
     `GRAPHINDEX_FTS_REGCONFIG` (namespace-prefix → regconfig map, e.g.
     `{"legal:": "spanish", "sym:": "simple"}`) with a
     `resolve_regconfig(namespace) -> str` helper (default `simple`).
   - Required extensions: emit `CREATE EXTENSION IF NOT EXISTS vector` and
     `btree_gist`; fail with a clear error message when the server lacks them.
-- Write live-DB-gated tests (skip without `GRAPHINDEX_PG_DSN`).
+- Write live-DB-gated tests — gate on the RESOLVED DSN
+  (`GRAPHINDEX_PG_DSN` env/navconfig override, else `default_dsn`); skip only
+  when both are unset (`default_dsn` is `None` when DB config is absent,
+  `conf.py:76`).
 
 **NOT in scope**: any store method (TASK-2765+), ANN index creation policy
 (TASK-2769 decides HNSW/IVFFlat with spike data — this task only leaves the
@@ -69,6 +77,8 @@ embeddings table indexable), wiki store (TASK-2768).
 import asyncpg                          # precedent: parrot/core/hooks/postgres.py, parrot/eval/sink.py
 from pgvector.asyncpg import register_vector  # pgvector pip pkg — VERIFY installed version exposes it
 from navconfig import config            # house config pattern (see parrot/conf.py usage)
+from parrot.conf import default_dsn     # conf.py:72 — 'postgres://…' local DSN (None when DB config absent, :76)
+# DSN resolution precedent: CREW_RESULT_STORAGE_PG_DSN = config.get(..., fallback=default_dsn)  # conf.py:302
 ```
 
 ### Existing Signatures to Use (patterns, same repo)
@@ -129,7 +139,10 @@ draft)" verbatim as the starting point — key invariants that MUST survive:
 - [ ] `resolve_regconfig("legal:core") == "spanish"` with the mapped config;
       unmapped → `"simple"` (test).
 - [ ] Zero SQLAlchemy imports: `grep -i sqlalchemy pg_schema.py` empty.
-- [ ] `ruff check` clean; tests skip cleanly without `GRAPHINDEX_PG_DSN`.
+- [ ] Unset `GRAPHINDEX_PG_DSN` resolves to `parrot.conf.default_dsn`
+      (test with monkeypatched config).
+- [ ] `ruff check` clean; tests skip cleanly when the resolved DSN is None
+      (no env override AND `default_dsn is None`).
 
 ---
 
@@ -138,8 +151,9 @@ draft)" verbatim as the starting point — key invariants that MUST survive:
 ```python
 # packages/ai-parrot/tests/knowledge/graphindex/test_pg_schema.py
 import os, pytest
-pytestmark = pytest.mark.skipif(not os.environ.get("GRAPHINDEX_PG_DSN"),
-                                reason="needs live Postgres")
+from parrot.conf import default_dsn
+PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN") or default_dsn
+pytestmark = pytest.mark.skipif(not PG_DSN, reason="needs live Postgres")
 
 async def test_migration_idempotent(pg_pool, tmp_schema): ...
 async def test_exclusion_constraint_rejects_overlap(pg_pool, tmp_schema): ...

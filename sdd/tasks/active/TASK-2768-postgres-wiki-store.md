@@ -47,7 +47,8 @@ as secondary lookup. Wired into `create_wiki_store` as an explicit
   - Constructor: `PostgresWikiStore(dsn=..., wiki_name=..., schema=...)`.
 - MODIFY `create_wiki_store` (`wiki/store.py:1795`): add an explicit
   `backend == "postgres"` branch with lazy import, passing
-  `dsn=kwargs["dsn"]` (navconfig default `GRAPHINDEX_PG_DSN`); extend the
+  `dsn=kwargs["dsn"]` (default: the resolved `GRAPHINDEX_PG_DSN`, which
+  itself falls back to `parrot.conf.default_dsn` — see TASK-2764); extend the
   unknown-backend error message list.
 - Extend the wiki contract suite fixture with a live-gated `postgres` param:
   `tests/knowledge/wiki/test_store.py:29`

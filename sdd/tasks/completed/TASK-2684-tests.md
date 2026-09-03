@@ -193,9 +193,47 @@ def test_voice_answer_submission_passthrough():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: —
-**Date**: —
-**Notes**: —
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-03
+**Notes**:
+- Most unit tests listed in spec §4 were already written by TASK-2677–2683
+  (`test_core_models.py`, `test_validators_rest.py`, `test_field_helpers.py`,
+  `test_xforms.py` already had full FEAT-488 coverage). This task added the
+  remaining gaps:
+  - `test_jsonschema_emits_accept_content_types` in `test_renderers.py`
+    (`TestJsonSchemaRendererContentType`) — the renderer already emitted
+    `x-accept-content-types` (verified in `renderers/jsonschema.py`) but had
+    no test.
+  - `test_audio_renderer_accept_content_types` in
+    `tests/formdesigner/test_audio_form_renderer.py`
+    (`TestAudioRendererContentType`) — verifies `AudioQuestion.accept_content_types`
+    mirrors `FormField.accept_content_types`.
+  - New `tests/integration/test_formfield_content_type.py` with both
+    integration tests from spec §4:
+    `test_backward_compatible_schema_deserialization` and
+    `test_voice_answer_submission_passthrough`.
+- Corrected two stale details from the task's Test Specification against the
+  verified Codebase Contract: `FormSchema` requires `form_id` (the sample
+  JSON in this task file omitted it) and `FormValidator` exposes
+  `validate()`, not `validate_submission()` — used the verified method.
+- Ran the full `pytest packages/parrot-formdesigner/ -q` suite: 41
+  pre-existing failures unrelated to FEAT-488 (missing `FieldType` schema
+  snippets for `search`/`ai_capture`/`credit_card`/etc., controls-registry
+  snapshot staleness, FEAT-300 API tests) — confirmed identical against
+  `dev` (no diff in those files between this branch and `dev`), so left
+  untouched per no-scope-creep. All FEAT-488-relevant test files
+  (12 unit + xforms + audio + integration) pass: 224 passed, 2 unrelated
+  pre-existing failures out of that filtered run's own two collisions with
+  the same pre-existing gap. `ruff check` clean on all new/modified test
+  files.
+- **Heads-up for `/sdd-done`**: `dev` already contains this feature's
+  TASK-2677–2683 commits via a previously merged PR (#1293,
+  "Merge pull request #1293 from phenobarbital/feat-488-formfield-content-type")
+  — that PR landed before TASK-2684 was done, so per-spec index status was
+  never finalized (`completed_at` still `null` on `dev`). This worktree's
+  branch tip was already an ancestor of `dev` before this task's commits;
+  the original PR is closed/merged, so landing this task's work requires a
+  **new** PR against `dev` (title suggestion: "FEAT-488 follow-up: TASK-2684
+  tests").
+**Deviations from spec**: none (only stale contract details corrected, no
+scope change).
