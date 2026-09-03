@@ -409,7 +409,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -450,7 +450,9 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
         messages, conversation_history, resolved_system_prompt = await self._build_messages(
@@ -623,7 +625,7 @@ class ZaiClient(OpenAIBaseClient):
         self,
         prompt: str,
         model: Union[str, ZaiModel, None] = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
@@ -666,6 +668,7 @@ class ZaiClient(OpenAIBaseClient):
             Exception: Propagates provider errors after emitting a
                 ``ClientCallFailedEvent``.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         resolved_model = self._model_value(model)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
@@ -1012,8 +1015,8 @@ class ZaiClient(OpenAIBaseClient):
                 wins).
             structured_output: Full :class:`StructuredOutputConfig`.  Takes
                 precedence over *output_type*.
-            model: Model override.  Falls back to :attr:`_lightweight_model`,
-                then :attr:`model`.
+            model: Model override.  Falls back to an explicitly selected
+                :attr:`model`, then :attr:`_lightweight_model`.
             system_prompt: System prompt override.  Falls back to the default
                 :attr:`BASIC_SYSTEM_PROMPT` template.
             max_tokens: Maximum completion tokens (default ``4096``).
@@ -1029,11 +1032,11 @@ class ZaiClient(OpenAIBaseClient):
         Raises:
             :class:`~parrot.exceptions.InvokeError`: On any provider error.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_system = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             if tools:
                 for tool_def in tools:

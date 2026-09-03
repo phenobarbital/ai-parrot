@@ -15,12 +15,14 @@ class GoogleModel(Enum):
     GEMINI_PRO_LATEST = "gemini-3.1-pro-preview"
     GEMINI_PRO_CUSTOMTOOLS = "gemini-3.1-pro-preview-customtools"
     GEMINI_FLASH_LITE_LATEST = "gemini-3.1-flash-lite"
+    # Gemini 3.8 series
+    GEMINI_3_8_FLASH = "gemini-3.8-flash"
     # Gemini 3.7 series
     GEMINI_3_7_FLASH = "gemini-3.7-flash"
     GEMINI_3_7_PRO = "gemini-3.7-pro"
     GEMINI_3_7_FLASH_THINKING = "gemini-3.7-flash-thinking"
     GEMINI_3_7_FLASH_LITE = "gemini-3.7-flash-lite"
-    # Gemini 3.x series
+    # Gemini 3.6 series
     GEMINI_3_6_FLASH = "gemini-3.6-flash"
     GEMINI_3_5_FLASH = "gemini-3.5-flash"
     GEMINI_3_5_FLASH_LITE = "gemini-3.5-flash-lite"
@@ -282,6 +284,7 @@ class VertexAIModel(Enum):
     Preview models additionally require api_version='v1beta1'.
     """
 
+    GEMINI_3_8_FLASH = "gemini-3.8-flash"
     GEMINI_3_7_FLASH = "gemini-3.7-flash"
     GEMINI_3_7_PRO = "gemini-3.7-pro"
     GEMINI_3_6_FLASH = "gemini-3.6-flash"

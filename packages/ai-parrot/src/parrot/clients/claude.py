@@ -28,6 +28,7 @@ from ..conf import (
     AWS_REGION_NAME,
     AWS_SESSION_TOKEN,
     ANTHROPIC_AWS_WORKSPACE_ID,
+    ANTHROPIC_AWS_API_KEY,
     BEDROCK_AWS_REGION,
 )
 
@@ -74,8 +75,29 @@ class AnthropicClient(AbstractClient):
     _default_model: str = 'claude-sonnet-4-5'
     _fallback_model: str = 'claude-sonnet-4.5'
     _lightweight_model: str = "claude-haiku-4-5-20251001"
+    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
+    # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
+    # ask()/ask_stream() fell back to before FEAT-481.
+    _default_max_tokens: int = 16000
     # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
     _min_cache_tokens: int = 1024
+
+    # 21,333 — not a round number, and not a model limit. ``ask()`` and
+    # ``invoke()`` both go through the SDK's NON-streaming
+    # ``messages.create()``, and the SDK refuses such a request outright when
+    # ``3600 * max_tokens / 128_000 > 600`` ("Streaming is required for
+    # operations that may take longer than 10 minutes",
+    # ``_base_client.py::_calculate_nonstreaming_timeout``). That inequality
+    # solves to ``max_tokens <= 21_333``, so anything larger raises a
+    # ``ValueError`` locally before a request is ever sent — a raised default
+    # would break every call rather than lengthen it.
+    #
+    # This ceiling is the transport's, not the model's: the same Claude models
+    # accept 65,536 through :class:`~parrot.clients.bedrock.BedrockConverseClient`
+    # (boto3 Converse, verified live 2026-09-03), which is why that client sets
+    # its own, much larger values. Lifting this one means teaching ``invoke()``
+    # to stream for large budgets — a separate change.
+    _default_max_tokens: int = 21333
 
     def __init__(
         self,
@@ -94,8 +116,12 @@ class AnthropicClient(AbstractClient):
         """Initialise an Anthropic client.
 
         Args:
-            api_key: Anthropic API key (direct backend only).  Defaults to the
-                ``ANTHROPIC_API_KEY`` navconfig / env value.
+            api_key: Anthropic API key.  For the ``direct`` backend this is
+                the api.anthropic.com key, defaulting to the
+                ``ANTHROPIC_API_KEY`` navconfig / env value.  For the ``aws``
+                backend it is the Claude-on-AWS workspace key, defaulting to
+                ``ANTHROPIC_AWS_API_KEY`` (a different credential — the direct
+                key is not valid against a workspace).
             base_url: Base URL for the direct Anthropic API.
             backend: Transport backend — ``"direct"`` (default), ``"bedrock"``,
                 or ``"aws"``.
@@ -137,6 +163,11 @@ class AnthropicClient(AbstractClient):
         # For the aws-workspace backend keep using the general AWS_REGION_NAME fallback.
         _region = aws_region or AWS_REGION_NAME
         _workspace_id = workspace_id or ANTHROPIC_AWS_WORKSPACE_ID
+        # A Claude-on-AWS workspace is billed and scoped through AWS and does
+        # NOT accept the direct api.anthropic.com key, so the "aws" backend
+        # takes its own credential. Fall back to ANTHROPIC_API_KEY only as a
+        # last resort, for setups that reuse one key across both.
+        _aws_api_key = api_key or ANTHROPIC_AWS_API_KEY or self.api_key
 
         # ── Instantiate the matching backend strategy ─────────────────────────
         from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
@@ -152,6 +183,7 @@ class AnthropicClient(AbstractClient):
             self._backend = AWSWorkspaceBackend(
                 aws_region=_region,
                 workspace_id=_workspace_id,
+                api_key=_aws_api_key,
                 aws_access_key=_access_key,
                 aws_secret_key=_secret_key,
                 aws_session_token=_session_token,
@@ -494,7 +526,7 @@ class AnthropicClient(AbstractClient):
 
         # Anthropic SDK requires max_tokens to be a non-None int;
         # _calculate_nonstreaming_timeout() does `int * max_tokens`.
-        _max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        _max_tokens = self._resolve_max_tokens(max_tokens)
         payload = {
             "model": model,
             "max_tokens": _max_tokens,
@@ -790,7 +822,7 @@ class AnthropicClient(AbstractClient):
         
         payload = {
             "model": model,
-            "max_tokens": self.max_tokens or 4096,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": self.temperature,
             "messages": messages,
             "tools": self._prepare_tools()
@@ -944,7 +976,7 @@ class AnthropicClient(AbstractClient):
                 self.register_tool(tool)
 
         # Ensure max_tokens is never None (SDK multiplies it for timeout calc)
-        current_max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
+        current_max_tokens = self._resolve_max_tokens(max_tokens)
         retry_count = 0
         assistant_content = ""
         final_message = None
@@ -1419,7 +1451,7 @@ class AnthropicClient(AbstractClient):
         # Prepare the payload
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(max_tokens),
             "temperature": temperature or self.temperature,
             "messages": messages
         }
@@ -1587,7 +1619,7 @@ class AnthropicClient(AbstractClient):
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature or self.temperature,
             "messages": messages,
             "system": system_prompt
@@ -1674,7 +1706,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1744,7 +1776,7 @@ Requirements:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1819,7 +1851,7 @@ Format your response clearly with these sections.
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1920,7 +1952,7 @@ Provide your final answer with:
 
         payload = {
             "model": self._resolve_model(model),
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
             "system": system_prompt
@@ -1966,7 +1998,8 @@ Provide your final answer with:
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full :class:`StructuredOutputConfig`; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``.
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.
@@ -1979,11 +2012,11 @@ Provide your final answer with:
         Raises:
             :class:`InvokeError`: On provider errors.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             # Claude: inject schema instruction into system prompt
             if config:

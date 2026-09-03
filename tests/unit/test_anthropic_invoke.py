@@ -70,12 +70,26 @@ class TestAnthropicInvoke:
         assert result.output == "Hello world"
 
     async def test_lightweight_model_default(self, mock_claude_client):
-        """invoke() uses _lightweight_model when no model param."""
+        """invoke() uses _lightweight_model when the caller selected no model.
+
+        ``AbstractClient.__init__`` sets ``self.model`` only from an explicit
+        ``model=`` kwarg, so ``None`` is the ``LLMFactory.create("anthropic")``
+        case — the one the lightweight default exists for.
+        """
+        mock_claude_client.model = None
         mock_claude_client.client.messages.create = AsyncMock(
             return_value=_make_mock_response("ok")
         )
         result = await mock_claude_client.invoke("test")
         assert result.model == "claude-haiku-4-5-20251001"
+
+    async def test_selected_model_outranks_lightweight(self, mock_claude_client):
+        """A model selected at construction beats _lightweight_model."""
+        mock_claude_client.client.messages.create = AsyncMock(
+            return_value=_make_mock_response("ok")
+        )
+        result = await mock_claude_client.invoke("test")
+        assert result.model == "claude-sonnet-4-5"
 
     async def test_model_override(self, mock_claude_client):
         """Explicit model param overrides _lightweight_model."""

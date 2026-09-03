@@ -248,9 +248,25 @@ class AbstractClient(EventEmitterMixin, ABC):
     # rejects the request ("Invalid 'tools': missing field `type`").
     tool_format: Optional[ToolFormat] = None
 
-    # Lightweight model used by invoke() — subclasses override this.
-    # None means fall back to self.model.
+    # Lightweight model used by invoke() when the caller did NOT select a model
+    # explicitly — subclasses override this. It is a *default*, not an override:
+    # an explicit ``model=`` kwarg at construction time (self.model) wins over
+    # it, otherwise invoke() would silently run a different model than the one
+    # the caller asked for. None means "no cheap default for this client".
+    # See _resolve_invoke_model() for the full chain.
     _lightweight_model: Optional[str] = None
+
+    # Default output-token budget for ask() / ask_stream() when neither the
+    # caller nor the constructor supplied one. ``None`` means "send no cap and
+    # let the provider apply its own default" — the right choice for providers
+    # whose native ceiling is far above anything we would hardcode
+    # (GoogleGenAIClient). Subclasses override this where the provider caps
+    # lower (GroqClient: 4096) or where generation is locally expensive
+    # (TransformersClient / Gemma4Client: 512, LocalLLMClient: 4096).
+    #
+    # Resolution order (see _resolve_max_tokens): per-call ``ask(max_tokens=N)``
+    # > per-instance ``Client(max_tokens=N)`` / ``preset`` > this class default.
+    _default_max_tokens: Optional[int] = 8192
 
     # Default output-token budget for invoke(). Subclasses override this where
     # the provider caps lower (GroqClient: 4096, local backends: 4096) or where
@@ -264,10 +280,15 @@ class AbstractClient(EventEmitterMixin, ABC):
     # MAX_TOKENS with truncated (unparseable) JSON. The identical call on
     # gemini-2.5-pro spent 1,011 on reasoning and finished cleanly at STOP.
     #
-    # Resolution order (see _resolve_invoke_max_tokens): per-call
-    # ``invoke(max_tokens=N)`` > per-instance ``Client(invoke_max_tokens=N)`` >
-    # per-instance ``Client(max_tokens=N)`` > this class default.
-    _invoke_max_tokens: int = 8192
+    # Resolution order: see _resolve_max_tokens().
+    #
+    # ``None`` means "invoke() uses _default_max_tokens" — set this ONLY when a
+    # client wants invoke() to differ from ask(). Defaulting it to a concrete
+    # number here would silently override every client that raises
+    # _default_max_tokens for good reason (NvidiaClient's 65,536 for reasoning
+    # models, AnthropicClient's non-streaming ceiling), because a class
+    # attribute on the base always resolves before those.
+    _invoke_max_tokens: Optional[int] = None
 
     # Fallback model for capacity errors — subclasses set their own default
     # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K,
@@ -282,6 +303,43 @@ class AbstractClient(EventEmitterMixin, ABC):
     # 0 means "provider does not support explicit caching" (the base AbstractClient no-op);
     # the value is not a real threshold but a sentinel indicating caching is unsupported here.
     _min_cache_tokens: int = 0
+
+    # Completion-token budget applied when the caller passes no ``max_tokens``
+    # and selects no preset.
+    #
+    # This used to be hardcoded to 4096 in two places in ``__init__``, which
+    # silently truncated every reasoning-capable model: those models spend the
+    # budget on ``reasoning_content`` first, so a 4096 cap can consume the whole
+    # allowance on thinking and return a truncated (or empty) answer. Measured
+    # against NVIDIA NIM's ``nemotron-3-nano-omni-30b-a3b-reasoning``, a single
+    # ordinary word problem burned 7,446 total tokens — well past the old
+    # default — with 11,791 characters of reasoning behind a 3,981-character
+    # answer.
+    #
+    # Subclasses override this with a value appropriate for their provider and
+    # model family (e.g. NvidiaClient raises it for NIM's reasoning models).
+    # Keep a subclass value at or below the smallest per-response output cap the
+    # provider enforces: several providers reject a ``max_tokens`` above the
+    # selected model's limit outright rather than clamping it.
+    _default_max_tokens: int = 16384
+
+    # Per-model output caps, for providers whose models do NOT share one limit.
+    #
+    # The warning on ``_default_max_tokens`` above — "keep it at or below the
+    # smallest cap the provider enforces" — is a real constraint but a costly
+    # one when the caps inside a single client differ by 8x. Measured on AWS
+    # Bedrock (2026-09-03): ``qwen3-32b`` rejects anything over 16,384 while
+    # ``claude-opus-5`` accepts 65,536, so one class-level value either breaks
+    # qwen or starves opus.
+    #
+    # A subclass fills this in with ``{model_fragment: cap}``; the fragment is
+    # matched against the resolved model id, so one entry covers a public name
+    # ("claude-opus-5") and its provider-qualified forms
+    # ("us.anthropic.claude-opus-5"). ``_resolve_max_tokens()`` then CLAMPS the
+    # budget to the matching cap rather than letting the provider reject the
+    # request — the entry is a ceiling, never a floor, so an unlisted model
+    # simply keeps ``_default_max_tokens``.
+    _model_max_tokens: Dict[str, int] = {}
 
     # Default system prompt template used when no system_prompt is passed to invoke().
     BASIC_SYSTEM_PROMPT: str = """Your name is $name Agent.
@@ -321,25 +379,30 @@ $backstory
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS["default"])
             # define temp, top_k, top_p, max_tokens from selected preset:
-            self.temperature = preset_config.get("temperature", 0.4)
-            self.top_k = preset_config.get("top_k", 30)
-            self.top_p = preset_config.get("top_p", 0.2)
-            self.max_tokens = preset_config.get("max_tokens", 4096)
+            self.temperature = preset_config.get('temperature', 0.4)
+            self.top_k = preset_config.get('top_k', 30)
+            self.top_p = preset_config.get('top_p', 0.2)
+            self.max_tokens = preset_config.get('max_tokens')
         else:
             # define default values from preset default:
-            self.temperature = kwargs.get("temperature", 0)
-            self.top_k = kwargs.get("top_k", 30)
-            self.top_p = kwargs.get("top_p", 0.2)
-            self.max_tokens = kwargs.get("max_tokens", 4096)
+            self.temperature = kwargs.get('temperature', 0)
+            self.top_k = kwargs.get('top_k', 30)
+            self.top_p = kwargs.get('top_p', 0.2)
+            # ``None`` means "not configured" — the per-client
+            # _default_max_tokens / _invoke_max_tokens defaults take over. Do
+            # NOT reintroduce a literal here: a framework-wide default assigned
+            # eagerly is indistinguishable from a deliberate caller choice, and
+            # would shadow every per-client default downstream.
+            self.max_tokens = kwargs.get("max_tokens")
         # Whether max_tokens was EXPLICITLY configured by the caller (directly
-        # or via a preset) rather than inherited from the framework default
-        # above. invoke() only honours an explicit value, so that a client's
-        # _invoke_max_tokens default is never shadowed by ask()'s generic one.
-        self._max_tokens_configured: bool = "max_tokens" in kwargs or preset is not None
-        # Per-instance override for invoke()'s output-token budget. ``None``
-        # means "fall back to an explicit self.max_tokens, then the class
-        # default" (see _resolve_invoke_max_tokens).
-        self.invoke_max_tokens: Optional[int] = kwargs.get("invoke_max_tokens", None)
+        # or via a preset) rather than left unset above. invoke() only honours
+        # an explicit value, so that a client's _invoke_max_tokens default is
+        # never shadowed by ask()'s generic one.
+        self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
+        # Per-instance override for invoke()'s output-token budget specifically.
+        # ``None`` means "fall back to an explicit self.max_tokens, then the
+        # class default" (see _resolve_max_tokens).
+        self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get("headers", {}))
         self.api_key = kwargs.get("api_key", None)
@@ -1576,7 +1639,7 @@ $backstory
         self,
         prompt: str,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1594,7 +1657,10 @@ $backstory
         Args:
             prompt: The input prompt for the model
             model: The model to use
-            max_tokens: Maximum number of tokens in the response
+            max_tokens: Maximum number of tokens in the response. ``None`` (the
+                default) resolves via :meth:`_resolve_max_tokens` — the
+                per-instance ``max_tokens``, then the client's
+                :attr:`_default_max_tokens`.
             temperature: Sampling temperature for response generation
             files: Optional files to include in the request
             system_prompt: Optional system prompt to guide the model
@@ -1614,7 +1680,7 @@ $backstory
         self,
         prompt: str,
         model: str = None,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -1682,8 +1748,9 @@ $backstory
                 Mutually exclusive with ``structured_output`` (``structured_output`` wins).
             structured_output: Full :class:`StructuredOutputConfig`, including optional
                 ``custom_parser``. Takes precedence over ``output_type``.
-            model: Override the model for this call. Falls back to
-                ``_lightweight_model``, then ``self.model``.
+            model: Override the model for this call. Falls back to an
+                explicitly selected ``self.model``, then ``_lightweight_model``,
+                then ``_default_model`` (see :meth:`_resolve_invoke_model`).
             system_prompt: Override the system prompt. Falls back to
                 ``BASIC_SYSTEM_PROMPT`` rendered with instance attributes.
             max_tokens: Maximum completion tokens. ``None`` (the default) resolves
@@ -1761,7 +1828,22 @@ $backstory
     def _resolve_invoke_model(self, model: Optional[str] = None) -> str:
         """Return the model identifier to use for an invoke() call.
 
-        Fallback chain: explicit ``model`` > ``_lightweight_model`` > ``self.model``.
+        Fallback chain: explicit ``model`` > ``self.model`` >
+        :attr:`_lightweight_model` > ``_default_model``.
+
+        ``self.model`` outranks :attr:`_lightweight_model` because
+        :meth:`AbstractClient.__init__` sets it from ``kwargs.get('model')``
+        and leaves it ``None`` otherwise — a truthy ``self.model`` therefore
+        means the caller **explicitly** selected that model (e.g.
+        ``LLMFactory.create("google:gemini-2.5-pro")``). Substituting the cheap
+        model for an explicit selection is a silent lie about which model ran:
+        under the old order three different Gemini tiers produced
+        byte-identical output in the FEAT-481 probe because all three were
+        really ``gemini-3.1-flash-lite``.
+
+        The lightweight default is unchanged for every client built *without*
+        an explicit model — the case the FEAT-481 spec was written for — so
+        ``LLMFactory.create("google")`` still gets the cheap model.
 
         Args:
             model: Caller-supplied model override, or ``None``.
@@ -1771,57 +1853,154 @@ $backstory
         """
         if model is not None:
             return model
+        if self.model:
+            return self.model
         if self._lightweight_model is not None:
             return self._lightweight_model
-        return self.model
+        # Terminal fallback: clients that set neither (NvidiaClient and the
+        # other OpenAIBaseClient subclasses) must not send ``model=None``.
+        return getattr(self, '_default_model', None)
 
-    def _resolve_invoke_max_tokens(self, max_tokens: Optional[int] = None) -> int:
-        """Return the output-token budget to use for an invoke() call.
+    def _model_output_cap(self, model: Optional[str]) -> Optional[int]:
+        """Return the provider's output-token cap for *model*, if one is known.
 
-        Resolution order (first non-``None`` wins):
+        Matching is by fragment so a single :attr:`_model_max_tokens` entry
+        covers every spelling of the same model — ``"claude-opus-5"`` also
+        matches ``"us.anthropic.claude-opus-5"`` and
+        ``"global.anthropic.claude-opus-5"``. The longest matching fragment
+        wins, so a specific entry beats a family-wide one.
+
+        Args:
+            model: Resolved model identifier, or ``None``.
+
+        Returns:
+            The cap in tokens, or ``None`` when the model is not listed.
+        """
+        if not model or not self._model_max_tokens:
+            return None
+        name = str(model).lower()
+        best: Optional[int] = None
+        best_len = -1
+        for fragment, cap in self._model_max_tokens.items():
+            if fragment.lower() in name and len(fragment) > best_len:
+                best, best_len = cap, len(fragment)
+        return best
+
+    def _resolve_max_tokens(
+        self,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
+        *,
+        for_invoke: bool = False,
+    ) -> Optional[int]:
+        """Return the completion-token budget for a call, in tokens.
+
+        One resolver serves both ``ask()`` and ``invoke()``; ``for_invoke``
+        selects the ``invoke()``-specific override and class default. The
+        chain, first non-``None`` wins:
 
         1. the explicit per-call ``max_tokens`` argument;
-        2. the per-instance ``invoke_max_tokens`` constructor kwarg;
-        3. the per-instance ``max_tokens`` constructor kwarg, but ONLY when it
-           was explicitly passed (or set by a ``preset``) — the framework's own
-           ``max_tokens`` default must not shadow a client's
-           :attr:`_invoke_max_tokens`;
-        4. the client's :attr:`_invoke_max_tokens` class default.
+        2. ``invoke()`` only — the per-instance ``invoke_max_tokens`` kwarg;
+        3. the per-instance ``max_tokens`` kwarg, but ONLY when the caller
+           actually passed it (or set it via a ``preset``). The framework's own
+           default must not shadow a client's class default, which is what
+           :attr:`_max_tokens_configured` exists to distinguish;
+        4. the model's own limit from :attr:`_model_max_tokens`, when known;
+        5. ``invoke()`` only — :attr:`_invoke_max_tokens`, when the client sets
+           one;
+        6. :attr:`_default_max_tokens`.
 
-        The class default is deliberately generous because reasoning models bill
-        their reasoning tokens against the same budget as the answer — see the
-        comment on :attr:`_invoke_max_tokens`. Clients whose provider caps lower
-        (Groq, local backends) override the class attribute.
+        Whatever wins is then clamped to the model's limit.
+
+        Step 4 is deliberate. ``max_tokens`` is a ceiling, not a reservation —
+        nothing is billed for headroom that goes unused — so when a model's real
+        limit is known, handing it the whole thing beats starving it with a
+        conservative class-wide default. That is what lets ``claude-opus-5`` run
+        at 65,536 while ``qwen3-32b``, behind the same client, stays at the
+        16,384 it will actually accept. It also means a client that wants a
+        deliberately SMALLER budget for a model must express that through
+        :attr:`_invoke_max_tokens` / :attr:`_default_max_tokens` and leave the
+        model out of :attr:`_model_max_tokens`, which records provider-enforced
+        limits only.
+
+        The clamp in the final step is what makes a raised default safe at all:
+        several providers reject an over-cap ``max_tokens`` outright instead of
+        clamping it themselves, so without it a generous default would turn
+        every call to a smaller model into a provider-side validation error.
 
         Args:
             max_tokens: Caller-supplied per-call override, or ``None``.
+            model: The model the call will run against, used to find its limit.
+            for_invoke: Whether this is an ``invoke()`` call, which has its own
+                per-instance override and class default.
 
         Returns:
-            A positive output-token budget.
+            A positive output-token budget, or ``None`` for an ``ask()`` call
+            on a client whose :attr:`_default_max_tokens` is ``None`` — that
+            combination means "send no cap and let the provider apply its own
+            default", and callers that must hand their SDK a concrete integer
+            should treat ``None`` accordingly. An ``invoke()`` call
+            (``for_invoke=True``) always resolves to an integer.
 
         Raises:
-            ValueError: If a resolved budget is not a positive integer.
+            ValueError: If a resolved budget is not a positive integer, or if
+                an ``invoke()`` call resolves to nothing at all.
         """
-        for candidate in (
+        cap = self._model_output_cap(model)
+        candidates = (
             max_tokens,
-            getattr(self, "invoke_max_tokens", None),
+            getattr(self, "invoke_max_tokens", None) if for_invoke else None,
             (
                 getattr(self, "max_tokens", None)
                 if getattr(self, "_max_tokens_configured", False)
                 else None
             ),
-            self._invoke_max_tokens,
-        ):
+            cap,
+            self._invoke_max_tokens if for_invoke else None,
+            self._default_max_tokens,
+        )
+        resolved: Optional[int] = None
+        for candidate in candidates:
             if candidate is None:
                 continue
             resolved = int(candidate)
             if resolved <= 0:
                 raise ValueError(
-                    f"invoke() max_tokens must be a positive integer, got {resolved!r}"
+                    f"max_tokens must be a positive integer, got {resolved!r}"
                 )
-            return resolved
-        # Unreachable while _invoke_max_tokens carries a positive class default.
-        raise ValueError("invoke() max_tokens could not be resolved")
+            break
+        if resolved is None:
+            if for_invoke:  # pragma: no cover - _invoke/_default is always set
+                raise ValueError("max_tokens could not be resolved")
+            # ask() on a client that deliberately sets ``_default_max_tokens =
+            # None``: send no cap rather than inventing one.
+            return None
+        if cap is not None and resolved > cap:
+            self.logger.debug(
+                "Clamping max_tokens %s -> %s for model %s (provider limit).",
+                resolved, cap, model,
+            )
+            return cap
+        return resolved
+
+    def _resolve_invoke_max_tokens(
+        self,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
+    ) -> int:
+        """Backwards-compatible alias for ``invoke()``'s budget resolution.
+
+        Prefer :meth:`_resolve_max_tokens` with ``for_invoke=True``; this
+        wrapper exists so existing call sites and tests keep working.
+
+        Args:
+            max_tokens: Caller-supplied per-call override, or ``None``.
+            model: The model the call will run against.
+
+        Returns:
+            A positive output-token budget.
+        """
+        return self._resolve_max_tokens(max_tokens, model, for_invoke=True)
 
     def _build_invoke_result(
         self,

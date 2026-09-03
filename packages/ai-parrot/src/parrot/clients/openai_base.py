@@ -24,8 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
+from typing import TYPE_CHECKING, Any, Optional
 from datamodel.parsers.json import json_decoder
 from tenacity import (
     AsyncRetrying,
@@ -73,6 +72,14 @@ class OpenAIBaseClient(AbstractClient):
     # values here — they stay None (AbstractClient defaults) so the invoke
     # chain (base.py:_resolve_invoke_model) falls through to self.model.
 
+    # SDK request timeout (seconds) used when the caller passes no ``timeout``.
+    # Subclasses override this when their endpoint routinely takes longer than
+    # a normal chat completion — reasoning models are the motivating case: a
+    # single measured NIM reasoning request took 96.8s against this base's 60s
+    # default, so every such call failed with ``APITimeoutError`` even though
+    # the endpoint was healthy and would have answered.
+    _default_timeout: float = 60.0
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -90,7 +97,8 @@ class OpenAIBaseClient(AbstractClient):
             **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
                 May include ``model`` (normalized via :meth:`_normalize_model`
                 before being forwarded) and ``timeout`` (SDK request timeout,
-                defaults to 60 seconds).
+                defaulting to this class's :attr:`_default_timeout`, which
+                subclasses raise for slower endpoints).
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -98,7 +106,7 @@ class OpenAIBaseClient(AbstractClient):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        self._timeout = kwargs.pop("timeout", 60)
+        self._timeout = kwargs.pop("timeout", self._default_timeout)
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
@@ -630,8 +638,9 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = prepared_tools
             args["tool_choice"] = "auto"
 
-        if max_tokens or self.max_tokens:
-            args["max_tokens"] = max_tokens or self.max_tokens
+        _resolved_max_tokens = self._resolve_max_tokens(max_tokens)
+        if _resolved_max_tokens is not None:
+            args["max_tokens"] = _resolved_max_tokens
         if temperature:
             args["temperature"] = temperature
 
@@ -995,7 +1004,7 @@ class OpenAIBaseClient(AbstractClient):
             args["tools"] = tools_payload
             args["tool_choice"] = "auto"
 
-        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        max_tokens_value = self._resolve_max_tokens(max_tokens)
         if max_tokens_value is not None:
             args["max_tokens"] = max_tokens_value
 
@@ -1198,7 +1207,9 @@ class OpenAIBaseClient(AbstractClient):
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full ``StructuredOutputConfig``; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``/``self.model``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``, then
+                ``_default_model``.
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.
@@ -1213,11 +1224,11 @@ class OpenAIBaseClient(AbstractClient):
             InvokeError: On provider errors, or if the client is not
                 initialized.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         try:
             resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
             messages = [
                 {"role": "system", "content": resolved_prompt},

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "investigation",
+  "rationale": "The request asserts 'direct print to stdout', but wiki orientation shows a dedicated cli/renderer.py ('Response renderer for AI-Parrot CLI agent REPL') and a devloop/console.py with a Rich Live painter, while rich/prompt_toolkit/questionary are already declared dependencies. The premise must be verified before designing a refactor, and the devloop console is a likely in-repo homologation target.",
+  "queries": [
+    {"id":"Q001","intent":"Read the CLI entrypoint to confirm how 'parrot agent <id>' is wired and which command group owns it","type":"read","priority":1,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/__init__.py"}},
+    {"id":"Q002","intent":"Read agent_repl.py — the Click command behind 'parrot agent' — to see session bootstrap and output path","type":"read","priority":1,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/agent_repl.py"}},
+    {"id":"Q003","intent":"Read repl.py, the REPL engine, to determine whether output goes through print() or a renderer, and how prompt_toolkit is used","type":"read","priority":1,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/repl.py"}},
+    {"id":"Q004","intent":"Read renderer.py to establish what rendering capability already exists and whether it uses Rich","type":"read","priority":1,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/renderer.py"}},
+    {"id":"Q005","intent":"Count and locate raw print() calls across the whole parrot/cli tree to quantify the stated problem","type":"grep","priority":1,"depth":0,"params":{"pattern":"^\\s*print\\(","path":"packages/ai-parrot/src/parrot/cli","include":"*.py","max_results":200}},
+    {"id":"Q006","intent":"Inventory every existing Rich import across the workspace to map the current Rich footprint and conventions","type":"grep","priority":1,"depth":0,"params":{"pattern":"from rich|import rich","path":"packages","include":"*.py","max_results":200}},
+    {"id":"Q007","intent":"Read the devloop console engine — the most advanced in-repo console — as the homologation reference for a refactor","type":"read","priority":1,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/devloop/console.py"}},
+    {"id":"Q008","intent":"List the devloop CLI package files to see the full set of console/renderer components already built there","type":"tree","priority":2,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/devloop","max_depth":2}},
+    {"id":"Q009","intent":"Locate prompt_toolkit usage sites to know which prompt features (history, completion, key bindings) are already wired","type":"grep","priority":2,"depth":0,"params":{"pattern":"prompt_toolkit","path":"packages","include":"*.py","max_results":100}},
+    {"id":"Q010","intent":"Find questionary usage — the already-declared interactive-prompt library — since it overlaps InquirerPy's proposed role","type":"grep","priority":2,"depth":0,"params":{"pattern":"questionary","path":"packages","include":"*.py","max_results":100}},
+    {"id":"Q011","intent":"Read the CLI dependency block in the core pyproject to confirm which TUI libraries are declared and under which extra","type":"read","priority":2,"depth":0,"params":{"path":"packages/ai-parrot/pyproject.toml","lines":[80,145]}},
+    {"id":"Q012","intent":"Read the prior console-cli-agents spec to recover the original design intent and avoid re-litigating settled decisions","type":"read","priority":2,"depth":0,"params":{"path":"sdd/specs/console-cli-agents.spec.md"}},
+    {"id":"Q013","intent":"Read the devloop-cli-console spec, which already solved the Rich-console problem for a sibling command","type":"read","priority":2,"depth":0,"params":{"path":"sdd/specs/devloop-cli-console.spec.md"}},
+    {"id":"Q014","intent":"Find how streaming agent output reaches the terminal, the key constraint for any Live/markdown rendering approach","type":"grep","priority":2,"depth":0,"params":{"pattern":"ask_stream|astream|async for chunk","path":"packages/ai-parrot/src/parrot/cli","include":"*.py","max_results":80}},
+    {"id":"Q015","intent":"Locate HITL / confirmation / approval prompts in the CLI to scope the InquirerPy-vs-questionary decision","type":"grep","priority":2,"depth":0,"params":{"pattern":"confirm|approval|HITL|input\\(","path":"packages/ai-parrot/src/parrot/cli","include":"*.py","max_results":100}},
+    {"id":"Q016","intent":"Check whether Textual appears anywhere in the workspace already (docs, specs, deps) before proposing it","type":"grep","priority":2,"depth":0,"params":{"pattern":"textual","path":".","include":"*.toml","max_results":50}},
+    {"id":"Q017","intent":"Recent commit history on parrot/cli to learn what has changed lately and who owns it","type":"git_log","priority":3,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli","since":"120.days.ago","max_results":25}},
+    {"id":"Q018","intent":"Find existing tests for the CLI/REPL to know what a refactor must keep green","type":"glob","priority":3,"depth":0,"params":{"pattern":"tests/**/*cli*.py","max_results":60}},
+    {"id":"Q019","intent":"Read the agentd console proxy CLI, a second consumer of the REPL, to check refactor blast radius","type":"read","priority":3,"depth":0,"params":{"path":"packages/ai-parrot-integrations/src/parrot/integrations/agentd/cli.py"}},
+    {"id":"Q020","intent":"Read the devloop run renderer (Rich Live envelope painter) as the concrete streaming-render pattern to reuse","type":"read","priority":3,"depth":0,"params":{"path":"packages/ai-parrot/src/parrot/cli/devloop/renderer.py"}}
+  ],
+  "expected_findings": [
+    "Whether 'parrot agent' truly prints raw to stdout or already routes through cli/renderer.py",
+    "The exact Rich footprint already present and the conventions it establishes",
+    "Whether devloop/console.py is a reusable console engine or devloop-specific",
+    "The questionary-vs-InquirerPy overlap (questionary is already a declared dep)",
+    "The streaming constraint that decides inline-Rich vs full-screen Textual",
+    "Blast radius: agentd proxy and any CLI tests that a refactor must not break"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["parrot agent", "Rich", "prompt_toolkit", "Textual", "InquirerPy"],
+      "verbs": ["refactor", "print", "scroll", "confirm"],
+      "polarity": "negative"
+    },
+    "estimated_budget_use": {"files_read": 12, "grep_calls": 8, "git_calls": 1}
+  }
+}

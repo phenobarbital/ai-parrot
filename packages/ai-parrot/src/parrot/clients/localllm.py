@@ -68,6 +68,8 @@ class LocalLLMClient(OpenAIBaseClient):
     # windows and generation is wall-clock expensive, so keep invoke()'s budget
     # conservative. Raise per-instance with ``invoke_max_tokens=``.
     _invoke_max_tokens: int = 4096
+    # Same conservative budget for ask()/ask_stream().
+    _default_max_tokens: int = 4096
 
     def __init__(
         self,
@@ -245,10 +247,10 @@ class LocalLLMClient(OpenAIBaseClient):
         Raises:
             :class:`InvokeError`: On provider errors.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
         config = self._build_invoke_structured_config(output_type, structured_output)
         resolved_model = self._resolve_invoke_model(model)
+        max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
         if not self.client:
             raise InvokeError(

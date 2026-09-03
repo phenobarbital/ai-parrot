@@ -1,0 +1,466 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-519",
+  "mode": "investigation",
+  "overall_confidence": "high",
+  "summary": "The request's premise is half true. `parrot agent` is NOT a print()-based console \u2014 it already uses Rich end to end (banner, errors, tables, markdown, tool panels, usage) and prompt_toolkit for input; there are zero print() calls in packages/ai-parrot/src/parrot/cli. The real defect is one function: ResponseRenderer.render_stream_chunk() writes raw sys.stdout.write(text), and because REPLConfig.streaming defaults to True that raw path is what every user sees by default. The good Markdown renderer is reachable only via --no-stream. The documented reason for the raw write is a genuine conflict between rich.live.Live and prompt_toolkit.patch_stdout() \u2014 but the sibling command `parrot devloop` already solved that exact conflict in the same package with a modal pause/resume discipline. So this is a homologation feature (bring `parrot agent` up to the standard `parrot devloop` already set), not a greenfield TUI adoption. Rich, prompt_toolkit and questionary are already core dependencies; InquirerPy would duplicate questionary, which is already what `parrot agent`'s own agent picker uses; Textual appears in no pyproject in the repo and would be the only genuinely new dependency. Note: HEAD advanced by two commits (3b5e4fed5, 7c2790044) during this research run, both on this surface. Neither touched the raw write; each added another compensating layer (_BlockingSafeFile write-retry, _mute_stream_loggers log suppression), bringing the count of stacked workarounds around this one seam to three. All line references in this synthesis are against the post-commit HEAD.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/renderer.py",
+      "symbol": "ResponseRenderer.render_stream_chunk",
+      "lines": "248-260",
+      "role": "ROOT CAUSE \u2014 the only raw stdout write on the interactive display path",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/renderer.py",
+      "symbol": "ResponseRenderer.render_stream_start",
+      "lines": "233-246",
+      "role": "documents why Live was abandoned; the constraint to overturn",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/renderer.py",
+      "symbol": "ResponseRenderer.render_stream_end",
+      "lines": "262-280",
+      "role": "discards the accumulated _stream_buffer without re-rendering it as Markdown",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/renderer.py",
+      "symbol": "_BlockingSafeFile",
+      "lines": "22-56",
+      "role": "WORKAROUND #2 (added mid-research) \u2014 retries writes that BlockingIOError because patch_stdout() makes the fd non-blocking",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/repl.py",
+      "symbol": "_mute_stream_loggers / _restore_stream_loggers",
+      "lines": "27-58, 247, 279",
+      "role": "WORKAROUND #3 (added mid-research) \u2014 silences console log handlers during a stream so log lines stop interleaving with tokens",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/repl.py",
+      "symbol": "REPLConfig.streaming",
+      "lines": "82-85",
+      "role": "defaults True, making the degraded path the default UX",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/repl.py",
+      "symbol": "AgentREPL.run",
+      "lines": "131-198",
+      "role": "monolithic loop; owns patch_stdout(), no post-turn hook",
+      "evidence": [
+        "F003",
+        "F004",
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/devloop/renderer.py",
+      "symbol": "RunView.pause / RunView.resume / RunView.run_live",
+      "lines": "82-107",
+      "role": "REFERENCE \u2014 the working Live-under-patch_stdout pattern to homologate",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/devloop/console.py",
+      "symbol": "DevLoopConsole._handle_gates",
+      "lines": "903-969",
+      "role": "REFERENCE \u2014 modal pause/prompt/resume call sequence",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/loaders.py",
+      "symbol": "StandaloneAgentLoader.select_agent",
+      "lines": "103-120",
+      "role": "questionary.select() already serves parrot agent's picker \u2014 InquirerPy would duplicate it",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/agentd/cli.py",
+      "symbol": "_wrap_with_event_drain",
+      "lines": "205-230",
+      "role": "BLAST RADIUS \u2014 second consumer, monkeypatches around the missing post-turn hook",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/tests/cli/test_integration.py",
+      "symbol": "TestResponseRenderer / TestAgentREPLStream / TestCLICommandAgent",
+      "lines": "29-491",
+      "role": "regression net the refactor must keep green",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/wizard.py",
+      "symbol": "generic Pydantic wizard engine",
+      "lines": null,
+      "role": "specified as generic and reusable (devloop spec G2) \u2014 reuse candidate",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "rich.live.Live emits cursor-control ANSI (\\x1b[2K, \\x1b[?25l) that prompt_toolkit.patch_stdout()'s StdoutProxy mangles into literal '?[2K'; every Console in the CLI already works around this with file=sys.__stdout__, force_terminal=True.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "The conflict is solvable under prompt_toolkit: devloop runs Live and prompt_async together by pausing the Live region around every prompt ('one writer at a time').",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "rich>=13.0, prompt_toolkit>=3.0 and questionary>=2.1.1 are already core dependencies of ai-parrot; adding InquirerPy would duplicate questionary's role.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "Textual appears in zero .toml files in the repository \u2014 it is a new dependency, not an activation of an existing one.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "Rich is already established across 30 files in 4 distributions, so a Rich-based refactor extends an existing convention.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "AgentREPL/ResponseRenderer/REPLConfig are imported cross-package by ai-parrot-integrations' agentd CLI; their constructor signatures are a de-facto public API.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "AgentREPL.run() exposes no post-turn hook, forcing agentd to shadow send/send_stream at the instance level \u2014 a documented workaround this refactor could retire.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "Three separate Console instances exist (agent_repl.py:25, repl.py:95, renderer.py:42) with no shared configuration point for theme/width/record.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "tests/cli/test_integration.py (FEAT-168) is mock-based and covers the renderer, both send paths, slash commands and the Click command; devloop has its own console/renderer suite that models how to test a Live console.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "RunView is coupled to dev-loop SessionHost envelope semantics (replay_since, gate handlers) and cannot be instantiated by the agent REPL as-is \u2014 it is a pattern, not a reusable class.",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "statement": "Three stacked workarounds now compensate for the same unaddressed seam: Console(file=sys.__stdout__) proxy bypass, _BlockingSafeFile write-retry, and _mute_stream_loggers log suppression during streams. Two of the three landed on 2026-09-02 while this research ran, and neither touched render_stream_chunk.",
+      "evidence": [
+        "F011",
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "Log lines interleaving with streamed tokens is an additional symptom of streaming outside a managed render region; it was not named in the original request but is now being worked around in code.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [
+    {
+      "rank": 1,
+      "statement": "The perceived 'poor and cheap' look & feel is caused almost entirely by ResponseRenderer.render_stream_chunk()'s raw sys.stdout.write on the default streaming path, which discards Markdown, syntax highlighting and wrapping that the batch path already provides. Restoring rendered output to the streaming path \u2014 by adopting devloop's modal pause/resume Live discipline, or at minimum re-rendering the accumulated buffer as Markdown at stream end \u2014 addresses the complaint without any new dependency.",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003",
+        "F004",
+        "F005"
+      ],
+      "reasoning": "The batch path already renders Markdown/panels/tables, streaming defaults to True, and the one raw write sits exactly on that default path."
+    },
+    {
+      "rank": 2,
+      "statement": "The secondary cause is architectural: AgentREPL.run() is a monolithic loop with no rendering-strategy seam and no post-turn hook, so neither the agent console nor agentd can vary presentation without monkeypatching. Extracting a console/renderer seam is what makes further UX work (and devloop homologation) cheap.",
+      "confidence": "high",
+      "evidence": [
+        "F004",
+        "F008",
+        "F009",
+        "F011"
+      ],
+      "reasoning": "agentd's own docstring names the missing post-turn hook; three unshared Console instances show no central presentation layer; and F011 shows two further workarounds accreted on this seam during the research run itself rather than a fix at the source."
+    },
+    {
+      "rank": 3,
+      "statement": "[REJECTED by U1] A full Textual TUI would dissolve the Live-vs-patch_stdout conflict outright by owning the screen (no prompt_toolkit patching, native scrollback, a real Markdown widget), but it is a new dependency, a rewrite of the input layer, incompatible with piping/non-TTY use, and would fork the agent console away from devloop's Rich conventions rather than homologating with them.",
+      "confidence": "low",
+      "evidence": [
+        "F005",
+        "F006",
+        "F007"
+      ],
+      "reasoning": "Textual is absent from every pyproject while Rich spans 30 files; the conflict it would solve is already solved in-repo by cheaper means."
+    }
+  ],
+  "scope": {
+    "statement": "Extract a shared Rich console/presentation layer for the parrot CLI and migrate `parrot agent` onto it, adopting devloop's modal pause/resume Live discipline so streamed responses render with the same fidelity as batch responses. Keep prompt_toolkit and questionary; adopt neither Textual nor InquirerPy. Bring `parrot attach` (agentd) onto the same layer and give AgentREPL a real post-turn hook so its monkeypatch can be retired. Retire the three stacked workarounds (sys.__stdout__ bypass, _BlockingSafeFile, _mute_stream_loggers) as the seam makes them unnecessary. Generalize cli/wizard.py into a shared engine the agent console reuses (D1). The existing Rich HITL surface under parrot/human/ is explicitly deferred to a follow-up (D2), but the shared layer must be designed so it can adopt it later without a second redesign.",
+    "confidence": "high",
+    "evidence": [
+      "F003",
+      "F005",
+      "F006"
+    ],
+    "in_scope": [
+      "packages/ai-parrot/src/parrot/cli/renderer.py",
+      "packages/ai-parrot/src/parrot/cli/repl.py",
+      "packages/ai-parrot/src/parrot/cli/agent_repl.py",
+      "packages/ai-parrot/src/parrot/cli/devloop/renderer.py",
+      "packages/ai-parrot/src/parrot/cli/devloop/console.py",
+      "packages/ai-parrot-integrations/src/parrot/integrations/agentd/cli.py",
+      "packages/ai-parrot/tests/cli/test_integration.py",
+      "packages/ai-parrot/tests/cli/devloop/",
+      "packages/ai-parrot/src/parrot/cli/wizard.py"
+    ],
+    "possibly_in_scope": [
+      "packages/ai-parrot/src/parrot/cli/loaders.py"
+    ],
+    "out_of_scope": [
+      "Textual adoption (rejected at U1)",
+      "InquirerPy adoption (rejected at U2)",
+      "packages/ai-parrot/src/parrot/cli/tool_worker.py (its sys.stdout.write is an IPC marker protocol, not display)",
+      "parrot/clients/* changes from commit 7c2790044",
+      "packages/ai-parrot/src/parrot/human/channels/cli.py and cli_companion.py \u2014 deferred to a follow-up feature (D2); the shared layer must stay adoptable by them without redesign"
+    ]
+  },
+  "confidence_map": [
+    {
+      "claim": "parrot agent already uses Rich; there are zero print() calls in parrot/cli",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003"
+      ]
+    },
+    {
+      "claim": "render_stream_chunk's raw sys.stdout.write is the root cause of the degraded default UX",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "streaming=True is the default, so the degraded path is the default",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "The Live-vs-patch_stdout conflict is real and documented in-code",
+      "confidence": "high",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "devloop already solved that conflict with a pause/resume discipline in the same package",
+      "confidence": "high",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "claim": "questionary is already core and already serves parrot agent's picker; InquirerPy duplicates it",
+      "confidence": "high",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "claim": "Textual is in no pyproject in the repo",
+      "confidence": "high",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "claim": "agentd is a second consumer whose monkeypatch could be retired by a proper hook",
+      "confidence": "high",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "claim": "A FEAT-168 mock-based suite covers the REPL and must stay green",
+      "confidence": "high",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "claim": "cli/wizard.py will be generalized into a shared engine the agent console reuses (decision D1, not inference)",
+      "confidence": "high",
+      "evidence": [
+        "F010"
+      ],
+      "reasoning": "Decision, not discovery: F010 shows the devloop spec already declared this engine generic (goal G2); D1 commits this feature to making that real. Whether it generalizes cleanly is now an implementation task, not an open risk."
+    },
+    {
+      "claim": "Extracting a console/renderer seam is the right structural fix rather than patching render_stream_chunk alone",
+      "confidence": "medium",
+      "evidence": [
+        "F004",
+        "F008"
+      ]
+    },
+    {
+      "claim": "A Textual rewrite would break non-TTY/piped usage of parrot agent",
+      "confidence": "low",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "claim": "the surface is accreting point workarounds (3 now) rather than fixing the seam; 2 landed during this research run",
+      "confidence": "high",
+      "evidence": [
+        "F011"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which architecture: an inline-console upgrade (Rich Live + devloop's pause/resume discipline, keeping prompt_toolkit) or a full-screen Textual app with its own scrolling chat area and Markdown widget?",
+      "why": "The source explicitly left this open ('or Textual'). It decides dependency footprint, whether piping still works, and whether the agent console converges with or forks from devloop.",
+      "affects_claims": [
+        "hypothesis-1",
+        "hypothesis-3",
+        "scope"
+      ],
+      "user_answer": "Inline Rich + pause/resume. Keep prompt_toolkit and adopt devloop's modal 'one writer at a time' Live discipline so streamed tokens render as Markdown in a Live region that pauses around every prompt. No new dependencies; converges with devloop; piping/non-TTY preserved; the three stacked workarounds become removable. Textual is explicitly NOT adopted."
+    },
+    {
+      "id": "U2",
+      "question": "Is InquirerPy a hard requirement, or is questionary (already a core dependency, already used by parrot agent's own picker) acceptable for confirmations and HITL?",
+      "why": "Both wrap prompt_toolkit and cover the same role; adopting InquirerPy adds a redundant dependency to core.",
+      "affects_claims": [
+        "scope"
+      ],
+      "user_answer": "Keep questionary (already core >=2.1.1, already powers parrot agent's own picker at loaders.py:103-120). InquirerPy is explicitly NOT adopted."
+    },
+    {
+      "id": "U3",
+      "question": "Should the refactor extract a shared console/presentation layer used by parrot agent, parrot devloop and parrot attach, or stay local to parrot agent?",
+      "why": "Determines whether this is a contained fix or a cross-package refactor with a de-facto public API change.",
+      "affects_claims": [
+        "hypothesis-2",
+        "scope"
+      ],
+      "user_answer": "Extract a shared console/presentation layer used by parrot agent, parrot devloop and parrot attach \u2014 single Console, one Live discipline, pluggable renderer. Cross-package refactor, accepted."
+    },
+    {
+      "id": "U4",
+      "question": "Should this feature also give AgentREPL a real post-turn hook so agentd can retire its send/send_stream monkeypatch?",
+      "why": "agentd's own docstring flags this as deferred scope; doing it here is cheap, doing it later means touching the same seam twice.",
+      "affects_claims": [
+        "hypothesis-2"
+      ],
+      "user_answer": "Yes \u2014 give AgentREPL a real post-turn hook and retire agentd's send/send_stream instance-level monkeypatch."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All four unknowns are resolved, localization is high-confidence and verified against post-commit HEAD, and the architectural fork the source left open (inline Rich vs Textual) is now decided in favour of inline Rich + pause/resume. Nothing remains that options analysis would settle, so /sdd-brainstorm is no longer warranted."
+  },
+  "budget_status": {
+    "consumed": {
+      "files_read": 17,
+      "grep_calls": 14,
+      "git_calls": 4,
+      "depth_reached": 1
+    },
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "deferred_questions": [
+    {
+      "id": "D1",
+      "question": "Does cli/wizard.py actually generalise to the agent console, or is it devloop-shaped in practice?",
+      "user_answer": "Generalize it. cli/wizard.py becomes a genuinely shared engine the agent console reuses, rather than staying devloop-shaped. This makes real the 'generic, reusable engine' the devloop spec already declared as goal G2 (F010).",
+      "resolution": "in_scope",
+      "affects_claims": [
+        "C13"
+      ]
+    },
+    {
+      "id": "D2",
+      "question": "Should parrot/human/channels/cli.py and cli_companion.py (an existing Rich-based HITL surface not named in the request) migrate onto the shared layer in this feature or a follow-up?",
+      "user_answer": "Migrate later. Explicitly a follow-up feature, not FEAT-519. The shared console layer must therefore be designed so that surface CAN adopt it later without a second redesign, but no migration work happens here.",
+      "resolution": "deferred_followup",
+      "affects_claims": []
+    }
+  ]
+}

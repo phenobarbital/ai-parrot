@@ -64,6 +64,10 @@ class TransformersClient(AbstractClient):
     # have small context windows, so keep invoke()'s budget conservative.
     # Raise per-instance with ``invoke_max_tokens=``.
     _invoke_max_tokens: int = 4096
+    # ask()/ask_stream() drive local generation token-by-token, so their
+    # default stays small — a large cap costs real wall-clock, not just
+    # headroom. Raise per-instance with ``max_tokens=``.
+    _default_max_tokens: int = 512
 
     def __init__(
         self,
@@ -351,7 +355,7 @@ class TransformersClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        max_tokens: int = 512,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -380,6 +384,7 @@ class TransformersClient(AbstractClient):
         Returns:
             AIMessage response
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         if not self.model or not self.tokenizer:
             await self._load_model()
 
@@ -519,7 +524,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         model: Optional[str] = None,
-        max_tokens: int = 512,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
@@ -537,6 +542,7 @@ class TransformersClient(AbstractClient):
 
         Note: True streaming is not easily available with transformers.
         """
+        max_tokens = self._resolve_max_tokens(max_tokens)
         response = await self.ask(
             prompt=prompt,
             model=model,
@@ -609,9 +615,9 @@ class TransformersClient(AbstractClient):
         so this falls back to schema-in-system-prompt when output_type
         or structured_output is provided.
         """
-        max_tokens = self._resolve_invoke_max_tokens(max_tokens)
         config = self._build_invoke_structured_config(output_type, structured_output)
         resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+        max_tokens = self._resolve_max_tokens(max_tokens, self.model_name, for_invoke=True)
 
         response = await self.ask(
             prompt=prompt,
