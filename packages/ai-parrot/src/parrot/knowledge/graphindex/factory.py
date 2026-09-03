@@ -201,24 +201,29 @@ class HashingGraphEmbedder:
 
 
 async def build_graph_memory_toolkit(
-    db_dir: Path | str,
+    db_dir: Optional[Path | str] = None,
     tenant_id: str = "default",
     agent_id: str = "agent",
     run_id: Optional[str] = None,
     embedder: Optional[Any] = None,
     client: Optional[Any] = None,
     dimension: int = DEFAULT_DIMENSION,
+    backend: str = "sqlite",
+    dsn: Optional[str] = None,
+    schema: str = "graphindex",
 ) -> "GraphIndexToolkit":
     """Open (or create) a persistent graph memory and return its toolkit.
 
-    Loads the durable graph plane from ``db_dir``, assembles the
-    in-memory rustworkx graph, embeds the loaded nodes, and wires a
-    :class:`GraphPublisher` so every toolkit write persists as an
-    audited, revertible commit.
+    Loads the durable graph plane, assembles the in-memory rustworkx
+    graph, embeds the loaded nodes, and wires a :class:`GraphPublisher`
+    so every toolkit write persists as an audited, revertible commit.
 
     Args:
         db_dir: Directory holding the per-tenant SQLite graph plane.
-        tenant_id: Tenant identifier (one ``<tenant_id>.db`` per tenant).
+            Required (and only used) when ``backend="sqlite"``.
+        tenant_id: Tenant identifier (one ``<tenant_id>.db`` per tenant
+            on the SQLite backend; ignored by the Postgres backend, whose
+            shared schema is not per-tenant partitioned in v1).
         agent_id: Stable agent identity stamped onto writes.
         run_id: Optional run/session id stamped onto writes (mutable on
             the returned toolkit — set per ask).
@@ -227,16 +232,41 @@ async def build_graph_memory_toolkit(
             offline :class:`HashingGraphEmbedder`.
         client: Optional ``AbstractClient`` for ``explain()``.
         dimension: Vector dimension for the default embedder.
+        backend: ``"sqlite"`` (default, per-tenant SQLite file) or
+            ``"postgres"`` (FEAT-520 — shared ``graphindex.*`` schema;
+            unlocks the toolkit's temporal/hybrid tools, see
+            ``parrot_tools.graphindex.toolkit``).
+        dsn: Postgres DSN. Only used when ``backend="postgres"``; defaults
+            to ``pg_schema.GRAPHINDEX_PG_DSN`` when not given.
+        schema: Postgres schema name. Only used when ``backend="postgres"``.
 
     Returns:
         A write-enabled, persistence-backed ``GraphIndexToolkit``.
+
+    Raises:
+        ValueError: For an unknown ``backend``, or a missing ``db_dir``
+            when ``backend="sqlite"``.
     """
     # Lazy import — keeps ai-parrot core free of a hard dependency on
     # the ai-parrot-tools distribution (same seam as ToolInterface).
     from parrot_tools.graphindex.toolkit import GraphIndexToolkit
 
     ctx = make_stub_tenant_context(tenant_id)
-    persistence = SQLitePersistence(Path(db_dir))
+    if backend == "sqlite":
+        if db_dir is None:
+            raise ValueError("build_graph_memory_toolkit: db_dir is required for backend='sqlite'")
+        persistence = SQLitePersistence(Path(db_dir))
+    elif backend == "postgres":
+        # Lazy import — keeps the sqlite-only path free of an asyncpg/
+        # pgvector dependency (FEAT-520, same lazy-import seam as the
+        # GraphIndexToolkit import above).
+        from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
+
+        persistence = PostgresPersistence(dsn, schema=schema)
+    else:
+        raise ValueError(
+            f"build_graph_memory_toolkit: unknown backend {backend!r} — expected 'sqlite' or 'postgres'"
+        )
     publisher = GraphPublisher(persistence, ctx)
 
     nodes, edges = await persistence.load_graph(ctx)

@@ -7,6 +7,43 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+#### FEAT-520: GraphIndex Postgres Backend — Bitemporal Plane + One-Pass Hybrid Retrieval
+
+Third GraphIndex persistence backend (`PostgresPersistence`) at parity
+with `SQLitePersistence`/`GraphIndexPersistence`, plus a fourth
+`BaseWikiStore` implementation (`PostgresWikiStore`) — both over ONE
+shared, engine-enforced bitemporal `graphindex.*` schema. asyncpg only;
+zero SQLAlchemy; `PgVectorStore` is explicitly not reused.
+
+- `PostgresPersistence` — full parity surface (`persist_graph`,
+  `replace_document_slice`, `is_stale`, `load_graph`) plus the graph
+  commit protocol (`apply_update`/`get_commit`/`list_commits`/
+  `revert_commit`) on real transactions.
+- Bitemporal writes: `node_versions.validity` is a `tstzrange` protected
+  by a GiST `EXCLUDE` constraint — overlapping versions of one concept
+  are rejected by the ENGINE, not ingest discipline. Corrections
+  close-and-insert; content is never `UPDATE`d.
+- Temporal read contract (Postgres-only in v1): `as_of(t)`, `history
+  (concept_id)`, `diff(concept_id, t1, t2)`.
+- `hybrid_retrieve` — graph expansion + pgvector KNN + `ts_rank_cd` FTS as
+  CTEs of ONE SQL statement, RRF-fused (`Σ w/(60+rank)`) in SQL, with
+  cross-encoder re-ranking through the existing `parrot.rerankers` seam.
+- `PostgresWikiStore` — full `BaseWikiStore` surface over the same
+  schema, including the schema-v2 symbol surface (`upsert_symbols`,
+  `find_symbols`, trigram+FTS `search_symbols_fts`).
+- In-schema pgvector embeddings (`graphindex.embeddings`) with a
+  config-driven ANN index (`ivfflat` default — see the TASK-2770 spike
+  artifact for the measured HNSW-vs-IVFFlat tradeoff).
+- `build_graph_memory_toolkit(backend="postgres", ...)` factory path; four
+  mono-purpose temporal/hybrid agent tools (`graph_as_of`,
+  `graph_concept_history`, `graph_diff`, `graph_hybrid_retrieve`),
+  registered only when the bound persistence exposes the temporal surface
+  (duck-typed).
+- Docs: [`docs/graphindex.md`](docs/graphindex.md) backend matrix,
+  Temporal API, and Hybrid Retrieval sections.
+
 ---
 
 ## [0.28.0] — 2026-08-26

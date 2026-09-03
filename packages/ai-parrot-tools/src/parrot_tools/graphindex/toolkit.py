@@ -35,17 +35,39 @@ Tool surface:
   # DURABLE MEMORY (requires publisher=GraphPublisher)
   graph_history, revert_write
 
+  # TEMPORAL + HYBRID (FEAT-520 — Postgres-backed durable plane ONLY;
+  # excluded from tool generation, not just error-returning, when the
+  # bound persistence lacks the surface — feature-detected via hasattr,
+  # never isinstance, spec D5)
+  graph_as_of, graph_concept_history, graph_diff, graph_hybrid_retrieve
+
 When a ``GraphPublisher`` is injected, every write tool ALSO persists
 its mutation as an audited, revertible commit stamped with the agent's
 identity and run — the graph becomes durable cross-session memory
 ("the agent forgets, the graph does not"). Persistence failures never
 fail the tool call; they surface as ``persist_warning`` in the result.
+
+FEAT-520: when the injected ``publisher``'s bound persistence is
+Postgres-backed (``PostgresPersistence``, duck-typed via ``hasattr``,
+never ``isinstance`` — spec D5), four additional mono-purpose tools are
+registered: ``graph_as_of``/``graph_concept_history``/``graph_diff``
+(temporal reads) and ``graph_hybrid_retrieve`` (one-pass graph+KNN+FTS
+retrieval). They are deliberately excluded from tool generation — not
+merely error-returning — on SQLite/ArangoDB-backed toolkits, via
+``exclude_tools`` computed in ``__init__``. Fusion weights and result
+limits are fixed operator configuration (``_HYBRID_RETRIEVE_WEIGHTS``/
+``_HYBRID_RETRIEVE_LIMIT`` below), never LLM-controlled parameters — "el
+agente elige tools, nunca pesos ni modos" (brainstorm D6). NOTE:
+``graph_concept_history`` is named to avoid colliding with the EXISTING
+``graph_history`` tool above (commit/write history, unrelated to a
+concept's bitemporal VERSION history — spec D5's `history(concept_id)`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
@@ -67,6 +89,22 @@ logger = logging.getLogger(__name__)
 
 # Number of surprising connections returned by _get_or_compute_analytics.
 DEFAULT_ANALYTICS_TOP_K = 10
+
+#: FEAT-520 — names of the temporal/hybrid tools, only registered when the
+#: bound persistence exposes the temporal surface (``hasattr(persistence,
+#: "as_of")`` — spec D5 duck-typing rule).
+_TEMPORAL_TOOL_NAMES = (
+    "graph_as_of",
+    "graph_concept_history",
+    "graph_diff",
+    "graph_hybrid_retrieve",
+)
+
+#: Fixed ``hybrid_retrieve`` fusion config for the ``graph_hybrid_retrieve``
+#: tool. Operator configuration, never LLM-controlled — "el agente elige
+#: tools, nunca pesos ni modos" (brainstorm D6).
+_HYBRID_RETRIEVE_LIMIT = 20
+_HYBRID_RETRIEVE_WEIGHTS = {"graph": 1.0, "knn": 1.0, "fts": 1.0}
 
 
 class GraphIndexToolkit(AbstractToolkit):
@@ -145,6 +183,11 @@ class GraphIndexToolkit(AbstractToolkit):
         self._analytics_cache: Optional[Any] = None  # FEAT-215
         self._encoder_warning_emitted = False
         self.logger = logging.getLogger(__name__)
+        # FEAT-520: temporal/hybrid tools are excluded from tool generation
+        # entirely (not merely error-returning) unless the bound persistence
+        # exposes the temporal surface — duck-typed via hasattr, spec D5.
+        if self._temporal_persistence() is None:
+            self.exclude_tools = (*self.exclude_tools, *_TEMPORAL_TOOL_NAMES)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -246,6 +289,21 @@ class GraphIndexToolkit(AbstractToolkit):
             self.logger.warning("%s: durable persist failed: %s", op, exc)
             return {"persisted": False, "persist_warning": str(exc)}
 
+    def _temporal_persistence(self) -> Optional[Any]:
+        """Return the bound persistence IFF it exposes the temporal surface.
+
+        Duck-typed via ``hasattr`` (spec D5) — never ``isinstance``, so any
+        backend that grows ``as_of``/``history``/``diff`` later is picked
+        up automatically. Returns ``None`` when no publisher is configured
+        or the persistence is SQLite/ArangoDB-backed (no temporal API).
+
+        Returns:
+            The persistence object, or ``None``.
+        """
+        persistence = getattr(self.publisher, "persistence", None)
+        if persistence is not None and hasattr(persistence, "as_of"):
+            return persistence
+        return None
 
     # ------------------------------------------------------------------
     # Public agent tools
@@ -1164,6 +1222,139 @@ class GraphIndexToolkit(AbstractToolkit):
                 " in-memory graph"
             )
         return result
+
+    # ------------------------------------------------------------------
+    # FEAT-520: temporal + hybrid tools (Postgres-backed durable plane only
+    # — see _temporal_persistence() and the module docstring)
+    # ------------------------------------------------------------------
+
+    async def graph_as_of(self, timestamp: str) -> dict:
+        """Snapshot the durable graph as it existed at a point in time.
+
+        Only available when the durable graph plane is Postgres-backed
+        (bitemporal storage — FEAT-520). Repealed/superseded nodes and
+        edges are excluded exactly as they were at ``timestamp``.
+
+        Args:
+            timestamp: ISO-8601, timezone-aware timestamp (e.g.
+                ``"2026-06-01T00:00:00+00:00"``).
+
+        Returns:
+            ``{"nodes": [...], "edges": [...]}`` at that snapshot, or
+            ``{"error": ...}`` when unavailable or the timestamp is
+            malformed/naive.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_as_of: no temporal-capable durable graph plane configured"}
+        try:
+            t = datetime.fromisoformat(timestamp)
+        except ValueError as exc:
+            return {"error": f"graph_as_of: invalid timestamp {timestamp!r}: {exc}"}
+        try:
+            nodes, edges = await persistence.as_of(self.publisher.ctx, t)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_as_of: {exc}"}
+        return {
+            "nodes": [n.model_dump(mode="json") for n in nodes],
+            "edges": [e.model_dump(mode="json") for e in edges],
+        }
+
+    async def graph_concept_history(self, concept_id: str) -> dict:
+        """List every version of a concept over time (bitemporal version history).
+
+        Distinct from ``graph_history`` above (which lists durable WRITE
+        commits) — this lists a single CONCEPT's content versions,
+        including repealed ones. Only available on a Postgres-backed
+        durable plane (FEAT-520).
+
+        Args:
+            concept_id: The concept to list version history for.
+
+        Returns:
+            ``{"versions": [...]}`` ordered oldest-first, or
+            ``{"error": ...}`` when unavailable.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_concept_history: no temporal-capable durable graph plane configured"}
+        try:
+            rows = await persistence.history(self.publisher.ctx, concept_id)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_concept_history: {exc}"}
+        return {"versions": [row.model_dump(mode="json") for row in rows]}
+
+    async def graph_diff(self, concept_id: str, t1: str, t2: str) -> dict:
+        """Structured diff of a concept between two points in time.
+
+        Reports version changes plus incident edges added/removed between
+        ``t1`` and ``t2`` — structured data for the LLM to reason over,
+        never a raw-text comparison. Only available on a Postgres-backed
+        durable plane (FEAT-520).
+
+        Args:
+            concept_id: The concept to diff.
+            t1: Start ISO-8601, timezone-aware timestamp.
+            t2: End ISO-8601, timezone-aware timestamp.
+
+        Returns:
+            The structured diff as a dict, or ``{"error": ...}``.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None:
+            return {"error": "graph_diff: no temporal-capable durable graph plane configured"}
+        try:
+            t1_dt = datetime.fromisoformat(t1)
+            t2_dt = datetime.fromisoformat(t2)
+        except ValueError as exc:
+            return {"error": f"graph_diff: invalid timestamp: {exc}"}
+        try:
+            diff = await persistence.diff(self.publisher.ctx, concept_id, t1_dt, t2_dt)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_diff: {exc}"}
+        return diff.model_dump(mode="json")
+
+    async def graph_hybrid_retrieve(
+        self,
+        query: Optional[str] = None,
+        seeds: Optional[list[str]] = None,
+    ) -> dict:
+        """Retrieve relevant concepts via combined graph + lexical search.
+
+        Fuses temporal graph expansion (from ``seeds``) with full-text
+        search (over ``query``) in one ranked result set. Fusion weights
+        and the result limit are FIXED operator configuration — never
+        exposed as parameters here, so the agent picks WHAT to search
+        for, never HOW (brainstorm D6). Only available on a Postgres
+        -backed durable plane (FEAT-520); the semantic/KNN leg is not
+        wired from this tool (query embedding generation is a separate
+        concern outside this toolkit's scope) — this wraps the graph and
+        FTS legs only.
+
+        Args:
+            query: Free-form natural-language query for the lexical leg.
+            seeds: Optional concept_ids to seed graph expansion from.
+
+        Returns:
+            ``{"candidates": [...]}`` ranked results, or ``{"error": ...}``
+            when unavailable or neither ``query`` nor ``seeds`` is given.
+        """
+        persistence = self._temporal_persistence()
+        if persistence is None or not hasattr(persistence, "hybrid_retrieve"):
+            return {"error": "graph_hybrid_retrieve: no hybrid-capable durable graph plane configured"}
+        if not query and not seeds:
+            return {"error": "graph_hybrid_retrieve: provide query and/or seeds"}
+        try:
+            candidates = await persistence.hybrid_retrieve(
+                self.publisher.ctx,
+                fts_terms=query,
+                seeds=seeds,
+                limit=_HYBRID_RETRIEVE_LIMIT,
+                weights=_HYBRID_RETRIEVE_WEIGHTS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph_hybrid_retrieve: {exc}"}
+        return {"candidates": [c.model_dump(mode="json") for c in candidates]}
 
     async def ground_claim(self, claim: str) -> dict:
         """Check whether the graph evidences a claim (grounding layer).
