@@ -85,12 +85,31 @@ class TestGoogleInvoke:
         assert isinstance(result.output, str)
 
     async def test_lightweight_model_default(self, mock_google_client):
-        """invoke() uses _lightweight_model by default."""
+        """invoke() uses _lightweight_model when the caller selected no model.
+
+        ``AbstractClient.__init__`` sets ``self.model`` only from an explicit
+        ``model=`` kwarg, so ``None`` is the ``LLMFactory.create("google")``
+        case — the one the lightweight default exists for.
+        """
+        mock_google_client.model = None
         mock_google_client.client.aio.models.generate_content = AsyncMock(
             return_value=_make_mock_response("ok")
         )
         result = await mock_google_client.invoke("test")
         assert result.model == "gemini-3-flash-lite"
+
+    async def test_selected_model_outranks_lightweight(self, mock_google_client):
+        """A model selected at construction beats _lightweight_model.
+
+        The fixture's ``self.model`` stands in for
+        ``LLMFactory.create("google:gemini-2.5-flash")``; invoke() must run
+        that, not the cheap default.
+        """
+        mock_google_client.client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("ok")
+        )
+        result = await mock_google_client.invoke("test")
+        assert result.model == "gemini-2.5-flash"
 
     async def test_model_override(self, mock_google_client):
         """Explicit model param overrides _lightweight_model."""
@@ -109,7 +128,9 @@ class TestGoogleInvoke:
             "Extract entities", output_type=ExtractedData
         )
         assert isinstance(result, InvokeResult)
-        assert result.model == "gemini-3-flash-lite"
+        # The fixture selects gemini-2.5-flash explicitly, which outranks
+        # _lightweight_model; this test is about the config, not the model.
+        assert result.model == "gemini-2.5-flash"
         # Verify generation_config was set
         call_kwargs = mock_google_client.client.aio.models.generate_content.call_args[1]
         config_obj = call_kwargs.get("config")

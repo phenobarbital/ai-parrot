@@ -1206,7 +1206,9 @@ class OpenAIBaseClient(AbstractClient):
             output_type: Pydantic model or dataclass to parse the response into.
             structured_output: Full ``StructuredOutputConfig``; takes
                 precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model``/``self.model``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``, then
+                ``_default_model``.
             system_prompt: System prompt override.
             max_tokens: Maximum completion tokens.
             temperature: Sampling temperature.

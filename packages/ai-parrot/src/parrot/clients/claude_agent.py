@@ -922,7 +922,8 @@ class ClaudeAgentClient(AbstractClient):
             prompt: The user prompt.
             output_type: Pydantic model class or dataclass to parse into.
             structured_output: Pre-parsed payload, takes precedence.
-            model: Override model. Falls back to ``_lightweight_model``.
+            model: Override model. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``.
             system_prompt: Override the agent's system prompt.
             max_tokens: Accepted for parity; not propagated.
             temperature: Accepted for parity; not propagated.
@@ -945,8 +946,11 @@ class ClaudeAgentClient(AbstractClient):
                 into ``output_type``.
         """
         del max_tokens, temperature, tools  # parity-only; see docstring
+        # Same precedence as AbstractClient._resolve_invoke_model(): an
+        # explicitly selected self.model outranks the lightweight default,
+        # which is only a default for clients built without a model=.
         resolved_model = self._resolve_model(
-            model, self._lightweight_model or self._default_model
+            model, self.model or self._lightweight_model or self._default_model
         )
 
         # Effective options: default to permission_mode="plan" so invoke()

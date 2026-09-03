@@ -71,12 +71,26 @@ class TestOpenAIInvoke:
         assert result.output == "Hello world"
 
     async def test_lightweight_model_default(self, mock_openai_client):
-        """invoke() uses _lightweight_model by default."""
+        """invoke() uses _lightweight_model when the caller selected no model.
+
+        ``AbstractClient.__init__`` sets ``self.model`` only from an explicit
+        ``model=`` kwarg, so ``None`` is the ``LLMFactory.create("openai")``
+        case — the one the lightweight default exists for.
+        """
+        mock_openai_client.model = None
         mock_openai_client.client.chat.completions.create = AsyncMock(
             return_value=_make_mock_response("ok")
         )
         result = await mock_openai_client.invoke("test")
         assert result.model == "gpt-4.1"
+
+    async def test_selected_model_outranks_lightweight(self, mock_openai_client):
+        """A model selected at construction beats _lightweight_model."""
+        mock_openai_client.client.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response("ok")
+        )
+        result = await mock_openai_client.invoke("test")
+        assert result.model == "gpt-4o"
 
     async def test_model_override(self, mock_openai_client):
         """Explicit model param overrides _lightweight_model."""

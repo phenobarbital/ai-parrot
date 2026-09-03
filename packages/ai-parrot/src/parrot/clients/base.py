@@ -268,8 +268,12 @@ class AbstractClient(EventEmitterMixin, ABC):
     # rejects the request ("Invalid 'tools': missing field `type`").
     tool_format: Optional[ToolFormat] = None
 
-    # Lightweight model used by invoke() — subclasses override this.
-    # None means fall back to self.model.
+    # Lightweight model used by invoke() when the caller did NOT select a model
+    # explicitly — subclasses override this. It is a *default*, not an override:
+    # an explicit ``model=`` kwarg at construction time (self.model) wins over
+    # it, otherwise invoke() would silently run a different model than the one
+    # the caller asked for. None means "no cheap default for this client".
+    # See _resolve_invoke_model() for the full chain.
     _lightweight_model: Optional[str] = None
 
     # Default output-token budget for invoke(). Subclasses override this where
@@ -1838,8 +1842,9 @@ $backstory
                 Mutually exclusive with ``structured_output`` (``structured_output`` wins).
             structured_output: Full :class:`StructuredOutputConfig`, including optional
                 ``custom_parser``. Takes precedence over ``output_type``.
-            model: Override the model for this call. Falls back to
-                ``_lightweight_model``, then ``self.model``.
+            model: Override the model for this call. Falls back to an
+                explicitly selected ``self.model``, then ``_lightweight_model``,
+                then ``_default_model`` (see :meth:`_resolve_invoke_model`).
             system_prompt: Override the system prompt. Falls back to
                 ``BASIC_SYSTEM_PROMPT`` rendered with instance attributes.
             max_tokens: Maximum completion tokens. ``None`` (the default) resolves
@@ -1919,7 +1924,22 @@ $backstory
     def _resolve_invoke_model(self, model: Optional[str] = None) -> str:
         """Return the model identifier to use for an invoke() call.
 
-        Fallback chain: explicit ``model`` > ``_lightweight_model`` > ``self.model``.
+        Fallback chain: explicit ``model`` > ``self.model`` >
+        :attr:`_lightweight_model` > ``_default_model``.
+
+        ``self.model`` outranks :attr:`_lightweight_model` because
+        :meth:`AbstractClient.__init__` sets it from ``kwargs.get('model')``
+        and leaves it ``None`` otherwise — a truthy ``self.model`` therefore
+        means the caller **explicitly** selected that model (e.g.
+        ``LLMFactory.create("google:gemini-2.5-pro")``). Substituting the cheap
+        model for an explicit selection is a silent lie about which model ran:
+        under the old order three different Gemini tiers produced
+        byte-identical output in the FEAT-481 probe because all three were
+        really ``gemini-3.1-flash-lite``.
+
+        The lightweight default is unchanged for every client built *without*
+        an explicit model — the case the FEAT-481 spec was written for — so
+        ``LLMFactory.create("google")`` still gets the cheap model.
 
         Args:
             model: Caller-supplied model override, or ``None``.
@@ -1929,9 +1949,13 @@ $backstory
         """
         if model is not None:
             return model
+        if self.model:
+            return self.model
         if self._lightweight_model is not None:
             return self._lightweight_model
-        return self.model
+        # Terminal fallback: clients that set neither (NvidiaClient and the
+        # other OpenAIBaseClient subclasses) must not send ``model=None``.
+        return getattr(self, '_default_model', None)
 
     def _model_output_cap(self, model: Optional[str]) -> Optional[int]:
         """Return the provider's output-token cap for *model*, if one is known.

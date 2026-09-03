@@ -132,7 +132,14 @@ class TestResolveInvokeModel:
         assert result == "gpt-4o"
 
     def test_lightweight_model_fallback(self, client):
-        """Falls back to _lightweight_model when no explicit model."""
+        """Falls back to _lightweight_model when the caller selected no model.
+
+        ``self.model`` is ``None`` here because ``AbstractClient.__init__``
+        leaves it ``None`` unless the caller passed ``model=`` — i.e. this is
+        the ``LLMFactory.create("anthropic")`` case, where the cheap default
+        is exactly what invoke() should use.
+        """
+        client.model = None
         client._lightweight_model = "claude-haiku-4-5-20251001"
         result = client._resolve_invoke_model(None)
         assert result == "claude-haiku-4-5-20251001"
@@ -149,6 +156,38 @@ class TestResolveInvokeModel:
         client._lightweight_model = "cheap-model"
         result = client._resolve_invoke_model("expensive-model")
         assert result == "expensive-model"
+
+    def test_selected_model_outranks_lightweight(self, client):
+        """A model selected at construction beats the lightweight default.
+
+        Regression test for the FEAT-481 defect: ``_lightweight_model`` used
+        to outrank ``self.model``, so ``LLMFactory.create("google:gemini-2.5-pro")``
+        followed by ``invoke()`` silently ran ``gemini-3.1-flash-lite`` — which
+        is what made three Gemini tiers produce byte-identical output in the
+        original probe.
+        """
+        client.model = "gemini-2.5-pro"
+        client._lightweight_model = "gemini-3.1-flash-lite"
+        assert client._resolve_invoke_model(None) == "gemini-2.5-pro"
+
+    def test_explicit_arg_still_beats_selected_model(self, client):
+        """The per-call ``model=`` argument stays the highest priority."""
+        client.model = "gemini-2.5-pro"
+        client._lightweight_model = "gemini-3.1-flash-lite"
+        assert client._resolve_invoke_model("gemini-2.5-flash") == "gemini-2.5-flash"
+
+    def test_falls_back_to_default_model_when_nothing_set(self, client):
+        """Neither selected nor lightweight → ``_default_model``, never ``None``.
+
+        Covers NvidiaClient and the other ``OpenAIBaseClient`` subclasses,
+        which deliberately set no ``_lightweight_model`` and never assign
+        ``self.model``; before this fix they resolved to ``None`` and sent
+        ``model=None`` to the provider.
+        """
+        client.model = None
+        client._lightweight_model = None
+        client._default_model = "minimaxai/minimax-m3"
+        assert client._resolve_invoke_model(None) == "minimaxai/minimax-m3"
 
 
 class TestBuildInvokeResult:

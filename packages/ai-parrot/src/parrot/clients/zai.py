@@ -1013,8 +1013,8 @@ class ZaiClient(OpenAIBaseClient):
                 wins).
             structured_output: Full :class:`StructuredOutputConfig`.  Takes
                 precedence over *output_type*.
-            model: Model override.  Falls back to :attr:`_lightweight_model`,
-                then :attr:`model`.
+            model: Model override.  Falls back to an explicitly selected
+                :attr:`model`, then :attr:`_lightweight_model`.
             system_prompt: System prompt override.  Falls back to the default
                 :attr:`BASIC_SYSTEM_PROMPT` template.
             max_tokens: Maximum completion tokens (default ``4096``).

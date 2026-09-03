@@ -8,18 +8,19 @@ provider's credentials are not configured on the machine.
 They lock in the three findings the ``artifacts/feat481_structured_output_matrix.py``
 matrix established against live providers:
 
-1. ``invoke()`` silently ignores the caller's model selection when the client
-   defines ``_lightweight_model`` — see :func:`test_invoke_honours_selected_model`.
+1. ``invoke()`` used to silently ignore the caller's model selection when the
+   client defines ``_lightweight_model`` — now fixed, and locked in by
+   :func:`test_invoke_honours_selected_model`.
 2. A response truncated at the output-token cap becomes a raw ``str`` rather
    than an error, so callers dereference a string as a model — see
    :func:`test_truncated_structured_output_is_not_silently_a_string`.
 3. Given enough budget, mainstream models satisfy the schema; the failure is
    not schema-level — see :func:`test_model_satisfies_meeting_page_schema`.
 
-Test 1 is the one that will fail today and should keep failing until the
-resolution order in ``AbstractClient._resolve_invoke_model`` is fixed; it is
-marked ``xfail(strict=False)`` so it records the defect without breaking a
-live-test run, and flips to XPASS the moment the fix lands.
+Test 1 was a non-strict ``xfail`` while the defect stood. The resolution order
+in ``AbstractClient._resolve_invoke_model`` has since been fixed to
+``model=`` > ``self.model`` > ``_lightweight_model`` > ``_default_model``, so
+it is now a plain assertion guarding against regression.
 
 Run with::
 
@@ -125,15 +126,15 @@ async def test_model_satisfies_meeting_page_schema(harness, prompt, spec):
 async def test_invoke_honours_selected_model(harness, prompt, spec):
     """``invoke()`` must run the model the caller selected.
 
-    ``LLMFactory.create("google:gemini-2.5-pro")`` sets ``self.model``, but
-    ``_resolve_invoke_model()`` ranks ``self._lightweight_model`` above it, so
-    an ``invoke()`` call with no explicit ``model=`` silently runs
+    ``LLMFactory.create("google:gemini-2.5-pro")`` sets ``self.model``.
+    ``_resolve_invoke_model()`` used to rank ``self._lightweight_model`` above
+    it, so an ``invoke()`` call with no explicit ``model=`` silently ran
     ``gemini-3.1-flash-lite`` instead. That substitution is what made three
     different Gemini tiers produce byte-identical failures in the original
     FEAT-481 probe and led to the wrong "schema-level" conclusion.
 
-    Marked non-strict xfail: it documents the defect today and turns XPASS
-    when the resolution order is fixed.
+    Now a live assertion: the fix reordered the chain to
+    ``model=`` > ``self.model`` > ``_lightweight_model`` > ``_default_model``.
     """
     _require(harness, spec)
     requested = spec.split(":", 1)[1]
@@ -143,13 +144,11 @@ async def test_invoke_honours_selected_model(harness, prompt, spec):
     if row["verdict"] in ("UNAVAIL", "SKIP"):
         pytest.skip(f"{spec}: {row['detail']}")
     effective = row["effective_model"]
-    if requested not in effective:
-        pytest.xfail(
-            f"known FEAT-481 defect: invoke() ran {effective!r} instead of the "
-            f"selected {requested!r} (_lightweight_model outranks self.model in "
-            f"AbstractClient._resolve_invoke_model)"
-        )
-    assert requested in effective
+    assert requested in effective, (
+        f"invoke() ran {effective!r} instead of the selected {requested!r} — "
+        f"the _lightweight_model/self.model precedence in "
+        f"AbstractClient._resolve_invoke_model has regressed"
+    )
 
 
 async def test_truncated_structured_output_is_not_silently_a_string(harness, prompt):
@@ -163,6 +162,12 @@ async def test_truncated_structured_output_is_not_silently_a_string(harness, pro
 
     Marked non-strict xfail on ``dev``, where ``invoke()`` still returns the
     string; it flips to XPASS once a guard lands.
+
+    Since PR #1303 the guard *has* landed, and the harness classifies the
+    outcome as ``TRUNCATED`` rather than the generic ``INVOKE-ERROR``:
+    ``_parse_structured_output`` inspects ``finish_reason`` and raises
+    ``TruncatedResponseError`` (an ``InvokeError`` subclass) before parsing.
+    Both verdicts satisfy this test — what it forbids is a raw ``str``.
     """
     spec = "google:gemini-3.1-flash-lite"
     _require(harness, spec)
@@ -178,6 +183,6 @@ async def test_truncated_structured_output_is_not_silently_a_string(harness, pro
             "known FEAT-481 defect: a MAX_TOKENS-truncated response is returned as a raw "
             f"str ({row['detail']}); finish_reason={row.get('finish_reason')!r}"
         )
-    assert row["verdict"] == "INVOKE-ERROR", (
+    assert row["verdict"] in ("INVOKE-ERROR", "TRUNCATED"), (
         f"expected a raised error rather than a leaked string, got {row['verdict']}"
     )
