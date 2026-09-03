@@ -21,7 +21,9 @@ single-layer path — this is a pure additive extension, not a rewrite.
 
 from __future__ import annotations
 
+import base64
 import logging
+from pathlib import Path
 from typing import Any
 
 import parrot.outputs.a2ui.catalog.basic
@@ -36,6 +38,7 @@ from parrot.outputs.a2ui.renderers import (
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record
+from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,60 @@ def _load_folium():
         raise ImportError(
             "The A2UI folium_map renderer requires 'folium'. " f"Install it with: pip install {_MAP_EXTRA}"
         ) from exc
+
+
+def _data_uri(path: Path, mime: str) -> str:
+    """Build a base64-encoded ``data:`` URI from a vendored asset file.
+
+    Args:
+        path: The vendored file's local path (from
+            ``_map_vendor.VENDORED_ASSET_PATHS``).
+        mime: The MIME type to embed (``"text/javascript"`` for ``.js``,
+            ``"text/css"`` for ``.css``).
+
+    Returns:
+        A ``data:{mime};base64,{...}`` URI string.
+    """
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+def _build_offline_url_map() -> dict[str, str]:
+    """Build the ``{cdn_url: data_uri}`` swap table (FEAT-522, TASK-2787).
+
+    Introspects ``folium.Map().default_js``/``default_css`` and
+    ``folium.plugins.MarkerCluster().default_js``/``default_css`` LIVE
+    (never a hardcoded URL list) so a future ``folium`` bump that keeps the
+    same resource ``name`` but changes its pinned CDN URL is still matched
+    correctly — the swap is keyed by the CURRENT url, looked up via each
+    resource's stable ``name`` against
+    ``_map_vendor.VENDORED_ASSET_PATHS`` (spec §7 Known Risks: "folium
+    version drift").
+
+    Read ONCE at import time (module-level ``_OFFLINE_URL_MAP`` below) —
+    mirrors this codebase's established ``_CHART_JS_SOURCE``/``_BASE_CSS``
+    "read once, never per-render" convention; base64-encoding ~13 small-to-
+    medium vendored files is a one-time, bounded cost.
+
+    Returns:
+        A mapping from each verified folium/MarkerCluster default resource
+        URL to its locally-vendored ``data:`` URI equivalent.
+    """
+    import folium
+    import folium.plugins as fp
+
+    pairs: dict[str, str] = {}
+    m = folium.Map()
+    mc = fp.MarkerCluster()
+    for name, url in [*m.default_js, *mc.default_js]:
+        pairs[url] = _data_uri(VENDORED_ASSET_PATHS[name], "text/javascript")
+    for name, url in [*m.default_css, *mc.default_css]:
+        pairs[url] = _data_uri(VENDORED_ASSET_PATHS[name], "text/css")
+    return pairs
+
+
+#: Read ONCE at import time (not per-render) — see `_build_offline_url_map`.
+_OFFLINE_URL_MAP: dict[str, str] = _build_offline_url_map()
 
 
 def build_map_document(
@@ -174,6 +231,17 @@ def build_map_document(
             ).add_to(fmap)
 
     document = fmap.get_root().render()
+    # FEAT-522 (TASK-2787): swap every one of folium's default CDN URLs for
+    # an inlined `data:` URI built from a locally vendored copy of that
+    # exact file — a plain string `.replace()` pass over the ALREADY-
+    # rendered HTML, never `add_js_link()`/`add_css_link()` (spec §2: those
+    # mutate a shared, class-level mutable list on `JSCSSMixin` that every
+    # `folium.Map`/`MarkerCluster` instance in the process shares). A
+    # `.replace()` on a URL that isn't present in this particular render
+    # (e.g. MarkerCluster's resources when clustering wasn't triggered) is
+    # a harmless no-op, so all pairs are applied unconditionally.
+    for cdn_url, data_uri in _OFFLINE_URL_MAP.items():
+        document = document.replace(cdn_url, data_uri)
     return document.encode("utf-8"), []
 
 

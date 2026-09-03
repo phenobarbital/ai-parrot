@@ -137,3 +137,23 @@ class TestBuildMapDocument:
         props = {"layers": [{"layer": "stores", "data": points}]}
         document, _ = fm.build_map_document(props, cluster_threshold_by_layer={"stores": 10})
         assert b"markerClusterGroup" in document
+
+
+class TestBuildMapDocumentOffline:
+    """FEAT-522 TASK-2787: offline data-URI swap for folium's default CDN resources."""
+
+    def test_zero_external_cdn_urls(self):
+        props = {"layers": [{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}]}
+        document, _ = fm.build_map_document(props)
+        text = document.decode("utf-8")
+        assert "cdn.jsdelivr.net" not in text
+        assert "cdnjs.cloudflare.com" not in text
+        assert "code.jquery.com" not in text
+        assert "netdna.bootstrapcdn.com" not in text
+
+    def test_data_uris_present(self):
+        props = {"layers": [{"layer": "stores", "data": [{"lat": 1.0, "lon": 2.0}]}]}
+        document, _ = fm.build_map_document(props)
+        text = document.decode("utf-8")
+        assert "data:text/javascript;base64," in text
+        assert "data:text/css;base64," in text
