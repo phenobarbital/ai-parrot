@@ -8,11 +8,11 @@ base_branch: main
 
 # Feature Specification: OpenAI `max_completion_tokens` for reasoning models
 
-**Jira**: TBD — *no `FEAT-<NNN>` reserved; a bugfix is not a feature (FEAT-466).
-Fill in the issue key before creating the worktree.*
+**Jira**: none — *user decision 2026-09-03: no ticket for this hotfix. No `FEAT-<NNN>` reserved; a bugfix is not a feature (FEAT-466).*
+The hotfix is identified by its spec slug; branch `hotfix-openai-max-completion-tokens`, tasks `HOTFIX-openai-max-completion-tokens-N`.
 **Date**: 2026-09-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.1
 
 ---
@@ -478,3 +478,4 @@ Verified via `grep -rn "class .*(OpenAIBaseClient)"`:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-03 | Jesus Lara | Initial draft — live-verified against `main` `ab932a93d` |
+| 0.2 | 2026-09-03 | Jesus Lara | Approved; no Jira ticket (user decision); decomposed into 4 `HOTFIX-openai-max-completion-tokens-N` tasks on branch `hotfix-openai-max-completion-tokens` |
