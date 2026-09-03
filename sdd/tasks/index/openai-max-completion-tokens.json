@@ -6,7 +6,7 @@
   "type": "hotfix",
   "base_branch": "main",
   "created_at": "2026-09-03T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-03T01:26:03+00:00",
   "tasks": [
     {
       "id": "HOTFIX-openai-max-completion-tokens-1",
@@ -77,7 +77,7 @@
       "jira_issue_key": null,
       "feature": "openai-max-completion-tokens",
       "spec": "sdd/specs/openai-max-completion-tokens.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,9 +87,9 @@
       "parallel": false,
       "parallelism_notes": "Final gate: needs both opt-ins landed before live verification is meaningful.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-openai-max-completion-tokens-4-live-verification-and-docs.md"
+      "started_at": "2026-09-03T01:26:03+00:00",
+      "completed_at": "2026-09-03T01:26:03+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-openai-max-completion-tokens-4-live-verification-and-docs.md"
     }
   ]
 }

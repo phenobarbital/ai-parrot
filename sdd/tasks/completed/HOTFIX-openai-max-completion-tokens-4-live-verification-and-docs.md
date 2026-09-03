@@ -211,14 +211,127 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-03
+**Notes**: Created
+`packages/ai-parrot/tests/clients/test_openai_reasoning_live.py` with the
+five `real_llm`-marked tests (`test_default_openai_client_ask_succeeds`,
+`test_gpt5_ask_succeeds`, `test_gpt5_ask_stream_succeeds`,
+`test_gpt5_invoke_structured_succeeds`, `test_gpt41_still_succeeds`),
+gated by `pytestmark = [pytest.mark.real_llm,
+pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), ...)]`, following
+`LLMFactory.create(llm) -> AbstractClient` (plain sync factory call,
+verified via `grep -n "def create" clients/factory.py` — no
+`async with`/context-manager, contrary to the task's own illustrative
+snippet). `pytest packages/ai-parrot/tests/clients/test_openai_reasoning_live.py -v`
+→ **5 skipped** (both `PARROT_TEST_REAL_LLM` and `OPENAI_API_KEY` absent in
+this session — confirmed via `env | grep -i openai` and no `.env` with real
+credentials anywhere in the worktree or main repo). `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Extended `docs/clients/openai-compatible.md` with the "Per-Model Request
+Adaptation" section (between "The Funnel Contract" and "The
+No-`gpt-*`-Defaults Rule") covering both attributes, the hook, the
+evidence table (spec §2), the current opt-in roster (`OpenAIClient`,
+`MoonshotClient`), and the no-`super()` caveat with Moonshot as the worked
+example; added item 8 to the "Adding a New OpenAI-Compatible Provider"
+checklist.
 
-**Live results** (test → PASS/FAIL/UNAVAIL):
+Ran both required full-suite commands, wrapped in `timeout -s KILL`, with
+output saved to `artifacts/logs/hotfix-openai-max-completion-tokens/`
+(gitignored):
+- `timeout -s KILL 600 pytest tests/unit/ -q` → completed in 23s (matches
+  the known "hangs after summary" behavior — captured before the hang).
+  **64 failed, 762 passed, 8 skipped** — every failure is in a test file
+  this hotfix never touched (`test_agentcrew_*`, `test_ephemeral_routes`,
+  `test_execution_history_handler`, `test_google_document_understanding`,
+  `test_multi_dataset_*`, `test_navigator_toolkit_refactor`,
+  `test_sql_toolkit`, `test_telegram_attachments_feat120`, `test_warmup`);
+  spot-checked one (`test_navigator_toolkit_refactor::test_init_accepts_dsn_only`)
+  → `TypeError: PostgresToolkit.__init__() missing 1 required positional
+  argument: 'dsn'`, unrelated to OpenAI/Moonshot clients. Two collection
+  errors (`test_database_agent.py`: missing `DatabaseAgentToolkit`;
+  `test_faiss_s3.py`: missing `FAISSStore`) also pre-exist —
+  `grep -l "openai_base\|clients.gpt\|clients.moonshot"` across all 11
+  distinct failing/erroring test files returned no matches, and
+  `git diff feb5a5a6a HEAD --stat` confirms none of them were touched by
+  any of this hotfix's three code commits.
+- `timeout -s KILL 550 pytest packages/ai-parrot/tests/ -q` → pre-existing,
+  **structural** blocker unrelated to this hotfix: collection aborts with
+  `ImportError while loading conftest ... ModuleNotFoundError: No module
+  named 'parrot.mcp.transports.stdio'` — `parrot/bots/__init__.py` imports
+  `AbstractBot` → `abstract.py` imports `MCPEnabledMixin` →
+  `mcp/integration.py:27` imports `from .transports.stdio import
+  StdioMCPSession`, but `packages/ai-parrot/src/parrot/mcp/transports/`
+  does not exist at all on this branch (verified: directory absent in both
+  the worktree and the main repo checkout). This makes importing
+  `parrot.bots` — and therefore most of `packages/ai-parrot/tests/`,
+  transitively — fail regardless of the OpenAI client changes.
+  `git log --oneline -1 -- packages/ai-parrot/src/parrot/mcp/integration.py`
+  → `84c87ed9d fix(mcp): make the aioquic QUIC transport genuinely
+  optional`, a commit that predates this hotfix's worktree entirely;
+  `git diff feb5a5a6a HEAD -- packages/ai-parrot/src/parrot/mcp/
+  packages/ai-parrot/src/parrot/bots/` is empty, confirming zero overlap
+  with this hotfix. Ran `packages/ai-parrot/tests/clients/` directly
+  instead for a narrower signal: also blocked, same root cause (355
+  errors, all setup-level `ModuleNotFoundError`/import-chain failures, not
+  assertion failures). This `mcp.transports` restructuring gap is out of
+  this hotfix's scope to fix (Cardinal Rule 5 — no scope creep; NOT in
+  scope per this task's own list: "any code change to `openai_base.py`,
+  `gpt.py` or `moonshot.py`... reopen the owning task rather than patching
+  here" — the same principle applies to an unrelated MCP module).
+  **This criterion is not met as literally stated** ("pass, or pre-existing
+  failures listed with evidence") because the run does not produce a
+  pass/fail list at all — it fails at collection. The evidence above
+  (root-cause trace + zero-diff confirmation) is the closest equivalent
+  achievable without also fixing the unrelated MCP gap; flagging this
+  explicitly rather than silently declaring the criterion satisfied. All
+  tests specific to this hotfix's scope (`tests/clients/test_openai_base_adapt_params.py`,
+  `tests/clients/test_openai_reasoning_params.py`,
+  `tests/clients/test_moonshot_client.py`,
+  `tests/clients/test_openai_compatible_defaults.py`,
+  `tests/unit/test_openai_invoke.py`,
+  `packages/ai-parrot/tests/clients/test_openai_reasoning_live.py`) pass
+  or skip cleanly (202 passed, 5 skipped total across those files).
+  A worktree environment note: two Cython extension modules
+  (`parrot/utils/types`, plus 18 other `.so` files across `packages/`) were
+  present as source (`.pyx`) but not compiled in this fresh worktree,
+  causing `ModuleNotFoundError` unrelated to the above; copied the
+  already-built `.so` files from the main repo checkout to unblock
+  collection (matches the documented worktree gotcha for compiled
+  extensions — these binaries are gitignored build artifacts, not part of
+  this commit).
 
-**Groq probe** (`max_tokens` → …, `max_completion_tokens` → …; flag flipped: yes/no):
+**Live results** (test → PASS/FAIL/UNAVAIL): all five **UNAVAIL** —
+no `OPENAI_API_KEY` in this session/environment (verified empty, no
+credentials file found). The tests are written and skip cleanly; they
+have not been executed against the live API. Flagging spec §5's "Live
+tests pass" criterion as **unverified, not failing** — a future session
+with `OPENAI_API_KEY` + `PARROT_TEST_REAL_LLM=1` set must run
+`pytest packages/ai-parrot/tests/clients/test_openai_reasoning_live.py -v -m real_llm`
+before this hotfix can be considered fully proven end-to-end, per spec §7
+("empty credit balances / missing credentials produce no evidence — do
+not mark the criterion satisfied").
 
-**Deviations from spec**: none | describe if any
+**Groq probe** (`max_tokens` → UNAVAIL, `max_completion_tokens` → UNAVAIL;
+flag flipped: **no**): no `GROQ_API_KEY` in this session (verified empty).
+No probe was possible. Per the task's evidence rule ("leave the flag off
+unless conclusive evidence"), `GroqClient._uses_max_completion_tokens`
+remains at its inherited `False` default — `groq.py` was not modified.
+This spec §8 open question (Q3) remains open for a future session with
+Groq credentials.
+
+**Deviations from spec**: (1) `LLMFactory.create()` is a synchronous
+factory returning an already-usable `AbstractClient` directly — no
+`async with` — contrary to the task's illustrative "Pattern to Follow"
+snippet; verified against `factory.py` and existing call sites
+(`test_localllm_client.py`, `test_factory_bedrock.py`) before writing the
+tests. (2) `test_gpt41_still_succeeds` uses `temperature=0.7` instead of
+the more obvious `0.0`, for the same reason documented in
+HOTFIX-openai-max-completion-tokens-2's Completion Note: `ask()` has a
+pre-existing, unrelated `if temperature:` truthiness bug that silently
+drops an explicit `0.0` before it reaches the wire, on every model — using
+`0.0` would not have exercised what the criterion is actually checking
+(temperature reaching and being accepted by the API). (3) The two
+full-suite acceptance criteria could not be fully satisfied due to
+pre-existing, unrelated breakage described above — see the detailed notes
+under "Notes".
