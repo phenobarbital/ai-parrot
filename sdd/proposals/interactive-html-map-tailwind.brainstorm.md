@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-03
 **Author**: Jesus Lara (jesuslarag@gmail.com)
-**Status**: exploration
+**Status**: exploration — user-owned open questions resolved 2026-09-03 (2 implementer-owned items deferred to `/sdd-spec`)
 **Recommended Option**: A
 
 ---
@@ -80,8 +80,10 @@ gaps as one combined follow-up to FEAT-493.
   Staffing section takes, and the one that produced the text degradation the user observed).
 - Real production dashboards can embed real PII (employee/store geolocation) in the Map's
   data — any inlining approach must not make that data easier to exfiltrate than it already is
-  in the current text-degradation form (e.g. `iframe` sandboxing considerations, see Open
-  Questions).
+  in the current text-degradation form. **Resolved 2026-09-03**: the embedding `<iframe>` uses
+  `sandbox="allow-scripts allow-popups"` — script execution stays allowed (required for
+  Leaflet to draw the map) and popups are allowed (so a marker tooltip/link can open in a new
+  tab), while top-navigation, forms, and same-origin access remain blocked.
 
 ---
 
@@ -276,8 +278,10 @@ browser-default appearance.
 properties (`layers`, `viewport`, `title`), constructs a synthetic single-Map `CreateSurface`
 envelope, and calls `FoliumMapRenderer().render(envelope)` (now internally wrapping each
 layer's markers in `folium.plugins.MarkerCluster` once a layer's point count passes a
-configurable threshold). The returned standalone HTML document's bytes are HTML-escaped and
-written into an `<iframe srcdoc="...">` in place of the old `.lower()`-produced text card.
+threshold — default **500**, overridable per-layer). The returned standalone HTML document's
+bytes are HTML-escaped and written into an
+`<iframe sandbox="allow-scripts allow-popups" srcdoc="...">` in place of the old
+`.lower()`-produced text card.
 
 **CSS track:** a new CI job installs Node + the Tailwind CLI (mirroring
 `release.yml`'s existing `ai-parrot-server/ui` step), runs it against a safelist generated
@@ -292,7 +296,8 @@ committed into `design_system/` and concatenated into `DesignSystem.stylesheet()
 
 - **Marker count above the clustering threshold**: wrapped in `MarkerCluster` automatically;
   below threshold, rendered as individual markers (current `folium_map.py` behavior,
-  unchanged).
+  unchanged). **Resolved 2026-09-03**: default threshold is **500** points per layer,
+  overridable per-layer via the layer's properties.
 - **Empty/zero-layer Map data**: renders an empty-state map card rather than raising —
   mirrors how Chart/DataTable already degrade gracefully on empty data today.
 - **Map nested in an `Infographic` section vs. top-level**: both `_render_top` and
@@ -300,15 +305,14 @@ committed into `design_system/` and concatenated into `DesignSystem.stylesheet()
   other producing the old text degradation (this is exactly how the flex_dashboard's
   Proximity Staffing case, which is *nested* inside an Infographic section, was missed if
   only the top-level path is patched).
-- **Tailwind CSS/class-vocabulary drift**: a CI check (new, part of this feature) fails the
-  build if the committed generated CSS file is stale relative to the current class vocabulary
-  scraped from `interactive_html.py` — prevents the gap from silently reopening as new
-  primitives are added later.
+- **Tailwind CSS/class-vocabulary drift**: **Resolved 2026-09-03** — the CI check **fails the
+  build** if the committed generated CSS file is stale relative to the current class vocabulary
+  scraped from `interactive_html.py` (no warn-and-allow-merge fallback); prevents the gap from
+  silently reopening as new primitives are added later.
 - **Real PII in embedded map data**: production dashboards (e.g. flex_dashboard's real store/
   employee geolocation) end up inlined inside the `iframe srcdoc` — no worse than today's text
-  degradation, which already inlines the same coordinates, but the `iframe`'s `sandbox`
-  attribute policy should be decided explicitly rather than left to default (see Open
-  Questions).
+  degradation, which already inlines the same coordinates. **Resolved 2026-09-03**: the
+  `iframe` uses `sandbox="allow-scripts allow-popups"` (see Constraints above).
 
 ---
 
@@ -336,7 +340,7 @@ committed into `design_system/` and concatenated into `DesignSystem.stylesheet()
 | `interactive_html.py` (`_INTERCEPTED`, `_render_top`, `_render_descriptor`, `supported_components`) | extends | Adds Map as a 4th natively-rendered component type; no existing dispatch logic removed. |
 | `folium_map.py` | extends | Adds `MarkerCluster` wrapping above a configurable point-count threshold; `FoliumMapRenderer.render()` signature unchanged, reused as-is for the composition. |
 | `design_system/__init__.py` (`DesignSystem.stylesheet()`) + `design_system/*.css` | modifies | Adds one new generated, committed CSS file to the existing concatenation. |
-| `.github/workflows/*.yml` | new CI step | New Node/pnpm + Tailwind CLI job, mirroring `release.yml:280-295`'s existing `ai-parrot-server/ui` pattern; does not touch the Python package's install-time build. |
+| `.github/workflows/*.yml` | new CI step | New Node/pnpm + Tailwind CLI job, mirroring `release.yml:280-295`'s existing `ai-parrot-server/ui` pattern; does not touch the Python package's install-time build. The staleness check **fails the build** (no warn-only fallback) when the committed generated CSS is out of sync with the scraped class vocabulary. |
 | `ai-parrot-visualizations/pyproject.toml` | none expected | `package-data` already globs `design_system/*.css` — the new generated file should be picked up automatically; verify during spec/task. |
 | `test_document_shell.py`, `test_interactive_html.py`, `test_semantic_classes.py` | depends on (must keep passing) | Substring-based; safe as long as existing class names are preserved in markup (they are, per this design). |
 | New tests | new | Map rendering + clustering behavior; a coverage-audit test asserting every emitted class has a CSS rule (closes the systemic-gap risk going forward). |
@@ -480,16 +484,20 @@ import folium.plugins  # MarkerCluster ships with folium>=0.14 — no new pyproj
 
 ## Open Questions
 
-- [ ] What `iframe sandbox` attribute policy (if any) should the embedded folium map use,
+- [x] What `iframe sandbox` attribute policy (if any) should the embedded folium map use,
   given production Map data can contain real employee/store PII inlined in the `srcdoc`? —
-  *Owner: user*
-- [ ] What marker-count threshold triggers `MarkerCluster` wrapping (e.g. 200? 500? configurable
-  per-layer)? — *Owner: user*
+  *Owner: user* — **Resolved 2026-09-03**: `sandbox="allow-scripts allow-popups"` (script
+  execution required for Leaflet; popups allowed for marker links/tooltips; top-navigation,
+  forms, and same-origin access remain blocked).
+- [x] What marker-count threshold triggers `MarkerCluster` wrapping (e.g. 200? 500? configurable
+  per-layer)? — *Owner: user* — **Resolved 2026-09-03**: default **500**, configurable
+  per-layer.
 - [ ] Tailwind v3 (needs `tailwind.config.js` + content globs) vs. v4 (CSS-first config, no
   PostCSS required for `@apply`) — which major version should the CI job target? — *Owner:
   implementer, quick eval during spec*
-- [ ] How should the CI staleness check for the committed generated CSS file work — fail the
-  build outright, or warn-and-allow-merge with a follow-up ticket? — *Owner: user*
+- [x] How should the CI staleness check for the committed generated CSS file work — fail the
+  build outright, or warn-and-allow-merge with a follow-up ticket? — *Owner: user* —
+  **Resolved 2026-09-03**: fail the build outright, no warn-and-allow-merge fallback.
 - [ ] Should the safelist-generation script live as a small Python utility (scraping
   `interactive_html.py`'s literal class strings via AST/regex) or be manually maintained as an
   explicit list — the former stays in sync automatically but is more code to review; the
