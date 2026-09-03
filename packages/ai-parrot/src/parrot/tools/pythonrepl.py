@@ -20,7 +20,7 @@ import numpy as np
 
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
-from navconfig import BASE_DIR
+from navconfig import BASE_DIR, config
 from parrot._imports import lazy_import
 from parrot.security.redaction import redact_text
 from .abstract import AbstractTool
@@ -72,6 +72,38 @@ class PythonREPLArgs(BaseModel):
 
     code: str = Field(description="Python code to execute in the REPL environment")
     debug: bool = False
+
+
+#: Accepted values for ``PythonREPLTool(execution_mode=...)`` /
+#: ``PYTHON_REPL_EXECUTION_MODE``.
+_EXECUTION_MODES = ("worker", "inprocess")
+
+
+def resolve_execution_mode(explicit: Optional[str] = None) -> str:
+    """Resolve the REPL execution mode: explicit argument, else environment.
+
+    Args:
+        explicit: The ``execution_mode`` constructor argument. ``None`` reads
+            ``PYTHON_REPL_EXECUTION_MODE`` from the environment / navconfig
+            (fallback ``"worker"``), so a deployment can flip every tool —
+            including the ones agents such as ``PandasAgent`` build
+            internally — without touching agent code.
+
+    Returns:
+        ``"worker"`` (persistent sandboxed worker process, the default) or
+        ``"inprocess"`` (pre-FEAT-380 behaviour: code runs inside the host
+        process, see ``repl_worker/inprocess.py``).
+
+    Raises:
+        ValueError: The value is not one of :data:`_EXECUTION_MODES`.
+    """
+    raw = explicit if explicit is not None else config.get("PYTHON_REPL_EXECUTION_MODE", fallback="worker")
+    mode = str(raw).strip().lower()
+    if mode not in _EXECUTION_MODES:
+        raise ValueError(
+            f"invalid PythonREPLTool execution_mode {raw!r}: expected one of {', '.join(_EXECUTION_MODES)}"
+        )
+    return mode
 
 
 class PythonREPLTool(AbstractTool):
@@ -189,6 +221,7 @@ class PythonREPLTool(AbstractTool):
         policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
         executor_max_workers: int = 4,
         worker_config=None,  # FEAT-380 Module 5: repl_worker.protocol.WorkerConfig | None
+        execution_mode: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -213,6 +246,13 @@ class PythonREPLTool(AbstractTool):
                 limits / lifecycle tuning for this instance's persistent
                 worker process (FEAT-380 Module 5). Defaults to
                 ``WorkerConfig()`` (lazily, on first use).
+            execution_mode: ``"worker"`` (default — persistent sandboxed
+                worker process) or ``"inprocess"`` (escape hatch: generated
+                code runs inside the host process on ``_repl_executor``, the
+                pre-FEAT-380 behaviour, with NO process isolation, rlimits or
+                SIGKILL deadline). ``None`` reads the
+                ``PYTHON_REPL_EXECUTION_MODE`` environment variable
+                (fallback ``"worker"``). See ``repl_worker/inprocess.py``.
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -267,6 +307,19 @@ class PythonREPLTool(AbstractTool):
         self._worker_repl_kwargs = {
             "setup_code": self.setup_code,
         }
+        # Execution mode (escape hatch): explicit arg > PYTHON_REPL_EXECUTION_MODE
+        # env var > "worker". Resolved once here so every later
+        # `_get_worker_handle()` call branches on a fixed value.
+        self._execution_mode = resolve_execution_mode(execution_mode)
+        self._inprocess_handle = None
+        if self._execution_mode == "inprocess":
+            self.logger.warning(
+                "PythonREPLTool %s: execution_mode='inprocess' — generated code runs INSIDE "
+                "the host process (no worker sandbox, no rlimits, no SIGKILL deadline). "
+                "Use only as a temporary escape hatch; unset PYTHON_REPL_EXECUTION_MODE "
+                "to restore the worker-process sandbox.",
+                self.name,
+            )
 
         # Setup the environment
         self._setup_environment()
@@ -874,6 +927,8 @@ print("Use 'execution_results' dict to store intermediate results.")
                 in-process ``exec()`` fallback; the caller reports this as
                 an explicit error instead).
         """
+        if self._execution_mode == "inprocess":
+            return self._get_inprocess_handle()
         pool = await self._acquire_worker_pool()
         if self._pending_worker_reset:
             self._pending_worker_reset = False
@@ -883,6 +938,44 @@ print("Use 'execution_results' dict to store intermediate results.")
             # transparently spawns a fresh one (its own crash-restart path,
             # TASK-1942) — the namespace is intentionally cleared.
         return await pool.acquire(self._session_id)
+
+    @property
+    def execution_mode(self) -> str:
+        """``"worker"`` or ``"inprocess"`` — resolved once at construction."""
+        return self._execution_mode
+
+    def _get_inprocess_handle(self):
+        """Return this instance's ``InProcessHandle`` (``execution_mode="inprocess"``).
+
+        Created lazily, bound to THIS instance's ``locals``/``globals`` and
+        ``_repl_executor`` — so a ``PythonPandasTool`` session clone gets its
+        own handle over its own copied namespace, matching the one-worker-
+        per-instance isolation unit of the worker path.
+
+        Returns:
+            A live ``InProcessHandle`` sharing ``WorkerHandle``'s surface.
+        """
+        from parrot.tools.repl_worker.inprocess import InProcessHandle
+        from parrot.tools.repl_worker.protocol import WorkerConfig
+
+        handle = self._inprocess_handle
+        if self._pending_worker_reset:
+            # Mirror what a worker restart gives the worker path: an EMPTY
+            # namespace (only the bootstrap bindings) and a NEW handle
+            # object, so `PythonPandasTool._get_worker_handle()` detects the
+            # swap by identity and re-seeds its DataFrames.
+            self._pending_worker_reset = False
+            self.locals.clear()
+            self.globals.clear()
+            self._setup_environment()
+            PythonREPLTool._bootstrapped = False
+            self._bootstrap()
+            handle = None
+        if handle is None or not handle.is_alive:
+            deadline_ms = (self._worker_config or WorkerConfig()).deadline_ms
+            handle = InProcessHandle(self, executor=self._repl_executor, deadline_ms=deadline_ms)
+            self._inprocess_handle = handle
+        return handle
 
     @contextlib.asynccontextmanager
     async def _worker_session(self):
@@ -918,9 +1011,12 @@ print("Use 'execution_results' dict to store intermediate results.")
         in-process — the host gate (allowlist + AST denylist) still fails
         cheap without a round-trip, but actual execution happens in this
         instance's persistent worker process via ``WorkerHandle``/
-        ``WorkerPool``. There is **no in-process ``exec()`` fallback**
-        (G8/AC8): if the worker cannot start, this returns an explicit G5
-        error dict instead.
+        ``WorkerPool``. There is **no automatic in-process ``exec()``
+        fallback** (G8/AC8): if the worker cannot start, this returns an
+        explicit G5 error dict instead. The only way to run in-process is
+        the explicit ``execution_mode="inprocess"`` escape hatch
+        (``InProcessHandle``), chosen at construction time — never
+        silently on failure.
 
         Args:
             code: Python code to execute

@@ -57,6 +57,27 @@ from .protocol import (
 logger = logging.getLogger(__name__)
 
 
+def _stage(message: str) -> None:
+    """Write one bootstrap-progress line straight to stderr (unbuffered).
+
+    Bootstrap diagnostics (post-FEAT-500): the host keeps a tail of this
+    process' stderr and quotes it in ``WorkerBootstrapError`` when the
+    ``ReadyResponse`` never arrives. Plain ``sys.stderr`` writes — not
+    ``logging`` — on purpose: they land before any logging configuration,
+    survive navconfig re-routing the root logger to stdout, and are never
+    filtered by log level. Each line names the LAST stage the worker reached,
+    so a stuck worker reports *where* it stalled instead of ``<empty>``.
+
+    Args:
+        message: Short stage description.
+    """
+    try:
+        sys.stderr.write(f"repl_worker[pid={os.getpid()}] {message}\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001 - diagnostics only, never fatal
+        pass
+
+
 def set_parent_death_signal() -> None:
     """Best-effort Linux-only orphan-reaping safety net (spec Module 4/AC12).
 
@@ -278,12 +299,14 @@ def serve(
             ``None`` (callers invoking ``serve()`` directly, e.g. tests)
             reports ``0``.
     """
+    _stage("building namespace (importing parrot.tools.pythonrepl + REPL bootstrap)")
     namespace = WorkerNamespace(output_dir=output_dir, repl_kwargs=repl_kwargs)
     # FEAT-500 (G1): announce readiness as the very FIRST frame on the control
     # pipe, once the namespace (framework + pandas import + REPL bootstrap) is
     # fully built. The host refuses to write any request before it has read
     # this frame, which is what closes the cold-start death spiral.
     bootstrap_ms = int((time.monotonic() - started_at) * 1000) if started_at is not None else 0
+    _stage(f"namespace built in {bootstrap_ms} ms, sending ready frame")
     write_frame(out_stream, ReadyResponse(pid=os.getpid(), bootstrap_ms=bootstrap_ms))
     logger.info(
         "repl_worker: ready in %d ms (max_workers config=%s), entering service loop",
@@ -332,6 +355,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         argv: Command-line arguments (defaults to ``sys.argv[1:]``).
     """
     started_at = time.monotonic()
+    _stage(f"interpreter up ({sys.executable}), parsing argv")
     logging.basicConfig(level=logging.INFO)
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 3:
@@ -349,6 +373,10 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     set_parent_death_signal()
     apply_rlimits(config)
+    _stage(
+        f"rlimits applied (AS={config.rlimit_as_bytes} CPU={config.rlimit_cpu_seconds} "
+        f"NOFILE={config.rlimit_nofile}), opening control pipe fds {read_fd}/{write_fd}"
+    )
 
     in_stream = os.fdopen(read_fd, "rb", buffering=0)
     out_stream = os.fdopen(write_fd, "wb", buffering=0)

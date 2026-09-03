@@ -26,6 +26,8 @@ import logging
 import os
 import subprocess
 import sys
+import threading
+from pathlib import Path
 from typing import Any, BinaryIO, Optional
 
 from .protocol import (
@@ -52,6 +54,52 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def probe_process_state(pid: int | None) -> str:
+    """Best-effort one-line snapshot of a live process from ``/proc`` (Linux).
+
+    Bootstrap diagnostics (post-FEAT-500): quoted in ``WorkerBootstrapError``
+    when a worker never sends its ready frame, so the error says whether the
+    child was stopped (``T``: SIGSTOP/SIGTTOU/debugger), sleeping on a
+    kernel wait channel (``S`` + ``wchan``), starved of CPU (``R`` with a
+    tiny ``cpu=``), or thrashing (huge ``VmPeak``). Never raises.
+
+    Args:
+        pid: The process to inspect; ``None`` or a non-Linux host yields
+            ``""``.
+
+    Returns:
+        ``"state=... threads=... vmpeak=... wchan=... cpu=...s"`` or ``""``
+        when unavailable.
+    """
+    if pid is None or sys.platform != "linux":
+        return ""
+    try:
+        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8", errors="replace")
+        fields = {}
+        for line in status.splitlines():
+            key, sep, value = line.partition(":")
+            if sep:
+                fields[key.strip()] = " ".join(value.split())
+        try:
+            wchan = Path(f"/proc/{pid}/wchan").read_text(encoding="utf-8", errors="replace").strip() or "0"
+        except OSError:
+            wchan = "?"
+        cpu = "?"
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            after_comm = stat.rsplit(")", 1)[1].split()
+            ticks = os.sysconf("SC_CLK_TCK") or 100
+            cpu = f"{(int(after_comm[11]) + int(after_comm[12])) / ticks:.2f}s"
+        except (OSError, ValueError, IndexError):
+            pass
+        return (
+            f"state={fields.get('State', '?')} threads={fields.get('Threads', '?')} "
+            f"vmpeak={fields.get('VmPeak', '?')} wchan={wchan} cpu={cpu}"
+        )
+    except OSError:
+        return ""
 
 
 class WorkerBootstrapError(RuntimeError):
@@ -197,6 +245,10 @@ class WorkerHandle:
         #: instead of re-reading `self._proc.stderr` directly, which would
         #: race the drain task reading the same stream.
         self._stderr_tail: list[str] = []
+        #: Same ring buffer for stdout — navconfig routes the worker's OWN
+        #: log records there, so it is the only trace of a worker whose
+        #: bootstrap stalled inside the framework import.
+        self._stdout_tail: list[str] = []
         #: Cheap, names-only shadow of the worker namespace — feeds
         #: `lost_variables` in the namespace-loss error after a kill.
         self.known_vars: list[str] = []
@@ -292,7 +344,16 @@ class WorkerHandle:
         budget_ms = self._config.bootstrap_timeout_ms
         pid = self._proc.pid if self._proc is not None else None
         cause: str | None = None
-        future = loop.run_in_executor(self._executor, read_frame, self._from_worker)
+        # Records whether the executor ever ran the read: a budget that
+        # expires with `read_started` still clear is thread starvation on
+        # the shared executor, not a slow worker — and the fix is different.
+        read_started = threading.Event()
+
+        def _read_first_frame() -> Any:
+            read_started.set()
+            return read_frame(self._from_worker)
+
+        future = loop.run_in_executor(self._executor, _read_first_frame)
         try:
             frame = await asyncio.wait_for(future, timeout=budget_ms / 1000)
         except asyncio.CancelledError:
@@ -300,7 +361,21 @@ class WorkerHandle:
             future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
             raise
         except asyncio.TimeoutError:
-            cause = "no ready frame within the bootstrap budget"
+            if read_started.is_set():
+                cause = "no ready frame within the bootstrap budget"
+            else:
+                threads = getattr(self._executor, "_max_workers", "?")
+                cause = (
+                    "the readiness read never got an executor thread — all "
+                    f"{threads} thread(s) of the shared executor were busy for the whole "
+                    "budget (thread starvation; raise executor_max_workers or lower "
+                    "prewarm_pool_size)"
+                )
+            # Snapshot the child BEFORE killing it: this is the only moment
+            # its /proc state can explain a silent stall.
+            probe = probe_process_state(pid)
+            if probe:
+                cause = f"{cause}; process: {probe}"
             # The executor thread stays blocked on the pipe until the kill
             # below closes it; retrieve its eventual exception so Python
             # doesn't warn about it at GC time.
@@ -323,8 +398,12 @@ class WorkerHandle:
 
         await self._kill_process()
         tail = " | ".join(self._stderr_tail[-5:]) or "<empty>"
+        stdout_tail = ""
+        if self._stdout_tail:
+            stdout_tail = "; stdout tail: " + " | ".join(self._stdout_tail[-3:])
         self._fail_ready(
-            f"REPL worker pid={pid} did not become ready within {budget_ms} ms " f"({cause}); stderr tail: {tail}"
+            f"REPL worker pid={pid} did not become ready within {budget_ms} ms "
+            f"({cause}); stderr tail: {tail}{stdout_tail}"
         )
 
     def _fail_ready(self, message: str) -> None:
@@ -406,10 +485,10 @@ class WorkerHandle:
                     continue
                 pid = self._proc.pid if self._proc is not None else "?"
                 logger.debug("repl_worker[pid=%s %s]: %s", pid, label, text[:2000])
-                if label == "stderr":
-                    self._stderr_tail.append(text)
-                    if len(self._stderr_tail) > 200:
-                        self._stderr_tail.pop(0)
+                tail = self._stderr_tail if label == "stderr" else self._stdout_tail
+                tail.append(text)
+                if len(tail) > 200:
+                    tail.pop(0)
 
         await asyncio.gather(
             _pump(self._proc.stdout if self._proc else None, "stdout"),

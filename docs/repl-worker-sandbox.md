@@ -60,9 +60,11 @@ there.
   (or namespace-API) call, never in `__init__`.
 - **Spawn only, never fork.** Connection pools and the parent's
   threads do not tolerate `fork()`.
-- **No in-process fallback.** If the worker cannot start, `_execute()`
-  returns an explicit error (see §2) — the in-process `exec()` path is
-  structurally unreachable from the async execution entrypoint.
+- **No automatic in-process fallback.** If the worker cannot start,
+  `_execute()` returns an explicit error (see §2) — the tool never silently
+  downgrades. The only way to run in-process is the explicit, logged
+  `execution_mode="inprocess"` escape hatch (see §3b), chosen at
+  construction time.
 
 ### Readiness handshake (FEAT-500)
 
@@ -205,6 +207,58 @@ DataFrames in memory is a data-exfiltration vector, not a tuning knob.
   memory-constrained hosts, not just the per-worker number.
 - `prewarm_pool_size` workers count against `max_workers` too (the pool
   caps `sessions + prewarmed spares` together).
+
+## 3b. Execution modes — the `inprocess` escape hatch
+
+`PythonREPLTool` (and therefore `PythonPandasTool`, `PandasAgent`, and every
+agent that builds one internally) has two execution modes, fixed at
+construction time:
+
+| Mode | Where generated code runs | Sandbox | Selected by |
+|---|---|---|---|
+| `worker` (**default**) | a persistent child process (`WorkerHandle`/`WorkerPool`, everything in this document) | rlimits, SIGKILL on `deadline_ms`, crash isolation, namespace-loss reporting | default |
+| `inprocess` | inside the host process, on the tool's own `locals`/`globals`, on its dedicated `_repl_executor` thread — the pre-FEAT-380 behaviour | **none** of the above; the allowlist + AST denylist gate still applies | `PythonREPLTool(execution_mode="inprocess")` or `PYTHON_REPL_EXECUTION_MODE=inprocess` in the environment |
+
+Resolution order: explicit constructor argument → `PYTHON_REPL_EXECUTION_MODE`
+(read through navconfig, case-insensitive) → `worker`. Any other value raises
+`ValueError` at construction. Selecting `inprocess` logs a **WARNING** naming
+the tool, every time an instance is built.
+
+```bash
+# Deployment-wide kill switch — no agent code changes needed
+export PYTHON_REPL_EXECUTION_MODE=inprocess
+```
+
+```python
+# Per instance
+tool = PythonREPLTool(execution_mode="inprocess")
+```
+
+What `inprocess` keeps, so callers do not have to branch: the
+`{status, result, error}` return contract, the namespace API
+(`get_var`/`set_var`/`list_vars`/`snapshot`/`inject_dataframe`),
+`PythonPandasTool`'s DataFrame seeding and audit preview, and session
+clones (each clone builds its own `InProcessHandle` over its own copied
+namespace). `WorkerPool` is never instantiated in this mode.
+
+What it gives up: a snippet that exceeds `deadline_ms` still returns the
+bounded error to the caller, but the thread keeps running until the snippet
+finishes (nothing can SIGKILL it) — the error text says so, and the
+namespace is *not* reported as lost because nothing died; the handle stays
+busy until that thread finishes, so a follow-up call gets a "still running"
+error instead of mutating the namespace concurrently. A hard crash in
+generated code (segfault, `os._exit`) takes the host down. And because
+`_execute_code` captures output with `redirect_stdout` (process-global),
+anything else the host prints to stdout during a snippet can leak into that
+snippet's result — the pre-FEAT-380 behaviour, accepted as a documented
+limitation of the hatch.
+
+Intended use: a temporary, deployment-level escape hatch while the worker
+path is being battle-tested on a given host, or hosts where spawning a
+child interpreter is impossible. It is implemented as
+`parrot.tools.repl_worker.inprocess.InProcessHandle`, a `WorkerHandle`
+look-alike, so removing the hatch later is a one-branch change in
+`PythonREPLTool._get_worker_handle()`.
 
 ### Instantiating a tool with a custom config
 
@@ -442,6 +496,42 @@ implemented in this feature.
   `WorkerPool.restart_count()`). Fixes a cold-start death spiral in which a
   host slower than the old 5 s budget could never produce a usable worker.
   See `sdd/specs/bug-workerpool-repl.spec.md`.
+- **Post-FEAT-500 — `inprocess` escape hatch + bootstrap diagnostics**:
+  added `execution_mode` / `PYTHON_REPL_EXECUTION_MODE` (§3b,
+  `InProcessHandle`) as an explicit, logged way to run the pre-worker
+  in-process path while the worker pool is battle-tested; enriched
+  `WorkerBootstrapError` with the child's `/proc` state, a thread-starvation
+  cause, the stdout tail, and worker-side stage markers on stderr (§6
+  "Reading a `WorkerBootstrapError`").
+
+### Reading a `WorkerBootstrapError`
+
+Since the diagnostics pass that followed FEAT-500, the message a worker that
+never sent its ready frame produces carries three extra facts:
+
+```
+REPL worker pid=31958 did not become ready within 30000 ms
+  (no ready frame within the bootstrap budget;
+   process: state=S (sleeping) threads=13 vmpeak=1234567 kB wchan=pipe_read cpu=1.20s);
+  stderr tail: repl_worker[pid=31958] rlimits applied (...) | repl_worker[pid=31958] building namespace (...)
+```
+
+- **`cause`** distinguishes a stuck child (`no ready frame within the
+  bootstrap budget`) from **thread starvation on the host** (`the readiness
+  read never got an executor thread — all N thread(s) ... were busy`): in
+  the second case the worker may be perfectly healthy and the fix is
+  `executor_max_workers` / `prewarm_pool_size`, not the worker.
+- **`process:`** is a `/proc/<pid>` snapshot taken *before* the kill
+  (Linux only): `state=T` means stopped (SIGSTOP/SIGTTOU/debugger),
+  `state=S` + `wchan` names what it sleeps on, `state=R` with a tiny `cpu=`
+  means it never got scheduled, a huge `vmpeak` means it is thrashing
+  against `rlimit_as_bytes`.
+- **`stderr tail`** now always contains the worker's own stage markers
+  (`interpreter up` → `rlimits applied` → `building namespace` →
+  `namespace built ... sending ready frame`), written unbuffered to stderr
+  before any logging is configured, so the last line is the last stage the
+  child reached. `<empty>` now means the interpreter never executed the
+  first line of `worker.main()` at all.
 
 ## See also
 
