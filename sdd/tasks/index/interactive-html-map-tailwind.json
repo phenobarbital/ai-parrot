@@ -129,7 +129,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,8 +139,8 @@
       "parallelism_notes": "Only touches .github/workflows/ci.yml; can run in parallel with TASK-2790 once TASK-2789's --check mode exists.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2791-ci-freshness-gate.md"
+      "completed_at": "2026-09-03T20:32:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2791-ci-freshness-gate.md"
     },
     {
       "id": "TASK-2792",
