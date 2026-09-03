@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-522
 **Date**: 2026-09-03
 **Author**: Jesus Lara (jesuslarag@gmail.com)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (`ai-parrot-visualizations`)
 
 ---
