@@ -53,6 +53,21 @@ FEAT-520 Module 6 adds ``upsert_embeddings`` — in-schema embeddings keyed
 involved; zero ``parrot.stores.*`` imports). This gives TASK-2771's
 hybrid retrieval a KNN leg inside the same transaction snapshot as the
 graph and FTS legs.
+
+FEAT-520 Module 7 adds ``hybrid_retrieve`` (spec D6/G5, deliberately named
+to avoid colliding with ``PgVectorStore.hybrid_search`` — spec C2): graph
+expansion (recursive CTE from ``seeds``), pgvector KNN, and ``ts_rank_cd``
+FTS run as CTEs of ONE SQL statement against the same ``as_of`` snapshot,
+fused with RRF (``Σ w_leg/(60+rank_leg)``, ``_RRF_K=60`` parity with
+``pageindex/hybrid_search.py``) in SQL. The graph leg's "rank" is derived
+from BFS depth order (closest-first), unifying all three legs under the
+same RRF formula rather than a separate depth-decay term. CTE order
+(graph→semantic: hood-restricted KNN when both ``seeds`` and
+``query_embedding`` are given) follows TASK-2770's spike decision
+(``artifacts/logs/feat-520-oq3-spike.md``). Cross-encoder re-ranking runs
+in Python through the existing ``parrot.rerankers`` seam, copying
+``HybridPageIndexSearch._apply_reranker``'s fallback semantics (failure or
+NaN score → fused order).
 """
 
 from __future__ import annotations
@@ -60,8 +75,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import math
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import asyncpg
@@ -82,8 +99,16 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,
 )
 from parrot.knowledge.ontology.schema import TenantContext
+from parrot.models.stores import SearchResult
+from parrot.rerankers.abstract import AbstractReranker
 
 logger = logging.getLogger(__name__)
+
+#: RRF constant — parity with ``pageindex/hybrid_search.py``'s ``_RRF_K``.
+_RRF_K = 60
+
+#: Default per-leg RRF weights for ``hybrid_retrieve`` (spec D6).
+_DEFAULT_HYBRID_WEIGHTS: dict[str, float] = {"graph": 1.0, "knn": 1.0, "fts": 1.0}
 
 
 class NodeVersionRow(BaseModel):
@@ -115,6 +140,19 @@ class TemporalDiff(BaseModel):
     version_changes: list[dict] = Field(default_factory=list)
     edges_added: list[dict] = Field(default_factory=list)
     edges_removed: list[dict] = Field(default_factory=list)
+
+
+class HybridCandidate(BaseModel):
+    """One fused candidate from ``hybrid_retrieve`` (pre- or post-rerank)."""
+
+    concept_id: str
+    version_id: int
+    title: str
+    score: float
+    signals: dict[str, float] = Field(default_factory=dict)
+    body_ref: Optional[str] = None
+    evidence: list[dict] = Field(default_factory=list)
+
 
 #: Private key nesting ``parent_id``/``embedding_ref`` inside the
 #: ``node_versions.domain_tags`` jsonb blob (see module docstring).
@@ -1316,3 +1354,325 @@ class PostgresPersistence:
                     )
                     written += 1
         return written
+
+    # ------------------------------------------------------------------
+    # hybrid_retrieve (Module 7) — graph + KNN + FTS, RRF-fused in SQL
+    # ------------------------------------------------------------------
+
+    async def _read_body_ref(self, body_ref: Optional[str]) -> str:
+        """Read a graph-plane markdown body from disk (off the event loop).
+
+        Args:
+            body_ref: Filesystem path, or ``None``.
+
+        Returns:
+            The file content, or ``""`` when ``body_ref`` is absent or
+            unreadable (logged, never raised — reranking degrades to
+            title-only content rather than failing the whole call).
+        """
+        if not body_ref:
+            return ""
+
+        def _read() -> str:
+            try:
+                return Path(body_ref).read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning("hybrid_retrieve: could not read body_ref %r: %s", body_ref, exc)
+                return ""
+
+        return await asyncio.to_thread(_read)
+
+    async def _apply_hybrid_reranker(
+        self,
+        reranker: AbstractReranker,
+        query_text: str,
+        candidates: list[HybridCandidate],
+        top_n: int,
+    ) -> list[HybridCandidate]:
+        """Re-rank fused candidates, falling back to fused order on failure/NaN.
+
+        Copies ``HybridPageIndexSearch._apply_reranker``'s semantics:
+        reads full content (never the truncated row), and on any
+        exception OR an unusable (NaN) score set, returns the fused
+        order truncated to ``top_n`` instead of raising.
+
+        Args:
+            reranker: The caller-supplied reranker instance.
+            query_text: The text to re-rank against (``fts_terms``).
+            candidates: Fused candidates, already score-ordered.
+            top_n: Maximum results to return.
+
+        Returns:
+            Re-ranked (or, on fallback, fused-order) candidates.
+        """
+        docs: list[SearchResult] = []
+        for cand in candidates:
+            body = await self._read_body_ref(cand.body_ref)
+            content = "\n".join(part for part in (cand.title, body) if part)
+            docs.append(
+                SearchResult(
+                    id=cand.concept_id,
+                    content=content,
+                    metadata={"concept_id": cand.concept_id},
+                    score=cand.score,
+                )
+            )
+
+        try:
+            reranked = await reranker.rerank(query_text, docs, top_n=top_n)
+        except Exception as exc:  # noqa: BLE001 — fallback policy, not a crash
+            logger.warning("hybrid_retrieve: reranker raised, falling back to fused order: %s", exc)
+            return candidates[:top_n]
+
+        cand_by_id = {c.concept_id: c for c in candidates}
+        ordered: list[HybridCandidate] = []
+        saw_nan = False
+        for item in reranked:
+            doc_id = getattr(getattr(item, "document", item), "id", None) or getattr(item, "id", None)
+            cand = cand_by_id.get(doc_id)
+            if cand is None:
+                continue
+            score = getattr(item, "rerank_score", None)
+            if isinstance(score, float) and math.isnan(score):
+                saw_nan = True
+                break
+            new_cand = cand.model_copy(update={"score": score} if isinstance(score, float) else {})
+            ordered.append(new_cand)
+
+        if saw_nan or not ordered:
+            return candidates[:top_n]
+        return ordered[:top_n]
+
+    async def hybrid_retrieve(
+        self,
+        ctx: TenantContext,
+        *,
+        query_embedding: Optional[list[float]] = None,
+        fts_terms: Optional[str] = None,
+        seeds: Optional[list[str]] = None,
+        as_of: Optional[datetime] = None,
+        weights: Optional[dict[str, float]] = None,
+        limit: int = 20,
+        reranker: Optional[AbstractReranker] = None,
+        rerank_top_k: int = 10,
+    ) -> list[HybridCandidate]:
+        """One-pass hybrid retrieval: graph + KNN + FTS, RRF-fused in SQL.
+
+        All three legs are CTEs of ONE SQL statement (one ``fetch`` call)
+        against the SAME ``as_of`` snapshot — no leg can see a version/edge
+        the others can't. RRF fusion (``Σ w_leg/(60+rank_leg)``, spec D6)
+        happens in SQL; the graph leg's "rank" is its BFS depth order
+        (closest-first) so all three legs share one fusion formula. CTE
+        order follows TASK-2770's spike decision: when both ``seeds`` and
+        ``query_embedding`` are given, the KNN leg is restricted to the
+        graph hood (graph→semantic — the measured winner at depth <=3).
+
+        Re-ranking uses ``fts_terms`` as the query text (this call has no
+        separate ``query_text`` param — the normative signature is spec
+        §2's; when a reranker is supplied without ``fts_terms``, reranking
+        is skipped and the fused order is returned, documented here since
+        the spec left the choice open).
+
+        Args:
+            ctx: Tenant context — its ``tenant_id`` doubles as the FTS
+                regconfig namespace when ``fts_terms`` is given (this
+                call has no per-row namespace to key off of, unlike the
+                write paths).
+            query_embedding: KNN leg query vector.
+            fts_terms: FTS leg query text (``websearch_to_tsquery``
+                syntax) — also the re-ranking query text.
+            seeds: Graph leg seed ``concept_id``s.
+            as_of: Point in time for all three legs; ``None`` → ``now()``.
+                Must be timezone-aware.
+            weights: Per-leg RRF weight overrides
+                (``{"graph": ..., "knn": ..., "fts": ...}``).
+            limit: Maximum fused candidates returned.
+            reranker: Optional cross-encoder reranker.
+            rerank_top_k: Maximum results after re-ranking.
+
+        Returns:
+            Fused (and optionally re-ranked) :class:`HybridCandidate` list.
+
+        Raises:
+            ValueError: When none of ``query_embedding``/``fts_terms``/
+                ``seeds`` is given, or ``as_of`` is a naive datetime.
+        """
+        if not (query_embedding or fts_terms or seeds):
+            raise ValueError(
+                "hybrid_retrieve: at least one of query_embedding / fts_terms / seeds must be provided"
+            )
+        if as_of is not None:
+            self._require_aware(as_of)
+        as_of_t = as_of or datetime.now(tz=timezone.utc)
+        w = {**_DEFAULT_HYBRID_WEIGHTS, **(weights or {})}
+        max_depth = 5
+
+        params: list[Any] = []
+
+        def ph(value: Any) -> str:
+            params.append(value)
+            return f"${len(params)}"
+
+        as_of_ph = ph(as_of_t)
+        cte_parts: list[str] = []
+        candidate_sources: list[str] = []
+
+        if seeds:
+            seeds_ph = ph(list(seeds))
+            max_depth_ph = ph(max_depth)
+            cte_parts.append(
+                f"""
+                hood AS (
+                    SELECT s AS concept_id, 0 AS depth, NULL::jsonb AS evidence_ref
+                    FROM unnest({seeds_ph}::text[]) AS s
+                    UNION
+                    SELECT e.dst, h.depth + 1, e.evidence_ref
+                    FROM hood h
+                    JOIN {self._schema}.edges e
+                        ON e.src = h.concept_id AND e.validity @> {as_of_ph}::timestamptz
+                    WHERE h.depth < {max_depth_ph}::int
+                ),
+                hood_dedup AS (
+                    SELECT DISTINCT ON (concept_id) concept_id, depth, evidence_ref
+                    FROM hood ORDER BY concept_id, depth ASC
+                ),
+                graph_leg AS (
+                    SELECT concept_id, depth, evidence_ref,
+                           row_number() OVER (ORDER BY depth ASC, concept_id ASC) AS rnk
+                    FROM hood_dedup
+                )
+                """
+            )
+            candidate_sources.append("SELECT concept_id FROM graph_leg")
+
+        if query_embedding:
+            validate_embedding_dim(query_embedding)
+            qvec_ph = ph(query_embedding)
+            knn_limit_ph = ph(max(limit * 5, 50))
+            hood_filter = (
+                "AND nv.concept_id IN (SELECT concept_id FROM graph_leg)" if seeds else ""
+            )
+            cte_parts.append(
+                f"""
+                knn_leg AS (
+                    SELECT nv.concept_id, emb.embedding <=> {qvec_ph} AS dist,
+                           row_number() OVER (ORDER BY emb.embedding <=> {qvec_ph}) AS rnk
+                    FROM {self._schema}.embeddings emb
+                    JOIN {self._schema}.node_versions nv ON nv.version_id = emb.version_id
+                    WHERE nv.validity @> {as_of_ph}::timestamptz
+                    {hood_filter}
+                    ORDER BY dist LIMIT {knn_limit_ph}::int
+                )
+                """
+            )
+            candidate_sources.append("SELECT concept_id FROM knn_leg")
+
+        if fts_terms:
+            namespace = getattr(ctx, "tenant_id", "") or ""
+            regconfig = resolve_regconfig(namespace)
+            reg_ph = ph(regconfig)
+            terms_ph = ph(fts_terms)
+            fts_limit_ph = ph(max(limit * 5, 50))
+            cte_parts.append(
+                f"""
+                fts_leg AS (
+                    SELECT nv.concept_id,
+                           ts_rank_cd(nv.fts, websearch_to_tsquery({reg_ph}::regconfig, {terms_ph})) AS raw_score,
+                           row_number() OVER (
+                               ORDER BY ts_rank_cd(nv.fts, websearch_to_tsquery({reg_ph}::regconfig, {terms_ph})) DESC
+                           ) AS rnk
+                    FROM {self._schema}.node_versions nv
+                    WHERE nv.validity @> {as_of_ph}::timestamptz
+                      AND nv.fts @@ websearch_to_tsquery({reg_ph}::regconfig, {terms_ph})
+                    ORDER BY raw_score DESC LIMIT {fts_limit_ph}::int
+                )
+                """
+            )
+            candidate_sources.append("SELECT concept_id FROM fts_leg")
+
+        candidates_sql = " UNION ".join(candidate_sources)
+        limit_ph = ph(limit)
+
+        join_graph = "LEFT JOIN graph_leg g ON g.concept_id = c.concept_id" if seeds else ""
+        join_knn = "LEFT JOIN knn_leg k ON k.concept_id = c.concept_id" if query_embedding else ""
+        join_fts = "LEFT JOIN fts_leg f ON f.concept_id = c.concept_id" if fts_terms else ""
+
+        # Weight placeholders are allocated ONLY for active legs — an
+        # allocated-but-unreferenced $N anywhere in the query makes asyncpg's
+        # prepare step fail with "could not determine data type of parameter"
+        # (Postgres can't infer a type for a param that appears in zero
+        # expressions).
+        score_terms: list[str] = []
+        if seeds:
+            w_graph_ph = ph(w["graph"])
+            score_terms.append(f"COALESCE({w_graph_ph}::float8 / (60 + g.rnk), 0)")
+        if query_embedding:
+            w_knn_ph = ph(w["knn"])
+            score_terms.append(f"COALESCE({w_knn_ph}::float8 / (60 + k.rnk), 0)")
+        if fts_terms:
+            w_fts_ph = ph(w["fts"])
+            score_terms.append(f"COALESCE({w_fts_ph}::float8 / (60 + f.rnk), 0)")
+        score_expr = " + ".join(score_terms)
+
+        select_extra = [
+            "g.depth AS graph_depth" if seeds else "NULL::int AS graph_depth",
+            "g.rnk AS graph_rank" if seeds else "NULL::bigint AS graph_rank",
+            "g.evidence_ref AS evidence_ref" if seeds else "NULL::jsonb AS evidence_ref",
+            "k.rnk AS knn_rank" if query_embedding else "NULL::bigint AS knn_rank",
+            "f.rnk AS fts_rank" if fts_terms else "NULL::bigint AS fts_rank",
+        ]
+
+        query = f"""
+            WITH RECURSIVE
+            {",".join(cte_parts)},
+            candidates AS ({candidates_sql})
+            SELECT c.concept_id, nv.version_id, nv.title, nv.body_ref,
+                   ({score_expr}) AS score,
+                   {", ".join(select_extra)}
+            FROM candidates c
+            JOIN {self._schema}.node_versions nv
+                ON nv.concept_id = c.concept_id AND nv.validity @> {as_of_ph}::timestamptz
+            {join_graph}
+            {join_knn}
+            {join_fts}
+            ORDER BY score DESC, c.concept_id
+            LIMIT {limit_ph}::int
+        """
+
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+
+        candidates: list[HybridCandidate] = []
+        for row in rows:
+            signals: dict[str, float] = {}
+            if seeds and row["graph_rank"] is not None:
+                signals["graph"] = w["graph"] / (_RRF_K + row["graph_rank"])
+                signals["graph_depth"] = float(row["graph_depth"])
+            if query_embedding and row["knn_rank"] is not None:
+                signals["knn"] = w["knn"] / (_RRF_K + row["knn_rank"])
+            if fts_terms and row["fts_rank"] is not None:
+                signals["fts"] = w["fts"] / (_RRF_K + row["fts_rank"])
+
+            evidence: list[dict[str, Any]] = []
+            if row["evidence_ref"]:
+                ev = orjson.loads(row["evidence_ref"])
+                if ev:
+                    evidence.append(ev)
+
+            candidates.append(
+                HybridCandidate(
+                    concept_id=row["concept_id"],
+                    version_id=row["version_id"],
+                    title=row["title"],
+                    score=float(row["score"]),
+                    signals=signals,
+                    body_ref=row["body_ref"],
+                    evidence=evidence,
+                )
+            )
+
+        if reranker is not None and fts_terms and candidates:
+            candidates = await self._apply_hybrid_reranker(reranker, fts_terms, candidates, rerank_top_k)
+
+        return candidates
