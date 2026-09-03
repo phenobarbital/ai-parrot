@@ -172,15 +172,35 @@ def _assertion_json(item: UniversalNode | UniversalEdge) -> Optional[str]:
 
 
 def _node_content_hash(node: UniversalNode) -> str:
-    """Compute the stable no-op-detection hash for a node's content.
+    """Compute the stable no-op-detection hash for a node's persisted fields.
+
+    Covers every field ``_upsert_node`` actually writes to
+    ``node_versions`` — title/summary/content_ref alone under-hashes: a
+    node written with identical title/summary/content_ref but changed
+    ``domain_tags``/``parent_id``/``embedding_ref``/``provenance``/
+    ``assertion`` would otherwise be treated as a no-op and silently
+    dropped (a real gap for ``apply_update``/durable agent-memory writes,
+    where metadata-only edits are common — e.g. ``tag_node``,
+    ``attach_summary``'s provenance stamping).
 
     Args:
-        node: The node whose title/summary/content_ref triple to hash.
+        node: The node whose persisted-field snapshot to hash.
 
     Returns:
         A hex sha1 digest.
     """
-    raw = f"{node.title}|{node.summary or ''}|{node.content_ref or ''}".encode("utf-8")
+    raw = "|".join(
+        [
+            node.title,
+            node.summary or "",
+            node.content_ref or "",
+            node.provenance.value,
+            str(node.parent_id or ""),
+            str(node.embedding_ref or ""),
+            orjson.dumps(node.domain_tags, option=orjson.OPT_SORT_KEYS).decode(),
+            _assertion_json(node) or "",
+        ]
+    ).encode("utf-8")
     return hashlib.sha1(raw).hexdigest()
 
 
@@ -194,6 +214,12 @@ class PostgresPersistence:
     Args:
         dsn: asyncpg-compatible DSN. Ignored when ``pool`` is supplied.
         pool: An existing asyncpg pool to reuse instead of creating one.
+            KNOWN LIMITATION (code-review finding): unlike a pool built by
+            ``create_pg_pool``, an externally-supplied pool does NOT get
+            the pgvector codec registered automatically — callers passing
+            ``pool=`` must register it themselves (``pgvector.asyncpg.
+            register_vector``) on that pool's own ``init`` callback, or
+            embedding reads/writes through this instance will fail.
         schema: The Postgres schema name housing the GraphIndex tables.
     """
 
@@ -539,6 +565,15 @@ class PostgresPersistence:
         (``source_uri`` starting with ``odoo-model://``) are never closed,
         even if their own URI is passed as ``document_uri``.
 
+        Nodes present in the OLD slice but absent from the new ``nodes``
+        list are truly removed — any currently-open edge touching one of
+        them is ALSO closed, regardless of that edge's own ``source_id``
+        stamp (an incoming edge from a different document into a node
+        this slice just dropped would otherwise dangle: still "current"
+        per its own validity range, but pointing at a concept_id with no
+        current version — ``load_graph`` does not itself filter edges by
+        endpoint currency).
+
         Args:
             ctx: Tenant context.
             document_uri: URI of the document to replace.
@@ -551,14 +586,15 @@ class PostgresPersistence:
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
-                old_count = await conn.fetchval(
+                old_rows = await conn.fetch(
                     f"""
-                    SELECT COUNT(*) FROM {self._schema}.node_versions
+                    SELECT concept_id FROM {self._schema}.node_versions
                     WHERE source_id = $1 AND upper_inf(validity)
                       AND source_id NOT LIKE 'odoo-model://%'
                     """,
                     document_uri,
                 )
+                old_ids = [r["concept_id"] for r in old_rows]
                 await conn.execute(
                     f"""
                     UPDATE {self._schema}.node_versions
@@ -581,6 +617,18 @@ class PostgresPersistence:
                 for node in nodes:
                     await self._upsert_node(conn, ctx, node)
 
+                new_ids = {n.node_id for n in nodes}
+                removed_ids = [cid for cid in old_ids if cid not in new_ids]
+                if removed_ids:
+                    await conn.execute(
+                        f"""
+                        UPDATE {self._schema}.edges
+                        SET validity = tstzrange(lower(validity), now())
+                        WHERE (src = ANY($1::text[]) OR dst = ANY($1::text[])) AND upper_inf(validity)
+                        """,
+                        removed_ids,
+                    )
+
                 node_uri_by_id = {n.node_id: n.source_uri for n in nodes}
                 for edge in edges:
                     src_uri = node_uri_by_id.get(edge.source_id)
@@ -592,7 +640,7 @@ class PostgresPersistence:
             len(nodes),
             len(edges),
         )
-        return {"nodes_replaced": old_count or 0, "edges_replaced": len(edges)}
+        return {"nodes_replaced": len(old_ids), "edges_replaced": len(edges)}
 
     async def is_stale(
         self,

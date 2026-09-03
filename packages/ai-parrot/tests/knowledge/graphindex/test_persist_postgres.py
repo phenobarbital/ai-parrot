@@ -139,6 +139,21 @@ async def test_replace_document_slice_atomic(pg_persistence, ctx):
     assert {n.node_id for n in nodes} == {"n3"}
 
 
+async def test_replace_document_slice_closes_dangling_incoming_edges(pg_persistence, ctx):
+    """A node dropped from a slice must not leave a stale incoming edge
+    from a DIFFERENT document/source open (code-review finding)."""
+    n1 = make_node("n1", source_uri="doc://a")
+    other = make_node("other", source_uri="doc://other")
+    await pg_persistence.persist_graph(ctx, [n1, other], [make_edge("other", "n1")])
+
+    # Replacing doc://a's slice with a DIFFERENT node drops n1 entirely.
+    n2 = make_node("n2", source_uri="doc://a")
+    await pg_persistence.replace_document_slice(ctx, "doc://a", [n2], [])
+
+    _, edges = await pg_persistence.load_graph(ctx)
+    assert ("other", "n1") not in [(e.source_id, e.target_id) for e in edges]
+
+
 async def test_is_stale(pg_persistence, ctx):
     assert await pg_persistence.is_stale(ctx, "file.py", 100.0, "sha1val") is True
 

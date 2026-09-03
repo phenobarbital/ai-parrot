@@ -172,3 +172,17 @@ def test_default_dsn_fallback(monkeypatch):
         assert reloaded.GRAPHINDEX_PG_DSN == default_dsn
     finally:
         importlib.reload(pg_schema)
+
+
+def test_validate_schema_name_rejects_unsafe_identifiers():
+    """Code-review finding: schema is spliced (never bound) into every
+    DDL/DML statement — defense-in-depth identifier validation."""
+    for bad in ("graphindex; DROP TABLE users; --", "a-b", "1abc", "a b", "Graphindex", ""):
+        with pytest.raises(ValueError):
+            pg_schema.validate_schema_name(bad)
+
+
+def test_validate_schema_name_accepts_safe_identifiers():
+    pg_schema.validate_schema_name("graphindex")
+    pg_schema.validate_schema_name("graphindex_test_abc123")
+    pg_schema.validate_schema_name("_leading_underscore")

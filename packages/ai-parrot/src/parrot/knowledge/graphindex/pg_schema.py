@@ -13,6 +13,7 @@ ORM/SQL-toolkit imports (spec U4/D8).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 import asyncpg
@@ -22,6 +23,30 @@ from pgvector.asyncpg import register_vector
 from parrot.conf import default_dsn
 
 logger = logging.getLogger(__name__)
+
+#: Postgres identifiers are spliced (never bound) into every DDL/DML
+#: statement in this backend — an operator-controlled navconfig setting,
+#: not user/LLM input, but nothing previously enforced that (code-review
+#: finding: defense-in-depth). Deliberately conservative: lowercase
+#: ``snake_case`` only, no quoting/escaping support needed.
+_VALID_SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def validate_schema_name(schema: str) -> None:
+    """Reject a schema name that is not a safe, unquoted SQL identifier.
+
+    Args:
+        schema: The schema name to validate.
+
+    Raises:
+        ValueError: When ``schema`` does not match ``^[a-z_][a-z0-9_]*$``.
+    """
+    if not _VALID_SCHEMA_NAME.match(schema):
+        raise ValueError(
+            f"Invalid GraphIndex Postgres schema name {schema!r} — expected "
+            "lowercase letters, digits, and underscores only, not starting "
+            "with a digit (identifiers are interpolated directly into SQL)."
+        )
 
 #: Version of the ``graphindex.*`` Postgres schema. Bumped whenever
 #: ``_MIGRATION_COLUMNS`` grows a new entry.
@@ -182,6 +207,17 @@ CREATE TABLE IF NOT EXISTS {schema}.edges (
 CREATE INDEX IF NOT EXISTS e_src      ON {schema}.edges (src, rel) WHERE upper_inf(validity);
 CREATE INDEX IF NOT EXISTS e_dst      ON {schema}.edges (dst, rel) WHERE upper_inf(validity);
 CREATE INDEX IF NOT EXISTS e_validity ON {schema}.edges USING gist (validity);
+-- At most one CURRENT row per logical edge (code-review finding): unlike
+-- node_versions, edges has no EXCLUDE constraint (matches the spec's
+-- normative DDL exactly), so without this the close-and-insert
+-- read-then-write pattern in _upsert_edge/_upsert_wiki_edge has a race
+-- window between two concurrent writers — both could observe "no current
+-- row" and both INSERT, leaving two simultaneously-open rows for the
+-- same (src, dst, rel). This partial unique index turns that into an
+-- explicit UniqueViolationError instead of a silent duplicate, the same
+-- "engine enforces it" philosophy as node_versions' EXCLUDE constraint.
+CREATE UNIQUE INDEX IF NOT EXISTS edges_current_unique_idx
+    ON {schema}.edges (src, dst, rel) WHERE upper_inf(validity);
 
 CREATE TABLE IF NOT EXISTS {schema}.embeddings (
     concept_id   text NOT NULL,
@@ -312,7 +348,11 @@ async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) 
     Args:
         pool: An asyncpg connection pool (see ``create_pg_pool``).
         schema: The target schema name.
+
+    Raises:
+        ValueError: When ``schema`` is not a safe SQL identifier.
     """
+    validate_schema_name(schema)
     async with pool.acquire() as conn:
         await _ensure_extensions(conn)
         async with conn.transaction():
@@ -358,8 +398,9 @@ async def ensure_ann_index(
         kind: ``"hnsw"`` or ``"ivfflat"``.
 
     Raises:
-        ValueError: For an unknown ``kind``.
+        ValueError: For an unknown ``kind`` or an unsafe ``schema`` name.
     """
+    validate_schema_name(schema)
     index_name = f"embeddings_{kind}_idx"
     if kind == "hnsw":
         ddl = (
@@ -405,8 +446,10 @@ async def create_pg_pool(
 
     Raises:
         ValueError: When no DSN is resolved (no override and
-            ``default_dsn`` is ``None``).
+            ``default_dsn`` is ``None``), or ``schema`` is not a safe SQL
+            identifier.
     """
+    validate_schema_name(schema)
     resolved_dsn = dsn or GRAPHINDEX_PG_DSN
     if not resolved_dsn:
         raise ValueError(
@@ -414,6 +457,20 @@ async def create_pg_pool(
             "GRAPHINDEX_PG_DSN or configure the default database (DBUSER/"
             "DBHOST/DBNAME) so parrot.conf.default_dsn resolves."
         )
+
+    # Bootstrap extensions BEFORE the pool exists (code-review finding):
+    # with the default min_size=1, asyncpg.create_pool() eagerly opens a
+    # connection — running the `init` callback below (register_vector)
+    # — as part of THIS call, before any caller gets a chance to run
+    # ensure_schema()'s CREATE EXTENSION. Against a genuinely fresh
+    # server with no extensions installed yet, that eager connection's
+    # register_vector() would fail with pgvector's raw "type not found"
+    # error instead of _ensure_extensions()'s clear, actionable one.
+    bootstrap_conn = await asyncpg.connect(dsn=resolved_dsn)
+    try:
+        await _ensure_extensions(bootstrap_conn)
+    finally:
+        await bootstrap_conn.close()
 
     async def _init(conn: asyncpg.Connection) -> None:
         await register_vector(conn)

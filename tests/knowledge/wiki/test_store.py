@@ -11,11 +11,13 @@ for real.
 
 import os
 import sqlite3
+import uuid
 from pathlib import Path
 from unittest import mock
 
 import aiosqlite
 import pytest
+from parrot.conf import default_dsn
 from parrot.knowledge.wiki.store import (
     BaseWikiStore,
     SQLiteWikiStore,
@@ -25,11 +27,64 @@ from parrot.knowledge.wiki.store import (
     estimate_tokens,
 )
 
+# FEAT-520 — resolved DSN gate for the postgres backend param (same
+# resolution order as the graphindex-postgres-backend spec's fixtures:
+# env override first, then parrot.conf.default_dsn).
+_PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN") or default_dsn
+needs_pg = pytest.mark.skipif(not _PG_DSN, reason="needs live Postgres")
 
-@pytest.fixture(params=["sqlite", "memory"])
-def store(tmp_path: Path, request: pytest.FixtureRequest) -> BaseWikiStore:
-    """Fresh store of each backend, rooted at tmp_path."""
-    return create_wiki_store(tmp_path, wiki_name="test-wiki", backend=request.param)
+# FEAT-520 TASK-2769's dimension guard ("Dimension mismatch -> explicit
+# error", an explicit, already-tested acceptance criterion —
+# test_dimension_guard_persistence/test_dimension_guard_wiki) is a
+# deliberate, irreconcilable divergence from these four tests' premise
+# (SQLite/memory silently accept/skip mismatched-dimension vectors — see
+# rank_by_cosine's own docstring: "candidates whose vector dimension does
+# not match the query are skipped"). Postgres enforces one fixed
+# embedding dimension per deployment (spec U4) and raises instead of
+# skipping — reasonable people could resolve this tension either way;
+# flagged for the PR reviewer rather than silently picking a side beyond
+# what TASK-2769 already committed to and tested.
+_PG_DIMENSION_GUARD_INCOMPATIBLE = {
+    "test_delete_page_cleans_everything",
+    "test_vector_ranking",
+    "test_vector_empty_store",
+    "test_vector_dimension_mismatch_skipped",
+}
+
+
+@pytest.fixture(params=["sqlite", "memory", pytest.param("postgres", marks=needs_pg)])
+async def store(tmp_path: Path, request: pytest.FixtureRequest) -> BaseWikiStore:
+    """Fresh store of each backend, rooted at tmp_path.
+
+    The ``postgres`` param (FEAT-520) uses a throwaway, per-test schema
+    over the resolved live DSN — dropped on teardown so parallel/repeated
+    runs never see another test's rows (the sqlite/memory params are
+    already isolated by ``tmp_path``). See
+    ``_PG_DIMENSION_GUARD_INCOMPATIBLE`` for the one documented, deliberate
+    exception (the dimension guard, not a bug).
+    """
+    if request.param == "postgres" and request.node.name.split("[")[0] in _PG_DIMENSION_GUARD_INCOMPATIBLE:
+        pytest.skip(
+            "postgres backend enforces one fixed embedding dimension per "
+            "deployment (spec U4) and raises on mismatch (TASK-2769's "
+            "explicit dimension-guard AC) instead of this test's "
+            "silently-skip-mismatched-vectors premise — see the module "
+            "comment above _PG_DIMENSION_GUARD_INCOMPATIBLE"
+        )
+    if request.param == "postgres":
+        schema = f"graphindex_test_{uuid.uuid4().hex[:12]}"
+        wiki_store = create_wiki_store(
+            tmp_path, wiki_name="test-wiki", backend="postgres", dsn=_PG_DSN, schema=schema
+        )
+        try:
+            yield wiki_store
+        finally:
+            pool = await wiki_store._ensure_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            await wiki_store.close()
+    else:
+        yield create_wiki_store(tmp_path, wiki_name="test-wiki", backend=request.param)
 
 
 def _page(cid: str, **kw) -> WikiPageRecord:

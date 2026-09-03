@@ -138,6 +138,12 @@ class PostgresWikiStore(BaseWikiStore):
         wiki_name: This wiki's namespace scope within the shared schema.
         schema: The Postgres schema name housing the GraphIndex tables.
         pool: An existing asyncpg pool to reuse instead of creating one.
+            KNOWN LIMITATION (code-review finding): unlike a pool built by
+            ``create_pg_pool``, an externally-supplied pool does NOT get
+            the pgvector codec registered automatically — callers passing
+            ``pool=`` must register it themselves (``pgvector.asyncpg.
+            register_vector``) on that pool's own ``init`` callback, or
+            embedding reads/writes through this instance will fail.
     """
 
     def __init__(
@@ -231,7 +237,18 @@ class PostgresWikiStore(BaseWikiStore):
     async def _upsert_wiki_edge(
         self, conn: asyncpg.Connection, src: str, dst: str, rel: str, provenance: str = "extracted"
     ) -> None:
-        """Close-and-insert one wiki edge (no-op when identical provenance)."""
+        """Close-and-insert one wiki edge (no-op when identical provenance).
+
+        The shared ``edges`` table's CHECK constraint mirrors the graph
+        -plane ``UniversalEdge`` invariant (confidence set iff
+        provenance='inferred') — the wiki edge tuple contract
+        (``(src, dst, rel[, provenance])``) has no confidence concept at
+        all, so a wiki-authored ``provenance='inferred'`` edge would
+        otherwise violate that constraint. A nominal ``confidence=1.0``
+        satisfies the shared invariant without carrying graph-plane
+        similarity-score semantics (which the wiki plane never reads).
+        """
+        confidence = 1.0 if provenance == "inferred" else None
         current = await conn.fetchrow(
             f"""
             SELECT edge_id, provenance FROM {self._schema}.edges
@@ -253,11 +270,12 @@ class PostgresWikiStore(BaseWikiStore):
                 current["edge_id"],
             )
         await conn.execute(
-            f"INSERT INTO {self._schema}.edges (src, dst, rel, provenance) VALUES ($1, $2, $3, $4)",
+            f"INSERT INTO {self._schema}.edges (src, dst, rel, provenance, confidence) VALUES ($1, $2, $3, $4, $5)",
             src,
             dst,
             rel,
             provenance,
+            confidence,
         )
 
     @staticmethod
@@ -319,11 +337,17 @@ class PostgresWikiStore(BaseWikiStore):
     ) -> dict[str, Any]:
         """Atomically replace all pages/edges derived from one source.
 
-        Closes existing version rows scoped by ``source_id``, closes
-        edges touching them, then upserts the replacement slice —
-        incoming edges from OTHER sources whose target survives (same
-        ``concept_id`` re-inserted) are preserved, matching
-        ``SQLiteWikiStore.replace_source_slice``.
+        Closes existing version rows scoped by ``source_id`` WITHIN THIS
+        STORE'S NAMESPACE (joins through ``nodes`` and filters
+        ``namespace = wiki_name`` — a shared schema can host multiple
+        wikis that happen to reuse the same ``source_id``; one wiki must
+        never close another wiki's pages), closes edges touching them,
+        clears stale native ``symbols`` rows for the same source (a
+        source that removes/renames symbols on re-scan must not leave
+        `find_symbols`/`search_symbols_fts` returning gone declarations),
+        then upserts the replacement slice — incoming edges from OTHER
+        sources whose target survives (same ``concept_id`` re-inserted)
+        are preserved, matching ``SQLiteWikiStore.replace_source_slice``.
 
         Args:
             source_id: Source whose derived pages are being replaced.
@@ -340,12 +364,17 @@ class PostgresWikiStore(BaseWikiStore):
             async with conn.transaction():
                 old_rows = await conn.fetch(
                     f"""
-                    SELECT concept_id FROM {self._schema}.node_versions
-                    WHERE source_id = $1 AND upper_inf(validity)
+                    SELECT nv.concept_id FROM {self._schema}.node_versions nv
+                    JOIN {self._schema}.nodes n ON n.concept_id = nv.concept_id
+                    WHERE nv.source_id = $1 AND upper_inf(nv.validity) AND n.namespace = $2
                     """,
                     source_id,
+                    self._wiki_name,
                 )
                 old_ids = [r["concept_id"] for r in old_rows]
+                await conn.execute(
+                    f"DELETE FROM {self._schema}.symbols WHERE source_id = $1", source_id
+                )
 
                 preserved: list[tuple[str, str, str]] = []
                 if old_ids:
@@ -366,9 +395,9 @@ class PostgresWikiStore(BaseWikiStore):
                         f"""
                         UPDATE {self._schema}.node_versions
                         SET validity = tstzrange(lower(validity), now())
-                        WHERE source_id = $1 AND upper_inf(validity)
+                        WHERE concept_id = ANY($1::text[]) AND upper_inf(validity)
                         """,
-                        source_id,
+                        old_ids,
                     )
                     await conn.execute(
                         f"""
