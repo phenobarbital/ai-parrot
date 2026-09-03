@@ -32,7 +32,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Creates persist_postgres.py — serializes with 2766/2767 which extend the same file.",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2765-postgres-persistence-parity.md"
+      "completed_at": "2026-09-03T11:58:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2765-postgres-persistence-parity.md"
     },
     {
       "id": "TASK-2766",

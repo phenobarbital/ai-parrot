@@ -187,4 +187,34 @@ async def test_fts_lang_per_namespace(pg_persistence, ctx): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `PostgresPersistence` in `persist_postgres.py` with
+`persist_graph`/`replace_document_slice`/`is_stale`/`load_graph`, all
+duck-typed to `GraphIndexPersistence`. Writes are append-only:
+`_upsert_node`/`_upsert_edge` close the current row's `validity` range
+(`UPDATE` touches ONLY `validity`, never content) and insert a new one
+only when content changed (node no-op detection via the
+title+summary+content_ref sha1 hash specified in the task; edge no-op via
+direct field comparison — edges have no `content_hash` column in the DDL).
+`replace_document_slice` closes versions/edges scoped by `source_id` and
+upserts the new slice in one transaction, exempting `odoo-model://`
+canonical nodes exactly like the SQLite sibling. FTS populated at insert
+time via `to_tsvector($regconfig::regconfig, ...)` using
+`resolve_regconfig` on `domain_tags["namespace"] or ctx.tenant_id`.
+
+Two documented, non-schema-changing decisions (pg_schema.py is out of this
+task's file scope — TASK-2764 already closed it per spec):
+1. `UniversalNode.parent_id`/`embedding_ref` have no dedicated column in
+   the shared DDL — they round-trip through a private `"_pg_extra"` key
+   nested inside the existing `node_versions.domain_tags` jsonb blob.
+2. `UniversalEdge` has no `evidence_ref` field — the spec U3 value is
+   read from/written to `edge.domain_tags["evidence_ref"]`, the exact
+   extensibility seam the model's docstring already documents for
+   domain-specific data (FEAT-392 precedent), and persisted to the DDL's
+   dedicated `edges.evidence_ref` jsonb column.
+
+All 9 live-DB-gated tests pass (roundtrip, append-only correction, no-op
+on identical content, atomic slice replace, `is_stale` parity, explicit
+exclusion-violation surfacing, evidence_ref roundtrip, per-namespace FTS
+regconfig with a Spanish stemming hit, no-SQLAlchemy grep). `ruff check`
+clean. Re-ran TASK-2764's `test_pg_schema.py` alongside — 16/16 green,
+no regression.
