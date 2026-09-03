@@ -288,10 +288,53 @@ first to match its exact fixture API before writing these tests.)*
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-09-03
+**Notes**: Added `from .folium_map import build_map_document` import; `"Map"`
+added to both `_INTERCEPTED` and `supported_components`; new `_render_map(self,
+props)` method mirroring `_render_chart`'s exact shape (calls
+`build_map_document(props, cluster_threshold=500)`, HTML-escapes the decoded
+document, returns `<iframe sandbox="allow-scripts allow-popups" srcdoc="...">`);
+`_render_top` and `_render_descriptor` both gained `if name == "Map": return
+self._render_map(...)` branches at the positions specified. Manually
+smoke-tested both dispatch paths end-to-end (not just unit-level): a
+top-level Map component renders the iframe with the old
+`"stores | label="` degradation text absent, and a Map nested inside an
+Infographic section (`sections: [{"components": [{"component": "Map", ...}]}]`
+— the ACTUAL section shape per `_render_infographic`'s own code, note this
+differs from the task's own illustrative test snippet, which nested `Map`
+directly under `sections` rather than under `sections[].components`) also
+renders the iframe via `_render_descriptor`'s new branch — confirming the
+exact `flex_dashboard.py` Proximity Staffing regression this task targets is
+fixed. `"Map"` passing through `_lower_composites`'s `_INTERCEPTED` gate
+unchanged is structurally guaranteed by the set addition (no separate check
+needed) and confirmed indirectly: `MapComponent.lower()`'s text degradation
+never appeared in either smoke test's output.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Ran the FULL `pytest packages/ai-parrot-visualizations/tests/` suite (not just
+the three files this task's own AC lists) as due diligence and found ONE
+pre-existing-but-newly-exposed failure,
+`TestPrintLayout::test_no_auto_fit` (`test_design_system_layouts.py`) — root
+cause: TASK-2789's Tailwind generation legitimately scanned `kpi-grid` (part
+of the `kpi-*` vocabulary) but that class is ALREADY deliberately styled in
+`components.css`/`layout-*.css` with an explicit "keep it static so print
+never carries minmax" design intent; the new Tailwind rule reintroduced
+`minmax(...)` into every composed sheet regardless of layout. Fixed in a
+separate, clearly-labeled commit (not folded into this task's own diff):
+added an `_ALREADY_STYLED_ELSEWHERE` exclusion set to
+`scripts/generate_a2ui_css.py`, regenerated `tailwind.generated.css`, and
+corrected one now-fragile substring assertion in `test_rich_datatable.py`
+(mirroring an already-documented identical gotcha on
+`test_no_pager_below_threshold` in that same file). Full suite: 231 passed
+after the fix (was 1 failed before). `ruff check interactive_html.py` clean;
+`test_document_shell.py`/`test_interactive_html.py`/`test_semantic_classes.py`
+(the three files this task's own AC lists) pass unmodified.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in this task's own files. The `kpi-grid` fix
+above touches files outside this task's own Files-to-Modify table
+(`scripts/generate_a2ui_css.py`, `tailwind.generated.css`,
+`test_rich_datatable.py` — all TASK-2789/pre-existing-test territory, not
+TASK-2788's) — flagged explicitly rather than silently bundled, justified by
+the spec's own feature-level AC "`pytest packages/ai-parrot-visualizations/
+tests/ -v` passes" (§5), which supersedes any single task's narrower
+"existing tests continue passing" scope.

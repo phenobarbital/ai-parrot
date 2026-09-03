@@ -71,7 +71,7 @@
       "feature_id": "FEAT-522",
       "feature": "interactive-html-map-tailwind",
       "spec": "sdd/specs/interactive-html-map-tailwind.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Calls build_map_document() from interactive_html.py; must land after the offline swap so the shipped dispatch is offline-safe from the start.",
       "assigned_to": null,
       "started_at": "2026-09-03T20:05:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2788-interactive-html-map-dispatch.md"
+      "completed_at": "2026-09-03T20:39:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2788-interactive-html-map-dispatch.md"
     },
     {
       "id": "TASK-2789",
