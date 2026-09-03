@@ -150,4 +150,45 @@ async def test_page_hashes(pg_wiki_store): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Re-verified the current `wiki/store.py` symbols DDL (`:134-161`) and
+method signatures (`:577-708` base, `:1323-1509` SQLite override) before
+implementing, per instructions — no drift since TASK-2764's snapshot;
+TASK-2764's `graphindex.symbols` table already matched column-for-column
+(confirmed no `decorators` column exists in the SQLite reference either,
+despite `SymbolRecord.decorators` — consistent, not a gap I introduced).
+
+Added `search_tsv tsvector` to `_MIGRATION_COLUMNS["symbols"]` (the exact
+post-v1 slot the TASK-2764 docstring reserved for this) — populated at
+upsert with `to_tsvector('simple', name || qualname || doc || signature)`,
+`simple` regconfig only (D7: never stemmed for code identifiers). Added
+`pg_trgm` to `_REQUIRED_EXTENSIONS` and three idempotent indexes
+(FTS GIN + two trigram GIN on `name`/`qualname`) created in
+`ensure_schema` after `_migrate()` (the column must exist first).
+`search_symbols_fts` combines both signals (`ts_rank_cd` word match OR
+`pg_trgm %` fuzzy match, ranked by `GREATEST(...)`) so identifier
+fragments are findable without stemming artifacts.
+
+Implemented `upsert_symbols`/`symbols_for`/`find_symbols`/
+`search_symbols_fts` on `PostgresWikiStore`, matching the SQLite
+signatures and ordering semantics exactly (`find_symbols` orders by
+`rel_path, qualname`, no special "exact name first" — that's the BASE
+class's default linear-scan behavior, not SQLite's own native override,
+confirmed by re-reading both). `page_hashes` was already implemented in
+TASK-2768 (operates on `node_versions.content_hash` via `upsert_pages`,
+which covers `sym:` pages the same as any page) — verified, not
+duplicated.
+
+**Contract correction** (documented in this task file): no SQLite symbol
+test suite exists anywhere in this codebase to port from (`grep` across
+`packages/ai-parrot/tests/` for `upsert_symbols`/`SymbolRecord`/etc.
+returns nothing) — the schema-v2 surface shipped without one. Wrote
+`test_postgres_symbols.py` directly against the SQLite method
+docstrings/signatures instead of inventing a SQLite suite (out of scope).
+
+All 8 tests pass (roundtrip incl. all fields, idempotent update-in-place
+not duplication, empty-file empty list, all five `find_symbols` filters,
+trigram search with a positive/negative assertion, no-stemming behavior
+documented, `page_hashes` cross-check, no-SQLAlchemy grep). Ran the full
+graphindex-postgres + wiki-store suite together: 96/96 green (no
+regression from the new extension/migration column/indexes). `ruff
+check` clean.

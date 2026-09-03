@@ -176,7 +176,7 @@
       "feature_id": "FEAT-520",
       "feature": "graphindex-postgres-backend",
       "spec": "sdd/specs/graphindex-postgres-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -186,8 +186,8 @@
       "parallelism_notes": "Wiki-plane lane (postgres_store.py + symbols DDL); parallel to 2770/2771 except for a small shared pg_schema.py edit — coordinate that hunk if run concurrently.",
       "assigned_to": null,
       "started_at": "2026-09-03T11:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2772-wiki-symbols-pg.md"
+      "completed_at": "2026-09-03T12:48:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2772-wiki-symbols-pg.md"
     },
     {
       "id": "TASK-2773",
