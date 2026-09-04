@@ -123,18 +123,14 @@ def test_from_ai_message_tools_used():
         ]
     )
 
-    turn = ConversationTurn.from_ai_message(
-        user_message="q", response=response, user_id="u", chatbot_id="bot-a"
-    )
+    turn = ConversationTurn.from_ai_message(user_message="q", response=response, user_id="u", chatbot_id="bot-a")
 
     assert turn.tools_used == ["search", "calc"]
 
 
 def test_from_ai_message_no_tool_calls():
     """No tool calls ⇒ an empty list, never ``None``."""
-    turn = ConversationTurn.from_ai_message(
-        user_message="q", response=_ai_message(), user_id="u", chatbot_id="bot-a"
-    )
+    turn = ConversationTurn.from_ai_message(user_message="q", response=_ai_message(), user_id="u", chatbot_id="bot-a")
 
     assert turn.tools_used == []
 
@@ -198,9 +194,7 @@ def test_from_ai_message_empty_assistant_text_override_is_honoured():
 
 def test_from_ai_message_result_is_persistable():
     """The produced turn survives ``to_dict``/``from_dict`` unchanged."""
-    turn = ConversationTurn.from_ai_message(
-        user_message="q", response=_ai_message(), user_id="u", chatbot_id="bot-a"
-    )
+    turn = ConversationTurn.from_ai_message(user_message="q", response=_ai_message(), user_id="u", chatbot_id="bot-a")
 
     restored = ConversationTurn.from_dict(turn.to_dict())
 

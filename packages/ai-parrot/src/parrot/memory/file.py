@@ -15,12 +15,7 @@ class FileConversationMemory(ConversationMemory):
         self.base_path.mkdir(exist_ok=True)
         self._lock = asyncio.Lock()
 
-    def _get_file_path(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> Path:
+    def _get_file_path(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> Path:
         """Get file path for a conversation history."""
         user_dir = self.base_path / str(user_id)
         if chatbot_id:
@@ -29,32 +24,22 @@ class FileConversationMemory(ConversationMemory):
         return user_dir / f"{session_id}.json"
 
     async def create_history(
-        self,
-        user_id: str,
-        session_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, metadata: Optional[Dict[str, Any]] = None, chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
         async with self._lock:
             history = ConversationHistory(
-                session_id=session_id,
-                user_id=user_id,
-                chatbot_id=chatbot_id,
-                metadata=metadata or {}
+                session_id=session_id, user_id=user_id, chatbot_id=chatbot_id, metadata=metadata or {}
             )
 
             file_path = self._get_file_path(user_id, session_id, chatbot_id)
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(history.to_dict(), f, indent=2, ensure_ascii=False, default=str)
 
             return history
 
     async def get_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get a conversation history, re-keying a legacy record if needed.
 
@@ -87,17 +72,11 @@ class FileConversationMemory(ConversationMemory):
 
             legacy.chatbot_id = str(chatbot_id)
             await self._write_history(legacy)
-            self.logger.info(
-                "Re-keyed legacy conversation %s/%s under chatbot %s",
-                user_id, session_id, chatbot_id
-            )
+            self.logger.info("Re-keyed legacy conversation %s/%s under chatbot %s", user_id, session_id, chatbot_id)
             return legacy
 
     async def _read_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Read exactly one path, without fallback. Caller must hold ``_lock``.
 
@@ -115,7 +94,7 @@ class FileConversationMemory(ConversationMemory):
             return None
 
         try:
-            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
             data = json.loads(content)
             return ConversationHistory.from_dict(data)
@@ -128,12 +107,8 @@ class FileConversationMemory(ConversationMemory):
         Args:
             history: The history to persist; its ``chatbot_id`` selects the path.
         """
-        file_path = self._get_file_path(
-            history.user_id,
-            history.session_id,
-            history.chatbot_id
-        )
-        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+        file_path = self._get_file_path(history.user_id, history.session_id, history.chatbot_id)
+        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(json.dumps(history.to_dict(), indent=2, ensure_ascii=False, default=str))
 
     async def update_history(self, history: ConversationHistory) -> None:
@@ -142,11 +117,7 @@ class FileConversationMemory(ConversationMemory):
             await self._write_history(history)
 
     async def add_turn(
-        self,
-        user_id: str,
-        session_id: str,
-        turn: ConversationTurn,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
     ) -> None:
         """Add a turn to the conversation."""
         history = await self.get_history(user_id, session_id, chatbot_id)
@@ -154,23 +125,14 @@ class FileConversationMemory(ConversationMemory):
             history.add_turn(turn)
             await self.update_history(history)
 
-    async def clear_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> None:
+    async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
         """Clear a conversation history."""
         history = await self.get_history(user_id, session_id, chatbot_id)
         if history:
             history.clear_turns()
             await self.update_history(history)
 
-    async def list_sessions(
-        self,
-        user_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> List[str]:
+    async def list_sessions(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all session IDs for a user."""
         async with self._lock:
             base_user_dir = self.base_path / str(user_id)
@@ -200,12 +162,7 @@ class FileConversationMemory(ConversationMemory):
 
             return sessions
 
-    async def delete_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> bool:
+    async def delete_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Delete a conversation history entirely."""
         async with self._lock:
             file_path = self._get_file_path(user_id, session_id, chatbot_id)

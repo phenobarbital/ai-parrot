@@ -31,9 +31,7 @@ def _client() -> GoogleGenAIClient:
 
 def test_google_format_history():
     """User turns map to ``UserContent``, assistant turns to ``ModelContent``."""
-    rendered = _client()._format_history(
-        [HistoryMessage("user", "q"), HistoryMessage("assistant", "a")]
-    )
+    rendered = _client()._format_history([HistoryMessage("user", "q"), HistoryMessage("assistant", "a")])
 
     assert len(rendered) == 2
     assert isinstance(rendered[0], UserContent)
@@ -72,9 +70,7 @@ def test_google_format_history_empty():
 
 def test_google_format_history_skips_blank_content():
     """Blank text is dropped — the SDK rejects contentless parts."""
-    rendered = _client()._format_history(
-        [HistoryMessage("user", "   "), HistoryMessage("assistant", "a")]
-    )
+    rendered = _client()._format_history([HistoryMessage("user", "   "), HistoryMessage("assistant", "a")])
 
     assert len(rendered) == 1
     assert isinstance(rendered[0], ModelContent)

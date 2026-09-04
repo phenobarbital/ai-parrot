@@ -1,4 +1,5 @@
 """Unit tests for GoogleAnalysis.document_understanding() — TASK-1363 (FEAT-203)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,7 +13,6 @@ from pydantic import BaseModel
 from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage, StructuredOutputConfig
 from parrot.models.google import GoogleModel
-
 
 # ---------------------------------------------------------------------------
 # Helper factories
@@ -31,9 +31,7 @@ def _make_mock_response(text: str = "This is a document summary.") -> SimpleName
         usage_metadata=usage_metadata,
         candidates=[
             SimpleNamespace(
-                content=SimpleNamespace(
-                    parts=[SimpleNamespace(text=text)]
-                ),
+                content=SimpleNamespace(parts=[SimpleNamespace(text=text)]),
                 finish_reason="STOP",
             )
         ],
@@ -66,9 +64,7 @@ def _build_mock_sdk() -> MagicMock:
 
     # Models API
     mock_sdk.aio.models = MagicMock()
-    mock_sdk.aio.models.generate_content = AsyncMock(
-        return_value=_make_mock_response()
-    )
+    mock_sdk.aio.models.generate_content = AsyncMock(return_value=_make_mock_response())
 
     # Chats API
     mock_chat = MagicMock()
@@ -101,6 +97,7 @@ def _make_google_client(mock_sdk: MagicMock) -> Any:
     client._locks_by_loop = {}
     try:
         from datamodel.parsers.json import JSONContent
+
         client._json = JSONContent()
     except ImportError:
         client._json = None
@@ -167,9 +164,7 @@ class TestDocumentUnderstanding:
 
     pytestmark = pytest.mark.asyncio
 
-    async def test_single_pdf_returns_aimessage(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_single_pdf_returns_aimessage(self, google_client: Any, sample_pdf: Path) -> None:
         """Single PDF, stateless mode — returns AIMessage with correct provider."""
         result = await google_client.document_understanding(
             prompt="Summarize this document",
@@ -197,9 +192,7 @@ class TestDocumentUnderstanding:
         # Two uploads expected, one per document
         assert mock_sdk.aio.files.upload.call_count == 2
 
-    async def test_string_path_accepted(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_string_path_accepted(self, google_client: Any, sample_pdf: Path) -> None:
         """A string path is accepted (not just Path objects)."""
         result = await google_client.document_understanding(
             prompt="What is this?",
@@ -208,9 +201,7 @@ class TestDocumentUnderstanding:
 
         assert isinstance(result, AIMessage)
 
-    async def test_file_too_large_raises_value_error(
-        self, google_client: Any, large_file: Path
-    ) -> None:
+    async def test_file_too_large_raises_value_error(self, google_client: Any, large_file: Path) -> None:
         """A file exceeding 50 MB raises ValueError before any upload."""
         with pytest.raises(ValueError, match="50 MB"):
             await google_client.document_understanding(
@@ -226,9 +217,7 @@ class TestDocumentUnderstanding:
                 documents="/nonexistent/path/document.pdf",
             )
 
-    async def test_structured_output_config_populates_ai_message(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_structured_output_config_populates_ai_message(self, google_client: Any, sample_pdf: Path) -> None:
         """StructuredOutputConfig causes structured_output to be set on AIMessage."""
 
         class Summary(BaseModel):
@@ -259,9 +248,7 @@ class TestDocumentUnderstanding:
         assert isinstance(result, AIMessage)
         assert result.structured_output == parsed_summary
 
-    async def test_structured_output_pydantic_class_auto_wrapped(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_structured_output_pydantic_class_auto_wrapped(self, google_client: Any, sample_pdf: Path) -> None:
         """A bare Pydantic class is auto-wrapped via _get_structured_config()."""
 
         class DocInfo(BaseModel):
@@ -314,12 +301,12 @@ class TestDocumentUnderstanding:
         # pollution fails the pre-FEAT-524 version of this test on `dev`.)
         with (
             patch.object(
-                type(google_client), "client", new_callable=PropertyMock,
+                type(google_client),
+                "client",
+                new_callable=PropertyMock,
                 return_value=mock_sdk,
             ),
-            patch.object(
-                google_client, "_format_history", wraps=google_client._format_history
-            ) as mock_format,
+            patch.object(google_client, "_format_history", wraps=google_client._format_history) as mock_format,
         ):
             result = await google_client.document_understanding(
                 prompt="Analyze this document",
@@ -337,12 +324,12 @@ class TestDocumentUnderstanding:
         """``stateless=True`` drops the history rather than replaying it."""
         with (
             patch.object(
-                type(google_client), "client", new_callable=PropertyMock,
+                type(google_client),
+                "client",
+                new_callable=PropertyMock,
                 return_value=mock_sdk,
             ),
-            patch.object(
-                google_client, "_format_history", wraps=google_client._format_history
-            ) as mock_format,
+            patch.object(google_client, "_format_history", wraps=google_client._format_history) as mock_format,
         ):
             result = await google_client.document_understanding(
                 prompt="Analyze this document",
@@ -354,9 +341,7 @@ class TestDocumentUnderstanding:
         assert isinstance(result, AIMessage)
         mock_format.assert_called_once_with(())
 
-    async def test_default_temperature_is_zero(
-        self, google_client: Any, mock_sdk: MagicMock, sample_pdf: Path
-    ) -> None:
+    async def test_default_temperature_is_zero(self, google_client: Any, mock_sdk: MagicMock, sample_pdf: Path) -> None:
         """Default temperature is 0.0 for deterministic document analysis."""
         captured_config: list = []
 
@@ -394,9 +379,7 @@ class TestDocumentUnderstanding:
 
         assert captured_config[0].temperature == 0.7
 
-    async def test_returns_provider_google_genai(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_returns_provider_google_genai(self, google_client: Any, sample_pdf: Path) -> None:
         """AIMessage.provider is always 'google_genai'."""
         result = await google_client.document_understanding(
             prompt="What is this document about?",
@@ -405,9 +388,7 @@ class TestDocumentUnderstanding:
 
         assert result.provider == "google_genai"
 
-    async def test_model_enum_accepted(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_model_enum_accepted(self, google_client: Any, sample_pdf: Path) -> None:
         """GoogleModel enum values are accepted for the model parameter."""
         result = await google_client.document_understanding(
             prompt="Summarize",
@@ -433,9 +414,7 @@ class TestUploadDocument:
 
     pytestmark = pytest.mark.asyncio
 
-    async def test_upload_returns_part(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_upload_returns_part(self, google_client: Any, sample_pdf: Path) -> None:
         """_upload_document() returns a types.Part with populated file_data."""
         try:
             from google.genai import types as genai_types  # noqa: F401
@@ -457,9 +436,7 @@ class TestUploadDocument:
 
         mock_sdk.aio.files.upload = AsyncMock(return_value=processing_file)
         # First get() still PROCESSING; second get() returns ACTIVE.
-        mock_sdk.aio.files.get = AsyncMock(
-            side_effect=[processing_file, active_file]
-        )
+        mock_sdk.aio.files.get = AsyncMock(side_effect=[processing_file, active_file])
 
         await google_client._ensure_client()
         with patch("asyncio.sleep", new=AsyncMock()):
@@ -486,9 +463,7 @@ class TestUploadDocument:
         ):
             await google_client._upload_document(sample_pdf)
 
-    async def test_upload_mime_type_detection_pdf(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_upload_mime_type_detection_pdf(self, google_client: Any, sample_pdf: Path) -> None:
         """_upload_document() correctly propagates the PDF MIME type from the Files API."""
         await google_client._ensure_client()
         part = await google_client._upload_document(sample_pdf)
@@ -520,9 +495,7 @@ class TestUploadDocument:
         mock_sleep.assert_not_called()
         assert part is not None
 
-    async def test_upload_string_path_resolved(
-        self, google_client: Any, sample_pdf: Path
-    ) -> None:
+    async def test_upload_string_path_resolved(self, google_client: Any, sample_pdf: Path) -> None:
         """_upload_document() accepts a string path (not only Path objects)."""
         await google_client._ensure_client()
         part = await google_client._upload_document(str(sample_pdf))

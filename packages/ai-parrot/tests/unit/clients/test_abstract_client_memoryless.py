@@ -108,10 +108,7 @@ def test_base_module_imports_no_storage_backend():
         "ConversationTurn",
     ):
         # Allowed only inside explanatory comments, never as code.
-        code_lines = [
-            line for line in source.splitlines()
-            if forbidden in line and not line.lstrip().startswith("#")
-        ]
+        code_lines = [line for line in source.splitlines() if forbidden in line and not line.lstrip().startswith("#")]
         assert code_lines == [], (forbidden, code_lines)
 
 

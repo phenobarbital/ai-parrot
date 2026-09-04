@@ -1892,8 +1892,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         response.artifact_id = infographic_envelope.artifact_id
                         finalize_a2ui_response(response)
                         self.logger.info(
-                            "InfographicRenderResult detected (A2UI) — bypassing formatter: "
-                            "artifact_id=%s",
+                            "InfographicRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                             infographic_envelope.artifact_id,
                         )
                         return response
@@ -1918,8 +1917,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         response.artifact_id = interactive_envelope.artifact_id
                         finalize_a2ui_response(response)
                         self.logger.info(
-                            "InteractiveRenderResult detected (A2UI) — bypassing formatter: "
-                            "artifact_id=%s",
+                            "InteractiveRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                             interactive_envelope.artifact_id,
                         )
                         return response

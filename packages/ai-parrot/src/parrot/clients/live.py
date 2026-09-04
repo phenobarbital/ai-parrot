@@ -24,6 +24,7 @@ Usage:
 
 Location: parrot/clients/live.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,12 +52,16 @@ from google.oauth2 import service_account
 from navconfig import config
 
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; they come from the per-call
 # ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
 from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
 from ..models.voice import (
-    AudioFormat, VoiceCapabilities, VoiceProvider, VoiceStreamOptions,
+    AudioFormat,
+    VoiceCapabilities,
+    VoiceProvider,
+    VoiceStreamOptions,
 )
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
@@ -68,6 +73,7 @@ from .base import AbstractClient
 # Response Models with Usage Metadata
 # =============================================================================
 
+
 @dataclass
 class LiveCompletionUsage:
     """
@@ -75,6 +81,7 @@ class LiveCompletionUsage:
 
     Compatible with CompletionUsage from parrot.models.basic
     """
+
     # Core token metrics
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -115,18 +122,19 @@ class LiveCompletionUsage:
             return cls()
 
         return cls(
-            prompt_tokens=getattr(usage_metadata, 'prompt_token_count', 0) or 0,
-            completion_tokens=getattr(usage_metadata, 'candidates_token_count', 0) or 0,
-            total_tokens=getattr(usage_metadata, 'total_token_count', 0) or 0,
-            input_tokens=getattr(usage_metadata, 'prompt_token_count', 0) or 0,
-            output_tokens=getattr(usage_metadata, 'candidates_token_count', 0) or 0,
-            extra=usage_metadata.__dict__ if hasattr(usage_metadata, '__dict__') else {}
+            prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            completion_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            total_tokens=getattr(usage_metadata, "total_token_count", 0) or 0,
+            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            extra=usage_metadata.__dict__ if hasattr(usage_metadata, "__dict__") else {},
         )
 
 
 @dataclass
 class LiveToolCall:
     """Represents a tool call from Gemini Live API."""
+
     id: str
     name: str
     arguments: Dict[str, Any]
@@ -141,13 +149,14 @@ class LiveToolCall:
             "arguments": self.arguments,
             "result": self.result,
             "error": self.error,
-            "execution_time_ms": self.execution_time_ms
+            "execution_time_ms": self.execution_time_ms,
         }
 
 
 @dataclass
 class VoiceTurnMetadata:
     """Metadata for a single voice turn/response."""
+
     turn_id: str
     started_at: datetime = field(default_factory=datetime.now)
     ended_at: Optional[datetime] = None
@@ -171,6 +180,7 @@ class LiveVoiceResponse:
     Enhanced version of VoiceResponse with CompletionUsage metadata
     for consistency with other AbstractClient implementations.
     """
+
     # Content
     text: str = ""
     audio_data: Optional[bytes] = None
@@ -216,12 +226,16 @@ class LiveVoiceResponse:
             "is_complete": self.is_complete,
             "is_interrupted": self.is_interrupted,
             "tool_calls": [tc.to_dict() for tc in self.tool_calls],
-            "usage": {
-                "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
-                "completion_tokens": self.usage.completion_tokens if self.usage else 0,
-                "total_tokens": self.usage.total_tokens if self.usage else 0,
-                "response_time_ms": self.usage.response_time_ms if self.usage else 0,
-            } if self.usage else None,
+            "usage": (
+                {
+                    "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
+                    "completion_tokens": self.usage.completion_tokens if self.usage else 0,
+                    "total_tokens": self.usage.total_tokens if self.usage else 0,
+                    "response_time_ms": self.usage.response_time_ms if self.usage else 0,
+                }
+                if self.usage
+                else None
+            ),
             "metadata": self.metadata,
             "session_id": self.session_id,
             "turn_id": self.turn_id,
@@ -232,6 +246,7 @@ class LiveVoiceResponse:
 # =============================================================================
 # Live Tool Adapter - Convert AbstractTool to Live API format
 # =============================================================================
+
 
 class LiveToolAdapter:
     """
@@ -245,7 +260,7 @@ class LiveToolAdapter:
         self,
         tool_manager: Optional[ToolManager] = None,
         tools: Optional[List[Any]] = None,
-        logger: Optional[Any] = None
+        logger: Optional[Any] = None,
     ):
         """
         Initialize adapter.
@@ -266,24 +281,25 @@ class LiveToolAdapter:
         # From tool_manager
         if self.tool_manager:
             for tool in self.tool_manager.all_tools():
-                if hasattr(tool, 'name'):
+                if hasattr(tool, "name"):
                     self.tool_map[tool.name] = tool
 
         # From extra tools
         for tool in self.extra_tools:
-            if hasattr(tool, 'name'):
+            if hasattr(tool, "name"):
                 self.tool_map[tool.name] = tool
-            elif hasattr(tool, '__name__'):
+            elif hasattr(tool, "__name__"):
                 self.tool_map[tool.__name__] = tool
 
     def _clean_schema_for_google(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Clean schema for Google/Vertex AI compatibility."""
+
         def clean_recursive(obj: Any) -> Any:
             if isinstance(obj, dict):
                 cleaned = {}
                 for key, value in obj.items():
                     # Skip keys not supported by Google
-                    if key in ('additionalProperties', '$defs', 'definitions', 'examples', 'default', 'title'):
+                    if key in ("additionalProperties", "$defs", "definitions", "examples", "default", "title"):
                         continue
                     cleaned[key] = clean_recursive(value)
                 return cleaned
@@ -295,11 +311,12 @@ class LiveToolAdapter:
 
     def _fix_type_case(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Convert type values to uppercase for GenAI compatibility."""
+
         def fix_recursive(obj: Any) -> Any:
             if isinstance(obj, dict):
                 result = {}
                 for key, value in obj.items():
-                    if key == 'type' and isinstance(value, str):
+                    if key == "type" and isinstance(value, str):
                         result[key] = value.upper()
                     else:
                         result[key] = fix_recursive(value)
@@ -343,51 +360,41 @@ class LiveToolAdapter:
     def _tool_to_declaration(self, tool: Any) -> Optional[types.FunctionDeclaration]:
         """Convert a single tool to a FunctionDeclaration."""
         # Handle AbstractTool instances
-        if hasattr(tool, 'get_schema'):
+        if hasattr(tool, "get_schema"):
             full_schema = tool.get_schema()
-            tool_name = full_schema.get('name', getattr(tool, 'name', 'unknown'))
-            tool_description = full_schema.get('description', getattr(tool, 'description', ''))
+            tool_name = full_schema.get("name", getattr(tool, "name", "unknown"))
+            tool_description = full_schema.get("description", getattr(tool, "description", ""))
 
             # Extract parameters schema
-            params_schema = full_schema.get('parameters', {}).copy()
+            params_schema = full_schema.get("parameters", {}).copy()
             params_schema = self._clean_schema_for_google(params_schema)
             params_schema = self._fix_type_case(params_schema)
 
             if not params_schema:
                 params_schema = {"type": "OBJECT", "properties": {}, "required": []}
 
-            return types.FunctionDeclaration(
-                name=tool_name,
-                description=tool_description,
-                parameters=params_schema
-            )
+            return types.FunctionDeclaration(name=tool_name, description=tool_description, parameters=params_schema)
 
         # Handle ToolDefinition
-        elif hasattr(tool, 'input_schema'):
+        elif hasattr(tool, "input_schema"):
             params_schema = self._clean_schema_for_google(tool.input_schema.copy())
             params_schema = self._fix_type_case(params_schema)
 
-            return types.FunctionDeclaration(
-                name=tool.name,
-                description=tool.description,
-                parameters=params_schema
-            )
+            return types.FunctionDeclaration(name=tool.name, description=tool.description, parameters=params_schema)
 
         # Handle callable with metadata
-        elif callable(tool) and hasattr(tool, '_tool_metadata'):
+        elif callable(tool) and hasattr(tool, "_tool_metadata"):
             metadata = tool._tool_metadata
             return types.FunctionDeclaration(
-                name=metadata['name'],
-                description=metadata['description'],
-                parameters=self._fix_type_case(metadata.get('schema', {}))
+                name=metadata["name"],
+                description=metadata["description"],
+                parameters=self._fix_type_case(metadata.get("schema", {})),
             )
 
         return None
 
     async def execute_tool(
-        self,
-        function_call: Any,
-        context: Optional[Dict[str, Any]] = None
+        self, function_call: Any, context: Optional[Dict[str, Any]] = None
     ) -> tuple[types.FunctionResponse, Optional[Dict[str, Any]]]:
         """
         Execute a tool call and return a (FunctionResponse, display_data) tuple.
@@ -410,9 +417,7 @@ class LiveToolAdapter:
 
             if tool is None:
                 return types.FunctionResponse(
-                    name=tool_name,
-                    id=tool_id,
-                    response={"error": f"Tool '{tool_name}' not found"}
+                    name=tool_name, id=tool_id, response={"error": f"Tool '{tool_name}' not found"}
                 )
 
             # Execute the tool
@@ -434,7 +439,7 @@ class LiveToolAdapter:
                 # `display_data` entirely; routing through it here would
                 # silently break the voice UX. See TASK-1956 Completion Note.
                 result = await tool.execute(**tool_args)
-            elif hasattr(tool, '__call__'):
+            elif hasattr(tool, "__call__"):
                 # Callable
                 called = tool(**tool_args)
                 if inspect.iscoroutine(called):
@@ -443,21 +448,19 @@ class LiveToolAdapter:
                     result = called
             else:
                 return types.FunctionResponse(
-                    name=tool_name,
-                    id=tool_id,
-                    response={"error": f"Tool '{tool_name}' is not executable"}
+                    name=tool_name, id=tool_id, response={"error": f"Tool '{tool_name}' is not executable"}
                 )
 
             # Handle ToolResult from AbstractTool
             display_data = None
-            
+
             if isinstance(result, ToolResult):
                 if result.status == "success":
-                    
+
                     # Extract display data if available
                     if result.display_data:
                         display_data = result.display_data
-                        
+
                     # Use voice_text as the primary response if available
                     if result.voice_text:
                         response_data = {"output": result.voice_text}
@@ -479,25 +482,18 @@ class LiveToolAdapter:
                 else:
                     response_data = {"result": result}
 
-            return types.FunctionResponse(
-                name=tool_name,
-                id=tool_id,
-                response=response_data
-            ), display_data
+            return types.FunctionResponse(name=tool_name, id=tool_id, response=response_data), display_data
 
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Tool execution error for {tool_name}: {e}")
-            return types.FunctionResponse(
-                name=tool_name,
-                id=tool_id,
-                response={"error": str(e)}
-            ), None
+            return types.FunctionResponse(name=tool_name, id=tool_id, response={"error": str(e)}), None
 
 
 # =============================================================================
 # GeminiLiveClient - Main Client Implementation
 # =============================================================================
+
 
 class GeminiLiveClient(AbstractClient):
     """
@@ -543,8 +539,8 @@ class GeminiLiveClient(AbstractClient):
     """
 
     # Class attributes following AbstractClient pattern
-    client_type: str = 'google_live'
-    client_name: str = 'google_live'
+    client_type: str = "google_live"
+    client_name: str = "google_live"
     _default_model: str = GoogleVoiceModel.DEFAULT.value
 
     def __init__(
@@ -565,7 +561,7 @@ class GeminiLiveClient(AbstractClient):
         use_tools: bool = False,
         tool_manager: Optional[ToolManager] = None,
         debug: bool = False,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize GeminiLiveClient.
@@ -598,18 +594,18 @@ class GeminiLiveClient(AbstractClient):
             use_tools=use_tools,
             tool_manager=tool_manager,
             debug=debug,
-            **kwargs
+            **kwargs,
         )
 
         # Google credentials (same pattern as GoogleGenAIClient)
-        self.api_key = api_key or config.get('GOOGLE_API_KEY')
+        self.api_key = api_key or config.get("GOOGLE_API_KEY")
         self.vertexai = vertexai
-        self.vertex_project = project or config.get('VERTEX_PROJECT_ID')
-        self.vertex_location = location or config.get('VERTEX_REGION')
+        self.vertex_project = project or config.get("VERTEX_PROJECT_ID")
+        self.vertex_location = location or config.get("VERTEX_REGION")
         if credentials_file:
             self._credentials_file = Path(credentials_file).expanduser()
         else:
-            creds = config.get('VERTEX_CREDENTIALS_FILE')
+            creds = config.get("VERTEX_CREDENTIALS_FILE")
             self._credentials_file = Path(creds).expanduser() if creds else None
 
         # Voice-specific settings
@@ -674,9 +670,7 @@ class GeminiLiveClient(AbstractClient):
             output_formats=frozenset({AudioFormat.PCM_24K}),
             input_sample_rates=frozenset({16000}),
             output_sample_rates=frozenset({24000}),
-            voice_catalog=frozenset(
-                profile.voice_name for profile in ALL_VOICE_PROFILES
-            ),
+            voice_catalog=frozenset(profile.voice_name for profile in ALL_VOICE_PROFILES),
             default_voice="Puck",
         )
 
@@ -687,36 +681,25 @@ class GeminiLiveClient(AbstractClient):
         Required by AbstractClient (abstract method).
         """
         if self.vertexai:
-            self.logger.info(
-                f"Initializing Vertex AI for project {self.vertex_project} "
-                f"in {self.vertex_location}"
-            )
+            self.logger.info(f"Initializing Vertex AI for project {self.vertex_project} " f"in {self.vertex_location}")
             credentials = None
             if self._credentials_file and self._credentials_file.exists():
-                credentials = service_account.Credentials.from_service_account_file(
-                    str(self._credentials_file)
-                )
+                credentials = service_account.Credentials.from_service_account_file(str(self._credentials_file))
 
             return genai.Client(
                 vertexai=True,
                 project=self.vertex_project,
                 location=self.vertex_location,
                 credentials=credentials,
-                http_options={"api_version": "v1beta"}
+                http_options={"api_version": "v1beta"},
             )
 
-        return genai.Client(
-            api_key=self.api_key,
-            http_options={"api_version": "v1beta"}
-        )
+        return genai.Client(api_key=self.api_key, http_options={"api_version": "v1beta"})
 
     def _get_tool_adapter(self) -> LiveToolAdapter:
         """Get or create the tool adapter."""
         if self._tool_adapter is None:
-            self._tool_adapter = LiveToolAdapter(
-                tool_manager=self.tool_manager,
-                logger=self.logger
-            )
+            self._tool_adapter = LiveToolAdapter(tool_manager=self.tool_manager, logger=self.logger)
         return self._tool_adapter
 
     def _resolve_voice_name(self, requested: Optional[str]) -> str:
@@ -741,9 +724,9 @@ class GeminiLiveClient(AbstractClient):
         if requested in self.voice_capabilities.voice_catalog:
             return requested
         self.logger.warning(
-            "GeminiLiveClient: voice %r is not in the known catalog; "
-            "falling back to %r",
-            requested, self.voice_name,
+            "GeminiLiveClient: voice %r is not in the known catalog; " "falling back to %r",
+            requested,
+            self.voice_name,
         )
         return self.voice_name
 
@@ -805,10 +788,8 @@ class GeminiLiveClient(AbstractClient):
         speech_config = types.SpeechConfig(
             language_code=self.language,
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=resolved_voice_name
-                )
-            )
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=resolved_voice_name)
+            ),
         )
 
         if stt_only:
@@ -828,9 +809,7 @@ class GeminiLiveClient(AbstractClient):
             temperature=temperature,
             max_output_tokens=max_tokens,
             top_p=top_p,
-            context_window_compression=types.ContextWindowCompressionConfig(
-                sliding_window=types.SlidingWindow()
-            ),
+            context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=False,
@@ -842,15 +821,12 @@ class GeminiLiveClient(AbstractClient):
             ),
             # Input transcription, gated by enable_input_transcription
             # (FEAT-418 — previously unconditional regardless of mode).
-            input_audio_transcription=(
-                types.AudioTranscriptionConfig() if enable_input_transcription else None
-            ),
+            input_audio_transcription=(types.AudioTranscriptionConfig() if enable_input_transcription else None),
             # Output transcription only makes sense in full-duplex, and
             # stt_only still wins over enable_output_transcription
             # (preserves live.py:711 semantics — FEAT-418).
             output_audio_transcription=(
-                None if stt_only or not enable_output_transcription
-                else types.AudioTranscriptionConfig()
+                None if stt_only or not enable_output_transcription else types.AudioTranscriptionConfig()
             ),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
             # Session resumption (FEAT-418, TASK-2168): always requested so
@@ -872,9 +848,7 @@ class GeminiLiveClient(AbstractClient):
             adapter = self._get_tool_adapter()
             if declarations := adapter.get_function_declarations():
                 live_config.tools = [types.Tool(function_declarations=declarations)]
-                self.logger.debug(
-                    f"Registered {len(declarations)} tools for Live session"
-                )
+                self.logger.debug(f"Registered {len(declarations)} tools for Live session")
         return live_config
 
     async def stream_voice(
@@ -885,7 +859,7 @@ class GeminiLiveClient(AbstractClient):
         user_id: Optional[str] = None,
         stt_only: bool = False,
         options: Optional[VoiceStreamOptions] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
         Stream bidirectional voice interaction.
@@ -942,8 +916,11 @@ class GeminiLiveClient(AbstractClient):
         # top_p/voice) or default True (transcription flags).
         live_config_overrides: Dict[str, Any] = {}
         for field_name in (
-            "temperature", "max_tokens", "top_p",
-            "enable_input_transcription", "enable_output_transcription",
+            "temperature",
+            "max_tokens",
+            "top_p",
+            "enable_input_transcription",
+            "enable_output_transcription",
             "voice",
         ):
             if field_name in kwargs:
@@ -954,7 +931,7 @@ class GeminiLiveClient(AbstractClient):
         live_config = self._build_live_config(
             system_prompt=system_prompt,
             stt_only=stt_only,
-            response_modalities=kwargs.get('response_modalities'),
+            response_modalities=kwargs.get("response_modalities"),
             **live_config_overrides,
         )
 
@@ -964,9 +941,7 @@ class GeminiLiveClient(AbstractClient):
         # suppress the thinking text from LiveVoiceResponse.text so that
         # downstream consumers (VoiceBot.ask_stream, memory, frontend)
         # see the real spoken words.
-        is_audio_mode = not stt_only and "AUDIO" in (
-            live_config.response_modalities or []
-        )
+        is_audio_mode = not stt_only and "AUDIO" in (live_config.response_modalities or [])
 
         # Tracking
         turn_metadata = VoiceTurnMetadata(turn_id=turn_id)
@@ -978,14 +953,9 @@ class GeminiLiveClient(AbstractClient):
         self.logger.info(f"Starting voice session {session_id}, turn {turn_id}")
 
         try:
-            async with self.client.aio.live.connect(
-                model=self.model,
-                config=live_config
-            ) as session:
+            async with self.client.aio.live.connect(model=self.model, config=live_config) as session:
                 # Start audio sender task
-                sender_task = asyncio.create_task(
-                    self._audio_sender(session, audio_iterator)
-                )
+                sender_task = asyncio.create_task(self._audio_sender(session, audio_iterator))
 
                 try:
                     async for response in session.receive():
@@ -995,7 +965,7 @@ class GeminiLiveClient(AbstractClient):
                             server_content = response.server_content
 
                             # Check for interruption
-                            if getattr(server_content, 'interrupted', False):
+                            if getattr(server_content, "interrupted", False):
                                 turn_metadata.was_interrupted = True
                                 yield LiveVoiceResponse(
                                     text=accumulated_text,
@@ -1015,14 +985,10 @@ class GeminiLiveClient(AbstractClient):
                             # In STT-only mode the config requests no response
                             # modalities so Gemini should not produce a model turn;
                             # guard here as a defense-in-depth safety net.
-                            if (
-                                not stt_only
-                                and hasattr(server_content, 'model_turn')
-                                and server_content.model_turn
-                            ):
+                            if not stt_only and hasattr(server_content, "model_turn") and server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     # Text
-                                    if hasattr(part, 'text') and part.text:
+                                    if hasattr(part, "text") and part.text:
                                         if is_audio_mode:
                                             # In AUDIO mode, model_turn text
                                             # is the model's internal reasoning
@@ -1057,7 +1023,7 @@ class GeminiLiveClient(AbstractClient):
                                             )
 
                                     # Audio (inline_data)
-                                    if hasattr(part, 'inline_data') and part.inline_data:
+                                    if hasattr(part, "inline_data") and part.inline_data:
                                         audio_chunk = part.inline_data.data
                                         accumulated_audio += audio_chunk
                                         duration = self._estimate_audio_duration(audio_chunk)
@@ -1072,10 +1038,8 @@ class GeminiLiveClient(AbstractClient):
                                             user_id=user_id,
                                             role="assistant",
                                         )
-                            elif stt_only and hasattr(server_content, 'model_turn') and server_content.model_turn:
-                                self.logger.debug(
-                                    "STT-only: model_turn received but suppressed (double-brain guard)"
-                                )
+                            elif stt_only and hasattr(server_content, "model_turn") and server_content.model_turn:
+                                self.logger.debug("STT-only: model_turn received but suppressed (double-brain guard)")
 
                             # Handle input transcription (user's speech)
                             # It's in server_content, not at response level!
@@ -1084,8 +1048,8 @@ class GeminiLiveClient(AbstractClient):
                             # role="user" text response instead of the
                             # provider-specific metadata["user_transcription"]
                             # key (removed — no deprecation window, spec §5).
-                            if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
-                                text = getattr(server_content.input_transcription, 'text', '')
+                            if hasattr(server_content, "input_transcription") and server_content.input_transcription:
+                                text = getattr(server_content.input_transcription, "text", "")
                                 if text:
                                     self.logger.info(f"User transcription: {text}")
                                     turn_metadata.input_transcription = text
@@ -1100,8 +1064,8 @@ class GeminiLiveClient(AbstractClient):
 
                             # Handle output transcription (model's speech)
                             # It's in server_content, not at response level!
-                            if hasattr(server_content, 'output_transcription') and server_content.output_transcription:
-                                text = getattr(server_content.output_transcription, 'text', '')
+                            if hasattr(server_content, "output_transcription") and server_content.output_transcription:
+                                text = getattr(server_content.output_transcription, "text", "")
                                 if text:
                                     self.logger.info(f"Model transcription: {text}")
                                     # Accumulate (not overwrite) — Gemini
@@ -1127,7 +1091,7 @@ class GeminiLiveClient(AbstractClient):
                                     )
 
                             # Check for turn complete (After processing content)
-                            if getattr(server_content, 'turn_complete', False):
+                            if getattr(server_content, "turn_complete", False):
                                 self.logger.debug(f"Turn complete received for {turn_id}")
                                 turn_metadata.ended_at = datetime.now()
                                 usage.response_time_ms = turn_metadata.duration_ms
@@ -1154,14 +1118,17 @@ class GeminiLiveClient(AbstractClient):
                                 continue
 
                         # Handle tool calls
-                        if hasattr(response, 'tool_call') and response.tool_call:
+                        if hasattr(response, "tool_call") and response.tool_call:
                             self.logger.info(f"Tool call received: {response.tool_call}")
                             adapter = self._get_tool_adapter()
                             function_calls = list(response.tool_call.function_calls)
 
                             async def _run_one_tool_call(
-                                fc, turn_id=turn_id, adapter=adapter,
-                                session_id=session_id, user_id=user_id,
+                                fc,
+                                turn_id=turn_id,
+                                adapter=adapter,
+                                session_id=session_id,
+                                user_id=user_id,
                             ):
                                 # Bind the enclosing loop's turn_id/adapter/
                                 # session_id/user_id as defaults (evaluated
@@ -1196,10 +1163,7 @@ class GeminiLiveClient(AbstractClient):
                                 self.logger.info(f"Executing tool: {fc.name} with args: {effective_args}")
 
                                 try:
-                                    func_response, display_data = await adapter.execute_tool(
-                                        fc,
-                                        context=tool_context
-                                    )
+                                    func_response, display_data = await adapter.execute_tool(fc, context=tool_context)
                                 except Exception as exc:
                                     # adapter.execute_tool() already catches
                                     # tool-execution errors internally and
@@ -1208,7 +1172,8 @@ class GeminiLiveClient(AbstractClient):
                                     # tool never cancels its TaskGroup siblings
                                     # (FEAT-416 TASK-2148 acceptance criterion).
                                     func_response = types.FunctionResponse(
-                                        name=fc.name, id=fc.id,
+                                        name=fc.name,
+                                        id=fc.id,
                                         response={"error": str(exc)},
                                     )
                                     display_data = None
@@ -1224,19 +1189,14 @@ class GeminiLiveClient(AbstractClient):
                             # sequential await-in-a-loop.
                             if parallel_tool_execution and len(function_calls) > 1:
                                 async with asyncio.TaskGroup() as tg:
-                                    tasks = [
-                                        tg.create_task(_run_one_tool_call(fc))
-                                        for fc in function_calls
-                                    ]
+                                    tasks = [tg.create_task(_run_one_tool_call(fc)) for fc in function_calls]
                                 tool_results = [t.result() for t in tasks]
 
                                 # All tool results must reach the model
                                 # before it resumes — send them together
                                 # in one call (parallel path only).
                                 await session.send_tool_response(
-                                    function_responses=[
-                                        func_response for _, func_response, _ in tool_results
-                                    ]
+                                    function_responses=[func_response for _, func_response, _ in tool_results]
                                 )
                             else:
                                 # Sequential (default, or a single call):
@@ -1256,9 +1216,7 @@ class GeminiLiveClient(AbstractClient):
                                 for fc in function_calls:
                                     result = await _run_one_tool_call(fc)
                                     tool_results.append(result)
-                                    await session.send_tool_response(
-                                        function_responses=[result[1]]
-                                    )
+                                    await session.send_tool_response(function_responses=[result[1]])
 
                             for tool_call, _func_response, display_data in tool_results:
                                 usage.tool_calls_executed += 1
@@ -1296,23 +1254,18 @@ class GeminiLiveClient(AbstractClient):
                                 )
 
                         # Handle usage metadata if available
-                        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                        if hasattr(response, "usage_metadata") and response.usage_metadata:
                             usage = LiveCompletionUsage.from_gemini_usage(response.usage_metadata)
 
                         # Retain the session resumption handle (FEAT-418,
                         # TASK-2168) so the NEXT stream_voice() call (a
                         # reconnect, driven by VoiceSession's existing loop)
                         # can resume with context instead of a cold start.
-                        if (
-                            hasattr(response, 'session_resumption_update')
-                            and response.session_resumption_update
-                        ):
+                        if hasattr(response, "session_resumption_update") and response.session_resumption_update:
                             update = response.session_resumption_update
-                            if getattr(update, 'resumable', False) and getattr(update, 'new_handle', None):
+                            if getattr(update, "resumable", False) and getattr(update, "new_handle", None):
                                 self._resumption_handle = update.new_handle
-                                self.logger.debug(
-                                    "Session resumption handle updated for %s", session_id
-                                )
+                                self.logger.debug("Session resumption handle updated for %s", session_id)
 
                         # Handle GoAway (session ending). FEAT-418: also set
                         # metadata["reconnect_required"]=True (keeping
@@ -1320,7 +1273,7 @@ class GeminiLiveClient(AbstractClient):
                         # it) so VoiceSession's reconnect loop
                         # (voice/session.py:196-199) fires for Gemini the
                         # same way it already does for Nova.
-                        if hasattr(response, 'go_away') and response.go_away:
+                        if hasattr(response, "go_away") and response.go_away:
                             self.logger.info("Received GoAway from server")
                             yield LiveVoiceResponse(
                                 text="",
@@ -1360,12 +1313,11 @@ class GeminiLiveClient(AbstractClient):
             # a cold reconnect via the existing reconnect_required path
             # (VoiceSession's loop calls stream_voice() again; the next
             # _build_live_config() call passes handle=None).
-            if self._resumption_handle and any(
-                keyword in error_str for keyword in ("resumption", "handle", "expired")
-            ):
+            if self._resumption_handle and any(keyword in error_str for keyword in ("resumption", "handle", "expired")):
                 self.logger.warning(
                     "GeminiLiveClient: session resumption handle rejected/expired "
-                    "(%s); clearing and falling back to a cold reconnect.", e,
+                    "(%s); clearing and falling back to a cold reconnect.",
+                    e,
                 )
                 self._resumption_handle = None
                 yield LiveVoiceResponse(
@@ -1409,11 +1361,7 @@ class GeminiLiveClient(AbstractClient):
                 user_id=user_id,
             )
 
-    async def _audio_sender(
-        self,
-        session,
-        audio_iterator: AsyncIterator[bytes]
-    ) -> None:
+    async def _audio_sender(self, session, audio_iterator: AsyncIterator[bytes]) -> None:
         """Send audio chunks to the Gemini session.
 
         For multi-turn support:
@@ -1436,10 +1384,7 @@ class GeminiLiveClient(AbstractClient):
                             f"Sending audio_stream_end signal..."
                         )
                         try:
-                            await asyncio.wait_for(
-                                session.send_realtime_input(audio_stream_end=True),
-                                timeout=5.0
-                            )
+                            await asyncio.wait_for(session.send_realtime_input(audio_stream_end=True), timeout=5.0)
                             self.logger.info("audio_stream_end sent successfully")
                             audio_stream_ended = True
                         except asyncio.TimeoutError:
@@ -1448,9 +1393,7 @@ class GeminiLiveClient(AbstractClient):
                             self.logger.error(f"Error sending audio_stream_end: {e}")
                 else:
                     # Real audio chunk
-                    await session.send(
-                        input={"data": chunk, "mime_type": "audio/pcm"}
-                    )
+                    await session.send(input={"data": chunk, "mime_type": "audio/pcm"})
                     chunks_sent += 1
                     total_bytes += len(chunk)
                     # Reset flag for new audio turn
@@ -1460,10 +1403,7 @@ class GeminiLiveClient(AbstractClient):
             if chunks_sent > 0 and not audio_stream_ended:
                 self.logger.info("Audio iterator completed, sending final audio_stream_end...")
                 try:
-                    await asyncio.wait_for(
-                        session.send_realtime_input(audio_stream_end=True),
-                        timeout=5.0
-                    )
+                    await asyncio.wait_for(session.send_realtime_input(audio_stream_end=True), timeout=5.0)
                     self.logger.info("Final audio_stream_end sent successfully")
                 except Exception as e:
                     # Expected during session close - downgrade to debug
@@ -1477,10 +1417,7 @@ class GeminiLiveClient(AbstractClient):
             # Even on cancel, try to send audio_stream_end if we sent audio
             if chunks_sent > 0 and not audio_stream_ended:
                 try:
-                    await asyncio.wait_for(
-                        session.send_realtime_input(audio_stream_end=True),
-                        timeout=2.0
-                    )
+                    await asyncio.wait_for(session.send_realtime_input(audio_stream_end=True), timeout=2.0)
                 except Exception:
                     pass
         except Exception as e:
@@ -1496,7 +1433,7 @@ class GeminiLiveClient(AbstractClient):
         question: str,
         system_prompt: Optional[str] = None,
         history: Optional[Sequence[HistoryMessage]] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
         Send text input and receive voice response.
@@ -1524,6 +1461,7 @@ class GeminiLiveClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_live
+
         _lc_tc_live = self._emit_before_call(
             client_name="gemini-live",
             model=self.model or "",
@@ -1534,27 +1472,15 @@ class GeminiLiveClient(AbstractClient):
         )
         _lc_t0_live = _lc_time_live.perf_counter()
 
-        live_config = self._build_live_config(
-            system_prompt=system_prompt,
-            **kwargs
-        )
+        live_config = self._build_live_config(system_prompt=system_prompt, **kwargs)
 
-        self.logger.info(
-            f"Starting text-to-speech session {session_id}"
-        )
+        self.logger.info(f"Starting text-to-speech session {session_id}")
 
         try:
-            async with self.client.aio.live.connect(
-                model=self.model,
-                config=live_config
-            ) as session:
+            async with self.client.aio.live.connect(model=self.model, config=live_config) as session:
                 # Send text
                 await session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part(text=question)]
-                    ),
-                    turn_complete=True
+                    turns=types.Content(role="user", parts=[types.Part(text=question)]), turn_complete=True
                 )
 
                 accumulated_audio = b""
@@ -1565,11 +1491,9 @@ class GeminiLiveClient(AbstractClient):
                     if response.server_content:
                         server_content = response.server_content
 
-
-
-                        if hasattr(server_content, 'model_turn') and server_content.model_turn:
+                        if hasattr(server_content, "model_turn") and server_content.model_turn:
                             for part in server_content.model_turn.parts:
-                                if hasattr(part, 'text') and part.text:
+                                if hasattr(part, "text") and part.text:
                                     accumulated_text += part.text
                                     yield LiveVoiceResponse(
                                         text=part.text,
@@ -1579,7 +1503,7 @@ class GeminiLiveClient(AbstractClient):
                                         user_id=user_id,
                                     )
 
-                                if hasattr(part, 'inline_data') and part.inline_data:
+                                if hasattr(part, "inline_data") and part.inline_data:
                                     audio_chunk = part.inline_data.data
                                     accumulated_audio += audio_chunk
                                     yield LiveVoiceResponse(
@@ -1592,15 +1516,11 @@ class GeminiLiveClient(AbstractClient):
                                     )
 
                     # Handle tool calls
-                    if hasattr(response, 'tool_call') and response.tool_call:
+                    if hasattr(response, "tool_call") and response.tool_call:
                         adapter = self._get_tool_adapter()
 
                         for fc in response.tool_call.function_calls:
-                            tool_call = LiveToolCall(
-                                id=fc.id,
-                                name=fc.name,
-                                arguments=dict(fc.args) if fc.args else {}
-                            )
+                            tool_call = LiveToolCall(id=fc.id, name=fc.name, arguments=dict(fc.args) if fc.args else {})
                             tool_calls_list.append(tool_call)
 
                             # Pass session context to tool execution
@@ -1609,19 +1529,14 @@ class GeminiLiveClient(AbstractClient):
                                 "user_id": str(user_id) if user_id is not None else None,
                                 "turn_id": turn_id,
                             }
-                            func_response, display_data = await adapter.execute_tool(
-                                fc,
-                                context=tool_context
-                            )
+                            func_response, display_data = await adapter.execute_tool(fc, context=tool_context)
                             tool_call.result = func_response.response
 
-                            await session.send_tool_response(
-                                function_responses=[func_response]
-                            )
+                            await session.send_tool_response(function_responses=[func_response])
 
                             # Reset text accumulator after tool call to capture only the final answer
                             accumulated_text = ""
-                            
+
                             # Inject tool output as initial part of the answer
                             if isinstance(tool_call.result, dict) and "output" in tool_call.result:
                                 tool_output_text = str(tool_call.result["output"]) + "\n\n"
@@ -1646,12 +1561,12 @@ class GeminiLiveClient(AbstractClient):
                                 session_id=session_id,
                                 turn_id=turn_id,
                                 user_id=user_id,
-                                metadata=metadata
+                                metadata=metadata,
                             )
 
                         # Check for turn_complete ONLY if we didn't just handle a tool call
                         # If we handled a tool call, we sent a response and expect the model to continue
-                        if getattr(server_content, 'turn_complete', False):
+                        if getattr(server_content, "turn_complete", False):
                             yield LiveVoiceResponse(
                                 text=accumulated_text,
                                 audio_data=accumulated_audio or None,
@@ -1667,7 +1582,9 @@ class GeminiLiveClient(AbstractClient):
             self.logger.error(f"Text session error: {e}")
             # FEAT-176: lifecycle event — ClientCallFailedEvent
             await self._emit_failed_call(
-                _lc_tc_live, client_name="gemini-live", model=self.model or "",
+                _lc_tc_live,
+                client_name="gemini-live",
+                model=self.model or "",
                 duration_ms=(_lc_time_live.perf_counter() - _lc_t0_live) * 1000,
                 exc=e,
             )
@@ -1683,18 +1600,22 @@ class GeminiLiveClient(AbstractClient):
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
         await self._emit_after_call(
-            _lc_tc_live, client_name="gemini-live", model=self.model or "",
+            _lc_tc_live,
+            client_name="gemini-live",
+            model=self.model or "",
             duration_ms=(_lc_time_live.perf_counter() - _lc_t0_live) * 1000,
-            input_tokens=None, output_tokens=None, finish_reason=None,
+            input_tokens=None,
+            output_tokens=None,
+            finish_reason=None,
         )
 
     async def close(self) -> None:
         """Close the client and clean up resources."""
         if self.client:
             with contextlib.suppress(Exception):
-                if hasattr(self.client, '_api_client'):
+                if hasattr(self.client, "_api_client"):
                     api_client = self.client._api_client
-                    if hasattr(api_client, '_aiohttp_session'):
+                    if hasattr(api_client, "_aiohttp_session"):
                         await api_client._aiohttp_session.close()
 
         # Call parent close
@@ -1720,26 +1641,25 @@ class GeminiLiveClient(AbstractClient):
         class can be instantiated. Use stream_voice() for the realtime flow.
         """
         raise NotImplementedError(
-            "GeminiLiveClient is realtime voice — use stream_voice(); "
-            "invoke() is not supported."
+            "GeminiLiveClient is realtime voice — use stream_voice(); " "invoke() is not supported."
         )
 
     async def resume(self, *args, **kwargs):
         """Not supported: GeminiLiveClient does not implement suspend/resume."""
-        raise NotImplementedError(
-            "GeminiLiveClient does not support suspend/resume."
-        )
+        raise NotImplementedError("GeminiLiveClient does not support suspend/resume.")
+
 
 # =============================================================================
 # Factory function
 # =============================================================================
+
 
 def create_live_client(
     model: Optional[Union[str, GoogleVoiceModel]] = None,
     voice_name: str = "Puck",
     tools: Optional[List[AbstractTool]] = None,
     use_tools: bool = True,
-    **kwargs
+    **kwargs,
 ) -> GeminiLiveClient:
     """
     Factory function to create a GeminiLiveClient.
@@ -1754,13 +1674,7 @@ def create_live_client(
     Returns:
         Configured GeminiLiveClient instance
     """
-    return GeminiLiveClient(
-        model=model,
-        voice_name=voice_name,
-        tools=tools,
-        use_tools=use_tools,
-        **kwargs
-    )
+    return GeminiLiveClient(model=model, voice_name=voice_name, tools=tools, use_tools=use_tools, **kwargs)
 
 
 # =============================================================================

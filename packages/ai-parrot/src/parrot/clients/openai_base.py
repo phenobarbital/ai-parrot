@@ -14,6 +14,7 @@ OpenAI-the-provider knowledge and belongs exclusively in
 
 See ``sdd/specs/openai-compatible-clients.spec.md`` (FEAT-438) §3 Module 1.
 """
+
 from __future__ import annotations
 
 import base64
@@ -45,6 +46,7 @@ from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
 from ..utils.http_logging import quiet_http_loggers
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
@@ -133,8 +135,7 @@ class OpenAIBaseClient(AbstractClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "OpenAIBaseClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "OpenAIBaseClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         return AsyncOpenAI(
             api_key=self.api_key,
@@ -174,9 +175,7 @@ class OpenAIBaseClient(AbstractClient):
         """
         resolved = model or self.model or self.default_model
         if not resolved:
-            raise ValueError(
-                f"no model configured for {self.__class__.__name__}"
-            )
+            raise ValueError(f"no model configured for {self.__class__.__name__}")
         return self._normalize_model(resolved)
 
     def _is_responses_model(self, model_str: str) -> bool:
@@ -515,9 +514,7 @@ class OpenAIBaseClient(AbstractClient):
             if track_usage:
                 round_usage, round_raw_usage = self._extract_completion_usage(response)
                 if round_usage is not None:
-                    accumulated_usage = (
-                        round_usage if accumulated_usage is None else accumulated_usage + round_usage
-                    )
+                    accumulated_usage = round_usage if accumulated_usage is None else accumulated_usage + round_usage
 
             result = response.choices[0].message
 
@@ -663,9 +660,7 @@ class OpenAIBaseClient(AbstractClient):
                 )
                 model_str = self._fallback_model
                 _used_fallback = True
-                response = await self._chat_completion(
-                    model=model_str, messages=messages, use_tools=_use_tools, **args
-                )
+                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
             else:
                 raise
         _round_duration_ms = (time.perf_counter() - _round_t0) * 1000
@@ -776,9 +771,7 @@ class OpenAIBaseClient(AbstractClient):
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or self.default_model)
 
-        messages.append(
-            {"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input}
-        )
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
         turn_id = str(uuid.uuid4())
 
@@ -836,9 +829,7 @@ class OpenAIBaseClient(AbstractClient):
         with open(file_path, "rb") as file:  # noqa: ASYNC230 — moved verbatim from gpt.py
             await self.client.files.create(file=file, purpose=purpose)
 
-    def _encode_image_for_openai(
-        self, image: Path | bytes | Image.Image, low_quality: bool = False
-    ) -> dict[str, Any]:
+    def _encode_image_for_openai(self, image: Path | bytes | Image.Image, low_quality: bool = False) -> dict[str, Any]:
         """Encode an image as an OpenAI-shaped ``image_url`` content block.
 
         Args:
@@ -856,9 +847,7 @@ class OpenAIBaseClient(AbstractClient):
         try:
             from PIL import Image
         except ImportError as exc:
-            raise ImportError(
-                "Image methods require Pillow. Install with: pip install Pillow"
-            ) from exc
+            raise ImportError("Image methods require Pillow. Install with: pip install Pillow") from exc
         if isinstance(image, Path):
             if not image.exists():
                 raise FileNotFoundError(f"Image file not found: {image}")
@@ -1059,19 +1048,23 @@ class OpenAIBaseClient(AbstractClient):
                 tc_serialized = []
                 for idx in sorted(_tc_accum):
                     tc_info = _tc_accum[idx]
-                    tc_serialized.append({
-                        "id": tc_info["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc_info["name"],
-                            "arguments": tc_info["arguments"],
-                        },
-                    })
-                messages.append({
-                    "role": "assistant",
-                    "content": _round_content or None,
-                    "tool_calls": tc_serialized,
-                })
+                    tc_serialized.append(
+                        {
+                            "id": tc_info["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc_info["name"],
+                                "arguments": tc_info["arguments"],
+                            },
+                        }
+                    )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": _round_content or None,
+                        "tool_calls": tc_serialized,
+                    }
+                )
 
                 for idx in sorted(_tc_accum):
                     tc_info = _tc_accum[idx]
@@ -1089,12 +1082,14 @@ class OpenAIBaseClient(AbstractClient):
                         tool_result = await self._execute_tool(tc_info["name"], tool_args)
                         tc.result = tool_result
                         tc.execution_time = time.time() - start_time
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_info["id"],
-                            "name": tc_info["name"],
-                            "content": str(tool_result),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc_info["id"],
+                                "name": tc_info["name"],
+                                "content": str(tool_result),
+                            }
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -1105,12 +1100,14 @@ class OpenAIBaseClient(AbstractClient):
                             e.agent_name = model_str
                             raise
                         tc.error = str(e)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_info["id"],
-                            "name": tc_info["name"],
-                            "content": str(e),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc_info["id"],
+                                "name": tc_info["name"],
+                                "content": str(e),
+                            }
+                        )
                     all_tool_calls.append(tc)
                 # Continue to next streaming round.
             else:
@@ -1224,9 +1221,7 @@ class OpenAIBaseClient(AbstractClient):
             if not self.client:
                 raise RuntimeError(f"{type(self).__name__} not initialised. Use async context manager.")
 
-            response = await self._chat_completion(
-                model=resolved_model, messages=messages, use_tools=True, **kwargs
-            )
+            response = await self._chat_completion(model=resolved_model, messages=messages, use_tools=True, **kwargs)
             raw_text = response.choices[0].message.content or ""
 
             output: Any = raw_text

@@ -140,9 +140,7 @@ def render_history(
             continue
 
         is_foreign = (
-            current_chatbot_id is not None
-            and turn.chatbot_id is not None
-            and turn.chatbot_id != current_chatbot_id
+            current_chatbot_id is not None and turn.chatbot_id is not None and turn.chatbot_id != current_chatbot_id
         )
         if is_foreign and not include_other_agents:
             continue

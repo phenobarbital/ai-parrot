@@ -599,7 +599,8 @@ class DatabaseAgent(BasicAgent):
                     content, wrapped = await renderer.render(response)
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning(
-                        "StructuredTableRenderer dispatch failed: %s", exc,
+                        "StructuredTableRenderer dispatch failed: %s",
+                        exc,
                     )
                     content, wrapped = None, str(exc)
 
@@ -615,8 +616,7 @@ class DatabaseAgent(BasicAgent):
                     # Renderer failed — degrade gracefully to SQL_ANALYSIS
                     # so the frontend still shows a usable SQL artifact card.
                     self.logger.warning(
-                        "StructuredTableRenderer failed (%s) — falling back "
-                        "to SQL_ANALYSIS",
+                        "StructuredTableRenderer failed (%s) — falling back " "to SQL_ANALYSIS",
                         wrapped,
                     )
                     response.output_mode = OutputMode.SQL_ANALYSIS

@@ -26,11 +26,7 @@ _TREE = ast.parse(_SOURCE)
 
 def _code_lines_containing(token: str) -> list[str]:
     """Source lines mentioning ``token`` outside comments."""
-    return [
-        line.strip()
-        for line in _SOURCE.splitlines()
-        if token in line and not line.lstrip().startswith("#")
-    ]
+    return [line.strip() for line in _SOURCE.splitlines() if token in line and not line.lstrip().startswith("#")]
 
 
 @pytest.mark.parametrize(

@@ -261,12 +261,8 @@ def test_create_system_prompt_has_no_conversation_context_kwarg():
     """The digest cannot even be passed in any more."""
     import inspect
 
-    assert "conversation_context" not in inspect.signature(
-        AbstractBot.create_system_prompt
-    ).parameters
-    assert "conversation_context" not in inspect.signature(
-        AbstractBot._build_prompt
-    ).parameters
+    assert "conversation_context" not in inspect.signature(AbstractBot.create_system_prompt).parameters
+    assert "conversation_context" not in inspect.signature(AbstractBot._build_prompt).parameters
 
 
 async def test_system_prompt_contains_no_conversation_context_section():

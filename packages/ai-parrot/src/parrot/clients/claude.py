@@ -12,20 +12,24 @@ from pathlib import Path
 import mimetypes
 from pydantic import BaseModel, Field
 from navconfig import config
+
 # from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from .base import AbstractClient, BatchRequest, StreamingRetryConfig
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters. Response metadata and
 # HumanInteractionInterrupt read them from the per-call ContextVars that
 # BaseBot binds (FEAT-228), so nothing is lost by dropping the kwargs.
 from parrot.observability.context import current_session_id, current_user_id
+
 # FEAT-176: lifecycle events
 from parrot.core.events.lifecycle.events import (
     ClientStreamChunkEvent,
     PromptCacheAppliedEvent,
     PromptCacheSkippedEvent,
 )
+
 # FEAT-232: AWS / Bedrock conf constants
 from ..conf import (
     AWS_ACCESS_KEY,
@@ -50,15 +54,12 @@ from ..models import (
     OutputFormat,
     StructuredOutputConfig,
     CompletionUsage,
-    ObjectDetectionResult
+    ObjectDetectionResult,
 )
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
 from ..models.claude import ClaudeModel
-from ..models.outputs import (
-    SentimentAnalysis,
-    ProductReview
-)
+from ..models.outputs import SentimentAnalysis, ProductReview
 from ..utils.http_logging import quiet_http_loggers
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
@@ -73,12 +74,13 @@ AnthropicBackend = Literal["direct", "bedrock", "aws"]
 
 class AnthropicClient(AbstractClient):
     """Client for interacting with the Anthropic API using the official SDK."""
+
     version: str = "2023-06-01"
     client_type: str = "anthropic"
     client_name: str = "claude"
     use_session: bool = False
-    _default_model: str = 'claude-sonnet-4-5'
-    _fallback_model: str = 'claude-sonnet-4.5'
+    _default_model: str = "claude-sonnet-4-5"
+    _fallback_model: str = "claude-sonnet-4.5"
     _lightweight_model: str = "claude-haiku-4-5-20251001"
     # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
     # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
@@ -116,7 +118,7 @@ class AnthropicClient(AbstractClient):
         workspace_id: Optional[str] = None,
         aws_profile: Optional[str] = None,
         region_prefix: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ):
         """Initialise an Anthropic client.
 
@@ -149,7 +151,7 @@ class AnthropicClient(AbstractClient):
                 ``"<prefix>.anthropic.<id>-vN:0"`` form.  ``None`` → no prefix.
             **kwargs: Forwarded to :class:`~parrot.clients.base.AbstractClient`.
         """
-        self.api_key = api_key or config.get('ANTHROPIC_API_KEY')
+        self.api_key = api_key or config.get("ANTHROPIC_API_KEY")
         self.base_url = base_url
         self.backend: AnthropicBackend = backend
         self._backend_name: str = backend
@@ -176,6 +178,7 @@ class AnthropicClient(AbstractClient):
 
         # ── Instantiate the matching backend strategy ─────────────────────────
         from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
+
         if backend == "bedrock":
             self._backend: "AnthropicBackendProtocol" = BedrockBackend(
                 aws_region=_bedrock_region,
@@ -260,14 +263,13 @@ class AnthropicClient(AbstractClient):
         Returns:
             A resolved, backend-translated model ID string.
         """
-        raw = (model.value if isinstance(model, ClaudeModel) else model) or (
-            self.model or self.default_model
-        )
+        raw = (model.value if isinstance(model, ClaudeModel) else model) or (self.model or self.default_model)
         return self._backend.translate_model(raw)
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect Anthropic capacity errors using SDK exception types."""
         from anthropic import RateLimitError, APIStatusError
+
         if isinstance(error, RateLimitError):
             return True
         if isinstance(error, APIStatusError) and error.status_code in (429, 503, 529):
@@ -281,7 +283,7 @@ class AnthropicClient(AbstractClient):
     # — the param must be omitted entirely. Mirrors the guard pattern in
     # ``GoogleGenAIClient._requires_thinking``.
     _ADAPTIVE_ONLY_PREFIXES: tuple = (
-        "claude-fable-5",       # covers fable-5 AND fable-5-1
+        "claude-fable-5",  # covers fable-5 AND fable-5-1
         "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
@@ -330,8 +332,9 @@ class AnthropicClient(AbstractClient):
             for param in ("temperature", "top_p", "top_k"):
                 if payload.pop(param, None) is not None:
                     self.logger.debug(
-                        "AnthropicClient: dropped '%s' — %s is adaptive-only "
-                        "and rejects sampling params.", param, model,
+                        "AnthropicClient: dropped '%s' — %s is adaptive-only " "and rejects sampling params.",
+                        param,
+                        model,
                     )
         thinking = payload.get("thinking")
         if (
@@ -341,22 +344,18 @@ class AnthropicClient(AbstractClient):
         ):
             payload.pop("thinking", None)
             self.logger.debug(
-                "AnthropicClient: dropped thinking={type:disabled} — %s "
-                "requires the 'thinking' param omitted.", model,
+                "AnthropicClient: dropped thinking={type:disabled} — %s " "requires the 'thinking' param omitted.",
+                model,
             )
         return payload
 
     async def _sdk_create(self, payload: dict):
         """Sanitize then dispatch a non-streaming ``messages.create`` call."""
-        return await self.client.messages.create(
-            **self._sanitize_payload_for_model(payload)
-        )
+        return await self.client.messages.create(**self._sanitize_payload_for_model(payload))
 
     def _sdk_stream(self, payload: dict):
         """Sanitize then return a streaming ``messages.stream`` context manager."""
-        return self.client.messages.stream(
-            **self._sanitize_payload_for_model(payload)
-        )
+        return self.client.messages.stream(**self._sanitize_payload_for_model(payload))
 
     # ── FEAT-181: Prompt Caching ───────────────────────────────────────────
 
@@ -386,8 +385,8 @@ class AnthropicClient(AbstractClient):
                 cacheable_count += 1
             elif seg.cacheable and cacheable_count >= MAX_CACHE_BLOCKS:
                 self.logger.debug(
-                    "AnthropicClient: max 4 cache_control blocks reached; "
-                    "segment dropped from cache: %.40s...", seg.text
+                    "AnthropicClient: max 4 cache_control blocks reached; " "segment dropped from cache: %.40s...",
+                    seg.text,
                 )
             blocks.append(block)
         return blocks
@@ -415,37 +414,38 @@ class AnthropicClient(AbstractClient):
         """
         import hashlib as _hashlib
         from parrot.core.events.lifecycle import TraceContext as _TC
+
         tc = trace_context if trace_context is not None else _TC.new_root()
         if not segments:
-            self.events.emit_nowait(PromptCacheSkippedEvent(
-                trace_context=tc,
-                client_name=self._telemetry_client_name,
-                model=payload.get("model", ""),
-                reason="no_segments",
-                source_type="client",
-                source_name="anthropic",
-            ))
+            self.events.emit_nowait(
+                PromptCacheSkippedEvent(
+                    trace_context=tc,
+                    client_name=self._telemetry_client_name,
+                    model=payload.get("model", ""),
+                    reason="no_segments",
+                    source_type="client",
+                    source_name="anthropic",
+                )
+            )
             return payload
         blocks = self._segments_to_anthropic_blocks(segments)
         payload["system"] = blocks
         # Emit cache-applied event (fire-and-forget)
         cacheable_segs = [s for s in segments if s.cacheable]
-        seg_hashes = tuple(
-            _hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs
-        )
+        seg_hashes = tuple(_hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs)
         est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
-        self.events.emit_nowait(PromptCacheAppliedEvent(
-            trace_context=tc,
-            client_name=self._telemetry_client_name,
-            model=payload.get("model", ""),
-            blocks_marked=sum(
-                1 for b in blocks if isinstance(b, dict) and "cache_control" in b
-            ),
-            est_tokens=est_tokens,
-            segment_hashes=seg_hashes,
-            source_type="client",
-            source_name="anthropic",
-        ))
+        self.events.emit_nowait(
+            PromptCacheAppliedEvent(
+                trace_context=tc,
+                client_name=self._telemetry_client_name,
+                model=payload.get("model", ""),
+                blocks_marked=sum(1 for b in blocks if isinstance(b, dict) and "cache_control" in b),
+                est_tokens=est_tokens,
+                segment_hashes=seg_hashes,
+                source_type="client",
+                source_name="anthropic",
+            )
+        )
         return payload
 
     async def ask(
@@ -495,6 +495,7 @@ class AnthropicClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time
+
         _lc_tc = self._emit_before_call(
             client_name=self._telemetry_client_name,
             model=model,
@@ -514,14 +515,14 @@ class AnthropicClient(AbstractClient):
 
         # Lazy loading system prompt
         if lazy_loading:
-            search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            search_prompt = (
+                "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
             # FEAT-181: guard against List[CacheableSegment] + string concatenation
             _sp = self._resolve_system_prompt(system_prompt) if isinstance(system_prompt, list) else system_prompt
             system_prompt = f"{_sp}\n\n{search_prompt}" if _sp else search_prompt
 
-        output_config = self._get_structured_config(
-            structured_output
-        )
+        output_config = self._get_structured_config(structured_output)
 
         if structured_output:
             schema_instruction = output_config.format_schema_instruction()
@@ -536,7 +537,7 @@ class AnthropicClient(AbstractClient):
             "model": model,
             "max_tokens": _max_tokens,
             "temperature": temperature or self.temperature,
-            "messages": messages
+            "messages": messages,
         }
 
         if system_prompt:
@@ -555,15 +556,15 @@ class AnthropicClient(AbstractClient):
 
         # LAZY LOADING LOGIC
         active_tool_names = set()
-        
+
         if _use_tools:
             if lazy_loading:
-                 prepared = self._prepare_lazy_tools()
-                 if prepared:
-                     payload["tools"] = prepared
-                     active_tool_names.add("search_tools")
+                prepared = self._prepare_lazy_tools()
+                if prepared:
+                    payload["tools"] = prepared
+                    active_tool_names.add("search_tools")
             else:
-                 payload["tools"] = self._prepare_tools()
+                payload["tools"] = self._prepare_tools()
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -584,7 +585,9 @@ class AnthropicClient(AbstractClient):
                 if self._should_use_fallback(payload["model"], e):
                     self.logger.warning(
                         "Model %s capacity error: %s. Retrying with fallback: %s",
-                        payload["model"], e, self._fallback_model
+                        payload["model"],
+                        e,
+                        self._fallback_model,
                     )
                     payload["model"] = self._backend.translate_model(self._fallback_model)
                     used_fallback = True
@@ -603,9 +606,7 @@ class AnthropicClient(AbstractClient):
             if _lc_round_raw_usage:
                 _lc_round_usage = CompletionUsage.from_claude(_lc_round_raw_usage)
                 _lc_accumulated_usage = (
-                    _lc_round_usage
-                    if _lc_accumulated_usage is None
-                    else _lc_accumulated_usage + _lc_round_usage
+                    _lc_round_usage if _lc_accumulated_usage is None else _lc_accumulated_usage + _lc_round_usage
                 )
             else:
                 _lc_round_usage = None
@@ -623,11 +624,7 @@ class AnthropicClient(AbstractClient):
                         tool_id = content_block["id"]
 
                         # Create ToolCall object and execute
-                        tc = ToolCall(
-                            id=tool_id,
-                            name=tool_name,
-                            arguments=tool_input
-                        )
+                        tc = ToolCall(id=tool_id, name=tool_name, arguments=tool_input)
 
                         try:
                             start_time = time.time()
@@ -636,23 +633,22 @@ class AnthropicClient(AbstractClient):
 
                             # Lazy Loading Check
                             if lazy_loading and tool_name == "search_tools":
-                                 new_tools = self._check_new_tools(tool_name, str(tool_result))
-                                 if new_tools:
-                                     for nt in new_tools:
-                                         if nt not in active_tool_names:
-                                             active_tool_names.add(nt)
-                                             found_new_tools = True
+                                new_tools = self._check_new_tools(tool_name, str(tool_result))
+                                if new_tools:
+                                    for nt in new_tools:
+                                        if nt not in active_tool_names:
+                                            active_tool_names.add(nt)
+                                            found_new_tools = True
 
                             tc.result = tool_result
                             tc.execution_time = execution_time
 
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_id,
-                                "content": str(tool_result)
-                            })
+                            tool_results.append(
+                                {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
+                            )
                         except Exception as e:
                             from parrot.core.exceptions import HumanInteractionInterrupt
+
                             if isinstance(e, HumanInteractionInterrupt):
                                 e.session_id = current_session_id.get()
                                 # We MUST append the assistant's tool-use message so it is in the history when resuming
@@ -662,19 +658,16 @@ class AnthropicClient(AbstractClient):
                                 raise
 
                             tc.error = str(e)
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_id,
-                                "is_error": True,
-                                "content": str(e)
-                            })
+                            tool_results.append(
+                                {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
+                            )
 
                         all_tool_calls.append(tc)
                         _lc_round_tool_names.append(tool_name)
 
                 # Update available tools if new ones found
                 if lazy_loading and found_new_tools:
-                     payload["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
+                    payload["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
 
                 # FEAT-397: emit ClientRoundEvent after tool execution for this round
                 self._emit_round_event(
@@ -702,17 +695,13 @@ class AnthropicClient(AbstractClient):
         if structured_output:
             # Extract text content from Claude's response
             text_content = "".join(
-                content_block["text"]
-                for content_block in result["content"]
-                if content_block["type"] == "text"
+                content_block["text"] for content_block in result["content"] if content_block["type"] == "text"
             )
             try:
                 # Known-truncated output must not reach a custom parser either.
                 self._raise_if_truncated(result.get("stop_reason"))
                 if output_config.custom_parser:
-                    final_output = await output_config.custom_parser(
-                        text_content
-                    )
+                    final_output = await output_config.custom_parser(text_content)
                 final_output = await self._parse_structured_output(
                     text_content,
                     output_config,
@@ -735,7 +724,7 @@ class AnthropicClient(AbstractClient):
             session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
-            tool_calls=all_tool_calls
+            tool_calls=all_tool_calls,
         )
 
         # FEAT-397: replace the last-round-only usage with the accumulated
@@ -749,38 +738,33 @@ class AnthropicClient(AbstractClient):
 
         # Add fallback metadata if fallback was used
         if used_fallback:
-            if not hasattr(ai_message, 'metadata') or ai_message.metadata is None:
+            if not hasattr(ai_message, "metadata") or ai_message.metadata is None:
                 ai_message.metadata = {}
-            ai_message.metadata['used_fallback_model'] = True
-            ai_message.metadata['original_model'] = model
-            ai_message.metadata['fallback_model'] = self._fallback_model
+            ai_message.metadata["used_fallback_model"] = True
+            ai_message.metadata["original_model"] = model
+            ai_message.metadata["fallback_model"] = self._fallback_model
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_usage = getattr(ai_message, 'usage', None)
+        _lc_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
             _lc_tc,
             client_name=self._telemetry_client_name,
             model=model,
             duration_ms=(_lc_time.perf_counter() - _lc_t0) * 1000,
-            input_tokens=getattr(_lc_usage, 'input_tokens', None) if _lc_usage else None,
-            output_tokens=getattr(_lc_usage, 'output_tokens', None) if _lc_usage else None,
-            finish_reason=getattr(ai_message, 'stop_reason', None),
+            input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
+            output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
+            finish_reason=getattr(ai_message, "stop_reason", None),
         )
         return ai_message
 
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: Dict[str, Any]
-    ) -> AIMessage:
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
         """Resume a suspended model execution.
-        
+
         Args:
             session_id: The session ID
             user_input: The user's input to inject as tool result
             state: The suspended state containing messages and tool_call_id
-            
+
         Returns:
             AIMessage: The response from the LLM
         """
@@ -789,30 +773,23 @@ class AnthropicClient(AbstractClient):
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
         # Preserve agent_name semantics; translate result through backend.
-        model = self._backend.translate_model(
-            state.get("agent_name", self.model or self.default_model)
-        )
+        model = self._backend.translate_model(state.get("agent_name", self.model or self.default_model))
 
         # Inject user input as tool result
-        messages.append({
-            "role": "user",
-            "content": [{
-                "type": "tool_result",
-                "tool_use_id": tool_call_id,
-                "content": user_input
-            }]
-        })
+        messages.append(
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_call_id, "content": user_input}]}
+        )
 
         # Track tools used in this continuation
         all_tool_calls = []
         turn_id = str(uuid.uuid4())
-        
+
         payload = {
             "model": model,
             "max_tokens": self._resolve_max_tokens(),
             "temperature": self.temperature,
             "messages": messages,
-            "tools": self._prepare_tools()
+            "tools": self._prepare_tools(),
         }
 
         # Handle tool calls in a loop
@@ -837,13 +814,12 @@ class AnthropicClient(AbstractClient):
                             tc.result = tool_result
                             tc.execution_time = time.time() - start_time
 
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_id,
-                                "content": str(tool_result)
-                            })
+                            tool_results.append(
+                                {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
+                            )
                         except Exception as e:
                             from parrot.core.exceptions import HumanInteractionInterrupt
+
                             if isinstance(e, HumanInteractionInterrupt):
                                 e.session_id = session_id
                                 e.messages = messages + [{"role": "assistant", "content": result["content"]}]
@@ -852,12 +828,9 @@ class AnthropicClient(AbstractClient):
                                 raise
 
                             tc.error = str(e)
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_id,
-                                "is_error": True,
-                                "content": str(e)
-                            })
+                            tool_results.append(
+                                {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
+                            )
 
                         all_tool_calls.append(tc)
 
@@ -875,7 +848,7 @@ class AnthropicClient(AbstractClient):
             user_id="unknown",
             session_id=session_id,
             turn_id=turn_id,
-            tool_calls=all_tool_calls
+            tool_calls=all_tool_calls,
         )
 
     async def ask_stream(
@@ -944,6 +917,7 @@ class AnthropicClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_s
+
         _lc_model_s = model  # already resolved via _resolve_model above
         _lc_tc_s = self._emit_before_call(
             client_name=self._telemetry_client_name,
@@ -975,7 +949,7 @@ class AnthropicClient(AbstractClient):
                     "model": model,
                     "max_tokens": current_max_tokens,
                     "temperature": temperature or self.temperature,
-                    "messages": messages
+                    "messages": messages,
                 }
 
                 if system_prompt:
@@ -1009,15 +983,17 @@ class AnthropicClient(AbstractClient):
                                 assistant_content += text
                                 # FEAT-176: per-chunk event (short-circuited when no subscribers)
                                 if _lc_has_chunk_subs:
-                                    await self.events.emit(ClientStreamChunkEvent(
-                                        trace_context=_lc_tc_s,
-                                        client_name=self._telemetry_client_name,
-                                        model=_lc_model_s or "",
-                                        chunk_index=_lc_chunk_idx,
-                                        chunk_size_bytes=len(text.encode("utf-8")),
-                                        source_type="client",
-                                        source_name="anthropic",
-                                    ))
+                                    await self.events.emit(
+                                        ClientStreamChunkEvent(
+                                            trace_context=_lc_tc_s,
+                                            client_name=self._telemetry_client_name,
+                                            model=_lc_model_s or "",
+                                            chunk_index=_lc_chunk_idx,
+                                            chunk_size_bytes=len(text.encode("utf-8")),
+                                            source_type="client",
+                                            source_name="anthropic",
+                                        )
+                                    )
                                     _lc_chunk_idx += 1
                                 yield text
 
@@ -1046,29 +1022,31 @@ class AnthropicClient(AbstractClient):
                                         tool_result = await self._execute_tool(tool_name, tool_input)
                                         tc.result = tool_result
                                         tc.execution_time = time.time() - start_time
-                                        tool_results.append({
-                                            "type": "tool_result",
-                                            "tool_use_id": tool_id,
-                                            "content": str(tool_result),
-                                        })
+                                        tool_results.append(
+                                            {
+                                                "type": "tool_result",
+                                                "tool_use_id": tool_id,
+                                                "content": str(tool_result),
+                                            }
+                                        )
                                     except Exception as e:
                                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                                         if isinstance(e, HumanInteractionInterrupt):
                                             e.session_id = current_session_id.get()
-                                            e.messages = messages + [
-                                                {"role": "assistant", "content": result_content}
-                                            ]
+                                            e.messages = messages + [{"role": "assistant", "content": result_content}]
                                             e.tool_call_id = tool_id
                                             e.agent_name = model
                                             raise
                                         tc.error = str(e)
-                                        tool_results.append({
-                                            "type": "tool_result",
-                                            "tool_use_id": tool_id,
-                                            "is_error": True,
-                                            "content": str(e),
-                                        })
+                                        tool_results.append(
+                                            {
+                                                "type": "tool_result",
+                                                "tool_use_id": tool_id,
+                                                "is_error": True,
+                                                "content": str(e),
+                                            }
+                                        )
                                     all_tool_calls.append(tc)
 
                             # Append assistant turn + tool results, loop.
@@ -1077,14 +1055,14 @@ class AnthropicClient(AbstractClient):
                             payload["messages"] = messages
                         else:
                             # Not a tool-use stop — done streaming.
-                            if stop_reason == 'max_tokens':
+                            if stop_reason == "max_tokens":
                                 max_tokens_reached = True
                             break
 
                 except Exception as e:
                     # Handle rate limits and server errors
                     error_str = str(e).lower()
-                    if '429' in error_str or 'rate limit' in error_str:
+                    if "429" in error_str or "rate limit" in error_str:
                         if retry_config.retry_on_rate_limit and retry_count < retry_config.max_retries:
                             yield f"\n\n⚠️ **Rate limited (attempt {retry_count + 1}). Retrying...**\n\n"
                             retry_count += 1
@@ -1093,7 +1071,7 @@ class AnthropicClient(AbstractClient):
                         else:
                             yield "\n\n❌ **Rate limit exceeded. Max retries reached.**\n"
                             break
-                    elif '5' in error_str[:3]:  # 5xx errors
+                    elif "5" in error_str[:3]:  # 5xx errors
                         if retry_config.retry_on_server_error and retry_count < retry_config.max_retries:
                             yield f"\n\n⚠️ **Server error (attempt {retry_count + 1}). Retrying...**\n\n"
                             retry_count += 1
@@ -1175,15 +1153,15 @@ class AnthropicClient(AbstractClient):
         # case, which it handles in BaseBot.ask_stream's error path.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent for stream
-        _lc_stream_usage = getattr(ai_message, 'usage', None)
+        _lc_stream_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
             _lc_tc_s,
             client_name=self._telemetry_client_name,
             model=_lc_model_s or "",
             duration_ms=(_lc_time_s.perf_counter() - _lc_t0_s) * 1000,
-            input_tokens=getattr(_lc_stream_usage, 'input_tokens', None) if _lc_stream_usage else None,
-            output_tokens=getattr(_lc_stream_usage, 'output_tokens', None) if _lc_stream_usage else None,
-            finish_reason=getattr(ai_message, 'stop_reason', None),
+            input_tokens=getattr(_lc_stream_usage, "input_tokens", None) if _lc_stream_usage else None,
+            output_tokens=getattr(_lc_stream_usage, "output_tokens", None) if _lc_stream_usage else None,
+            finish_reason=getattr(ai_message, "stop_reason", None),
         )
         yield ai_message
 
@@ -1196,10 +1174,9 @@ class AnthropicClient(AbstractClient):
             "requests": [
                 {
                     "custom_id": req.custom_id,
-                    "params": self._sanitize_payload_for_model({
-                        **req.params,
-                        **({"betas": ["context-1m-2025-08-07"]} if context_1m else {})
-                    })
+                    "params": self._sanitize_payload_for_model(
+                        {**req.params, **({"betas": ["context-1m-2025-08-07"]} if context_1m else {})}
+                    ),
                 }
                 for req in requests
             ]
@@ -1226,6 +1203,7 @@ class AnthropicClient(AbstractClient):
             # Note: SDK may not have direct results download, so we use session for this
             if not self.session:
                 import aiohttp
+
                 async with aiohttp.ClientSession() as temp_session:
                     async with temp_session.get(results_url) as response:
                         response.raise_for_status()
@@ -1237,19 +1215,19 @@ class AnthropicClient(AbstractClient):
 
             # Parse JSONL format and convert to AIMessage
             results = []
-            for line in results_text.strip().split('\n'):
+            for line in results_text.strip().split("\n"):
                 if line:
                     batch_result = json_decoder(line)
                     # Extract the response from batch format
-                    if 'response' in batch_result and 'body' in batch_result['response']:
-                        claude_response = batch_result['response']['body']
+                    if "response" in batch_result and "body" in batch_result["response"]:
+                        claude_response = batch_result["response"]["body"]
 
                         # Create AIMessage from batch result
                         ai_message = AIMessageFactory.from_claude(
                             response=claude_response,
                             input_text="Batch request",
-                            model=claude_response.get('model', 'unknown'),
-                            turn_id=str(uuid.uuid4())
+                            model=claude_response.get("model", "unknown"),
+                            turn_id=str(uuid.uuid4()),
                         )
                         results.append(ai_message)
                     else:
@@ -1260,17 +1238,13 @@ class AnthropicClient(AbstractClient):
         else:
             raise RuntimeError("No results URL provided in batch status")
 
-    def _encode_image_for_claude(
-        self,
-        image: Union[Path, bytes, "Image.Image"]
-    ) -> Dict[str, Any]:
+    def _encode_image_for_claude(self, image: Union[Path, bytes, "Image.Image"]) -> Dict[str, Any]:
         """Encode image for Claude's vision API."""
         try:
             from PIL import Image
         except ImportError as exc:
             raise ImportError(
-                "Image methods on AnthropicClient require Pillow. "
-                "Install with: pip install Pillow"
+                "Image methods on AnthropicClient require Pillow. " "Install with: pip install Pillow"
             ) from exc
 
         if isinstance(image, Path):
@@ -1279,17 +1253,17 @@ class AnthropicClient(AbstractClient):
 
             # Get mime type
             mime_type, _ = mimetypes.guess_type(str(image))
-            if not mime_type or not mime_type.startswith('image/'):
+            if not mime_type or not mime_type.startswith("image/"):
                 mime_type = "image/jpeg"  # Default fallback
 
             # Read and encode the file
             with open(image, "rb") as f:
-                encoded_data = base64.b64encode(f.read()).decode('utf-8')
+                encoded_data = base64.b64encode(f.read()).decode("utf-8")
 
         elif isinstance(image, bytes):
             # Handle raw bytes
             mime_type = "image/jpeg"  # Default, could be improved with image format detection
-            encoded_data = base64.b64encode(image).decode('utf-8')
+            encoded_data = base64.b64encode(image).decode("utf-8")
 
         elif isinstance(image, Image.Image):
             # Handle PIL Image object
@@ -1301,20 +1275,13 @@ class AnthropicClient(AbstractClient):
                 image = image.convert("RGB")
 
             image.save(buffer, format=image_format)
-            encoded_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
             mime_type = f"image/{image_format.lower()}"
 
         else:
             raise ValueError("Image must be a Path, bytes, or PIL.Image object.")
 
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": mime_type,
-                "data": encoded_data
-            }
-        }
+        return {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": encoded_data}}
 
     async def ask_to_image(
         self,
@@ -1363,9 +1330,7 @@ class AnthropicClient(AbstractClient):
         # history half is formatted here, and the image turn is appended after.
         messages = self._format_history(history or ())
 
-        output_config = self._get_structured_config(
-            structured_output
-        )
+        output_config = self._get_structured_config(structured_output)
 
         # Prepare the content for the current message
         content = []
@@ -1381,16 +1346,10 @@ class AnthropicClient(AbstractClient):
                 content.append(ref_image_content)
 
         # Add the text prompt last
-        content.append({
-            "type": "text",
-            "text": prompt
-        })
+        content.append({"type": "text", "text": prompt})
 
         # Create the new user message with image content
-        new_message = {
-            "role": "user",
-            "content": content
-        }
+        new_message = {"role": "user", "content": content}
 
         # Replace the last message (which was just text) with our multimodal message
         if messages and messages[-1]["role"] == "user":
@@ -1403,7 +1362,7 @@ class AnthropicClient(AbstractClient):
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(max_tokens),
             "temperature": temperature or self.temperature,
-            "messages": messages
+            "messages": messages,
         }
 
         if context_1m:
@@ -1438,18 +1397,13 @@ class AnthropicClient(AbstractClient):
                 # Fallback - define a simple structure if import fails
                 class SimpleObjectDetection(BaseModel):
                     """Simple object detection result structure."""
+
                     analysis: str = Field(description="Detailed analysis of the image")
                     total_count: int = Field(description="Total number of objects detected")
-                    objects: TypingList[str] = Field(
-                        default_factory=list,
-                        description="List of detected objects"
-                    )
+                    objects: TypingList[str] = Field(default_factory=list, description="List of detected objects")
 
                 structured_output = SimpleObjectDetection
-            output_config = StructuredOutputConfig(
-                output_type=structured_output,
-                format=OutputFormat.JSON
-            )
+            output_config = StructuredOutputConfig(output_type=structured_output, format=OutputFormat.JSON)
 
         # Note: Claude's vision models typically don't support tool calling
         # So we skip tool preparation for vision requests
@@ -1489,7 +1443,6 @@ class AnthropicClient(AbstractClient):
 
         # FEAT-524: no memory write — AbstractBot is the single writer.
 
-
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_claude(
             response=result,
@@ -1499,7 +1452,7 @@ class AnthropicClient(AbstractClient):
             session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
-            tool_calls=all_tool_calls
+            tool_calls=all_tool_calls,
         )
 
         # Ensure text field is properly set for property access
@@ -1533,9 +1486,7 @@ class AnthropicClient(AbstractClient):
         """
         await self._ensure_client()
 
-        self.logger.info(
-            f"Generating summary for text: '{text[:50]}...'"
-        )
+        self.logger.info(f"Generating summary for text: '{text[:50]}...'")
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -1549,17 +1500,14 @@ class AnthropicClient(AbstractClient):
 - Write in clear, accessible language."""
 
         # Prepare the message for Claude
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": text}]
-        }]
+        messages = [{"role": "user", "content": [{"type": "text", "text": text}]}]
 
         payload = {
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature or self.temperature,
             "messages": messages,
-            "system": system_prompt
+            "system": system_prompt,
         }
 
         if context_1m:
@@ -1578,11 +1526,10 @@ class AnthropicClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=None,
-            tool_calls=[]
+            tool_calls=[],
         )
 
         return ai_message
-
 
     async def translate_text(
         self,
@@ -1610,9 +1557,7 @@ class AnthropicClient(AbstractClient):
         """
         await self._ensure_client()
 
-        self.logger.info(
-            f"Translating text to '{target_lang}': '{text[:50]}...'"
-        )
+        self.logger.info(f"Translating text to '{target_lang}': '{text[:50]}...'")
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -1636,17 +1581,14 @@ Requirements:
 - If there are proper nouns or technical terms, keep them appropriate for the target language context"""  # noqa
 
         # Prepare the message for Claude
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": text}]
-        }]
+        messages = [{"role": "user", "content": [{"type": "text", "text": text}]}]
 
         payload = {
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
-            "system": system_prompt
+            "system": system_prompt,
         }
 
         if context_1m:
@@ -1665,11 +1607,10 @@ Requirements:
             session_id=session_id,
             turn_id=turn_id,
             structured_output=None,
-            tool_calls=[]
+            tool_calls=[],
         )
 
         return ai_message
-
 
     # Additional helper methods you might want to add
 
@@ -1706,17 +1647,14 @@ Requirements:
 - Order points by importance (most important first)
 - Use bullet points (•) to format the list"""
 
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": text}]
-        }]
+        messages = [{"role": "user", "content": [{"type": "text", "text": text}]}]
 
         payload = {
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
-            "system": system_prompt
+            "system": system_prompt,
         }
 
         if context_1m:
@@ -1733,9 +1671,8 @@ Requirements:
             session_id=session_id,
             turn_id=turn_id,
             structured_output=None,
-            tool_calls=[]
+            tool_calls=[],
         )
-
 
     async def analyze_sentiment(
         self,
@@ -1781,17 +1718,14 @@ Your response should include:
 Format your response clearly with these sections.
             """
 
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": text}]
-        }]
+        messages = [{"role": "user", "content": [{"type": "text", "text": text}]}]
 
         payload = {
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
-            "system": system_prompt
+            "system": system_prompt,
         }
 
         if context_1m:
@@ -1801,13 +1735,13 @@ Format your response clearly with these sections.
         structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
             response=response,
-            input_text=f"Review: {text[:100]}...", # Changed from 'text' to f"Review: {text[:100]}..."
+            input_text=f"Review: {text[:100]}...",  # Changed from 'text' to f"Review: {text[:100]}..."
             model=model,
-            user_id=user_id, # Kept user_id
-            session_id=session_id, # Kept session_id
-            turn_id=turn_id, # Kept turn_id
-            structured_output=structured_output, # Kept structured_output
-            tool_calls=[]
+            user_id=user_id,  # Kept user_id
+            session_id=session_id,  # Kept session_id
+            turn_id=turn_id,  # Kept turn_id
+            structured_output=structured_output,  # Kept structured_output
+            tool_calls=[],
         )
 
     def _get_deep_research_system_prompt(self) -> str:
@@ -1882,17 +1816,24 @@ Provide your final answer with:
 
     Extract the rating based on the review content (estimate if not explicitly stated), determine sentiment, and identify key product features mentioned. Respond only with valid JSON, no additional text."""
 
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"}]
-        }]
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}",
+                    }
+                ],
+            }
+        ]
 
         payload = {
             "model": self._resolve_model(model),
             "max_tokens": self._resolve_max_tokens(),
             "temperature": temperature,
             "messages": messages,
-            "system": system_prompt
+            "system": system_prompt,
         }
 
         response = await self._sdk_create(payload)
@@ -1906,9 +1847,8 @@ Provide your final answer with:
             session_id=session_id,
             turn_id=turn_id,
             structured_output=ProductReview,
-            tool_calls=[]
+            tool_calls=[],
         )
-
 
     async def invoke(
         self,
@@ -1976,16 +1916,14 @@ Provide your final answer with:
                     kwargs["tools"] = tool_defs
 
             if not self.client:
-                raise RuntimeError(
-                    "AnthropicClient not initialised. Use async context manager."
-                )
+                raise RuntimeError("AnthropicClient not initialised. Use async context manager.")
 
             response = await self.client.messages.create(**kwargs)
 
             # Extract text from response content blocks
             raw_text = ""
             for block in response.content:
-                if hasattr(block, 'text'):
+                if hasattr(block, "text"):
                     raw_text += block.text
 
             # Parse structured output
@@ -2004,13 +1942,11 @@ Provide your final answer with:
                     )
 
             usage_dict = {}
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 usage_dict = response.usage.__dict__
             usage = CompletionUsage.from_claude(usage_dict)
 
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, response
-            )
+            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
         except InvokeError:
             raise
         except Exception as exc:

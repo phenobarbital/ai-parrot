@@ -92,12 +92,10 @@ def test_all_clients_accept_history(client_id: str, method: str):
     """Every client accepts ``history`` — explicitly, or via ``**kwargs``."""
     parameters = inspect.signature(getattr(CLIENTS[client_id], method)).parameters
 
-    has_var_kwargs = any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
-    )
-    assert "history" in parameters or has_var_kwargs, (
-        f"{client_id}.{method} can neither take history= nor absorb it via **kwargs"
-    )
+    has_var_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    assert (
+        "history" in parameters or has_var_kwargs
+    ), f"{client_id}.{method} can neither take history= nor absorb it via **kwargs"
 
 
 @pytest.mark.parametrize("client_id", CLIENT_IDS)
@@ -117,9 +115,7 @@ def test_no_client_constructor_takes_conversation_memory(client_id: str):
     """Clients are memory-less: no ``__init__`` accepts a conversation store."""
     parameters = inspect.signature(CLIENTS[client_id].__init__).parameters
 
-    assert "conversation_memory" not in parameters, (
-        f"{client_id}.__init__ still accepts conversation_memory"
-    )
+    assert "conversation_memory" not in parameters, f"{client_id}.__init__ still accepts conversation_memory"
 
 
 @pytest.mark.parametrize("client_id", CLIENT_IDS)

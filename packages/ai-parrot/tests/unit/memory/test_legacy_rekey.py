@@ -292,9 +292,7 @@ async def test_file_get_history_does_not_deadlock_on_rekey(file_memory: FileConv
 
     await file_memory.create_history("u", "s")
 
-    history = await asyncio.wait_for(
-        file_memory.get_history("u", "s", chatbot_id="bot"), timeout=5
-    )
+    history = await asyncio.wait_for(file_memory.get_history("u", "s", chatbot_id="bot"), timeout=5)
 
     assert history is not None
     # And the lock is properly released afterwards.

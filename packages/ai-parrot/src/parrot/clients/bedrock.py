@@ -408,9 +408,7 @@ class BedrockConverseBase(AbstractClient):
     # Message / tool schema adaptation
     # ------------------------------------------------------------------
 
-    def _format_history(
-        self, history: Sequence[HistoryMessage]
-    ) -> List[Dict[str, Any]]:
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Dict[str, Any]]:
         """Render conversation history in Bedrock Converse message shape.
 
         Overrides :meth:`AbstractClient._format_history` (which emits
@@ -426,10 +424,7 @@ class BedrockConverseBase(AbstractClient):
         Returns:
             Converse-shaped ``{"role", "content": [{"text": ...}]}`` dicts.
         """
-        return [
-            {"role": message.role, "content": [{"text": message.content}]}
-            for message in history
-        ]
+        return [{"role": message.role, "content": [{"text": message.content}]} for message in history]
 
     def _prepare_messages(self, prompt: str, files: Optional[List[Union[str, Path]]] = None) -> List[Dict[str, Any]]:
         """Build the initial Bedrock Converse user message.
@@ -1246,13 +1241,15 @@ class BedrockConverseBase(AbstractClient):
                     tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
                 except (json.JSONDecodeError, TypeError):
                     tool_input = {}
-                round_content_blocks.append({
-                    "toolUse": {
-                        "toolUseId": tb["toolUseId"],
-                        "name": tb["name"],
-                        "input": tool_input,
+                round_content_blocks.append(
+                    {
+                        "toolUse": {
+                            "toolUseId": tb["toolUseId"],
+                            "name": tb["name"],
+                            "input": tool_input,
+                        }
                     }
-                })
+                )
 
             bedrock_messages.append({"role": "assistant", "content": round_content_blocks})
 
@@ -1274,12 +1271,14 @@ class BedrockConverseBase(AbstractClient):
                         tool_result = await self._execute_tool(tb["name"], tool_input)
                         tc.result = tool_result
                         tc.execution_time = time.time() - start_time
-                        tool_result_blocks.append({
-                            "toolResult": {
-                                "toolUseId": tb["toolUseId"],
-                                "content": [{"text": str(tool_result)}],
+                        tool_result_blocks.append(
+                            {
+                                "toolResult": {
+                                    "toolUseId": tb["toolUseId"],
+                                    "content": [{"text": str(tool_result)}],
+                                }
                             }
-                        })
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -1290,13 +1289,15 @@ class BedrockConverseBase(AbstractClient):
                             e.agent_name = resolved_model
                             raise
                         tc.error = str(e)
-                        tool_result_blocks.append({
-                            "toolResult": {
-                                "toolUseId": tb["toolUseId"],
-                                "content": [{"text": str(e)}],
-                                "status": "error",
+                        tool_result_blocks.append(
+                            {
+                                "toolResult": {
+                                    "toolUseId": tb["toolUseId"],
+                                    "content": [{"text": str(e)}],
+                                    "status": "error",
+                                }
                             }
-                        })
+                        )
                     all_tool_calls.append(tc)
 
                 bedrock_messages.append({"role": "user", "content": tool_result_blocks})

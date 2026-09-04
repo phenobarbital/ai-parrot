@@ -1,4 +1,3 @@
-
 import uuid
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -16,6 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 @dataclass
 class ConversationTurn:
     """Represents a single turn in a conversation."""
+
     turn_id: str
     user_id: str
     user_message: str
@@ -32,31 +32,31 @@ class ConversationTurn:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize turn to dictionary."""
         return {
-            'turn_id': self.turn_id,
-            'user_id': self.user_id,
-            'user_message': self.user_message,
-            'assistant_response': self.assistant_response,
-            'context_used': self.context_used,
-            'tools_used': self.tools_used,
-            'timestamp': self.timestamp.isoformat(),
-            'metadata': self.metadata,
-            'chatbot_id': self.chatbot_id
+            "turn_id": self.turn_id,
+            "user_id": self.user_id,
+            "user_message": self.user_message,
+            "assistant_response": self.assistant_response,
+            "context_used": self.context_used,
+            "tools_used": self.tools_used,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata,
+            "chatbot_id": self.chatbot_id,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ConversationTurn':
+    def from_dict(cls, data: Dict[str, Any]) -> "ConversationTurn":
         """Deserialize turn from dictionary."""
         return cls(
-            turn_id=data['turn_id'],
-            user_id=data['user_id'],
-            user_message=data['user_message'],
-            assistant_response=data['assistant_response'],
-            context_used=data.get('context_used'),
-            tools_used=data.get('tools_used', []),
-            timestamp=datetime.fromisoformat(data['timestamp']),
-            metadata=data.get('metadata', {}),
+            turn_id=data["turn_id"],
+            user_id=data["user_id"],
+            user_message=data["user_message"],
+            assistant_response=data["assistant_response"],
+            context_used=data.get("context_used"),
+            tools_used=data.get("tools_used", []),
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            metadata=data.get("metadata", {}),
             # Legacy records predate attribution — absent key means "unknown".
-            chatbot_id=data.get('chatbot_id')
+            chatbot_id=data.get("chatbot_id"),
         )
 
     @classmethod
@@ -70,7 +70,7 @@ class ConversationTurn:
         context_used: Optional[str] = None,
         turn_id: Optional[str] = None,
         assistant_text: Optional[str] = None,
-    ) -> 'ConversationTurn':
+    ) -> "ConversationTurn":
         """Build a turn from the ``AIMessage`` a bot round produced.
 
         This is the canonical constructor used by
@@ -129,6 +129,7 @@ class ConversationTurn:
 @dataclass
 class ConversationHistory:
     """Manages conversation history for a session - replaces ConversationSession."""
+
     session_id: str
     user_id: str
     chatbot_id: Optional[str] = None
@@ -159,60 +160,52 @@ class ConversationHistory:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize conversation history to dictionary."""
         return {
-            'session_id': self.session_id,
-            'user_id': self.user_id,
-            'chatbot_id': self.chatbot_id,
-            'turns': [turn.to_dict() for turn in self.turns],
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
-            'metadata': self.metadata
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "chatbot_id": self.chatbot_id,
+            "turns": [turn.to_dict() for turn in self.turns],
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "metadata": self.metadata,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ConversationHistory':
+    def from_dict(cls, data: Dict[str, Any]) -> "ConversationHistory":
         """Deserialize conversation history from dictionary."""
         history = cls(
-            session_id=data['session_id'],
-            user_id=data['user_id'],
-            chatbot_id=data.get('chatbot_id'),
-            created_at=datetime.fromisoformat(data['created_at']),
-            updated_at=datetime.fromisoformat(data['updated_at']),
-            metadata=data.get('metadata', {})
+            session_id=data["session_id"],
+            user_id=data["user_id"],
+            chatbot_id=data.get("chatbot_id"),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            updated_at=datetime.fromisoformat(data["updated_at"]),
+            metadata=data.get("metadata", {}),
         )
 
-        for turn_data in data.get('turns', []):
+        for turn_data in data.get("turns", []):
             turn = ConversationTurn.from_dict(turn_data)
             history.turns.append(turn)
 
         return history
 
+
 class ConversationMemory(ABC):
     """Abstract base class for conversation memory storage."""
 
     def __init__(self, debug: bool = False):
-        self.logger = logging.getLogger(
-            f"parrot.Memory.{self.__class__.__name__}"
-        )
+        self.logger = logging.getLogger(f"parrot.Memory.{self.__class__.__name__}")
         self._json = JSONContent()
         self.debug = debug
 
     @abstractmethod
     async def create_history(
-        self,
-        user_id: str,
-        session_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, metadata: Optional[Dict[str, Any]] = None, chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
         pass
 
     @abstractmethod
     async def get_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get a conversation history."""
         pass
@@ -224,40 +217,22 @@ class ConversationMemory(ABC):
 
     @abstractmethod
     async def add_turn(
-        self,
-        user_id: str,
-        session_id: str,
-        turn: ConversationTurn,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
     ) -> None:
         """Add a turn to the conversation."""
         pass
 
     @abstractmethod
-    async def clear_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> None:
+    async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
         """Clear a conversation history."""
         pass
 
     @abstractmethod
-    async def list_sessions(
-        self,
-        user_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> List[str]:
+    async def list_sessions(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all session IDs for a user."""
         pass
 
     @abstractmethod
-    async def delete_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> bool:
+    async def delete_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Delete a conversation history entirely."""
         pass

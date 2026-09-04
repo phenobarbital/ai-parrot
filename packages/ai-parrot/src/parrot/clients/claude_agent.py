@@ -34,6 +34,7 @@ Highlights:
   ``ask_to_image``, the analytic helpers) raise ``NotImplementedError``
   with a redirect message pointing at :class:`AnthropicClient`.
 """
+
 from __future__ import annotations
 
 import json
@@ -70,7 +71,6 @@ from ..models.responses import InvokeResult
 from ..memory.render import HistoryMessage
 from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
-
 
 logging.getLogger("claude_agent_sdk").setLevel(logging.WARNING)
 
@@ -172,9 +172,7 @@ class ClaudeAgentRunOptions(BaseModel):
             "the [claude-agent] extra."
         ),
     )
-    setting_sources: Optional[
-        List[Literal["user", "project", "local"]]
-    ] = Field(
+    setting_sources: Optional[List[Literal["user", "project", "local"]]] = Field(
         default=None,
         description=(
             "Source folders the SDK should load .claude/agents/ "
@@ -242,10 +240,7 @@ class ClaudeAgentRunOptions(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-_INSTALL_HINT = (
-    "claude_agent_sdk is not installed. "
-    "Install with: pip install ai-parrot[claude-agent]"
-)
+_INSTALL_HINT = "claude_agent_sdk is not installed. " "Install with: pip install ai-parrot[claude-agent]"
 
 
 def _import_sdk():
@@ -311,9 +306,7 @@ class ClaudeAgentClient(AbstractClient):
         self.cli_path = cli_path
         self.cwd = cwd
         self.permission_mode = permission_mode
-        self.default_run_options: ClaudeAgentRunOptions = (
-            run_options or ClaudeAgentRunOptions()
-        )
+        self.default_run_options: ClaudeAgentRunOptions = run_options or ClaudeAgentRunOptions()
         # Maps an ai-parrot session id to the CLI's OWN session id, so a
         # second turn on the same conversation resumes instead of trying to
         # re-create a session the CLI already has. See _cli_session_for().
@@ -338,9 +331,7 @@ class ClaudeAgentClient(AbstractClient):
             return None
         return self._cli_sessions.get(session_id)
 
-    def _remember_cli_session(
-        self, session_id: Optional[str], messages: List[Any]
-    ) -> None:
+    def _remember_cli_session(self, session_id: Optional[str], messages: List[Any]) -> None:
         """Record the CLI session id the SDK reported for this conversation.
 
         The CLI assigns its own session id, which is NOT the one passed in
@@ -405,9 +396,7 @@ class ClaudeAgentClient(AbstractClient):
                     continue
                 if key == "extra_options":
                     if value:
-                        merged.extra_options = {
-                            **(merged.extra_options or {}), **value
-                        }
+                        merged.extra_options = {**(merged.extra_options or {}), **value}
                 else:
                     setattr(merged, key, value)
 
@@ -417,11 +406,7 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["allowed_tools"] = merged.allowed_tools
         if merged.disallowed_tools is not None:
             kwargs["disallowed_tools"] = merged.disallowed_tools
-        effective_permission_mode = (
-            permission_mode
-            or merged.permission_mode
-            or self.permission_mode
-        )
+        effective_permission_mode = permission_mode or merged.permission_mode or self.permission_mode
         if effective_permission_mode is not None:
             kwargs["permission_mode"] = effective_permission_mode
         effective_cwd = merged.cwd or self.cwd
@@ -470,20 +455,15 @@ class ClaudeAgentClient(AbstractClient):
         # `prompt` and bounded by `max_exposed_tools` (TASK-2289's
         # narrowing budget) — Claude Code loads every exposed MCP tool
         # eagerly, so bounding what is handed over is parrot's job.
-        server_map: dict[str, Any] = (
-            dict(merged.mcp_servers) if merged.mcp_servers else {}
-        )
+        server_map: dict[str, Any] = dict(merged.mcp_servers) if merged.mcp_servers else {}
         if merged.expose_parrot_tools:
             from .claude_agent_bridge import ClaudeAgentToolBridge
 
-            bridge = ClaudeAgentToolBridge(
-                self.tool_manager, tool_timeout=merged.tool_timeout
-            )
+            bridge = ClaudeAgentToolBridge(self.tool_manager, tool_timeout=merged.tool_timeout)
             selected_tools = bridge.select(prompt or "", merged.max_exposed_tools)
             if selected_tools:
                 self.logger.debug(
-                    "Bridging %d tool(s) to the Claude Code sub-agent "
-                    "(prompt-length=%d)",
+                    "Bridging %d tool(s) to the Claude Code sub-agent " "(prompt-length=%d)",
                     len(selected_tools),
                     len(prompt or ""),
                 )
@@ -495,15 +475,11 @@ class ClaudeAgentClient(AbstractClient):
                 # existing mechanism `_execute_tool()` already reads for
                 # the primary tool loop; the bridge just reuses it.
                 caller_context = getattr(self, "_permission_context", None)
-                server_map["parrot"] = bridge.build_server(
-                    selected_tools, caller_context
-                )
+                server_map["parrot"] = bridge.build_server(selected_tools, caller_context)
                 exposed_names = bridge.exposed_names()
                 if "allowed_tools" in kwargs:
                     existing = kwargs["allowed_tools"]
-                    kwargs["allowed_tools"] = existing + [
-                        name for name in exposed_names if name not in existing
-                    ]
+                    kwargs["allowed_tools"] = existing + [name for name in exposed_names if name not in existing]
         if server_map:
             kwargs["mcp_servers"] = server_map
 
@@ -626,9 +602,7 @@ class ClaudeAgentClient(AbstractClient):
         effective_run_options = run_options
         if use_tools is False:
             effective_run_options = (
-                run_options.model_copy(deep=True)
-                if run_options is not None
-                else ClaudeAgentRunOptions()
+                run_options.model_copy(deep=True) if run_options is not None else ClaudeAgentRunOptions()
             )
             effective_run_options.expose_parrot_tools = False
 
@@ -649,6 +623,7 @@ class ClaudeAgentClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_ca
+
         _lc_tc_ca = self._emit_before_call(
             client_name="claude-agent",
             model=resolved_model or "",
@@ -672,12 +647,14 @@ class ClaudeAgentClient(AbstractClient):
             structured_output=structured_output,
         )
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_ca_usage = getattr(ai_message, 'usage', None)
+        _lc_ca_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_ca, client_name="claude-agent", model=resolved_model or "",
+            _lc_tc_ca,
+            client_name="claude-agent",
+            model=resolved_model or "",
             duration_ms=(_lc_time_ca.perf_counter() - _lc_t0_ca) * 1000,
-            input_tokens=getattr(_lc_ca_usage, 'input_tokens', None) if _lc_ca_usage else None,
-            output_tokens=getattr(_lc_ca_usage, 'output_tokens', None) if _lc_ca_usage else None,
+            input_tokens=getattr(_lc_ca_usage, "input_tokens", None) if _lc_ca_usage else None,
+            output_tokens=getattr(_lc_ca_usage, "output_tokens", None) if _lc_ca_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -805,6 +782,7 @@ class ClaudeAgentClient(AbstractClient):
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_cas
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _CAsStreamChunkEvent
+
         _lc_tc_cas = self._emit_before_call(
             client_name="claude-agent",
             model=resolved_model or "",
@@ -830,20 +808,22 @@ class ClaudeAgentClient(AbstractClient):
             # subclasses or aliases.
             if isinstance(msg, AssistantMessage) or type(msg).__name__ == "AssistantMessage":
                 for block in getattr(msg, "content", []) or []:
-                    if (
-                        isinstance(block, TextBlock)
-                        or type(block).__name__ == "TextBlock"
-                    ):
+                    if isinstance(block, TextBlock) or type(block).__name__ == "TextBlock":
                         text = getattr(block, "text", "") or ""
                         if text:
                             # FEAT-176: per-chunk event
                             if _lc_has_chunk_subs_cas:
-                                await self.events.emit(_CAsStreamChunkEvent(
-                                    trace_context=_lc_tc_cas, client_name="claude-agent",
-                                    model=resolved_model or "", chunk_index=_lc_chunk_idx_cas,
-                                    chunk_size_bytes=len(text.encode("utf-8")),
-                                    source_type="client", source_name="claude-agent",
-                                ))
+                                await self.events.emit(
+                                    _CAsStreamChunkEvent(
+                                        trace_context=_lc_tc_cas,
+                                        client_name="claude-agent",
+                                        model=resolved_model or "",
+                                        chunk_index=_lc_chunk_idx_cas,
+                                        chunk_size_bytes=len(text.encode("utf-8")),
+                                        source_type="client",
+                                        source_name="claude-agent",
+                                    )
+                                )
                                 _lc_chunk_idx_cas += 1
                             yield text
 
@@ -857,12 +837,14 @@ class ClaudeAgentClient(AbstractClient):
             turn_id=turn_id,
         )
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_cas_usage = getattr(ai_message, 'usage', None)
+        _lc_cas_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_cas, client_name="claude-agent", model=resolved_model or "",
+            _lc_tc_cas,
+            client_name="claude-agent",
+            model=resolved_model or "",
             duration_ms=(_lc_time_cas.perf_counter() - _lc_t0_cas) * 1000,
-            input_tokens=getattr(_lc_cas_usage, 'input_tokens', None) if _lc_cas_usage else None,
-            output_tokens=getattr(_lc_cas_usage, 'output_tokens', None) if _lc_cas_usage else None,
+            input_tokens=getattr(_lc_cas_usage, "input_tokens", None) if _lc_cas_usage else None,
+            output_tokens=getattr(_lc_cas_usage, "output_tokens", None) if _lc_cas_usage else None,
             finish_reason=None,
         )
         yield ai_message
@@ -891,9 +873,7 @@ class ClaudeAgentClient(AbstractClient):
         """
         del state  # accepted for AbstractClient parity
         turn_id = str(uuid.uuid4())
-        options = self._build_options(
-            resume_id=session_id, prompt=user_input
-        )
+        options = self._build_options(resume_id=session_id, prompt=user_input)
         messages = await self._collect_messages(user_input, options=options)
         return AIMessageFactory.from_claude_agent(
             messages=messages,
@@ -961,16 +941,12 @@ class ClaudeAgentClient(AbstractClient):
         # Same precedence as AbstractClient._resolve_invoke_model(): an
         # explicitly selected self.model outranks the lightweight default,
         # which is only a default for clients built without a model=.
-        resolved_model = self._resolve_model(
-            model, self.model or self._lightweight_model or self._default_model
-        )
+        resolved_model = self._resolve_model(model, self.model or self._lightweight_model or self._default_model)
 
         # Effective options: default to permission_mode="plan" so invoke()
         # can never mutate the filesystem unless the caller explicitly opts in.
         effective_run_options = (
-            run_options.model_copy(deep=True)
-            if run_options is not None
-            else ClaudeAgentRunOptions()
+            run_options.model_copy(deep=True) if run_options is not None else ClaudeAgentRunOptions()
         )
         if effective_run_options.permission_mode is None:
             effective_run_options.permission_mode = "plan"
@@ -985,11 +961,7 @@ class ClaudeAgentClient(AbstractClient):
         if structured_output is None and output_type is not None:
             schema_clause = self._render_schema_clause(output_type)
 
-        full_prompt = (
-            f"{prompt}\n\n{schema_clause}".strip()
-            if schema_clause
-            else prompt
-        )
+        full_prompt = f"{prompt}\n\n{schema_clause}".strip() if schema_clause else prompt
 
         try:
             options = self._build_options(
@@ -1002,9 +974,7 @@ class ClaudeAgentClient(AbstractClient):
         except ImportError:
             raise
         except Exception as exc:  # pragma: no cover - provider-side
-            raise InvokeError(
-                f"ClaudeAgentClient.invoke failed: {exc}", original=exc
-            ) from exc
+            raise InvokeError(f"ClaudeAgentClient.invoke failed: {exc}", original=exc) from exc
 
         ai_message = AIMessageFactory.from_claude_agent(
             messages=messages,
@@ -1045,29 +1015,25 @@ class ClaudeAgentClient(AbstractClient):
     async def ask_to_image(self, *args: Any, **kwargs: Any) -> AIMessage:
         del args, kwargs
         raise NotImplementedError(
-            "ClaudeAgentClient does not support vision / image inputs. "
-            "Use AnthropicClient.ask_to_image instead."
+            "ClaudeAgentClient does not support vision / image inputs. " "Use AnthropicClient.ask_to_image instead."
         )
 
     async def summarize_text(self, *args: Any, **kwargs: Any) -> AIMessage:
         del args, kwargs
         raise NotImplementedError(
-            "ClaudeAgentClient does not implement summarize_text. "
-            "Use AnthropicClient.summarize_text instead."
+            "ClaudeAgentClient does not implement summarize_text. " "Use AnthropicClient.summarize_text instead."
         )
 
     async def translate_text(self, *args: Any, **kwargs: Any) -> AIMessage:
         del args, kwargs
         raise NotImplementedError(
-            "ClaudeAgentClient does not implement translate_text. "
-            "Use AnthropicClient.translate_text instead."
+            "ClaudeAgentClient does not implement translate_text. " "Use AnthropicClient.translate_text instead."
         )
 
     async def analyze_sentiment(self, *args: Any, **kwargs: Any) -> AIMessage:
         del args, kwargs
         raise NotImplementedError(
-            "ClaudeAgentClient does not implement analyze_sentiment. "
-            "Use AnthropicClient.analyze_sentiment instead."
+            "ClaudeAgentClient does not implement analyze_sentiment. " "Use AnthropicClient.analyze_sentiment instead."
         )
 
     async def analyze_product_review(self, *args: Any, **kwargs: Any) -> AIMessage:

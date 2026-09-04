@@ -55,6 +55,7 @@ def _require_google_sdk() -> None:
 import pandas as pd
 from ..base import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ...memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
@@ -299,9 +300,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return GoogleGenAIClient._requires_thinking(model) or model.lower().startswith(
-            "gemini-3.5-flash-lite"
-        )
+        return GoogleGenAIClient._requires_thinking(model) or model.lower().startswith("gemini-3.5-flash-lite")
 
     @classmethod
     def _thinking_off(cls, model: str, **kwargs) -> "Optional[ThinkingConfig]":
@@ -2976,9 +2975,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return result
 
-    def _format_history(
-        self, history: Sequence[HistoryMessage]
-    ) -> List[Any]:
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Any]:
         """Render conversation history as google.genai ``Content`` objects.
 
         Overrides :meth:`AbstractClient._format_history` (which emits
@@ -3973,7 +3970,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             yield "_Gathering information and exploring sources..._\n\n"
             try:
                 ai_message = await self._deep_research_ask(
-                    prompt=prompt, model=model, agent_config=agent_config, user_id=current_user_id.get(), session_id=current_session_id.get()
+                    prompt=prompt,
+                    model=model,
+                    agent_config=agent_config,
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
                 yield ai_message.text_response
                 yield ai_message
@@ -4183,9 +4184,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             # the client's invoke-tier budget in that case
                             # rather than multiplying None.
                             _base_cap = (
-                                current_max_tokens
-                                if current_max_tokens is not None
-                                else self._invoke_max_tokens
+                                current_max_tokens if current_max_tokens is not None else self._invoke_max_tokens
                             )
                             new_max_tokens = int(_base_cap * retry_config.token_increase_factor)
                             yield f"\n\n🔄 **Retrying with increased limit ({new_max_tokens})...**\n\n"
@@ -4428,7 +4427,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 turn_id=turn_id,
                 structured_output=final_output if final_output is not None else final_text,
                 tool_calls=all_tool_calls_history,
-                    text_response=final_text,
+                text_response=final_text,
                 files=[],
                 images=[],
                 code=None,
@@ -5054,9 +5053,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Disable thinking for image tasks (reduces latency).
         # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
         _thinking = (
-            ThinkingConfig(thinking_budget=8192)
-            if self._requires_thinking(model)
-            else self._thinking_off(model)
+            ThinkingConfig(thinking_budget=8192) if self._requires_thinking(model) else self._thinking_off(model)
         )
         final_config = GenerateContentConfig(
             **generation_config,
@@ -5615,9 +5612,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if needs_two_call:
                 # --- First call: tools, no structured output ---
                 tool_defs = self._prepare_tools()
-                first_thinking = self._invoke_thinking_config(
-                    resolved_model, structured=False
-                )
+                first_thinking = self._invoke_thinking_config(resolved_model, structured=False)
                 first_config = GenerateContentConfig(
                     system_instruction=resolved_prompt,
                     max_output_tokens=max_tokens,
@@ -5638,9 +5633,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     f"Based on this information:\n{first_text}\n\n"
                     f"Original request: {prompt}\n\nProvide structured output."
                 )
-                second_thinking = self._invoke_thinking_config(
-                    resolved_model, structured=True
-                )
+                second_thinking = self._invoke_thinking_config(resolved_model, structured=True)
                 second_config = GenerateContentConfig(
                     system_instruction=resolved_prompt,
                     max_output_tokens=max_tokens,
@@ -5674,9 +5667,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if sdk_tools:
                         gen_config_kwargs["tools"] = sdk_tools
 
-                thinking = self._invoke_thinking_config(
-                    resolved_model, structured=config is not None
-                )
+                thinking = self._invoke_thinking_config(resolved_model, structured=config is not None)
                 if thinking is not None:
                     gen_config_kwargs["thinking_config"] = thinking
 
@@ -5724,8 +5715,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # call to work from — recovering there would just burn a
                         # second request. Same idiom as the combined-mode path.
                         self.logger.warning(
-                            "invoke(): structured parse returned raw text for %s — "
-                            "falling back to a reformat call.",
+                            "invoke(): structured parse returned raw text for %s — " "falling back to a reformat call.",
                             resolved_model,
                         )
                         output = await self._reformat_to_structured(

@@ -23,6 +23,7 @@ import pandas as pd
 import aiohttp
 from navconfig import config
 from navconfig.logging import logging
+
 # FEAT-524: clients are memory-less. Only the provider-neutral render TYPE is
 # imported, from ``parrot.memory.render`` — a leaf module that never pulls in a
 # storage backend, so no LLM client inherits a Redis/aiofiles dependency.
@@ -374,15 +375,15 @@ $backstory
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS["default"])
             # define temp, top_k, top_p, max_tokens from selected preset:
-            self.temperature = preset_config.get('temperature', 0.4)
-            self.top_k = preset_config.get('top_k', 30)
-            self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens')
+            self.temperature = preset_config.get("temperature", 0.4)
+            self.top_k = preset_config.get("top_k", 30)
+            self.top_p = preset_config.get("top_p", 0.2)
+            self.max_tokens = preset_config.get("max_tokens")
         else:
             # define default values from preset default:
-            self.temperature = kwargs.get('temperature', 0)
-            self.top_k = kwargs.get('top_k', 30)
-            self.top_p = kwargs.get('top_p', 0.2)
+            self.temperature = kwargs.get("temperature", 0)
+            self.top_k = kwargs.get("top_k", 30)
+            self.top_p = kwargs.get("top_p", 0.2)
             # ``None`` means "not configured" — the per-client
             # _default_max_tokens / _invoke_max_tokens defaults take over. Do
             # NOT reintroduce a literal here: a framework-wide default assigned
@@ -393,11 +394,11 @@ $backstory
         # or via a preset) rather than left unset above. invoke() only honours
         # an explicit value, so that a client's _invoke_max_tokens default is
         # never shadowed by ask()'s generic one.
-        self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
+        self._max_tokens_configured: bool = "max_tokens" in kwargs or preset is not None
         # Per-instance override for invoke()'s output-token budget specifically.
         # ``None`` means "fall back to an explicit self.max_tokens, then the
         # class default" (see _resolve_max_tokens).
-        self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
+        self.invoke_max_tokens: Optional[int] = kwargs.get("invoke_max_tokens", None)
         self.base_headers.update(kwargs.get("headers", {}))
         self.api_key = kwargs.get("api_key", None)
         self.version = kwargs.get("version", self.version)
@@ -1540,9 +1541,7 @@ $backstory
 
         return [{"role": "user", "content": content}]
 
-    def _existing_files(
-        self, files: Optional[List[Union[str, Path]]]
-    ) -> Optional[List[Union[str, Path]]]:
+    def _existing_files(self, files: Optional[List[Union[str, Path]]]) -> Optional[List[Union[str, Path]]]:
         """Filter out attachments that do not exist on disk.
 
         A missing attachment is logged and skipped rather than allowed to raise
@@ -1564,16 +1563,12 @@ $backstory
                 if Path(file_path).exists():
                     safe_files.append(file_path)
                 else:
-                    self.logger.error(
-                        f"Error processing file {file_path}: file does not exist"
-                    )
+                    self.logger.error(f"Error processing file {file_path}: file does not exist")
             except Exception as e:  # noqa: BLE001 - defensive: any Path() failure
                 self.logger.error(f"Error processing file {file_path}: {e}")
         return safe_files or None
 
-    def _format_history(
-        self, history: Sequence[HistoryMessage]
-    ) -> List[Dict[str, Any]]:
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Dict[str, Any]]:
         """Map rendered history onto this provider's message shape (FEAT-524).
 
         The default emits the text-content-block form most providers accept.
@@ -1588,10 +1583,7 @@ $backstory
         Returns:
             Provider-shaped message dicts, in order.
         """
-        return [
-            {"role": message.role, "content": [{"type": "text", "text": message.content}]}
-            for message in history
-        ]
+        return [{"role": message.role, "content": [{"type": "text", "text": message.content}]} for message in history]
 
     def _build_messages(
         self,
@@ -1888,7 +1880,7 @@ $backstory
             return self._lightweight_model
         # Terminal fallback: clients that set neither (NvidiaClient and the
         # other OpenAIBaseClient subclasses) must not send ``model=None``.
-        return getattr(self, '_default_model', None)
+        return getattr(self, "_default_model", None)
 
     def _model_output_cap(self, model: Optional[str]) -> Optional[int]:
         """Return the provider's output-token cap for *model*, if one is known.
@@ -1979,11 +1971,7 @@ $backstory
         candidates = (
             max_tokens,
             getattr(self, "invoke_max_tokens", None) if for_invoke else None,
-            (
-                getattr(self, "max_tokens", None)
-                if getattr(self, "_max_tokens_configured", False)
-                else None
-            ),
+            (getattr(self, "max_tokens", None) if getattr(self, "_max_tokens_configured", False) else None),
             cap,
             self._invoke_max_tokens if for_invoke else None,
             self._default_max_tokens,
@@ -1994,9 +1982,7 @@ $backstory
                 continue
             resolved = int(candidate)
             if resolved <= 0:
-                raise ValueError(
-                    f"max_tokens must be a positive integer, got {resolved!r}"
-                )
+                raise ValueError(f"max_tokens must be a positive integer, got {resolved!r}")
             break
         if resolved is None:
             if for_invoke:  # pragma: no cover - _invoke/_default is always set
@@ -2007,7 +1993,9 @@ $backstory
         if cap is not None and resolved > cap:
             self.logger.debug(
                 "Clamping max_tokens %s -> %s for model %s (provider limit).",
-                resolved, cap, model,
+                resolved,
+                cap,
+                model,
             )
             return cap
         return resolved
@@ -2082,13 +2070,15 @@ $backstory
     #: Provider finish/stop reasons that mean the completion was cut off by the
     #: output-token limit. Compared after :meth:`_normalize_finish_reason`
     #: (lower-cased, enum-class prefix stripped).
-    TRUNCATED_FINISH_REASONS: FrozenSet[str] = frozenset({
-        "max_tokens",         # Anthropic Messages API, Bedrock Converse
-        "max_output_tokens",  # Google / OpenAI Responses (incomplete_details)
-        "length",             # OpenAI-compatible chat completions (OpenAI, Groq,
-                              #   Z.AI, vLLM, LocalLLM, HuggingFace, ...)
-        "reason_max_len",     # xAI Grok SDK (sample_pb2.FinishReason)
-    })
+    TRUNCATED_FINISH_REASONS: FrozenSet[str] = frozenset(
+        {
+            "max_tokens",  # Anthropic Messages API, Bedrock Converse
+            "max_output_tokens",  # Google / OpenAI Responses (incomplete_details)
+            "length",  # OpenAI-compatible chat completions (OpenAI, Groq,
+            #   Z.AI, vLLM, LocalLLM, HuggingFace, ...)
+            "reason_max_len",  # xAI Grok SDK (sample_pb2.FinishReason)
+        }
+    )
 
     @staticmethod
     def _normalize_finish_reason(finish_reason: Any) -> Optional[str]:

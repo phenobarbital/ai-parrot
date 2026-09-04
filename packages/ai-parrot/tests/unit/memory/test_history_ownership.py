@@ -76,9 +76,7 @@ class RecordingClient(AbstractClient):
         prepare = getattr(self, "_prepare_conversation_context", None)
         history_obj = None
         if prepare is not None and user_id and session_id:
-            messages, history_obj, system_prompt = await prepare(
-                prompt, None, user_id, session_id, system_prompt
-            )
+            messages, history_obj, system_prompt = await prepare(prompt, None, user_id, session_id, system_prompt)
         else:
             # Post-FEAT-524: the bot hands us an already rendered history.
             build_messages = getattr(self, "_build_messages", None)
@@ -173,9 +171,7 @@ async def test_bot_round_persists_exactly_one_turn(bot: BaseBot) -> None:
     await _two_rounds(bot)
 
     memory = bot.conversation_memory
-    history = await memory.get_history(
-        "u", "s", chatbot_id=getattr(bot, "memory_key_id", None)
-    )
+    history = await memory.get_history("u", "s", chatbot_id=getattr(bot, "memory_key_id", None))
     assert history is not None, "history was never created"
     assert len(history.turns) == 2, (
         f"expected 1 turn per round, got {len(history.turns)} turns for 2 rounds "
@@ -195,9 +191,7 @@ async def test_history_reaches_provider_once(bot: BaseBot) -> None:
     await _two_rounds(bot)
 
     call = bot.get_client().calls[-1]
-    payload = json.dumps(
-        {k: call[k] for k in ("prompt", "system_prompt", "messages")}, default=str
-    )
+    payload = json.dumps({k: call[k] for k in ("prompt", "system_prompt", "messages")}, default=str)
 
     assert payload.count(ROUND_1_TEXT) == 1, (
         "round-1 text reached the provider more than once on round 2 — "
@@ -226,6 +220,5 @@ async def test_system_prompt_has_no_history_digest(bot: BaseBot) -> None:
     client = bot.get_client()
     system_prompt = client.calls[-1]["system_prompt"] or ""
     assert "## Conversation Context" not in system_prompt, (
-        "the system prompt still carries the conversation digest "
-        "(AbstractBot.build_conversation_context)"
+        "the system prompt still carries the conversation digest " "(AbstractBot.build_conversation_context)"
     )

@@ -17,6 +17,7 @@ from ..models.responses import InvokeResult
 from ..models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
 from ..exceptions import InvokeError
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
@@ -60,9 +61,7 @@ class ZaiClient(OpenAIBaseClient):
     ) -> None:
         resolved_key = api_key or config.get("ZAI_API_KEY")
         if not resolved_key:
-            raise ValueError(
-                "ZAI_API_KEY is required. Pass api_key= or set the ZAI_API_KEY environment variable."
-            )
+            raise ValueError("ZAI_API_KEY is required. Pass api_key= or set the ZAI_API_KEY environment variable.")
         resolved_base_url = base_url or config.get("ZAI_BASE_URL") or "https://api.z.ai/api/paas/v4/"
         self.timeout = timeout
         self.max_retries = max_retries
@@ -890,9 +889,7 @@ class ZaiClient(OpenAIBaseClient):
         """
         messages: List[Dict[str, Any]] = list(state.get("messages", []))
         tool_call_id: Optional[str] = state.get("tool_call_id")
-        resolved_model = self._model_value(
-            state.get("model") or state.get("agent_name")
-        )
+        resolved_model = self._model_value(state.get("model") or state.get("agent_name"))
         turn_id = str(uuid.uuid4())
 
         # Inject the resumption value as a tool result or a new user turn.

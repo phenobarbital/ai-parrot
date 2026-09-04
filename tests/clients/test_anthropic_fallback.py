@@ -1,4 +1,5 @@
 """Tests for AnthropicClient fallback behavior."""
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from anthropic import RateLimitError, APIStatusError, InternalServerError
@@ -7,8 +8,9 @@ from anthropic import RateLimitError, APIStatusError, InternalServerError
 def _make_client():
     """Create an AnthropicClient instance without full __init__."""
     from parrot.clients.claude import AnthropicClient
+
     client = AnthropicClient.__new__(AnthropicClient)
-    client._fallback_model = 'claude-sonnet-4.5'
+    client._fallback_model = "claude-sonnet-4.5"
     return client
 
 
@@ -47,7 +49,8 @@ class TestAnthropicFallbackModel:
 
     def test_fallback_model_default(self):
         from parrot.clients.claude import AnthropicClient
-        assert AnthropicClient._fallback_model == 'claude-sonnet-4.5'
+
+        assert AnthropicClient._fallback_model == "claude-sonnet-4.5"
 
 
 class TestAnthropicIsCapacityError:
@@ -108,10 +111,11 @@ class TestAnthropicIsCapacityError:
 class TestAnthropicAskFallback:
     """Test fallback behavior in the ask() method."""
 
-    def _setup_client(self, model='claude-opus-4'):
+    def _setup_client(self, model="claude-opus-4"):
         from parrot.clients.claude import AnthropicClient
+
         client = AnthropicClient.__new__(AnthropicClient)
-        client._fallback_model = 'claude-sonnet-4.5'
+        client._fallback_model = "claude-sonnet-4.5"
         client.enable_tools = False
         client.model = model
         client._default_model = model
@@ -120,12 +124,10 @@ class TestAnthropicAskFallback:
         client.logger = MagicMock()
         # FEAT-524: the client no longer loads or writes conversation memory.
         # It composes its messages synchronously from the history it is handed.
-        client._build_messages = MagicMock(
-            return_value=[{"role": "user", "content": "Hello"}]
+        client._build_messages = MagicMock(return_value=[{"role": "user", "content": "Hello"}])
+        client._get_structured_config = MagicMock(
+            return_value=MagicMock(format_schema_instruction=MagicMock(return_value=""))
         )
-        client._get_structured_config = MagicMock(return_value=MagicMock(
-            format_schema_instruction=MagicMock(return_value="")
-        ))
         return client
 
     def _mock_response(self, model="claude-sonnet-4.5"):
@@ -134,7 +136,7 @@ class TestAnthropicAskFallback:
             "content": [{"type": "text", "text": "Hello!"}],
             "stop_reason": "end_turn",
             "model": model,
-            "usage": {"input_tokens": 10, "output_tokens": 5}
+            "usage": {"input_tokens": 10, "output_tokens": 5},
         }
         return mock_resp
 
@@ -151,15 +153,15 @@ class TestAnthropicAskFallback:
 
         mock_ai_message = MagicMock()
         mock_ai_message.metadata = {}
-        with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+        with patch("parrot.clients.claude.AIMessageFactory") as mock_factory:
             mock_factory.from_claude.return_value = mock_ai_message
             result = await client.ask("Hello", model="claude-opus-4")
 
         assert mock_create.call_count == 2
         # Verify fallback metadata
-        assert result.metadata['used_fallback_model'] is True
-        assert result.metadata['original_model'] == 'claude-opus-4'
-        assert result.metadata['fallback_model'] == 'claude-sonnet-4.5'
+        assert result.metadata["used_fallback_model"] is True
+        assert result.metadata["original_model"] == "claude-opus-4"
+        assert result.metadata["fallback_model"] == "claude-sonnet-4.5"
         # Verify logger warning was called
         client.logger.warning.assert_called_once()
 
@@ -178,7 +180,7 @@ class TestAnthropicAskFallback:
     @pytest.mark.asyncio
     async def test_ask_no_fallback_when_already_on_fallback_model(self):
         """ask() should not fallback when already using the fallback model."""
-        client = self._setup_client(model='claude-sonnet-4.5')
+        client = self._setup_client(model="claude-sonnet-4.5")
         error = _make_rate_limit_error()
 
         client.client = MagicMock()
@@ -198,12 +200,10 @@ class TestAnthropicAskFallback:
         # First call: error → fallback, tool_use response
         tool_response = MagicMock()
         tool_response.model_dump.return_value = {
-            "content": [
-                {"type": "tool_use", "id": "tool_1", "name": "test_tool", "input": {}}
-            ],
+            "content": [{"type": "tool_use", "id": "tool_1", "name": "test_tool", "input": {}}],
             "stop_reason": "tool_use",
             "model": "claude-sonnet-4.5",
-            "usage": {"input_tokens": 10, "output_tokens": 5}
+            "usage": {"input_tokens": 10, "output_tokens": 5},
         }
         # Second call: final response (should still use fallback model)
         final_response = self._mock_response()
@@ -219,14 +219,14 @@ class TestAnthropicAskFallback:
 
         mock_ai_message = MagicMock()
         mock_ai_message.metadata = {}
-        with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+        with patch("parrot.clients.claude.AIMessageFactory") as mock_factory:
             mock_factory.from_claude.return_value = mock_ai_message
             result = await client.ask("Hello", model="claude-opus-4")
 
         assert mock_create.call_count == 3
         # All calls after fallback should use fallback model
         # Call 2 (after fallback) and call 3 (tool loop continuation) use payload with fallback
-        assert result.metadata['used_fallback_model'] is True
+        assert result.metadata["used_fallback_model"] is True
 
 
 class TestAnthropicSdkRetries:
@@ -235,6 +235,7 @@ class TestAnthropicSdkRetries:
     @pytest.mark.asyncio
     async def test_sdk_max_retries_preserved(self):
         from parrot.clients.claude import AnthropicClient
+
         client = AnthropicClient.__new__(AnthropicClient)
         client.api_key = "test-key"
         sdk_client = await client.get_client()

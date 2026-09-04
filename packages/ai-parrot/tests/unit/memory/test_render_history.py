@@ -136,9 +136,7 @@ def test_render_custom_other_agent_label():
     """``other_agent_label`` is a format string receiving ``chatbot_id``."""
     history = _history(_turn(1, chatbot_id="B"))
 
-    rendered = render_history(
-        history, current_chatbot_id="A", other_agent_label="<<{chatbot_id}>>"
-    )
+    rendered = render_history(history, current_chatbot_id="A", other_agent_label="<<{chatbot_id}>>")
 
     assert rendered[1].content == "<<B>> a"
 

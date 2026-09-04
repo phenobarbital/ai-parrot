@@ -24,9 +24,7 @@ def test_bedrock_format_history():
     """History renders as Converse ``{"text": ...}`` content blocks."""
     client = _client()
 
-    messages = client._format_history(
-        [HistoryMessage("user", "q"), HistoryMessage("assistant", "a")]
-    )
+    messages = client._format_history([HistoryMessage("user", "q"), HistoryMessage("assistant", "a")])
 
     assert messages == [
         {"role": "user", "content": [{"text": "q"}]},

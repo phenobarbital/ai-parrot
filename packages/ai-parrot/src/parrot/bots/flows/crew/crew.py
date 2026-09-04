@@ -16,9 +16,18 @@ Module-level constant ``_INTERNAL_SHARED_KEYS`` lists keys that are placed
 in ``FlowContext.shared_data`` for framework bookkeeping and must NOT be
 forwarded as kwargs to agent calls.
 """
+
 from __future__ import annotations
 from typing import (
-    List, Dict, Any, Union, Optional, Literal, Set, Callable, Tuple,
+    List,
+    Dict,
+    Any,
+    Union,
+    Optional,
+    Literal,
+    Set,
+    Callable,
+    Tuple,
     TYPE_CHECKING,
 )
 from datetime import datetime
@@ -44,10 +53,7 @@ from ....clients.google import GoogleGenAIClient
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool, ToolResult
-from ....models.responses import (
-    AIMessage,
-    AgentResponse
-)
+from ....models.responses import AIMessage, AgentResponse
 from ....models.status import AgentStatus
 
 # Canonical result models (replacing parrot.models.crew)
@@ -98,9 +104,7 @@ AgentNode = CrewAgentNode
 # Keys placed in FlowContext.shared_data for framework bookkeeping.
 # These must NOT be forwarded to agent calls (agent.ask / .conversation / .invoke)
 # because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
-_INTERNAL_SHARED_KEYS: frozenset = frozenset(
-    {'execution_memory', 'shared_state', 'crew_execution_id'}
-)
+_INTERNAL_SHARED_KEYS: frozenset = frozenset({"execution_memory", "shared_state", "crew_execution_id"})
 
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
@@ -156,7 +160,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         enable_analysis: bool = False,
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
-        agent_execution_timeout: float = 600.0, # Timeout in seconds per agent execution
+        agent_execution_timeout: float = 600.0,  # Timeout in seconds per agent execution
         persist_results: bool = True,
         result_storage: Union[str, "ResultStorage", None] = None,
         persist_agent_results: bool = True,
@@ -165,7 +169,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         tenant: Optional[str] = None,
         generate_infographic: bool = False,
         result_agent_name: str = "result-agent",
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the AgentCrew.
@@ -195,7 +199,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 ``from_definition()`` wires this automatically from the
                 definition's ``tenant`` field.
         """
-        self.name = name or 'AgentCrew'
+        self.name = name or "AgentCrew"
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
         self._auto_configure: bool = auto_configure
         # internal tools:
@@ -211,28 +215,24 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            client_cls = SUPPORTED_CLIENTS.get('google')
+            client_cls = SUPPORTED_CLIENTS.get("google")
             self._llm = client_cls(**kwargs) if client_cls else None
         self.truncation_length = (
-            truncation_length
-            if truncation_length is not None
-            else self.__class__.default_truncation_length
+            truncation_length if truncation_length is not None else self.__class__.default_truncation_length
         )
         self.truncate_context_summary = truncate_context_summary
         # Workflow graph for flow-based execution
         self.workflow_graph: Dict[str, CrewAgentNode] = {}
         self.initial_agent: Optional[str] = None
         self.final_agents: Set[str] = set()
-        self.use_tqdm: bool = kwargs.get('use_tqdm', True)
+        self.use_tqdm: bool = kwargs.get("use_tqdm", True)
         # Internal tracking of per-agent initialization guards
         self._agent_locks: Dict[int, asyncio.Lock] = {}
         # Execution Memory:
         self.enable_analysis = enable_analysis
         self.embedding_model = embedding_model if enable_analysis else None
         self.execution_memory = ExecutionMemory(
-            embedding_model=embedding_model,
-            dimension=dimension,
-            index_type=index_type
+            embedding_model=embedding_model, dimension=dimension, index_type=index_type
         )
         # Register Retrieval Tool — wiki_provider resolves lazily because the
         # execution wiki recorder is created on first use.
@@ -244,19 +244,17 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             try:
                 self._llm.register_tool(self.retrieval_tool)
             except Exception as e:
-                self.logger.warning(
-                    f"Failed to register retrieval tool: {e}"
-                )
+                self.logger.warning(f"Failed to register retrieval tool: {e}")
         self._summary = None
         self.last_crew_result: Optional[FlowResult] = None
         self._last_execution_id: Optional[str] = None
         self._last_user_id: Optional[str] = None
         self._last_session_id: Optional[str] = None
         self.agent_execution_timeout = agent_execution_timeout
-        
+
         # Status Tracking
         self._agent_statuses: Dict[str, Dict[str, Any]] = {}
-        
+
         # Result persistence (FEAT-147)
         self._persist_results: bool = persist_results
         self._result_storage_arg: Union[str, "ResultStorage", None] = result_storage
@@ -287,9 +285,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         if agents:
             for agent in agents:
                 self.add_agent(agent)
-                self.workflow_graph[agent.name] = CrewAgentNode(
-                    agent=agent, node_id=agent.name
-                )
+                self.workflow_graph[agent.name] = CrewAgentNode(agent=agent, node_id=agent.name)
 
     @property
     def agent_statuses(self) -> Dict[str, Dict[str, Any]]:
@@ -322,8 +318,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # the full run_* name (e.g. 'run_sequential') — normalise so
         # build_execution_document() matches CrewExecutionDocument.from_storage()
         # for the same run (TASK-1770 e2e equality requirement).
-        _mode = self.last_crew_result.metadata.get('mode', 'unknown')
-        _method = _mode if _mode.startswith('run_') else f'run_{_mode}'
+        _mode = self.last_crew_result.metadata.get("mode", "unknown")
+        _method = _mode if _mode.startswith("run_") else f"run_{_mode}"
         return CrewExecutionDocument.from_memory(
             execution_id=self._last_execution_id,
             crew_name=self.name,
@@ -383,9 +379,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             result: The ``FlowResult`` produced by the run.
         """
         hooks_to_fire: List[CrewHookCallback] = []
-        if result.status in ('completed', 'partial'):
+        if result.status in ("completed", "partial"):
             hooks_to_fire.extend(self._on_complete_hooks)
-        if result.status in ('failed', 'partial'):
+        if result.status in ("failed", "partial"):
             hooks_to_fire.extend(self._on_error_hooks)
 
         for hook in hooks_to_fire:
@@ -394,9 +390,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 if asyncio.iscoroutine(ret):
                     await ret
             except Exception as exc:
-                self.logger.error(
-                    "Error in crew lifecycle hook %r: %s", hook, exc
-                )
+                self.logger.error("Error in crew lifecycle hook %r: %s", hook, exc)
 
     def _ensure_execution_wiki(self) -> Optional["ExecutionWikiRecorder"]:
         """Lazily resolve the per-crew execution wiki recorder.
@@ -420,9 +414,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 )
 
                 storage_dir = (
-                    Path(self._execution_wiki_path)
-                    if self._execution_wiki_path
-                    else default_wiki_dir(self.name)
+                    Path(self._execution_wiki_path) if self._execution_wiki_path else default_wiki_dir(self.name)
                 )
                 self._execution_wiki = ExecutionWikiRecorder(
                     storage_dir,
@@ -430,9 +422,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     embedding_model=self.embedding_model,
                 )
             except Exception as exc:
-                self.logger.warning(
-                    "Execution wiki unavailable, disabling: %s", exc
-                )
+                self.logger.warning("Execution wiki unavailable, disabling: %s", exc)
                 self._enable_execution_wiki = False
                 return None
         return self._execution_wiki
@@ -448,7 +438,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         are swallowed so the chain never stalls. Tasks join the standard
         ``_persist_tasks`` set so ``aclose()`` drains them.
         """
-        prev = getattr(self, '_wiki_write_chain', None)
+        prev = getattr(self, "_wiki_write_chain", None)
 
         async def _chained():
             if prev is not None:
@@ -481,7 +471,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 task=task,
                 user_id=user_id,
                 session_id=session_id,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
 
@@ -495,9 +485,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         wiki = self._ensure_execution_wiki()
         if wiki is None:
             return
-        self._schedule_wiki_write(
-            wiki.record_run_end(execution_id, result, method=method)
-        )
+        self._schedule_wiki_write(wiki.record_run_end(execution_id, result, method=method))
 
     def _schedule_agent_persist(
         self,
@@ -530,10 +518,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         """
         # AgentResponse nests the AIMessage under `.response` — check both.
         _raw_message = agent_result.ai_message
-        _raw_tc = getattr(_raw_message, 'tool_calls', None)
+        _raw_tc = getattr(_raw_message, "tool_calls", None)
         if not _raw_tc:
-            _inner = getattr(_raw_message, 'response', None)
-            _raw_tc = getattr(_inner, 'tool_calls', None)
+            _inner = getattr(_raw_message, "response", None)
+            _raw_tc = getattr(_inner, "tool_calls", None)
         tool_calls = _serialise_result_value(_serialise_tool_calls(_raw_tc))
         _agent_task = asyncio.get_running_loop().create_task(
             self._save_agent_result(
@@ -550,11 +538,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         wiki = self._ensure_execution_wiki()
         if wiki is not None:
-            self._schedule_wiki_write(
-                wiki.record_agent_result(
-                    execution_id, agent_result, tool_calls=tool_calls
-                )
-            )
+            self._schedule_wiki_write(wiki.record_agent_result(execution_id, agent_result, tool_calls=tool_calls))
 
     async def _finalize_infographic(self, result: FlowResult) -> None:
         """Populate ``result.infographic``; swallow+log on failure (FEAT-308).
@@ -618,9 +602,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             )
             result.infographic = render_result
         except Exception as exc:  # noqa: BLE001 — graceful degradation (spec G7)
-            self.logger.error(
-                "Infographic generation failed: %s", exc, exc_info=True
-            )
+            self.logger.error("Infographic generation failed: %s", exc, exc_info=True)
             # result.infographic remains at its default (None) — crew result intact.
 
     @staticmethod
@@ -650,9 +632,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
 
     @classmethod
-    def _apply_definition_prompt(
-        cls, agent: Any, system_prompt: Optional[str]
-    ) -> None:
+    def _apply_definition_prompt(cls, agent: Any, system_prompt: Optional[str]) -> None:
         """Apply a definition's ``system_prompt`` plus temporal grounding.
 
         Agents built by :meth:`from_definition` default to a composable
@@ -748,16 +728,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         f"Re-execute to gather additional information. "
                         f"Use when the user needs more details or updated data from this agent."
                     ),
-                    use_conversation_method=False  # no conversation history
+                    use_conversation_method=False,  # no conversation history
                 )
 
                 # Add to LLM's tool manager
-                if hasattr(self._llm, 'tool_manager'):
+                if hasattr(self._llm, "tool_manager"):
                     self._llm.tool_manager.add_tool(agent_tool)
             except Exception as e:
-                self.logger.warning(
-                    f"Failed to register {agent.name} as tool: {e}"
-                )
+                self.logger.warning(f"Failed to register {agent.name} as tool: {e}")
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -802,9 +780,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             agents.append(agent)
 
         # Allow callers to override max_parallel_tasks/tenant via kwargs.
-        max_parallel_tasks = kwargs.pop(
-            "max_parallel_tasks", crew_def.max_parallel_tasks
-        )
+        max_parallel_tasks = kwargs.pop("max_parallel_tasks", crew_def.max_parallel_tasks)
         tenant = kwargs.pop("tenant", crew_def.tenant)
         # Infographic wiring (FEAT-308): read from the definition, allow a
         # call-time override via kwargs. Without this, crews built from a
@@ -867,16 +843,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
             for relation in crew_def.flow_relations:
-                source_ids = (
-                    relation.source
-                    if isinstance(relation.source, list)
-                    else [relation.source]
-                )
-                target_ids = (
-                    relation.target
-                    if isinstance(relation.target, list)
-                    else [relation.target]
-                )
+                source_ids = relation.source if isinstance(relation.source, list) else [relation.source]
+                target_ids = relation.target if isinstance(relation.target, list) else [relation.target]
                 source_agents = cls._resolve_agents_by_ids(crew.agents, source_ids)
                 target_agents_list = cls._resolve_agents_by_ids(crew.agents, target_ids)
                 if source_agents and target_agents_list:
@@ -920,9 +888,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         agent_tool = AgentTool(
             agent=agent,
             tool_name=agent_id,
-            tool_description=getattr(agent, 'description', f"Execute {agent.name}"),
+            tool_description=getattr(agent, "description", f"Execute {agent.name}"),
             use_conversation_method=True,
-            execution_memory=self.execution_memory
+            execution_memory=self.execution_memory,
         )
 
         self.tools.append(agent_tool)
@@ -932,9 +900,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             agent_tools = agent.tool_manager.list_tools()
             self.logger.debug("Agent '%s' (ID: %s) initial tools: %s", agent.name, agent_id, agent_tools)
         except Exception as e:
-            self.logger.debug(
-                "Error listing tools for agent '%s': %s", agent_id, e
-            )
+            self.logger.debug("Error listing tools for agent '%s': %s", agent_id, e)
 
         # Register as tool in LLM orchestrator (if exists)
         if self._llm:
@@ -946,7 +912,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "last_active": datetime.now(),
             "task": None,
             "result": None,
-            "error": None
+            "error": None,
         }
 
         # Subscribe to agent events.
@@ -957,18 +923,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # ``_trigger_event`` path supplied. So status changes need a dedicated
         # bridge-compatible handler, while the task events below still flow
         # through ``_trigger_event`` and match ``_handle_agent_event``.
-        agent.add_event_listener(
-            agent.EVENT_STATUS_CHANGED, self._make_status_listener(agent_id)
-        )
-        agent.add_event_listener(
-            agent.EVENT_TASK_STARTED, self._handle_agent_event
-        )
-        agent.add_event_listener(
-            agent.EVENT_TASK_COMPLETED, self._handle_agent_event
-        )
-        agent.add_event_listener(
-            agent.EVENT_TASK_FAILED, self._handle_agent_event
-        )
+        agent.add_event_listener(agent.EVENT_STATUS_CHANGED, self._make_status_listener(agent_id))
+        agent.add_event_listener(agent.EVENT_TASK_STARTED, self._handle_agent_event)
+        agent.add_event_listener(agent.EVENT_TASK_COMPLETED, self._handle_agent_event)
+        agent.add_event_listener(agent.EVENT_TASK_FAILED, self._handle_agent_event)
 
         self.logger.info(f"Agents added and tracking initialized for '{agent_id}'")
 
@@ -1009,9 +967,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             ValueError: If ``node_id`` already exists in the crew.
         """
         if node_id in self.agents or node_id in self.workflow_graph:
-            raise ValueError(
-                f"Crew member '{node_id}' already exists"
-            )
+            raise ValueError(f"Crew member '{node_id}' already exists")
         node = ToolNode(
             tool=tool,
             node_id=node_id,
@@ -1026,11 +982,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "last_active": datetime.now(),
             "task": None,
             "result": None,
-            "error": None
+            "error": None,
         }
-        self.logger.info(
-            f"Added tool node '{node_id}' (tool '{tool.name}') to crew"
-        )
+        self.logger.info(f"Added tool node '{node_id}' (tool '{tool.name}') to crew")
         return node
 
     def remove_agent(self, agent_id: str) -> bool:
@@ -1039,9 +993,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             del self.agents[agent_id]
             self.workflow_graph.pop(agent_id, None)
             self._agent_statuses.pop(agent_id, None)
-            self.logger.info(
-                f"Removed agent '{agent_id}' from crew"
-            )
+            self.logger.info(f"Removed agent '{agent_id}' from crew")
             return True
         return False
 
@@ -1051,7 +1003,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         # Add to all existing agents (tool nodes have no tool_manager)
         for agent in self.agents.values():
-            if not hasattr(agent, 'tool_manager'):
+            if not hasattr(agent, "tool_manager"):
                 continue
             if not agent.tool_manager.get_tool(tool_name or tool.name):
                 agent.tool_manager.add_tool(tool, tool_name)
@@ -1073,9 +1025,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             An async callback compatible with ``_LegacyEventBridge._on_status``.
         """
 
-        async def _on_status(
-            *, old: Any = None, new: Any = None, **_: Any
-        ) -> None:
+        async def _on_status(*, old: Any = None, new: Any = None, **_: Any) -> None:
             info = self._agent_statuses.get(agent_id)
             if info is None:
                 return
@@ -1112,7 +1062,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 if agent.name == agent_name:
                     target_id = aid
                     break
-        
+
         if not target_id:
             return
 
@@ -1149,16 +1099,24 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             # Get agent name
             agent = self.agents.get(agent_id)
             name = agent.name if agent else agent_id
-            
-            statuses.append({
-                "agent_id": agent_id,
-                "agent_name": name,
-                "status": info["status"],
-                "task": info["task"],
-                "started_at": info.get("started_at", "").isoformat() if isinstance(info.get("started_at"), datetime) else None,
-                "completed_at": info.get("completed_at", "").isoformat() if isinstance(info.get("completed_at"), datetime) else None,
-                "error": info["error"]
-            })
+
+            statuses.append(
+                {
+                    "agent_id": agent_id,
+                    "agent_name": name,
+                    "status": info["status"],
+                    "task": info["task"],
+                    "started_at": (
+                        info.get("started_at", "").isoformat() if isinstance(info.get("started_at"), datetime) else None
+                    ),
+                    "completed_at": (
+                        info.get("completed_at", "").isoformat()
+                        if isinstance(info.get("completed_at"), datetime)
+                        else None
+                    ),
+                    "error": info["error"],
+                }
+            )
         return statuses
 
     def get_agent_result(self, agent_id: str) -> Optional[NodeResult]:
@@ -1190,8 +1148,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         task="",
                         result=agent_info.result,
                         metadata={
-                            'status': agent_info.status,
-                            'source': 'last_crew_result',
+                            "status": agent_info.status,
+                            "source": "last_crew_result",
                         },
                         execution_time=agent_info.execution_time,
                     )
@@ -1259,10 +1217,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         This metadata is used by run_flow() to know when to start and when to stop.
         """
         # Find agents with no dependencies (initial agents)
-        agents_with_deps = {
-            name for name, node in self.workflow_graph.items()
-            if node.dependencies
-        }
+        agents_with_deps = {name for name, node in self.workflow_graph.items() if node.dependencies}
         potential_initial = set(self.workflow_graph.keys()) - agents_with_deps
 
         if potential_initial and not self.initial_agent:
@@ -1270,10 +1225,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             self.initial_agent = next(iter(potential_initial))
 
         # Find agents with no successors (final agents)
-        self.final_agents = {
-            name for name, node in self.workflow_graph.items()
-            if not node.successors
-        }
+        self.final_agents = {name for name, node in self.workflow_graph.items() if not node.successors}
 
     async def _execute_parallel_agents(
         self,
@@ -1302,9 +1254,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             # get readiness of agent in AgentNode:
             agent = node.agent
             if agent_name not in self.agents:
-                self.logger.warning(
-                    f"Agent '{agent_name}' not found in crew, skipping"
-                )
+                self.logger.warning(f"Agent '{agent_name}' not found in crew, skipping")
                 continue
             await self._ensure_agent_ready(agent)
             # Double-check dependencies are satisfied (defensive programming)
@@ -1339,76 +1289,63 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 # Transition FSM to failed (guard against double-transition)
                 if node.fsm and str(node.fsm.current_state.id) != "failed":
                     node.fsm.fail()
-                self.logger.error(
-                    f"Error executing {agent_name}: {result}"
-                )
+                self.logger.error(f"Error executing {agent_name}: {result}")
                 context.responses[agent_name] = None
                 context.agent_metadata[agent_name] = build_node_metadata(
-                    agent_name,
-                    node.agent,
-                    None,
-                    None,
-                    0.0,
-                    'failed',
-                    str(result)
+                    agent_name, node.agent, None, None, 0.0, "failed", str(result)
                 )
-                self.execution_log.append({
-                    'agent_id': agent_name,
-                    'agent_name': node.agent.name,
-                    'output': str(result),
-                    'execution_time': 0,
-                    'success': False,
-                    'error': str(result)
-                })
+                self.execution_log.append(
+                    {
+                        "agent_id": agent_name,
+                        "agent_name": node.agent.name,
+                        "output": str(result),
+                        "execution_time": 0,
+                        "success": False,
+                        "error": str(result),
+                    }
+                )
 
                 # Save failed execution to memory (via shared_data)
-                _exec_mem = context.shared_data.get('execution_memory')
+                _exec_mem = context.shared_data.get("execution_memory")
                 if _exec_mem:
-                    _uid = context.shared_data.get('user_id', 'crew_user')
-                    _sid = context.shared_data.get('session_id', 'unknown')
+                    _uid = context.shared_data.get("user_id", "crew_user")
+                    _sid = context.shared_data.get("session_id", "unknown")
                     agent_result = NodeResult(
                         node_id=agent_name,
                         node_name=node.agent.name,
                         task=context.initial_task,
                         result=str(result),
                         metadata={
-                            'success': False,
-                            'error': str(result),
-                            'mode': 'flow',
-                            'user_id': _uid,
-                            'session_id': _sid,
+                            "success": False,
+                            "error": str(result),
+                            "mode": "flow",
+                            "user_id": _uid,
+                            "session_id": _sid,
                         },
-                        execution_time=0.0
+                        execution_time=0.0,
                     )
                     _exec_mem.add_result(agent_result, vectorize=False)
 
                     # Persist per-agent result incrementally (FEAT-306) — skip
                     # silently when the helper is used outside a run_flow()
                     # invocation (no crew_execution_id threaded in shared_data).
-                    _crew_execution_id = context.shared_data.get('crew_execution_id')
+                    _crew_execution_id = context.shared_data.get("crew_execution_id")
                     if _crew_execution_id:
                         self._schedule_agent_persist(
-                            agent_result, execution_id=_crew_execution_id,
-                            method='run_flow', user_id=_uid, session_id=_sid,
+                            agent_result,
+                            execution_id=_crew_execution_id,
+                            method="run_flow",
+                            user_id=_uid,
+                            session_id=_sid,
                         )
             else:
-                output = result.get('output') if isinstance(result, dict) else result
-                raw_response = result.get('response') if isinstance(result, dict) else result
-                execution_time = result.get('execution_time', 0.0) if isinstance(result, dict) else 0.0
+                output = result.get("output") if isinstance(result, dict) else result
+                raw_response = result.get("response") if isinstance(result, dict) else result
+                execution_time = result.get("execution_time", 0.0) if isinstance(result, dict) else 0.0
                 metadata = build_node_metadata(
-                    agent_name,
-                    node.agent,
-                    raw_response,
-                    output,
-                    execution_time,
-                    'completed'
+                    agent_name, node.agent, raw_response, output, execution_time, "completed"
                 )
-                context.mark_completed(
-                    agent_name,
-                    output,
-                    raw_response,
-                    metadata
-                )
+                context.mark_completed(agent_name, output, raw_response, metadata)
                 # Transition FSM to completed
                 if node.fsm and str(node.fsm.current_state.id) == "running":
                     node.fsm.succeed()
@@ -1418,21 +1355,23 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 # Fire per-agent callback right after FSM succeeds
                 if on_agent_complete:
                     await on_agent_complete(agent_name, output, context)
-                self.execution_log.append({
-                    'agent_id': agent_name,
-                    'agent_name': node.agent.name,
-                    'input': self._truncate_text(result.get('prompt', '') if isinstance(result, dict) else ''),
-                    'output': self._truncate_text(output),
-                    'execution_time': execution_time,
-                    'success': True
-                })
+                self.execution_log.append(
+                    {
+                        "agent_id": agent_name,
+                        "agent_name": node.agent.name,
+                        "input": self._truncate_text(result.get("prompt", "") if isinstance(result, dict) else ""),
+                        "output": self._truncate_text(output),
+                        "execution_time": execution_time,
+                        "success": True,
+                    }
+                )
 
                 # Save successful execution to memory (via shared_data)
-                _exec_mem = context.shared_data.get('execution_memory')
+                _exec_mem = context.shared_data.get("execution_memory")
                 if _exec_mem:
-                    _uid = context.shared_data.get('user_id', 'crew_user')
-                    _sid = context.shared_data.get('session_id', 'unknown')
-                    agent_input = result.get('prompt', '') if isinstance(result, dict) else context.initial_task
+                    _uid = context.shared_data.get("user_id", "crew_user")
+                    _sid = context.shared_data.get("session_id", "unknown")
+                    agent_input = result.get("prompt", "") if isinstance(result, dict) else context.initial_task
                     agent_result = NodeResult(
                         node_id=agent_name,
                         node_name=node.agent.name,
@@ -1440,19 +1379,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         result=output,
                         ai_message=raw_response,
                         metadata={
-                            'success': True,
-                            'mode': 'flow',
-                            'user_id': _uid,
-                            'session_id': _sid,
-                            'result_type': type(output).__name__
+                            "success": True,
+                            "mode": "flow",
+                            "user_id": _uid,
+                            "session_id": _sid,
+                            "result_type": type(output).__name__,
                         },
-                        execution_time=execution_time
+                        execution_time=execution_time,
                     )
                     # Vectorize only if analysis enabled
-                    _exec_mem.add_result(
-                        agent_result,
-                        vectorize=True
-                    )
+                    _exec_mem.add_result(agent_result, vectorize=True)
                     # Update execution order
                     if agent_name not in _exec_mem.execution_order:
                         _exec_mem.execution_order.append(agent_name)
@@ -1460,11 +1396,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     # Persist per-agent result incrementally (FEAT-306) — skip
                     # silently when the helper is used outside a run_flow()
                     # invocation (no crew_execution_id threaded in shared_data).
-                    _crew_execution_id = context.shared_data.get('crew_execution_id')
+                    _crew_execution_id = context.shared_data.get("crew_execution_id")
                     if _crew_execution_id:
                         self._schedule_agent_persist(
-                            agent_result, execution_id=_crew_execution_id,
-                            method='run_flow', user_id=_uid, session_id=_sid,
+                            agent_result,
+                            execution_id=_crew_execution_id,
+                            method="run_flow",
+                            user_id=_uid,
+                            session_id=_sid,
                         )
 
         return execution_results
@@ -1530,21 +1469,15 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         async with lock:
             if not self._agent_is_configured(agent):
                 try:
-                    self.logger.info(
-                        f"Auto-configuring agent '{agent.name}'"
-                    )
+                    self.logger.info(f"Auto-configuring agent '{agent.name}'")
                     await agent.configure()
-                    self.logger.info(
-                        f"Agent '{agent.name}' configured successfully"
-                    )
+                    self.logger.info(f"Agent '{agent.name}' configured successfully")
                 except Exception as e:
                     self.logger.error(
                         f"Failed to configure agent '{agent.name}': {e}",
                         exc_info=True,
                     )
                     raise
-
-
 
     async def _execute_agent(
         self,
@@ -1592,14 +1525,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             async with self.semaphore:
                 return await agent.call_tool(
                     input_text=query,
-                    results=(
-                        flow_context.results if flow_context is not None else {}
-                    ),
+                    results=(flow_context.results if flow_context is not None else {}),
                     timeout=self.agent_execution_timeout,
                 )
         await self._ensure_agent_ready(agent)
         async with self.semaphore:
-            if hasattr(agent, 'ask'):
+            if hasattr(agent, "ask"):
                 return await agent.ask(
                     question=query,
                     session_id=f"{session_id}_agent_{index}",
@@ -1607,9 +1538,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
-                    **kwargs
+                    **kwargs,
                 )
-            if hasattr(agent, 'conversation'):
+            if hasattr(agent, "conversation"):
                 return await agent.conversation(
                     question=query,
                     session_id=f"{session_id}_agent_{index}",
@@ -1617,28 +1548,24 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
-                    **kwargs
+                    **kwargs,
                 )
-            if hasattr(agent, 'invoke'):
+            if hasattr(agent, "invoke"):
                 return await agent.invoke(
                     question=query,
                     session_id=f"{session_id}_agent_{index}",
                     user_id=user_id,
                     use_conversation_history=False,
-                    **kwargs
+                    **kwargs,
                 )
             else:
-                raise ValueError(
-                    f"Agent {agent.name} does not support conversation, ask, or invoke methods"
-                )
+                raise ValueError(f"Agent {agent.name} does not support conversation, ask, or invoke methods")
 
     def _extract_result(self, response: Any) -> str:
         """Extract result string from response."""
         if isinstance(response, ToolResult):
             return extract_tool_output(response)
-        if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
-            response, 'content'
-        ):
+        if isinstance(response, (AIMessage, AgentResponse)) or hasattr(response, "content"):
             return response.content
         else:
             return str(response)
@@ -1659,10 +1586,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         """
         summaries = []
         for agent_name, result in context.results.items():
-            truncated = self._truncate_text(
-                result,
-                enabled=self.truncate_context_summary
-            )
+            truncated = self._truncate_text(result, enabled=self.truncate_context_summary)
             summaries.append(f"- {agent_name}: {truncated}")
         return "\n".join(summaries)
 
@@ -1698,18 +1622,16 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
     def _build_shared_state_summary(self, shared_state: Dict[str, Any]) -> str:
         """Create a human-readable summary from the shared loop state."""
-        history = shared_state.get('history', [])
+        history = shared_state.get("history", [])
         if not history:
             return "No prior agent outputs."
 
         lines = []
         for entry in history[-10:]:
-            iteration = entry.get('iteration')
-            agent_id = entry.get('agent_id')
-            output = entry.get('output')
-            lines.append(
-                f"Iteration {iteration} - {agent_id}: {self._truncate_text(str(output))}"
-            )
+            iteration = entry.get("iteration")
+            agent_id = entry.get("agent_id")
+            output = entry.get("output")
+            lines.append(f"Iteration {iteration} - {agent_id}: {self._truncate_text(str(output))}")
         return "\n".join(lines)
 
     async def _evaluate_loop_condition(
@@ -1729,13 +1651,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             return False
 
         history_summary = []
-        for entry in shared_state.get('history', []):
-            iteration_no = entry.get('iteration')
-            agent_id = entry.get('agent_id')
-            output = entry.get('output')
-            history_summary.append(
-                f"Iteration {iteration_no} - {agent_id}: {output}"
-            )
+        for entry in shared_state.get("history", []):
+            iteration_no = entry.get("iteration")
+            agent_id = entry.get("agent_id")
+            output = entry.get("output")
+            history_summary.append(f"Iteration {iteration_no} - {agent_id}: {output}")
 
         history_text = "\n".join(history_summary) or "(no outputs yet)"
         prompt = (
@@ -1754,28 +1674,20 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         try:
             async with self._llm as client:
                 response = await client.ask(
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    use_conversation_history=False
+                    prompt=prompt, max_tokens=max_tokens, temperature=temperature, use_conversation_history=False
                 )
         except Exception as exc:
-            self.logger.error(
-                f"Failed to evaluate loop condition with LLM: {exc}",
-                exc_info=True
-            )
+            self.logger.error(f"Failed to evaluate loop condition with LLM: {exc}", exc_info=True)
             return False
 
         decision_text = self._extract_result(response).strip().lower()
         if not decision_text:
             return False
 
-        if decision_text.startswith('yes') or ' stop' in decision_text:
+        if decision_text.startswith("yes") or " stop" in decision_text:
             return True
 
         return False
-
-
 
     # -------------------------------
     # Execution Methods (run_parallel, sequential, loop, flow)
@@ -1792,8 +1704,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         agent_sequence: List[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        model: Optional[str] = 'gemini-2.5-pro',
-        **kwargs
+        model: Optional[str] = "gemini-2.5-pro",
+        **kwargs,
     ) -> FlowResult:
         """
         Execute agents in sequence (pipeline pattern).
@@ -1831,11 +1743,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         """
         if not self.agents:
             return FlowResult(
-                output='No agents in crew',
+                output="No agents in crew",
                 execution_log=[],
-                status='failed',
+                status="failed",
                 total_time=0.0,
-                metadata={'mode': 'sequential'}
+                metadata={"mode": "sequential"},
             )
 
         # Determine agent sequence
@@ -1844,27 +1756,22 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         # Setup session identifiers
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        user_id = user_id or "crew_user"
         # Crew-level execution id (FEAT-306) — links this run's per-agent
         # writes to the consolidated CrewExecutionDocument.
         execution_id = str(uuid.uuid4())
-        self._schedule_wiki_run_start(
-            execution_id, 'run_sequential', query, user_id, session_id
-        )
+        self._schedule_wiki_run_start(execution_id, "run_sequential", query, user_id, session_id)
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
             original_query=query,
             embedding_model=self.embedding_model if self.enable_analysis else None,
-            dimension=getattr(self, 'dimension', 384),
-            index_type=getattr(self, 'index_type', 'Flat')
+            dimension=getattr(self, "dimension", 384),
+            index_type=getattr(self, "index_type", "Flat"),
         )
         # Set execution order for sequential mode
         agent_sequence_ids = agent_sequence if agent_sequence is not None else list(self.agents.keys())
-        self.execution_memory.execution_order = [
-            agent_id for agent_id in agent_sequence_ids
-            if agent_id in self.agents
-        ]
+        self.execution_memory.execution_order = [agent_id for agent_id in agent_sequence_ids if agent_id in self.agents]
 
         # Initialize context to track execution across agents
         current_input = query
@@ -1872,7 +1779,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             initial_task=query,
             shared_data={
                 **kwargs,
-                'execution_memory': self.execution_memory,
+                "execution_memory": self.execution_memory,
             },
         )
 
@@ -1926,15 +1833,17 @@ Current task: {current_input}"""
 
                 # Execute agent — strip framework-internal keys from shared_data
                 # (e.g. 'execution_memory') so they never leak into agent calls.
-                _agent_kwargs = {
-                    k: v for k, v in context.shared_data.items()
-                    if k not in _INTERNAL_SHARED_KEYS
-                }
+                _agent_kwargs = {k: v for k, v in context.shared_data.items() if k not in _INTERNAL_SHARED_KEYS}
                 response: AIMessage = await self._execute_agent(
-                    agent, agent_input, session_id, user_id, i,
-                    model=model, max_tokens=max_tokens,
+                    agent,
+                    agent_input,
+                    session_id,
+                    user_id,
+                    i,
+                    model=model,
+                    max_tokens=max_tokens,
                     flow_context=context,
-                    **_agent_kwargs
+                    **_agent_kwargs,
                 )
 
                 result = self._extract_result(response)
@@ -1947,14 +1856,14 @@ Current task: {current_input}"""
 
                 # Log execution details
                 log_entry = {
-                    'agent_id': agent_id,
-                    'agent_name': agent.name,
-                    'agent_index': i,
-                    'input': self._truncate_text(agent_input),
-                    'output': self._truncate_text(result),
-                    'full_output': result,
-                    'execution_time': execution_time,
-                    'success': True
+                    "agent_id": agent_id,
+                    "agent_name": agent.name,
+                    "agent_index": i,
+                    "input": self._truncate_text(agent_input),
+                    "output": self._truncate_text(result),
+                    "full_output": result,
+                    "execution_time": execution_time,
+                    "success": True,
                 }
                 self.execution_log.append(log_entry)
 
@@ -1962,16 +1871,7 @@ Current task: {current_input}"""
                 context.mark_completed(agent_id, result=result, response=response)
                 current_input = result
                 responses[agent_id] = response
-                agents_info.append(
-                    build_node_metadata(
-                        agent_id,
-                        agent,
-                        response,
-                        result,
-                        execution_time,
-                        'completed'
-                    )
-                )
+                agents_info.append(build_node_metadata(agent_id, agent, response, result, execution_time, "completed"))
                 results.append(result)
                 agent_ids.append(agent_id)
 
@@ -1983,23 +1883,23 @@ Current task: {current_input}"""
                     result=result,
                     ai_message=response,
                     metadata={
-                        'success': True,
-                        'mode': 'sequential',
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'index': i,
-                        'result_type': type(result).__name__
+                        "success": True,
+                        "mode": "sequential",
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "index": i,
+                        "result_type": type(result).__name__,
                     },
-                    execution_time=execution_time
+                    execution_time=execution_time,
                 )
                 # Vectorize only if analysis enabled
-                self.execution_memory.add_result(
-                    agent_result,
-                    vectorize=True
-                )
+                self.execution_memory.add_result(agent_result, vectorize=True)
                 self._schedule_agent_persist(
-                    agent_result, execution_id=execution_id, method='run_sequential',
-                    user_id=user_id, session_id=session_id,
+                    agent_result,
+                    execution_id=execution_id,
+                    method="run_sequential",
+                    user_id=user_id,
+                    session_id=session_id,
                 )
 
                 # FSM: mark node as completed
@@ -2017,29 +1917,19 @@ Current task: {current_input}"""
                     node.fsm.fail()
 
                 log_entry = {
-                    'agent_id': agent_id,
-                    'agent_name': agent.name,
-                    'agent_index': i,
-                    'input': current_input,
-                    'output': error_msg,
-                    'execution_time': 0,
-                    'success': False,
-                    'error': str(e)
+                    "agent_id": agent_id,
+                    "agent_name": agent.name,
+                    "agent_index": i,
+                    "input": current_input,
+                    "output": error_msg,
+                    "execution_time": 0,
+                    "success": False,
+                    "error": str(e),
                 }
                 self.execution_log.append(log_entry)
                 current_input = error_msg
                 errors[agent_id] = str(e)
-                agents_info.append(
-                    build_node_metadata(
-                        agent_id,
-                        agent,
-                        None,
-                        error_msg,
-                        0.0,
-                        'failed',
-                        str(e)
-                    )
-                )
+                agents_info.append(build_node_metadata(agent_id, agent, None, error_msg, 0.0, "failed", str(e)))
                 results.append(error_msg)
                 agent_ids.append(agent_id)
 
@@ -2050,22 +1940,22 @@ Current task: {current_input}"""
                     task=current_input,
                     result=error_msg,
                     metadata={
-                        'success': False,
-                        'error': str(e),
-                        'mode': 'sequential',
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'index': i
+                        "success": False,
+                        "error": str(e),
+                        "mode": "sequential",
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "index": i,
                     },
-                    execution_time=0.0
+                    execution_time=0.0,
                 )
-                self.execution_memory.add_result(
-                    agent_result,
-                    vectorize=False
-                )
+                self.execution_memory.add_result(agent_result, vectorize=False)
                 self._schedule_agent_persist(
-                    agent_result, execution_id=execution_id, method='run_sequential',
-                    user_id=user_id, session_id=session_id,
+                    agent_result,
+                    execution_id=execution_id,
+                    method="run_sequential",
+                    user_id=user_id,
+                    session_id=session_id,
                 )
 
                 failure_count += 1
@@ -2082,9 +1972,9 @@ Current task: {current_input}"""
             execution_log=self.execution_log,
             total_time=total_time,
             status=status,
-            metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
+            metadata={"mode": "sequential", "agent_sequence": agent_sequence},
         )
-        result.metadata['execution_id'] = execution_id
+        result.metadata["execution_id"] = execution_id
 
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
@@ -2098,14 +1988,14 @@ Current task: {current_input}"""
                 session_id=session_id,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
             if summary is not None:
                 result.summary = summary
                 result.metadata.update(
                     {
-                        'synthesized': True,
-                        'synthesis_prompt': synthesis_prompt,
+                        "synthesized": True,
+                        "synthesis_prompt": synthesis_prompt,
                     }
                 )
 
@@ -2126,7 +2016,7 @@ Current task: {current_input}"""
         document = CrewExecutionDocument.from_memory(
             execution_id=execution_id,
             crew_name=self.name,
-            method='run_sequential',
+            method="run_sequential",
             memory=self.execution_memory,
             result=result,
             user_id=user_id,
@@ -2135,17 +2025,17 @@ Current task: {current_input}"""
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 document,
-                'run_sequential',
+                "run_sequential",
                 execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id,
                 prompt=query,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
-        self._schedule_wiki_run_end(execution_id, result, 'run_sequential')
+        self._schedule_wiki_run_end(execution_id, result, "run_sequential")
 
         return result
 
@@ -2163,7 +2053,7 @@ Current task: {current_input}"""
         model: Optional[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        **kwargs
+        **kwargs,
     ) -> FlowResult:
         """Execute agents iteratively until the stopping condition is met.
 
@@ -2198,61 +2088,53 @@ Current task: {current_input}"""
         """
         if not self.agents:
             return FlowResult(
-                output='No agents in crew',
+                output="No agents in crew",
                 execution_log=[],
-                status='failed',
+                status="failed",
                 total_time=0.0,
-                metadata={'mode': 'loop', 'iterations': 0, 'condition_met': False}
+                metadata={"mode": "loop", "iterations": 0, "condition_met": False},
             )
 
         if not self._llm:
             # Let's create an LLM session if none is provided:
-            self._llm = GoogleGenAIClient(
-                model='gemini-2.5-pro',
-                max_tokens=8192
-            )
+            self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
 
         agent_sequence = agent_sequence or list(self.agents.keys())
         if not agent_sequence:
             return FlowResult(
-                output='No agents configured for loop execution',
+                output="No agents configured for loop execution",
                 execution_log=[],
-                status='failed',
+                status="failed",
                 total_time=0.0,
-                metadata={'mode': 'loop', 'iterations': 0, 'condition_met': False}
+                metadata={"mode": "loop", "iterations": 0, "condition_met": False},
             )
 
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        user_id = user_id or "crew_user"
         # Crew-level execution id (FEAT-306) — named `crew_execution_id` here
         # to avoid shadowing the per-iteration `execution_id` local variable
         # used below (f"{agent_id}#iteration{n}", an ExecutionMemory node key).
         crew_execution_id = str(uuid.uuid4())
-        self._schedule_wiki_run_start(
-            crew_execution_id, 'run_loop', initial_task, user_id, session_id
-        )
+        self._schedule_wiki_run_start(crew_execution_id, "run_loop", initial_task, user_id, session_id)
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
             original_query=initial_task,
             embedding_model=self.embedding_model if self.enable_analysis else None,
-            dimension=getattr(self, 'dimension', 384),
-            index_type=getattr(self, 'index_type', 'Flat')
+            dimension=getattr(self, "dimension", 384),
+            index_type=getattr(self, "index_type", "Flat"),
         )
         # Set execution order for loop mode (agents in sequence, repeated per iteration)
-        self.execution_memory.execution_order = [
-            agent_id for agent_id in agent_sequence
-            if agent_id in self.agents
-        ]
+        self.execution_memory.execution_order = [agent_id for agent_id in agent_sequence if agent_id in self.agents]
 
         self.execution_log = []
         overall_start = asyncio.get_running_loop().time()
 
         shared_state: Dict[str, Any] = {
-            'initial_task': initial_task,
-            'history': [],
-            'iteration_outputs': [],
-            'last_output': initial_task,
+            "initial_task": initial_task,
+            "history": [],
+            "iteration_outputs": [],
+            "last_output": initial_task,
         }
 
         responses: Dict[str, Any] = {}
@@ -2269,9 +2151,7 @@ Current task: {current_input}"""
         iterations_run = 0
 
         for iteration_index in range(max_iterations):
-            self.logger.notice(
-                f'Starting iteration {iteration_index + 1}/{max_iterations}'
-            )
+            self.logger.notice(f"Starting iteration {iteration_index + 1}/{max_iterations}")
             iterations_run = iteration_index + 1
 
             # Fresh FSM per iteration (completed is a final state, so
@@ -2283,40 +2163,38 @@ Current task: {current_input}"""
                     # (CrewAgentNode/AgentNode are frozen BaseModel subclasses,
                     # see core/node.py:222-227 for the established pattern);
                     # direct `node.fsm = ...` raises ValidationError (FEAT-309).
-                    object.__setattr__(
-                        node, "fsm", AgentTaskMachine(agent_name=node.agent.name)
-                    )
+                    object.__setattr__(node, "fsm", AgentTaskMachine(agent_name=node.agent.name))
 
             context = FlowContext(
                 initial_task=initial_task,
                 shared_data={
                     **kwargs,
-                    'shared_state': shared_state,
-                    'execution_memory': self.execution_memory,
+                    "shared_state": shared_state,
+                    "execution_memory": self.execution_memory,
                 },
             )
 
             iteration_success = True
             for agent_position, agent_id in enumerate(agent_sequence):
                 if agent_id not in self.agents:
-                    self.logger.warning(
-                        f"Agent '{agent_id}' not found in crew during loop execution, skipping"
-                    )
+                    self.logger.warning(f"Agent '{agent_id}' not found in crew during loop execution, skipping")
                     iteration_success = False
                     execution_id = f"{agent_id}#iteration{iterations_run}"
-                    error_message = 'Agent not found'
-                    self.execution_log.append({
-                        'agent_id': agent_id,
-                        'execution_id': execution_id,
-                        'iteration': iterations_run,
-                        'agent_name': agent_id,
-                        'agent_index': agent_position,
-                        'input': self._truncate_text(current_input),
-                        'output': error_message,
-                        'execution_time': 0.0,
-                        'success': False,
-                        'error': error_message,
-                    })
+                    error_message = "Agent not found"
+                    self.execution_log.append(
+                        {
+                            "agent_id": agent_id,
+                            "execution_id": execution_id,
+                            "iteration": iterations_run,
+                            "agent_name": agent_id,
+                            "agent_index": agent_position,
+                            "input": self._truncate_text(current_input),
+                            "output": error_message,
+                            "execution_time": 0.0,
+                            "success": False,
+                            "error": error_message,
+                        }
+                    )
                     agents_info.append(
                         build_node_metadata(
                             execution_id,
@@ -2324,7 +2202,7 @@ Current task: {current_input}"""
                             None,
                             None,
                             0.0,
-                            'failed',
+                            "failed",
                             error_message,
                         )
                     )
@@ -2339,23 +2217,23 @@ Current task: {current_input}"""
                         task=current_input,
                         result=error_message,
                         metadata={
-                            'success': False,
-                            'error': error_message,
-                            'mode': 'loop',
-                            'iteration': iterations_run,
-                            'user_id': user_id,
-                            'session_id': session_id,
-                            'agent_position': agent_position
+                            "success": False,
+                            "error": error_message,
+                            "mode": "loop",
+                            "iteration": iterations_run,
+                            "user_id": user_id,
+                            "session_id": session_id,
+                            "agent_position": agent_position,
                         },
-                        execution_time=0.0
+                        execution_time=0.0,
                     )
-                    self.execution_memory.add_result(
-                        agent_result,
-                        vectorize=False
-                    )
+                    self.execution_memory.add_result(agent_result, vectorize=False)
                     self._schedule_agent_persist(
-                        agent_result, execution_id=crew_execution_id, method='run_loop',
-                        user_id=user_id, session_id=session_id,
+                        agent_result,
+                        execution_id=crew_execution_id,
+                        method="run_loop",
+                        user_id=user_id,
+                        session_id=session_id,
                     )
 
                     failure_count += 1
@@ -2397,10 +2275,7 @@ Current task: {current_input}"""
                         await node.run_pre_actions(prompt=agent_input)
 
                     # Strip framework-internal keys from shared_data
-                    _agent_kwargs = {
-                        k: v for k, v in context.shared_data.items()
-                        if k not in _INTERNAL_SHARED_KEYS
-                    }
+                    _agent_kwargs = {k: v for k, v in context.shared_data.items() if k not in _INTERNAL_SHARED_KEYS}
                     response = await self._execute_agent(
                         agent,
                         agent_input,
@@ -2410,7 +2285,7 @@ Current task: {current_input}"""
                         model=model,
                         max_tokens=max_tokens,
                         flow_context=context,
-                        **_agent_kwargs
+                        **_agent_kwargs,
                     )
 
                     result = self._extract_result(response)
@@ -2423,16 +2298,16 @@ Current task: {current_input}"""
 
                     execution_id = f"{agent_id}#iteration{iterations_run}"
                     log_entry = {
-                        'agent_id': agent_id,
-                        'execution_id': execution_id,
-                        'iteration': iterations_run,
-                        'agent_name': agent.name,
-                        'agent_index': agent_position,
-                        'input': self._truncate_text(agent_input),
-                        'output': self._truncate_text(result),
-                        'full_output': result,
-                        'execution_time': execution_time,
-                        'success': True,
+                        "agent_id": agent_id,
+                        "execution_id": execution_id,
+                        "iteration": iterations_run,
+                        "agent_name": agent.name,
+                        "agent_index": agent_position,
+                        "input": self._truncate_text(agent_input),
+                        "output": self._truncate_text(result),
+                        "full_output": result,
+                        "execution_time": execution_time,
+                        "success": True,
                     }
                     self.execution_log.append(log_entry)
 
@@ -2440,22 +2315,17 @@ Current task: {current_input}"""
                     current_input = result
                     responses[execution_id] = response
                     agents_info.append(
-                        build_node_metadata(
-                            execution_id,
-                            agent,
-                            response,
-                            result,
-                            execution_time,
-                            'completed'
-                        )
+                        build_node_metadata(execution_id, agent, response, result, execution_time, "completed")
                     )
                     results.append(result)
                     agent_ids.append(execution_id)
-                    shared_state['history'].append({
-                        'iteration': iterations_run,
-                        'agent_id': agent_id,
-                        'output': result,
-                    })
+                    shared_state["history"].append(
+                        {
+                            "iteration": iterations_run,
+                            "agent_id": agent_id,
+                            "output": result,
+                        }
+                    )
 
                     # Save successful execution to memory
                     agent_result = NodeResult(
@@ -2465,24 +2335,24 @@ Current task: {current_input}"""
                         result=result,
                         ai_message=response,
                         metadata={
-                            'success': True,
-                            'mode': 'loop',
-                            'iteration': iterations_run,
-                            'user_id': user_id,
-                            'session_id': session_id,
-                            'agent_position': agent_position,
-                            'result_type': type(result).__name__
+                            "success": True,
+                            "mode": "loop",
+                            "iteration": iterations_run,
+                            "user_id": user_id,
+                            "session_id": session_id,
+                            "agent_position": agent_position,
+                            "result_type": type(result).__name__,
                         },
-                        execution_time=execution_time
+                        execution_time=execution_time,
                     )
                     # Vectorize only if analysis enabled
-                    self.execution_memory.add_result(
-                        agent_result,
-                        vectorize=True
-                    )
+                    self.execution_memory.add_result(agent_result, vectorize=True)
                     self._schedule_agent_persist(
-                        agent_result, execution_id=crew_execution_id, method='run_loop',
-                        user_id=user_id, session_id=session_id,
+                        agent_result,
+                        execution_id=crew_execution_id,
+                        method="run_loop",
+                        user_id=user_id,
+                        session_id=session_id,
                     )
 
                     success_count += 1
@@ -2496,29 +2366,21 @@ Current task: {current_input}"""
                         node.fsm.fail()
                     error_msg = f"Error executing agent {agent_id}: {exc}"
                     self.logger.error(error_msg, exc_info=True)
-                    self.execution_log.append({
-                        'agent_id': agent_id,
-                        'execution_id': execution_id,
-                        'iteration': iterations_run,
-                        'agent_name': agent.name,
-                        'agent_index': agent_position,
-                        'input': self._truncate_text(agent_input),
-                        'output': error_msg,
-                        'execution_time': 0.0,
-                        'success': False,
-                        'error': str(exc)
-                    })
-                    agents_info.append(
-                        build_node_metadata(
-                            execution_id,
-                            agent,
-                            None,
-                            None,
-                            0.0,
-                            'failed',
-                            str(exc)
-                        )
+                    self.execution_log.append(
+                        {
+                            "agent_id": agent_id,
+                            "execution_id": execution_id,
+                            "iteration": iterations_run,
+                            "agent_name": agent.name,
+                            "agent_index": agent_position,
+                            "input": self._truncate_text(agent_input),
+                            "output": error_msg,
+                            "execution_time": 0.0,
+                            "success": False,
+                            "error": str(exc),
+                        }
                     )
+                    agents_info.append(build_node_metadata(execution_id, agent, None, None, 0.0, "failed", str(exc)))
                     results.append(error_msg)
                     agent_ids.append(execution_id)
                     errors[execution_id] = str(exc)
@@ -2530,31 +2392,31 @@ Current task: {current_input}"""
                         task=agent_input,
                         result=error_msg,
                         metadata={
-                            'success': False,
-                            'error': str(exc),
-                            'mode': 'loop',
-                            'iteration': iterations_run,
-                            'user_id': user_id,
-                            'session_id': session_id,
-                            'agent_position': agent_position
+                            "success": False,
+                            "error": str(exc),
+                            "mode": "loop",
+                            "iteration": iterations_run,
+                            "user_id": user_id,
+                            "session_id": session_id,
+                            "agent_position": agent_position,
                         },
-                        execution_time=0.0
+                        execution_time=0.0,
                     )
-                    self.execution_memory.add_result(
-                        agent_result,
-                        vectorize=False
-                    )
+                    self.execution_memory.add_result(agent_result, vectorize=False)
                     self._schedule_agent_persist(
-                        agent_result, execution_id=crew_execution_id, method='run_loop',
-                        user_id=user_id, session_id=session_id,
+                        agent_result,
+                        execution_id=crew_execution_id,
+                        method="run_loop",
+                        user_id=user_id,
+                        session_id=session_id,
                     )
 
                     failure_count += 1
                     iteration_success = False
                     current_input = error_msg
 
-            shared_state['last_output'] = current_input
-            shared_state['iteration_outputs'].append(current_input)
+            shared_state["last_output"] = current_input
+            shared_state["iteration_outputs"].append(current_input)
             if condition:
                 condition_met = await self._evaluate_loop_condition(
                     condition=condition,
@@ -2577,11 +2439,11 @@ Current task: {current_input}"""
                     f"Loop iteration {iterations_run} completed with errors; continuing until condition is met or max iterations reached"
                 )
 
-            current_input = shared_state['last_output']
+            current_input = shared_state["last_output"]
 
         overall_end = asyncio.get_running_loop().time()
 
-        last_output = shared_state['last_output'] if shared_state['iteration_outputs'] else initial_task
+        last_output = shared_state["last_output"] if shared_state["iteration_outputs"] else initial_task
         status = determine_run_status(success_count, failure_count)
 
         result = FlowResult(
@@ -2593,15 +2455,15 @@ Current task: {current_input}"""
             total_time=overall_end - overall_start,
             status=status,
             metadata={
-                'mode': 'loop',
-                'iterations': iterations_run,
-                'max_iterations': max_iterations,
-                'condition': condition,
-                'condition_met': condition_met,
-                'shared_state': shared_state,
-            }
+                "mode": "loop",
+                "iterations": iterations_run,
+                "max_iterations": max_iterations,
+                "condition": condition,
+                "condition_met": condition_met,
+                "shared_state": shared_state,
+            },
         )
-        result.metadata['execution_id'] = crew_execution_id
+        result.metadata["execution_id"] = crew_execution_id
 
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
@@ -2615,14 +2477,14 @@ Current task: {current_input}"""
                 session_id=session_id,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
             if summary is not None:
                 result.summary = summary
                 result.metadata.update(
                     {
-                        'synthesized': True,
-                        'synthesis_prompt': synthesis_prompt,
+                        "synthesized": True,
+                        "synthesis_prompt": synthesis_prompt,
                     }
                 )
 
@@ -2643,7 +2505,7 @@ Current task: {current_input}"""
         document = CrewExecutionDocument.from_memory(
             execution_id=crew_execution_id,
             crew_name=self.name,
-            method='run_loop',
+            method="run_loop",
             memory=self.execution_memory,
             result=result,
             user_id=user_id,
@@ -2652,17 +2514,17 @@ Current task: {current_input}"""
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 document,
-                'run_loop',
+                "run_loop",
                 execution_id=crew_execution_id,
                 user_id=user_id,
                 session_id=session_id,
                 prompt=initial_task,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
-        self._schedule_wiki_run_end(crew_execution_id, result, 'run_loop')
+        self._schedule_wiki_run_end(crew_execution_id, result, "run_loop")
 
         return result
 
@@ -2676,7 +2538,7 @@ Current task: {current_input}"""
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        **kwargs
+        **kwargs,
     ) -> FlowResult:
         """
         Execute multiple agents in parallel using asyncio.gather().
@@ -2709,32 +2571,29 @@ Current task: {current_input}"""
             metadata, and execution logs.
         """
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        user_id = user_id or "crew_user"
         # Crew-level execution id (FEAT-306).
         execution_id = str(uuid.uuid4())
-        original_query = tasks[0]['query'] if tasks else ""
-        self._schedule_wiki_run_start(
-            execution_id, 'run_parallel', original_query, user_id, session_id
-        )
+        original_query = tasks[0]["query"] if tasks else ""
+        self._schedule_wiki_run_start(execution_id, "run_parallel", original_query, user_id, session_id)
 
         # initialize execution log
         self.execution_memory = ExecutionMemory(
             original_query=original_query,
             embedding_model=self.embedding_model if self.enable_analysis else None,
-            dimension=getattr(self, 'dimension', 384),
-            index_type=getattr(self, 'index_type', 'Flat')
+            dimension=getattr(self, "dimension", 384),
+            index_type=getattr(self, "index_type", "Flat"),
         )
         # Set execution order for parallel mode (all agents at same level)
         self.execution_memory.execution_order = [
-            task.get('agent_id') for task in tasks
-            if task.get('agent_id') in self.agents
+            task.get("agent_id") for task in tasks if task.get("agent_id") in self.agents
         ]
 
         context = FlowContext(
             initial_task=original_query,
             shared_data={
                 **kwargs,
-                'execution_memory': self.execution_memory,
+                "execution_memory": self.execution_memory,
             },
         )
 
@@ -2753,8 +2612,8 @@ Current task: {current_input}"""
         task_metadata = []
 
         for i, task in enumerate(tasks):
-            agent_id = task.get('agent_id')
-            query = task.get('query')
+            agent_id = task.get("agent_id")
+            query = task.get("query")
 
             if agent_id not in self.agents:
                 self.logger.warning(f"Agent '{agent_id}' not found, skipping")
@@ -2762,32 +2621,25 @@ Current task: {current_input}"""
 
             agent = self.agents[agent_id]
             node = self.workflow_graph.get(agent_id)
-            task_metadata.append({
-                'agent_id': agent_id,
-                'agent_name': agent.name,
-                'query': query,
-                'index': i
-            })
+            task_metadata.append({"agent_id": agent_id, "agent_name": agent.name, "query": query, "index": i})
 
             # Build per-task agent kwargs: strip internal bookkeeping keys so
             # ExecutionMemory / shared_state never reach agent.ask(**kwargs).
-            _agent_kwargs = {
-                k: v for k, v in context.shared_data.items()
-                if k not in _INTERNAL_SHARED_KEYS
-            }
+            _agent_kwargs = {k: v for k, v in context.shared_data.items() if k not in _INTERNAL_SHARED_KEYS}
 
             async def _run_with_hooks(
-                _agent=agent, _query=query, _idx=i, _node=node,
-                _kwargs=_agent_kwargs, _ctx=context,
+                _agent=agent,
+                _query=query,
+                _idx=i,
+                _node=node,
+                _kwargs=_agent_kwargs,
+                _ctx=context,
             ):
                 """Wrap _execute_agent with pre/post action hooks."""
                 if _node:
                     await _node.run_pre_actions(prompt=_query)
                 resp = await self._execute_agent(
-                    _agent, _query, session_id, user_id, _idx,
-                    max_tokens=max_tokens,
-                    flow_context=_ctx,
-                    **_kwargs
+                    _agent, _query, session_id, user_id, _idx, max_tokens=max_tokens, flow_context=_ctx, **_kwargs
                 )
                 if _node:
                     await _node.run_post_actions(result=resp)
@@ -2798,14 +2650,14 @@ Current task: {current_input}"""
         if not async_tasks:
             return FlowResult(
                 output=None,
-                status='failed',
-                errors={'__crew__': 'No valid tasks to execute'},
-                metadata={'mode': 'parallel'}
+                status="failed",
+                errors={"__crew__": "No valid tasks to execute"},
+                metadata={"mode": "parallel"},
             )
 
         # Wire FSM transitions: schedule + start all nodes before gather
         for meta in task_metadata:
-            node = self.workflow_graph.get(meta['agent_id'])
+            node = self.workflow_graph.get(meta["agent_id"])
             if node and node.fsm:
                 node.fsm.schedule()
                 node.fsm.start()
@@ -2820,10 +2672,10 @@ Current task: {current_input}"""
         parallel_results = {}
 
         for i, (result, metadata) in enumerate(zip(results, task_metadata)):
-            agent_id = metadata['agent_id']
-            agent_name = metadata['agent_name']
+            agent_id = metadata["agent_id"]
+            agent_name = metadata["agent_name"]
             agent_ids.append(agent_id)
-            _query = metadata['query']
+            _query = metadata["query"]
             execution_time = end_time - start_time  # Total parallel time
 
             if isinstance(result, Exception):
@@ -2842,41 +2694,35 @@ Current task: {current_input}"""
                     task=_query,
                     result=error_msg,
                     metadata={
-                        'success': False,
-                        'error': str(result),
-                        'mode': 'parallel',
-                        'user_id': user_id,
-                        'session_id': session_id
+                        "success": False,
+                        "error": str(result),
+                        "mode": "parallel",
+                        "user_id": user_id,
+                        "session_id": session_id,
                     },
-                    execution_time=0.0
+                    execution_time=0.0,
                 )
-                self.execution_memory.add_result(
-                    agent_result,
-                    vectorize=False
-                )
+                self.execution_memory.add_result(agent_result, vectorize=False)
                 self._schedule_agent_persist(
-                    agent_result, execution_id=execution_id, method='run_parallel',
-                    user_id=user_id, session_id=session_id,
+                    agent_result,
+                    execution_id=execution_id,
+                    method="run_parallel",
+                    user_id=user_id,
+                    session_id=session_id,
                 )
                 log_entry = {
-                    'agent_id': agent_id,
-                    'agent_name': agent_name,
-                    'agent_index': i,
-                    'input': _query,
-                    'output': error_msg,
-                    'execution_time': 0,
-                    'success': False,
-                    'error': str(result)
+                    "agent_id": agent_id,
+                    "agent_name": agent_name,
+                    "agent_index": i,
+                    "input": _query,
+                    "output": error_msg,
+                    "execution_time": 0,
+                    "success": False,
+                    "error": str(result),
                 }
                 agents_info.append(
                     build_node_metadata(
-                        agent_id,
-                        self.agents.get(agent_id),
-                        None,
-                        error_msg,
-                        0.0,
-                        'failed',
-                        str(result)
+                        agent_id, self.agents.get(agent_id), None, error_msg, 0.0, "failed", str(result)
                     )
                 )
                 results_payload.append(error_msg)
@@ -2888,7 +2734,7 @@ Current task: {current_input}"""
                 extracted_result = self._extract_result(result)
                 parallel_results[agent_id] = extracted_result
                 context.mark_completed(agent_id, result=extracted_result, response=result)
-                _query = metadata['query']
+                _query = metadata["query"]
 
                 # Save successful execution to memory
                 agent_result = NodeResult(
@@ -2898,34 +2744,34 @@ Current task: {current_input}"""
                     result=extracted_result,
                     ai_message=result,
                     metadata={
-                        'success': True,
-                        'mode': 'parallel',
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'index': i,
-                        'result_type': type(extracted_result).__name__
+                        "success": True,
+                        "mode": "parallel",
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "index": i,
+                        "result_type": type(extracted_result).__name__,
                     },
-                    execution_time=execution_time
+                    execution_time=execution_time,
                 )
                 # Vectorize only if analysis enabled (handled internally by ExecutionMemory)
-                self.execution_memory.add_result(
-                    agent_result,
-                    vectorize=True
-                )
+                self.execution_memory.add_result(agent_result, vectorize=True)
                 self._schedule_agent_persist(
-                    agent_result, execution_id=execution_id, method='run_parallel',
-                    user_id=user_id, session_id=session_id,
+                    agent_result,
+                    execution_id=execution_id,
+                    method="run_parallel",
+                    user_id=user_id,
+                    session_id=session_id,
                 )
 
                 log_entry = {
-                    'agent_id': agent_id,
-                    'agent_name': agent_name,
-                    'agent_index': i,
-                    'input': _query,
-                    'output': self._truncate_text(extracted_result),
-                    'full_output': extracted_result,
-                    'execution_time': end_time - start_time,  # Total parallel time
-                    'success': True
+                    "agent_id": agent_id,
+                    "agent_name": agent_name,
+                    "agent_index": i,
+                    "input": _query,
+                    "output": self._truncate_text(extracted_result),
+                    "full_output": extracted_result,
+                    "execution_time": end_time - start_time,  # Total parallel time
+                    "success": True,
                 }
                 agents_info.append(
                     build_node_metadata(
@@ -2934,7 +2780,7 @@ Current task: {current_input}"""
                         result,
                         extracted_result,
                         end_time - start_time,
-                        'completed'
+                        "completed",
                     )
                 )
                 results_payload.append(extracted_result)
@@ -2960,12 +2806,12 @@ Current task: {current_input}"""
             total_time=end_time - start_time,
             status=status,
             metadata={
-                'mode': 'parallel',
-                'task_count': len(agent_ids),
-                'requested_tasks': len(tasks),
-            }
+                "mode": "parallel",
+                "task_count": len(agent_ids),
+                "requested_tasks": len(tasks),
+            },
         )
-        result.metadata['execution_id'] = execution_id
+        result.metadata["execution_id"] = execution_id
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
@@ -2977,14 +2823,14 @@ Current task: {current_input}"""
                 session_id=session_id,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
             if summary is not None:
                 result.summary = summary
                 result.metadata.update(
                     {
-                        'synthesized': True,
-                        'synthesis_prompt': synthesis_prompt,
+                        "synthesized": True,
+                        "synthesis_prompt": synthesis_prompt,
                     }
                 )
 
@@ -3005,7 +2851,7 @@ Current task: {current_input}"""
         document = CrewExecutionDocument.from_memory(
             execution_id=execution_id,
             crew_name=self.name,
-            method='run_parallel',
+            method="run_parallel",
             memory=self.execution_memory,
             result=result,
             user_id=user_id,
@@ -3014,17 +2860,17 @@ Current task: {current_input}"""
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 document,
-                'run_parallel',
+                "run_parallel",
                 execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id,
                 prompt=original_query,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
-        self._schedule_wiki_run_end(execution_id, result, 'run_parallel')
+        self._schedule_wiki_run_end(execution_id, result, "run_parallel")
 
         return result
 
@@ -3039,7 +2885,7 @@ Current task: {current_input}"""
         max_tokens: int = 8192,
         temperature: float = 0.1,
         on_agent_complete: Optional[Callable] = None,
-        **kwargs
+        **kwargs,
     ) -> FlowResult:
         """
         Execute the workflow using the defined task flows (DAG-based execution).
@@ -3094,19 +2940,17 @@ Current task: {current_input}"""
         """
         # Setup session identifiers
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        user_id = user_id or "crew_user"
         # Crew-level execution id (FEAT-306).
         execution_id = str(uuid.uuid4())
-        self._schedule_wiki_run_start(
-            execution_id, 'run_flow', initial_task, user_id, session_id
-        )
+        self._schedule_wiki_run_start(execution_id, "run_flow", initial_task, user_id, session_id)
 
         # Initialize execution memory
         self.execution_memory = ExecutionMemory(
             original_query=initial_task,
             embedding_model=self.embedding_model if self.enable_analysis else None,
-            dimension=getattr(self, 'dimension', 384),
-            index_type=getattr(self, 'index_type', 'Flat')
+            dimension=getattr(self, "dimension", 384),
+            index_type=getattr(self, "index_type", "Flat"),
         )
         # Set execution order for flow mode (will be updated as agents complete)
         self.execution_memory.execution_order = []
@@ -3119,10 +2963,10 @@ Current task: {current_input}"""
         context = FlowContext(
             initial_task=initial_task,
             shared_data={
-                'execution_memory': self.execution_memory,
-                'user_id': user_id,
-                'session_id': session_id,
-                'crew_execution_id': execution_id,
+                "execution_memory": self.execution_memory,
+                "user_id": user_id,
+                "session_id": session_id,
+                "crew_execution_id": execution_id,
             },
         )
 
@@ -3131,9 +2975,7 @@ Current task: {current_input}"""
 
         # Validate workflow before starting
         if not self.initial_agent:
-            raise ValueError(
-                "No initial agent found. Define task flows first using task_flow()."
-            )
+            raise ValueError("No initial agent found. Define task flows first using task_flow().")
 
         iteration = 0
         while iteration < max_iterations:
@@ -3151,8 +2993,7 @@ Current task: {current_input}"""
                     # downstream agents are blocked by failed dependencies.
                     if context.errors:
                         self.logger.warning(
-                            "Workflow stopped: failed agents %s block downstream. "
-                            "Completed: %s, Expected final: %s",
+                            "Workflow stopped: failed agents %s block downstream. " "Completed: %s, Expected final: %s",
                             set(context.errors.keys()),
                             context.completed_tasks,
                             self.final_agents,
@@ -3170,9 +3011,7 @@ Current task: {current_input}"""
 
             # Execute all ready agents in parallel.
             # Results are tracked in context; the return dict is not needed.
-            await self._execute_parallel_agents(
-                ready_agents, context, on_agent_complete=on_agent_complete
-            )
+            await self._execute_parallel_agents(ready_agents, context, on_agent_complete=on_agent_complete)
 
             iteration += 1
 
@@ -3184,10 +3023,7 @@ Current task: {current_input}"""
             )
 
         end_time = asyncio.get_running_loop().time()
-        error_messages: Dict[str, str] = {
-            agent: str(err)
-            for agent, err in context.errors.items()
-        }
+        error_messages: Dict[str, str] = {agent: str(err) for agent, err in context.errors.items()}
         completion_order = context.completion_order or list(context.completed_tasks)
 
         agents_info: List[NodeExecutionInfo] = []
@@ -3196,10 +3032,8 @@ Current task: {current_input}"""
             if metadata:
                 agents_info.append(metadata)
 
-        success_count = sum(
-            info.status == 'completed' for info in agents_info
-        )
-        failure_count = sum(info.status == 'failed' for info in agents_info)
+        success_count = sum(info.status == "completed" for info in agents_info)
+        failure_count = sum(info.status == "failed" for info in agents_info)
 
         for agent_name, error in error_messages.items():
             if agent_name not in completion_order:
@@ -3211,8 +3045,8 @@ Current task: {current_input}"""
                     context.responses.get(agent_name),
                     context.results.get(agent_name),
                     0.0,
-                    'failed',
-                    error
+                    "failed",
+                    error,
                 )
                 agents_info.append(metadata)
                 failure_count += 1
@@ -3232,9 +3066,9 @@ Current task: {current_input}"""
             execution_log=self.execution_log,
             total_time=end_time - start_time,
             status=status,
-            metadata={'mode': 'flow', 'iterations': iteration}
+            metadata={"mode": "flow", "iterations": iteration},
         )
-        result.metadata['execution_id'] = execution_id
+        result.metadata["execution_id"] = execution_id
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
@@ -3246,14 +3080,14 @@ Current task: {current_input}"""
                 session_id=session_id,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
             if summary is not None:
                 result.summary = summary
                 result.metadata.update(
                     {
-                        'synthesized': True,
-                        'synthesis_prompt': synthesis_prompt,
+                        "synthesized": True,
+                        "synthesis_prompt": synthesis_prompt,
                     }
                 )
 
@@ -3274,7 +3108,7 @@ Current task: {current_input}"""
         document = CrewExecutionDocument.from_memory(
             execution_id=execution_id,
             crew_name=self.name,
-            method='run_flow',
+            method="run_flow",
             memory=self.execution_memory,
             result=result,
             user_id=user_id,
@@ -3283,17 +3117,17 @@ Current task: {current_input}"""
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 document,
-                'run_flow',
+                "run_flow",
                 execution_id=execution_id,
                 user_id=user_id,
                 session_id=session_id,
                 prompt=initial_task,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
         _persist_task.add_done_callback(self._persist_tasks.discard)
-        self._schedule_wiki_run_end(execution_id, result, 'run_flow')
+        self._schedule_wiki_run_end(execution_id, result, "run_flow")
 
         return result
 
@@ -3333,6 +3167,7 @@ Current task: {current_input}"""
         Returns:
             True if workflow is valid
         """
+
         def has_cycle(start: str, visited: Set[str], rec_stack: Set[str]) -> bool:
             """
             Detect cycles using depth-first search with recursion stack.
@@ -3374,19 +3209,17 @@ Current task: {current_input}"""
         monitoring and optimization.
         """
         if not self.execution_log:
-            return {'message': 'No executions yet'}
+            return {"message": "No executions yet"}
 
-        total_time = sum(log['execution_time'] for log in self.execution_log)
-        success_count = sum(bool(log['success']) for log in self.execution_log)
+        total_time = sum(log["execution_time"] for log in self.execution_log)
+        success_count = sum(bool(log["success"]) for log in self.execution_log)
 
         return {
-            'total_agents': len(self.agents),
-            'executed_agents': len(self.execution_log),
-            'successful_agents': success_count,
-            'total_execution_time': total_time,
-            'average_time_per_agent': (
-                total_time / len(self.execution_log) if self.execution_log else 0
-            )
+            "total_agents": len(self.agents),
+            "executed_agents": len(self.execution_log),
+            "successful_agents": success_count,
+            "total_execution_time": total_time,
+            "average_time_per_agent": (total_time / len(self.execution_log) if self.execution_log else 0),
         }
 
     async def run(
@@ -3397,7 +3230,7 @@ Current task: {current_input}"""
         session_id: str = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Execute all agents in parallel with a task, then synthesize results with LLM.
@@ -3444,61 +3277,40 @@ Current task: {current_input}"""
             )
 
         if not self.agents:
-            raise ValueError(
-                "No agents in crew. Add agents first."
-            )
+            raise ValueError("No agents in crew. Add agents first.")
 
         # Setup session
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        user_id = user_id or "crew_user"
 
         # Prepare tasks for each agent
         tasks_list = []
 
         if isinstance(task, str):
             # Same task for all agents
-            tasks_list.extend(
-                {'agent_id': agent_id, 'query': task}
-                for agent_id, _ in self.agents.items()
-            )
+            tasks_list.extend({"agent_id": agent_id, "query": task} for agent_id, _ in self.agents.items())
         elif isinstance(task, dict):
             # Custom task per agent
             for agent_id, agent_task in task.items():
                 if agent_id in self.agents:
-                    tasks_list.append({
-                        'agent_id': agent_id,
-                        'query': agent_task
-                    })
+                    tasks_list.append({"agent_id": agent_id, "query": agent_task})
                 else:
-                    self.logger.warning(
-                        f"Agent '{agent_id}' in task dict not found in crew"
-                    )
+                    self.logger.warning(f"Agent '{agent_id}' in task dict not found in crew")
         else:
-            raise ValueError(
-                f"task must be str or dict, got {type(task)}"
-            )
+            raise ValueError(f"task must be str or dict, got {type(task)}")
 
         # Execute agents in parallel
-        self.logger.info(
-            f"Executing {len(tasks_list)} agents in parallel for research"
-        )
+        self.logger.info(f"Executing {len(tasks_list)} agents in parallel for research")
 
-        parallel_result = await self.run_parallel(
-            tasks=tasks_list,
-            user_id=user_id,
-            session_id=session_id,
-            **kwargs
-        )
+        parallel_result = await self.run_parallel(tasks=tasks_list, user_id=user_id, session_id=session_id, **kwargs)
 
-        if not parallel_result['success']:
-            raise RuntimeError(
-                f"Parallel execution failed: {parallel_result.get('error', 'Unknown error')}"
-            )
+        if not parallel_result["success"]:
+            raise RuntimeError(f"Parallel execution failed: {parallel_result.get('error', 'Unknown error')}")
 
         # Build context from all agent results
         context_parts = ["# Research Findings from Specialist Agents\n"]
 
-        for agent_id, result in parallel_result['results'].items():
+        for agent_id, result in parallel_result["results"].items():
             agent = self.agents[agent_id]
             agent_name = agent.name
 
@@ -3527,27 +3339,24 @@ Create a clear, well-structured response."""
 
         async with self._llm as client:
             synthesis_response = await client.ask(
-                prompt=final_prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                **kwargs
+                prompt=final_prompt, max_tokens=max_tokens, temperature=temperature, **kwargs
             )
 
         # Enhance response with crew metadata
-        if hasattr(synthesis_response, 'metadata'):
-            synthesis_response.metadata['crew_name'] = self.name
-            synthesis_response.metadata['agents_used'] = list(parallel_result['results'].keys())
-            synthesis_response.metadata['total_execution_time'] = parallel_result['total_execution_time']
+        if hasattr(synthesis_response, "metadata"):
+            synthesis_response.metadata["crew_name"] = self.name
+            synthesis_response.metadata["agents_used"] = list(parallel_result["results"].keys())
+            synthesis_response.metadata["total_execution_time"] = parallel_result["total_execution_time"]
 
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 synthesis_response,
-                'run',
+                "run",
                 user_id=user_id,
                 session_id=session_id,
                 prompt=task if isinstance(task, str) else str(task),
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -3567,7 +3376,7 @@ Create a clear, well-structured response."""
         return {
             "results": self.execution_memory.results,
             "summary": self._summary,
-            "execution_order": self.execution_memory.execution_order
+            "execution_order": self.execution_memory.execution_order,
         }
 
     @property
@@ -3626,72 +3435,70 @@ Create a clear, well-structured response."""
         metadata de ejecución.
         """
         context = {
-            'question': question,
-            'semantic_matches': [],
-            'research_matches': research_matches or [],
-            'crew_summary': {},
-            'agents_available': [],
-            'execution_metadata': {}
+            "question": question,
+            "semantic_matches": [],
+            "research_matches": research_matches or [],
+            "crew_summary": {},
+            "agents_available": [],
+            "execution_metadata": {},
         }
 
         # 1. Procesar resultados semánticos de FAISS
         seen_agents = set()
         for chunk_text, agent_result, score in semantic_results:
             if agent_result.agent_id not in seen_agents:
-                context['semantic_matches'].append({
-                    'agent_id': agent_result.agent_id,
-                    'agent_name': agent_result.agent_name,
-                    'relevant_content': chunk_text,
-                    'similarity_score': round(score, 3),
-                    'task_executed': agent_result.task,
-                    'execution_time': agent_result.execution_time
-                })
+                context["semantic_matches"].append(
+                    {
+                        "agent_id": agent_result.agent_id,
+                        "agent_name": agent_result.agent_name,
+                        "relevant_content": chunk_text,
+                        "similarity_score": round(score, 3),
+                        "task_executed": agent_result.task,
+                        "execution_time": agent_result.execution_time,
+                    }
+                )
                 seen_agents.add(agent_result.agent_id)
 
         # 2. Agregar contexto del CrewResult
         if textual_context:
-            context['crew_summary'] = {
-                'final_output': textual_context.get('final_output', ''),
-                'relevant_logs': textual_context.get('relevant_logs', []),
-                'relevant_agents': [
+            context["crew_summary"] = {
+                "final_output": textual_context.get("final_output", ""),
+                "relevant_logs": textual_context.get("relevant_logs", []),
+                "relevant_agents": [
                     {
-                        'agent_id': info.agent_id,
-                        'agent_name': info.agent_name,
-                        'status': info.status,
-                        'execution_time': info.execution_time
+                        "agent_id": info.agent_id,
+                        "agent_name": info.agent_name,
+                        "status": info.status,
+                        "execution_time": info.execution_time,
                     }
-                    for info in textual_context.get('relevant_agents', [])
-                ]
+                    for info in textual_context.get("relevant_agents", [])
+                ],
             }
 
         # 3. Listar agentes disponibles para re-ejecución
-        context['agents_available'] = [
+        context["agents_available"] = [
             {
-                'agent_id': agent_id,
-                'agent_name': agent.name,
-                'tool_name': f"agent_{agent_id}",
-                'previous_result': (
+                "agent_id": agent_id,
+                "agent_name": agent.name,
+                "tool_name": f"agent_{agent_id}",
+                "previous_result": (
                     self.execution_memory.get_results_by_agent(agent_id).result
                     if self.execution_memory.get_results_by_agent(agent_id)
                     else None
-                )
+                ),
             }
             for agent_id, agent in self.agents.items()
         ]
 
         # 4. Metadata de ejecución
         if self.last_crew_result:
-            context['execution_metadata'] = {
-                'total_agents': len(self.agents),
-                'execution_mode': self.last_crew_result.metadata.get('mode', 'unknown'),
-                'total_time': self.last_crew_result.total_time,
-                'status': self.last_crew_result.status,
-                'completed_agents': len([
-                    a for a in self.last_crew_result.agents if a.status == 'completed'
-                ]),
-                'failed_agents': len([
-                    a for a in self.last_crew_result.agents if a.status == 'failed'
-                ])
+            context["execution_metadata"] = {
+                "total_agents": len(self.agents),
+                "execution_mode": self.last_crew_result.metadata.get("mode", "unknown"),
+                "total_time": self.last_crew_result.total_time,
+                "status": self.last_crew_result.status,
+                "completed_agents": len([a for a in self.last_crew_result.agents if a.status == "completed"]),
+                "failed_agents": len([a for a in self.last_crew_result.agents if a.status == "failed"]),
             }
 
         return context
@@ -3783,127 +3590,108 @@ analyze, and present information in the most helpful way for the user.
 
     def _build_ask_user_prompt(self, question: str, context: Dict[str, Any]) -> str:
         """Construye el user prompt con la pregunta y contexto recuperado."""
-        prompt_parts = [
-            "# User Question",
-            f"{question}",
-            "",
-            "---",
-            ""
-        ]
+        prompt_parts = ["# User Question", f"{question}", "", "---", ""]
 
         # 1. Resultados semánticos (más importantes primero)
-        if context.get('semantic_matches'):
-            prompt_parts.extend([
-                "# Relevant Information from Agents (Semantic Search)",
-                ""
-            ])
+        if context.get("semantic_matches"):
+            prompt_parts.extend(["# Relevant Information from Agents (Semantic Search)", ""])
 
-            for i, match in enumerate(context['semantic_matches'], 1):
-                prompt_parts.extend([
-                    f"## Match {i}: {match['agent_name']} (Similarity: {match['similarity_score']})",
-                    f"**Task Executed**: {match['task_executed']}",
-                    f"**Execution Time**: {match['execution_time']:.2f}s",
-                    "",
-                    "**Relevant Content**:",
-                    "```",
-                    self._coerce_prompt_text(match['relevant_content']),
-                    "```",
-                    ""
-                ])
+            for i, match in enumerate(context["semantic_matches"], 1):
+                prompt_parts.extend(
+                    [
+                        f"## Match {i}: {match['agent_name']} (Similarity: {match['similarity_score']})",
+                        f"**Task Executed**: {match['task_executed']}",
+                        f"**Execution Time**: {match['execution_time']:.2f}s",
+                        "",
+                        "**Relevant Content**:",
+                        "```",
+                        self._coerce_prompt_text(match["relevant_content"]),
+                        "```",
+                        "",
+                    ]
+                )
         else:
-            prompt_parts.extend([
-                "# Relevant Information from Agents",
-                "*No semantically similar content found. Answering based on crew summary.*",
-                ""
-            ])
+            prompt_parts.extend(
+                [
+                    "# Relevant Information from Agents",
+                    "*No semantically similar content found. Answering based on crew summary.*",
+                    "",
+                ]
+            )
 
         # 1b. Matches del execution wiki (BM25 sobre resultados intermedios
         # y tool calls de todas las ejecuciones registradas)
-        if research_matches := context.get('research_matches'):
-            prompt_parts.extend([
-                "---",
-                "",
-                "# Research Wiki Matches (intermediate results & tool calls)",
-                ""
-            ])
+        if research_matches := context.get("research_matches"):
+            prompt_parts.extend(["---", "", "# Research Wiki Matches (intermediate results & tool calls)", ""])
             for i, match in enumerate(research_matches, 1):
-                prompt_parts.extend([
-                    f"## Research Match {i}: {match.get('title', '')} "
-                    f"[{match.get('category', '')}] "
-                    f"(Score: {match.get('score', 0)})",
-                    f"**Page**: {match.get('concept_id', '')}",
-                ])
-                if match.get('summary'):
-                    prompt_parts.append(
-                        f"**Summary**: {self._coerce_prompt_text(match['summary'])}"
+                prompt_parts.extend(
+                    [
+                        f"## Research Match {i}: {match.get('title', '')} "
+                        f"[{match.get('category', '')}] "
+                        f"(Score: {match.get('score', 0)})",
+                        f"**Page**: {match.get('concept_id', '')}",
+                    ]
+                )
+                if match.get("summary"):
+                    prompt_parts.append(f"**Summary**: {self._coerce_prompt_text(match['summary'])}")
+                if match.get("content"):
+                    prompt_parts.extend(
+                        [
+                            "",
+                            "**Content**:",
+                            "```",
+                            self._coerce_prompt_text(match["content"]),
+                            "```",
+                        ]
                     )
-                if match.get('content'):
-                    prompt_parts.extend([
-                        "",
-                        "**Content**:",
-                        "```",
-                        self._coerce_prompt_text(match['content']),
-                        "```",
-                    ])
                 prompt_parts.append("")
 
         # 2. Resumen del crew (si existe)
-        crew_summary = context.get('crew_summary', {})
-        if crew_summary.get('final_output'):
-            prompt_parts.extend([
-                "---",
-                "",
-                "# Final Crew Output",
-                self._coerce_prompt_text(crew_summary['final_output']),
-                ""
-            ])
+        crew_summary = context.get("crew_summary", {})
+        if crew_summary.get("final_output"):
+            prompt_parts.extend(
+                ["---", "", "# Final Crew Output", self._coerce_prompt_text(crew_summary["final_output"]), ""]
+            )
 
-        if crew_summary.get('relevant_agents'):
-            prompt_parts.extend([
-                "## Agents Involved",
-                ""
-            ])
+        if crew_summary.get("relevant_agents"):
+            prompt_parts.extend(["## Agents Involved", ""])
             prompt_parts.extend(
                 f"- **{agent_info['agent_name']}** ({agent_info['status']}, {agent_info['execution_time']:.2f}s)"
-                for agent_info in crew_summary['relevant_agents']
+                for agent_info in crew_summary["relevant_agents"]
             )
             prompt_parts.append("")
 
         # 3. Metadata de ejecución
-        if exec_meta := context.get('execution_metadata', {}):
-            prompt_parts.extend([
-                "---",
-                "",
-                "# Execution Metadata",
-                f"- **Mode**: {exec_meta.get('execution_mode', 'unknown')}",
-                f"- **Total Agents**: {exec_meta.get('total_agents', 0)}",
-                f"- **Completed**: {exec_meta.get('completed_agents', 0)}",
-                f"- **Failed**: {exec_meta.get('failed_agents', 0)}",
-                f"- **Total Time**: {exec_meta.get('total_time', 0):.2f}s",
-                f"- **Status**: {exec_meta.get('status', 'unknown')}",
-                ""
-            ])
+        if exec_meta := context.get("execution_metadata", {}):
+            prompt_parts.extend(
+                [
+                    "---",
+                    "",
+                    "# Execution Metadata",
+                    f"- **Mode**: {exec_meta.get('execution_mode', 'unknown')}",
+                    f"- **Total Agents**: {exec_meta.get('total_agents', 0)}",
+                    f"- **Completed**: {exec_meta.get('completed_agents', 0)}",
+                    f"- **Failed**: {exec_meta.get('failed_agents', 0)}",
+                    f"- **Total Time**: {exec_meta.get('total_time', 0):.2f}s",
+                    f"- **Status**: {exec_meta.get('status', 'unknown')}",
+                    "",
+                ]
+            )
 
         # 4. Agentes disponibles para re-ejecución
-        if agents_available := context.get('agents_available', []):
-            prompt_parts.extend([
-                "---",
-                "",
-                "# Available Agents for Re-execution",
-                ""
-            ])
+        if agents_available := context.get("agents_available", []):
+            prompt_parts.extend(["---", "", "# Available Agents for Re-execution", ""])
             for agent_info in agents_available:
-                has_result = agent_info['previous_result'] is not None
+                has_result = agent_info["previous_result"] is not None
                 status_emoji = "✅" if has_result else "⚠️"
 
                 prompt_parts.append(
-                    f"{status_emoji} **{agent_info['agent_name']}** "
-                    f"(tool: `{agent_info['tool_name']}`)"
+                    f"{status_emoji} **{agent_info['agent_name']}** " f"(tool: `{agent_info['tool_name']}`)"
                 )
 
                 if has_result:
                     # Truncar resultado previo
-                    prev_result = str(agent_info['previous_result'])
+                    prev_result = str(agent_info["previous_result"])
                     if len(prev_result) > 200:
                         prev_result = f"{prev_result[:200]}..."
                     prompt_parts.append(f"  - Previous result: {prev_result}")
@@ -3913,22 +3701,20 @@ analyze, and present information in the most helpful way for the user.
             prompt_parts.append("")
 
         # 5. Instrucciones finales
-        prompt_parts.extend([
-            "---",
-            "",
-            "**Instructions**: Based on the information above, answer the user's question. ",
-            "If you need additional information and agent re-execution is enabled, ",
-            "call the appropriate agent tools with specific queries.",
-            ""
-        ])
+        prompt_parts.extend(
+            [
+                "---",
+                "",
+                "**Instructions**: Based on the information above, answer the user's question. ",
+                "If you need additional information and agent re-execution is enabled, ",
+                "call the appropriate agent tools with specific queries.",
+                "",
+            ]
+        )
 
         return "\n".join(prompt_parts)
 
-    def _textual_search(
-        self,
-        query: str,
-        crew_result: Optional[FlowResult] = None
-    ) -> Dict[str, Any]:
+    def _textual_search(self, query: str, crew_result: Optional[FlowResult] = None) -> Dict[str, Any]:
         """Búsqueda textual básica en el CrewResult usando keywords."""
         if crew_result is None:
             crew_result = self.last_crew_result
@@ -3938,24 +3724,34 @@ analyze, and present information in the most helpful way for the user.
 
         # Extraer keywords simples (minúsculas, sin stopwords comunes)
         stopwords = {
-            'el', 'la', 'de', 'que', 'en', 'y', 'a', 'los', 'las',
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'
+            "el",
+            "la",
+            "de",
+            "que",
+            "en",
+            "y",
+            "a",
+            "los",
+            "las",
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
         }
 
-        keywords = [
-            word.lower()
-            for word in query.split()
-            if len(word) > 2 and word.lower() not in stopwords
-        ]
+        keywords = [word.lower() for word in query.split() if len(word) > 2 and word.lower() not in stopwords]
 
         if not keywords:
             keywords = [query.lower()]
 
-        context = {
-            'final_output': crew_result.output,
-            'relevant_logs': [],
-            'relevant_agents': []
-        }
+        context = {"final_output": crew_result.output, "relevant_logs": [], "relevant_agents": []}
 
         # Buscar en execution_log
         for log_entry in crew_result.execution_log:
@@ -3964,17 +3760,17 @@ analyze, and present information in the most helpful way for the user.
             # Si encuentra al menos 2 keywords o 1 keyword en logs cortos
             matches = sum(kw in log_text for kw in keywords)
             if matches >= 2 or (matches >= 1 and len(log_entry) < 500):
-                context['relevant_logs'].append(log_entry)
+                context["relevant_logs"].append(log_entry)
 
         # Limitar logs relevantes a los más importantes
-        context['relevant_logs'] = context['relevant_logs'][:5]
+        context["relevant_logs"] = context["relevant_logs"][:5]
 
         # Buscar en agent metadata
         for agent_info in crew_result.agents:
             agent_text = f"{agent_info.agent_name} {agent_info.agent_id}".lower()
 
             if any(kw in agent_text for kw in keywords):
-                context['relevant_agents'].append(agent_info)
+                context["relevant_agents"].append(agent_info)
 
         return context
 
@@ -3989,7 +3785,7 @@ analyze, and present information in the most helpful way for the user.
         enable_agent_reexecution: bool = True,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        **llm_kwargs
+        **llm_kwargs,
     ) -> AIMessage:
         """
         Interactive execution query against the crew's execution memory.
@@ -4024,10 +3820,7 @@ analyze, and present information in the most helpful way for the user.
         """
         # 1. Validaciones
         if not self._llm:
-            raise ValueError(
-                "No LLM configured for ask(). "
-                "Pass llm parameter to AgentCrew constructor."
-            )
+            raise ValueError("No LLM configured for ask(). " "Pass llm parameter to AgentCrew constructor.")
 
         if not self.execution_memory.results:
             raise ValueError(
@@ -4035,36 +3828,22 @@ analyze, and present information in the most helpful way for the user.
                 "run_sequential(), run_parallel(), run_flow(), or run_loop()."
             )
 
-        self.logger.info(
-            f"Processing ask() query: {question[:100]}..."
-        )
+        self.logger.info(f"Processing ask() query: {question[:100]}...")
         start_time = asyncio.get_running_loop().time()
 
         # 2. Búsqueda semántica en FAISS (ExecutionMemory)
-        self.logger.debug(
-            f"Performing semantic search with top_k={top_k}"
-        )
-        semantic_results = self.execution_memory.search_similar(
-            query=question,
-            top_k=top_k
-        )
+        self.logger.debug(f"Performing semantic search with top_k={top_k}")
+        semantic_results = self.execution_memory.search_similar(query=question, top_k=top_k)
 
         # Filtrar por score_threshold
         semantic_results = [
-            (chunk, result, score)
-            for chunk, result, score in semantic_results
-            if score >= score_threshold
+            (chunk, result, score) for chunk, result, score in semantic_results if score >= score_threshold
         ]
 
-        self.logger.info(
-            f"Found {len(semantic_results)} semantic matches above threshold {score_threshold}"
-        )
+        self.logger.info(f"Found {len(semantic_results)} semantic matches above threshold {score_threshold}")
 
         # 3. Búsqueda textual en CrewResult
-        textual_context = self._textual_search(
-            query=question,
-            crew_result=self.last_crew_result
-        )
+        textual_context = self._textual_search(query=question, crew_result=self.last_crew_result)
 
         # 3b. Búsqueda en el execution wiki (BM25 sobre resultados
         # intermedios y tool-call results de todas las ejecuciones).
@@ -4073,13 +3852,10 @@ analyze, and present information in the most helpful way for the user.
         wiki = self._ensure_execution_wiki()
         if wiki is not None:
             for match in research_matches[:3]:
-                page = await wiki.get_page(match.get('concept_id', ''))
-                if page and page.get('body'):
-                    body = str(page['body'])
-                    match['content'] = (
-                        body[:2000] + "\n... [truncated]"
-                        if len(body) > 2000 else body
-                    )
+                page = await wiki.get_page(match.get("concept_id", ""))
+                if page and page.get("body"):
+                    body = str(page["body"])
+                    match["content"] = body[:2000] + "\n... [truncated]" if len(body) > 2000 else body
 
         # 4. Construir contexto combinado
         context = self._build_ask_context(
@@ -4090,22 +3866,15 @@ analyze, and present information in the most helpful way for the user.
         )
 
         # 5. Construir prompts
-        system_prompt = self._build_ask_system_prompt(
-            enable_reexecution=enable_agent_reexecution
-        )
+        system_prompt = self._build_ask_system_prompt(enable_reexecution=enable_agent_reexecution)
 
-        user_prompt = self._build_ask_user_prompt(
-            question=question,
-            context=context
-        )
+        user_prompt = self._build_ask_user_prompt(question=question, context=context)
 
         # 6. Ejecutar LLM principal
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_ask_user'
+        user_id = user_id or "crew_ask_user"
 
-        self.logger.info(
-            f"Calling LLM orchestrator (tools_enabled={enable_agent_reexecution})"
-        )
+        self.logger.info(f"Calling LLM orchestrator (tools_enabled={enable_agent_reexecution})")
 
         async with self._llm as client:
             response = await client.ask(
@@ -4115,73 +3884,67 @@ analyze, and present information in the most helpful way for the user.
                 use_conversation_history=False,
                 max_tokens=max_tokens or 8192,
                 temperature=temperature or 0.2,
-                **llm_kwargs
+                **llm_kwargs,
             )
 
         # 7. Agregar metadata a la respuesta
         end_time = asyncio.get_running_loop().time()
 
-        if not hasattr(response, 'metadata'):
+        if not hasattr(response, "metadata"):
             response.metadata = {}
 
         response.metadata.update(
             {
-                'ask_execution_time': end_time - start_time,
-                'semantic_results_count': len(semantic_results),
-                'semantic_results': [
+                "ask_execution_time": end_time - start_time,
+                "semantic_results_count": len(semantic_results),
+                "semantic_results": [
                     {
-                        'agent_id': result.agent_id,
-                        'agent_name': result.agent_name,
-                        'score': float(score),
+                        "agent_id": result.agent_id,
+                        "agent_name": result.agent_name,
+                        "score": float(score),
                     }
                     for _, result, score in semantic_results
                 ],
-                'agents_consulted': list(
-                    {result.agent_id for _, result, _ in semantic_results}
-                ),
-                'textual_context_used': bool(textual_context.get('relevant_logs')),
-                'research_matches_count': len(research_matches),
-                'research_matches': [
+                "agents_consulted": list({result.agent_id for _, result, _ in semantic_results}),
+                "textual_context_used": bool(textual_context.get("relevant_logs")),
+                "research_matches_count": len(research_matches),
+                "research_matches": [
                     {
-                        'concept_id': m.get('concept_id'),
-                        'category': m.get('category'),
-                        'score': m.get('score'),
+                        "concept_id": m.get("concept_id"),
+                        "category": m.get("category"),
+                        "score": m.get("score"),
                     }
                     for m in research_matches
                 ],
-                'reexecution_enabled': enable_agent_reexecution,
-                'crew_name': self.name,
+                "reexecution_enabled": enable_agent_reexecution,
+                "crew_name": self.name,
             }
         )
 
         # Detectar si hubo re-ejecuciones (tool calls)
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             reexecuted_agents = []
             for call in response.tool_calls:
-                tool_name = call.get('name', '') if isinstance(call, dict) else getattr(call, 'name', '')  # noqa
-                if tool_name.startswith('agent_'):
-                    agent_id = tool_name.replace('agent_', '')
+                tool_name = call.get("name", "") if isinstance(call, dict) else getattr(call, "name", "")  # noqa
+                if tool_name.startswith("agent_"):
+                    agent_id = tool_name.replace("agent_", "")
                     reexecuted_agents.append(agent_id)
 
             if reexecuted_agents:
-                response.metadata['agents_reexecuted'] = reexecuted_agents
-                self.logger.info(
-                    f"Agents re-executed during ask(): {reexecuted_agents}"
-                )
+                response.metadata["agents_reexecuted"] = reexecuted_agents
+                self.logger.info(f"Agents re-executed during ask(): {reexecuted_agents}")
 
-        self.logger.info(
-            f"ask() completed in {end_time - start_time:.2f}s"
-        )
+        self.logger.info(f"ask() completed in {end_time - start_time:.2f}s")
 
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 response,
-                'ask',
+                "ask",
                 user_id=user_id,
                 session_id=session_id,
                 prompt=question,
-                tenant=getattr(self, '_tenant', 'global'),
+                tenant=getattr(self, "_tenant", "global"),
             )
         )
         self._persist_tasks.add(_persist_task)
@@ -4190,10 +3953,7 @@ analyze, and present information in the most helpful way for the user.
         return response
 
     # =================== SUMMARY() SYSTEM METHODS ===================
-    def _chunk_results_adaptive(
-        self,
-        max_tokens_per_chunk: int = 4000
-    ) -> List[List[NodeResult]]:
+    def _chunk_results_adaptive(self, max_tokens_per_chunk: int = 4000) -> List[List[NodeResult]]:
         """
         Divide resultados en chunks adaptativos respetando execution_order.
 
@@ -4221,7 +3981,7 @@ analyze, and present information in the most helpful way for the user.
                 continue
 
             # Omitir resultados con errores
-            if hasattr(result, 'metadata') and result.metadata.get('status') == 'failed':
+            if hasattr(result, "metadata") and result.metadata.get("status") == "failed":
                 self.logger.debug(f"Skipping failed agent: {agent_id}")
                 continue
 
@@ -4244,11 +4004,7 @@ analyze, and present information in the most helpful way for the user.
 
         return chunks
 
-    def _format_result_for_report(
-        self,
-        result: NodeResult,
-        include_metadata: bool = False
-    ) -> str:
+    def _format_result_for_report(self, result: NodeResult, include_metadata: bool = False) -> str:
         """
         Formatea un AgentResult como markdown para el reporte.
 
@@ -4259,36 +4015,25 @@ analyze, and present information in the most helpful way for the user.
         Returns:
             String markdown formateado
         """
-        parts = [
-            f"## {result.agent_name}",
-            "",
-            f"**Task**: {result.task}",
-            ""
-        ]
+        parts = [f"## {result.agent_name}", "", f"**Task**: {result.task}", ""]
 
         if include_metadata:
-            parts.extend([
-                f"**Execution Time**: {result.execution_time:.2f}s",
-                f"**Timestamp**: {result.timestamp.isoformat()}",
-                ""
-            ])
+            parts.extend(
+                [
+                    f"**Execution Time**: {result.execution_time:.2f}s",
+                    f"**Timestamp**: {result.timestamp.isoformat()}",
+                    "",
+                ]
+            )
 
         # Formatear resultado
         result_content = str(result.result)
 
         # Si es muy largo, agregar en bloque de código
         if len(result_content) > 500:
-            parts.extend([
-                "**Result**:",
-                "```",
-                result_content,
-                "```"
-            ])
+            parts.extend(["**Result**:", "```", result_content, "```"])
         else:
-            parts.extend([
-                "**Result**:",
-                result_content
-            ])
+            parts.extend(["**Result**:", result_content])
 
         parts.append("")  # Línea en blanco al final
 
@@ -4310,22 +4055,24 @@ analyze, and present information in the most helpful way for the user.
             f"# {self.name} - Full Execution Report",
             "",
             f"**Generated**: {datetime.now().isoformat()}",
-            ""
+            "",
         ]
 
         # Agregar metadata del último crew result si existe
         if self.last_crew_result:
-            report_parts.extend([
-                "## Execution Summary",
-                "",
-                f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
-                f"- **Total Agents**: {len(self.agents)}",
-                f"- **Status**: {self.last_crew_result.status}",
-                f"- **Total Time**: {self.last_crew_result.total_time:.2f}s",
-                "",
-                "---",
-                ""
-            ])
+            report_parts.extend(
+                [
+                    "## Execution Summary",
+                    "",
+                    f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
+                    f"- **Total Agents**: {len(self.agents)}",
+                    f"- **Status**: {self.last_crew_result.status}",
+                    f"- **Total Time**: {self.last_crew_result.total_time:.2f}s",
+                    "",
+                    "---",
+                    "",
+                ]
+            )
 
         report_parts.extend(("## Agent Results", ""))
         results_added = 0
@@ -4336,7 +4083,7 @@ analyze, and present information in the most helpful way for the user.
                 continue
 
             # Omitir errores
-            if hasattr(result, 'metadata') and result.metadata.get('status') == 'failed':
+            if hasattr(result, "metadata") and result.metadata.get("status") == "failed":
                 continue
 
             formatted = self._format_result_for_report(result, include_metadata=False)
@@ -4355,7 +4102,7 @@ analyze, and present information in the most helpful way for the user.
         max_tokens_per_chunk: int = 4000,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        **llm_kwargs
+        **llm_kwargs,
     ) -> str:
         """
         Genera executive summary usando LLM iterativo con chunks.
@@ -4377,9 +4124,7 @@ analyze, and present information in the most helpful way for the user.
             String markdown con executive summary
         """
         if not self._llm:
-            raise ValueError(
-                "No LLM configured. Pass llm parameter to AgentCrew constructor."
-            )
+            raise ValueError("No LLM configured. Pass llm parameter to AgentCrew constructor.")
 
         self.logger.info("Generating executive summary with iterative LLM...")
 
@@ -4400,21 +4145,15 @@ Create a clear, well-structured response."""
         if not chunks:
             return "No results available to summarize."
 
-        self.logger.info(
-            f"Processing {len(chunks)} chunks for executive summary"
-        )
+        self.logger.info(f"Processing {len(chunks)} chunks for executive summary")
 
         # 2. Procesar cada chunk con progress feedback
         mini_summaries = []
         session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_summary_user'
+        user_id = user_id or "crew_summary_user"
         # Progress tracking
         if self.use_tqdm:
-            chunk_iterator = async_tqdm(
-                enumerate(chunks, 1),
-                total=len(chunks),
-                desc="Summarizing chunks"
-            )
+            chunk_iterator = async_tqdm(enumerate(chunks, 1), total=len(chunks), desc="Summarizing chunks")
         else:
             chunk_iterator = enumerate(chunks, 1)
         for chunk_idx, chunk in chunk_iterator:
@@ -4422,16 +4161,10 @@ Create a clear, well-structured response."""
                 self.logger.info(f"Processing chunk {chunk_idx}/{len(chunks)}...")
 
             # Construir contexto del chunk
-            chunk_context_parts = [
-                f"# Chunk {chunk_idx} of {len(chunks)} - Agent Results",
-                ""
-            ]
+            chunk_context_parts = [f"# Chunk {chunk_idx} of {len(chunks)} - Agent Results", ""]
 
             for result in chunk:
-                formatted = self._format_result_for_report(
-                    result,
-                    include_metadata=False
-                )
+                formatted = self._format_result_for_report(result, include_metadata=False)
                 chunk_context_parts.append(formatted)
 
             chunk_context = "\n".join(chunk_context_parts)
@@ -4453,40 +4186,39 @@ Keep your summary clear, structured, and focused on the most valuable informatio
                         use_conversation_history=False,
                         max_tokens=8192,
                         temperature=0.3,
-                        **llm_kwargs
+                        **llm_kwargs,
                     )
-                    mini_summaries.append({
-                        'chunk_idx': chunk_idx,
-                        'summary': response.content,
-                        'agents': [r.agent_name for r in chunk]
-                    })
+                    mini_summaries.append(
+                        {"chunk_idx": chunk_idx, "summary": response.content, "agents": [r.agent_name for r in chunk]}
+                    )
                 except Exception as e:
                     self.logger.error(f"Error processing chunk {chunk_idx}: {e}")
                     # Agregar placeholder
-                    mini_summaries.append({
-                        'chunk_idx': chunk_idx,
-                        'summary': f"[Error processing chunk {chunk_idx}]",
-                        'agents': [r.agent_name for r in chunk]
-                    })
+                    mini_summaries.append(
+                        {
+                            "chunk_idx": chunk_idx,
+                            "summary": f"[Error processing chunk {chunk_idx}]",
+                            "agents": [r.agent_name for r in chunk],
+                        }
+                    )
 
         # 3. Final pass: Combinar mini-summaries
         self.logger.info("Generating final executive summary...")
 
-        final_context_parts = [
-            f"# {self.name} - Agent Summaries to Synthesize",
-            ""
-        ]
+        final_context_parts = [f"# {self.name} - Agent Summaries to Synthesize", ""]
 
         for mini in mini_summaries:
-            final_context_parts.extend([
-                f"## Summary Part {mini['chunk_idx']}",
-                f"*Agents: {', '.join(mini['agents'])}*",
-                "",
-                mini['summary'],
-                "",
-                "---",
-                ""
-            ])
+            final_context_parts.extend(
+                [
+                    f"## Summary Part {mini['chunk_idx']}",
+                    f"*Agents: {', '.join(mini['agents'])}*",
+                    "",
+                    mini["summary"],
+                    "",
+                    "---",
+                    "",
+                ]
+            )
 
         final_context = "\n".join(final_context_parts)
 
@@ -4510,9 +4242,9 @@ above. Ensure the summary:
             final_response = await client.ask(
                 prompt=final_prompt,
                 use_conversation_history=False,
-                max_tokens=llm_kwargs.get('max_tokens', 8192),
+                max_tokens=llm_kwargs.get("max_tokens", 8192),
                 temperature=0.3,
-                **llm_kwargs
+                **llm_kwargs,
             )
 
         self.logger.info("Executive summary generated successfully")
@@ -4522,27 +4254,25 @@ above. Ensure the summary:
             f"# {self.name} - Executive Summary",
             "",
             f"**Generated**: {datetime.now().isoformat()}",
-            ""
+            "",
         ]
 
         if self.last_crew_result:
-            final_report_parts.extend([
-                "## Execution Overview",
-                "",
-                f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
-                f"- **Total Agents**: {len(self.agents)}",
-                f"- **Status**: {self.last_crew_result.status}",
-                f"- **Chunks Processed**: {len(chunks)}",
-                "",
-                "---",
-                ""
-            ])
+            final_report_parts.extend(
+                [
+                    "## Execution Overview",
+                    "",
+                    f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
+                    f"- **Total Agents**: {len(self.agents)}",
+                    f"- **Status**: {self.last_crew_result.status}",
+                    f"- **Chunks Processed**: {len(chunks)}",
+                    "",
+                    "---",
+                    "",
+                ]
+            )
 
-        final_report_parts.extend([
-            "## Summary",
-            "",
-            final_response.content
-        ])
+        final_report_parts.extend(["## Summary", "", final_response.content])
 
         return "\n".join(final_report_parts)
 
@@ -4553,7 +4283,7 @@ above. Ensure the summary:
         max_tokens_per_chunk: int = 4000,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        **llm_kwargs
+        **llm_kwargs,
     ) -> str:
         """
         Genera reporte completo o executive summary de todos los resultados.
@@ -4617,10 +4347,8 @@ above. Ensure the summary:
         if mode == "executive_summary" and not self._llm:
             try:
                 # Default to Google GenAI if no LLM provided
-                self.logger.warning(
-                    "No LLM provided for executive summary. Defaulting to Google GenAI."
-                )
-                self._llm = SUPPORTED_CLIENTS['google']()
+                self.logger.warning("No LLM provided for executive summary. Defaulting to Google GenAI.")
+                self._llm = SUPPORTED_CLIENTS["google"]()
             except Exception as ex:
                 self.logger.error(f"Failed to initialize default LLM: {ex}")
                 raise ValueError(
@@ -4628,9 +4356,7 @@ above. Ensure the summary:
                     "Either use mode='full_report' or pass llm to AgentCrew constructor."
                 ) from ex
 
-        self.logger.info(
-            f"Generating {mode} from {len(self.execution_memory.results)} results"
-        )
+        self.logger.info(f"Generating {mode} from {len(self.execution_memory.results)} results")
 
         # Ejecutar según modo
         if mode == "full_report":
@@ -4641,7 +4367,7 @@ above. Ensure the summary:
                 max_tokens_per_chunk=max_tokens_per_chunk,
                 user_id=user_id,
                 session_id=session_id,
-                **llm_kwargs
+                **llm_kwargs,
             )
 
         # Save in self._summary

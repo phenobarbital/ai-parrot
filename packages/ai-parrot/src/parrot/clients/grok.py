@@ -9,6 +9,7 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
@@ -24,24 +25,20 @@ def _xai_chat_helpers():
         from xai_sdk.chat import user, system, assistant, tool_result
     except ImportError as exc:
         raise ImportError(
-            "GrokClient requires the 'xai-sdk' package (>=1.12). "
-            "Install with: pip install ai-parrot[grok]"
+            "GrokClient requires the 'xai-sdk' package (>=1.12). " "Install with: pip install ai-parrot[grok]"
         ) from exc
     return user, system, assistant, tool_result
 
-from ..models import (
-    MessageResponse,
-    CompletionUsage,
-    AIMessage,
-    StructuredOutputConfig,
-    ToolCall
-)
+
+from ..models import MessageResponse, CompletionUsage, AIMessage, StructuredOutputConfig, ToolCall
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
 from ..tools.manager import ToolFormat
 
+
 class GrokModel(str, Enum):
     """Grok model versions (xAI API, July 2026)."""
+
     GROK_4_3 = "grok-4.3"
     GROK_4_20 = "grok-4.20"
     GROK_4_20_NON_REASONING = "grok-4.20-non-reasoning"
@@ -53,10 +50,12 @@ class GrokModel(str, Enum):
     GROK_IMAGINE_IMAGE_QUALITY = "grok-imagine-image-quality"
     GROK_IMAGINE_VIDEO = "grok-imagine-video"
 
+
 class GrokClient(AbstractClient):
     """
     Client for interacting with xAI's Grok models.
     """
+
     client_type: str = "xai"
     client_name: str = "grok"
     _default_model: str = GrokModel.GROK_4_3.value
@@ -65,12 +64,7 @@ class GrokClient(AbstractClient):
     # preserves the budget ask()/ask_stream() hardcoded before FEAT-481.
     _default_max_tokens: int = 16000
 
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        timeout: int = 3600,
-        **kwargs
-    ):
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 3600, **kwargs):
         """
         Initialize Grok client.
 
@@ -84,6 +78,7 @@ class GrokClient(AbstractClient):
         if not self.api_key:
             try:
                 from navconfig import config
+
                 self.api_key = config.get("XAI_API_KEY")
             except ImportError:
                 pass
@@ -99,8 +94,7 @@ class GrokClient(AbstractClient):
             from xai_sdk import AsyncClient
         except ImportError as exc:
             raise ImportError(
-                "GrokClient requires the 'xai-sdk' package (>=1.12). "
-                "Install with: pip install ai-parrot[grok]"
+                "GrokClient requires the 'xai-sdk' package (>=1.12). " "Install with: pip install ai-parrot[grok]"
             ) from exc
         return AsyncClient(api_key=self.api_key, timeout=self.timeout)
 
@@ -124,7 +118,7 @@ class GrokClient(AbstractClient):
         schema = None
         name = "structured_output"
 
-        if isinstance(structured_output, type) and hasattr(structured_output, 'model_json_schema'):
+        if isinstance(structured_output, type) and hasattr(structured_output, "model_json_schema"):
             schema = structured_output.model_json_schema()
             name = structured_output.__name__.lower()
         elif is_dataclass(structured_output):
@@ -135,11 +129,7 @@ class GrokClient(AbstractClient):
             return {
                 "response_format": {
                     "type": "json_schema",
-                    "json_schema": {
-                        "name": name,
-                        "schema": schema,
-                        "strict": True
-                    }
+                    "json_schema": {"name": name, "schema": schema, "strict": True},
                 }
             }
 
@@ -181,7 +171,7 @@ class GrokClient(AbstractClient):
         prepared_tools = []
         for schema in schemas:
             s = schema.copy()
-            s.pop('_tool_instance', None)
+            s.pop("_tool_instance", None)
             prepared_tools.append(
                 make_tool(
                     name=s.get("name", ""),
@@ -233,6 +223,7 @@ class GrokClient(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_grok2
+
         _lc_tc_grok2 = self._emit_before_call(
             client_name="grok",
             model=model,
@@ -244,17 +235,13 @@ class GrokClient(AbstractClient):
         _lc_t0_grok2 = _lc_time_grok2.perf_counter()
 
         # 3. Initialize Chat
-        chat_kwargs = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
+        chat_kwargs = {"model": model, "max_tokens": max_tokens, "temperature": temperature}
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
 
         if prepared_tools:
-            chat_kwargs['tools'] = prepared_tools
-            chat_kwargs['tool_choice'] = "auto"
+            chat_kwargs["tools"] = prepared_tools
+            chat_kwargs["tool_choice"] = "auto"
 
         chat = client.chat.create(**chat_kwargs)
 
@@ -333,12 +320,7 @@ class GrokClient(AbstractClient):
 
                     tool_exec_result = await self._execute_tool(tool_name, tool_args)
 
-                    tool_call_rec = ToolCall(
-                        id=tool_id,
-                        name=tool_name,
-                        arguments=tool_args,
-                        result=tool_exec_result
-                    )
+                    tool_call_rec = ToolCall(id=tool_id, name=tool_name, arguments=tool_args, result=tool_exec_result)
                     all_tool_calls.append(tool_call_rec)
                     _lc_round_tool_names_grok2.append(tool_name)
 
@@ -368,7 +350,7 @@ class GrokClient(AbstractClient):
 
         from ..models.responses import AIMessageFactory
 
-        text_content = final_response.content if hasattr(final_response, 'content') else str(final_response)
+        text_content = final_response.content if hasattr(final_response, "content") else str(final_response)
 
         structured_payload = None
         if output_config:
@@ -395,8 +377,8 @@ class GrokClient(AbstractClient):
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
             turn_id=turn_id,
-            usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, 'usage') else None,
-            text_response=text_content
+            usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, "usage") else None,
+            text_response=text_content,
         )
 
         # FEAT-397: replace the last-round-only usage with the accumulated
@@ -418,12 +400,14 @@ class GrokClient(AbstractClient):
         # the single writer.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_grok2_usage = getattr(ai_message, 'usage', None)
+        _lc_grok2_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_grok2, client_name="grok", model=model,
+            _lc_tc_grok2,
+            client_name="grok",
+            model=model,
             duration_ms=(_lc_time_grok2.perf_counter() - _lc_t0_grok2) * 1000,
-            input_tokens=getattr(_lc_grok2_usage, 'prompt_tokens', None) if _lc_grok2_usage else None,
-            output_tokens=getattr(_lc_grok2_usage, 'completion_tokens', None) if _lc_grok2_usage else None,
+            input_tokens=getattr(_lc_grok2_usage, "prompt_tokens", None) if _lc_grok2_usage else None,
+            output_tokens=getattr(_lc_grok2_usage, "completion_tokens", None) if _lc_grok2_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -456,6 +440,7 @@ class GrokClient(AbstractClient):
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_groks
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GrokStreamChunkEvent
+
         _lc_tc_groks = self._emit_before_call(
             client_name="grok",
             model=model,
@@ -513,12 +498,17 @@ class GrokClient(AbstractClient):
                 full_response.append(content)
                 # FEAT-176: per-chunk event
                 if _lc_has_chunk_subs_grok2:
-                    await self.events.emit(_GrokStreamChunkEvent(
-                        trace_context=_lc_tc_groks, client_name="grok",
-                        model=model, chunk_index=_lc_chunk_idx_grok2,
-                        chunk_size_bytes=len(content.encode("utf-8")),
-                        source_type="client", source_name="grok",
-                    ))
+                    await self.events.emit(
+                        _GrokStreamChunkEvent(
+                            trace_context=_lc_tc_groks,
+                            client_name="grok",
+                            model=model,
+                            chunk_index=_lc_chunk_idx_grok2,
+                            chunk_size_bytes=len(content.encode("utf-8")),
+                            source_type="client",
+                            source_name="grok",
+                        )
+                    )
                     _lc_chunk_idx_grok2 += 1
                 yield content
 
@@ -526,7 +516,7 @@ class GrokClient(AbstractClient):
         final_text = final_sdk_response.content if final_sdk_response else "".join(full_response)
         usage = (
             CompletionUsage.from_grok(final_sdk_response.usage)
-            if final_sdk_response and hasattr(final_sdk_response, 'usage')
+            if final_sdk_response and hasattr(final_sdk_response, "usage")
             else CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
         )
         ai_message = AIMessage(
@@ -542,22 +532,19 @@ class GrokClient(AbstractClient):
         )
         # FEAT-176: lifecycle event — AfterClientCallEvent
         await self._emit_after_call(
-            _lc_tc_groks, client_name="grok", model=model,
+            _lc_tc_groks,
+            client_name="grok",
+            model=model,
             duration_ms=(_lc_time_groks.perf_counter() - _lc_t0_groks) * 1000,
-            input_tokens=getattr(usage, 'prompt_tokens', None),
-            output_tokens=getattr(usage, 'completion_tokens', None),
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
             finish_reason=None,
         )
         yield ai_message
 
         # FEAT-524: no memory write — the bot persists the round.
 
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: Dict[str, Any]
-    ) -> AIMessage:
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
         """Resume a suspended Grok execution after a HandoffTool / HITL pause.
 
         Replays the suspended message history into a fresh xAI ``chat`` object,
@@ -666,18 +653,14 @@ class GrokClient(AbstractClient):
         if final_response is None:
             final_response = response
 
-        text_content = (
-            final_response.content if hasattr(final_response, "content") else str(final_response)
-        )
+        text_content = final_response.content if hasattr(final_response, "content") else str(final_response)
         ai_message = AIMessageFactory.create_message(
             response=final_response,
             input_text="[Resumed Conversation]",
             model=model,
             user_id=state.get("user_id", "unknown"),
             session_id=session_id,
-            usage=CompletionUsage.from_grok(final_response.usage)
-            if hasattr(final_response, "usage")
-            else None,
+            usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, "usage") else None,
             text_response=text_content,
         )
         ai_message.tool_calls = all_tool_calls
@@ -767,10 +750,8 @@ class GrokClient(AbstractClient):
                             model=resolved_model,
                         )
 
-            usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, response
-            )
+            usage = CompletionUsage.from_grok(response.usage) if hasattr(response, "usage") else CompletionUsage()
+            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
         except InvokeError:
             raise
         except Exception as exc:

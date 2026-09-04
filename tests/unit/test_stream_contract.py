@@ -27,6 +27,7 @@ Part 3 – Contract-shape tests (mock at ask_stream level)
 
 No real API calls are made in any test.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +40,6 @@ import pytest
 from parrot.clients.base import AbstractClient
 from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage, CompletionUsage
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -88,17 +88,13 @@ def _assert_contract(
     provider: str | None = None,
 ) -> None:
     """Assert the universal streaming contract."""
-    assert len(chunks) >= min_chunks, (
-        f"Expected ≥{min_chunks} str chunk(s), got {len(chunks)}"
-    )
+    assert len(chunks) >= min_chunks, f"Expected ≥{min_chunks} str chunk(s), got {len(chunks)}"
     assert ai_msg is not None, "Final AIMessage was not yielded"
     assert isinstance(ai_msg, AIMessage)
     assert ai_msg.model is not None and ai_msg.model != ""
     assert ai_msg.provider is not None and ai_msg.provider != ""
     if provider is not None:
-        assert ai_msg.provider == provider, (
-            f"Expected provider={provider!r}, got {ai_msg.provider!r}"
-        )
+        assert ai_msg.provider == provider, f"Expected provider={provider!r}, got {ai_msg.provider!r}"
 
 
 # ===========================================================================
@@ -110,9 +106,7 @@ def test_abstract_client_ask_stream_return_type():
     """AbstractClient.ask_stream return type must be AsyncIterator[Union[str, AIMessage]]."""
     hints = get_type_hints(AbstractClient.ask_stream)
     expected = AsyncIterator[Union[str, AIMessage]]
-    assert hints["return"] == expected, (
-        f"Expected {expected!r}, got {hints['return']!r}"
-    )
+    assert hints["return"] == expected, f"Expected {expected!r}, got {hints['return']!r}"
 
 
 def test_ask_stream_signature_has_correct_annotation():
@@ -120,9 +114,7 @@ def test_ask_stream_signature_has_correct_annotation():
     sig = inspect.signature(AbstractClient.ask_stream)
     assert sig.return_annotation != inspect.Parameter.empty
     annotation_repr = repr(sig.return_annotation)
-    assert "AIMessage" in annotation_repr, (
-        f"Return annotation does not reference AIMessage: {annotation_repr}"
-    )
+    assert "AIMessage" in annotation_repr, f"Return annotation does not reference AIMessage: {annotation_repr}"
 
 
 @pytest.mark.asyncio
@@ -141,9 +133,7 @@ async def test_stream_contract_last_item_is_aimessage():
         all_items.append(item)
 
     assert len(all_items) >= 2
-    assert isinstance(all_items[-1], AIMessage), (
-        f"Last item must be AIMessage, got {type(all_items[-1])!r}"
-    )
+    assert isinstance(all_items[-1], AIMessage), f"Last item must be AIMessage, got {type(all_items[-1])!r}"
     str_items = [i for i in all_items if isinstance(i, str)]
     assert len(str_items) >= 1
 
@@ -179,9 +169,7 @@ async def test_gemma4_ask_stream_real_implementation():
     # Patch self.ask to return our pre-built AIMessage
     client.ask = AsyncMock(return_value=ai_msg_from_ask)
 
-    chunks, final_msg = await _consume(
-        client.ask_stream("test prompt", max_tokens=512)
-    )
+    chunks, final_msg = await _consume(client.ask_stream("test prompt", max_tokens=512))
 
     # The real ask_stream() was called — verify it did the right thing
     client.ask.assert_awaited_once()
@@ -208,9 +196,7 @@ async def test_gemma4_ask_stream_empty_response():
     client.logger = MagicMock()
     client.ask = AsyncMock(return_value=ai_msg_from_ask)
 
-    chunks, final_msg = await _consume(
-        client.ask_stream("test prompt", max_tokens=512)
-    )
+    chunks, final_msg = await _consume(client.ask_stream("test prompt", max_tokens=512))
 
     # Even with empty text, the AIMessage must still be yielded
     assert final_msg is not None
@@ -239,9 +225,7 @@ async def test_transformers_ask_stream_real_implementation():
     client.logger = MagicMock()
     client.ask = AsyncMock(return_value=ai_msg_from_ask)
 
-    chunks, final_msg = await _consume(
-        client.ask_stream("test prompt", max_tokens=512)
-    )
+    chunks, final_msg = await _consume(client.ask_stream("test prompt", max_tokens=512))
 
     client.ask.assert_awaited_once()
     _assert_contract(chunks, final_msg, provider="transformers")
@@ -302,9 +286,7 @@ async def test_groq_ask_stream_real_implementation():
     # FEAT-524: _prepare_conversation_context/_update_conversation_memory are
     # gone; the client now composes messages synchronously from the rendered
     # history it is handed, and never writes to memory.
-    client._build_messages = MagicMock(
-        return_value=[{"role": "user", "content": "test prompt"}]
-    )
+    client._build_messages = MagicMock(return_value=[{"role": "user", "content": "test prompt"}])
     client._prepare_groq_tools = MagicMock(return_value=[])  # no tools
 
     # Mock the Groq SDK client via PropertyMock (direct assignment is blocked
@@ -314,6 +296,7 @@ async def test_groq_ask_stream_real_implementation():
 
     # Also need CompletionUsage.from_groq to work — verify it exists
     from parrot.models import CompletionUsage as CU
+
     assert hasattr(CU, "from_groq"), "CompletionUsage.from_groq must exist"
 
     with patch.object(type(client), "client", new_callable=PropertyMock) as mock_client_prop:
@@ -354,9 +337,7 @@ async def test_groq_ask_stream_no_usage_data():
     client = GroqClient.__new__(GroqClient)
     client.logger = MagicMock()
     client.model = "llama-3.3-70b-versatile"
-    client._build_messages = MagicMock(
-        return_value=[{"role": "user", "content": "hi"}]
-    )
+    client._build_messages = MagicMock(return_value=[{"role": "user", "content": "hi"}])
     client._prepare_groq_tools = MagicMock(return_value=[])
 
     mock_sdk = MagicMock()
@@ -364,9 +345,7 @@ async def test_groq_ask_stream_no_usage_data():
 
     with patch.object(type(client), "client", new_callable=PropertyMock) as mock_client_prop:
         mock_client_prop.return_value = mock_sdk
-        chunks, final_msg = await _consume(
-            client.ask_stream("hi", history=None)
-        )
+        chunks, final_msg = await _consume(client.ask_stream("hi", history=None))
 
     assert final_msg is not None
     assert final_msg.usage.prompt_tokens == 0
@@ -398,9 +377,7 @@ async def test_anthropic_contract_shape():
 
     client = AnthropicClient.__new__(AnthropicClient)
     with patch.object(client, "ask_stream", side_effect=_conforming):
-        chunks, ai_msg = await _consume(
-            client.ask_stream("test prompt", history=None)
-        )
+        chunks, ai_msg = await _consume(client.ask_stream("test prompt", history=None))
 
     _assert_contract(chunks, ai_msg, provider="claude")
     assert ai_msg is sentinel

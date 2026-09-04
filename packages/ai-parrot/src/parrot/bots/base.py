@@ -695,9 +695,7 @@ class BaseBot(AbstractBot):
                 )
 
             # Create system prompt (no vector context)
-            system_prompt = await self.create_system_prompt(
-                user_id=user_id, session_id=session_id, **kwargs
-            )
+            system_prompt = await self.create_system_prompt(user_id=user_id, session_id=session_id, **kwargs)
 
             # Configure LLM if needed
             llm = self.get_client()
@@ -752,7 +750,7 @@ class BaseBot(AbstractBot):
                         response=response,
                         user_id=user_id,
                         chatbot_id=self.memory_key_id,
-                        context_used=None  # invoke does not use vector context,
+                        context_used=None,  # invoke does not use vector context,
                     )
                     await self.save_conversation_turn(user_id, session_id, turn)
 

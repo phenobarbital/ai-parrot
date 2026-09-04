@@ -5,6 +5,7 @@ with a single LLM call for the executive paragraph.
 
 Implements Spec §3 Module 8.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,6 @@ from parrot.storage.security_reports import (
     ReportRef,
     SeverityBreakdown,
 )
-
 
 # ---------------------------------------------------------------------------
 # Public Pydantic models
@@ -178,14 +178,9 @@ class WeeklySecuritySummarizer:
 
         # 2. Set-op finding diffs on finding_id.
         #    current_findings: id → EmbeddedFinding (latest scan wins on dupe id)
-        current_findings: dict[str, EmbeddedFinding] = {
-            f.finding_id: f
-            for s in scans
-            for f in s.top_findings
-        }
+        current_findings: dict[str, EmbeddedFinding] = {f.finding_id: f for s in scans for f in s.top_findings}
         previous_findings: dict[str, EmbeddedFinding] = {
-            f.finding_id: f
-            for f in (previous_summary_data.persistent_findings if previous_summary_data else [])
+            f.finding_id: f for f in (previous_summary_data.persistent_findings if previous_summary_data else [])
         }
 
         current_ids = set(current_findings.keys())
@@ -245,12 +240,11 @@ class WeeklySecuritySummarizer:
         Returns:
             ``_Executive`` Pydantic model with the generated paragraph.
         """
+
         def _fmt_findings(findings: list[EmbeddedFinding], label: str) -> str:
             if not findings:
                 return f"{label}: none"
-            items = "; ".join(
-                f"[{f.severity}] {f.title}" for f in findings[:5]
-            )
+            items = "; ".join(f"[{f.severity}] {f.title}" for f in findings[:5])
             suffix = f" (+ {len(findings) - 5} more)" if len(findings) > 5 else ""
             return f"{label}: {items}{suffix}"
 
@@ -266,9 +260,7 @@ class WeeklySecuritySummarizer:
             f"{_fmt_findings(persistent, 'Persistent findings')}\n\n"
             f"Return only the executive paragraph."
         )
-        self.logger.debug(
-            "Calling LLM for executive paragraph (framework=%s, provider=%s)", framework, provider
-        )
+        self.logger.debug("Calling LLM for executive paragraph (framework=%s, provider=%s)", framework, provider)
         response = await self._llm.ask(prompt, structured_output=_Executive)
         return response.structured_output
 
@@ -332,9 +324,7 @@ class MonthlySecuritySummarizer:
             persistent_findings = list(weekly_summaries[0].persistent_findings)
         else:
             # Intersection across all weekly persistent_finding_ids.
-            weekly_id_sets = [
-                {f.finding_id for f in w.persistent_findings} for w in weekly_summaries
-            ]
+            weekly_id_sets = [{f.finding_id for f in w.persistent_findings} for w in weekly_summaries]
             persistent_ids = weekly_id_sets[0].intersection(*weekly_id_sets[1:])
             # Pick canonical EmbeddedFinding from the latest week that has it.
             canonical: dict[str, EmbeddedFinding] = {}
@@ -345,9 +335,7 @@ class MonthlySecuritySummarizer:
             persistent_findings = _sort_findings(list(canonical.values()))
 
         # Collect source_report_ids: UUIDs from all weeks' source_report_ids.
-        source_report_ids: list[UUID] = [
-            rid for w in weekly_summaries for rid in w.source_report_ids
-        ]
+        source_report_ids: list[UUID] = [rid for w in weekly_summaries for rid in w.source_report_ids]
 
         # 3. Single LLM call — only for the executive paragraph.
         exec_result = await self._call_llm_for_exec(
@@ -390,6 +378,7 @@ class MonthlySecuritySummarizer:
         Returns:
             ``_Executive`` Pydantic model with the generated paragraph.
         """
+
         def _fmt(findings: list[EmbeddedFinding]) -> str:
             if not findings:
                 return "none"

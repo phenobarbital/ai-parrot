@@ -135,13 +135,19 @@ class TestBuildMessages:
     @staticmethod
     def _rendered(*pairs):
         """Render ``(user, assistant)`` pairs the way the bot would."""
-        history = ConversationHistory(session_id="s1", user_id="u1", turns=[
-            ConversationTurn(
-                turn_id=f"t{i}", user_id="u1",
-                user_message=user, assistant_response=assistant,
-            )
-            for i, (user, assistant) in enumerate(pairs)
-        ])
+        history = ConversationHistory(
+            session_id="s1",
+            user_id="u1",
+            turns=[
+                ConversationTurn(
+                    turn_id=f"t{i}",
+                    user_id="u1",
+                    user_message=user,
+                    assistant_response=assistant,
+                )
+                for i, (user, assistant) in enumerate(pairs)
+            ],
+        )
         return render_history(history)
 
     def test_no_history_single_current_message_no_duplication(self):
@@ -157,9 +163,7 @@ class TestBuildMessages:
         """Historical turns come first, the current turn last, each exactly once."""
         client = _make_client(logger=MagicMock())
 
-        messages = client._build_messages(
-            "And 3+3?", None, self._rendered(("What's 2+2?", "4"))
-        )
+        messages = client._build_messages("And 3+3?", None, self._rendered(("What's 2+2?", "4")))
 
         # Exactly 3 messages: [history_user, history_assistant, current_user] —
         # not 5, which is what the pre-FEAT-302 duplication produced.
@@ -167,9 +171,7 @@ class TestBuildMessages:
 
         current_text = messages[2]["content"]
         if isinstance(current_text, list):
-            current_text = "".join(
-                b.get("text", "") for b in current_text if isinstance(b, dict)
-            )
+            current_text = "".join(b.get("text", "") for b in current_text if isinstance(b, dict))
         assert "3+3" in current_text
         # And the history text appears exactly once across the whole payload.
         assert json.dumps(messages).count("2+2") == 1
@@ -178,9 +180,7 @@ class TestBuildMessages:
         """Several turns keep their order, with the current turn appended last."""
         client = _make_client(logger=MagicMock())
 
-        messages = client._build_messages(
-            "third", None, self._rendered(("first", "a1"), ("second", "a2"))
-        )
+        messages = client._build_messages("third", None, self._rendered(("first", "a1"), ("second", "a2")))
 
         texts = ["".join(b["text"] for b in m["content"]) for m in messages]
         assert texts == ["first", "a1", "second", "a2", "third"]
@@ -189,9 +189,7 @@ class TestBuildMessages:
         """An empty rendered history is not an empty leading message."""
         client = _make_client(logger=MagicMock())
 
-        assert client._build_messages("Hello", None, []) == client._build_messages(
-            "Hello", None, None
-        )
+        assert client._build_messages("Hello", None, []) == client._build_messages("Hello", None, None)
 
     def test_no_system_prompt_is_synthesized_from_history(self):
         """FEAT-524: history never becomes system-prompt prose any more.
@@ -212,9 +210,7 @@ class TestBuildMessages:
         """A nonexistent attachment is logged and skipped, never raised."""
         client = _make_client(logger=MagicMock())
 
-        messages = client._build_messages(
-            "Hello", ["/nonexistent/path/does-not-exist.txt"], None
-        )
+        messages = client._build_messages("Hello", ["/nonexistent/path/does-not-exist.txt"], None)
 
         # No exception; the missing file was skipped, leaving a text-only message.
         assert len(messages) == 1

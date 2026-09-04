@@ -9,6 +9,7 @@ Supported models:
   - google/gemma-4-E4B-it   (4B parameters)
   - google/gemma-4-26B-A4B-it (26B MoE, 4B active)
 """
+
 import asyncio
 import json
 import logging
@@ -23,16 +24,12 @@ from enum import Enum
 ## dependencies when Gemma4Client is not actually used.
 
 from ..memory.render import HistoryMessage
+
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient, MessageResponse
-from ..models import (
-    AIMessage,
-    AIMessageFactory,
-    CompletionUsage,
-    StructuredOutputConfig
-)
+from ..models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
 from ..models.basic import ToolCall
 from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
@@ -40,6 +37,7 @@ from ..tools.manager import ToolFormat
 
 class Gemma4Model(Enum):
     """Supported Gemma 4 model variants."""
+
     GEMMA_4_E2B = "google/gemma-4-E2B-it"
     GEMMA_4_E4B = "google/gemma-4-E4B-it"
     GEMMA_4_26B_A4B = "google/gemma-4-26B-A4B-it"
@@ -77,7 +75,7 @@ class Gemma4Client(AbstractClient):
         dtype: Optional[Any] = None,
         trust_remote_code: bool = False,
         enable_thinking: bool = False,
-        **kwargs
+        **kwargs,
     ):
         """Initialize the Gemma4Client.
 
@@ -107,9 +105,7 @@ class Gemma4Client(AbstractClient):
         self.processor = None
         self.generation_config = None
 
-        self.logger = logging.getLogger(
-            f"parrot.Gemma4Client.{self.model_name}"
-        )
+        self.logger = logging.getLogger(f"parrot.Gemma4Client.{self.model_name}")
 
         # Reduce noise from HTTP libraries used by HuggingFace Hub
         logging.getLogger("httpcore").setLevel(logging.INFO)
@@ -143,13 +139,9 @@ class Gemma4Client(AbstractClient):
 
         # Resolve device/dtype on first load
         if self.device is None:
-            self.device = self._device_arg or (
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
+            self.device = self._device_arg or ("cuda" if torch.cuda.is_available() else "cpu")
         if self.dtype is None:
-            self.dtype = self._dtype_arg or (
-                torch.float16 if torch.cuda.is_available() else torch.float32
-            )
+            self.dtype = self._dtype_arg or (torch.float16 if torch.cuda.is_available() else torch.float32)
 
         if self.generation_config is None:
             self.generation_config = GenerationConfig(
@@ -235,20 +227,20 @@ class Gemma4Client(AbstractClient):
 
         # 1. Registered tools from ToolManager
         if self.tool_manager and self.enable_tools:
-            manager_schemas = self.tool_manager.get_tool_schemas(
-                provider_format=ToolFormat.OPENAI
-            )
+            manager_schemas = self.tool_manager.get_tool_schemas(provider_format=ToolFormat.OPENAI)
             for schema in manager_schemas:
                 name = schema.get("name")
                 if name and name not in processed_names:
-                    gemma_tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "description": schema.get("description", ""),
-                            "parameters": schema.get("parameters", {}),
-                        },
-                    })
+                    gemma_tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "description": schema.get("description", ""),
+                                "parameters": schema.get("parameters", {}),
+                            },
+                        }
+                    )
                     processed_names.add(name)
 
         # 2. Ad-hoc tool dicts
@@ -264,24 +256,24 @@ class Gemma4Client(AbstractClient):
                 elif "name" in tool:
                     name = tool["name"]
                     if name not in processed_names:
-                        gemma_tools.append({
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "description": tool.get("description", ""),
-                                "parameters": tool.get(
-                                    "parameters",
-                                    tool.get("input_schema", {}),
-                                ),
-                            },
-                        })
+                        gemma_tools.append(
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "description": tool.get("description", ""),
+                                    "parameters": tool.get(
+                                        "parameters",
+                                        tool.get("input_schema", {}),
+                                    ),
+                                },
+                            }
+                        )
                         processed_names.add(name)
 
         return gemma_tools or None
 
-    def _parse_tool_calls(
-        self, parsed: Dict[str, Any]
-    ) -> List[ToolCall]:
+    def _parse_tool_calls(self, parsed: Dict[str, Any]) -> List[ToolCall]:
         """Extract ToolCall objects from a parsed model response.
 
         ``parse_response()`` returns a dict with an optional
@@ -313,11 +305,13 @@ class Gemma4Client(AbstractClient):
                     arguments = {"raw": raw_args}
             else:
                 arguments = raw_args
-            tool_calls.append(ToolCall(
-                id=str(uuid.uuid4()),
-                name=name,
-                arguments=arguments,
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=str(uuid.uuid4()),
+                    name=name,
+                    arguments=arguments,
+                )
+            )
         return tool_calls
 
     # ------------------------------------------------------------------
@@ -330,18 +324,18 @@ class Gemma4Client(AbstractClient):
     ) -> List[Dict[str, Any]]:
         """Format abstract messages into Hugging Face Gemma 4 format.
 
-        Translates file attachments to multimodal image/audio/video content 
+        Translates file attachments to multimodal image/audio/video content
         blocks and ensures they precede text in the content list.
         """
         formatted = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", [])
-            
+
             if isinstance(content, str):
                 formatted.append({"role": role, "content": [{"type": "text", "text": content}]})
                 continue
-                
+
             formatted_content = []
             text_blocks = []
             for block in content:
@@ -362,14 +356,14 @@ class Gemma4Client(AbstractClient):
                 else:
                     # In case of existing multimodal pieces or tools
                     formatted_content.append(block)
-            
+
             # Text MUST come after images/audio/video for Gemma 4 optimal performance
             formatted_content.extend(text_blocks)
-            
+
             formatted_msg = msg.copy()
             formatted_msg["content"] = formatted_content
             formatted.append(formatted_msg)
-            
+
         return formatted
 
     def _apply_chat_template(
@@ -430,28 +424,21 @@ class Gemma4Client(AbstractClient):
 
         start_time = time.time()
         import torch
+
         with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs, generation_config=gen_config
-            )
+            outputs = self.model.generate(**inputs, generation_config=gen_config)
         generation_time = time.time() - start_time
 
         generated_ids = outputs[0][input_length:]
 
         # Parse structured response (thinking, content, tool_calls)
-        raw_response = self.processor.decode(
-            generated_ids, skip_special_tokens=False
-        )
+        raw_response = self.processor.decode(generated_ids, skip_special_tokens=False)
         if hasattr(self.processor, "parse_response"):
             parsed = self.processor.parse_response(raw_response)
             if not isinstance(parsed, dict):
                 parsed = {"content": str(parsed)}
         else:
-            parsed = {
-                "content": self.processor.decode(
-                    generated_ids, skip_special_tokens=True
-                )
-            }
+            parsed = {"content": self.processor.decode(generated_ids, skip_special_tokens=True)}
 
         usage = CompletionUsage(
             prompt_tokens=input_length,
@@ -474,7 +461,7 @@ class Gemma4Client(AbstractClient):
         history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """Send a prompt and return the response.
 
@@ -513,7 +500,8 @@ class Gemma4Client(AbstractClient):
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_g4
-        _lc_model_g4 = self.model_name if hasattr(self, 'model_name') else ""
+
+        _lc_model_g4 = self.model_name if hasattr(self, "model_name") else ""
         _lc_tc_g4 = self._emit_before_call(
             client_name="gemma4",
             model=_lc_model_g4,
@@ -532,18 +520,12 @@ class Gemma4Client(AbstractClient):
 
         all_tool_calls: List[ToolCall] = []
         total_generation_time = 0.0
-        total_usage = CompletionUsage(
-            prompt_tokens=0, completion_tokens=0, total_tokens=0
-        )
+        total_usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
         # ------ Tool-calling loop ------
         for _round in range(MAX_TOOL_ROUNDS):
-            inputs = self._apply_chat_template(
-                chat_messages, tools=gemma_tools
-            )
-            parsed, usage, gen_time = self._generate(
-                inputs, max_tokens, temperature, **kwargs
-            )
+            inputs = self._apply_chat_template(chat_messages, tools=gemma_tools)
+            parsed, usage, gen_time = self._generate(inputs, max_tokens, temperature, **kwargs)
 
             total_generation_time += gen_time
             total_usage = CompletionUsage(
@@ -560,50 +542,46 @@ class Gemma4Client(AbstractClient):
                 break
 
             # Execute each tool call
-            self.logger.info(
-                f"Round {_round + 1}: executing {len(round_tool_calls)} tool call(s)"
-            )
+            self.logger.info(f"Round {_round + 1}: executing {len(round_tool_calls)} tool call(s)")
 
             # Append the assistant message with tool_calls to conversation
-            chat_messages.append({
-                "role": "assistant",
-                "content": [{"type": "text", "text": ""}],
-                "tool_calls": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.arguments),
-                        },
-                    }
-                    for tc in round_tool_calls
-                ],
-            })
+            chat_messages.append(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": ""}],
+                    "tool_calls": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments),
+                            },
+                        }
+                        for tc in round_tool_calls
+                    ],
+                }
+            )
 
             for tc in round_tool_calls:
                 try:
-                    result = await self._execute_tool(
-                        tc.name, tc.arguments
-                    )
+                    result = await self._execute_tool(tc.name, tc.arguments)
                     tc.result = result
                 except Exception as e:
                     tc.error = str(e)
                     result = f"Error: {e}"
-                    self.logger.error(
-                        f"Tool '{tc.name}' failed: {e}"
-                    )
+                    self.logger.error(f"Tool '{tc.name}' failed: {e}")
 
                 # Append tool result as a message for the next round
-                chat_messages.append({
-                    "role": "tool",
-                    "name": tc.name,
-                    "content": [{"type": "text", "text": str(result)}],
-                })
+                chat_messages.append(
+                    {
+                        "role": "tool",
+                        "name": tc.name,
+                        "content": [{"type": "text", "text": str(result)}],
+                    }
+                )
                 all_tool_calls.append(tc)
         else:
-            self.logger.warning(
-                f"Tool-calling loop hit MAX_TOOL_ROUNDS ({MAX_TOOL_ROUNDS})"
-            )
+            self.logger.warning(f"Tool-calling loop hit MAX_TOOL_ROUNDS ({MAX_TOOL_ROUNDS})")
 
         # Extract final text content
         response_text = (parsed.get("content") or "").strip()
@@ -639,12 +617,14 @@ class Gemma4Client(AbstractClient):
                 self.logger.warning(f"Failed to parse structured output: {e}")
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_g4_usage = getattr(ai_message, 'usage', None)
+        _lc_g4_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_g4, client_name="gemma4", model=_lc_model_g4,
+            _lc_tc_g4,
+            client_name="gemma4",
+            model=_lc_model_g4,
             duration_ms=(_lc_time_g4.perf_counter() - _lc_t0_g4) * 1000,
-            input_tokens=getattr(_lc_g4_usage, 'prompt_tokens', None) if _lc_g4_usage else None,
-            output_tokens=getattr(_lc_g4_usage, 'completion_tokens', None) if _lc_g4_usage else None,
+            input_tokens=getattr(_lc_g4_usage, "prompt_tokens", None) if _lc_g4_usage else None,
+            output_tokens=getattr(_lc_g4_usage, "completion_tokens", None) if _lc_g4_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -663,7 +643,7 @@ class Gemma4Client(AbstractClient):
         system_prompt: Optional[str] = None,
         history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Pseudo-streaming: generates fully then yields chunks then final AIMessage.
 
@@ -681,7 +661,7 @@ class Gemma4Client(AbstractClient):
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
             tools=tools,
-            **kwargs
+            **kwargs,
         )
         text = response.content
         chunk_size = 10
@@ -735,9 +715,7 @@ class Gemma4Client(AbstractClient):
             output=output,
             output_type=config.output_type if config else None,
             model=self.model_name,
-            usage=response.usage or CompletionUsage(
-                prompt_tokens=0, completion_tokens=0, total_tokens=0
-            ),
+            usage=response.usage or CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             raw_response=response,
         )
 
@@ -755,16 +733,16 @@ class Gemma4Client(AbstractClient):
         tool_call_id = state.get("tool_call_id")
 
         if tool_call_id:
-            chat_messages.append({
-                "role": "tool",
-                "name": state.get("tool_name", "handoff_tool"),
-                "content": user_input,
-            })
+            chat_messages.append(
+                {
+                    "role": "tool",
+                    "name": state.get("tool_name", "handoff_tool"),
+                    "content": user_input,
+                }
+            )
 
         gemma_tools = state.get("tools")
-        inputs = self._apply_chat_template(
-            chat_messages, tools=gemma_tools
-        )
+        inputs = self._apply_chat_template(chat_messages, tools=gemma_tools)
         parsed, usage, gen_time = self._generate(
             inputs,
             max_tokens=state.get("max_tokens", 4096),
@@ -804,9 +782,7 @@ class Gemma4Client(AbstractClient):
             "status": "loaded",
             "enable_thinking": self.enable_thinking,
             "vocab_size": inner_tok.vocab_size if inner_tok else None,
-            "max_position_embeddings": getattr(
-                self.model.config, "max_position_embeddings", None
-            ),
+            "max_position_embeddings": getattr(self.model.config, "max_position_embeddings", None),
         }
 
     async def clear_model(self):
@@ -818,6 +794,7 @@ class Gemma4Client(AbstractClient):
             del self.processor
             self.processor = None
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         self.logger.info("Model cleared from memory")

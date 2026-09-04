@@ -179,9 +179,7 @@ async def test_turn_stored_under_memory_key_id(bot: BaseBot):
     """The persisted turn is retrievable under the agent-segmented key."""
     await bot.ask("q", user_id="u", session_id="s", use_vector_context=False)
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert len(history.turns) == 1
     assert history.turns[0].chatbot_id == bot.memory_key_id
 
@@ -218,9 +216,7 @@ async def test_one_turn_per_round(entry_point: str):
     await method("q1", user_id="u", session_id="s", use_vector_context=False)
     await method("q2", user_id="u", session_id="s", use_vector_context=False)
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert len(history.turns) == 2
 
 
@@ -231,9 +227,7 @@ async def test_ask_stream_persists_one_turn():
     async for _ in bot.ask_stream("q", user_id="u", session_id="s", use_vector_context=False):
         pass
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert len(history.turns) == 1
     assert history.turns[0].chatbot_id == bot.memory_key_id
 
@@ -265,9 +259,7 @@ async def test_ask_stream_partial_save_on_error():
         if isinstance(chunk, str):
             chunks.append(chunk)
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert history is not None and len(history.turns) == 1
     assert "partial text" in history.turns[0].assistant_response
     assert history.turns[0].chatbot_id == bot.memory_key_id
@@ -282,9 +274,7 @@ async def test_persisted_turn_is_built_from_the_ai_message(bot: BaseBot):
     """The turn carries the canonical metadata shape from ``from_ai_message``."""
     await bot.ask("q", user_id="u", session_id="s", use_vector_context=False)
 
-    turn = (
-        await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
-    ).turns[0]
+    turn = (await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)).turns[0]
 
     assert turn.user_message == "q"
     assert turn.assistant_response == "canned-reply"
@@ -300,9 +290,7 @@ async def test_persisted_turn_is_built_from_the_ai_message(bot: BaseBot):
 async def test_conversation_context_info_measures_rendered_messages(bot: BaseBot):
     """``AIMessage`` context metadata is fed from the rendered message count."""
     await bot.ask("round-one", user_id="u", session_id="s", use_vector_context=False)
-    response = await bot.ask(
-        "round-two", user_id="u", session_id="s", use_vector_context=False
-    )
+    response = await bot.ask("round-two", user_id="u", session_id="s", use_vector_context=False)
 
     # One prior turn renders to two messages (user + assistant).
     assert response.conversation_context_length == 2
@@ -356,9 +344,7 @@ async def test_model_switching_fallback_single_turn():
     assert len(primary.calls) == 1 and len(secondary.calls) == 1
     assert response.output == "secondary"
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert len(history.turns) == 1
     # The failed primary attempt is NOT recorded — only the answer that won.
     assert history.turns[0].assistant_response == "secondary"
@@ -384,9 +370,7 @@ async def test_model_switching_contrastive_single_turn():
 
     await bot.ask("q", user_id="u", session_id="s", use_vector_context=False)
 
-    history = await bot.conversation_memory.get_history(
-        "u", "s", chatbot_id=bot.memory_key_id
-    )
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert len(history.turns) == 1
 
 
@@ -415,8 +399,6 @@ def test_save_conversation_turn_rejects_foreign_turn_from_bot_code():
     async def _run():
         bot = await _make_bot()
         with pytest.raises(ValueError):
-            await bot.save_conversation_turn(
-                "u", "s", ConversationTurn("t", "u", "q", "a", chatbot_id="someone-else")
-            )
+            await bot.save_conversation_turn("u", "s", ConversationTurn("t", "u", "q", "a", chatbot_id="someone-else"))
 
     asyncio.run(_run())
