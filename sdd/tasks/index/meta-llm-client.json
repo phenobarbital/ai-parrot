@@ -133,7 +133,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Creates two new files (smoke script, doc page) touched by nothing else - CAN run beside TASK-2838.",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2839-smoke-script-and-docs.md"
+      "completed_at": "2026-09-04T14:53:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2839-smoke-script-and-docs.md"
     },
     {
       "id": "TASK-2840",
