@@ -14,14 +14,14 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates the parrot/clients/meta/ package (__init__.py + models.py) per the FEAT-523 folder convention; shares no files with any other task. Root of the dependency graph.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2833-meta-model-catalog.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Creates clients/meta/client.py, which TASK-2836/2837/2840 all then edit. Must land first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2834-metaclient-chat-completions.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "Touches factory.py and two roster files only - disjoint from clients/meta/client.py, so it CAN run beside TASK-2836 in a separate worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2835-factory-registration-and-rosters.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": false,
       "parallelism_notes": "Edits clients/meta/client.py, same file as TASK-2834/2837/2840. The main engineering task (D1).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2836-responses-api-path.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": false,
       "parallelism_notes": "Edits clients/meta/client.py and builds directly on the Responses path from TASK-2836.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2837-search-grounding-token-counting.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": false,
       "parallelism_notes": "Needs factory registration AND the full capability surface before it can exercise them live.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2838-live-e2e-suite.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -142,7 +142,7 @@
       "parallel": true,
       "parallelism_notes": "Creates two new files (smoke script, doc page) touched by nothing else - CAN run beside TASK-2838.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2839-smoke-script-and-docs.md"
     },
@@ -153,7 +153,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -162,7 +162,7 @@
       "parallel": false,
       "parallelism_notes": "Edits clients/meta/client.py. D2: last and explicitly droppable - nothing depends on it; intended cut if the phase runs long.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-04T14:09:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2840-tool-search-mapping.md"
     }
