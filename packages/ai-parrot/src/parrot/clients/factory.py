@@ -51,9 +51,6 @@ logger = logging.getLogger(__name__)
 # ai-parrot-client-<provider> satellite distribution (TASK-2854 drops this
 # tuple entirely once every provider has an entry point).
 _IN_CORE_PROVIDERS: Tuple[str, ...] = (
-    "groq",
-    "grok",
-    "zai",
     "nvidia",
     "moonshot",
     "openrouter",
@@ -63,9 +60,10 @@ _IN_CORE_PROVIDERS: Tuple[str, ...] = (
     # ai-parrot-client-meta (TASK-2849); "anthropic" and "amazon"
     # extracted to ai-parrot-client-anthropic / ai-parrot-client-amazon
     # (TASK-2850); "google", "gemma4" and "hf" extracted to
-    # ai-parrot-client-google / -gemma4 / -hf (TASK-2851) — all registered
-    # via real `parrot.clients` entry points now, not this transitional
-    # walk.
+    # ai-parrot-client-google / -gemma4 / -hf (TASK-2851); "groq", "grok"
+    # and "zai" extracted to ai-parrot-client-groq / -grok / -zai
+    # (TASK-2852) — all registered via real `parrot.clients` entry points
+    # now, not this transitional walk.
 )
 
 # Guards _discover() so repeated calls (from create()/list_providers()/

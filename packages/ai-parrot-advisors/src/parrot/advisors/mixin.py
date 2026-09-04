@@ -155,6 +155,13 @@ class ProductAdvisorMixin:
             # Create a text-based LLM for question generation
             # Note: Don't use llm.model as it's an audio-only model
             GoogleGenAIClient = SUPPORTED_CLIENTS.get('google')
+            # FEAT-523 (TASK-2852): a provider registered via a real
+            # `parrot.clients` entry point (e.g. "google", extracted to
+            # ai-parrot-client-google) is stored as `ep.load` itself — a
+            # zero-arg callable, not the class directly. Resolve it the
+            # same way LLMFactory.create() does before instantiating.
+            if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+                GoogleGenAIClient = GoogleGenAIClient()
             if GoogleGenAIClient:
                 llm = GoogleGenAIClient(
                     model='gemini-3.1-flash-lite-preview',

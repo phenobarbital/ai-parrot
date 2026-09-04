@@ -338,6 +338,12 @@ class ToolInterface:
         """
         try:
             if cls := SUPPORTED_CLIENTS.get(llm.lower(), None):
+                # FEAT-523 (TASK-2852): a provider registered via a real
+                # `parrot.clients` entry point is stored as `ep.load`
+                # itself — a zero-arg callable, not the class directly.
+                # Resolve it the same way LLMFactory.create() does.
+                if callable(cls) and not isinstance(cls, type):
+                    cls = cls()
                 return cls(model=model, **kwargs)
             raise ValueError(f"Unsupported LLM: {llm}")
         except Exception:

@@ -360,6 +360,13 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         GoogleGenAIClient = SUPPORTED_CLIENTS.get("google")
         if not GoogleGenAIClient:
             raise ValueError("GoogleGenAIClient not available")
+        # FEAT-523 (TASK-2852): a provider registered via a real
+        # `parrot.clients` entry point (e.g. "google", extracted to
+        # ai-parrot-client-google) is stored as `ep.load` itself — a
+        # zero-arg callable, not the class directly. Resolve it the same
+        # way LLMFactory.create() does before instantiating.
+        if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+            GoogleGenAIClient = GoogleGenAIClient()
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(

@@ -68,11 +68,12 @@ def test_create_missing_satellite(monkeypatch):
 
 def test_list_models_active_deprecated(monkeypatch):
     _reset(monkeypatch)
-    # FEAT-523 (TASK-2849/2850/2851): "openai"/"meta"/"anthropic"/"amazon"/
-    # "google"/"gemma4"/"hf" were all extracted to their own satellites —
-    # use "groq", which stays in _IN_CORE_PROVIDERS, so this core test
-    # doesn't depend on any satellite being installed.
-    out = factory.LLMFactory.list_models("groq")
+    # FEAT-523 (TASK-2849/2850/2851/2852): "openai"/"meta"/"anthropic"/
+    # "amazon"/"google"/"gemma4"/"hf"/"groq"/"grok"/"zai" were all
+    # extracted to their own satellites — use "nvidia", which stays in
+    # _IN_CORE_PROVIDERS, so this core test doesn't depend on any
+    # satellite being installed.
+    out = factory.LLMFactory.list_models("nvidia")
     assert set(out) == {"active", "deprecated"}
     assert out["active"]
 
@@ -80,11 +81,12 @@ def test_list_models_active_deprecated(monkeypatch):
 def test_list_providers_lists_in_core_keys(monkeypatch):
     _reset(monkeypatch)
     providers = factory.LLMFactory.list_providers()
-    # FEAT-523 (TASK-2849/2850/2851): "openai"/"meta"/"anthropic"/"amazon"/
-    # "google"/"gemma4"/"hf" were all extracted to their own satellites —
-    # assert against "groq"/"zai", which stay in _IN_CORE_PROVIDERS.
-    assert providers.get("groq") == "ai-parrot"
-    assert providers.get("zai") == "ai-parrot"
+    # FEAT-523 (TASK-2849/2850/2851/2852): "openai"/"meta"/"anthropic"/
+    # "amazon"/"google"/"gemma4"/"hf"/"groq"/"grok"/"zai" were all
+    # extracted to their own satellites — assert against "nvidia"/
+    # "moonshot", which stay in _IN_CORE_PROVIDERS.
+    assert providers.get("nvidia") == "ai-parrot"
+    assert providers.get("moonshot") == "ai-parrot"
 
 
 def test_provider_backend_discovered():

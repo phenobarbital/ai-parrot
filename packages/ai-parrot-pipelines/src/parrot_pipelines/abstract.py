@@ -85,6 +85,13 @@ class AbstractPipeline(ABC):
             )
 
         client_class = supported_clients[provider]
+        # FEAT-523 (TASK-2852): a provider now registered via a real
+        # `parrot.clients` entry point (rather than the transitional
+        # in-core walk) is stored as `ep.load` itself — a zero-arg
+        # callable, not the class directly. Resolve it the same way
+        # LLMFactory.create() does before instantiating.
+        if callable(client_class) and not isinstance(client_class, type):
+            client_class = client_class()
         client = client_class(model=model, **kwargs)
         self.llm_provider = client.client_name.lower()
         return client
