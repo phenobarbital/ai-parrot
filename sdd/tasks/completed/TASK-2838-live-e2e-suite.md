@@ -47,7 +47,29 @@ the owning task, do not weaken the test.
 
 > Note: an untracked `tests/e2e/` directory already exists in the working tree
 > from unrelated work. Add this file to it; do not restructure the directory or
-> touch anything already there.
+> touch anything already there. (In practice this worktree's `tests/e2e/` did
+> not exist yet — worktrees only inherit tracked files — so this task creates
+> the directory fresh; nothing pre-existing was touched.)
+
+> **File-scope expansion (per this task's own "fix the defect in the owning
+> task, do not weaken the test" instruction)**: running the live suite with
+> real credentials surfaced two genuine wire-shape defects in TASK-2836's
+> `_prepare_responses_args()` (owning task, already completed) that no
+> mocked unit test had caught:
+> 1. Tool *definitions* were forwarded in the Chat-Completions-nested shape
+>    (`{"type":"function","function":{...}}`) — Responses live 400s with
+>    `'tools[0]' missing required field 'name'`; it needs the flat shape.
+> 2. Tool-call *round trips* were represented as invented
+>    `tool_output`/`tool_call` content blocks (mirroring `gpt.py`'s
+>    structural pattern) — Responses live 400s with `'input[N].content' did
+>    not match any supported type`; the real shape is top-level
+>    `function_call`/`function_call_output` items.
+>
+> Both are fixed in `packages/ai-parrot/src/parrot/clients/meta/client.py`
+> (added `_to_responses_tool()`; rewrote the tool-call branches of
+> `_prepare_responses_args()`), with matching unit-test updates in
+> `tests/clients/test_meta_responses.py`. Both files are therefore also
+> MODIFY for this task, beyond the one originally listed.
 
 ---
 
@@ -194,7 +216,43 @@ class TestMetaLive:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Created `tests/e2e/test_meta_live.py`, gated on `META_API_KEY`
+(present in this environment), marked `@pytest.mark.live`. Ran the full
+suite live against `muse-spark-1.3-contributor`: **7/7 passed** —
+non-empty visible text (F015 guard), full tool-calling round trip
+(Responses path), structured output (Chat Completions path — not yet
+supported on Responses, per `MetaClient.ask()`'s own docstring),
+Responses `status == "completed"`, search grounding surfacing
+`web_search_calls` metadata, `count_input_tokens()` returning a positive
+int, and `tool_choice="required"` raising `openai.BadRequestError`. All
+prompts synthetic. `ruff` clean.
+
+**Two genuine live-discovered defects fixed** (in TASK-2836's owning file,
+per this task's "fix the defect in the owning task" instruction — see the
+file-scope note above):
+1. `count_input_tokens()` called `self.client.responses.input_tokens(...)`
+   directly — that attribute is an SDK sub-resource
+   (`AsyncInputTokens`), not callable; the real method is `.count(...)`.
+2. `_prepare_responses_args()` sent tool *definitions* in the
+   Chat-Completions-nested shape and tool-call *round trips* as invented
+   `tool_output`/`tool_call` content blocks (both mirrored from `gpt.py`'s
+   structural reference, which turned out not to match Meta's actual
+   Responses wire shape for either case). Both 400s live; fixed with a new
+   `_to_responses_tool()` flattening helper and top-level
+   `function_call`/`function_call_output` input items respectively.
+   Corresponding unit tests updated/added in `test_meta_responses.py` and
+   `test_meta_grounding.py` (mock-shape fix for `.count`).
+
+**Deviations from spec**: (1) `LLMFactory.create(E2E_MODEL).model` is not
+literally `result.content` as the task's illustrative test snippet
+showed — the real `AIMessage` field is `.output` (per
+`AIMessageFactory.from_openai`); tests use `.output`. (2) The
+`test_live_tool_choice_required_raises` snippet showed `ask(...,
+tool_choice="required")`, but `ask()` never exposes a raw `tool_choice`
+override (the base always forces `"auto"` when tools are prepared) — the
+test instead calls `client._chat_completion(...)` directly with an
+explicit `tool_choice="required"` override, which is the only way to
+actually put that value on the wire. (3) File scope expanded beyond the
+single listed file — see the note added to this task file above.

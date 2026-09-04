@@ -112,7 +112,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Needs factory registration AND the full capability surface before it can exercise them live.",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2838-live-e2e-suite.md"
+      "completed_at": "2026-09-04T14:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2838-live-e2e-suite.md"
     },
     {
       "id": "TASK-2839",
