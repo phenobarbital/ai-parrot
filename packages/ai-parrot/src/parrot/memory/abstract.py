@@ -1,15 +1,51 @@
 import uuid
+import orjson
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from abc import ABC, abstractmethod
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
+from .compaction.models import (
+    ToolInvocation,
+    ToolStatus,
+    TokenCount,
+    TurnState,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     # Imported lazily: ``parrot.models`` must not become a runtime dependency
     # of ``parrot.memory`` (FEAT-524 keeps this package import-cycle free).
     from parrot.models import AIMessage
+
+
+def _stringify(result: Any) -> Optional[str]:
+    """Coerce a tool call's raw ``result`` into text for ``ToolInvocation.output``.
+
+    Args:
+        result: The raw value on ``ToolCall.result``.
+
+    Returns:
+        ``None`` if ``result`` is ``None``; the string unchanged if it
+        already is one; the canonical (key-sorted) JSON text for dict/list
+        payloads; ``str(result)`` for anything else.
+    """
+    if result is None:
+        return None
+    if isinstance(result, str):
+        return result
+    if isinstance(result, (dict, list)):
+        return orjson.dumps(result, option=orjson.OPT_SORT_KEYS).decode()
+    return str(result)
+
+
+def _tee_key(result: Any) -> Optional[str]:
+    """Extract the FEAT-380 working-memory tee key from a tool result, if any."""
+    if isinstance(result, dict):
+        tee = result.get("_tee")
+        if isinstance(tee, dict):
+            return tee.get("key")
+    return None
 
 
 @dataclass
@@ -28,6 +64,22 @@ class ConversationTurn:
     #: ``AbstractBot.save_conversation_turn``; ``None`` on records written
     #: before attribution existed.
     chatbot_id: Optional[str] = None
+    #: Tool activity captured from ``AIMessage.tool_calls`` (FEAT-525).
+    #: Empty for legacy records and for turns with no tool use.
+    tool_invocations: List[ToolInvocation] = field(default_factory=list)
+    #: Round-level failure text, condensed by Stage 0 rule 5. Never omitted.
+    error: Optional[str] = None
+    #: Stamped by ``ConversationMemory.add_turn`` (Stage 0.5). ``None`` for
+    #: legacy turns until they are counted lazily.
+    token_count: Optional[TokenCount] = None
+    #: Storage always writes ``RAW`` in v1; ``PRUNED``/``SUMMARIZED`` are
+    #: view-only / Stage-2-reserved states.
+    state: TurnState = TurnState.RAW
+    #: ``1`` for legacy turns; ``2`` once written by ``add_turn``.
+    schema_version: int = 1
+    #: Stage 0 normalization version stamp (``NORM_VERSION``); ``None`` when
+    #: normalization has not run (legacy turns, or ``normalize=False``).
+    norm_version: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize turn to dictionary."""
@@ -41,11 +93,18 @@ class ConversationTurn:
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata,
             "chatbot_id": self.chatbot_id,
+            "tool_invocations": [inv.to_dict() for inv in self.tool_invocations],
+            "error": self.error,
+            "token_count": self.token_count.to_dict() if self.token_count else None,
+            "state": self.state.value,
+            "schema_version": self.schema_version,
+            "norm_version": self.norm_version,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConversationTurn":
         """Deserialize turn from dictionary."""
+        token_count_data = data.get("token_count")
         return cls(
             turn_id=data["turn_id"],
             user_id=data["user_id"],
@@ -57,6 +116,14 @@ class ConversationTurn:
             metadata=data.get("metadata", {}),
             # Legacy records predate attribution — absent key means "unknown".
             chatbot_id=data.get("chatbot_id"),
+            tool_invocations=[
+                ToolInvocation.from_dict(d) for d in data.get("tool_invocations", []) or []
+            ],
+            error=data.get("error"),
+            token_count=TokenCount.from_dict(token_count_data) if token_count_data else None,
+            state=TurnState(data.get("state", TurnState.RAW.value)),
+            schema_version=data.get("schema_version", 1),
+            norm_version=data.get("norm_version"),
         )
 
     @classmethod
@@ -70,6 +137,7 @@ class ConversationTurn:
         context_used: Optional[str] = None,
         turn_id: Optional[str] = None,
         assistant_text: Optional[str] = None,
+        error: Optional[str] = None,
     ) -> "ConversationTurn":
         """Build a turn from the ``AIMessage`` a bot round produced.
 
@@ -94,6 +162,8 @@ class ConversationTurn:
                 ``response``. Used by the streaming partial-save path, where
                 the accumulated text is authoritative and the ``AIMessage`` is
                 synthesized after the fact.
+            error: Round-level failure text (FEAT-525). Condensed by Stage 0
+                rule 5 when the turn is normalized; never omitted.
 
         Returns:
             A fully populated :class:`ConversationTurn`.
@@ -107,6 +177,21 @@ class ConversationTurn:
 
         tool_calls = getattr(response, "tool_calls", None) or []
         usage = getattr(response, "usage", None)
+
+        tool_invocations = [
+            ToolInvocation(
+                tool_name=tc.name,
+                input=tc.arguments,
+                output=_stringify(tc.result),
+                status=ToolStatus.ERROR if tc.error else ToolStatus.COMPLETED,
+                error=tc.error,
+                elapsed_ms=(
+                    int(tc.execution_time * 1000) if tc.execution_time is not None else None
+                ),
+                wm_key=_tee_key(tc.result),
+            )
+            for tc in tool_calls
+        ]
 
         return cls(
             turn_id=turn_id or getattr(response, "turn_id", None) or str(uuid.uuid4()),
@@ -123,6 +208,8 @@ class ConversationTurn:
                 "response_time": getattr(response, "response_time", None),
             },
             chatbot_id=chatbot_id,
+            tool_invocations=tool_invocations,
+            error=error,
         )
 
 
