@@ -145,7 +145,7 @@ family-based satellite packages** using PEP 420 implicit namespace packages
 |---|---|---|---|
 | `ai-parrot-client-openai` | `OpenAIClient` (gpt.py), `OpenAICodexClient` (codex_agent.py), `codex_tool_bridge.py` | `openai`, `openai-codex` | ~3,250 |
 | `ai-parrot-client-anthropic` | `AnthropicClient` (claude.py), `ClaudeAgentClient` (claude_agent.py), `ClaudeAgentBridge` (claude_agent_bridge.py), `anthropic_backends.py` | `anthropic[aiohttp]`, `claude-agent-sdk` | ~5,100 |
-| `ai-parrot-client-google` | `GoogleGenAIClient` (google/), `Gemma4Client` (gemma4.py), `GeminiLiveClient` (live.py) | `google-genai`, `google-api-python-client`, `google-cloud-texttospeech` | ~16,000 |
+| `ai-parrot-client-google` | `GoogleGenAIClient` (google/), `Gemma4Client` (gemma4.py), `GeminiLiveClient` (live.py — WebSocket voice) | `google-genai`, `google-api-python-client`, `google-cloud-texttospeech` | ~16,000 |
 | `ai-parrot-client-amazon` | `BedrockConverseClient` (bedrock.py), Nova clients (nova/), `BedrockMantleClient` | `aioboto3`, `anthropic[aiohttp,aws]` | ~4,400 |
 | `ai-parrot-client-groq` | `GroqClient` (groq.py) | `groq` | ~1,500 |
 | `ai-parrot-client-grok` | `GrokClient` (grok.py) | `xai-sdk` | ~800 |
@@ -183,7 +183,7 @@ No new Pydantic models. The existing `AbstractClient` interface and
 ### New Public Interfaces
 
 ```python
-# parrot/clients/factory.py — new discovery API (optional)
+# parrot/clients/factory.py — new public discovery API
 class LLMFactory:
     @staticmethod
     def list_providers() -> dict[str, str]:
@@ -224,7 +224,8 @@ class LLMFactory:
     `AnthropicClient` via entry-point discovery.
   - Remove all non-core imports from `factory.py` (the satellite clients)
     and their `_lazy_*` closures.
-  - Clean up `__init__.py` — remove the `ZaiClient` import.
+  - Clean up `__init__.py` — remove the `ZaiClient` import entirely
+    (hard cut, no deprecation shim — no external consumers).
 - **Depends on**: nothing (this is the foundation)
 
 ### Module 2: Satellite Package — ai-parrot-client-openai
@@ -246,8 +247,9 @@ class LLMFactory:
 ### Module 4: Satellite Package — ai-parrot-client-google
 - **Path**: `packages/ai-parrot-client-google/`
 - **Responsibility**: Ship `GoogleGenAIClient` (google/ subpackage),
-  `Gemma4Client` (gemma4.py), `GeminiLiveClient` (live.py). Declare
-  entry points: `google`, `gemma4`.
+  `Gemma4Client` (gemma4.py), `GeminiLiveClient` (live.py — WebSocket-based
+  voice; ships with Google family since it depends on `google-genai`).
+  Declare entry points: `google`, `gemma4`, `gemini-live`.
 - **Depends on**: Module 1
 
 ### Module 5: Satellite Package — ai-parrot-client-amazon
@@ -273,6 +275,8 @@ class LLMFactory:
     `openai = ["ai-parrot-client-openai"]`,
     `anthropic = ["ai-parrot-client-anthropic"]`, etc.
   - Rewrite `llms` to pull all 10 satellites.
+  - Root `pyproject.toml`'s `all` extra pulls `ai-parrot[llms]`
+    transitively (not each satellite individually).
   - Add new packages to workspace `members` list.
   - Each satellite gets its own `pyproject.toml` with independent version.
 - **Depends on**: Modules 2–6
@@ -655,16 +659,18 @@ from .zai import ZaiClient  # ← REMOVE: moves to satellite
   MetaPathFinder as fallback.
 - [x] Package naming convention? — *Resolved in brainstorm*:
   `ai-parrot-client-{family}`.
-- [ ] Should the `ZaiClient` import in `parrot/clients/__init__.py` be
+- [x] Should the `ZaiClient` import in `parrot/clients/__init__.py` be
   removed entirely or replaced with a lazy-import that emits a
-  `DeprecationWarning`? — *Owner: Jesus*
-- [ ] Should `LLMFactory.list_providers()` be a public API? — *Owner: Jesus*
-- [ ] How should the `all` extra in root `pyproject.toml` be updated —
+  `DeprecationWarning`? — *Resolved*: removed cleanly (no external
+  consumers — hard cut per project policy).
+- [x] Should `LLMFactory.list_providers()` be a public API? — *Resolved*:
+  yes, public method.
+- [x] How should the `all` extra in root `pyproject.toml` be updated —
   transitively via `ai-parrot[llms]`, or list each satellite explicitly?
-  — *Owner: Jesus*
-- [ ] Should `GeminiLiveClient` (live.py) move with the Google family or
+  — *Resolved*: transitive via `ai-parrot[llms]`.
+- [x] Should `GeminiLiveClient` (live.py) move with the Google family or
   stay in core given its distinct use pattern (WebSocket-based voice)?
-  — *Owner: Jesus*
+  — *Resolved*: ship with the Google satellite (`ai-parrot-client-google`).
 
 ---
 
@@ -673,3 +679,4 @@ from .zai import ZaiClient  # ← REMOVE: moves to satellite
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-04 | Jesus Lara | Initial draft from brainstorm |
+| 0.2 | 2026-09-04 | Jesus Lara | Resolve all open questions: ZaiClient hard cut, list_providers() public, transitive all extra, GeminiLiveClient ships with Google |
