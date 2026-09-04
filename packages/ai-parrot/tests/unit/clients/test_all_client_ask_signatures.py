@@ -162,18 +162,16 @@ def test_declared_history_is_actually_consumed(client_id: str, method: str):
 
     tree = ast.parse(source)
     node = next(
-        n for n in ast.walk(tree)
-        if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == method
+        n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == method
     )
     params = {a.arg for a in node.args.args + node.args.kwonlyargs}
     if "history" not in params:
         pytest.skip(f"{client_id}.{method} takes history via **kwargs")
 
     uses = [
-        n for n in ast.walk(node)
-        if isinstance(n, ast.Name)
-        and n.id == "history"
-        and isinstance(n.ctx, (ast.Load, ast.Del))
+        n
+        for n in ast.walk(node)
+        if isinstance(n, ast.Name) and n.id == "history" and isinstance(n.ctx, (ast.Load, ast.Del))
     ]
     assert uses, (
         f"{client_id}.{method} declares `history` but never reads or `del`s it — "
