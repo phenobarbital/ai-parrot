@@ -155,7 +155,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Sequential after the factory API exists; disjoint files from the satellite tasks, but keep it before them so the server never imports a moved module.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2848-server-llm-handler-catalogue.md"
+      "completed_at": "2026-09-04T19:59:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2848-server-llm-handler-catalogue.md"
     },
     {
       "id": "TASK-2849",
