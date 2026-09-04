@@ -49,7 +49,6 @@ from parrot.core.hooks.github_webhook import GitHubWebhookHook
 # FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
 from parrot.core.hooks import GitHubWebhookConfig, HookEvent
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.scheduler import schedule_daily_report, schedule_weekly_report
 from parrot_tools.gittoolkit import (
     ContributorStats,
@@ -320,7 +319,7 @@ class GitHubReviewer(Agent):
         or OpenAI model.
     """
 
-    model = GoogleModel.GEMINI_3_FLASH_PREVIEW
+    model = "gemini-3.5-flash"
 
     # aiohttp app keys. The dispatcher fans out to every listener so multiple
     # GitHubReviewer subclasses (one per repo) can share a single endpoint;

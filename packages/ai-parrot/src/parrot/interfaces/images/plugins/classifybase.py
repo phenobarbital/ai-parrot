@@ -3,7 +3,6 @@ from typing import List, Optional, Union
 from pydantic import BaseModel
 import pandas as pd
 from .abstract import ImagePlugin
-from ....clients.google import GoogleModel
 from ....models import ObjectDetectionResult
 
 
@@ -24,7 +23,7 @@ class ClassifyBase(ImagePlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model_name: str = kwargs.get(
-            "model_name", GoogleModel.GEMINI_2_5_FLASH.value
+            "model_name", "gemini-2.5-flash"
         )
         model = kwargs.get(
             "detection_model",

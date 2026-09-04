@@ -13,9 +13,7 @@ from aiohttp import MultipartWriter, web
 from navigator.views import BaseView
 from datamodel.parsers.json import json_encoder
 
-from parrot.clients.google import GoogleGenAIClient
 from parrot.models import ImageGenerationPrompt, VideoGenerationPrompt
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 
 class MediaGen(BaseView):
@@ -81,15 +79,18 @@ class MediaGen(BaseView):
         
         # Default model based on action
         default_model = (
-            GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW.value
+            "gemini-3.1-flash-image"
             if action == "image"
-            else GoogleModel.VEO_3_1.value
+            else "veo-3.1-generate-preview"
         )
         model = data.get("model") or default_model
 
         if action not in {"image", "video"}:
             return self.error("Unsupported action. Must be 'image' or 'video'.", status=400)
 
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.google import GoogleGenAIClient
         client = GoogleGenAIClient(model=model)
         try:
             generated_files: List[Path] = []

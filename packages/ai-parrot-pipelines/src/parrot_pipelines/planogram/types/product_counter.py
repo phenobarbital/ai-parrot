@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -109,7 +108,7 @@ class ProductCounter(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -233,7 +232,7 @@ class ProductCounter(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,

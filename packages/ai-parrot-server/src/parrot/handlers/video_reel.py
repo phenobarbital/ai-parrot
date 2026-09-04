@@ -15,7 +15,6 @@ from navigator.views import BaseView
 if TYPE_CHECKING:
     from navigator.types import WebApp
 from pydantic import ValidationError
-from parrot.clients.google import GoogleGenAIClient
 from parrot.models.google import (
     AspectRatio,
     MusicGenre,
@@ -23,7 +22,6 @@ from parrot.models.google import (
     VideoReelRequest,
     VideoReelScene,
 )
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 from .jobs import JobManager, JobStatus
@@ -201,7 +199,7 @@ class VideoReelHandler(BaseView):
             return self.error("Invalid request body.", status=400)
 
         # Extract control keys before Pydantic validation.
-        model = data.pop("model", GoogleModel.GEMINI_3_FLASH_PREVIEW.value)
+        model = data.pop("model", "gemini-3.5-flash")
         output_directory: Optional[str] = data.pop("output_directory", None)
         user_id: Optional[str] = data.pop("user_id", None)
         session_id: Optional[str] = data.pop("session_id", None)
@@ -236,6 +234,9 @@ class VideoReelHandler(BaseView):
 
         async def run_logic():
             try:
+                # FEAT-523 (TASK-2846): lazy import — core must not import a
+                # provider module at module scope (AC-3).
+                from parrot.clients.google import GoogleGenAIClient
                 client = GoogleGenAIClient(model=model)
                 async with client:
                     result = await client.generate_video_reel(

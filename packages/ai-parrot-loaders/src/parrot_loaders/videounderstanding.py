@@ -1,4 +1,4 @@
-from typing import Union, List, Optional
+from typing import Union, List, Optional, TYPE_CHECKING
 from collections.abc import Callable
 import re
 import json
@@ -6,8 +6,12 @@ from pathlib import PurePath, Path
 from datetime import datetime
 from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
-from parrot.clients.google import GoogleGenAIClient
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core/satellites must not
+    # import a provider client at module scope (AC-3); the real import is
+    # deferred to _get_google_client().
+    from parrot.clients.google import GoogleGenAIClient
 
 
 def split_text(text, max_length):
@@ -111,7 +115,7 @@ class VideoUnderstandingLoader(BaseVideoLoader):
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'video_understanding',
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_PRO_PREVIEW,
+        model: str = "gemini-3.1-pro-preview",
         temperature: float = 0.2,
         prompt: Optional[str] = None,
         custom_instructions: Optional[str] = None,
@@ -149,9 +153,12 @@ Video Analysis Instructions:
             5. Place each caption into an object with the timecode of the caption in the video.
 """
 
-    async def _get_google_client(self) -> GoogleGenAIClient:
+    async def _get_google_client(self) -> "GoogleGenAIClient":
         """Get or create Google GenAI client."""
         if self.google_client is None:
+            # FEAT-523 (TASK-2846): lazy import — core/satellites must not
+            # import a provider client at module scope (AC-3).
+            from parrot.clients.google import GoogleGenAIClient
             self.google_client = GoogleGenAIClient(model=self.model)
         return self.google_client
 

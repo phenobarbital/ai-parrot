@@ -12,7 +12,6 @@ from PIL import (
 from navconfig.logging import logging
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
 from parrot.clients.factory import SUPPORTED_CLIENTS
-from parrot.clients.google import GoogleGenAIClient, GoogleModel
 
 
 logging.getLogger('pytesseract').setLevel(logging.WARNING)
@@ -49,6 +48,9 @@ class AbstractPipeline(ABC):
         else:
             self.llm_provider = llm.client_name.lower()
         # Ensure a Google Client for multi-modal capabilities:
+        # FEAT-523 (TASK-2846): lazy import — core/satellites must not
+        # import a provider client at module scope (AC-3).
+        from parrot.clients.google import GoogleGenAIClient
         self.roi_client = GoogleGenAIClient(
             model="gemini-3-flash-preview",
             temperature=0.0,

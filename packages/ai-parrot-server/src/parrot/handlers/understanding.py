@@ -13,7 +13,6 @@ from aiohttp import web
 from navigator.views import BaseView
 from pydantic import ValidationError
 
-from parrot.clients.google import GoogleGenAIClient
 from parrot.handlers.models.understanding import (
     UnderstandingRequest,
     UnderstandingResponse,
@@ -214,6 +213,9 @@ class UnderstandingHandler(BaseView):
             if model_override:
                 client_kwargs["model"] = model_override
 
+            # FEAT-523 (TASK-2846): lazy import — core must not import a
+            # provider module at module scope (AC-3).
+            from parrot.clients.google import GoogleGenAIClient
             client = GoogleGenAIClient(**client_kwargs)
             async with client:
                 try:

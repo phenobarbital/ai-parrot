@@ -4,7 +4,6 @@ import yaml
 from pydantic import BaseModel
 from PIL import Image
 from .abstract import ImagePlugin
-from ....clients.google import GoogleModel, GoogleGenAIClient
 
 
 class AnalysisPlugin(ImagePlugin):
@@ -14,7 +13,7 @@ class AnalysisPlugin(ImagePlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model_name: str = kwargs.get(
-            "model_name", GoogleModel.GEMINI_2_5_FLASH.value
+            "model_name", "gemini-2.5-flash"
         )
         self.prompt_path = kwargs.get("prompt_path", Path.cwd() / "prompts")
         self.prompt_file: Union[str, Path] = kwargs.get(
@@ -123,6 +122,9 @@ class AnalysisPlugin(ImagePlugin):
             return None
         # Perform analysis based on the image classification
         try:
+            # FEAT-523 (TASK-2846): lazy import — core must not import a
+            # provider client at module scope (AC-3).
+            from ....clients.google import GoogleGenAIClient
             async with GoogleGenAIClient() as client:
                 _result = await client.ask_to_image(
                     image=image,

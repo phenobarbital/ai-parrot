@@ -23,8 +23,6 @@ from ..conf import (
     DEFAULT_LLM_TEMPERATURE,
 )
 
-## AI Models:
-from ..clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from ..stores.models import Document
 from ..stores.utils.chunking import LateChunkingProcessor
 from .splitters import (
@@ -1035,7 +1033,7 @@ class AbstractLoader(ABC):
             summary = await asyncio.to_thread(
                 summarizer.summarize_text,
                 text=text,
-                model=GoogleModel.GEMINI_2_5_FLASH_LITE,
+                model="gemini-2.5-flash-lite",
                 temperature=0.1,
             )
             return summary.output
@@ -1070,7 +1068,7 @@ class AbstractLoader(ABC):
             else:
                 # Use Google Gemini for Summarization:
                 self._summary_model = LLMFactory.create(
-                    llm=f"google:{GoogleModel.GEMINI_2_5_FLASH_LITE.value}",
+                    llm="google:gemini-2.5-flash-lite",
                     model_kwargs={
                         "temperature": 0.1,
                     }
@@ -1112,7 +1110,7 @@ class AbstractLoader(ABC):
                     text=text,
                     source_lang=source_lang,
                     target_lang=target_lang,
-                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW,
+                    model="gemini-2.5-flash-lite",
                     temperature=0.1,
                     max_tokens=1000
                 )
@@ -1177,7 +1175,7 @@ class AbstractLoader(ABC):
             if not self._use_translation_pipeline:
                 # Use LLM for translation
                 translation_model = self.get_default_llm(
-                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW.value
+                    model="gemini-2.5-flash-lite"
                 )
                 self._translation_models[cache_key] = translation_model
 

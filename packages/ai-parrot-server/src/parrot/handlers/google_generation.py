@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 import logging
 
 from aiohttp import web
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navigator.views import BaseView, BaseHandler
 
-from parrot.clients.google import GoogleGenAIClient
 from parrot.models import ImageGenerationPrompt, MusicGenerationRequest, SpeechGenerationPrompt, VideoGenerationPrompt, VideoReelRequest
 from parrot.models.google import (
     ALL_VOICE_PROFILES,
@@ -17,7 +16,12 @@ from parrot.models.google import (
     MusicGenre,
     MusicMood,
 )
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core must not import a
+    # provider module at module scope (AC-3); the real imports are
+    # deferred to the methods that need them.
+    from parrot.clients.google import GoogleGenAIClient
 
 
 class GoogleGenerationHelper(BaseHandler):
@@ -25,6 +29,10 @@ class GoogleGenerationHelper(BaseHandler):
 
     @staticmethod
     def list_models() -> list[str]:
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3). TASK-2848 replaces this
+        # with LLMFactory.list_models().
+        from parrot.clients.google.models import GoogleModel
         return [model.value for model in GoogleModel]
 
     @staticmethod
@@ -89,10 +97,13 @@ class GoogleGeneration(BaseView):
         return self.json_response(payload)
 
     async def post(self) -> web.Response:
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.google import GoogleGenAIClient
         data = await self.request.json()
         action = str(data.get("action", "")).lower().strip()
 
-        client = GoogleGenAIClient(model=data.get("model", GoogleModel.GEMINI_2_5_FLASH.value))
+        client = GoogleGenAIClient(model=data.get("model", "gemini-2.5-flash"))
         try:
             if action == "video":
                 return await self._generate_video(client, data)

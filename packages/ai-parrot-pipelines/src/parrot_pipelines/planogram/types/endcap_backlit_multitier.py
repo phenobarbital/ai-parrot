@@ -14,7 +14,6 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
 from .abstract import AbstractPlanogramType
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     BoundingBox,
     Detection,
@@ -205,7 +204,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=_RawDetections,
                         max_tokens=8192,
@@ -416,7 +415,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=_RawDetections,
                         max_tokens=8192,
@@ -1143,7 +1142,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     structured_output=_RawDetections,
                     max_tokens=4096,
@@ -1303,7 +1302,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     structured_output=_RawDetections,
                     max_tokens=4096,
@@ -1570,7 +1569,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     structured_output=_RawDetections,
                     max_tokens=4096,
@@ -1759,7 +1758,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     structured_output=_RawDetections,
                     max_tokens=4096,

@@ -12,7 +12,6 @@ import logging
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp    # pylint: disable=E0611
-from parrot.clients.google import GoogleGenAIClient
 from parrot.conf import PLANOGRAM_FOLDER, DEFAULT_LLM_MODEL
 from parrot_pipelines.models import PlanogramConfig, EndcapGeometry
 from parrot_pipelines.planogram.plan import PlanogramCompliance
@@ -141,6 +140,9 @@ class PlanogramComplianceHandler(BaseView):
         async def run_compliance() -> dict[str, Any]:
             """Execute the planogram compliance pipeline as a background task."""
             try:
+                # FEAT-523 (TASK-2846): lazy import — core/satellites must
+                # not import a provider module at module scope (AC-3).
+                from parrot.clients.google import GoogleGenAIClient
                 llm = GoogleGenAIClient(model=DEFAULT_LLM_MODEL)
                 pipeline = PlanogramCompliance(planogram_config=_config, llm=llm)
                 result = await pipeline.run(

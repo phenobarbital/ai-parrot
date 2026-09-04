@@ -4,7 +4,6 @@ from enum import Enum, EnumMeta
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
-from ....clients.google import GoogleModel, GoogleGenAIClient
 
 DEFAULT_PROMPT = """
 You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
@@ -54,7 +53,7 @@ class ClassificationPlugin(ImagePlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model_name: str = kwargs.get(
-            "model_name", GoogleModel.GEMINI_2_5_FLASH.value
+            "model_name", "gemini-2.5-flash"
         )
         self.prompt: List[str] = kwargs.get("prompt", DEFAULT_PROMPT)
         self.confidence: float = kwargs.get("confidence", 0.5)
@@ -124,6 +123,9 @@ class ClassificationPlugin(ImagePlugin):
         :param image: Image Bytes opened with PIL Image.open
         :return: A dictionary containing the classification result.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider client at module scope (AC-3).
+        from ....clients.google import GoogleGenAIClient
         async with GoogleGenAIClient() as client:
             _result = await client.ask_to_image(
                 image=image,

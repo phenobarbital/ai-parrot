@@ -8,7 +8,6 @@ import pandas as pd
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from ..models.responses import AIMessage, AgentResponse
-from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from .prompts.builder import PromptBuilder
@@ -102,6 +101,9 @@ class BasicAgent(Chatbot, NotificationMixin):
         ##  Logging:
         self.logger = logging.getLogger(f"{self.name}.Agent")
         ## Google GenAI Client (for multi-modal responses and TTS generation):
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider client at module scope (AC-3).
+        from ..clients.google import GoogleGenAIClient
         default_client = GoogleGenAIClient()
         if self._llm_raw is None:
             self.client = default_client

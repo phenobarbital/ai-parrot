@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from parrot.bots.agent import Agent
-from parrot.clients.anthropic import AnthropicClient
 from parrot.conf import STUDIO_AGENT_MODEL
 from parrot.skills.mixin import SkillRegistryMixin
 
@@ -91,6 +90,9 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
         """
         llm = kwargs.pop("llm", None)
         if llm is None:
+            # FEAT-523 (TASK-2846): lazy import — core must not import a
+            # provider module at module scope (AC-3).
+            from parrot.clients.anthropic import AnthropicClient
             resolved_model = model or STUDIO_AGENT_MODEL
             llm = AnthropicClient(api_key=api_key, model=resolved_model)
         super().__init__(

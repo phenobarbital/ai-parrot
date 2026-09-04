@@ -36,12 +36,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from parrot import conf
-from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
@@ -56,6 +55,12 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.models.nova import effective_max_tokens
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.observability.context import usage_attribution
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # FEAT-523 (TASK-2846): type-check-only — core must not import a
+    # provider module at module scope (AC-3); the real import is deferred
+    # to __init__.
+    from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 
 #: Kept byte-identical to ``conf.DEV_LOOP_MANTLE_REVIEW_MODEL``'s fallback.
 #: Same rationale as ``models/nova.py``'s ``NOVA_DEFAULT_CONVERSE_MODEL``:
@@ -167,6 +172,9 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         self._review_commit = review_commit
         self._max_diff_chars = max_diff_chars
         self._max_tokens = max_tokens
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.amazon.nova.mantle import BedrockMantleClient
         self._client = client or BedrockMantleClient()
         self._event_registry_resolver = event_registry_resolver
         self.logger = logging.getLogger(__name__)

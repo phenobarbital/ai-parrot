@@ -12,15 +12,18 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from parrot.clients.nvidia import NvidiaClient
-from parrot.clients.nvidia.models import NvidiaModel
-
 from .decorators import tool_schema
 from .toolkit import AbstractToolkit
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core/satellites must not
+    # import a provider client at module scope (AC-3); the real import is
+    # deferred to MinimaxProvider.__init__.
+    from parrot.clients.nvidia import NvidiaClient
 
 
 @dataclass
@@ -214,8 +217,11 @@ class MinimaxProvider:
     def __init__(
         self,
         client: NvidiaClient | None = None,
-        default_model: str = NvidiaModel.MINIMAX_M3.value,
+        default_model: str = "minimaxai/minimax-m3",
     ) -> None:
+        # FEAT-523 (TASK-2846): lazy import — core/satellites must not
+        # import a provider client at module scope (AC-3).
+        from parrot.clients.nvidia import NvidiaClient
         self.client = client or NvidiaClient(model=default_model)
         self.default_model = default_model
 

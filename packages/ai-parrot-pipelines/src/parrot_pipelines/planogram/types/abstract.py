@@ -17,7 +17,6 @@ from parrot.models.detections import (
     ShelfRegion,
 )
 from parrot.models.compliance import ComplianceResult
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 if TYPE_CHECKING:
     from ..plan import PlanogramCompliance
@@ -237,7 +236,7 @@ class AbstractPlanogramType(ABC):
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     max_tokens=128,
                 )

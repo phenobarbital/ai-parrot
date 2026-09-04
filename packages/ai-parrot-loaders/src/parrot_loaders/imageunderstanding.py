@@ -1,5 +1,5 @@
 """Image Understanding Loader using Google GenAI for analyzing images."""
-from typing import Union, List, Optional
+from typing import Union, List, Optional, TYPE_CHECKING
 from collections.abc import Callable
 import re
 import json
@@ -7,8 +7,12 @@ from pathlib import PurePath, Path
 from datetime import datetime
 from parrot.stores.models import Document
 from parrot.loaders.abstract import AbstractLoader
-from parrot.clients.google import GoogleGenAIClient
-from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core/satellites must not
+    # import a provider client at module scope (AC-3); the real import is
+    # deferred to _get_google_client().
+    from parrot.clients.google import GoogleGenAIClient
 
 
 def split_text(text: str, max_length: int) -> List[str]:
@@ -93,7 +97,7 @@ class ImageUnderstandingLoader(AbstractLoader):
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'image_understanding',
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
+        model: str = "gemini-3.1-flash-image",
         temperature: float = 0.2,
         prompt: Optional[str] = None,
         custom_instructions: Optional[str] = None,
@@ -153,9 +157,12 @@ Image Analysis Instructions:
     6. If the image contains diagrams, charts, or infographics, extract the data and relationships.
 """
 
-    async def _get_google_client(self) -> GoogleGenAIClient:
+    async def _get_google_client(self) -> "GoogleGenAIClient":
         """Get or create Google GenAI client."""
         if self.google_client is None:
+            # FEAT-523 (TASK-2846): lazy import — core/satellites must not
+            # import a provider client at module scope (AC-3).
+            from parrot.clients.google import GoogleGenAIClient
             self.google_client = GoogleGenAIClient(model=self.model)
         return self.google_client
 
