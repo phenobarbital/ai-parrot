@@ -16,6 +16,7 @@ class RedisConversation(ConversationMemory):
         key_prefix: str = "conversation",
         use_hash_storage: bool = True
     ):
+        super().__init__()
         self.redis_url = redis_url or REDIS_HISTORY_URL
         self.key_prefix = key_prefix
         self.use_hash_storage = use_hash_storage
@@ -129,7 +130,68 @@ class RedisConversation(ConversationMemory):
         session_id: str,
         chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
-        """Get a conversation history."""
+        """Get a conversation history, re-keying a legacy record if needed.
+
+        FEAT-524 unified the storage key to ``(chatbot, user, session)``.
+        Histories written before that live under the un-segmented
+        ``conversation:{user}:{session}`` key, and these keys carry no TTL, so
+        without a fallback every live conversation would silently restart the
+        first time a bot asked for its history under the new key.
+
+        When ``chatbot_id`` is given and the segmented key holds nothing, the
+        legacy key is read once, copied under the segmented key and returned.
+        The legacy record is deliberately **left in place** so a rollback still
+        finds it. The copy is idempotent, so two concurrent first reads racing
+        each other is benign — no locking (spec §7 "Re-key race").
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent key segment. Falsy means "read the legacy key
+                directly" — no re-key is attempted.
+
+        Returns:
+            The history, or ``None`` when neither key holds one.
+        """
+        history = await self._load_history(user_id, session_id, chatbot_id)
+        if history is not None or not chatbot_id:
+            return history
+
+        legacy = await self._load_history(user_id, session_id, None)
+        if legacy is None:
+            return None
+
+        legacy.chatbot_id = str(chatbot_id)
+        await self.update_history(legacy)
+        # Keep list_sessions(user_id, chatbot_id) able to find the migrated
+        # session — update_history alone only writes the history key.
+        await self.redis.sadd(
+            self._get_user_sessions_key(user_id, chatbot_id),
+            session_id
+        )
+        self.logger.info(
+            "Re-keyed legacy conversation %s/%s under chatbot %s",
+            user_id, session_id, chatbot_id
+        )
+        return legacy
+
+    async def _load_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> Optional[ConversationHistory]:
+        """Read the history stored at exactly one key, without any fallback.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent key segment; ``None`` reads the un-segmented key.
+
+        Returns:
+            The deserialized history, or ``None`` if the key is empty or the
+            stored payload cannot be parsed.
+        """
         key = self._get_key(user_id, session_id, chatbot_id)
 
         if self.use_hash_storage:

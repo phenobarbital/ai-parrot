@@ -10,6 +10,7 @@ class FileConversationMemory(ConversationMemory):
     """File-based implementation of conversation memory."""
 
     def __init__(self, base_path: str = "./conversations"):
+        super().__init__()
         self.base_path = Path(base_path)
         self.base_path.mkdir(exist_ok=True)
         self._lock = asyncio.Lock()
@@ -55,30 +56,90 @@ class FileConversationMemory(ConversationMemory):
         session_id: str,
         chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
-        """Get a conversation history."""
+        """Get a conversation history, re-keying a legacy record if needed.
+
+        FEAT-524 unified the storage path to ``{user}/{chatbot}/{session}.json``.
+        Histories written before that live at ``{user}/{session}.json``. When
+        ``chatbot_id`` is given and the segmented path holds nothing, the legacy
+        path is read once, copied to the segmented path and returned. The legacy
+        file is deliberately **left in place** so a rollback still finds it.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent path segment. Falsy means "read the legacy path
+                directly" — no re-key is attempted.
+
+        Returns:
+            The history, or ``None`` when neither path holds one.
+        """
+        # One lock acquisition for read-and-maybe-copy: ``self._lock`` is a
+        # plain asyncio.Lock (not reentrant), so calling update_history() from
+        # in here would deadlock. The write is inlined via _write_history().
         async with self._lock:
-            file_path = self._get_file_path(user_id, session_id, chatbot_id)
-            if not file_path.exists():
+            history = await self._read_history(user_id, session_id, chatbot_id)
+            if history is not None or not chatbot_id:
+                return history
+
+            legacy = await self._read_history(user_id, session_id, None)
+            if legacy is None:
                 return None
 
-            try:
-                async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-                    content = await f.read()
-                data = json.loads(content)
-                return ConversationHistory.from_dict(data)
-            except (TypeError, KeyError, ValueError):
-                return None
+            legacy.chatbot_id = str(chatbot_id)
+            await self._write_history(legacy)
+            self.logger.info(
+                "Re-keyed legacy conversation %s/%s under chatbot %s",
+                user_id, session_id, chatbot_id
+            )
+            return legacy
+
+    async def _read_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> Optional[ConversationHistory]:
+        """Read exactly one path, without fallback. Caller must hold ``_lock``.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent path segment; ``None`` reads the legacy path.
+
+        Returns:
+            The deserialized history, or ``None`` if the file is absent or
+            cannot be parsed.
+        """
+        file_path = self._get_file_path(user_id, session_id, chatbot_id)
+        if not file_path.exists():
+            return None
+
+        try:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+            data = json.loads(content)
+            return ConversationHistory.from_dict(data)
+        except (TypeError, KeyError, ValueError):
+            return None
+
+    async def _write_history(self, history: ConversationHistory) -> None:
+        """Write a history to its own path. Caller must hold ``_lock``.
+
+        Args:
+            history: The history to persist; its ``chatbot_id`` selects the path.
+        """
+        file_path = self._get_file_path(
+            history.user_id,
+            history.session_id,
+            history.chatbot_id
+        )
+        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(history.to_dict(), indent=2, ensure_ascii=False, default=str))
 
     async def update_history(self, history: ConversationHistory) -> None:
         """Update a conversation history."""
         async with self._lock:
-            file_path = self._get_file_path(
-                history.user_id,
-                history.session_id,
-                history.chatbot_id
-            )
-            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(history.to_dict(), indent=2, ensure_ascii=False, default=str))
+            await self._write_history(history)
 
     async def add_turn(
         self,
