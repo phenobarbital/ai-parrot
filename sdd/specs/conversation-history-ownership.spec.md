@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-524
 **Date**: 2026-09-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0 (breaking — hard cut on `AbstractClient.ask()` / `ask_stream()` signatures)
 
 ---
