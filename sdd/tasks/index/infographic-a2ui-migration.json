@@ -168,7 +168,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -179,8 +179,8 @@
       "parallelism_notes": "Edits infographic_toolkit.py after TASK-2856; needs build_html_document.",
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2864-toolkit-jinja-lane-htmldocument.md"
+      "completed_at": "2026-09-04T22:41:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2864-toolkit-jinja-lane-htmldocument.md"
     },
     {
       "id": "TASK-2865",
