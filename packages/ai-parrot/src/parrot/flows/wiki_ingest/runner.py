@@ -285,6 +285,97 @@ async def _upsert_project_meeting_index(
     await _write_note(toolkit, index_path, render_project_meeting_index_active(name, entries), writes)
 
 
+async def _reconcile_project(
+    agent: Any,
+    toolkit: Any,
+    project_name: str,
+    *,
+    meeting: fetch_gate_node.GatedMeeting,
+    meeting_extraction: Any,
+    meeting_source_link: str,
+    classification: Any,
+    contradiction_titles: list[str],
+    writes: list[_PageWrite],
+    validation_ctx: ValidationContext,
+    review_items: list[Any],
+    touched_paths: list[str],
+) -> str | None:
+    """§16/§19 — reconcile (or create) ONE project page for this meeting.
+
+    Applied to the primary project AND every additional related project: a
+    project the classifier declared relevant must receive this meeting's
+    source link and current-state update, not merely a wikilink from the
+    meeting page. Only the primary project carries this meeting's
+    contradiction links (they were detected against the primary project's
+    claims); additional projects get an empty ``contradiction_titles``.
+
+    Args:
+        agent: The agent (for ``strong_client``).
+        toolkit: This subsystem's vault toolkit.
+        project_name: The project to reconcile.
+        meeting: The meeting driving the reconcile.
+        meeting_extraction: The Module 8 extraction.
+        meeting_source_link: Wikilink target of the meeting source page.
+        classification: The Module 7 classification.
+        contradiction_titles: Bare contradiction-page titles to link.
+        writes: The meeting's rollback journal.
+        validation_ctx: The §34 evidence context (updated in place).
+        review_items: The meeting's collected review-item drafts.
+        touched_paths: The meeting's touched-path list (for §2 rule 1).
+
+    Returns:
+        The project name if a page was written (created/updated/
+        chronological), else ``None``.
+    """
+    from .models import ProjectFrontmatter
+
+    project_path = _project_vault_path(project_name)
+    touched_paths.append(project_path)
+    existing_content = None
+    existing_frontmatter = None
+    locked = False
+    try:
+        note = await toolkit.read_note(project_path)
+        existing_content = note["content"]
+        locked = bool(note["frontmatter"].get("locked", False))
+        existing_frontmatter = ProjectFrontmatter(**{k: v for k, v in note["frontmatter"].items() if k != "locked"})
+    except FileNotFoundError:
+        pass
+
+    reconcile_result = await project_reconcile_node.run_project_reconcile(
+        agent.strong_client,
+        existing_content=existing_content,
+        existing_frontmatter=existing_frontmatter,
+        locked=locked,
+        project_name=project_name,
+        meeting=meeting,
+        meeting_extraction=meeting_extraction,
+        meeting_source_link=meeting_source_link,
+        classification=classification,
+        contradiction_titles=contradiction_titles,
+    )
+    validation_ctx.diff_guard_violations.extend(reconcile_result.diff_guard_violations)
+    if reconcile_result.review_item:
+        review_items.append(reconcile_result.review_item)
+    if reconcile_result.content and reconcile_result.vault_path:
+        await _write_note(toolkit, reconcile_result.vault_path, reconcile_result.content, writes)
+        validation_ctx.new_wikilinks.append(reconcile_result.vault_path.removesuffix(".md"))
+        validation_ctx.existing_or_queued_pages.append(reconcile_result.vault_path.removesuffix(".md"))
+        # §18 — seed/maintain the project's active meeting index so a
+        # newly-created project gets the required structure (archive only
+        # re-splits an index that already exists).
+        await _upsert_project_meeting_index(
+            toolkit,
+            project_name,
+            meeting=meeting,
+            meeting_source_link=meeting_source_link,
+            significance=meeting.title,
+            writes=writes,
+        )
+        return project_name
+    return None
+
+
 async def _queue_review_item(
     toolkit: Any,
     report: IngestReport,
@@ -575,56 +666,42 @@ async def _process_one_meeting(
         meeting_extraction = _extraction_from_meeting(meeting_result)
 
         # --- §16/§19 project reconcile / new project -----------------------------
+        # Reconcile the primary project AND every additional related project.
+        # A project the classifier declared relevant must receive this
+        # meeting's source link + current-state update, not merely a wikilink
+        # from the meeting page (which would otherwise dangle / silently drop
+        # the meeting from the project's history). Only the primary project
+        # carries this meeting's contradiction links (detected against ITS
+        # claims); additional projects get none.
         projects_touched: list[str] = []
+        reconcile_targets: list[tuple[str, list[str]]] = []
         if classification.primary_project:
-            project_path = _project_vault_path(classification.primary_project)
-            touched_paths.append(project_path)
-            existing_content = None
-            existing_frontmatter = None
-            locked = False
-            try:
-                note = await toolkit.read_note(project_path)
-                existing_content = note["content"]
-                locked = bool(note["frontmatter"].get("locked", False))
-                from .models import ProjectFrontmatter
+            reconcile_targets.append((classification.primary_project, contradiction_titles))
+        for additional_project in classification.additional_projects:
+            reconcile_targets.append((additional_project, []))
 
-                existing_frontmatter = ProjectFrontmatter(
-                    **{k: v for k, v in note["frontmatter"].items() if k != "locked"}
-                )
-            except FileNotFoundError:
-                pass
-
-            reconcile_result = await project_reconcile_node.run_project_reconcile(
-                agent.strong_client,
-                existing_content=existing_content,
-                existing_frontmatter=existing_frontmatter,
-                locked=locked,
-                project_name=classification.primary_project,
+        seen_projects: set[str] = set()
+        for target_name, target_contradictions in reconcile_targets:
+            dedup_key = title_case_name(target_name)
+            if dedup_key in seen_projects:
+                continue
+            seen_projects.add(dedup_key)
+            touched_project = await _reconcile_project(
+                agent,
+                toolkit,
+                target_name,
                 meeting=meeting,
                 meeting_extraction=meeting_extraction,
                 meeting_source_link=meeting_source_link,
                 classification=classification,
-                contradiction_titles=contradiction_titles,
+                contradiction_titles=target_contradictions,
+                writes=writes,
+                validation_ctx=validation_ctx,
+                review_items=review_items,
+                touched_paths=touched_paths,
             )
-            validation_ctx.diff_guard_violations.extend(reconcile_result.diff_guard_violations)
-            if reconcile_result.review_item:
-                review_items.append(reconcile_result.review_item)
-            if reconcile_result.content and reconcile_result.vault_path:
-                await _write_note(toolkit, reconcile_result.vault_path, reconcile_result.content, writes)
-                validation_ctx.new_wikilinks.append(reconcile_result.vault_path.removesuffix(".md"))
-                validation_ctx.existing_or_queued_pages.append(reconcile_result.vault_path.removesuffix(".md"))
-                projects_touched.append(classification.primary_project)
-                # §18 — seed/maintain the project's active meeting index so a
-                # newly-created project gets the required structure (archive
-                # only re-splits an index that already exists).
-                await _upsert_project_meeting_index(
-                    toolkit,
-                    classification.primary_project,
-                    meeting=meeting,
-                    meeting_source_link=meeting_source_link,
-                    significance=meeting.title,
-                    writes=writes,
-                )
+            if touched_project:
+                projects_touched.append(touched_project)
 
         # --- §20/§21 entities + concepts -----------------------------------------
         entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]

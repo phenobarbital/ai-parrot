@@ -716,3 +716,58 @@ async def test_ingest_passes_existing_context_to_classify(
     assert context is not None
     assert "Existing Proj" in context.candidate_projects
     assert "Jane Doe" in context.candidate_people
+
+
+@pytest.mark.asyncio
+async def test_ingest_reconciles_additional_projects(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every classified project (primary AND additional) is reconciled — each
+    gets this meeting's source link + current-state update and its own
+    Meeting Summaries index. Regression: only the primary was reconciled, so
+    additional projects got a wikilink from the meeting page that could
+    dangle and never received the meeting in their history."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Joint Program Sync", "2026-08-20T10:00:00-05:00")
+    )
+
+    async def _strong_invoke(prompt, *, output_type=None, **kwargs):
+        if output_type is Classification:
+            return _FakeInvokeResult(
+                Classification(
+                    confidence="high",
+                    primary_project="Acme Rollout",
+                    primary_client="Acme Corp",
+                    additional_projects=["Beta Initiative"],
+                )
+            )
+        if output_type is ContradictionDetectionResult:
+            return _FakeInvokeResult(ContradictionDetectionResult(conflicts=[]))
+        if output_type is NewProjectJustification:
+            return _FakeInvokeResult(NewProjectJustification(justified=True, reason="Ongoing body of work."))
+        if output_type is EntityExtraction:
+            return _FakeInvokeResult(EntityExtraction(materially_relevant=False, summary=""))
+        if output_type is ConceptExtraction:
+            return _FakeInvokeResult(ConceptExtraction(materially_relevant=False, definition="x", why_it_matters="y"))
+        if output_type is OverviewChangeAssessment:
+            return _FakeInvokeResult(OverviewChangeAssessment(materially_changed=False, reason="none"))
+        return _FakeInvokeResult(None)
+
+    strong_client = AsyncMock()
+    strong_client.invoke = AsyncMock(side_effect=_strong_invoke)
+    agent = _make_agent(listing, strong_client, _make_cheap_client())
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    primary = tmp_path / "Projects" / "Acme Rollout" / "Acme Rollout.md"
+    additional = tmp_path / "Projects" / "Beta Initiative" / "Beta Initiative.md"
+    assert primary.is_file()
+    assert additional.is_file(), "additional project page was not reconciled"
+    # Both projects link this meeting as a source (not just the meeting page).
+    assert "Wiki/Sources/Meetings/" in primary.read_text()
+    assert "Wiki/Sources/Meetings/" in additional.read_text()
+    # Both projects get their own meeting index.
+    assert list((tmp_path / "Projects" / "Beta Initiative" / "Meeting Summaries").rglob("index.md"))
