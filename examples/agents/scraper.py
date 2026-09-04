@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from parrot.bots.scraper import ScrapingAgent
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 async def check_scrapping_agent():
     """Example of using the ScrapingAgent with adaptive configuration"""

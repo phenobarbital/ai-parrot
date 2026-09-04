@@ -1,6 +1,13 @@
 from .client import GoogleGenAIClient
-from ...models.google import GoogleModel
+from .live import GeminiLiveClient
+from .models import GoogleModel, VertexAIModel
 
 GoogleClient = GoogleGenAIClient
 
-__all__ = ["GoogleGenAIClient", "GoogleClient", "GoogleModel"]
+__all__ = [
+    "GoogleGenAIClient",
+    "GoogleClient",
+    "GeminiLiveClient",
+    "GoogleModel",
+    "VertexAIModel",
+]

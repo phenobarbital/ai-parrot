@@ -14,7 +14,7 @@ from parrot_pipelines.planogram.grid.detector import GridDetector
 from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
 from PIL import Image
 from .abstract import AbstractPlanogramType
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     Detection,
     DetectionBox,

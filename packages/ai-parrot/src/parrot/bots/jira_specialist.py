@@ -42,7 +42,7 @@ from parrot.conf import JIRA_ALLOWED_REPORTERS, JIRA_DEFAULT_REPORTER
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
 from parrot.tools.reminder import ReminderToolkit
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext

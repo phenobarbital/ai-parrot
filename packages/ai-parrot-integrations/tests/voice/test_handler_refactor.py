@@ -14,7 +14,7 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from parrot.voice.handler import (
     BotConfig,
@@ -359,7 +359,7 @@ class TestUsageInResponseComplete:
 
     @pytest.mark.asyncio
     async def test_usage_included_when_present(self, handler, connection):
-        from parrot.clients.live import LiveCompletionUsage
+        from parrot.models.voice import LiveCompletionUsage
 
         session = _HandlerVoiceSession(
             client=_capable_mock_client(),

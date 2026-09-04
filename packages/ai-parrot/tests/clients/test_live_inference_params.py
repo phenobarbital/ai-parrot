@@ -5,7 +5,7 @@ top_p, real transcription-flag parameters (closing the latent TypeError at
 live.py:777-780), and the ``options: VoiceStreamOptions`` threading.
 """
 import pytest
-from parrot.clients.live import GeminiLiveClient
+from parrot.clients.google.live import GeminiLiveClient
 from parrot.models.voice import VoiceStreamOptions
 
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from datamodel.parsers.json import json_decoder, json_encoder
 from parrot.models.responses import AIMessage
 from parrot.models.basic import CompletionUsage
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class TestData(BaseModel):

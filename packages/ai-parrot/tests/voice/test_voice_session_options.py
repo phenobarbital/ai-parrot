@@ -4,7 +4,7 @@
 import asyncio
 
 import pytest
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.models.voice import (
     AudioFormat,
     VoiceCapabilities,

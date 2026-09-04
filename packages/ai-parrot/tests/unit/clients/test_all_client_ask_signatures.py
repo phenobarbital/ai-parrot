@@ -35,7 +35,7 @@ CLIENT_MODULES = [
     "parrot.clients.grok",
     "parrot.clients.groq",
     "parrot.clients.hf",
-    "parrot.clients.live",
+    "parrot.clients.google.live",
     "parrot.clients.localllm",
     "parrot.clients.moonshot",
     "parrot.clients.nvidia",

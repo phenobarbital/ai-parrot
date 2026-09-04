@@ -1,6 +1,6 @@
 """Tests for GoogleModel computer-use entries (TASK-1480)."""
 import pytest
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class TestGoogleModelComputerUseEntries:

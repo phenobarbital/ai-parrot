@@ -24,7 +24,7 @@ def test_stub_without_capabilities_is_not_voice_capable():
 
 
 def test_gemini_satisfies_protocol():
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
     assert isinstance(GeminiLiveClient(), VoiceCapable)
 
 
@@ -34,7 +34,7 @@ def test_nova_satisfies_protocol():
 
 
 def test_descriptors_tell_current_truth():
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
     from parrot.clients.nova import NovaClient
     gemini = GeminiLiveClient().voice_capabilities
     nova = NovaClient().voice_capabilities
@@ -50,7 +50,7 @@ def test_descriptors_tell_current_truth():
 
 class TestGeminiVoiceCapabilities:
     def test_audio_formats_pcm(self):
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         caps = GeminiLiveClient().voice_capabilities
         assert caps.input_formats == frozenset({AudioFormat.PCM_16K})
         assert caps.output_formats == frozenset({AudioFormat.PCM_24K})
@@ -58,11 +58,11 @@ class TestGeminiVoiceCapabilities:
         assert caps.output_sample_rates == frozenset({24000})
 
     def test_default_voice_is_puck(self):
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         assert GeminiLiveClient().voice_capabilities.default_voice == "Puck"
 
     def test_voice_catalog_uses_real_profiles(self):
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         from parrot.models.google import ALL_VOICE_PROFILES
         caps = GeminiLiveClient().voice_capabilities
         assert caps.voice_catalog == frozenset(
@@ -72,7 +72,7 @@ class TestGeminiVoiceCapabilities:
         assert "Charon" in caps.voice_catalog
 
     def test_parallel_tool_execution_already_true(self):
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         assert GeminiLiveClient().voice_capabilities.parallel_tool_execution is True
 
 

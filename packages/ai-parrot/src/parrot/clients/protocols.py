@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
-from ..models.voice import VoiceCapabilities, VoiceStreamOptions
-from .live import LiveVoiceResponse
+from ..models.voice import LiveVoiceResponse, VoiceCapabilities, VoiceStreamOptions
 
 
 @runtime_checkable

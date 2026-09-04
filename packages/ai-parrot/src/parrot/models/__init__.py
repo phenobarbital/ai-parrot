@@ -74,7 +74,6 @@ from .generation import (
     VideoResolution,
 )
 from .google import (
-    GoogleModel,
     TTSVoice,
     MusicGenre,
     MusicMood,
@@ -147,7 +146,6 @@ __all__ = (
     "SpeakerConfig",
     "SpeechGenerationPrompt",
     "VideoGenerationPrompt",
-    "GoogleModel",
     "TTSVoice",
     "VoiceConfig",
     "AudioFormat",

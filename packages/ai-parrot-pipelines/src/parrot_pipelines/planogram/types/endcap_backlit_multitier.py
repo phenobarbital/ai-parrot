@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
 from .abstract import AbstractPlanogramType
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     BoundingBox,
     Detection,

@@ -430,9 +430,17 @@ GOOGLE_CREDENTIALS_FILE = Path(
 )
 
 ## LLM default config:
-from .models.google import GoogleModel  # noqa: E402
-
-DEFAULT_LLM_MODEL = config.get("LLM_MODEL", fallback=GoogleModel.GEMINI_FLASH_LATEST.value)
+# FEAT-523 (TASK-2841): GoogleModel relocated out of parrot.models.google.
+# Spec §3 Module 2 / Integration Points already prescribes this exact line's
+# end state (literal fallback, no GoogleModel import) — applied here instead
+# of deferring to TASK-2846 because `parrot.clients.google` (and any
+# submodule under it) cannot be imported from conf.py without a circular
+# import: parrot.clients.base -> parrot.memory -> parrot.tools ->
+# parrot.plugins -> parrot.conf -> parrot.clients.google.__init__ ->
+# parrot.clients.google.client -> parrot.clients.base (still mid-import).
+# "gemini-flash-latest" is GoogleModel.GEMINI_FLASH_LATEST.value, verified
+# byte-identical in parrot/clients/google/models.py.
+DEFAULT_LLM_MODEL = config.get("LLM_MODEL", fallback="gemini-flash-latest")
 DEFAULT_LLM_TEMPERATURE = config.get("LLM_TEMPERATURE", fallback=0.1)
 
 """

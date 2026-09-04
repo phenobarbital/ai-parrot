@@ -22,7 +22,7 @@ from parrot.clients.protocols import VoiceCapable
 class TestVoiceCapableProtocol:
     def test_gemini_satisfies_protocol(self):
         """GeminiLiveClient structurally satisfies VoiceCapable."""
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         assert isinstance(GeminiLiveClient(), VoiceCapable)
 
     def test_nova_satisfies_protocol(self):

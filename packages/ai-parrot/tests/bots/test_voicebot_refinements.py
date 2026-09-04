@@ -48,7 +48,7 @@ class TestVoiceBotLazyExport:
     """The export must not be EAGER (regression guard).
 
     An eager `from .voice import VoiceBot` in `parrot/bots/__init__.py`
-    drags `parrot.clients.live` -> `from google import genai` into every
+    drags `parrot.clients.google.live` -> `from google import genai` into every
     importer of `parrot.bots`, turning the optional `google-genai` dep into
     a hard requirement of the agent REPL and the agentd daemon. AST-based
     for the same reason as the rest of this module.

@@ -26,9 +26,8 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from ..clients.live import LiveVoiceResponse
 from ..clients.protocols import VoiceCapable
-from ..models.voice import VoiceConfig, VoiceStreamOptions
+from ..models.voice import LiveVoiceResponse, VoiceConfig, VoiceStreamOptions
 
 logger = logging.getLogger(__name__)
 

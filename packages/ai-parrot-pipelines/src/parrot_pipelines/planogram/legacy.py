@@ -28,7 +28,7 @@ import cv2
 import torch
 from google.genai.errors import ServerError
 from ..abstract import AbstractPipeline
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     BoundingBox,
     DetectionBox,

@@ -25,11 +25,8 @@ from typing import (
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
-from ..clients.live import (
-    GeminiLiveClient,
-    LiveCompletionUsage,
-    LiveVoiceResponse,
-)
+from ..clients.google.live import GeminiLiveClient
+from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).

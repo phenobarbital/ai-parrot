@@ -46,7 +46,6 @@ from ...models import (
     VideoResolution,
 )
 from ...models.google import (
-    GoogleModel,
     TTSVoice,
     MusicGenre,
     MusicMood,
@@ -59,6 +58,7 @@ from ...models.google import (
     VideoReelRequest,
     VideoReelScene,
 )
+from .models import GoogleModel
 from ...exceptions import SpeechGenerationError
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory

@@ -8,7 +8,7 @@ canonical role attribute instead of the removed
 metadata["user_transcription"] key.
 """
 from parrot.bots import VoiceBot
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.models.voice import VoiceConfig
 
 

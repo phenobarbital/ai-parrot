@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     Detection,
     BoundingBox,

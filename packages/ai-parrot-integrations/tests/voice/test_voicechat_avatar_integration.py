@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection
 

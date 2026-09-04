@@ -34,7 +34,8 @@ except ImportError:
     ClaudeModel = None
 
 try:
-    from parrot.models.google import GoogleModel
+    # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
+    from parrot.clients.google.models import GoogleModel
 except ImportError:
     GoogleModel = None
 

@@ -39,9 +39,7 @@ from ...models import (
     CompletionUsage,
     StructuredOutputConfig,
 )
-from ...models.google import (
-    GoogleModel,
-)
+from .models import GoogleModel
 from ...models.detections import (
     DetectionBox,
     ShelfRegion,

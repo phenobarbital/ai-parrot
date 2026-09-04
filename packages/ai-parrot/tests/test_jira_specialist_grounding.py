@@ -158,7 +158,7 @@ _mk("parrot.integrations.telegram.callbacks",
     CallbackResult=MagicMock,
     build_inline_keyboard=MagicMock())
 _mk("parrot.tools.reminder", ReminderToolkit=MagicMock())
-_mk("parrot.models.google", GoogleModel=MagicMock())
+_mk("parrot.clients.google.models", GoogleModel=MagicMock())
 _mk("parrot.auth.credentials", OAuthCredentialResolver=MagicMock())
 _mk("parrot.auth.context", UserContext=MagicMock())
 _mk("parrot.core.hooks.models",

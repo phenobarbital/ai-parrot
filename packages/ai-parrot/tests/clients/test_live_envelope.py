@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from parrot.clients.live import GeminiLiveClient
+from parrot.clients.google.live import GeminiLiveClient
 
 
 class _FakeLiveSession:

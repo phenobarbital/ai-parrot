@@ -13,7 +13,7 @@ All Gemini / bot internals are mocked — no real network connections.
 ``google-genai`` distribution being installed.
 
 Module loading note: the venv's editable-install for ``parrot.voice.handler``
-and ``parrot.clients.live`` points to the *main* repo.  We extend
+and ``parrot.clients.google.live`` points to the *main* repo.  We extend
 ``parrot.__path__`` and ``parrot.voice.__path__`` with the worktree source
 directories so Python resolves the worktree's modified copies.  This mirrors
 the pattern used by the project's test suite (see conftest.py).
@@ -70,14 +70,14 @@ for _key in list(sys.modules):
     if _key in (
         "parrot.voice.handler",
         "parrot.voice",
-        "parrot.clients.live",
+        "parrot.clients.google.live",
     ):
         del sys.modules[_key]
 importlib.invalidate_caches()
 
 
 # ---------------------------------------------------------------------------
-# Inject google.genai stub so parrot.clients.live can be imported without the
+# Inject google.genai stub so parrot.clients.google.live can be imported without the
 # real google-genai distribution (which may not be installed in the test env).
 # ---------------------------------------------------------------------------
 
@@ -138,7 +138,7 @@ def _inject_genai_stub() -> None:
 _inject_genai_stub()
 
 # Now import from the worktree's versions.
-from parrot.clients.live import LiveVoiceResponse  # noqa: E402
+from parrot.models.voice import LiveVoiceResponse  # noqa: E402
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection  # noqa: E402
 
 # Sanity check: make sure we loaded the worktree's handler (not the main repo).
@@ -457,7 +457,7 @@ def test_build_live_config_stt_only_sets_empty_modalities():
 
     This tells Gemini not to generate a model response at all.
     """
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
 
     client = GeminiLiveClient.__new__(GeminiLiveClient)
     # Minimal attribute setup to avoid __init__ side-effects
@@ -491,7 +491,7 @@ def test_build_live_config_stt_only_sets_empty_modalities():
 
 def test_build_live_config_default_full_duplex():
     """``_build_live_config()`` (default) uses AUDIO modality for full-duplex."""
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
 
     client = GeminiLiveClient.__new__(GeminiLiveClient)
     client.language = "en-US"

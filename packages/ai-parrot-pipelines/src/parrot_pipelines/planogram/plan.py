@@ -4,7 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from ..abstract import AbstractPipeline
 from ..models import PlanogramConfig
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,

@@ -42,7 +42,7 @@ from pathlib import Path
 
 from parrot.bots.agent import BasicAgent
 from parrot.clients.google.client import GoogleGenAIClient
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 from parrot.knowledge.pageindex import (
     PageIndexLLMAdapter,
     PageIndexRetriever,

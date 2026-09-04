@@ -24,7 +24,7 @@ from ..conf import (
 )
 
 ## AI Models:
-from ..models.google import GoogleModel
+from ..clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from ..stores.models import Document
 from ..stores.utils.chunking import LateChunkingProcessor
 from .splitters import (

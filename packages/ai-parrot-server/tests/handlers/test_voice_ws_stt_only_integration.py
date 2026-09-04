@@ -83,14 +83,14 @@ for _key in list(sys.modules):
     if _key in (
         "parrot.voice.handler",
         "parrot.voice",
-        "parrot.clients.live",
+        "parrot.clients.google.live",
     ):
         del sys.modules[_key]
 importlib.invalidate_caches()
 
 
 # ---------------------------------------------------------------------------
-# Inject google.genai stub so parrot.clients.live can be imported without the
+# Inject google.genai stub so parrot.clients.google.live can be imported without the
 # real google-genai distribution (which may not be installed in the test env).
 # ---------------------------------------------------------------------------
 
@@ -149,7 +149,7 @@ def _inject_genai_stub() -> None:
 _inject_genai_stub()
 
 # Import from worktree versions.
-from parrot.clients.live import LiveVoiceResponse  # noqa: E402
+from parrot.models.voice import LiveVoiceResponse  # noqa: E402
 from parrot.models.voice import (  # noqa: E402
     AudioFormat,
     VoiceCapabilities,

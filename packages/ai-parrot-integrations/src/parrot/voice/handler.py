@@ -93,7 +93,7 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
     Pre-Alpha ``aws_sdk_bedrock_runtime`` extra is optional and is only
     required at first ``stream_voice()`` call, not at import time). Every
     other currently-declared provider resolves to
-    :class:`~parrot.clients.live.GeminiLiveClient`, the only fully-wired
+    :class:`~parrot.clients.google.live.GeminiLiveClient`, the only fully-wired
     voice client at this time (``OPENAI_REALTIME`` / ``WHISPER_TTS`` are
     declared in the enum but not yet backed by dedicated client classes).
 
@@ -117,7 +117,7 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
 
         return NovaClient
 
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
 
     return GeminiLiveClient
 

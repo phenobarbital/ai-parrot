@@ -15,7 +15,7 @@ from datamodel.parsers.json import json_encoder
 
 from parrot.clients.google import GoogleGenAIClient
 from parrot.models import ImageGenerationPrompt, VideoGenerationPrompt
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 
 class MediaGen(BaseView):

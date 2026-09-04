@@ -22,19 +22,18 @@ Usage:
         async for response in client.stream_voice(audio_iterator):
             print(response.text, response.usage)
 
-Location: parrot/clients/live.py
+Location: parrot/clients/google/live.py
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import inspect
 import logging
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
@@ -51,197 +50,28 @@ from google.genai import types
 from google.oauth2 import service_account
 from navconfig import config
 
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; they come from the per-call
 # ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
-from ..models.voice import (
+from ...models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
+from ...models.voice import (
     AudioFormat,
     VoiceCapabilities,
     VoiceProvider,
     VoiceStreamOptions,
+    LiveCompletionUsage,
+    LiveToolCall,
+    VoiceTurnMetadata,
+    LiveVoiceResponse,
 )
-from ..tools.abstract import AbstractTool, ToolResult
-from ..tools.manager import ToolManager
+from ...tools.abstract import AbstractTool, ToolResult
+from ...tools.manager import ToolManager
 
 # Import from parrot framework
-from .base import AbstractClient
-
-# =============================================================================
-# Response Models with Usage Metadata
-# =============================================================================
-
-
-@dataclass
-class LiveCompletionUsage:
-    """
-    Usage tracking for Gemini Live API responses.
-
-    Compatible with CompletionUsage from parrot.models.basic
-    """
-
-    # Core token metrics
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-    # Aliases for Gemini naming
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-    # Audio-specific metrics
-    input_audio_duration_ms: float = 0.0
-    output_audio_duration_ms: float = 0.0
-
-    # Timing
-    response_time_ms: float = 0.0
-    first_token_time_ms: float = 0.0
-
-    # Tool execution
-    tool_calls_executed: int = 0
-    tool_execution_time_ms: float = 0.0
-
-    # Provider metadata
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        # Sync aliases
-        if self.input_tokens and not self.prompt_tokens:
-            self.prompt_tokens = self.input_tokens
-        if self.output_tokens and not self.completion_tokens:
-            self.completion_tokens = self.output_tokens
-        if not self.total_tokens:
-            self.total_tokens = self.prompt_tokens + self.completion_tokens
-
-    @classmethod
-    def from_gemini_usage(cls, usage_metadata: Any) -> "LiveCompletionUsage":
-        """Create from Gemini usage metadata when available."""
-        if usage_metadata is None:
-            return cls()
-
-        return cls(
-            prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            completion_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
-            total_tokens=getattr(usage_metadata, "total_token_count", 0) or 0,
-            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
-            extra=usage_metadata.__dict__ if hasattr(usage_metadata, "__dict__") else {},
-        )
-
-
-@dataclass
-class LiveToolCall:
-    """Represents a tool call from Gemini Live API."""
-
-    id: str
-    name: str
-    arguments: Dict[str, Any]
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    execution_time_ms: float = 0.0
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "arguments": self.arguments,
-            "result": self.result,
-            "error": self.error,
-            "execution_time_ms": self.execution_time_ms,
-        }
-
-
-@dataclass
-class VoiceTurnMetadata:
-    """Metadata for a single voice turn/response."""
-
-    turn_id: str
-    started_at: datetime = field(default_factory=datetime.now)
-    ended_at: Optional[datetime] = None
-    input_transcription: Optional[str] = None
-    output_transcription: Optional[str] = None
-    tool_calls_count: int = 0
-    was_interrupted: bool = False
-
-    @property
-    def duration_ms(self) -> float:
-        if self.ended_at:
-            return (self.ended_at - self.started_at).total_seconds() * 1000
-        return 0.0
-
-
-@dataclass
-class LiveVoiceResponse:
-    """
-    Response from GeminiLiveClient voice interaction.
-
-    Enhanced version of VoiceResponse with CompletionUsage metadata
-    for consistency with other AbstractClient implementations.
-    """
-
-    # Content
-    text: str = ""
-    audio_data: Optional[bytes] = None
-    audio_format: str = "audio/pcm;rate=24000"
-
-    # State
-    is_complete: bool = False
-    is_interrupted: bool = False
-
-    # Tool calls
-    tool_calls: List[LiveToolCall] = field(default_factory=list)
-
-    # Usage metadata - consistent with CompletionUsage
-    usage: Optional[LiveCompletionUsage] = None
-
-    # Turn metadata
-    turn_metadata: Optional[VoiceTurnMetadata] = None
-
-    # Session info
-    session_id: Optional[str] = None
-    turn_id: Optional[str] = None
-    user_id: Optional[str] = None
-
-    # Speaker attribution (FEAT-408, canonicalized lowercase in FEAT-418)
-    role: Optional[str] = None
-    """Speaker this frame is attributed to: "user" or "assistant" (canonical
-    lowercase form, FEAT-418). GeminiLiveClient sets this on every
-    model-originated and user-transcription frame as of FEAT-418
-    (previously always None here; user transcription instead traveled via
-    the now-removed metadata["user_transcription"])."""
-
-    # Extra metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def to_websocket_message(self) -> Dict[str, Any]:
-        """Format for WebSocket transmission."""
-
-        return {
-            "type": "voice_response",
-            "text": self.text,
-            "audio_base64": base64.b64encode(self.audio_data).decode() if self.audio_data else None,
-            "audio_format": self.audio_format,
-            "is_complete": self.is_complete,
-            "is_interrupted": self.is_interrupted,
-            "tool_calls": [tc.to_dict() for tc in self.tool_calls],
-            "usage": (
-                {
-                    "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
-                    "completion_tokens": self.usage.completion_tokens if self.usage else 0,
-                    "total_tokens": self.usage.total_tokens if self.usage else 0,
-                    "response_time_ms": self.usage.response_time_ms if self.usage else 0,
-                }
-                if self.usage
-                else None
-            ),
-            "metadata": self.metadata,
-            "session_id": self.session_id,
-            "turn_id": self.turn_id,
-            "role": self.role,
-        }
-
+from ..base import AbstractClient
+from .models import GoogleModel
 
 # =============================================================================
 # Live Tool Adapter - Convert AbstractTool to Live API format
@@ -542,6 +372,10 @@ class GeminiLiveClient(AbstractClient):
     client_type: str = "google_live"
     client_name: str = "google_live"
     _default_model: str = GoogleVoiceModel.DEFAULT.value
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("gemini-live",)
+    models: type[Enum] = GoogleModel
 
     def __init__(
         self,

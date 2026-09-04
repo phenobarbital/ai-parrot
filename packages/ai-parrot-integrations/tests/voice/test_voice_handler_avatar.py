@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection
 
 

@@ -13,8 +13,8 @@ from parrot.models.google import (
     MusicGenerationRequest,
     MusicGenre,
     MusicMood,
-    GoogleModel,
 )
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 
 class LyriaMusicHandler(BaseView):

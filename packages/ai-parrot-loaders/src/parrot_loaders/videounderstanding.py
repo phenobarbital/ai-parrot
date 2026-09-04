@@ -7,7 +7,7 @@ from datetime import datetime
 from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
 from parrot.clients.google import GoogleGenAIClient
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 
 def split_text(text, max_length):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 from collections import defaultdict
+from enum import Enum
 import copy
 import difflib
 import re
@@ -71,10 +72,10 @@ from ...models import (
 from ...models.responses import InvokeResult
 from ...exceptions import InvokeError
 from ...models.google import (
-    GoogleModel,
     ALL_VOICE_PROFILES,
     VoiceRegistry,
 )
+from .models import GoogleModel
 from ...tools.abstract import AbstractTool, ToolResult
 from ...core.exceptions import HumanInteractionInterrupt
 from ...auth.credentials import CredentialRequired  # FEAT-264 — per-user cred gate
@@ -114,6 +115,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     client_type: str = "google"
     client_name: str = "google"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("google",)
+    models: type[Enum] = GoogleModel
+
     _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
     _fallback_model: str = "gemini-3.1-flash-lite"
     _model_garden: bool = False

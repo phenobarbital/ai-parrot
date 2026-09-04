@@ -30,7 +30,7 @@ class TestNovaProvider:
 
 class TestProviderResolution:
     def test_resolve_google_live_returns_gemini_live_client(self):
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         assert resolve_voice_client_class(VoiceProvider.GOOGLE_LIVE) is GeminiLiveClient
 
     def test_resolve_nova_returns_nova_client(self):
@@ -53,7 +53,7 @@ class TestProviderResolution:
     def test_voice_chat_handler_default_provider_unchanged(self):
         """Non-Nova providers still resolve to GeminiLiveClient — no
         regression for the existing (only fully-wired) voice provider."""
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
         assert VoiceChatHandler.resolve_provider_client(
             VoiceProvider.GOOGLE_LIVE
         ) is GeminiLiveClient

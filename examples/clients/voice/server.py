@@ -80,7 +80,7 @@ if _ENV_FILE.is_file():
 
 from aiohttp import web
 from parrot.bots import VoiceBot
-from parrot.clients.live import GeminiLiveClient
+from parrot.clients.google.live import GeminiLiveClient
 from parrot.clients.protocols import VoiceCapable
 from parrot.models.voice import VoiceCapabilities, VoiceConfig, VoiceProvider
 from parrot.tools import tool

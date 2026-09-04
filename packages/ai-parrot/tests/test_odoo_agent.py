@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 # ── Resolve paths ─────────────────────────────────────────────────────────────
 

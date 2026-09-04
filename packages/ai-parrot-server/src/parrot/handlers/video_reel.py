@@ -22,8 +22,8 @@ from parrot.models.google import (
     MusicMood,
     VideoReelRequest,
     VideoReelScene,
-    GoogleModel,
 )
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 from .jobs import JobManager, JobStatus

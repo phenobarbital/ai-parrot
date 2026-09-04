@@ -23,7 +23,7 @@ from parrot.forms import (
 )
 from parrot.forms.renderers.html5 import HTML5Renderer
 from parrot.forms.style import LayoutType
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class FormAgent(BasicAgent):

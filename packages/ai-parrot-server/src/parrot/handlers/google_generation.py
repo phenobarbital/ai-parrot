@@ -14,10 +14,10 @@ from parrot.models import ImageGenerationPrompt, MusicGenerationRequest, SpeechG
 from parrot.models.google import (
     ALL_VOICE_PROFILES,
     ConversationalScriptConfig,
-    GoogleModel,
     MusicGenre,
     MusicMood,
 )
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
 
 
 class GoogleGenerationHelper(BaseHandler):

@@ -45,7 +45,7 @@ async def _build_pageindex() -> tuple[object, list[str], object]:
     holds a reference to it but does not own its session lifecycle.
     """
     from parrot.clients.google.client import GoogleGenAIClient
-    from parrot.models.google import GoogleModel
+    from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
     from parrot.knowledge.pageindex import PageIndexLLMAdapter, PageIndexToolkit
 
     PAGEINDEX_DIR.mkdir(parents=True, exist_ok=True)

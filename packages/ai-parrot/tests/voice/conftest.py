@@ -18,7 +18,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from parrot.clients.live import GeminiLiveClient
+from parrot.clients.google.live import GeminiLiveClient
 from parrot.clients.nova import NovaClient
 
 

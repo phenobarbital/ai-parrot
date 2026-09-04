@@ -54,9 +54,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
 from ...models.bedrock_models import translate as translate_bedrock_model
-from ...models.voice import VoiceStreamOptions
+from ...models.voice import (
+    LiveCompletionUsage,
+    LiveToolCall,
+    LiveVoiceResponse,
+    VoiceStreamOptions,
+    VoiceTurnMetadata,
+)
 
 # Nova Sonic / Nova 2 Sonic synthesis voice catalog (FEAT-418, TASK-2169).
 #
@@ -594,7 +599,7 @@ class NovaAudio:
                 # ToolManager.register_tool() without an AbstractTool wrapper)
                 # do not and instead carry name/description/input_schema
                 # directly — mirrors LiveToolAdapter._tool_to_declaration()'s
-                # verified branching (clients/live.py).
+                # verified branching (clients/google/live.py).
                 if hasattr(tool, "get_schema"):
                     schema = tool.get_schema()
                     name = schema.get("name", getattr(tool, "name", "unknown"))
@@ -819,7 +824,7 @@ class NovaAudio:
     ) -> AsyncIterator[LiveVoiceResponse]:
         """Stream bidirectional voice interaction via Nova Sonic.
 
-        Follows :meth:`~parrot.clients.live.GeminiLiveClient.stream_voice`'s
+        Follows :meth:`~parrot.clients.google.live.GeminiLiveClient.stream_voice`'s
         sender/receiver task pattern: a background sender task reads PCM
         16kHz chunks from *audio_iterator* and forwards them as
         ``audioInput`` event frames, while this coroutine iterates the

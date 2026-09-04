@@ -20,12 +20,12 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from parrot.clients.live import (
+from parrot.models.voice import (
     LiveCompletionUsage,
     LiveToolCall,
     LiveVoiceResponse,
+    VoiceConfig,
 )
-from parrot.models.voice import VoiceConfig
 
 VOICE_BOT_SOURCE = (
     Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"

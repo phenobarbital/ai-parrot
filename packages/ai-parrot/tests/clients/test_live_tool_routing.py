@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from parrot.clients.live import LiveToolAdapter
+from parrot.clients.google.live import LiveToolAdapter
 from parrot.tools import AbstractTool, ToolResult
 
 
@@ -114,7 +114,7 @@ class TestLiveRouting:
 
     async def test_no_private_execute_call_left(self):
         import inspect
-        from parrot.clients import live as live_module
+        from parrot.clients.google import live as live_module
         src = inspect.getsource(live_module.LiveToolAdapter.execute_tool)
         # A prose comment may mention the OLD `_execute()` call for context;
         # what must not exist is the actual call expression.
