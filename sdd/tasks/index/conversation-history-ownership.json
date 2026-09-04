@@ -150,7 +150,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Owns the cross-client signature test, which must run after every other client group is migrated.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2815-client-migration-google-live-signature-test.md"
+      "completed_at": "2026-09-04T01:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2815-client-migration-google-live-signature-test.md"
     },
     {
       "id": "TASK-2816",
