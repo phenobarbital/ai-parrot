@@ -7,6 +7,7 @@
 // Data Models / §3 Module 2.
 import type { SourceLink, BotDocumentEntry } from "$lib/types/bot-chat.js";
 import type { AgentToolCall as GeneratedAgentToolCall } from "$lib/types/generated/AgentChatResponse";
+import type { A2UIEnvelope } from "$lib/components/agents/canvas/a2ui/a2ui-types";
 
 export interface AgentChatRequest {
   ws_channel_id?: string;
@@ -45,6 +46,9 @@ export interface AgentMessage {
   // IndexedDB to avoid bloat) — degrades to text-only on reload.
   audio_base64?: string;
   audio_format?: string;
+  // A2UI envelope (FEAT-527): present on both `output_mode: "infographic"`
+  // (dual-emit, additive) and `output_mode: "a2ui"` turns.
+  a2ui_envelope?: A2UIEnvelope;
 }
 
 /**

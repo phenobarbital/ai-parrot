@@ -7,7 +7,7 @@ describe("features", () => {
     expect(Object.isFrozen(features)).toBe(true);
   });
 
-  it("exposes exactly the eight documented flags", () => {
+  it("exposes exactly the nine documented flags", () => {
     expect(Object.keys(features).sort()).toEqual(
       [
         "voice",
@@ -18,6 +18,7 @@ describe("features", () => {
         "infographic",
         "datasets",
         "richEditor",
+        "a2ui",
       ].sort(),
     );
   });
