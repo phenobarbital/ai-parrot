@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple, Sequence
 
 from ...exceptions import InvokeError
 import os
@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover - exercised when extra is missing
     Part = None  # type: ignore[assignment]
     ModelContent = None  # type: ignore[assignment]
     UserContent = None  # type: ignore[assignment]
+from ...memory.render import HistoryMessage
 from ...models import (
     AIMessage,
     AIMessageFactory,
@@ -224,6 +225,7 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
+        history: Optional[Sequence[HistoryMessage]] = None,
         offsets: Optional[tuple[str, str]] = None,
         reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
         timeout: Optional[int] = 600,
@@ -246,50 +248,13 @@ class GoogleAnalysis:
 
         await self._ensure_client()
 
-        if stateless:
-            # For stateless mode, skip conversation memory
-            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-            conversation_history = None
-        else:
-            # Use the unified conversation context preparation from AbstractClient
-            (
-                messages,
-                conversation_history,
-                prompt_instruction,
-            ) = await self._prepare_conversation_context(
-                prompt,
-                None,
-                user_id,
-                session_id,
-                prompt_instruction,
-                stateless=stateless,
-            )
-
-        # Prepare conversation history for Google GenAI format
-        history = []
-        if messages:
-            for msg in messages[:-1]:  # Exclude the current user message (last in list)
-                role = msg["role"].lower()
-                if role == "user":
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if (
-                            isinstance(part_content, dict)
-                            and part_content.get("type") == "text"
-                        ):
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ["assistant", "model"]:
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if (
-                            isinstance(part_content, dict)
-                            and part_content.get("type") == "text"
-                        ):
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = () if stateless else (history or ())
+        history = self._format_history(_rendered)
 
         config_kwargs = {
             "response_modalities": ["Text"],
@@ -472,26 +437,8 @@ class GoogleAnalysis:
                     finish_reason=self._extract_finish_reason(response),
                 )
 
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_history,
-                    messages
-                    + [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"[Image Analysis]: {prompt}"}
-                            ],
-                        },
-                    ],
-                    None,
-                    turn_id,
-                    prompt,
-                    final_response,
-                    [],
-                )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # single writer; the `if not stateless` guard around it went with it.
             # Create AIMessage using factory
             ai_message = AIMessageFactory.from_gemini(
                 response=response,
@@ -502,7 +449,6 @@ class GoogleAnalysis:
                 turn_id=turn_id,
                 structured_output=final_output,
                 tool_calls=None,
-                conversation_history=conversation_history,
                 text_response=final_response,
             )
 
@@ -730,6 +676,7 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
+        history: Optional[Sequence[HistoryMessage]] = None,
         timeout: Optional[int] = 600,
         temperature: float = 0.0,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
@@ -800,27 +747,11 @@ class GoogleAnalysis:
         # 3. Ensure client is ready
         await self._ensure_client(model=model_name)
 
-        # 4. Prepare conversation context for stateful mode (BEFORE building config)
-        conversation_history = None
-        history: List[Any] = []
-        messages: List[Any] = []
-        if not stateless:
-            messages, conversation_history, prompt_instruction = await self._prepare_conversation_context(
-                prompt, None, user_id, session_id, prompt_instruction, stateless=stateless
-            )
-            # Convert to Google GenAI history format
-            for msg in messages[:-1]:  # exclude the current user message (last)
-                role = msg["role"].lower()
-                msg_parts = []
-                for part_content in msg.get("content", []):
-                    if isinstance(part_content, dict) and part_content.get("type") == "text":
-                        msg_parts.append(Part(text=part_content.get("text", "")))
-                if not msg_parts:
-                    continue
-                if role == "user":
-                    history.append(UserContent(parts=msg_parts))
-                elif role in ("assistant", "model"):
-                    history.append(ModelContent(parts=msg_parts))
+        # 4. FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed: `history` as google.genai Content objects for the SDK, and
+        # `messages` dict-shaped for the HITL resume accumulator.
+        _rendered = (history or ()) if not stateless else ()
+        history = self._format_history(_rendered)
 
         # 5. Upload all documents in parallel via Files API
         self.logger.info("Uploading %d document(s) in parallel...", len(doc_paths))
@@ -896,18 +827,8 @@ class GoogleAnalysis:
                     )
 
             # 12. Update memory (stateful) — use messages as-is (no duplicate user turn)
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_history,
-                    messages,
-                    None,
-                    turn_id,
-                    prompt,
-                    final_response,
-                    [],
-                )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # single writer; the `if not stateless` guard around it went with it.
 
             # 13. Parse response and return AIMessage
             ai_message = AIMessageFactory.from_gemini(
@@ -919,7 +840,6 @@ class GoogleAnalysis:
                 turn_id=turn_id,
                 structured_output=final_output,
                 text_response=final_response,
-                conversation_history=conversation_history,
             )
 
             if ai_message.usage:

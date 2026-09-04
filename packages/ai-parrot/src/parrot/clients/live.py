@@ -6,7 +6,7 @@ ecosystem while supporting the unique requirements of voice streaming.
 
 Key Features:
 - Inherits from AbstractClient (same as GoogleGenAIClient, AnthropicClient, etc.)
-- Reuses tool_manager, conversation_memory, preset system
+- Reuses tool_manager and the preset system
 - Uses same credential pattern as GoogleGenAIClient
 - Supports AbstractTool integration via LiveToolAdapter
 - Returns LiveVoiceResponse with CompletionUsage metadata
@@ -42,6 +42,7 @@ from typing import (
     List,
     Optional,
     Union,
+    Sequence,
 )
 
 from google import genai
@@ -49,7 +50,10 @@ from google.genai import types
 from google.oauth2 import service_account
 from navconfig import config
 
-from ..memory import ConversationMemory
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; they come from the per-call
+# ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
 from ..models.voice import (
     AudioFormat, VoiceCapabilities, VoiceProvider, VoiceStreamOptions,
@@ -500,11 +504,12 @@ class GeminiLiveClient(AbstractClient):
     Client for Gemini Live API voice interactions.
 
     Inherits from AbstractClient to maintain consistency with the AI-Parrot
-    ecosystem. Reuses tool_manager, conversation_memory, and credential
+    ecosystem. Reuses tool_manager and credential
     patterns from GoogleGenAIClient.
 
     Key features:
-    - Inherits tool_manager and conversation_memory from AbstractClient
+    - Inherits tool_manager from AbstractClient (FEAT-524: clients are
+      memory-less; live.py keeps its own realtime session model instead)
     - Uses same credential system (api_key, vertexai, credentials_file)
     - Integrates AbstractTool via LiveToolAdapter
     - Returns LiveVoiceResponse with usage metadata
@@ -555,7 +560,6 @@ class GeminiLiveClient(AbstractClient):
         voice_name: str = "Puck",
         language: str = "en-US",
         # AbstractClient params
-        conversation_memory: Optional[ConversationMemory] = None,
         preset: Optional[str] = None,
         tools: Optional[List[Union[str, AbstractTool]]] = None,
         use_tools: bool = False,
@@ -575,7 +579,6 @@ class GeminiLiveClient(AbstractClient):
             credentials_file: Path to service account credentials
             voice_name: Voice for speech synthesis (Puck, Charon, Kore, etc.)
             language: Language code (en-US, es-ES, etc.)
-            conversation_memory: Conversation memory instance
             preset: LLM preset name
             tools: List of tools to register
             use_tools: Enable tool usage
@@ -590,7 +593,6 @@ class GeminiLiveClient(AbstractClient):
             model = model.value
         super().__init__(
             model=model,
-            conversation_memory=conversation_memory,
             preset=preset,
             tools=tools,
             use_tools=use_tools,
@@ -1493,8 +1495,7 @@ class GeminiLiveClient(AbstractClient):
         self,
         question: str,
         system_prompt: Optional[str] = None,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
@@ -1505,8 +1506,9 @@ class GeminiLiveClient(AbstractClient):
         Args:
             question: Text input to send
             system_prompt: Optional system instructions
-            session_id: Session identifier
-            user_id: User identifier
+            history: Accepted for ``AbstractClient`` conformance (FEAT-524) but
+                NOT replayed — the Gemini Live API maintains its own realtime
+                session, which spec §1 keeps out of scope.
             **kwargs: Additional configuration
 
         Yields:
@@ -1514,7 +1516,10 @@ class GeminiLiveClient(AbstractClient):
         """
         await self._ensure_client()
 
-        session_id = session_id or str(uuid.uuid4())
+        # FEAT-524: ids come from the ContextVars BaseBot binds, not kwargs.
+        del history  # not replayed; the Live API owns the session (see docstring)
+        user_id = current_user_id.get()
+        session_id = current_session_id.get() or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
