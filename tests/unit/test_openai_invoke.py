@@ -24,7 +24,7 @@ def _make_mock_response(text: str = '{"sentiment": "positive", "confidence": 0.9
 
 def _make_client():
     """Create OpenAIClient without network setup."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
     client = OpenAIClient.__new__(OpenAIClient)
     client.model = "gpt-4o"
     client._lightweight_model = "gpt-4.1"

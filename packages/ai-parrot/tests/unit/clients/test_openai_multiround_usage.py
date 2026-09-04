@@ -13,7 +13,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     ClientRoundEvent,

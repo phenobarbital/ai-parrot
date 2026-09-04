@@ -15,7 +15,7 @@ The Responses API path (``use_responses=True``, the default) is net-new and
 **local to this class** (design decision D1): ``OpenAIBaseClient`` has no
 Responses-API support by design, so ``ask()``/``ask_stream()`` are overridden
 here to route to :meth:`MetaClient._responses_completion`. The *structure* of
-:class:`~parrot.clients.gpt.OpenAIClient`'s equivalent methods
+:class:`~parrot.clients.openai.OpenAIClient`'s equivalent methods
 (``gpt.py:353-680``) is mirrored as a read-only reference — never imported,
 subclassed, or modified; some duplication is the accepted, reversible trade.
 
@@ -312,7 +312,7 @@ class MetaClient(OpenAIBaseClient):
         the *real*, live-verified Responses wire shape (NOT a
         ``role``/``content`` wrapper like Chat Completions; NOT the
         ``tool_output``/``tool_call`` content-block shape
-        :class:`~parrot.clients.gpt.OpenAIClient` mirrors, which was tried
+        :class:`~parrot.clients.openai.OpenAIClient` mirrors, which was tried
         first here and 400s live with ``'input[N].content' did not match
         any supported type`` — corrected during implementation).
 

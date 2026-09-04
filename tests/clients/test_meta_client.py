@@ -9,7 +9,7 @@ import pytest
 
 from parrot.clients.meta import CONTRIBUTOR_MODELS, MetaClient, MetaModel
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 from parrot.clients.openai_base import OpenAIBaseClient
 
 

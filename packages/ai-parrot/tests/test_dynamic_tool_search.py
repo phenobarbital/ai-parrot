@@ -4,7 +4,7 @@ import asyncio
 import json
 from unittest.mock import MagicMock, AsyncMock, patch
 from parrot.clients.base import ToolDefinition
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 
 # Define a hidden tool function
 def hidden_tool_func(arg: str) -> str:
@@ -42,7 +42,7 @@ class TestDynamicToolSearch(unittest.IsolatedAsyncioTestCase):
         new_tools = self.client._check_new_tools("search_tools", search_result)
         self.assertEqual(new_tools, ["hidden_tool"])
 
-    @patch('parrot.clients.gpt.OpenAIClient._execute_tool')
+    @patch('parrot.clients.openai.client.OpenAIClient._execute_tool')
     async def test_ask_lazy_flow(self, mock_execute):
         """
         Verify the lazy loading flow in ask():

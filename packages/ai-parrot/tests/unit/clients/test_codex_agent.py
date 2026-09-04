@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+from parrot.clients.openai.codex_agent import CodexAgentRunOptions, OpenAICodexClient
 from parrot.clients.factory import LLMFactory
 from parrot.tools.manager import ToolManager
 
@@ -132,7 +132,7 @@ async def test_tool_bridge_routes_through_tool_manager() -> None:
         sys.path.remove(tests_dir)
     sys.modules.pop("mcp", None)
 
-    from parrot.clients.codex_tool_bridge import CodexToolBridge
+    from parrot.clients.openai.codex_tool_bridge import CodexToolBridge
 
     manager = ToolManager(include_search_tool=False)
 

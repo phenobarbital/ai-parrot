@@ -18,7 +18,8 @@ from parrot.outputs import OutputMode
 
 # Try to import Model Enums for listing supported models
 try:
-    from parrot.models.openai import OpenAIModel, DEPRECATIONS
+    # FEAT-523 (TASK-2842): relocated; TASK-2848 replaces this with LLMFactory.list_models()
+    from parrot.clients.openai.models import OpenAIModel, DEPRECATIONS
 except ImportError:
     OpenAIModel = None
     DEPRECATIONS = None

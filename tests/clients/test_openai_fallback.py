@@ -1,6 +1,6 @@
 import pytest
 from openai import RateLimitError, APIError, BadRequestError
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 
 
 def _make_openai_client(**attrs):

@@ -10,7 +10,7 @@ import warnings
 
 import pytest
 
-from parrot.models.openai import (
+from parrot.clients.openai.models import (
     OpenAIModel,
     DeprecationInfo,
     DEPRECATIONS,
@@ -138,7 +138,7 @@ class TestNormalizeModel:
 
     def test_emits_warning_once(self):
         """Calling _normalize_model with a deprecated ID emits exactly one warning."""
-        from parrot.clients import gpt as gpt_mod
+        from parrot.clients.openai import client as gpt_mod
 
         gpt_mod._warned.clear()
 
@@ -155,7 +155,7 @@ class TestNormalizeModel:
 
     def test_silent_for_current_id(self):
         """_normalize_model must emit no warning for a current model."""
-        from parrot.clients import gpt as gpt_mod
+        from parrot.clients.openai import client as gpt_mod
 
         gpt_mod._warned.clear()
 
@@ -171,7 +171,7 @@ class TestDefaults:
 
     def test_openaiclient_default_is_gpt5_mini(self):
         """OpenAIClient class-level defaults must be gpt-5-mini."""
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         assert OpenAIClient.model == "gpt-5-mini"
         assert OpenAIClient._default_model == "gpt-5-mini"

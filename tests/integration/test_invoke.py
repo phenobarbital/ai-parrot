@@ -100,7 +100,7 @@ def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
 
 def _make_openai_client(response_text: str = '{"name": "John", "age": 30}'):
     """OpenAIClient with mocked SDK."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
     client = OpenAIClient.__new__(OpenAIClient)
     client.model = "gpt-4o"
     client._lightweight_model = "gpt-4.1"

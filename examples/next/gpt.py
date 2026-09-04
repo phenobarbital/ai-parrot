@@ -2,7 +2,7 @@ from typing import List, TypedDict
 from dataclasses import dataclass
 import asyncio
 from pydantic import BaseModel
-from parrot.clients.gpt import OpenAIClient, OpenAIModel
+from parrot.clients.openai import OpenAIClient, OpenAIModel
 from parrot.models import VideoGenerationPrompt
 
 

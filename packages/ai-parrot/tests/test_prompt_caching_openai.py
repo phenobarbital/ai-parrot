@@ -3,7 +3,7 @@
 FEAT-181 — Provider-Agnostic Prompt Caching (TASK-1223).
 """
 from parrot.bots.prompts.segments import CacheableSegment
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 
 
 class TestOpenAICacheTranslator:

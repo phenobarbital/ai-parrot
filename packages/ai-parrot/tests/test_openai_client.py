@@ -1,13 +1,13 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 from parrot.models import AIMessage
 
 @pytest.mark.asyncio
 async def test_openai_ask():
     # Mock the OpenAI client class
-    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+    with patch('parrot.clients.openai.client.AsyncOpenAI') as mock_openai_cls:
         # Client instance mock
         mock_client_instance = MagicMock()
         mock_openai_cls.return_value = mock_client_instance
@@ -35,7 +35,7 @@ async def test_openai_ask():
         client.logger = MagicMock()
 
         # Patch AIMessageFactory
-        with patch('parrot.clients.gpt.AIMessageFactory') as mock_factory:
+        with patch('parrot.clients.openai.client.AIMessageFactory') as mock_factory:
             mock_factory.from_openai.return_value = AIMessage(content="Hello, GPT!")
 
             # Test ask
@@ -52,7 +52,7 @@ def mock_stream_chunk(text):
 
 @pytest.mark.asyncio
 async def test_openai_ask_stream():
-    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+    with patch('parrot.clients.openai.client.AsyncOpenAI') as mock_openai_cls:
         mock_client_instance = MagicMock()
         mock_openai_cls.return_value = mock_client_instance
         
@@ -82,7 +82,7 @@ async def test_openai_ask_stream():
 @pytest.mark.asyncio
 async def test_openai_deep_research_routes_to_correct_model():
     """Test that deep_research flag routes to o3-deep-research model."""
-    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+    with patch('parrot.clients.openai.client.AsyncOpenAI') as mock_openai_cls:
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
         
@@ -115,7 +115,7 @@ async def test_openai_deep_research_routes_to_correct_model():
 @pytest.mark.asyncio
 async def test_openai_deep_research_configures_tools():
     """Test that deep_research configures web_search and file_search tools."""
-    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+    with patch('parrot.clients.openai.client.AsyncOpenAI') as mock_openai_cls:
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
         

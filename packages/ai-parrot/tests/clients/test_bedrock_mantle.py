@@ -146,7 +146,7 @@ class TestBedrockMantleClient:
         # resolution happens before super().__init__, so OpenAIClient's
         # own OPENAI_API_KEY fallback (gpt.py:92) is never reached.
         monkeypatch.setattr(
-            "parrot.clients.gpt.config.get",
+            "parrot.clients.openai.client.config.get",
             lambda key, *a, **kw: "SHOULD-NOT-BE-USED" if key == "OPENAI_API_KEY" else None,
         )
         c4 = BedrockMantleClient(region="us-east-1")
@@ -168,7 +168,7 @@ class TestBedrockMantleClient:
             "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
         )
         monkeypatch.setattr(
-            "parrot.clients.gpt.config.get",
+            "parrot.clients.openai.client.config.get",
             lambda key, *a, **kw: "SHOULD-NOT-LEAK" if key == "OPENAI_API_KEY" else None,
         )
         c = BedrockMantleClient(region="us-east-1")

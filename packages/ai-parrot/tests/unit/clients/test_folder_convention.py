@@ -19,8 +19,9 @@ import pathlib
 import pytest
 
 #: Providers already migrated to the `clients/<provider>/{__init__,client,
-#: models}.py` convention. TASK-2841 lands "google"; later tasks append.
-CONVERTED = ["google"]
+#: models}.py` convention. TASK-2841 lands "google"; TASK-2842 appends
+#: "openai"; later tasks append further.
+CONVERTED = ["google", "openai"]
 
 
 @pytest.mark.parametrize("provider", CONVERTED)

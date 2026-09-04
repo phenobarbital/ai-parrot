@@ -494,7 +494,7 @@ $backstory
 
         FEAT-181 — default no-op. Subclasses override for their provider:
         - :class:`~parrot.clients.claude.AnthropicClient` — ``cache_control`` blocks.
-        - :class:`~parrot.clients.gpt.OpenAIClient` — automatic (pass-through).
+        - :class:`~parrot.clients.openai.OpenAIClient` — automatic (pass-through).
         - :class:`~parrot.clients.google.client.GoogleGenAIClient` — ``CachedContent``.
 
         Args:

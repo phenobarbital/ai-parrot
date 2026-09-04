@@ -386,7 +386,7 @@ async def test_anthropic_contract_shape():
 @pytest.mark.asyncio
 async def test_openai_contract_shape():
     """OpenAIClient contract shape: conforming generator is consumed correctly."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     sentinel = _make_aimessage(provider="openai", model="gpt-5-mini")
 

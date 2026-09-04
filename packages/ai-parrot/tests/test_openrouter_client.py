@@ -65,7 +65,7 @@ class TestOpenRouterClientInit:
         """FEAT-438 TASK-2300: client is a subclass of OpenAIBaseClient,
         NOT OpenAIClient — the rebase means OpenRouterClient no longer
         inherits OpenAI-the-provider defaults (gpt-* model ids)."""
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
         from parrot.clients.openai_base import OpenAIBaseClient
         assert isinstance(client, OpenAIBaseClient)
         assert not isinstance(client, OpenAIClient)

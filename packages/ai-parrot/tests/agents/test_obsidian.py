@@ -21,7 +21,7 @@ from parrot.agents.obsidian import (
     _filters_to_tool_args,
     _merge_filters,
 )
-from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+from parrot.clients.openai.codex_agent import CodexAgentRunOptions, OpenAICodexClient
 from pydantic import ValidationError
 
 

@@ -13,29 +13,30 @@ from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .openai_base import OpenAIBaseClient
+from ..openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
     # SDKs to be installed at runtime when this client is unused.
     from openai import AsyncOpenAI
     from PIL import Image
-from ..models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
-from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
-from ..models.openai import (
+from ...models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
+from .models import (
     OpenAIModel,
+    DEPRECATIONS,
     is_deprecated,
     get_shutoff_date,
     resolve_alias,
 )
-from ..models.outputs import ProductReview
-from ..models.detections import DetectionBox, ShelfRegion, IdentifiedProduct
+from ...models.outputs import ProductReview
+from ...models.detections import DetectionBox, ShelfRegion, IdentifiedProduct
 
 # The httpx/httpcore families are quieted by parrot.clients.openai_base at
 # import time (it covers the httpx2/httpcore2 names the OpenAI SDK actually
@@ -91,6 +92,12 @@ class OpenAIClient(OpenAIBaseClient):
     # (FEAT-438) — no need to redeclare it here.
     model: str = OpenAIModel.GPT5_MINI.value
     client_name: str = "openai"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("openai",)
+    models: type[Enum] = OpenAIModel
+    deprecated_models: dict = DEPRECATIONS
+
     _default_model: str = "gpt-5-mini"
     _fallback_model: str = "gpt-5-nano"
     _lightweight_model: str = "gpt-4.1"

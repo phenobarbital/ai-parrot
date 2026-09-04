@@ -70,14 +70,14 @@ CLIENT_PATHS = [
     ("parrot.clients.claude", "AnthropicClient"),
     ("parrot.clients.google.client", "GoogleGenAIClient"),
     ("parrot.clients.openai_base", "OpenAIBaseClient"),
-    ("parrot.clients.gpt", "OpenAIClient"),
+    ("parrot.clients.openai.client", "OpenAIClient"),
     ("parrot.clients.groq", "GroqClient"),
     ("parrot.clients.grok", "GrokClient"),
     ("parrot.clients.zai", "ZaiClient"),
     ("parrot.clients.bedrock", "BedrockConverseBase"),
     ("parrot.clients.localllm", "LocalLLMClient"),
     ("parrot.clients.claude_agent", "ClaudeAgentClient"),
-    ("parrot.clients.codex_agent", "OpenAICodexClient"),
+    ("parrot.clients.openai.codex_agent", "OpenAICodexClient"),
     ("parrot.clients.hf", "TransformersClient"),
     ("parrot.clients.gemma4", "Gemma4Client"),
 ]
@@ -393,7 +393,7 @@ class TestBudgetReachesProvider:
         assert captured["config"].max_output_tokens == 1234
 
     async def test_openai_base_sends_resolved_max_tokens(self, bind_sdk_client):
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = _bare(
             OpenAIClient,

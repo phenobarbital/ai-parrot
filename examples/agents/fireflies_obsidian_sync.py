@@ -19,7 +19,7 @@ import asyncio
 import logging
 import os
 
-from parrot.clients.codex_agent import CodexAgentRunOptions
+from parrot.clients.openai.codex_agent import CodexAgentRunOptions
 from parrot.agents.obsidian import FirefliesObsidianAgent
 
 logging.basicConfig(level=logging.INFO)

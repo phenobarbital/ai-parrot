@@ -1,7 +1,7 @@
 """OpenAI Codex-backed agent target for the Agent CLI Daemon (agentd).
 
 Serves an :class:`~parrot.bots.agent.Agent` whose LLM is an
-:class:`~parrot.clients.codex_agent.OpenAICodexClient`, so turns can be
+:class:`~parrot.clients.openai.codex_agent.OpenAICodexClient`, so turns can be
 delegated to the local Codex runtime authenticated with the credentials the
 ``codex`` CLI already has installed.
 """

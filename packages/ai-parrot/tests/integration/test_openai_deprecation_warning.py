@@ -14,8 +14,12 @@ SRC = REPO_ROOT / "packages/ai-parrot/src/parrot"
 
 
 def test_no_internal_call_site_uses_deprecated_id():
-    """No .py file under src/parrot/ (except models/openai.py) should contain
-    known-deprecated model literal strings."""
+    """No .py file under src/parrot/ (except clients/openai/models.py) should
+    contain known-deprecated model literal strings.
+
+    FEAT-523 (TASK-2842): the registry relocated from ``models/openai.py``
+    to ``clients/openai/models.py``.
+    """
     forbidden = ["gpt-4-turbo", "gpt-3.5-turbo", "gpt-5-chat-latest"]
     cmd = [
         "grep", "-rn", "--include=*.py",
@@ -24,17 +28,17 @@ def test_no_internal_call_site_uses_deprecated_id():
         str(SRC),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    # Allow only matches inside models/openai.py (the registry):
+    # Allow only matches inside clients/openai/models.py (the registry):
     bad = [
         ln for ln in result.stdout.splitlines()
-        if "models/openai.py" not in ln
+        if "clients/openai/models.py" not in ln
     ]
     assert not bad, "Found deprecated model literals:\n" + "\n".join(bad)
 
 
 def test_openai_client_warns_on_deprecated_call():
     """Constructing OpenAIClient with a deprecated model must emit DeprecationWarning."""
-    from parrot.clients import gpt as gpt_mod
+    from parrot.clients.openai import client as gpt_mod
     gpt_mod._warned.clear()
     with pytest.warns(DeprecationWarning, match="deprecated"):
         gpt_mod.OpenAIClient(api_key="dummy", model="gpt-4-turbo")

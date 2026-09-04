@@ -287,7 +287,7 @@ class TestGoogleInvokeTruncation:
 
 
 def _make_openai_client():
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     client = OpenAIClient.__new__(OpenAIClient)
     client.model = "gpt-4o"
@@ -371,7 +371,7 @@ class TestCustomParserGuard:
 
 class TestOpenAIInvokeTruncation:
     async def test_length_raises_invoke_error(self, bind_sdk_client):
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         client.model = "gpt-4o"

@@ -189,7 +189,7 @@ class TestStudioCatalogs:
 
 
 def _real_openai():
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     return OpenAIClient
 

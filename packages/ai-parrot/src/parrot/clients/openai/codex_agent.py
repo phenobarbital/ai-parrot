@@ -9,19 +9,21 @@ import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Optional
 
 from pydantic import BaseModel
 
 from parrot.clients.base import AbstractClient, MessageResponse
+from parrot.clients.openai.models import OpenAIModel
 from parrot.exceptions import InvokeError
 from parrot.models import AIMessage, StructuredOutputConfig
 from parrot.models.basic import CompletionUsage, ToolCall
 from parrot.models.responses import InvokeResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from parrot.clients.codex_tool_bridge import CodexToolBridge
+    from parrot.clients.openai.codex_tool_bridge import CodexToolBridge
 
 
 Backend = Literal["auto", "sdk", "cli"]
@@ -78,6 +80,10 @@ class OpenAICodexClient(AbstractClient):
     client_name = "openai-codex"
     default_model = "gpt-5.1-codex"
     use_session = False
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("codex-agent", "openai-codex", "codex-code")
+    models: type[Enum] = OpenAIModel
 
     def __init__(
         self,
@@ -525,7 +531,7 @@ class OpenAICodexClient(AbstractClient):
     ) -> Optional["CodexToolBridge"]:
         if not options.expose_parrot_tools or self.tool_manager.tool_count() == 0:
             return None
-        from parrot.clients.codex_tool_bridge import CodexToolBridge
+        from parrot.clients.openai.codex_tool_bridge import CodexToolBridge
 
         return CodexToolBridge(
             self.tool_manager,

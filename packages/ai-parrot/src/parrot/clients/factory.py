@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, Tuple
 from .base import AbstractClient
 from .claude import AnthropicClient
 from .google import GoogleGenAIClient
-from .gpt import OpenAIClient
+from .openai import OpenAIClient
 from .groq import GroqClient
 from .grok import GrokClient
 from .openrouter import OpenRouterClient
@@ -101,11 +101,12 @@ def _lazy_claude_agent():
 def _lazy_openai_codex():
     """Lazy loader for :class:`OpenAICodexClient`.
 
-    Importing :mod:`parrot.clients.codex_agent` does not import the optional
-    ``openai_codex`` SDK at module scope. The SDK is resolved only when the
-    SDK backend is used; the CLI backend can reuse installed Codex CLI auth.
+    Importing :mod:`parrot.clients.openai.codex_agent` does not import the
+    optional ``openai_codex`` SDK at module scope. The SDK is resolved only
+    when the SDK backend is used; the CLI backend can reuse installed Codex
+    CLI auth.
     """
-    from .codex_agent import OpenAICodexClient
+    from .openai.codex_agent import OpenAICodexClient
 
     return OpenAICodexClient
 

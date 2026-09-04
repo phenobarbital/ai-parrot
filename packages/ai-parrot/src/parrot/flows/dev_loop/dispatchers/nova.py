@@ -18,7 +18,7 @@ bedrock-mantle base URL, reusing the inherited tool loop, Redis event
 streaming, cwd-safety guard, and output validation unchanged.
 
 FEAT-438 code-review fix: this used to construct a plain
-:class:`~parrot.clients.gpt.OpenAIClient` here instead of
+:class:`~parrot.clients.openai.OpenAIClient` here instead of
 ``BedrockMantleClient``. Since ``OpenAIClient`` carries OpenAI-the-
 provider's own ``gpt-*`` defaults (``_default_model``/``_fallback_model``/
 ``_lightweight_model``), a capacity-error fallback on this dispatcher's

@@ -1,4 +1,4 @@
-"""Shared fixtures for parrot/models unit tests."""
+"""Shared fixtures for parrot.clients.openai unit tests (FEAT-523, TASK-2842)."""
 
 import pytest
 
