@@ -183,10 +183,57 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
 **Notes**:
+- **ECharts** (`echarts.py`): `_SERIES_TYPE` += donut→pie/radar/gauge/funnel/
+  treemap/heatmap; row-native types (gauge/funnel/treemap/heatmap/waterfall/
+  radar) built via a new `_build_row_native_series()` dispatcher (early
+  return from `_build_option`) rather than the standard per-y-column loop:
+  gauge (one data point per y column, x ignored), funnel/treemap (data from
+  the FIRST y column only), heatmap ([xIdx,yIdx,value] triples + a new
+  `_heatmap_visual_map()` + categorical x/y axes), waterfall (2-series
+  stacked-bar technique: transparent placeholder + delta series), radar (one
+  trace per y column, `radar.indicator` from x categories). `donut` reuses
+  the standard `pie` loop with `radius:["40%","70%"]` added per series.
+  `palette`/`colorBySign` remain honoured for bar/line/area/scatter/pie/donut
+  (unchanged code path) — not meaningful for the row-native types, so not
+  applied there.
+- **interactive-html** (`interactive_html.py`): `_CHART_TYPE` (Python,
+  previously DEAD CODE — verified unused anywhere) and the mirrored inline
+  JS `chartTypeMap` both gained `donut→doughnut`/`radar→radar`. The 5
+  unsupported types render as `"bar"` in the embedded Chart.js config AND
+  append a `degradation_record` (a visible `<p class="a2ui-notice">rendered
+  as bar (no <type> support in this surface)</p>` caption too) — implemented
+  in `_render_chart()`, which now takes a `degradations` list threaded
+  through `_render_top` → `_render_chart`/`_render_descriptor` →
+  `_render_infographic` (nested Chart-in-Infographic degradations now reach
+  the top-level `metadata["degraded"]`, previously impossible since neither
+  method accepted the list).
+- **ssr-html** (`ssr_html.py`): ALL chart types already lower to the same
+  generic text summary (`ChartComponent.lower()`'s caption already prints
+  `f"Chart ({type})"` — verified, no change needed there, out of this
+  task's file scope anyway). `_lower_composites()` now takes a
+  `degradations` list and records the 5 new types (before FEAT-527 the
+  adapter collapsed them to a supported type, so this renderer never saw
+  the literal type before); `pdf.py`'s `PDFRenderer(SSRHTMLRenderer)`
+  inherits the fix with zero code changes (confirmed no override exists).
+- **Deviation (documented, not scope creep)**: `test_semantic_classes.py`'s
+  `TestGoldensUntouched::test_no_catalog_file_modified` (a pre-existing
+  FEAT-522/TASK-2715 guard, git-diffing `catalog/` against `origin/dev`)
+  started failing purely as a side effect of TASK-2859/2860's ALREADY-LANDED,
+  spec-sanctioned catalog edits — not anything in this task's own diff.
+  Left unfixed it would permanently redden
+  `pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers`,
+  this task's own acceptance criterion. Updated its allowlist with the 4
+  FEAT-527 catalog files and a comment citing spec §7's explicit golden-
+  freeze exception. Not listed in this task's Files table; added as the
+  minimal necessary companion fix, called out here rather than silently
+  bundled.
+- 204/204 tests pass in
+  `pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers`.
+  `ruff check` on all 7 touched files: all checks passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the renderer behaviour itself; see the
+`test_semantic_classes.py` note above for the one out-of-list file touched
+(a stale guard-test fix, not a code-behavior deviation).
