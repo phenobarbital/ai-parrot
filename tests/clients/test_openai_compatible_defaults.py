@@ -72,6 +72,13 @@ def _client_kwargs(cls) -> dict:
         return {"api_key": "test-key", "region": "us-east-1"}
     if cls in (LocalLLMClient, vLLMClient):
         return {"api_key": "test-key", "base_url": "http://localhost:8000/v1"}
+    if cls is MetaClient:
+        # FEAT-526: MetaClient defaults to use_responses=True, routing
+        # ask() to a MetaClient-local Responses override that bypasses
+        # `_chat_completion` entirely (D1). These tests mock
+        # `_chat_completion` and exercise the Chat-Completions funnel,
+        # which is exactly what use_responses=False selects.
+        return {"api_key": "test-key", "use_responses": False}
     return {"api_key": "test-key"}
 
 
