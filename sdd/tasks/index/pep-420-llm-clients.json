@@ -112,7 +112,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Sequential: touches conf.py and bots/agent.py which FEAT-525 may also touch — rebase-check.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2846-core-callsite-hard-cut.md"
+      "completed_at": "2026-09-04T19:22:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2846-core-callsite-hard-cut.md"
     },
     {
       "id": "TASK-2847",
