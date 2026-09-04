@@ -50,7 +50,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Memory backends only (redis.py, file.py); disjoint from TASK-2811/2812 which touch bots/ and clients/.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2810-lazy-legacy-rekey-backends.md"
+      "completed_at": "2026-09-04T00:38:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2810-lazy-legacy-rekey-backends.md"
     },
     {
       "id": "TASK-2811",
