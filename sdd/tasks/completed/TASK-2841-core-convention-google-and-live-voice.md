@@ -122,10 +122,10 @@ Server handlers `lyria_music.py`, `video_reel.py`, `google_generation.py`, `medi
 
 ## Acceptance Criteria
 
-- [ ] `parrot/clients/google/` has `__init__.py`, `client.py`, `models.py` (+ existing `analysis.py`, `generation.py`, new `live.py`)
-- [ ] `from parrot.models.google import GoogleModel` raises ImportError; `from parrot.clients.google import GoogleModel, VertexAIModel` works
-- [ ] `from parrot.models.voice import LiveVoiceResponse` works; `parrot/clients/protocols.py` does not import `.live`
-- [ ] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff check` clean on touched files
+- [x] `parrot/clients/google/` has `__init__.py`, `client.py`, `models.py` (+ existing `analysis.py`, `generation.py`, new `live.py`)
+- [x] `from parrot.models.google import GoogleModel` raises ImportError; `from parrot.clients.google import GoogleModel, VertexAIModel` works
+- [x] `from parrot.models.voice import LiveVoiceResponse` works; `parrot/clients/protocols.py` does not import `.live`
+- [x] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff check` clean on touched files
 
 ---
 
@@ -175,10 +175,90 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented exactly per scope. Commit `77b599141` on
+`feat-FEAT-523-pep-420-llm-clients`.
+
+- `parrot/clients/google/models.py` created: `GoogleModel` + `VertexAIModel`
+  moved byte-identical from `parrot/models/google.py` (verified member names
+  and values unchanged, diffed against the original).
+- `LiveVoiceResponse` moved to `parrot/models/voice.py`, and — per the
+  contract's own note ("take its dataclass deps with it if they are pure
+  data") — its three pure-data dependencies `LiveCompletionUsage`,
+  `LiveToolCall`, `VoiceTurnMetadata` moved with it (all `@dataclass`, no
+  I/O, no SDK imports). `live.py` (now `google/live.py`) imports all four
+  back from `...models.voice` for its own internal use (~30 call sites).
+- `git mv clients/live.py clients/google/live.py`; `GeminiLiveClient` gained
+  `provider_keys = ("gemini-live",)` / `models = GoogleModel`;
+  `GoogleGenAIClient` gained `provider_keys = ("google",)` /
+  `models = GoogleModel`.
+- `protocols.py` now imports `LiveVoiceResponse` from `..models.voice`
+  alongside `VoiceCapabilities`/`VoiceStreamOptions`; no more `.live` import.
+- `google/analysis.py` and `google/generation.py` (same-provider-folder,
+  not "core call sites") updated to import `GoogleModel` from the new
+  `.models` instead of `...models.google` — required for the folder to be
+  self-contained per the convention, not part of TASK-2846's cross-package
+  hard cut.
+- **Blast radius**: the task's own Scope text — "update every importer of
+  `parrot.clients.live`" and the Implementation Notes' "point [GoogleModel
+  importers] at `parrot.clients.google.models` temporarily so the tree
+  stays green" — meant fixing ~40 additional files across `ai-parrot`,
+  `ai-parrot-integrations`, `ai-parrot-server`, `ai-parrot-loaders`,
+  `ai-parrot-pipelines`, `tests/`, and `examples/`. Full list is in the
+  commit. Every one of these is a single import-line change (or a
+  `sys.modules` stub-key rename in test scaffolding) — no logic changed.
+- `nova/audio.py` also imported the four moved dataclasses via the old
+  `..live` path — fixed to `...models.voice` (not listed in the task's
+  file table but required for the tree to stay green; nova/ is a sibling
+  provider folder, out of TASK-2841's conversion scope itself).
+
+**Deviations from spec**:
+
+1. **`conf.py`**: the contract said to point removed-symbol importers at
+   `parrot.clients.google.models` "temporarily" (leaving the full hard cut
+   to TASK-2846). For `conf.py` specifically this is impossible: `parrot.
+   clients.base` → `parrot.memory` → `parrot.tools` → `parrot.plugins` →
+   `parrot.conf` is an existing import chain, so anything under
+   `parrot.clients` that `conf.py` imports re-enters
+   `parrot.clients.google.__init__` → `.client` → `..base`, which is still
+   mid-import — a genuine circular import (verified: reproduced the
+   `ImportError: cannot import name 'AbstractClient' from partially
+   initialized module 'parrot.clients.base'` before fixing). Since the
+   spec's own §3 Module 2 / Integration Points table already prescribes
+   `DEFAULT_LLM_MODEL`'s permanent end state as the literal
+   `"gemini-flash-latest"` with no `GoogleModel` import, I applied that
+   now instead of a workaround that cannot work, with the reasoning
+   documented inline in `conf.py`. TASK-2846 has one fewer line to change
+   as a result.
+2. **Compiled `.so` artifacts**: this worktree had no `.venv` of its own
+   (shared venv's editable installs point at the main checkout's
+   `packages/*/src`). Copied two pre-built, gitignored `.so` files
+   (`parrot/utils/types.cpython-312*.so`,
+   `parrot/utils/parsers/toml.cpython-312*.so`) from the main repo purely
+   so `PYTHONPATH`-based verification could import `parrot` from this
+   worktree. Not committed (confirmed gitignored); no source change.
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/unit/clients -q` → 355 passed, 8
+  pre-existing failures (verified byte-identical failures against `dev`
+  HEAD, unrelated to this change: `test_groq_multiround_usage.py` /
+  `test_openai_multiround_usage.py`, a `raw_response` Pydantic validation
+  issue with `MagicMock`).
+- `pytest tests/unit/clients/test_folder_convention.py -v` → 7/7 passed.
+- Broader sanity sweep (not required by the AC, done for confidence given
+  the blast radius): `tests/clients`, `tests/voice`, targeted
+  `tests/bots/test_voicebot_*` — every failure found was reproduced
+  identically on `dev` HEAD before this change.
+- `ruff check` clean on every file with substantial new content
+  (`google/models.py`, `google/__init__.py`, `google/live.py`,
+  `models/voice.py`, `models/google.py`, `models/__init__.py`,
+  `protocols.py`, `conf.py`, `nova/audio.py`,
+  `tests/unit/clients/test_folder_convention.py`). Pre-existing
+  `F841`/`F821`/`E402` findings in files where I only changed one import
+  line were spot-checked against `dev` and confirmed pre-existing.
+- `ai-parrot-integrations/tests/voice` (137 tests) and the two
+  `ai-parrot-server` voice STT test modules collect with zero import
+  errors.

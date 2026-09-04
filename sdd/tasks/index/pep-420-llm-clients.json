@@ -14,7 +14,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches parrot/models/__init__.py and parrot/models/google.py that every following folder-conversion task also edits; must land first.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2841-core-convention-google-and-live-voice.md"
+      "completed_at": "2026-09-04T17:22:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2841-core-convention-google-and-live-voice.md"
     },
     {
       "id": "TASK-2842",
