@@ -90,7 +90,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "clients/base.py only, but leaves concrete clients call-time broken until TASK-2813/2814/2815 — run sequentially inside the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2812-abstractclient-hard-cut.md"
+      "completed_at": "2026-09-04T01:04:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2812-abstractclient-hard-cut.md"
     },
     {
       "id": "TASK-2813",
