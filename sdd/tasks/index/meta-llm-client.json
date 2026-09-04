@@ -14,7 +14,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates the parrot/clients/meta/ package (__init__.py + models.py) per the FEAT-523 folder convention; shares no files with any other task. Root of the dependency graph.",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2833-meta-model-catalog.md"
+      "completed_at": "2026-09-04T14:13:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2833-meta-model-catalog.md"
     },
     {
       "id": "TASK-2834",
