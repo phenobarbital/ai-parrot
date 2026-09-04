@@ -551,19 +551,15 @@ class TestVideoUnderstandingStructuredOutput:
         client, m = _build_mocked_client()
         json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
         m["chat.send_message"].return_value = _make_fake_response(json_text)
-        client._prepare_conversation_context = AsyncMock(
-            return_value=(
-                [
-                    {
-                        "role": "user",
-                        "content": [{"type": "text", "text": "extract weather"}],
-                    }
-                ],
-                MagicMock(),
-                "Use JSON output.",
-            )
+        # FEAT-524: the client is memory-less; it only shapes what it is given.
+        client._dict_messages = MagicMock(
+            return_value=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "extract weather"}],
+                }
+            ]
         )
-        client._update_conversation_memory = AsyncMock()
 
         with patch("parrot.clients.google.analysis.AIMessageFactory") as mock_factory:
             mock_factory.from_gemini.return_value = AIMessage(

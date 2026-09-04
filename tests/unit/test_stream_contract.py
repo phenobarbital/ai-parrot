@@ -37,6 +37,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from parrot.clients.base import AbstractClient
+from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage, CompletionUsage
 
 
@@ -297,16 +298,14 @@ async def test_groq_ask_stream_real_implementation():
     client.logger = MagicMock()
     client.model = "llama-3.3-70b-versatile"
 
-    # Mock internal helpers so ask_stream can run without a real backend
-    client._prepare_conversation_context = AsyncMock(
-        return_value=(
-            [{"role": "user", "content": "test prompt"}],  # messages
-            None,                                           # conversation_session
-            None,                                           # system_prompt
-        )
+    # Mock internal helpers so ask_stream can run without a real backend.
+    # FEAT-524: _prepare_conversation_context/_update_conversation_memory are
+    # gone; the client now composes messages synchronously from the rendered
+    # history it is handed, and never writes to memory.
+    client._build_messages = MagicMock(
+        return_value=[{"role": "user", "content": "test prompt"}]
     )
     client._prepare_groq_tools = MagicMock(return_value=[])  # no tools
-    client._update_conversation_memory = AsyncMock()
 
     # Mock the Groq SDK client via PropertyMock (direct assignment is blocked
     # by the AbstractClient.client property setter).
@@ -320,14 +319,21 @@ async def test_groq_ask_stream_real_implementation():
     with patch.object(type(client), "client", new_callable=PropertyMock) as mock_client_prop:
         mock_client_prop.return_value = mock_sdk
         chunks, final_msg = await _consume(
-            client.ask_stream("test prompt", user_id="u1", session_id="s1")
+            client.ask_stream(
+                "test prompt",
+                history=[HistoryMessage("user", "earlier"), HistoryMessage("assistant", "ok")],
+            )
         )
 
     _assert_contract(chunks, final_msg, min_chunks=1, provider="groq")
     assert "".join(chunks) == "Hello world!"
-    # Memory update must have been called BEFORE the final yield
-    # (confirmed by the fact we reached this assertion without error)
-    client._update_conversation_memory.assert_awaited_once()
+    # FEAT-524: the client no longer persists anything — it only formats the
+    # history it was given. Assert that it was consumed instead.
+    client._build_messages.assert_called_once()
+    assert client._build_messages.call_args.args[2] == [
+        HistoryMessage("user", "earlier"),
+        HistoryMessage("assistant", "ok"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -348,11 +354,10 @@ async def test_groq_ask_stream_no_usage_data():
     client = GroqClient.__new__(GroqClient)
     client.logger = MagicMock()
     client.model = "llama-3.3-70b-versatile"
-    client._prepare_conversation_context = AsyncMock(
-        return_value=([{"role": "user", "content": "hi"}], None, None)
+    client._build_messages = MagicMock(
+        return_value=[{"role": "user", "content": "hi"}]
     )
     client._prepare_groq_tools = MagicMock(return_value=[])
-    client._update_conversation_memory = AsyncMock()
 
     mock_sdk = MagicMock()
     mock_sdk.chat.completions.create = AsyncMock(return_value=_mock_response_stream())
@@ -360,7 +365,7 @@ async def test_groq_ask_stream_no_usage_data():
     with patch.object(type(client), "client", new_callable=PropertyMock) as mock_client_prop:
         mock_client_prop.return_value = mock_sdk
         chunks, final_msg = await _consume(
-            client.ask_stream("hi", user_id=None, session_id=None)
+            client.ask_stream("hi", history=None)
         )
 
     assert final_msg is not None
@@ -394,7 +399,7 @@ async def test_anthropic_contract_shape():
     client = AnthropicClient.__new__(AnthropicClient)
     with patch.object(client, "ask_stream", side_effect=_conforming):
         chunks, ai_msg = await _consume(
-            client.ask_stream("test prompt", user_id="u1", session_id="s1")
+            client.ask_stream("test prompt", history=None)
         )
 
     _assert_contract(chunks, ai_msg, provider="claude")

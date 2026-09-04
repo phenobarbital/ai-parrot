@@ -268,18 +268,14 @@ class _FunnelSpy(OpenAIBaseClient):
         return _make_response(message, usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5))
 
 
-async def _noop_conversation_context(*_a, **_kw):
-    return [], None, None
-
-
-async def _noop_update_conversation_memory(*_a, **_kw):
-    return None
+def _noop_build_messages(*_a, **_kw):
+    """FEAT-524: replaces the removed _prepare_conversation_context stub."""
+    return []
 
 
 def _make_funnel_spy(**kwargs):
     client = _FunnelSpy(api_key="k", base_url="http://x/v1", model="m", **kwargs)
-    client._prepare_conversation_context = _noop_conversation_context
-    client._update_conversation_memory = _noop_update_conversation_memory
+    client._build_messages = _noop_build_messages
     return client
 
 

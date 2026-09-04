@@ -118,15 +118,14 @@ class TestAnthropicAskFallback:
         client.max_tokens = 4096
         client.temperature = 0.7
         client.logger = MagicMock()
-        client._prepare_conversation_context = AsyncMock(return_value=(
-            [{"role": "user", "content": "Hello"}],
-            [],
-            "You are helpful"
-        ))
+        # FEAT-524: the client no longer loads or writes conversation memory.
+        # It composes its messages synchronously from the history it is handed.
+        client._build_messages = MagicMock(
+            return_value=[{"role": "user", "content": "Hello"}]
+        )
         client._get_structured_config = MagicMock(return_value=MagicMock(
             format_schema_instruction=MagicMock(return_value="")
         ))
-        client._update_conversation_memory = AsyncMock()
         return client
 
     def _mock_response(self, model="claude-sonnet-4.5"):

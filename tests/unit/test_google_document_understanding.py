@@ -4,11 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from pydantic import BaseModel
 
+from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage, StructuredOutputConfig
 from parrot.models.google import GoogleModel
 
@@ -290,41 +291,68 @@ class TestDocumentUnderstanding:
         assert isinstance(result, AIMessage)
         assert result.structured_output == parsed_info
 
-    async def test_stateful_mode_calls_prepare_context(
-        self, google_client: Any, sample_pdf: Path
+    async def test_stateful_mode_renders_supplied_history(
+        self, google_client: Any, mock_sdk: MagicMock, sample_pdf: Path
     ) -> None:
-        """Stateful mode invokes _prepare_conversation_context."""
-        conversation_history = MagicMock()
-        conversation_history.turns = []
+        """Stateful mode formats the history it is handed (FEAT-524).
 
+        Replaces the old assertion that ``_prepare_conversation_context`` was
+        invoked: the client no longer loads history at all, it receives an
+        already-rendered list and maps it with ``_format_history``.
+        """
+        history = [
+            HistoryMessage("user", "earlier question"),
+            HistoryMessage("assistant", "earlier answer"),
+        ]
+
+        # Pin the SDK inside the test. `google_client` patches `get_client` at
+        # CLASS level and the resolved SDK is memoized in the loop-local
+        # `_clients_by_loop` cache, so under a full-suite run `self.client` can
+        # resolve to whatever another module's patcher left behind — a bare
+        # MagicMock that blows up on `await`. Patching the `client` property
+        # directly makes this test independent of that ordering. (The same
+        # pollution fails the pre-FEAT-524 version of this test on `dev`.)
         with (
             patch.object(
-                google_client,
-                "_prepare_conversation_context",
-                new=AsyncMock(
-                    return_value=(
-                        [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
-                        conversation_history,
-                        None,
-                    )
-                ),
-            ) as mock_prepare,
-            patch.object(
-                google_client,
-                "_update_conversation_memory",
-                new=AsyncMock(),
+                type(google_client), "client", new_callable=PropertyMock,
+                return_value=mock_sdk,
             ),
+            patch.object(
+                google_client, "_format_history", wraps=google_client._format_history
+            ) as mock_format,
         ):
             result = await google_client.document_understanding(
                 prompt="Analyze this document",
                 documents=sample_pdf,
                 stateless=False,
-                user_id="user-1",
-                session_id="session-1",
+                history=history,
             )
 
         assert isinstance(result, AIMessage)
-        mock_prepare.assert_called_once()
+        mock_format.assert_called_once_with(history)
+
+    async def test_stateless_mode_ignores_supplied_history(
+        self, google_client: Any, mock_sdk: MagicMock, sample_pdf: Path
+    ) -> None:
+        """``stateless=True`` drops the history rather than replaying it."""
+        with (
+            patch.object(
+                type(google_client), "client", new_callable=PropertyMock,
+                return_value=mock_sdk,
+            ),
+            patch.object(
+                google_client, "_format_history", wraps=google_client._format_history
+            ) as mock_format,
+        ):
+            result = await google_client.document_understanding(
+                prompt="Analyze this document",
+                documents=sample_pdf,
+                stateless=True,
+                history=[HistoryMessage("user", "should be ignored")],
+            )
+
+        assert isinstance(result, AIMessage)
+        mock_format.assert_called_once_with(())
 
     async def test_default_temperature_is_zero(
         self, google_client: Any, mock_sdk: MagicMock, sample_pdf: Path
