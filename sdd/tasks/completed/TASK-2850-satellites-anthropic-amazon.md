@@ -142,10 +142,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Same shape as TASK-2849. `git mv` both provider folders (amazon's `nova/`
+subdir moved whole) with `.gitkeep` markers; no stray `__init__.py`
+verified. `pyproject.toml` per satellite per the spec §7 template.
+
+**Contract correction**: the Codebase Contract's line 56 claimed "amazon:
+... SDK: aioboto3>=13.2.0, anthropic[aiohttp,aws], aws_sdk_bedrock_runtime"
+— verified this against the actual code and it's backwards. `grep -rn
+"anthropic" packages/.../amazon/` shows zero `import anthropic` anywhere;
+every hit is a Bedrock model-ID string literal (`"anthropic.claude-..."`).
+The real cross-satellite dependency is the other direction:
+`anthropic/backends.py:175` does a lazy (in-method, not module-scope)
+`from parrot.clients.amazon.models import translate` for the Bedrock
+backend. So: `ai-parrot-client-amazon`'s `dependencies` = `["ai-parrot",
+"aioboto3>=13.2.0"]` only; `ai-parrot-client-anthropic`'s pyproject has a
+comment noting the soft/lazy dependency on `ai-parrot-client-amazon` for
+its Bedrock backend (left undeclared, same treatment as the pre-existing
+undeclared `aws_sdk_bedrock_runtime`).
+
+Moved `test_claude_multiround_usage.py` (anthropic) and
+`test_bedrock_format_history.py`/`test_bedrock_multiround_usage.py`
+(amazon) from `tests/unit/clients/` — verified each file's actual import
+target first (`test_bedrock_*` import `parrot.clients.amazon.bedrock`/
+`.nova`, not anthropic's own Bedrock backend, despite the shared
+"bedrock" name). No `tests/unit/clients/anthropic/` or `/amazon/` subdirs
+existed to move.
+
+`factory.py`: removed `"anthropic"` and `"amazon"` from
+`_IN_CORE_PROVIDERS`. Updated `test_factory_discovery.py`'s
+`test_list_providers_lists_in_core_keys` (previously asserted
+`"anthropic"`, now uses `"groq"`, still genuinely in-core).
+
+**Verification** — reused the worktree-local `.venv` discovered mid-TASK-2849
+(a background process's `uv sync` created it; confirmed isolated to this
+worktree, not the shared repo venv). `uv sync --all-packages` picked up
+both new satellites automatically (workspace `members = ["packages/*"]`
+glob, no edit needed). Real `importlib.metadata.entry_points(group=
+"parrot.clients")` now returns all 4 satellites extracted so far (7
+openai/meta keys + 6 anthropic/amazon keys = 13 total), each resolving via
+`LLMFactory.create()`/`.list_providers()` to the correct class and
+distribution name. `packages/ai-parrot-client-anthropic/tests -q` → 5/5
+passed; `packages/ai-parrot-client-amazon/tests -q` → 21/21 passed.
+`packages/ai-parrot/tests/unit/clients -q` (both this fresh venv with
+missing optional SDKs reinstalled, and the shared venv) → only the
+pre-existing groq/grok multiround `MagicMock`/`raw_response` failures,
+confirmed byte-identical to TASK-2849's commit. `ruff check` on every
+touched/created file → all clean (`All checks passed!`). Broader
+server/studio + pipelines regression sweep (shared venv) → same
+pre-existing failures only (`test_meta_agent.py` × 3,
+`test_endcap_no_shelves_promotional.py` × 1), none new.
+
+**Deviations from spec**: none beyond the Codebase Contract direction
+correction documented above (a factual correction verified against code,
+not a design change) and the cross-satellite soft-dependency comment in
+`ai-parrot-client-anthropic/pyproject.toml` (documentation only, no new
+hard dependency added).
+
+**Process note**: `git commit -m "..."` with backticks inside the message
+triggers bash command substitution even inside double quotes — one
+sentence referencing `` `import anthropic` `` got silently eaten mid-commit
+(harmless "command not found" side effects, but a mangled message). Fixed
+via `git commit --amend -F <file>`. Will use `-F <file>` for any future
+commit message containing backticks.
