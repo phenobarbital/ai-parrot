@@ -2,33 +2,31 @@
 TransformersClient for ai-parrot framework.
 Supports micro-LLMs from HuggingFace transformers for small tasks.
 """
+
 import asyncio
 import logging
 import uuid
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 from pathlib import Path
 from enum import Enum
 
 
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    GenerationConfig
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
+from ..memory.render import HistoryMessage
+
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient, MessageResponse
-from ..models import (
-    AIMessage,
-    AIMessageFactory,
-    CompletionUsage,
-    StructuredOutputConfig
-)
+from ..models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
 from ..models.responses import InvokeResult
 
 
 class TransformersModel(Enum):
     """Enum for supported transformer models."""
+
     DIALOPT_MEDIUM = "microsoft/DialoGPT-medium"
     DIALOPT_SMALL = "microsoft/DialoGPT-small"
     DIALOPT_LARGE = "microsoft/DialoGPT-large"
@@ -76,7 +74,7 @@ class TransformersClient(AbstractClient):
         torch_dtype: Optional["torch.dtype"] = None,
         trust_remote_code: bool = False,
         use_fast_tokenizer: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the TransformersClient.
@@ -95,6 +93,7 @@ class TransformersClient(AbstractClient):
         self.model_name = model.value if isinstance(model, TransformersModel) else model
         self.client_name = self.model_name.split("/")[-1]  # Use last part of model name as client name
         import torch
+
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.torch_dtype = torch_dtype or (torch.float16 if torch.cuda.is_available() else torch.float32)
         self.trust_remote_code = trust_remote_code
@@ -115,9 +114,7 @@ class TransformersClient(AbstractClient):
             eos_token_id=None,  # Will be set after tokenizer is loaded
         )
 
-        self.logger = logging.getLogger(
-            f"parrot.TransformersClient.{self.model_name}"
-        )
+        self.logger = logging.getLogger(f"parrot.TransformersClient.{self.model_name}")
 
         # Reduce noise from HTTP libraries used by HuggingFace Hub
         logging.getLogger("httpcore").setLevel(logging.INFO)
@@ -145,7 +142,7 @@ class TransformersClient(AbstractClient):
             self.model_name,
             use_fast=self.use_fast_tokenizer,
             trust_remote_code=self.trust_remote_code,
-            padding_side='left'  # Important for batch generation
+            padding_side="left",  # Important for batch generation
         )
 
         # Set pad token if not available
@@ -173,7 +170,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """
         Prepare the prompt based on the model type.
@@ -203,7 +200,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Format prompt for Gemma models."""
         messages = []
@@ -217,12 +214,8 @@ class TransformersClient(AbstractClient):
         messages.append({"role": "user", "content": prompt})
 
         # Use tokenizer's chat template if available
-        if hasattr(self.tokenizer, 'apply_chat_template'):
-            return self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
+        if hasattr(self.tokenizer, "apply_chat_template"):
+            return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         else:
             # Fallback format
             formatted = ""
@@ -234,7 +227,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Format prompt for Qwen models."""
         messages = []
@@ -242,22 +235,17 @@ class TransformersClient(AbstractClient):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         else:
-            messages.append({
-                "role": "system",
-                "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
-            })
+            messages.append(
+                {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}
+            )
 
         if conversation_history:
             messages.extend(conversation_history)
 
         messages.append({"role": "user", "content": prompt})
 
-        if hasattr(self.tokenizer, 'apply_chat_template'):
-            return self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
+        if hasattr(self.tokenizer, "apply_chat_template"):
+            return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         else:
             # Fallback format
             formatted = ""
@@ -270,7 +258,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Format prompt for Phi models."""
         messages = []
@@ -283,12 +271,8 @@ class TransformersClient(AbstractClient):
 
         messages.append({"role": "user", "content": prompt})
 
-        if hasattr(self.tokenizer, 'apply_chat_template'):
-            return self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
+        if hasattr(self.tokenizer, "apply_chat_template"):
+            return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         else:
             # Phi-3 format
             formatted = ""
@@ -297,11 +281,7 @@ class TransformersClient(AbstractClient):
             formatted += "<|assistant|>\n"
             return formatted
 
-    def _format_dialogpt_prompt(
-        self,
-        prompt: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None
-    ) -> str:
+    def _format_dialogpt_prompt(self, prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
         """Format prompt for DialoGPT models."""
         # DialoGPT is conversational, so we concatenate with EOS tokens
         conversation = ""
@@ -320,7 +300,7 @@ class TransformersClient(AbstractClient):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Simple fallback prompt format."""
         formatted = ""
@@ -335,22 +315,20 @@ class TransformersClient(AbstractClient):
         formatted += f"User: {prompt}\nAssistant:"
         return formatted
 
-    def _get_conversation_history(
-        self,
-        user_id: Optional[str],
-        session_id: Optional[str]
-    ) -> List[Dict[str, str]]:
-        """Get conversation history from memory."""
-        if not self.conversation_memory or not user_id or not session_id:
-            return []
+    def _history_as_turns(self, history: Optional[Sequence[HistoryMessage]]) -> List[Dict[str, str]]:
+        """Adapt rendered history to the flat dicts ``_prepare_prompt`` expects.
 
-        try:
-            # This would be implemented based on your memory system
-            # For now, return empty list
-            return []
-        except Exception as e:
-            self.logger.warning(f"Could not retrieve conversation history: {e}")
-            return []
+        Replaces the old ``_get_conversation_history(user_id, session_id)``,
+        which was a stub that always returned ``[]`` — this client never
+        actually replayed history before FEAT-524.
+
+        Args:
+            history: Already-rendered conversation history, or ``None``.
+
+        Returns:
+            ``[{"role": ..., "content": ...}, ...]``.
+        """
+        return [{"role": m.role, "content": m.content} for m in history or ()]
 
     async def ask(
         self,
@@ -359,11 +337,10 @@ class TransformersClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Send a prompt to the transformer model and return the response.
@@ -391,15 +368,12 @@ class TransformersClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_hf
+
         _lc_tc_hf = self._emit_before_call(
             client_name="huggingface",
-            model=self.model_name if hasattr(self, 'model_name') else "",
+            model=self.model_name if hasattr(self, "model_name") else "",
             temperature=temperature if temperature is not None else self.temperature,
             system_prompt=system_prompt,
             has_tools=False,
@@ -408,18 +382,12 @@ class TransformersClient(AbstractClient):
         _lc_t0_hf = _lc_time_hf.perf_counter()
 
         if files:
-            self.logger.warning(
-                "File attachments not supported by TransformersClient"
-            )
+            self.logger.warning("File attachments not supported by TransformersClient")
 
         if tools:
-            self.logger.warning(
-                "Tool calling not supported by TransformersClient"
-            )
-        all_tool_calls = []
-
-        # Get conversation history
-        conversation_history = self._get_conversation_history(user_id, session_id)
+            self.logger.warning("Tool calling not supported by TransformersClient")
+        # FEAT-524: history arrives already rendered from the bot.
+        conversation_history = self._history_as_turns(history)
 
         # Prepare the prompt
         formatted_prompt = self._prepare_prompt(prompt, system_prompt, conversation_history)
@@ -428,12 +396,12 @@ class TransformersClient(AbstractClient):
         gen_config = GenerationConfig(
             max_new_tokens=max_tokens,
             temperature=temperature,
-            top_p=kwargs.get('top_p', 0.9),
-            top_k=kwargs.get('top_k', 50),
+            top_p=kwargs.get("top_p", 0.9),
+            top_k=kwargs.get("top_k", 50),
             do_sample=temperature > 0,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
-            repetition_penalty=kwargs.get('repetition_penalty', 1.1),
+            repetition_penalty=kwargs.get("repetition_penalty", 1.1),
         )
 
         # Tokenize input
@@ -445,12 +413,9 @@ class TransformersClient(AbstractClient):
         start_time = time.time()
 
         import torch
+
         with torch.no_grad():
-            outputs = self.model.generate(
-                inputs,
-                generation_config=gen_config,
-                **kwargs
-            )
+            outputs = self.model.generate(inputs, generation_config=gen_config, **kwargs)
 
         generation_time = time.time() - start_time
 
@@ -466,15 +431,15 @@ class TransformersClient(AbstractClient):
         usage = CompletionUsage(
             prompt_tokens=input_length,
             completion_tokens=len(generated_ids),
-            total_tokens=input_length + len(generated_ids)
+            total_tokens=input_length + len(generated_ids),
         )
 
         # Create AIMessage response
         ai_message = AIMessageFactory.create_message(
             response=response_text,
             input_text=original_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             model=self.model_name,
             text_response=response_text,
@@ -484,38 +449,27 @@ class TransformersClient(AbstractClient):
 
         # Store conversation turn if memory is available
         # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            response_text,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Handle structured output if requested
         if structured_output:
             try:
                 structured_result = await self._handle_structured_output(
-                    {"content": [{"type": "text", "text": response_text}]},
-                    structured_output
+                    {"content": [{"type": "text", "text": response_text}]}, structured_output
                 )
                 ai_message.structured_output = structured_result
             except Exception as e:
                 self.logger.warning(f"Failed to parse structured output: {e}")
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_hf_usage = getattr(ai_message, 'usage', None)
+        _lc_hf_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_hf, client_name="huggingface",
-            model=self.model_name if hasattr(self, 'model_name') else "",
+            _lc_tc_hf,
+            client_name="huggingface",
+            model=self.model_name if hasattr(self, "model_name") else "",
             duration_ms=(_lc_time_hf.perf_counter() - _lc_t0_hf) * 1000,
-            input_tokens=getattr(_lc_hf_usage, 'prompt_tokens', None) if _lc_hf_usage else None,
-            output_tokens=getattr(_lc_hf_usage, 'completion_tokens', None) if _lc_hf_usage else None,
+            input_tokens=getattr(_lc_hf_usage, "prompt_tokens", None) if _lc_hf_usage else None,
+            output_tokens=getattr(_lc_hf_usage, "completion_tokens", None) if _lc_hf_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -528,10 +482,9 @@ class TransformersClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream the model's response.
 
@@ -550,10 +503,9 @@ class TransformersClient(AbstractClient):
             temperature=temperature,
             files=files,
             system_prompt=system_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            history=history,
             tools=tools,
-            **kwargs
+            **kwargs,
         )
 
         # Simulate streaming by yielding chunks
@@ -561,7 +513,7 @@ class TransformersClient(AbstractClient):
         chunk_size = 10  # Characters per chunk
 
         for i in range(0, len(text), chunk_size):
-            chunk = text[i:i + chunk_size]
+            chunk = text[i : i + chunk_size]
             yield chunk
             await asyncio.sleep(0.01)  # Small delay to simulate streaming
 
@@ -585,12 +537,12 @@ class TransformersClient(AbstractClient):
                 # Create error response
                 error_message = AIMessageFactory.create_message(
                     response=result,
-                    input_text=request.get('prompt', ''),
-                    user_id=request.get('user_id'),
-                    session_id=request.get('session_id'),
+                    input_text=request.get("prompt", ""),
+                    user_id=request.get("user_id"),
+                    session_id=request.get("session_id"),
                     turn_id=str(uuid.uuid4()),
                     model=self.model_name,
-                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                 )
                 results.append(error_message)
 
@@ -631,8 +583,7 @@ class TransformersClient(AbstractClient):
         if config and config.output_type:
             try:
                 output = await self._handle_structured_output(
-                    {"content": [{"type": "text", "text": response.content}]},
-                    config
+                    {"content": [{"type": "text", "text": response.content}]}, config
                 )
             except Exception as e:
                 self.logger.warning(f"Structured output parsing failed: {e}")
@@ -641,9 +592,7 @@ class TransformersClient(AbstractClient):
             output=output,
             output_type=config.output_type if config else None,
             model=self.model_name,
-            usage=response.usage or CompletionUsage(
-                prompt_tokens=0, completion_tokens=0, total_tokens=0
-            ),
+            usage=response.usage or CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             raw_response=response,
         )
 
@@ -659,8 +608,7 @@ class TransformersClient(AbstractClient):
         so resume is a no-op that returns the user input as a simple response.
         """
         self.logger.warning(
-            "TransformersClient does not support resume/tool-calling. "
-            "Returning user input as plain response."
+            "TransformersClient does not support resume/tool-calling. " "Returning user input as plain response."
         )
         turn_id = str(uuid.uuid4())
         response = await self.ask(
@@ -683,7 +631,7 @@ class TransformersClient(AbstractClient):
             "torch_dtype": str(self.torch_dtype),
             "status": "loaded",
             "vocab_size": self.tokenizer.vocab_size if self.tokenizer else None,
-            "max_position_embeddings": getattr(self.model.config, 'max_position_embeddings', None),
+            "max_position_embeddings": getattr(self.model.config, "max_position_embeddings", None),
         }
 
     async def clear_model(self):
@@ -695,8 +643,7 @@ class TransformersClient(AbstractClient):
             del self.tokenizer
             self.tokenizer = None
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        self.logger.info(
-            "Model cleared from memory"
-        )
+        self.logger.info("Model cleared from memory")

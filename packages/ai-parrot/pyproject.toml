@@ -79,15 +79,20 @@ dependencies = [
     "navconfig[default]>=2.2.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
-    # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
-    "navigator-auth>0.20.9",
+    # evaluation to fail-closed with a PyO3 TypeError. The latest AI-Parrot
+    # changes additionally require the 0.24.0 API surface. Loose upper
+    # bound on purpose; only the floor is enforced.
+    "navigator-auth>=0.24.0",
     "navigator-session>=0.6.5",
-    # navigator-api 3.0.3+ ships the FileManager interface AI-Parrot relies on.
-    # 3.1.2 also fixes the aiohttp RequestHandler kwargs warning (invalid
+    # navigator-api 3.0.3+ ships the `navigator.utils.file` FileManager
+    # interface AI-Parrot re-exports from `parrot.interfaces.file`; 3.1.2
+    # fixes the aiohttp RequestHandler kwargs warning (invalid
     # client_timeout/max_request_size were silently dropping every custom
-    # server setting). Pin to 3.1.2 to prevent silent downgrades and to
-    # guarantee that fix is present.
-    "navigator-api[uvloop,locale,google]>=3.1.2",
+    # server setting); 3.2.2 is the version the current code is verified
+    # against. Floor at 3.2.2 (loose upper bound) so a stray resolver run
+    # can never drop back to a 2.x that has no `navigator.utils.file` at all
+    # (that downgrade broke `parrot.tools.pythonrepl` imports on 2026-09-03).
+    "navigator-api[uvloop,locale,google]>=3.2.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
@@ -234,6 +239,13 @@ flowtask = [
 graphindex = [
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
+]
+
+# GraphIndex Postgres backend (FEAT-520) — bitemporal graph + wiki plane over
+# asyncpg. Zero SQLAlchemy (U4/D8); PgVectorStore is explicitly excluded.
+graphindex-postgres = [
+    "asyncpg>=0.29",
+    "pgvector>=0.2",
 ]
 
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate

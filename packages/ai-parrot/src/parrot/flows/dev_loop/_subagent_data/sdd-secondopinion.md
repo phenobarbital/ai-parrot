@@ -25,7 +25,6 @@ description: |
   list concrete findings with file/line evidence, and emit the verdict
   JSON — I do not touch any files."
 
-model: gpt-5.5
 color: purple
 permissionMode: plan
 tools: Read, Grep, Glob, Bash

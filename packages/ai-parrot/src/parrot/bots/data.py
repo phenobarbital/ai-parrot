@@ -33,6 +33,7 @@ from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChart
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
+from ..memory.render import render_history
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -420,6 +421,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         max_iterations: Optional[int] = None,
         output_routing: bool = False,
         output_routing_config: Optional[IntentRouterConfig] = None,
+        python_repl_execution_mode: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -444,10 +446,22 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 provided, it takes precedence over the ``output_routing`` flag's
                 default config (and must set ``enable_output_mode_routing=True``
                 to activate).
+            python_repl_execution_mode: Forwarded to the internal
+                ``PythonPandasTool`` as its ``execution_mode`` — ``"worker"``
+                (default, persistent sandboxed worker process) or
+                ``"inprocess"`` (escape hatch: generated code runs inside the
+                host process, no process isolation/rlimits/SIGKILL deadline;
+                see ``PythonREPLTool.__init__``). ``None`` (the default) falls
+                through to that tool's own resolution, which reads the
+                ``PYTHON_REPL_EXECUTION_MODE`` environment variable
+                (fallback ``"worker"``) — so a subclass or caller can pin a
+                mode per-agent, per-instance, without touching the deployment
+                environment.
             **kwargs: Additional configuration
         """
         self._output_routing_enabled = output_routing
         self._output_routing_config = output_routing_config
+        self._python_repl_execution_mode = python_repl_execution_mode
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -581,6 +595,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             include_sample_data=False,
             sample_rows=2,
             report_dir=report_dir,
+            # None here is a no-op — PythonREPLTool.resolve_execution_mode()
+            # falls back to PYTHON_REPL_EXECUTION_MODE / "worker" exactly as
+            # before. Only a caller passing `python_repl_execution_mode=` to
+            # PandasAgent.__init__ changes behaviour.
+            execution_mode=self._python_repl_execution_mode,
         )
 
         # Prophet forecasting tool
@@ -1324,14 +1343,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         try:
             # Get conversation history (no vector search for PandasAgent)
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
                 conversation_history = await self.get_conversation_history(
                     user_id, session_id
                 ) or await self.create_conversation_history(user_id, session_id)
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524: history goes to the provider as alternating messages.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
             # Determine output mode
             if output_mode is None:
@@ -1399,7 +1423,6 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs,
@@ -1450,8 +1473,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     "system_prompt": system_prompt,
                     "model": kwargs.get("model", self._llm_model),
                     "temperature": kwargs.get("temperature", 0.0),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": True,  # ALWAYS use tools for PandasAgent
                 }
 
@@ -1524,8 +1546,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 # Transfer artifacts accumulated by DatasetManager
@@ -1870,8 +1892,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         response.artifact_id = infographic_envelope.artifact_id
                         finalize_a2ui_response(response)
                         self.logger.info(
-                            "InfographicRenderResult detected (A2UI) — bypassing formatter: "
-                            "artifact_id=%s",
+                            "InfographicRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                             infographic_envelope.artifact_id,
                         )
                         return response
@@ -1896,8 +1917,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         response.artifact_id = interactive_envelope.artifact_id
                         finalize_a2ui_response(response)
                         self.logger.info(
-                            "InteractiveRenderResult detected (A2UI) — bypassing formatter: "
-                            "artifact_id=%s",
+                            "InteractiveRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                             interactive_envelope.artifact_id,
                         )
                         return response
@@ -2063,25 +2083,22 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Persist the turn into conversation_memory so subsequent
                 # questions in the same session see prior context. Without
-                # this, build_conversation_context() always sees an empty
-                # history because PandasAgent reads from conversation_memory
-                # but ChatStorage writes to a separate Redis namespace.
+                # this, render_history() always sees an empty history because
+                # PandasAgent reads from conversation_memory but ChatStorage
+                # writes to a separate Redis namespace.
                 if use_conversation_history and memory:
                     try:
-                        turn = ConversationTurn(
-                            turn_id=response.turn_id or turn_id,
-                            user_id=user_id,
+                        turn = ConversationTurn.from_ai_message(
                             user_message=question,
-                            assistant_response=answer_text or "",
-                            tools_used=[t.name for t in (response.tool_calls or [])],
-                            metadata={
-                                "model": getattr(response, "model", None),
-                                "response_time": getattr(response, "response_time", None),
-                                "usage": getattr(response, "usage", None),
-                                "finish_reason": getattr(response, "finish_reason", None),
-                            },
+                            response=response,
+                            user_id=user_id,
+                            chatbot_id=self.memory_key_id,
+                            turn_id=response.turn_id or turn_id,
+                            # PandasAgent's answer text is post-processed, so it
+                            # stays authoritative over response.to_text.
+                            assistant_text=answer_text or "",
                         )
-                        await memory.add_turn(user_id, session_id, turn)
+                        await self.save_conversation_turn(user_id, session_id, turn)
                     except Exception as _save_exc:
                         self.logger.debug(
                             "Failed to persist conversation turn: %s",

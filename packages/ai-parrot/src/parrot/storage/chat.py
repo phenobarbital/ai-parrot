@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 
 from navconfig.logging import logging
 
+from ..memory.render import render_history
 from .models import ChatMessage, Conversation, MessageRole, ToolCall, Source
-
 
 # Default limits
 HOT_TTL_HOURS = 48
@@ -51,22 +51,22 @@ class ChatStorage:
         if self._redis is None:
             try:
                 from parrot.memory import RedisConversation  # noqa: E501 pylint: disable=import-outside-toplevel
+
                 self._redis = RedisConversation(key_prefix="chat")
             except Exception as exc:
-                self.logger.warning(
-                    "RedisConversation unavailable, hot cache disabled: %s", exc
-                )
+                self.logger.warning("RedisConversation unavailable, hot cache disabled: %s", exc)
 
         # Storage backend — selected via PARROT_STORAGE_BACKEND env var (FEAT-116)
         if self._dynamo is None:
             try:
-                from parrot.storage.backends import build_conversation_backend  # noqa: E501 pylint: disable=import-outside-toplevel
+                from parrot.storage.backends import (
+                    build_conversation_backend,
+                )  # noqa: E501 pylint: disable=import-outside-toplevel
+
                 self._dynamo = await build_conversation_backend()
                 await self._dynamo.initialize()
             except Exception as exc:
-                self.logger.warning(
-                    "Storage backend unavailable, cold storage disabled: %s", exc
-                )
+                self.logger.warning("Storage backend unavailable, cold storage disabled: %s", exc)
 
         self._initialized = True
 
@@ -153,12 +153,8 @@ class ChatStorage:
             timestamp=now,
         )
 
-        tool_call_objs = [
-            ToolCall.from_dict(tc) for tc in (tool_calls or [])
-        ]
-        source_objs = [
-            Source.from_dict(s) for s in (sources or [])
-        ]
+        tool_call_objs = [ToolCall.from_dict(tc) for tc in (tool_calls or [])]
+        source_objs = [Source.from_dict(s) for s in (sources or [])]
 
         assistant_msg = ChatMessage(
             message_id=f"{turn_id}_assistant",
@@ -183,7 +179,10 @@ class ChatStorage:
         # --- Hot tier: Redis ---
         if self._redis:
             try:
-                from parrot.memory.abstract import ConversationTurn  # noqa: E501 pylint: disable=import-outside-toplevel
+                from parrot.memory.abstract import (
+                    ConversationTurn,
+                )  # noqa: E501 pylint: disable=import-outside-toplevel
+
                 turn = ConversationTurn(
                     turn_id=turn_id,
                     user_id=user_id,
@@ -199,26 +198,16 @@ class ChatStorage:
                     },
                 )
                 # Ensure conversation history exists, then add turn
-                history = await self._redis.get_history(
-                    user_id, session_id, chatbot_id=agent_id
-                )
+                history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if not history:
-                    await self._redis.create_history(
-                        user_id, session_id, chatbot_id=agent_id
-                    )
-                await self._redis.add_turn(
-                    user_id, session_id, turn, chatbot_id=agent_id
-                )
+                    await self._redis.create_history(user_id, session_id, chatbot_id=agent_id)
+                await self._redis.add_turn(user_id, session_id, turn, chatbot_id=agent_id)
             except Exception as exc:
                 self.logger.warning("Redis save_turn failed: %s", exc)
 
         # --- Cold tier: DynamoDB (fire-and-forget) ---
         if self._dynamo:
-            asyncio.get_running_loop().create_task(
-                self._save_to_dynamodb(
-                    user_msg, assistant_msg, agent_id, now
-                )
-            )
+            asyncio.get_running_loop().create_task(self._save_to_dynamodb(user_msg, assistant_msg, agent_id, now))
 
         return turn_id
 
@@ -279,7 +268,9 @@ class ChatStorage:
         except Exception as exc:
             self.logger.warning(
                 "%s save failed for session %s: %s",
-                self._backend_label, user_msg.session_id, exc,
+                self._backend_label,
+                user_msg.session_id,
+                exc,
             )
 
     # ------------------------------------------------------------------
@@ -301,36 +292,43 @@ class ChatStorage:
         # Try Redis first
         if self._redis:
             try:
-                history = await self._redis.get_history(
-                    user_id, session_id, chatbot_id=agent_id
-                )
+                history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if history and history.turns:
                     messages = []
                     for turn in history.turns[-limit:]:
-                        messages.append({
-                            "role": MessageRole.USER.value,
-                            "content": turn.user_message,
-                            "timestamp": turn.timestamp.isoformat()
-                            if isinstance(turn.timestamp, datetime)
-                            else str(turn.timestamp),
-                            "turn_id": turn.turn_id,
-                            "metadata": turn.metadata,
-                        })
-                        messages.append({
-                            "role": MessageRole.ASSISTANT.value,
-                            "content": turn.assistant_response,
-                            "timestamp": turn.timestamp.isoformat()
-                            if isinstance(turn.timestamp, datetime)
-                            else str(turn.timestamp),
-                            "turn_id": turn.turn_id,
-                            "tools_used": turn.tools_used,
-                            "metadata": turn.metadata,
-                        })
+                        messages.append(
+                            {
+                                "role": MessageRole.USER.value,
+                                "content": turn.user_message,
+                                "timestamp": (
+                                    turn.timestamp.isoformat()
+                                    if isinstance(turn.timestamp, datetime)
+                                    else str(turn.timestamp)
+                                ),
+                                "turn_id": turn.turn_id,
+                                "metadata": turn.metadata,
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": MessageRole.ASSISTANT.value,
+                                "content": turn.assistant_response,
+                                "timestamp": (
+                                    turn.timestamp.isoformat()
+                                    if isinstance(turn.timestamp, datetime)
+                                    else str(turn.timestamp)
+                                ),
+                                "turn_id": turn.turn_id,
+                                "tools_used": turn.tools_used,
+                                "metadata": turn.metadata,
+                            }
+                        )
                     return messages
             except Exception as exc:
                 self.logger.warning(
                     "Redis load failed, falling back to %s: %s",
-                    self._backend_label, exc,
+                    self._backend_label,
+                    exc,
                 )
 
         # Fallback: DynamoDB
@@ -348,39 +346,39 @@ class ChatStorage:
                 for turn in turns:
                     turn_id = turn.get("turn_id", "")
                     ts = turn.get("timestamp", "")
-                    messages.append({
-                        "role": MessageRole.USER.value,
-                        "content": turn.get("user_message", ""),
-                        "timestamp": ts,
-                        "turn_id": turn_id,
-                    })
-                    messages.append({
-                        "role": MessageRole.ASSISTANT.value,
-                        "content": turn.get("assistant_response", ""),
-                        "timestamp": ts,
-                        "turn_id": turn_id,
-                        "output": turn.get("output"),
-                        "output_mode": turn.get("output_mode"),
-                        "data": turn.get("data"),
-                        "code": turn.get("code"),
-                        "model": turn.get("model"),
-                        "provider": turn.get("provider"),
-                        "response_time_ms": turn.get("response_time_ms"),
-                        "tool_calls": turn.get("tool_calls", []),
-                        "sources": turn.get("sources", []),
-                        "metadata": turn.get("metadata", {}),
-                    })
+                    messages.append(
+                        {
+                            "role": MessageRole.USER.value,
+                            "content": turn.get("user_message", ""),
+                            "timestamp": ts,
+                            "turn_id": turn_id,
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": MessageRole.ASSISTANT.value,
+                            "content": turn.get("assistant_response", ""),
+                            "timestamp": ts,
+                            "turn_id": turn_id,
+                            "output": turn.get("output"),
+                            "output_mode": turn.get("output_mode"),
+                            "data": turn.get("data"),
+                            "code": turn.get("code"),
+                            "model": turn.get("model"),
+                            "provider": turn.get("provider"),
+                            "response_time_ms": turn.get("response_time_ms"),
+                            "tool_calls": turn.get("tool_calls", []),
+                            "sources": turn.get("sources", []),
+                            "metadata": turn.get("metadata", {}),
+                        }
+                    )
                 return messages
             except Exception as exc:
-                self.logger.warning(
-                    "%s load failed: %s", self._backend_label, exc
-                )
+                self.logger.warning("%s load failed: %s", self._backend_label, exc)
 
         return []
 
-    async def get_conversation_metadata(
-        self, session_id: str
-    ) -> Optional[Dict[str, Any]]:
+    async def get_conversation_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load conversation metadata.
 
         Note: This method requires user_id and agent_id for DynamoDB
@@ -415,15 +413,11 @@ class ChatStorage:
             # Filter by 'since' if provided
             if since:
                 since_iso = since.isoformat()
-                threads = [
-                    t for t in threads
-                    if t.get("updated_at", "") >= since_iso
-                ]
+                threads = [t for t in threads if t.get("updated_at", "") >= since_iso]
             # Clean up DynamoDB internal fields
             results = []
             for t in threads:
-                clean = {k: v for k, v in t.items()
-                         if k not in ("PK", "SK", "type", "ttl")}
+                clean = {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
                 results.append(clean)
             return results
         except Exception as exc:
@@ -440,15 +434,15 @@ class ChatStorage:
         """Create a conversation thread in DynamoDB."""
         if not self._dynamo:
             self.logger.warning(
-                "create_conversation: cold-storage backend not configured "
-                "(session=%s)", session_id,
+                "create_conversation: cold-storage backend not configured " "(session=%s)",
+                session_id,
             )
             return None
         if not getattr(self._dynamo, "is_connected", True):
             self.logger.warning(
-                "create_conversation: %s not connected — thread %s will "
-                "NOT be persisted.",
-                self._backend_label, session_id,
+                "create_conversation: %s not connected — thread %s will " "NOT be persisted.",
+                self._backend_label,
+                session_id,
             )
             return None
         now = datetime.now(timezone.utc)
@@ -470,7 +464,10 @@ class ChatStorage:
             )
             self.logger.info(
                 "Conversation %s created in %s (user=%s agent=%s)",
-                session_id, self._backend_label, user_id, agent_id,
+                session_id,
+                self._backend_label,
+                user_id,
+                agent_id,
             )
             return {
                 "session_id": session_id,
@@ -481,7 +478,8 @@ class ChatStorage:
         except Exception as exc:
             self.logger.error(
                 "create_conversation failed for %s: %s",
-                session_id, exc,
+                session_id,
+                exc,
                 exc_info=True,
             )
             return None
@@ -499,15 +497,16 @@ class ChatStorage:
         """
         if not self._dynamo:
             self.logger.warning(
-                "update_conversation_title: backend not configured "
-                "(session=%s)", session_id,
+                "update_conversation_title: backend not configured " "(session=%s)",
+                session_id,
             )
             return False
         if not user_id or not agent_id:
             self.logger.warning(
-                "update_conversation_title: missing PK fields "
-                "(session=%s, user_id=%r, agent_id=%r)",
-                session_id, user_id, agent_id,
+                "update_conversation_title: missing PK fields " "(session=%s, user_id=%r, agent_id=%r)",
+                session_id,
+                user_id,
+                agent_id,
             )
             return False
         try:
@@ -520,13 +519,14 @@ class ChatStorage:
             )
             self.logger.info(
                 "Conversation %s title updated to '%s' (user=%s agent=%s)",
-                session_id, title, user_id, agent_id,
+                session_id,
+                title,
+                user_id,
+                agent_id,
             )
             return True
         except Exception as exc:
-            self.logger.warning(
-                "update_conversation_title failed for %s: %s", session_id, exc
-            )
+            self.logger.warning("update_conversation_title failed for %s: %s", session_id, exc)
             return False
 
     async def delete_conversation(
@@ -547,9 +547,7 @@ class ChatStorage:
         # Redis
         if self._redis:
             try:
-                result = await self._redis.delete_history(
-                    user_id, session_id, chatbot_id=agent_id
-                )
+                result = await self._redis.delete_history(user_id, session_id, chatbot_id=agent_id)
                 if result:
                     deleted = True
             except Exception as exc:
@@ -567,12 +565,12 @@ class ChatStorage:
                     deleted = True
                 self.logger.debug(
                     "Deleted %d conversation items and %d artifacts for session %s",
-                    conv_deleted, art_deleted, session_id,
+                    conv_deleted,
+                    art_deleted,
+                    session_id,
                 )
             except Exception as exc:
-                self.logger.warning(
-                    "%s delete failed: %s", self._backend_label, exc
-                )
+                self.logger.warning("%s delete failed: %s", self._backend_label, exc)
 
         return deleted
 
@@ -605,14 +603,10 @@ class ChatStorage:
                 session_id=session_id,
                 updated_at=datetime.now(timezone.utc),
             )
-            self.logger.debug(
-                "Deleted turn %s from session %s", turn_id, session_id
-            )
+            self.logger.debug("Deleted turn %s from session %s", turn_id, session_id)
             return True
         except Exception as exc:
-            self.logger.warning(
-                "delete_turn failed for %s in %s: %s", turn_id, session_id, exc
-            )
+            self.logger.warning("delete_turn failed for %s in %s: %s", turn_id, session_id, exc)
             return False
 
     async def get_context_for_agent(
@@ -631,22 +625,22 @@ class ChatStorage:
         # Try Redis first for speed
         if self._redis:
             try:
-                history = await self._redis.get_history(
-                    user_id, session_id, chatbot_id=agent_id
-                )
+                history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if history and history.turns:
-                    return history.get_messages_for_api(model=model)[-max_turns * 2:]
+                    # FEAT-524: ConversationHistory.get_messages_for_api() was
+                    # removed; render_history() replaces it. Without this the
+                    # AttributeError would be swallowed by the `except Exception:
+                    # pass` below and this Redis fast path would silently fall
+                    # through to DynamoDB forever.
+                    return [
+                        {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
+                    ]
             except Exception:
                 pass
 
         # Fallback to DynamoDB
-        messages = await self.load_conversation(
-            user_id, session_id, agent_id=agent_id, limit=max_turns
-        )
-        return [
-            {"role": m.get("role", "user"), "content": m.get("content", "")}
-            for m in messages
-        ]
+        messages = await self.load_conversation(user_id, session_id, agent_id=agent_id, limit=max_turns)
+        return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
 
 
 def _safe_serialize_value(obj: Any) -> Any:

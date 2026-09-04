@@ -207,3 +207,72 @@ class TestFunctionResponseBlobWrapping:
         )
         assert part is not None
         assert part.function_response is not None
+
+
+class TestZeroThinkingBudgetRejection:
+    """Models that answer 400 to an explicit ``thinking_budget=0``.
+
+    Verified 2026-09-03 by raw REST against generativelanguage.googleapis.com
+    with no ``google-genai`` in the path. ``gemini-3.5-flash-lite`` is the one
+    non-Pro model in this set: sending 0 returns ``400 INVALID_ARGUMENT``,
+    while omitting the budget (or sending -1 / 512) returns 200. Forcing 0 made
+    ask() and both invoke() shapes unusable for it.
+    """
+
+    def test_flash_lite_3_5_rejects_zero(self):
+        from parrot.clients.google.client import GoogleGenAIClient
+        assert GoogleGenAIClient._rejects_zero_thinking_budget("gemini-3.5-flash-lite") is True
+
+    def test_pro_family_still_rejects_zero(self):
+        """The predicate is a superset of _requires_thinking."""
+        from parrot.clients.google.client import GoogleGenAIClient
+        for model in ("gemini-2.5-pro", "gemini-3.1-pro-preview"):
+            assert GoogleGenAIClient._rejects_zero_thinking_budget(model) is True
+
+    def test_other_flash_tiers_accept_zero(self):
+        """Every other tested flash tier takes 0 — do not widen this by guess."""
+        from parrot.clients.google.client import GoogleGenAIClient
+        for model in (
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash",
+        ):
+            assert GoogleGenAIClient._rejects_zero_thinking_budget(model) is False, model
+
+    def test_none_model_is_safe(self):
+        from parrot.clients.google.client import GoogleGenAIClient
+        assert GoogleGenAIClient._rejects_zero_thinking_budget(None) is False
+
+    def test_thinking_off_omits_config_for_rejecting_model(self):
+        """The helper returns None so the caller omits the field entirely."""
+        from parrot.clients.google.client import GoogleGenAIClient
+        assert GoogleGenAIClient._thinking_off("gemini-3.5-flash-lite") is None
+        assert GoogleGenAIClient._thinking_off("gemini-2.5-pro") is None
+
+    def test_thinking_off_disables_for_normal_model(self):
+        from parrot.clients.google.client import GoogleGenAIClient
+        cfg = GoogleGenAIClient._thinking_off("gemini-2.5-flash", include_thoughts=False)
+        assert cfg is not None
+        assert cfg.thinking_budget == 0
+        assert cfg.include_thoughts is False
+
+    def test_invoke_thinking_config_skips_rejecting_model(self):
+        """invoke()'s structured path must not force 0 on gemini-3.5-flash-lite."""
+        from parrot.clients.google.client import GoogleGenAIClient
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        assert client._invoke_thinking_config("gemini-3.5-flash-lite", structured=True) is None
+        # An unaffected flash-lite still gets reasoning switched off.
+        cfg = client._invoke_thinking_config("gemini-2.5-flash-lite", structured=True)
+        assert cfg is not None and cfg.thinking_budget == 0
+
+    def test_thinking_budget_none_is_permitted(self):
+        """ThinkingConfig with thinking_budget=None is valid and serializes to empty dict."""
+        from google.genai import types, _common
+        cfg = types.ThinkingConfig(thinking_budget=None)
+        assert cfg.thinking_budget is None
+        # In google-genai, None thinking_budget serializes to empty dict, which the API accepts
+        serialized = _common.convert_to_dict(cfg)
+        assert "thinking_budget" not in serialized
+        assert "thinkingBudget" not in serialized

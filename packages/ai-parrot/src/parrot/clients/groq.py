@@ -1,6 +1,6 @@
 from __future__ import annotations
 import traceback
-from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING
+from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING, Sequence
 from pathlib import Path
 from logging import getLogger
 import uuid
@@ -10,6 +10,11 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
+from ..memory.render import HistoryMessage
+
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .openai_base import OpenAIBaseClient
 from ..tools.manager import ToolFormat
 
@@ -26,15 +31,11 @@ from ..models import (
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
 from ..models.groq import GroqModel
-from ..models.outputs import (
-    SentimentAnalysis,
-    ProductReview
-)
+from ..models.outputs import SentimentAnalysis, ProductReview
 
-
-getLogger('httpx').setLevel('WARNING')
-getLogger('httpcore').setLevel('WARNING')
-getLogger('groq').setLevel('INFO')
+getLogger("httpx").setLevel("WARNING")
+getLogger("httpcore").setLevel("WARNING")
+getLogger("groq").setLevel("INFO")
 
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
@@ -78,7 +79,7 @@ class GroqClient(OpenAIBaseClient):
     client_name: str = "groq"
     tool_format: ToolFormat = ToolFormat.GROQ
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
-    _default_model: str = 'openai/gpt-oss-120b'
+    _default_model: str = "openai/gpt-oss-120b"
     _lightweight_model: str = "kimi-k2-instruct"
     # Groq caps completion tokens at 4096 for most hosted models and rejects an
     # over-cap request outright rather than clamping it, so this client pins its
@@ -89,13 +90,8 @@ class GroqClient(OpenAIBaseClient):
     # a single number to keep correct.
     _default_max_tokens: int = 4095
 
-    def __init__(
-        self,
-        api_key: str = None,
-        base_url: str = "https://api.groq.com/openai/v1",
-        **kwargs
-    ):
-        resolved_key = api_key or config.get('GROQ_API_KEY')
+    def __init__(self, api_key: str = None, base_url: str = "https://api.groq.com/openai/v1", **kwargs):
+        resolved_key = api_key or config.get("GROQ_API_KEY")
         super().__init__(
             api_key=resolved_key,
             base_url=base_url,
@@ -118,8 +114,7 @@ class GroqClient(OpenAIBaseClient):
             from groq import AsyncGroq
         except ImportError as exc:
             raise ImportError(
-                "GroqClient requires the 'groq' SDK. "
-                "Install with: pip install ai-parrot[groq]"
+                "GroqClient requires the 'groq' SDK. " "Install with: pip install ai-parrot[groq]"
             ) from exc
         return AsyncGroq(api_key=self.api_key)
 
@@ -146,9 +141,7 @@ class GroqClient(OpenAIBaseClient):
             The raw Groq SDK response object (or async stream when
             ``stream=True``).
         """
-        return await self.client.chat.completions.create(
-            model=model, messages=messages, stream=stream, **kwargs
-        )
+        return await self.client.chat.completions.create(model=model, messages=messages, stream=stream, **kwargs)
 
     def _fix_schema_for_groq(self, schema: dict) -> dict:
         """
@@ -165,10 +158,19 @@ class GroqClient(OpenAIBaseClient):
         schema = self._oai_normalize_schema(schema, force_required_all=False)
 
         unsupported_constraints = [
-            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-            "minLength", "maxLength", "pattern", "format",
-            "minItems", "maxItems", "uniqueItems",
-            "minProperties", "maxProperties",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "minLength",
+            "maxLength",
+            "pattern",
+            "format",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
+            "minProperties",
+            "maxProperties",
         ]
 
         def visit(node):
@@ -182,10 +184,7 @@ class GroqClient(OpenAIBaseClient):
                     variants = node["anyOf"]
 
                     # 1) Fix integer/number overlap for Groq
-                    type_variants = [
-                        v.get("type") for v in variants
-                        if isinstance(v, dict) and "type" in v
-                    ]
+                    type_variants = [v.get("type") for v in variants if isinstance(v, dict) and "type" in v]
                     if "number" in type_variants and "integer" in type_variants:
                         new_variants = []
                         for v in variants:
@@ -222,7 +221,7 @@ class GroqClient(OpenAIBaseClient):
                     # else:
                     #     # Just recurse into each variant
                     #     node["anyOf"] = [visit(v) for v in variants]
-                    
+
                     # Original logic above was stripping NULL from AnyOf.
                     # We simply recurse now.
                     node["anyOf"] = [visit(v) for v in variants]
@@ -277,14 +276,16 @@ class GroqClient(OpenAIBaseClient):
             # 2) normalize for Groq
             fixed_schema = self._fix_schema_for_groq(param_schema)
 
-            groq_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "description": getattr(tool, "description", "") or "",
-                    "parameters": fixed_schema
+            groq_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": getattr(tool, "description", "") or "",
+                        "parameters": fixed_schema,
+                    },
                 }
-            })
+            )
         return groq_tools
 
     def _prepare_structured_output_format(self, structured_output: type) -> dict:
@@ -298,17 +299,13 @@ class GroqClient(OpenAIBaseClient):
             structured_output = structured_output.__class__
 
         # Pydantic models
-        if isinstance(structured_output, type) and hasattr(structured_output, 'model_json_schema'):
+        if isinstance(structured_output, type) and hasattr(structured_output, "model_json_schema"):
             schema = structured_output.model_json_schema()
             fixed_schema = self._fix_schema_for_groq(schema)
             return {
                 "response_format": {
                     "type": "json_schema",
-                    "json_schema": {
-                        "name": structured_output.__name__.lower(),
-                        "schema": fixed_schema,
-                        "strict": True
-                    }
+                    "json_schema": {"name": structured_output.__name__.lower(), "schema": fixed_schema, "strict": True},
                 }
             }
 
@@ -319,11 +316,7 @@ class GroqClient(OpenAIBaseClient):
             return {
                 "response_format": {
                     "type": "json_schema",
-                    "json_schema": {
-                        "name": structured_output.__name__.lower(),
-                        "schema": fixed_schema,
-                        "strict": True
-                    }
+                    "json_schema": {"name": structured_output.__name__.lower(), "schema": fixed_schema, "strict": True},
                 }
             }
 
@@ -339,12 +332,11 @@ class GroqClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[dict]] = None,
         use_tools: Optional[bool] = None,
-        use_code_interpreter: Optional[bool] = None
+        use_code_interpreter: Optional[bool] = None,
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
         max_tokens = self._resolve_max_tokens(max_tokens)
@@ -355,12 +347,10 @@ class GroqClient(OpenAIBaseClient):
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_groq
+
         _lc_tc_groq = self._emit_before_call(
             client_name="groq",
             model=model,
@@ -385,9 +375,7 @@ class GroqClient(OpenAIBaseClient):
 
         # Groq doesn't support combining structured output with tools
         # Priority: tools first, then structured output in separate request if needed
-        output_config = self._get_structured_config(
-            structured_output
-        )
+        output_config = self._get_structured_config(structured_output)
         use_tools = _use_tools
         use_structured_output = bool(output_config)
 
@@ -399,8 +387,7 @@ class GroqClient(OpenAIBaseClient):
 
         if use_structured_output and model not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
             self.logger.error(
-                f"The model '{model}' does not support structured output. "
-                "Please choose a compatible model."
+                f"The model '{model}' does not support structured output. " "Please choose a compatible model."
             )
             model = GroqModel.LLAMA_4_SCOUT_17B.value
 
@@ -420,38 +407,29 @@ class GroqClient(OpenAIBaseClient):
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
-            "stream": False
+            "stream": False,
         }
 
         if use_tools and not request_use_structured_output:
             request_args["tool_choice"] = "auto"
             request_args["tools"] = tools or []
-            if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and \
-               model != getattr(GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"):
+            if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and model != getattr(
+                GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"
+            ):
                 request_args["parallel_tool_calls"] = True
         elif use_code_interpreter:
             if model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):
                 request_args["tool_choice"] = "required"
-                request_args["tools"] = [
-                    {
-                        "type": "browser_search"
-                    },
-                    {
-                        "type": "code_interpreter"
-                    }
-                ]
+                request_args["tools"] = [{"type": "browser_search"}, {"type": "code_interpreter"}]
 
         # Add structured output format if no tools
         if request_output_config and not use_tools:
             self._ensure_json_instruction(
-                messages,
-                "Please respond with a valid JSON object that matches the requested schema."
+                messages, "Please respond with a valid JSON object that matches the requested schema."
             )
             if request_output_config.format == OutputFormat.JSON:
                 if output_type := request_output_config.output_type:
-                    request_args.update(
-                        self._prepare_structured_output_format(output_type)
-                    )
+                    request_args.update(self._prepare_structured_output_format(output_type))
                 else:
                     request_args["response_format"] = {"type": "json_object"}
 
@@ -501,20 +479,20 @@ class GroqClient(OpenAIBaseClient):
                 _lc_round_tool_names_groq = []
 
                 # Add the assistant's message with tool calls to conversation
-                messages.append({
-                    "role": "assistant",
-                    "content": result.content or "",
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": result.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                             }
-                        } for tc in result.tool_calls
-                    ]
-                })
+                            for tc in result.tool_calls
+                        ],
+                    }
+                )
 
                 # Execute each tool call
                 for tool_call in result.tool_calls:
@@ -525,11 +503,7 @@ class GroqClient(OpenAIBaseClient):
                         tool_args = json_decoder(tool_call.function.arguments)
 
                     # Create ToolCall object and execute
-                    tc = ToolCall(
-                        id=tool_call.id,
-                        name=tool_name,
-                        arguments=tool_args
-                    )
+                    tc = ToolCall(id=tool_call.id, name=tool_name, arguments=tool_args)
 
                     try:
                         start_time = time.time()
@@ -539,16 +513,19 @@ class GroqClient(OpenAIBaseClient):
                         tc.execution_time = execution_time
 
                         # Add tool result to conversation
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": str(tool_result)
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_name,
+                                "content": str(tool_result),
+                            }
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
+
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = messages.copy()
                             e.tool_call_id = tool_call.id
                             e.agent_name = model
@@ -556,13 +533,15 @@ class GroqClient(OpenAIBaseClient):
                         tc.error = str(e)
                         trace = traceback.format_exc()
                         # Add error to conversation
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": f"Error: {str(e)}",
-                            "traceback": trace
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_name,
+                                "content": f"Error: {str(e)}",
+                                "traceback": trace,
+                            }
+                        )
 
                     all_tool_calls.append(tc)
                     _lc_round_tool_names_groq.append(tool_name)
@@ -621,19 +600,13 @@ class GroqClient(OpenAIBaseClient):
         if structured_output_for_later and use_tools:
             # Add the final tool response to messages
             if result.content:
-                messages.append({
-                    "role": "assistant",
-                    "content": result.content
-                })
+                messages.append({"role": "assistant", "content": result.content})
 
             # Make a new request for structured output
             json_followup_instruction = (
                 "Please format the above response as valid JSON that matches the requested structure."
             )
-            messages.append({
-                "role": "user",
-                "content": [{"type": "text", "text": json_followup_instruction}]
-            })
+            messages.append({"role": "user", "content": [{"type": "text", "text": json_followup_instruction}]})
 
             self._ensure_json_instruction(messages, json_followup_instruction)
 
@@ -643,23 +616,22 @@ class GroqClient(OpenAIBaseClient):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "top_p": top_p,
-                "stream": False
+                "stream": False,
             }
 
             if structured_output_for_later.format == OutputFormat.JSON:
                 output_type = structured_output_for_later.output_type
                 if output_type:
-                    structured_args.update(
-                        self._prepare_structured_output_format(output_type)
-                    )
+                    structured_args.update(self._prepare_structured_output_format(output_type))
                 else:
                     structured_args["response_format"] = {"type": "json_object"}
 
             structured_response = await self._chat_completion(**structured_args, use_tools=False)
-            result = structured_response.message if hasattr(
-                structured_response,
-                'message'
-            ) else structured_response.choices[0].message
+            result = (
+                structured_response.message
+                if hasattr(structured_response, "message")
+                else structured_response.choices[0].message
+            )
 
             parsed_config = structured_output_for_later
             _final_response = structured_response
@@ -684,31 +656,17 @@ class GroqClient(OpenAIBaseClient):
 
         # Add final assistant message to conversation (if not already added)
         if not (use_tools and result.content):  # Only add if we haven't already added it in tool handling
-            messages.append({
-                "role": "assistant",
-                "content": result.content or ""
-            })
+            messages.append({"role": "assistant", "content": result.content or ""})
 
         # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = result.content if isinstance(
-            result.content, str) else self._json.dumps(result.content)
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         structured_payload = None
-        if parsed_config and final_output is not None and not (
-            isinstance(final_output, str) and final_output == response_text
+        if (
+            parsed_config
+            and final_output is not None
+            and not (isinstance(final_output, str) and final_output == response_text)
         ):
             structured_payload = final_output
 
@@ -716,10 +674,10 @@ class GroqClient(OpenAIBaseClient):
             response=response,
             input_text=original_prompt,
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
-            structured_output=structured_payload
+            structured_output=structured_payload,
         )
 
         # FEAT-397: replace the last-round-only usage with the accumulated
@@ -735,12 +693,14 @@ class GroqClient(OpenAIBaseClient):
         ai_message.tool_calls = all_tool_calls
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
-        _lc_groq_usage = getattr(ai_message, 'usage', None)
+        _lc_groq_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_groq, client_name="groq", model=model,
+            _lc_tc_groq,
+            client_name="groq",
+            model=model,
             duration_ms=(_lc_time_groq.perf_counter() - _lc_t0_groq) * 1000,
-            input_tokens=getattr(_lc_groq_usage, 'prompt_tokens', None) if _lc_groq_usage else None,
-            output_tokens=getattr(_lc_groq_usage, 'completion_tokens', None) if _lc_groq_usage else None,
+            input_tokens=getattr(_lc_groq_usage, "prompt_tokens", None) if _lc_groq_usage else None,
+            output_tokens=getattr(_lc_groq_usage, "completion_tokens", None) if _lc_groq_usage else None,
             finish_reason=None,
         )
         return ai_message
@@ -754,8 +714,7 @@ class GroqClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[dict]] = None,
         deep_research: bool = False,
         agent_config: Optional[dict] = None,
@@ -772,16 +731,14 @@ class GroqClient(OpenAIBaseClient):
         turn_id = str(uuid.uuid4())
         model = model.value if isinstance(model, GroqModel) else model
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_groqs
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GroqStreamChunkEvent
+
         _lc_tc_groqs = self._emit_before_call(
             client_name="groq",
             model=model,
@@ -826,16 +783,21 @@ class GroqClient(OpenAIBaseClient):
                 assistant_content += text_chunk
                 # FEAT-176: per-chunk event
                 if _lc_has_chunk_subs_groq:
-                    await self.events.emit(_GroqStreamChunkEvent(
-                        trace_context=_lc_tc_groqs, client_name="groq",
-                        model=model, chunk_index=_lc_chunk_idx_groq,
-                        chunk_size_bytes=len(text_chunk.encode("utf-8")),
-                        source_type="client", source_name="groq",
-                    ))
+                    await self.events.emit(
+                        _GroqStreamChunkEvent(
+                            trace_context=_lc_tc_groqs,
+                            client_name="groq",
+                            model=model,
+                            chunk_index=_lc_chunk_idx_groq,
+                            chunk_size_bytes=len(text_chunk.encode("utf-8")),
+                            source_type="client",
+                            source_name="groq",
+                        )
+                    )
                     _lc_chunk_idx_groq += 1
                 yield text_chunk
             # Capture usage from the final chunk (present when stream_options.include_usage=True)
-            if hasattr(chunk, 'usage') and chunk.usage is not None:
+            if hasattr(chunk, "usage") and chunk.usage is not None:
                 usage_data = chunk.usage
 
         # Build and yield final AIMessage
@@ -850,8 +812,8 @@ class GroqClient(OpenAIBaseClient):
             model=model,
             provider="groq",
             usage=usage,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
         )
         # Update conversation memory BEFORE yielding the final AIMessage so the
@@ -859,40 +821,23 @@ class GroqClient(OpenAIBaseClient):
         # the sentinel (generators are not fully drained once the caller exits the
         # async-for loop).
         if assistant_content:
-            messages.append({
-                "role": "assistant",
-                "content": assistant_content
-            })
-            tools_used = []
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages,
-                system_prompt,
-                turn_id,
-                prompt,
-                assistant_content,
-                tools_used
-            )
+            messages.append({"role": "assistant", "content": assistant_content})
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent (stream)
-        _lc_groqs_usage = getattr(ai_message, 'usage', None)
+        _lc_groqs_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
-            _lc_tc_groqs, client_name="groq", model=model,
+            _lc_tc_groqs,
+            client_name="groq",
+            model=model,
             duration_ms=(_lc_time_groqs.perf_counter() - _lc_t0_groqs) * 1000,
-            input_tokens=getattr(_lc_groqs_usage, 'prompt_tokens', None) if _lc_groqs_usage else None,
-            output_tokens=getattr(_lc_groqs_usage, 'completion_tokens', None) if _lc_groqs_usage else None,
+            input_tokens=getattr(_lc_groqs_usage, "prompt_tokens", None) if _lc_groqs_usage else None,
+            output_tokens=getattr(_lc_groqs_usage, "completion_tokens", None) if _lc_groqs_usage else None,
             finish_reason=None,
         )
         yield ai_message
 
-    async def resume(
-        self,
-        session_id: str,
-        user_input: str,
-        state: dict
-    ) -> AIMessage:
+    async def resume(self, session_id: str, user_input: str, state: dict) -> AIMessage:
         """Resume a suspended model execution after HandoffTool pause.
 
         Args:
@@ -908,12 +853,7 @@ class GroqClient(OpenAIBaseClient):
         model = state.get("agent_name", self.model or self._default_model)
 
         # Inject user input as tool result for the handoff tool call
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": "handoff_tool",
-            "content": user_input
-        })
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
         all_tool_calls: list = []
         turn_id = str(uuid.uuid4())
@@ -944,20 +884,20 @@ class GroqClient(OpenAIBaseClient):
         while result.tool_calls and conversation_turns < max_turns:
             conversation_turns += 1
 
-            messages.append({
-                "role": "assistant",
-                "content": result.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                         }
-                    } for tc in result.tool_calls
-                ]
-            })
+                        for tc in result.tool_calls
+                    ],
+                }
+            )
 
             for tool_call in result.tool_calls:
                 tool_name = tool_call.function.name
@@ -966,11 +906,7 @@ class GroqClient(OpenAIBaseClient):
                 except json.JSONDecodeError:
                     tool_args = json_decoder(tool_call.function.arguments)
 
-                tc = ToolCall(
-                    id=tool_call.id,
-                    name=tool_name,
-                    arguments=tool_args
-                )
+                tc = ToolCall(id=tool_call.id, name=tool_name, arguments=tool_args)
 
                 try:
                     start_time_t = time.time()
@@ -979,14 +915,12 @@ class GroqClient(OpenAIBaseClient):
                     tc.result = tool_result
                     tc.execution_time = execution_time
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(tool_result)
-                    })
+                    messages.append(
+                        {"role": "tool", "tool_call_id": tool_call.id, "name": tool_name, "content": str(tool_result)}
+                    )
                 except Exception as e:
                     from parrot.core.exceptions import HumanInteractionInterrupt
+
                     if isinstance(e, HumanInteractionInterrupt):
                         e.session_id = session_id
                         e.messages = messages.copy()
@@ -994,12 +928,9 @@ class GroqClient(OpenAIBaseClient):
                         e.agent_name = model
                         raise
                     tc.error = str(e)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": f"Error: {str(e)}"
-                    })
+                    messages.append(
+                        {"role": "tool", "tool_call_id": tool_call.id, "name": tool_name, "content": f"Error: {str(e)}"}
+                    )
                 all_tool_calls.append(tc)
 
             continue_args = {
@@ -1041,7 +972,7 @@ class GroqClient(OpenAIBaseClient):
         system_prompt: Optional[str] = None,
         top_p: float = 0.9,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> AIMessage:
         """Summarize the given text using Groq API.
 
@@ -1066,10 +997,8 @@ class GroqClient(OpenAIBaseClient):
 
         system_prompt = system_prompt or "Summarize the following text:"
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1094,26 +1023,11 @@ class GroqClient(OpenAIBaseClient):
         summarized_text = result.content
 
         # Add final assistant message to conversation
-        messages.append({
-            "role": "assistant",
-            "content": result.content
-        })
+        messages.append({"role": "assistant", "content": result.content})
 
         # Update conversation memory
-        tools_used = []
         # return only 100 characters of the summarized text
-        assistant_content = summarized_text[:100] if summarized_text else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'summarization',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_groq(
@@ -1123,7 +1037,7 @@ class GroqClient(OpenAIBaseClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=summarized_text
+            structured_output=summarized_text,
         )
 
         return ai_message
@@ -1137,7 +1051,7 @@ class GroqClient(OpenAIBaseClient):
         top_p: float = 0.9,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        use_structured: bool = False
+        use_structured: bool = False,
     ) -> AIMessage:
         """
         Analyze the sentiment of a given text.
@@ -1174,10 +1088,8 @@ Your response should include:
 Format your response clearly with these sections.
             """
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1197,9 +1109,7 @@ Format your response clearly with these sections.
         # Add structured output if requested
         structured_output = None
         if use_structured:
-            request_args.update(
-                self._prepare_structured_output_format(SentimentAnalysis)
-            )
+            request_args.update(self._prepare_structured_output_format(SentimentAnalysis))
             structured_output = SentimentAnalysis
 
         # Make request to Groq API
@@ -1210,11 +1120,7 @@ Format your response clearly with these sections.
         sentiment_result = result.content
 
         # Add final assistant message to conversation
-        messages.append({
-            "role": "assistant",
-            "content": result.content
-        })
-
+        messages.append({"role": "assistant", "content": result.content})
 
         # Handle structured output
         final_output = None
@@ -1233,20 +1139,8 @@ Format your response clearly with these sections.
                 final_output = result.content
 
         # Update conversation memory
-        tools_used = []
         # return only 100 characters of the sentiment analysis result
-        assistant_content = sentiment_result[:100] if sentiment_result else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'sentiment_analysis',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_groq(
@@ -1303,10 +1197,8 @@ Format your response clearly with these sections.
             f"including sentiment, rating, and key features mentioned in the review."
         )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1315,7 +1207,10 @@ Format your response clearly with these sections.
             "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"},
+                {
+                    "role": "user",
+                    "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}",
+                },
             ],
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -1331,25 +1226,10 @@ Format your response clearly with these sections.
         result = response.choices[0].message
 
         # Add final assistant message to conversation
-        messages.append({
-            "role": "assistant",
-            "content": result.content
-        })
+        messages.append({"role": "assistant", "content": result.content})
 
         # Update conversation memory
-        tools_used = []
-        assistant_content = result.content[:100] if result.content else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'product_review_analysis',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         # Handle structured output
         final_output = None
         # Prepare structured output configuration
@@ -1446,18 +1326,19 @@ Format your response clearly with these sections.
                 if tool_defs:
                     first_kwargs["tools"] = tool_defs
 
-                first_response = await self._chat_completion(
-                    **first_kwargs, use_tools=bool(tool_defs)
-                )
+                first_response = await self._chat_completion(**first_kwargs, use_tools=bool(tool_defs))
                 first_text = first_response.choices[0].message.content or ""
 
                 # --- Second call: JSON mode + schema, no tools ---
                 second_messages = [
                     {"role": "system", "content": resolved_prompt},
-                    {"role": "user", "content": (
-                        f"Based on this information:\n{first_text}\n\n"
-                        f"Original request: {prompt}\n\nProvide structured output."
-                    )},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Based on this information:\n{first_text}\n\n"
+                            f"Original request: {prompt}\n\nProvide structured output."
+                        ),
+                    },
                 ]
                 schema = config.get_schema()
                 fixed_schema = self._fix_schema_for_groq(schema)
@@ -1471,9 +1352,7 @@ Format your response clearly with these sections.
                         "schema": fixed_schema,
                     },
                 }
-                final_response = await self._chat_completion(
-                    **second_kwargs, use_tools=False
-                )
+                final_response = await self._chat_completion(**second_kwargs, use_tools=False)
                 raw_text = final_response.choices[0].message.content or ""
 
             else:
@@ -1513,9 +1392,7 @@ Format your response clearly with these sections.
                     )
 
             usage = CompletionUsage.from_groq(final_response.usage)
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, final_response
-            )
+            return self._build_invoke_result(output, output_type, resolved_model, usage, final_response)
         except InvokeError:
             raise
         except Exception as exc:

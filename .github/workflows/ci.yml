@@ -29,6 +29,59 @@ jobs:
       - name: Check registry freshness
         run: uv run python scripts/generate_tool_registry.py --check
 
+      # FEAT-522: `generate_a2ui_css.py` shells out to the Tailwind v4 CLI
+      # (npm install into an isolated temp dir, never this repo's own
+      # node_modules — see the script's own `_run_tailwind_cli()` docstring)
+      # — this job otherwise only sets up Python/uv, so Node.js must be
+      # provisioned explicitly. Mirrors release.yml's `actions/setup-node@v4`
+      # pattern for consistency (same pinned major version).
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Check A2UI Tailwind CSS freshness (FEAT-522)
+        run: uv run python scripts/generate_a2ui_css.py --check
+
+      # FEAT-522 (spec §3 Module 6): a second, distinct check from the one
+      # above — catches drift that happens purely from a `folium` version
+      # bump in pyproject.toml/uv.lock (no `interactive_html.py`/vendored-
+      # asset code change at all). Introspects the CI runner's ACTUALLY-
+      # installed `folium` package's live `default_js`/`default_css` names
+      # (same assertion shape as TASK-2785's
+      # `test_all_folium_default_resources_have_a_vendored_path` unit test,
+      # run here as a CI gate). `ai-parrot-visualizations`'s `map` extra
+      # (folium) is not part of the workspace-wide sync above, so it is
+      # synced explicitly, scoped to this one step.
+      - name: Sync ai-parrot-visualizations map extra (FEAT-522)
+        run: uv sync --package ai-parrot-visualizations --extra map
+
+      - name: Check vendored map asset freshness (FEAT-522)
+        run: |
+          uv run python -c "
+          import folium
+          import folium.plugins as fp
+
+          from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
+
+          m = folium.Map()
+          mc = fp.MarkerCluster()
+          names = {n for n, _ in m.default_js} | {n for n, _ in m.default_css}
+          names |= {n for n, _ in mc.default_js} | {n for n, _ in mc.default_css}
+          missing_names = sorted(names - set(VENDORED_ASSET_PATHS))
+          missing_files = sorted(
+              n for n in names if n in VENDORED_ASSET_PATHS and not VENDORED_ASSET_PATHS[n].exists()
+          )
+          if missing_names or missing_files:
+              print('Vendored map assets are STALE relative to the installed folium package.')
+              if missing_names:
+                  print(f'  folium resource name(s) with no vendored mapping: {missing_names}')
+              if missing_files:
+                  print(f'  Mapped but missing on disk: {missing_files}')
+              raise SystemExit(1)
+          print('Vendored map assets are up to date.')
+          "
+
       # FEAT-387: fails the build on any NEW TASK-<NNN> collision (a task
       # number reused across two different features). scripts/sdd/.collision_baseline.json
       # is a one-time baseline exception listing every TASK-ID collision that

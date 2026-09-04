@@ -24,10 +24,14 @@ import contextlib
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
+import threading
+import time
 from typing import Any, BinaryIO, Optional
 
+from .observer import ProcessObserver, read_proc_cpu_seconds, read_proc_status, read_proc_wchan
 from .protocol import (
     ExecRequest,
     ExecResult,
@@ -35,6 +39,7 @@ from .protocol import (
     InjectDfRequest,
     ListNsRequest,
     ListNsResponse,
+    MemoryVerdict,
     NamespaceLossError,
     PingRequest,
     PongResponse,
@@ -52,6 +57,45 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def probe_process_state(pid: int | None) -> str:
+    """Best-effort one-line snapshot of a live process from ``/proc`` (Linux).
+
+    Bootstrap diagnostics (post-FEAT-500): quoted in ``WorkerBootstrapError``
+    when a worker never sends its ready frame, so the error says whether the
+    child was stopped (``T``: SIGSTOP/SIGTTOU/debugger), sleeping on a
+    kernel wait channel (``S`` + ``wchan``), starved of CPU (``R`` with a
+    tiny ``cpu=``), or thrashing (huge ``VmPeak``). Never raises.
+
+    The ``/proc`` parsing itself moved to ``observer.py`` (FEAT-521 TASK-2775,
+    reused by ``ProcessObserver``'s continuous sampling); this function is now
+    a thin compatibility wrapper preserving its original signature and
+    return-value contract for existing callers.
+
+    Args:
+        pid: The process to inspect; ``None`` or a non-Linux host yields
+            ``""``.
+
+    Returns:
+        ``"state=... threads=... vmpeak=... wchan=... cpu=...s"`` or ``""``
+        when unavailable.
+    """
+    if pid is None or sys.platform != "linux":
+        return ""
+    try:
+        fields = read_proc_status(pid)
+    except OSError:
+        return ""
+    wchan = read_proc_wchan(pid) or "?"
+    try:
+        cpu = f"{read_proc_cpu_seconds(pid):.2f}s"
+    except (OSError, ValueError, IndexError):
+        cpu = "?"
+    return (
+        f"state={fields.get('State', '?')} threads={fields.get('Threads', '?')} "
+        f"vmpeak={fields.get('VmPeak', '?')} wchan={wchan} cpu={cpu}"
+    )
 
 
 class WorkerBootstrapError(RuntimeError):
@@ -98,6 +142,29 @@ _MEMORY_MARKERS = (
     "Killed",
     "OOM",
 )
+
+#: CPU-seconds delta below which a bootstrap progress window is "flat"
+#: (FEAT-521 §3 Module 4 bootstrap diagnostics) — same tolerance as
+#: `ProcessObserver`'s own verdict derivation.
+_BOOT_PROGRESS_EPSILON_S = 1e-3
+
+
+def _format_bytes(n: int) -> str:
+    """Human-readable binary byte size, e.g. ``4.30 GiB`` (FEAT-521 G4).
+
+    Args:
+        n: A byte count.
+
+    Returns:
+        ``n`` formatted with the largest binary unit that keeps the value
+        readable (``B``/``KiB``/``MiB``/``GiB``/``TiB``).
+    """
+    value = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024:
+            return f"{int(value)} {unit}" if unit == "B" else f"{value:.2f} {unit}"
+        value /= 1024
+    return f"{value:.2f} TiB"
 
 
 class WorkerHandle:
@@ -192,11 +259,24 @@ class WorkerHandle:
             max_workers=2, thread_name_prefix="repl-worker-lifecycle"
         )
         self._stdio_task: Optional[asyncio.Task] = None
+        #: FEAT-521: continuous host-side process observation, one instance
+        #: per live worker. `None` until `start()` spawns the process; the
+        #: verdict is `"unavailable"` on a non-POSIX host (see observer.py).
+        self.observer: Optional[ProcessObserver] = None
+        self._observer_task: Optional[asyncio.Task] = None
+        #: FEAT-521: early-fails the bootstrap when the observer sees a
+        #: sustained CPU-flat stall before `bootstrap_stall_ms` — a no-op
+        #: task when that config field is 0 (disabled, the default).
+        self._bootstrap_stall_task: Optional[asyncio.Task] = None
         #: Bounded ring buffer of recent stderr lines, fed by the continuous
         #: drain task (`_drain_stdio`) — `_classify_death()` reads from this
         #: instead of re-reading `self._proc.stderr` directly, which would
         #: race the drain task reading the same stream.
         self._stderr_tail: list[str] = []
+        #: Same ring buffer for stdout — navconfig routes the worker's OWN
+        #: log records there, so it is the only trace of a worker whose
+        #: bootstrap stalled inside the framework import.
+        self._stdout_tail: list[str] = []
         #: Cheap, names-only shadow of the worker namespace — feeds
         #: `lost_variables` in the namespace-loss error after a kill.
         self.known_vars: list[str] = []
@@ -215,6 +295,12 @@ class WorkerHandle:
         #: the next request is written or every later reply would be
         #: mis-attributed by one frame (spec §7 "Drain before write").
         self._pending_reply: asyncio.Future | None = None
+        #: FEAT-521: the round-trip future currently in flight inside
+        #: `_send()` (set for the duration of one call, cleared in its
+        #: `finally`) — lets `interrupt()` await the SAME already-ordered
+        #: reply a lethal deadline is waiting on, without dispatching a
+        #: second read against the control pipe.
+        self._inflight_reply: asyncio.Future | None = None
 
     @property
     def is_alive(self) -> bool:
@@ -266,6 +352,13 @@ class WorkerHandle:
         # misreported as an ordinary timeout instead of a stdio deadlock.
         self._stdio_task = loop.create_task(self._drain_stdio())
 
+        # FEAT-521 (G1): start continuous host-side observation right after
+        # the stdio drain task, spawn until kill. `_on_observer_hard_breach`
+        # is awaited exactly once by the observer the first time a sample
+        # crosses `memory_hard_limit_bytes`.
+        self.observer = ProcessObserver(self._proc.pid, self._config, on_hard_breach=self._on_observer_hard_breach)
+        self._observer_task = loop.create_task(self.observer.run())
+
         # FEAT-500 (G1): arm the readiness handshake. `start()` still returns
         # as soon as the process is spawned — it is `_send()` and
         # `WorkerPool._top_up_prewarmed()` that await `wait_ready()`, so no
@@ -273,6 +366,11 @@ class WorkerHandle:
         # ever counted as prewarmed before it can serve.
         self._ready = loop.create_future()
         self._ready_task = loop.create_task(self._await_ready())
+        # FEAT-521 (G2): optional early bootstrap failure when the observer
+        # sees a sustained CPU-flat stall before `bootstrap_stall_ms` — a
+        # no-op task (never started) when that budget is 0 (disabled).
+        if self._config.bootstrap_stall_ms > 0:
+            self._bootstrap_stall_task = loop.create_task(self._watch_bootstrap_stall())
 
     async def _await_ready(self) -> None:
         """Read the worker's first frame and resolve the readiness future.
@@ -287,12 +385,31 @@ class WorkerHandle:
         Never raises: it is a background task, so both outcomes are recorded
         on ``self._ready`` instead. On failure the worker is killed first — a
         process that cannot boot is not a live worker (spec Q1).
+
+        FEAT-521: no longer takes a one-shot ``/proc`` probe at the kill —
+        the timeout branch reads ``self.observer``'s sample ring instead
+        (:meth:`_describe_bootstrap_progress`), which was already sampling
+        continuously since :meth:`start`. A separate task
+        (:meth:`_watch_bootstrap_stall`) can resolve ``self._ready`` with a
+        failure EARLIER than ``bootstrap_timeout_ms`` when
+        ``bootstrap_stall_ms > 0`` and the observer sees a sustained
+        CPU-flat stall; :meth:`_fail_ready` being idempotent is what makes
+        that race with this method's own outcome safe.
         """
         loop = asyncio.get_event_loop()
         budget_ms = self._config.bootstrap_timeout_ms
         pid = self._proc.pid if self._proc is not None else None
         cause: str | None = None
-        future = loop.run_in_executor(self._executor, read_frame, self._from_worker)
+        # Records whether the executor ever ran the read: a budget that
+        # expires with `read_started` still clear is thread starvation on
+        # the shared executor, not a slow worker — and the fix is different.
+        read_started = threading.Event()
+
+        def _read_first_frame() -> Any:
+            read_started.set()
+            return read_frame(self._from_worker)
+
+        future = loop.run_in_executor(self._executor, _read_first_frame)
         try:
             frame = await asyncio.wait_for(future, timeout=budget_ms / 1000)
         except asyncio.CancelledError:
@@ -300,7 +417,22 @@ class WorkerHandle:
             future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
             raise
         except asyncio.TimeoutError:
-            cause = "no ready frame within the bootstrap budget"
+            if read_started.is_set():
+                cause = "no ready frame within the bootstrap budget"
+            else:
+                threads = getattr(self._executor, "_max_workers", "?")
+                cause = (
+                    "the readiness read never got an executor thread — all "
+                    f"{threads} thread(s) of the shared executor were busy for the whole "
+                    "budget (thread starvation; raise executor_max_workers or lower "
+                    "prewarm_pool_size)"
+                )
+            # FEAT-521: observer-derived progress note (was a one-shot
+            # `probe_process_state()` snapshot taken right here — the
+            # observer has been sampling continuously since `start()`).
+            progress_note = self._describe_bootstrap_progress(budget_ms / 1000)
+            if progress_note:
+                cause = f"{cause}; {progress_note}"
             # The executor thread stays blocked on the pipe until the kill
             # below closes it; retrieve its eventual exception so Python
             # doesn't warn about it at GC time.
@@ -313,6 +445,12 @@ class WorkerHandle:
             if isinstance(frame, ReadyResponse):
                 if not self._ready.done():
                     self._ready.set_result(frame)
+                if self.observer is not None:
+                    # FEAT-521: the observer has no visibility into the
+                    # ReadyResponse handshake by design (observation is
+                    # host-side/pipe-independent) — this is the one place
+                    # that tells it the worker is no longer "booting".
+                    self.observer.mark_idle()
                 logger.debug(
                     "WorkerHandle: worker pid=%s ready in %d ms",
                     frame.pid,
@@ -323,8 +461,12 @@ class WorkerHandle:
 
         await self._kill_process()
         tail = " | ".join(self._stderr_tail[-5:]) or "<empty>"
+        stdout_tail = ""
+        if self._stdout_tail:
+            stdout_tail = "; stdout tail: " + " | ".join(self._stdout_tail[-3:])
         self._fail_ready(
-            f"REPL worker pid={pid} did not become ready within {budget_ms} ms " f"({cause}); stderr tail: {tail}"
+            f"REPL worker pid={pid} did not become ready within {budget_ms} ms "
+            f"({cause}); stderr tail: {tail}{stdout_tail}"
         )
 
     def _fail_ready(self, message: str) -> None:
@@ -340,6 +482,64 @@ class WorkerHandle:
         # never be called (e.g. the handle is killed straight away), and an
         # unretrieved Future exception logs a spurious warning at GC time.
         self._ready.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+
+    def _describe_bootstrap_progress(self, window_s: float) -> str:
+        """Observer-derived progress note for a bootstrap timeout (spec §2).
+
+        Args:
+            window_s: Trailing window, in seconds, to measure CPU progress
+                over (typically the full bootstrap budget or stall budget).
+
+        Returns:
+            E.g. ``"booting, cpu advanced 0.40 s in 30.0 s (starved)"`` or
+            ``"booting, cpu flat since last sample, state=S
+            wchan=futex_wait_queue (stalled)"``, or ``""`` when the observer
+            never took a sample (e.g. it is `"unavailable"`).
+        """
+        if self.observer is None:
+            return ""
+        last = self.observer.last()
+        if last is None:
+            return ""
+        progress = self.observer.cpu_progress(window_s)
+        if progress > _BOOT_PROGRESS_EPSILON_S:
+            return f"booting, cpu advanced {progress:.2f} s in {window_s:.1f} s (starved)"
+        return f"booting, cpu flat since last sample, state={last.state} wchan={last.wchan or '-'} (stalled)"
+
+    async def _watch_bootstrap_stall(self) -> None:
+        """Fail the bootstrap early on a sustained observer-reported CPU-flat stall.
+
+        Background task started by :meth:`start` alongside :meth:`_await_ready`
+        only when ``bootstrap_stall_ms > 0`` (spec §2: "0 = never fail
+        bootstrap early on a stalled verdict"). A no-op once ``self._ready``
+        resolves from either side — :meth:`_fail_ready` is idempotent, so
+        this can only resolve the bootstrap EARLIER than
+        ``bootstrap_timeout_ms`` would, never later, and never races
+        :meth:`_await_ready`'s own outcome unsafely.
+        """
+        stall_budget_s = self._config.bootstrap_stall_ms / 1000
+        poll_s = min(self._config.observer_poll_ms / 1000, 0.5)
+        started_at = time.monotonic()
+        while self._ready is not None and not self._ready.done():
+            await asyncio.sleep(poll_s)
+            if self._ready is None or self._ready.done() or self.observer is None:
+                continue
+            if (time.monotonic() - started_at) < stall_budget_s:
+                continue
+            if self.observer.last() is None:
+                continue
+            if self.observer.cpu_progress(stall_budget_s) > _BOOT_PROGRESS_EPSILON_S:
+                continue
+            pid = self._proc.pid if self._proc is not None else None
+            await self._kill_process()
+            tail = " | ".join(self._stderr_tail[-5:]) or "<empty>"
+            progress_note = self._describe_bootstrap_progress(stall_budget_s)
+            self._fail_ready(
+                f"REPL worker pid={pid} bootstrap stalled for >= "
+                f"{self._config.bootstrap_stall_ms} ms ({progress_note}; failing early: "
+                f"bootstrap_stall_ms exceeded); stderr tail: {tail}"
+            )
+            return
 
     @property
     def is_ready(self) -> bool:
@@ -406,10 +606,10 @@ class WorkerHandle:
                     continue
                 pid = self._proc.pid if self._proc is not None else "?"
                 logger.debug("repl_worker[pid=%s %s]: %s", pid, label, text[:2000])
-                if label == "stderr":
-                    self._stderr_tail.append(text)
-                    if len(self._stderr_tail) > 200:
-                        self._stderr_tail.pop(0)
+                tail = self._stderr_tail if label == "stderr" else self._stdout_tail
+                tail.append(text)
+                if len(tail) > 200:
+                    tail.pop(0)
 
         await asyncio.gather(
             _pump(self._proc.stdout if self._proc else None, "stdout"),
@@ -456,47 +656,75 @@ class WorkerHandle:
             await self._drain_pending_reply(timeout_s)
             if not self.is_alive:
                 raise EOFError("worker process is not running")
+            # FEAT-521: the observer's in-flight flag brackets exactly this
+            # round-trip (spec: "set/cleared around `_roundtrip()` in
+            # `_send()`") — cleared in `finally` below so it clears on
+            # every outcome (success, timeout, cancellation, pipe failure).
+            if self.observer is not None:
+                self.observer.mark_busy()
             future = loop.run_in_executor(self._executor, self._roundtrip, request)
+            # FEAT-521: exposed so `interrupt()` can await this SAME
+            # already-ordered reply (never a second read against the pipe).
+            self._inflight_reply = future
             try:
-                # Shielded (FEAT-500): `wait_for` cancels what it waits on
-                # when the budget expires, which would leave `_pending_reply`
-                # holding an already-cancelled future — undrainable, and the
-                # executor thread would still be reading the pipe behind it.
-                # Shielding cancels only the outer wrapper, so a non-lethally
-                # timed-out reply stays genuinely pending and awaitable.
-                return await asyncio.wait_for(asyncio.shield(future), timeout=timeout_s)
-            except asyncio.CancelledError:
-                # The caller gave up (its own outer timeout, or task
-                # cancellation) — but the shielded executor thread still owns
-                # the pipe and WILL consume one reply frame. Park it exactly
-                # as a non-lethal timeout does: otherwise this method returns
-                # with `_pending_reply` empty, the next `_send()` writes while
-                # that thread is still reading, two threads read the same pipe
-                # and every subsequent reply is off by one frame. Cancellation
-                # is not a deadline breach, so the worker is never killed here
-                # (even when `lethal=True`).
-                future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
-                self._pending_reply = future
-                raise
-            except asyncio.TimeoutError:
-                # The executor thread is still blocked reading the pipe and
-                # will finish in the background; nobody awaits `future`
-                # through the normal path after this point, so
-                # retrieve/discard its eventual exception to avoid an
-                # "exception was never retrieved" warning at GC time.
-                future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
-                if lethal:
-                    await self._kill_process()
+                try:
+                    # Shielded (FEAT-500): `wait_for` cancels what it waits
+                    # on when the budget expires, which would leave
+                    # `_pending_reply` holding an already-cancelled future —
+                    # undrainable, and the executor thread would still be
+                    # reading the pipe behind it. Shielding cancels only the
+                    # outer wrapper, so a non-lethally timed-out reply stays
+                    # genuinely pending and awaitable.
+                    return await asyncio.wait_for(asyncio.shield(future), timeout=timeout_s)
+                except asyncio.CancelledError:
+                    # The caller gave up (its own outer timeout, or task
+                    # cancellation) — but the shielded executor thread still
+                    # owns the pipe and WILL consume one reply frame. Park it
+                    # exactly as a non-lethal timeout does: otherwise this
+                    # method returns with `_pending_reply` empty, the next
+                    # `_send()` writes while that thread is still reading,
+                    # two threads read the same pipe and every subsequent
+                    # reply is off by one frame. Cancellation is not a
+                    # deadline breach, so the worker is never killed here
+                    # (even when `lethal=True`).
+                    future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+                    self._pending_reply = future
                     raise
-                # U2: the worker keeps running and keeps its namespace. Park
-                # the straggling reply so the next `_send()` drains it.
-                self._pending_reply = future
-                pid = self._proc.pid if self._proc is not None else None
-                raise NamespaceTimeoutError(
-                    f"repl_worker[pid={pid}]: {request.op!r} request did not answer "
-                    f"within {timeout_s:.1f}s; the worker is still alive and the late "
-                    f"reply will be drained on the next call"
-                ) from None
+                except asyncio.TimeoutError:
+                    # The executor thread is still blocked reading the pipe
+                    # and will finish in the background; nobody awaits
+                    # `future` through the normal path after this point, so
+                    # retrieve/discard its eventual exception to avoid an
+                    # "exception was never retrieved" warning at GC time.
+                    future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+                    if lethal:
+                        # FEAT-521 G3 (two-stage deadline): try SIGINT before
+                        # SIGKILL. The worker's service loop converts a
+                        # KeyboardInterrupt into a bounded ExecResult and
+                        # keeps its namespace (TASK-2776) — `interrupt()`
+                        # awaits the SAME `future` up to
+                        # `interrupt_grace_ms`; a reply landing there is
+                        # returned normally (not a loss error, `known_vars`
+                        # untouched). Only the deterministic SIGKILL fallback
+                        # follows when the worker never answers the SIGINT.
+                        if self._config.interrupt_before_kill and await self.interrupt():
+                            return future.result()
+                        await self._kill_process()
+                        raise
+                    # U2: the worker keeps running and keeps its namespace.
+                    # Park the straggling reply so the next `_send()` drains
+                    # it.
+                    self._pending_reply = future
+                    pid = self._proc.pid if self._proc is not None else None
+                    raise NamespaceTimeoutError(
+                        f"repl_worker[pid={pid}]: {request.op!r} request did not answer "
+                        f"within {timeout_s:.1f}s; the worker is still alive and the late "
+                        f"reply will be drained on the next call"
+                    ) from None
+            finally:
+                self._inflight_reply = None
+                if self.observer is not None:
+                    self.observer.mark_idle()
 
     async def _drain_pending_reply(self, timeout_s: float) -> None:
         """Consume a reply left over from an earlier non-lethal timeout.
@@ -535,6 +763,71 @@ class WorkerHandle:
             logger.debug("WorkerHandle: parked reply failed while draining: %s", exc)
         self._pending_reply = None
 
+    async def interrupt(self) -> bool:
+        """Send SIGINT and wait up to ``interrupt_grace_ms`` for the reply (spec G3).
+
+        Namespace-preserving alternative to an immediate SIGKILL on a
+        ``deadline_ms`` breach: signals go through ``_lifecycle_executor``,
+        never the pipe-reading ``_executor`` (same rule as
+        :meth:`_kill_process` — the kill/signal path must never queue
+        behind a blocked read). Awaits ``self._inflight_reply`` — the SAME
+        round-trip future :meth:`_send` is already waiting on — rather than
+        issuing a second read against the control pipe, which the strictly
+        ordered protocol does not allow.
+
+        Never sends SIGINT on a non-POSIX host (``send_signal(SIGINT)`` is
+        unreliable there without a shared console — spec AC11: "interrupt
+        disabled" off-POSIX), when the process is already dead, or when the
+        observer's verdict shows the worker is not actually busy
+        (``"settled"``/``"booting"``/``"unavailable"``) — a worker that
+        isn't mid-request has nothing productive to interrupt.
+
+        Returns:
+            ``True`` if a reply frame arrived within ``interrupt_grace_ms``
+            (the worker's namespace survives); ``False`` if SIGINT was
+            skipped, the grace period elapsed, or the worker died instead
+            of answering — the caller should fall back to
+            :meth:`_kill_process`.
+        """
+        if sys.platform == "win32":
+            return False
+        if self._proc is None or self._proc.poll() is not None:
+            return False
+        if self.observer is not None:
+            verdict = self.observer.verdict()
+            if verdict in ("settled", "booting", "unavailable"):
+                logger.debug(
+                    "WorkerHandle: pid=%s skipping SIGINT — observer verdict=%s (not busy)",
+                    self._proc.pid,
+                    verdict,
+                )
+                return False
+        future = self._inflight_reply
+        if future is None:
+            return False
+        loop = asyncio.get_event_loop()
+        pid = self._proc.pid
+        logger.info("WorkerHandle: pid=%s sending SIGINT (interrupt-before-kill)", pid)
+        await loop.run_in_executor(self._lifecycle_executor, self._proc.send_signal, signal.SIGINT)
+        grace_s = self._config.interrupt_grace_ms / 1000
+        try:
+            # Shielded: a caller giving up on THIS wait must never cancel
+            # the underlying round-trip future — `_send()`'s own `finally`
+            # still owns cleaning it up.
+            await asyncio.wait_for(asyncio.shield(future), timeout=grace_s)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "WorkerHandle: pid=%s SIGINT did not produce a reply within interrupt_grace_ms=%d",
+                pid,
+                self._config.interrupt_grace_ms,
+            )
+            return False
+        except (EOFError, OSError, ValueError):
+            # The worker died instead of answering the interrupt — not a
+            # reply; the caller falls back to the deterministic kill path.
+            return False
+        return True
+
     async def _kill_process(self) -> None:
         """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16).
 
@@ -562,6 +855,29 @@ class WorkerHandle:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(self._lifecycle_executor, self._proc.kill)
             await loop.run_in_executor(self._lifecycle_executor, self._proc.wait)
+
+    async def _on_observer_hard_breach(self, verdict: MemoryVerdict) -> None:
+        """Kill the worker deterministically on a hard RSS breach (spec G4).
+
+        Wired as ``ProcessObserver``'s ``on_hard_breach`` callback in
+        :meth:`start`; the observer has already recorded ``verdict`` on
+        ``self.observer.memory_verdict`` by the time this runs —
+        :meth:`_classify_death` consults it before falling back to the
+        stderr-marker heuristic. Routes through :meth:`_kill_process` (on
+        ``self._lifecycle_executor``), never a direct ``Popen`` call, so it
+        never races the SIGKILL path already owned by that method.
+
+        Args:
+            verdict: The measured RSS and the limit it crossed.
+        """
+        pid = self._proc.pid if self._proc is not None else None
+        logger.warning(
+            "WorkerHandle: pid=%s hard RSS limit breached (rss=%d limit=%d) — killing",
+            pid,
+            verdict.rss,
+            verdict.limit,
+        )
+        await self._kill_process()
 
     def death_summary(self) -> tuple[int | None, str]:
         """Why this worker is (or might be) dead, for logs and diagnostics.
@@ -595,13 +911,19 @@ class WorkerHandle:
         instead of waiting for it.
 
         Returns:
-            ``"memory"`` when stderr hints at memory pressure, else
-            ``"crash"`` (the generic fallback — segfault, uncaught native
-            abort, protocol desync, etc.).
+            ``"memory"`` when the observer recorded a hard-limit breach
+            (checked first — FEAT-521, deterministic, no stderr heuristics
+            needed) or stderr hints at memory pressure, else ``"crash"``
+            (the generic fallback — segfault, uncaught native abort,
+            protocol desync, etc.).
         """
         # `_kill_process()` is idempotent/safe here whether the process is
         # still alive (kills it) or already reaped (no-op, no executor use).
         await self._kill_process()
+        # FEAT-521: the observer's own recorded verdict is authoritative —
+        # consult it BEFORE the stderr-marker heuristic.
+        if self.observer is not None and self.observer.memory_verdict is not None:
+            return "memory"
         # Read from the drain task's accumulated buffer, never the stream
         # directly — `_drain_stdio()` owns reading `self._proc.stderr`.
         stderr_text = "\n".join(self._stderr_tail)
@@ -619,6 +941,11 @@ class WorkerHandle:
         Returns:
             A dict matching ``PythonREPLTool._execute()``'s error contract.
         """
+        # FEAT-521: fold the observer's one-line description into the
+        # detail so every namespace-loss error names the verdict and last
+        # observation (spec G2/G3 "no blank errors").
+        if self.observer is not None:
+            detail = f"{detail}; {self.observer.describe()}"
         lost = list(self.known_vars)
         loss = NamespaceLossError(
             cause=cause,
@@ -672,9 +999,39 @@ class WorkerHandle:
 
         if response.new_vars:
             self.known_vars = sorted(set(self.known_vars) | set(response.new_vars))
+        # FEAT-521 G4: append exactly one soft-pressure hint line to this
+        # result (string or dict `result`), without altering the
+        # `{status, result, error}` envelope shape.
+        hint = self._soft_memory_hint()
         if response.status:
-            return {"status": response.status, "result": response.result, "error": response.error}
-        return response.output
+            result: dict[str, Any] = {"status": response.status, "result": response.result, "error": response.error}
+            if hint and isinstance(result["result"], str):
+                result["result"] = result["result"] + hint
+            return result
+        output = response.output
+        if hint and isinstance(output, str):
+            output = output + hint
+        return output
+
+    def _soft_memory_hint(self) -> str:
+        """One-line hint appended to the next result on a soft RSS breach (spec G4).
+
+        Returns:
+            E.g. ``"\\n[REPL memory] RSS 4.30 GiB exceeds the 4.00 GiB soft
+            limit — delete DataFrames you no longer need (del name) before
+            continuing."``, or ``""`` when there is no active soft-limit
+            pressure.
+        """
+        if self.observer is None:
+            return ""
+        pressure = self.observer.memory_pressure
+        if pressure is None:
+            return ""
+        rss, limit = pressure
+        return (
+            f"\n[REPL memory] RSS {_format_bytes(rss)} exceeds the {_format_bytes(limit)} "
+            "soft limit — delete DataFrames you no longer need (del name) before continuing."
+        )
 
     async def inject_dataframe(self, name: str, df: Any) -> None:
         """Inject a DataFrame into the worker namespace via Arrow IPC/shm (TASK-1945).
@@ -797,6 +1154,19 @@ class WorkerHandle:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._ready_task
             self._ready_task = None
+        # FEAT-521: leave no bootstrap-stall-watcher or observer task behind
+        # either (spec AC: "killing a handle leaves no observer/readiness/
+        # stdio task behind").
+        if self._bootstrap_stall_task is not None:
+            self._bootstrap_stall_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._bootstrap_stall_task
+            self._bootstrap_stall_task = None
+        if self._observer_task is not None:
+            self._observer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._observer_task
+            self._observer_task = None
         # A handle killed before it ever became ready must not leave
         # `wait_ready()` waiting forever — resolve it with a real message.
         self._fail_ready("REPL worker was killed before it signalled readiness")

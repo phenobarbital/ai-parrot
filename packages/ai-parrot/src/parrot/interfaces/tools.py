@@ -318,7 +318,7 @@ class ToolInterface:
         Configuration of LLM at runtime (during conversation/ask methods)
         """
         config = self._resolve_llm_config(llm, **kwargs)
-        llm = self._create_llm_client(config, self.conversation_memory)
+        llm = self._create_llm_client(config)
         try:
             if self.tool_manager and hasattr(llm, "tool_manager"):
                 self.sync_tools(llm)
