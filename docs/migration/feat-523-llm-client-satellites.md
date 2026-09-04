@@ -82,6 +82,32 @@ client class or an entry point's zero-arg loader
 (`EntryPoint.load`), resolved the same way `LLMFactory.create()` always
 has: `cls() if callable(cls) and not isinstance(cls, type) else cls`.
 
+## Renamed module paths (old → new)
+
+The folder-convention pass (TASK-2841..2846, before any code physically
+left `ai-parrot`) renamed several flat client modules and moved each
+provider's model enum out of `parrot.models` into its own
+`parrot.clients.<provider>.models`. All of the following are **gone** —
+importing the old path raises `ImportError`, not a deprecation warning
+(hard cut, no shim, per this project's "no external consumers" policy):
+
+| Old path | New path |
+|---|---|
+| `parrot.clients.gpt` | `parrot.clients.openai` |
+| `parrot.clients.claude` | `parrot.clients.anthropic` |
+| `parrot.clients.localllm` | `parrot.clients.local` |
+| `parrot.clients.bedrock` | `parrot.clients.amazon.bedrock` |
+| `parrot.clients.nova` | `parrot.clients.amazon.nova` |
+| `parrot.clients.live` | `parrot.clients.google.live` |
+| `parrot.models.<provider>` (enum + `DEPRECATIONS`) | `parrot.clients.<provider>.models` |
+
+Enum member names and values moved **byte-identical** — only the import
+path changed, e.g. `from parrot.models.openai import OpenAIModel` →
+`from parrot.clients.openai.models import OpenAIModel` (or, more
+commonly, `from parrot.clients.openai import OpenAIModel`, since every
+provider's `__init__.py` re-exports its model enum alongside its client
+class).
+
 ## What did NOT change
 
 - Every public `LLMFactory` method (`create`, `parse_llm_string`) keeps

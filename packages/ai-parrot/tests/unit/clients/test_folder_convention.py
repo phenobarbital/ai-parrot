@@ -1,4 +1,5 @@
-"""Folder-convention conformance tests (FEAT-523, TASK-2841).
+"""Folder-convention conformance tests (FEAT-523, TASK-2841; provider
+discovery rewritten by TASK-2855).
 
 Spec §2 'Folder convention (normative)' + §4 ``test_convention_three_files``
 / ``test_convention_class_attrs``. Every ``parrot/clients/<provider>/`` must
@@ -7,8 +8,18 @@ client class must expose ``provider_keys`` (non-empty tuple, primary key
 first) and ``models`` (an ``Enum`` subclass, the provider's model
 catalogue).
 
-``CONVERTED`` is appended to by every later folder-conversion task
-(TASK-2842..2845) as their providers land — do not remove entries.
+``CONVERTED`` is no longer a hard-coded list (TASK-2855) — it is derived
+from ``LLMFactory``'s own real discovery: every distinct
+``parrot.clients.<folder>`` package that backs at least one currently
+registered ``SUPPORTED_CLIENTS`` entry. A provider key (e.g.
+``"codex-agent"``, ``"gemini-live"``) does not always match its folder
+name 1:1, so the folder is derived from each resolved class's own
+``__module__`` (``parrot.clients.<folder>.<submodule>``) rather than from
+the key string itself. Requires satellites to be installed to discover
+anything — with zero installed, this file collects zero parametrize
+cases (not a failure; see ``test_core_independence.py`` for the
+"core imports with none installed" guarantee this file does not need to
+provide).
 """
 from __future__ import annotations
 
@@ -18,16 +29,30 @@ import pathlib
 
 import pytest
 
-#: Providers already migrated to the `clients/<provider>/{__init__,client,
-#: models}.py` convention. TASK-2841 lands "google"; TASK-2842 appends
-#: "openai"; TASK-2843 appends the five OpenAI-wire wrapper providers;
-#: TASK-2844 appends anthropic/groq/grok/zai; TASK-2845 appends
-#: amazon/gemma4/hf; later tasks append further.
-CONVERTED = [
-    "google", "openai", "moonshot", "openrouter", "nvidia", "local", "vllm",
-    "anthropic", "groq", "grok", "zai",
-    "amazon", "gemma4", "hf",
-]
+from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
+
+
+def _discover_provider_folders() -> list[str]:
+    """Every distinct ``parrot.clients.<folder>`` backing a registered key.
+
+    Resolves each ``SUPPORTED_CLIENTS`` value (a real class, or an entry
+    point's zero-arg loader) the same way ``LLMFactory.create()`` does,
+    then reads the folder name off ``cls.__module__`` — this is the only
+    reliable link back to a folder, since factory *keys* (aliases like
+    ``"codex-agent"``/``"gemini-live"``) don't always match the folder
+    they live in.
+    """
+    LLMFactory._discover()
+    folders: set[str] = set()
+    for entry in SUPPORTED_CLIENTS.values():
+        cls = entry() if callable(entry) and not isinstance(entry, type) else entry
+        parts = cls.__module__.split(".")
+        if len(parts) >= 3 and parts[0] == "parrot" and parts[1] == "clients":
+            folders.add(parts[2])
+    return sorted(folders)
+
+
+CONVERTED = _discover_provider_folders()
 
 
 @pytest.mark.parametrize("provider", CONVERTED)

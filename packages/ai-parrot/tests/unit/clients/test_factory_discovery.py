@@ -19,6 +19,27 @@ def _reset(monkeypatch):
     factory._PROVIDER_DIST.clear()
 
 
+@pytest.fixture(autouse=True)
+def _restore_real_discovery():
+    """TASK-2855: several tests in this file mutate the REAL
+    ``SUPPORTED_CLIENTS``/``_PROVIDER_DIST`` dicts directly (via
+    ``_reset()``) and repopulate them with mocked entry points —
+    ``monkeypatch`` reverts ``_DISCOVERED``/``importlib.metadata.
+    entry_points`` afterward, but not those direct dict mutations. Left
+    unrestored, a fake ``"test-provider"`` entry (or an empty registry)
+    leaks into any test file that runs afterward and iterates every
+    registered key (e.g.
+    ``tests/integration/clients/test_factory_create_all_keys.py``,
+    ``tests/unit/clients/test_folder_convention.py``). Force one real,
+    unmocked discovery pass after every test in this module.
+    """
+    yield
+    factory.SUPPORTED_CLIENTS.clear()
+    factory._PROVIDER_DIST.clear()
+    factory._DISCOVERED = False
+    factory.LLMFactory._discover()
+
+
 def test_discover_entry_points(monkeypatch):
     _reset(monkeypatch)
     ep = md.EntryPoint(
