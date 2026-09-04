@@ -154,10 +154,17 @@ async def bot() -> BaseBot:
     return instance
 
 
+#: Deliberately unlikely to occur in any static prompt boilerplate — the
+#: original "first"/"second" wording collided with the tool-usage instructions
+#: ("Call the first operation"), which made occurrence-counting meaningless.
+ROUND_1_TEXT = "zorblatt-round-one"
+ROUND_2_TEXT = "zorblatt-round-two"
+
+
 async def _two_rounds(instance: BaseBot) -> None:
     """Run two stateful rounds against the same (user, session) pair."""
-    await instance.ask("first", user_id="u", session_id="s", use_vector_context=False)
-    await instance.ask("second", user_id="u", session_id="s", use_vector_context=False)
+    await instance.ask(ROUND_1_TEXT, user_id="u", session_id="s", use_vector_context=False)
+    await instance.ask(ROUND_2_TEXT, user_id="u", session_id="s", use_vector_context=False)
 
 
 @pytest.mark.asyncio
@@ -178,15 +185,37 @@ async def test_bot_round_persists_exactly_one_turn(bot: BaseBot) -> None:
 
 @pytest.mark.asyncio
 async def test_history_reaches_provider_once(bot: BaseBot) -> None:
-    """Round 1's text must appear exactly once in round 2's outgoing payload."""
+    """Round 1's text must appear exactly once in round 2's outgoing payload.
+
+    Counted over only what is actually transmitted — the prompt, the system
+    prompt and the provider messages. The stub also records the raw ``history``
+    argument it was handed, but that is the *input* to the formatting step, not
+    a second copy on the wire, so including it would double-count by construction.
+    """
     await _two_rounds(bot)
 
-    client = bot.get_client()
-    payload = json.dumps(client.calls[-1], default=str)
-    assert payload.count("first") == 1, (
+    call = bot.get_client().calls[-1]
+    payload = json.dumps(
+        {k: call[k] for k in ("prompt", "system_prompt", "messages")}, default=str
+    )
+
+    assert payload.count(ROUND_1_TEXT) == 1, (
         "round-1 text reached the provider more than once on round 2 — "
         "history is injected both as replayed messages and as a system-prompt digest"
     )
+
+
+@pytest.mark.asyncio
+async def test_history_reaches_provider_as_messages(bot: BaseBot) -> None:
+    """Round 1 is replayed as alternating messages, not as system-prompt prose."""
+    await _two_rounds(bot)
+
+    call = bot.get_client().calls[-1]
+
+    assert [m["role"] for m in call["messages"]] == ["user", "assistant", "user"]
+    assert call["messages"][0]["content"][0]["text"] == ROUND_1_TEXT
+    assert call["messages"][-1]["content"][0]["text"] == ROUND_2_TEXT
+    assert ROUND_1_TEXT not in (call["system_prompt"] or "")
 
 
 @pytest.mark.asyncio

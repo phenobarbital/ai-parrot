@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from navconfig.logging import logging
 
+from ..memory.render import render_history
 from .models import ChatMessage, Conversation, MessageRole, ToolCall, Source
 
 
@@ -635,7 +636,15 @@ class ChatStorage:
                     user_id, session_id, chatbot_id=agent_id
                 )
                 if history and history.turns:
-                    return history.get_messages_for_api(model=model)[-max_turns * 2:]
+                    # FEAT-524: ConversationHistory.get_messages_for_api() was
+                    # removed; render_history() replaces it. Without this the
+                    # AttributeError would be swallowed by the `except Exception:
+                    # pass` below and this Redis fast path would silently fall
+                    # through to DynamoDB forever.
+                    return [
+                        {"role": m.role, "content": m.content}
+                        for m in render_history(history, max_turns=max_turns)
+                    ]
             except Exception:
                 pass
 

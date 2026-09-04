@@ -269,7 +269,7 @@ class WeeklySecuritySummarizer:
         self.logger.debug(
             "Calling LLM for executive paragraph (framework=%s, provider=%s)", framework, provider
         )
-        response = await self._llm.ask(prompt, structured_output=_Executive, stateless=True)
+        response = await self._llm.ask(prompt, structured_output=_Executive)
         return response.structured_output
 
 
@@ -413,5 +413,5 @@ class MonthlySecuritySummarizer:
             framework,
             provider,
         )
-        response = await self._llm.ask(prompt, structured_output=_Executive, stateless=True)
+        response = await self._llm.ask(prompt, structured_output=_Executive)
         return response.structured_output

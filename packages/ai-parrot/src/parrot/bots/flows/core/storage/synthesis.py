@@ -113,9 +113,6 @@ class SynthesisMixin:
                     prompt=final_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    user_id=user_id or "crew_user",
-                    session_id=session_id or str(uuid.uuid4()),
-                    use_conversation_history=False,
                     **kwargs,
                 )
 
@@ -206,9 +203,6 @@ async def synthesize_results(
         question=final_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
-        user_id=user_id or "flow_user",
-        session_id=session_id or str(uuid.uuid4()),
-        use_conversation_history=False,
     )
 
     summary = (

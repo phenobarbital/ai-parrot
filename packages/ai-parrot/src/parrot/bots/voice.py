@@ -34,7 +34,7 @@ from ..clients.live import (
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
 from ..mcp import MCPEnabledMixin, MCPServerConfig
-from ..memory import ConversationTurn
+from ..memory import ConversationTurn, render_history
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
 from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
@@ -560,13 +560,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
             # Get conversation context if available
-            conversation_context = ""
-            if self.conversation_memory:
-                conversation_history = await self.get_conversation_history(
-                    user_id, session_id
-                )
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history
-                # digest is gone. TASK-2816 replaces this with render_history().
+            # FEAT-524: no history render here. This path streams through
+            # client.stream_voice(), which maintains its own realtime Gemini Live
+            # session — spec §1 keeps provider-side conversation state out of
+            # scope. Transcripts are still persisted below via the single writer.
 
             # Create system prompt dynamically like BaseBot.ask()
             system_prompt = await self.create_system_prompt(
@@ -623,16 +620,19 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         if response.turn_id and response.turn_id != current_turn_id:
                             # Save previous turn if it exists and had content
                             if current_turn_id and (user_transcript or assistant_transcript):
+                                # FEAT-524: voice turns are built from transcripts
+                                # (there is no AIMessage), but they still go through
+                                # the single writer and carry memory_key_id.
                                 turn = ConversationTurn(
                                     turn_id=current_turn_id,
                                     user_id=user_id,
                                     user_message=user_transcript.strip(),
                                     assistant_response=assistant_transcript.strip(),
-                                    metadata={"timestamp": str(datetime.now())}
+                                    metadata={"timestamp": str(datetime.now())},
+                                    chatbot_id=self.memory_key_id,
                                 )
-                                await self.conversation_memory.add_turn(
-                                    user_id, session_id, turn, 
-                                    chatbot_id=str(self.chatbot_id)
+                                await self.save_conversation_turn(
+                                    user_id, session_id, turn
                                 )
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
                             
@@ -669,12 +669,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         user_id=user_id,
                         user_message=user_transcript.strip(),
                         assistant_response=assistant_transcript.strip(),
-                        metadata={"timestamp": str(datetime.now())}
+                        metadata={"timestamp": str(datetime.now())},
+                        chatbot_id=self.memory_key_id,
                     )
-                    await self.conversation_memory.add_turn(
-                        user_id, session_id, turn,
-                        chatbot_id=str(self.chatbot_id)
-                    )
+                    await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 
         except Exception as e:
@@ -791,13 +789,17 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
         # Get conversation context if available
-        conversation_context = ""
+        rendered_history = []
         if self.conversation_memory:
             conversation_history = await self.get_conversation_history(
                 user_id, session_id
             )
-            # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-            # is gone. TASK-2816 replaces this with render_history().
+            # FEAT-524: history goes to the provider as alternating messages.
+            rendered_history = render_history(
+                conversation_history,
+                max_turns=self.max_context_turns,
+                current_chatbot_id=self.memory_key_id,
+            )
 
         # Create system prompt dynamically
         system_prompt = await self.create_system_prompt(
@@ -818,8 +820,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             async for response in client.ask(
                 question=question,
                 system_prompt=system_prompt,
-                session_id=session_id,
-                user_id=user_id,
+                history=rendered_history,
                 **kwargs
             ):
                 yield response

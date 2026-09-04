@@ -14,7 +14,7 @@ import asyncio
 import time
 import warnings
 from pydantic import BaseModel
-from ..memory import ConversationTurn
+from ..memory import ConversationTurn, render_history
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
@@ -316,17 +316,25 @@ class BaseBot(AbstractBot):
         try:
             # Get conversation history using unified memory
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
 
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-                # is gone. TASK-2816 replaces this with render_history().
-                conversation_context = ""
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -440,8 +448,7 @@ class BaseBot(AbstractBot):
                         "prompt": question,
                         "system_prompt": system_prompt,
                         "temperature": kwargs.get("temperature", None),
-                        "user_id": user_id,
-                        "session_id": session_id,
+                        "history": rendered_history,
                         "use_tools": use_tools,
                     }
 
@@ -466,8 +473,8 @@ class BaseBot(AbstractBot):
                         source_documents=vector_info.get("source_documents", []),
                     )
                     response.set_conversation_context_info(
-                        used=bool(conversation_context),
-                        context_length=len(conversation_context) if conversation_context else 0,
+                        used=bool(rendered_history),
+                        context_length=len(rendered_history),
                     )
 
                     # Set additional metadata
@@ -520,21 +527,14 @@ class BaseBot(AbstractBot):
 
                     # Save conversation turn
                     if use_conversation_history and memory:
-                        turn = ConversationTurn(
-                            turn_id=response.turn_id or str(uuid.uuid4()),
-                            user_id=user_id,
+                        turn = ConversationTurn.from_ai_message(
                             user_message=question,
-                            assistant_response=response.content,
+                            response=response,
+                            user_id=user_id,
+                            chatbot_id=self.memory_key_id,
                             context_used=vector_context if use_vector_context else None,
-                            tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                            metadata={
-                                "response_time": response.response_time,
-                                "model": response.model,
-                                "usage": response.usage,
-                                "finish_reason": response.finish_reason,
-                            },
                         )
-                        await memory.add_turn(user_id, session_id, turn)
+                        await self.save_conversation_turn(user_id, session_id, turn)
 
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
@@ -674,17 +674,25 @@ class BaseBot(AbstractBot):
 
             # Get conversation history using unified memory
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
 
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-                # is gone. TASK-2816 replaces this with render_history().
-                conversation_context = ""
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(
@@ -702,8 +710,7 @@ class BaseBot(AbstractBot):
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get("temperature", None),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                 }
 
                 if "tool_type" in kwargs:
@@ -720,8 +727,8 @@ class BaseBot(AbstractBot):
 
                 # Set conversation context info
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 # Set additional metadata
@@ -740,21 +747,14 @@ class BaseBot(AbstractBot):
                 # Return the response
                 # Save conversation turn
                 if use_conversation_history and memory:
-                    turn = ConversationTurn(
-                        turn_id=response.turn_id or str(uuid.uuid4()),
-                        user_id=user_id,
+                    turn = ConversationTurn.from_ai_message(
                         user_message=question,
-                        assistant_response=response.content,
-                        context_used=None,  # invoke does not use vector context usually
-                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                        metadata={
-                            "response_time": response.response_time,
-                            "model": response.model,
-                            "usage": response.usage,
-                            "finish_reason": response.finish_reason,
-                        },
+                        response=response,
+                        user_id=user_id,
+                        chatbot_id=self.memory_key_id,
+                        context_used=None  # invoke does not use vector context,
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    await self.save_conversation_turn(user_id, session_id, turn)
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
@@ -1091,17 +1091,25 @@ class BaseBot(AbstractBot):
 
             # Get conversation history
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
             memory = memory or self.conversation_memory
 
             phase_started = time.perf_counter()
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-                # is gone. TASK-2816 replaces this with render_history().
-                conversation_context = ""
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
             self.logger.debug(
                 "[%s] ask timing: conversation_history_ms=%.1f",
                 self.name,
@@ -1282,8 +1290,7 @@ class BaseBot(AbstractBot):
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get("temperature", None),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": use_tools,
                 }
 
@@ -1332,21 +1339,14 @@ class BaseBot(AbstractBot):
                 # Save conversation turn
                 phase_started = time.perf_counter()
                 if use_conversation_history and memory:
-                    turn = ConversationTurn(
-                        turn_id=response.turn_id or str(uuid.uuid4()),
-                        user_id=user_id,
+                    turn = ConversationTurn.from_ai_message(
                         user_message=question,
-                        assistant_response=response.content,
+                        response=response,
+                        user_id=user_id,
+                        chatbot_id=self.memory_key_id,
                         context_used=vector_context if use_vector_context else None,
-                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                        metadata={
-                            "response_time": response.response_time,
-                            "model": response.model,
-                            "usage": response.usage,
-                            "finish_reason": response.finish_reason,
-                        },
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    await self.save_conversation_turn(user_id, session_id, turn)
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
                     self.name,
@@ -1366,8 +1366,8 @@ class BaseBot(AbstractBot):
                 )
 
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 if return_sources and vector_info.get("source_documents"):
@@ -1683,16 +1683,24 @@ class BaseBot(AbstractBot):
 
             search_kwargs = search_kwargs or {}
 
-            conversation_context = ""
+            rendered_history = []
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-                # is gone. TASK-2816 replaces this with render_history().
-                conversation_context = ""
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -1773,8 +1781,7 @@ class BaseBot(AbstractBot):
                     "system_prompt": system_prompt,
                     "model": kwargs.get("model", self._llm_model),
                     "temperature": kwargs.get("temperature", 0),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": kwargs.get("use_tools", True),
                 }
 
@@ -1841,6 +1848,11 @@ class BaseBot(AbstractBot):
                 # Save conversation turn — also runs on partial/error so the
                 # accumulated text is not lost from memory.
                 if use_conversation_history and memory and full_response:
+                    # FEAT-524: single writer here too. `full_response` — the text
+                    # actually streamed to the caller — stays authoritative, which
+                    # is what preserves the partial-save-on-error behaviour: this
+                    # runs even when the stream died before an AIMessage sentinel
+                    # arrived (`ai_message` may still be None).
                     turn = ConversationTurn(
                         turn_id=_turn_id,
                         user_id=user_id,
@@ -1849,8 +1861,9 @@ class BaseBot(AbstractBot):
                         context_used=vector_context if use_vector_context else None,
                         tools_used=[],
                         metadata={"model": kwargs.get("model", self._llm_model)},
+                        chatbot_id=self.memory_key_id,
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    await self.save_conversation_turn(user_id, session_id, turn)
 
                 if ai_message is None:
                     # Defensive fallback: client did not yield an AIMessage sentinel

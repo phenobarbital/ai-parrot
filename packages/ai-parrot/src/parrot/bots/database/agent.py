@@ -498,8 +498,6 @@ class DatabaseAgent(BasicAgent):
             "system_prompt": system_prompt,
             "use_tools": True,
             "tools": active_tools,
-            "user_id": user_id,
-            "session_id": session_id,
             "temperature": kwargs.pop("temperature", self._default_temperature),
         }
         if self.max_tokens is not None:

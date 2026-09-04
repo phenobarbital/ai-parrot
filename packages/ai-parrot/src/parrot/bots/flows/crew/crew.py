@@ -1757,8 +1757,6 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     prompt=prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    user_id=user_id,
-                    session_id=f"{session_id}_loop_condition",
                     use_conversation_history=False
                 )
         except Exception as exc:
@@ -3532,8 +3530,6 @@ Create a clear, well-structured response."""
                 prompt=final_prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                user_id=user_id,
-                session_id=f"{session_id}_synthesis",
                 **kwargs
             )
 
@@ -4119,8 +4115,6 @@ analyze, and present information in the most helpful way for the user.
                 use_conversation_history=False,
                 max_tokens=max_tokens or 8192,
                 temperature=temperature or 0.2,
-                user_id=user_id,
-                session_id=f"{session_id}_ask",
                 **llm_kwargs
             )
 
@@ -4459,8 +4453,6 @@ Keep your summary clear, structured, and focused on the most valuable informatio
                         use_conversation_history=False,
                         max_tokens=8192,
                         temperature=0.3,
-                        user_id=user_id,
-                        session_id=f"{session_id}_chunk_{chunk_idx}",
                         **llm_kwargs
                     )
                     mini_summaries.append({
@@ -4520,8 +4512,6 @@ above. Ensure the summary:
                 use_conversation_history=False,
                 max_tokens=llm_kwargs.get('max_tokens', 8192),
                 temperature=0.3,
-                user_id=user_id,
-                session_id=f"{session_id}_final",
                 **llm_kwargs
             )
 

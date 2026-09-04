@@ -33,6 +33,7 @@ from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChart
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
+from ..memory.render import render_history
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -1342,16 +1343,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         try:
             # Get conversation history (no vector search for PandasAgent)
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
                 conversation_history = await self.get_conversation_history(
                     user_id, session_id
                 ) or await self.create_conversation_history(user_id, session_id)
-                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
-                # is gone. TASK-2816 replaces this with render_history().
-                conversation_context = ""
+                # FEAT-524: history goes to the provider as alternating messages.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
             # Determine output mode
             if output_mode is None:
@@ -1469,8 +1473,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     "system_prompt": system_prompt,
                     "model": kwargs.get("model", self._llm_model),
                     "temperature": kwargs.get("temperature", 0.0),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": True,  # ALWAYS use tools for PandasAgent
                 }
 
@@ -1543,8 +1546,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 # Transfer artifacts accumulated by DatasetManager
@@ -2082,25 +2085,22 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Persist the turn into conversation_memory so subsequent
                 # questions in the same session see prior context. Without
-                # this, build_conversation_context() always sees an empty
-                # history because PandasAgent reads from conversation_memory
-                # but ChatStorage writes to a separate Redis namespace.
+                # this, render_history() always sees an empty history because
+                # PandasAgent reads from conversation_memory but ChatStorage
+                # writes to a separate Redis namespace.
                 if use_conversation_history and memory:
                     try:
-                        turn = ConversationTurn(
-                            turn_id=response.turn_id or turn_id,
-                            user_id=user_id,
+                        turn = ConversationTurn.from_ai_message(
                             user_message=question,
-                            assistant_response=answer_text or "",
-                            tools_used=[t.name for t in (response.tool_calls or [])],
-                            metadata={
-                                "model": getattr(response, "model", None),
-                                "response_time": getattr(response, "response_time", None),
-                                "usage": getattr(response, "usage", None),
-                                "finish_reason": getattr(response, "finish_reason", None),
-                            },
+                            response=response,
+                            user_id=user_id,
+                            chatbot_id=self.memory_key_id,
+                            turn_id=response.turn_id or turn_id,
+                            # PandasAgent's answer text is post-processed, so it
+                            # stays authoritative over response.to_text.
+                            assistant_text=answer_text or "",
                         )
-                        await memory.add_turn(user_id, session_id, turn)
+                        await self.save_conversation_turn(user_id, session_id, turn)
                     except Exception as _save_exc:
                         self.logger.debug(
                             "Failed to persist conversation turn: %s",
