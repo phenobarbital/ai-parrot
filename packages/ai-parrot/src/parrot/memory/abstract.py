@@ -7,16 +7,25 @@ from abc import ABC, abstractmethod
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
 from .compaction.models import (
+    CompactionCommit,
+    CompactionState,
     ToolInvocation,
     ToolStatus,
     TokenCount,
     TurnState,
 )
+from .compaction.omission import InMemoryOmissionStore, OmissionStore
+from .compaction.budget import apply_commit, apply_usage
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     # Imported lazily: ``parrot.models`` must not become a runtime dependency
     # of ``parrot.memory`` (FEAT-524 keeps this package import-cycle free).
     from parrot.models import AIMessage
+    # ``.compaction.tokens`` and ``.compaction.normalize`` import
+    # ``ConversationTurn`` from THIS module, so importing them at module
+    # level here would be a circular import. Type-only here; imported
+    # lazily inside the methods that need them at runtime.
+    from .compaction.tokens import TokenCounter
 
 
 def _stringify(result: Any) -> Optional[str]:
@@ -46,6 +55,46 @@ def _tee_key(result: Any) -> Optional[str]:
         if isinstance(tee, dict):
             return tee.get("key")
     return None
+
+
+def _preview(text: str, max_chars: int = 200) -> str:
+    """Truncate ``text`` to a short preview, noting how much was cut.
+
+    Args:
+        text: The full text (typically a tool output about to be offloaded
+            to the omission store).
+        max_chars: Maximum number of characters to keep.
+
+    Returns:
+        ``text`` unchanged when it already fits; otherwise the first
+        ``max_chars`` characters followed by ``" …(+N chars)"``.
+    """
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f" …(+{len(text) - max_chars:,} chars)"
+
+
+def _provider_prompt_tokens(turn: "ConversationTurn") -> Optional[int]:
+    """Read the provider-reported prompt token count from a turn's usage metadata.
+
+    FEAT-524's ``from_ai_message`` stores ``CompletionUsage.model_dump()``
+    under ``turn.metadata["usage"]``, which emits both the OpenAI
+    (``prompt_tokens``) and OTel-GenAI (``input_tokens``) vocabularies.
+
+    Args:
+        turn: The turn to read.
+
+    Returns:
+        The provider prompt token count, or ``None`` when the turn carries
+        no (or a non-dict) usage metadata.
+    """
+    usage = turn.metadata.get("usage") if isinstance(turn.metadata, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    value = usage.get("input_tokens")
+    if value is None:
+        value = usage.get("prompt_tokens")
+    return value
 
 
 @dataclass
@@ -276,12 +325,90 @@ class ConversationHistory:
 
 
 class ConversationMemory(ABC):
-    """Abstract base class for conversation memory storage."""
+    """Abstract base class for conversation memory storage.
 
-    def __init__(self, debug: bool = False):
+    FEAT-525 turns ``add_turn`` into a concrete template method (the
+    FEAT-391 "concrete public, abstract private" pattern): every writer —
+    bot, ``ChatStorage`` cold tier, voice transcripts — gets Stage 0
+    (normalization), Stage 0.5 (token counting) and write-time oversize
+    offload for free. Backends implement the abstract :meth:`_store_turn`
+    only, persisting the turn **and** (when given) the updated
+    ``metadata["compaction"]`` in one write.
+    """
+
+    def __init__(
+        self,
+        debug: bool = False,
+        *,
+        token_counter: Optional["TokenCounter"] = None,
+        omission_store: Optional[OmissionStore] = None,
+        normalize: bool = True,
+        oversize_tool_tokens: int = 2_000,
+    ) -> None:
+        """Initialize the memory.
+
+        Args:
+            debug: Enables verbose per-history debug logging.
+            token_counter: The counter used for Stage 0.5. Defaults to
+                :func:`parrot.memory.compaction.tokens.get_default_counter`
+                on first use (lazy — never resolved unless needed).
+            omission_store: The store oversized tool outputs are offloaded
+                to. Backends normally pass their own default; falling back
+                to an :class:`InMemoryOmissionStore` here is a safety net,
+                not the intended configuration.
+            normalize: When ``False``, disables Stage 0 for this instance
+                only; Stage 0.5 (token counting) stays always-on.
+            oversize_tool_tokens: Write-time offload threshold, in tokens
+                (same default as :class:`~parrot.memory.compaction.models.ContextBudget`).
+        """
         self.logger = logging.getLogger(f"parrot.Memory.{self.__class__.__name__}")
         self._json = JSONContent()
         self.debug = debug
+        self._token_counter = token_counter
+        self._omission_store = omission_store
+        self._normalize = normalize
+        self._oversize_tool_tokens = oversize_tool_tokens
+
+    @property
+    def token_counter(self) -> "TokenCounter":
+        """The Stage 0.5 token counter, resolved lazily on first use."""
+        if self._token_counter is None:
+            from .compaction.tokens import get_default_counter
+
+            self._token_counter = get_default_counter()
+        return self._token_counter
+
+    @property
+    def omission_store(self) -> OmissionStore:
+        """The store oversized tool outputs are offloaded to.
+
+        Backends should set ``self._omission_store`` in their own
+        ``__init__`` to a store sharing their connection/root. This
+        fallback exists so the property never raises, but an
+        :class:`InMemoryOmissionStore` built here is unset-and-forget: it
+        is process-local and lost on restart.
+        """
+        if self._omission_store is None:
+            self.logger.warning(
+                "%s has no OmissionStore configured; falling back to an "
+                "in-memory store (not persisted across restarts).",
+                self.__class__.__name__,
+            )
+            self._omission_store = InMemoryOmissionStore()
+        return self._omission_store
+
+    def omission_key(self, user_id: str, session_id: str, chatbot_id: Optional[str]) -> str:
+        """Compose the omission-store scoping key for one session.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent attribution; ``None`` becomes ``"_default"``.
+
+        Returns:
+            ``"{chatbot_id}:{user_id}:{session_id}"``.
+        """
+        return f"{chatbot_id or '_default'}:{user_id}:{session_id}"
 
     @abstractmethod
     async def create_history(
@@ -302,12 +429,161 @@ class ConversationMemory(ABC):
         """Update a conversation history."""
         pass
 
-    @abstractmethod
     async def add_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        compaction: Optional[CompactionCommit] = None,
     ) -> None:
-        """Add a turn to the conversation."""
-        pass
+        """Persist one turn: normalize, count, offload oversized outputs, write once.
+
+        Concrete template method (FEAT-525): normalizes (Stage 0, unless
+        ``normalize=False``), counts tokens (Stage 0.5, always-on),
+        offloads any tool output above ``oversize_tool_tokens`` to the
+        omission store with a short preview left in the turn, then
+        delegates the single backend write to :meth:`_store_turn`. When
+        ``compaction`` is given, folds it into the persisted
+        ``metadata["compaction"]`` state (calibration EWMA, boundary,
+        ``stage2_needed``) in the same write.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn: The turn to persist. Not mutated — Stage 0 (when
+                enabled) rebinds it to a new, normalized turn first; the
+                offload step mutates that new turn's invocations, which
+                belong to the copy being stored, not the caller's object.
+            chatbot_id: Agent attribution.
+            compaction: The bot's commit for this round, or ``None`` for
+                writers that do not participate in the budget round-trip
+                (e.g. a partial-save on error, or the ``ChatStorage`` tier).
+        """
+        from .compaction.tokens import count_turn, needs_recount
+
+        counter = self.token_counter
+        if self._normalize:
+            from .compaction.normalize import normalize_turn
+
+            turn = normalize_turn(turn)
+        if needs_recount(turn, counter):
+            turn.token_count = count_turn(turn, counter)
+
+        key = self.omission_key(user_id, session_id, chatbot_id)
+        offloaded = False
+        for inv in turn.tool_invocations:
+            if (
+                inv.output
+                and "output" not in inv.omitted
+                and counter.count(inv.output) > self._oversize_tool_tokens
+            ):
+                cid = await self.omission_store.put(key, inv.output, turn_id=turn.turn_id)
+                inv.output_chars = len(inv.output)
+                inv.output = _preview(inv.output)
+                inv.omitted["output"] = cid
+                offloaded = True
+        if offloaded:
+            turn.token_count = count_turn(turn, counter)
+
+        turn.schema_version = 2
+
+        state: Optional[Dict[str, Any]] = None
+        if compaction is not None:
+            prev = await self._get_compaction_state(user_id, session_id, chatbot_id)
+            state = apply_commit(
+                CompactionState.from_dict(prev) if prev else None,
+                compaction,
+                counter.name,
+                _provider_prompt_tokens(turn),
+            ).to_dict()
+
+        await self._store_turn(user_id, session_id, turn, chatbot_id, compaction_state=state)
+
+    @abstractmethod
+    async def _store_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        compaction_state: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist ``turn`` and, when given, ``metadata["compaction"]`` in ONE write.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn: The already normalized/counted/offloaded turn to store.
+            chatbot_id: Agent attribution.
+            compaction_state: The new ``history.metadata["compaction"]``
+                dict to persist alongside the turn, or ``None`` to leave
+                the history's compaction state untouched.
+        """
+
+    async def _get_compaction_state(
+        self, user_id: str, session_id: str, chatbot_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Read the persisted ``metadata["compaction"]`` dict for one session.
+
+        Concrete, overridable default that goes through :meth:`get_history`.
+        Backends may override with a cheaper targeted read (e.g. Redis
+        ``hget(key, "metadata")``) to avoid the FEAT-524 lazy legacy re-key
+        that a full :meth:`get_history` call may perform.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent attribution.
+
+        Returns:
+            The persisted compaction-state dict, or ``None`` when the
+            history does not exist yet or has none.
+        """
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None:
+            return None
+        return history.metadata.get("compaction")
+
+    async def report_usage(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        estimated_prompt_tokens: int,
+        provider_prompt_tokens: Optional[int],
+        chatbot_id: Optional[str] = None,
+    ) -> None:
+        """Fold one (estimate, provider) observation into the calibration state, without writing a turn.
+
+        Standalone counterpart to the calibration folded into
+        :meth:`add_turn` via ``compaction=`` — used by partial-save paths
+        (e.g. ``ask_stream`` on error) and tests that need to update
+        calibration independently of a turn write.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            estimated_prompt_tokens: The bot's own token estimate for the
+                round.
+            provider_prompt_tokens: The provider-reported prompt token
+                count for the same round, when available.
+            chatbot_id: Agent attribution.
+        """
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None:
+            return
+        prev = history.metadata.get("compaction")
+        state = (
+            CompactionState.from_dict(prev)
+            if prev
+            else CompactionState(tokenizer=self.token_counter.name)
+        )
+        state = apply_usage(state, estimated_prompt_tokens, provider_prompt_tokens)
+        history.metadata["compaction"] = state.to_dict()
+        await self.update_history(history)
 
     @abstractmethod
     async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
