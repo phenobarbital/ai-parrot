@@ -184,10 +184,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
 **Notes**:
+- **interactive-html**: added `"HtmlDocument"` to `_INTERCEPTED` (so it's
+  handled BEFORE lowering — its raw `html` lives on the component props,
+  never in a lowered tree). New `_render_htmldocument()` returns
+  `<section class="a2ui-html-document"><h3>…</h3><iframe
+  sandbox="allow-scripts" srcdoc="…escaped…"></iframe></section>` (inline
+  html) or `src="…srcUrl…"` (URL variant) — inline `style=` for min-height/
+  width/border (no CSS file edit needed for the layout itself, following
+  this file's own existing inline-`style=` precedent at line ~936). Wired
+  into both `_render_top` (top-level) and `_render_descriptor` (nested
+  inside an `Infographic` section).
+- **ssr-html**: `_render_Text()` special-cases `parrot_role ==
+  "html_document"` (the lowered placeholder from TASK-2863): degrades to
+  `<a href="{srcUrl}">{title}</a>` when a `srcUrl` exists, else the
+  placeholder text — the title is parsed out of the fixed, code-controlled
+  `"[HTML document: <title>]"` string format `HtmlDocumentComponent.lower()`
+  emits (not user input, so this is safe). ALWAYS records a
+  `degradation_record` (both branches) since this static renderer can never
+  embed the document either way. `pdf.py` inherits with ZERO code changes
+  (verified: `PDFRenderer._build_intermediate_html` calls
+  `super().render()` = `SSRHTMLRenderer.render()`).
+- **adaptive_cards**: `_render_Text()` special-cases the same role: a
+  `TextBlock` with the title, plus a top-level `Action.OpenUrl` appended to
+  `state.actions` when a `srcUrl` exists (same bottom-action-bar convention
+  `_render_Button`'s own `functionCall=openUrl` branch uses). Recorded.
+- **Companion fixes (necessary, minimal, not code-behavior deviations)**:
+  (1) ran `scripts/generate_a2ui_css.py` to regenerate
+  `tailwind.generated.css` for the new `.a2ui-html-document` class
+  referenced in `interactive_html.py` — 3-line diff, verified minimal.
+  (2) extended `test_semantic_classes.py`'s `TestGoldensUntouched` allowlist
+  for TASK-2862/2863's already-landed, already-approved catalog changes
+  (`catalog/base.py`, `catalog/__init__.py`'s `tool_only` gate; the new
+  `htmldocument.py` component + its golden) — this guard test's git-diff
+  scope had not yet caught up with those completed, in-scope tasks.
+- 213/213 targeted tests pass
+  (`pytest packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers`).
+  `ruff check` on all 9 touched files: all checks passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
