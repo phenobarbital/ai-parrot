@@ -11,9 +11,15 @@ HuggingFace via a unified `AbstractClient` interface.
 
 ### AbstractClient
 Unified interface for all LLM providers.
-Location: `parrot/clients/abstract_client.py`
+Location: `parrot/clients/base.py`
 - Never call provider SDKs directly — always go through AbstractClient
-- Implement `async def completion()`, `async def stream()`, `async def embed()`
+- Implement `async def ask()`, `async def ask_stream()`, `async def invoke()`,
+  `async def resume()`, `async def get_client()`
+- **Memory-less (FEAT-524).** Clients neither load nor persist conversation
+  history. They receive an already-rendered
+  `history: Sequence[HistoryMessage]` per call and map it to their provider's
+  shape by overriding `_format_history()` (only Bedrock Converse and Google
+  need to). `ask()`/`ask_stream()` take no `user_id`/`session_id`.
 
 ### AbstractBot / Chatbot / Agent
 Location: `parrot/bots/`
@@ -74,6 +80,16 @@ class/instance, or model_config dict) plus a `model_switch_mode`:
 Built on the `AbstractBot.get_client()` / `execute_llm_call()` hooks (same
 cooperative pattern as `IntentRouterMixin`). v1 limitation: `ask_stream`
 always uses the primary client.
+
+### Conversation memory
+`AbstractBot` is the **sole owner** of conversation history (FEAT-524): it loads
+it, renders it with `parrot.memory.render_history()`, hands it to the client as
+`history=`, and is the only writer — every turn goes through
+`AbstractBot.save_conversation_turn()`. Histories are keyed per agent as
+`(memory_key_id, user_id, session_id)`, and every `ConversationTurn` carries the
+producing agent's `chatbot_id`. `render_history()` is the extension point for
+future compaction work.
+See `docs/memory/conversation-history-ownership.md`.
 
 ### Loaders
 Location: `parrot/loaders/`
@@ -210,7 +226,9 @@ parrot/
 │                     #   concrete rerankers (local/llm) ship from
 │                     #   ai-parrot-embeddings; import paths unchanged.
 ├── handlers/         # HTTP handlers (aiohttp-based)
-├── memory/           # Conversation memory (Redis-backed)
+├── memory/           # Conversation memory (In-memory/File/Redis) + render.py,
+│                     #   the provider-neutral HistoryMessage/render_history layer
+│                     #   that AbstractBot feeds to clients (FEAT-524)
 └── integrations/     # Telegram, MS Teams, Slack, MCP
 ```
 
@@ -238,7 +256,7 @@ See `docs/migration/feat-201-ai-parrot-embeddings.md` for migration details.
 - Never subclass LangChain components — LangChain is removed
 - Never store secrets in code — use environment variables
 - Never add synchronous blocking code in async methods
-- Never modify `abstract_client.py` without discussing first — it's the foundation
+- Never modify `parrot/clients/base.py` without discussing first — it's the foundation
 
 ---
 
