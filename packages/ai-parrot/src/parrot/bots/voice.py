@@ -284,11 +284,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         )
         return config
 
-    def _create_llm_client(
-        self,
-        config,
-        conversation_memory=None
-    ) -> VoiceCapable:
+    def _create_llm_client(self, config) -> VoiceCapable:
         """
         Create the voice-provider client (GeminiLiveClient or, per FEAT-315,
         NovaClient) with voice-specific parameters.
@@ -317,7 +313,6 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 tools=current_tools,
                 use_tools=use_tools,
                 tool_manager=self.tool_manager,
-                conversation_memory=conversation_memory,
                 **{k: v for k, v in config.extra.items() if k != 'voice_id'}
             )
         else:
@@ -332,7 +327,6 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 tools=current_tools,
                 use_tools=use_tools,
                 tool_manager=self.tool_manager,
-                conversation_memory=conversation_memory,
                 # Credentials and extra config (exclude already-passed args)
                 **{k: v for k, v in config.extra.items() if k not in ('voice_name', 'language', 'temperature', 'max_tokens')}
             )
@@ -571,16 +565,13 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 conversation_history = await self.get_conversation_history(
                     user_id, session_id
                 )
-                if conversation_history:
-                    conversation_context = self.build_conversation_context(
-                        conversation_history
-                    )
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history
+                # digest is gone. TASK-2816 replaces this with render_history().
 
             # Create system prompt dynamically like BaseBot.ask()
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
@@ -589,7 +580,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # Ensure LLM client is configured
             if self._llm is None:
                 config = self._resolve_llm_config()
-                self._llm = self._create_llm_client(config, self.conversation_memory)
+                self._llm = self._create_llm_client(config)
 
             # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
             # Memory tracking variables
@@ -805,14 +796,13 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             conversation_history = await self.get_conversation_history(
                 user_id, session_id
             )
-            if conversation_history:
-                conversation_context = self.build_conversation_context(conversation_history)
+            # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+            # is gone. TASK-2816 replaces this with render_history().
 
         # Create system prompt dynamically
         system_prompt = await self.create_system_prompt(
             kb_context=kb_context,
             vector_context=vector_context,
-            conversation_context=conversation_context,
             metadata=vector_metadata,
             user_context=user_context,
             **kwargs
@@ -821,7 +811,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         # Ensure LLM client is configured
         if self._llm is None:
             config = self._resolve_llm_config()
-            self._llm = self._create_llm_client(config, self.conversation_memory)
+            self._llm = self._create_llm_client(config)
 
         # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
         async with self._llm as client:

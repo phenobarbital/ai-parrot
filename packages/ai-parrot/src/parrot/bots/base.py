@@ -112,7 +112,6 @@ class BaseBot(AbstractBot):
         vector_context: str = "",
         kb_context: str = "",
         user_context: str = "",
-        conversation_context: str = "",
         memory_context: str = "",
         vector_metadata: Optional[dict] = None,
     ) -> None:
@@ -149,7 +148,6 @@ class BaseBot(AbstractBot):
         #     len(vector_context or ""), search_results, len(sources),
         #     len(kb_context or ""),
         #     len(user_context or ""),
-        #     len(conversation_context or ""),
         #     len(memory_context or ""),
         # )
 
@@ -326,7 +324,9 @@ class BaseBot(AbstractBot):
                 conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+                # is gone. TASK-2816 replaces this with render_history().
+                conversation_context = ""
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -402,7 +402,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 user_id=user_id,
@@ -417,7 +416,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 vector_metadata=vector_metadata,
             )
 
@@ -684,11 +682,13 @@ class BaseBot(AbstractBot):
                 conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+                # is gone. TASK-2816 replaces this with render_history().
+                conversation_context = ""
 
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(
-                conversation_context=conversation_context, user_id=user_id, session_id=session_id, **kwargs
+                user_id=user_id, session_id=session_id, **kwargs
             )
 
             # Configure LLM if needed
@@ -1099,7 +1099,9 @@ class BaseBot(AbstractBot):
                 conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+                # is gone. TASK-2816 replaces this with render_history().
+                conversation_context = ""
             self.logger.debug(
                 "[%s] ask timing: conversation_history_ms=%.1f",
                 self.name,
@@ -1218,7 +1220,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 memory_context=memory_context or None,
@@ -1240,7 +1241,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 memory_context=memory_context,
                 vector_metadata=vector_metadata,
             )
@@ -1690,7 +1690,9 @@ class BaseBot(AbstractBot):
                 conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+                # is gone. TASK-2816 replaces this with render_history().
+                conversation_context = ""
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -1738,7 +1740,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs,
@@ -1751,7 +1752,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 vector_metadata=vector_metadata,
             )
 

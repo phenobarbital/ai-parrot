@@ -354,7 +354,15 @@ class Chatbot(BaseBot):
             bot, 'pre_instructions', default=[]
         )
         self.name = self._from_db(bot, 'name', default=self.name)
-        self.chatbot_id = str(self._from_db(bot, 'chatbot_id', default=self.chatbot_id))
+        # FEAT-524: an id loaded from the database is an EXPLICIT id — it is
+        # stable across restarts, so ``memory_key_id`` may key conversation
+        # storage by it instead of falling back to ``self.name``. Read with
+        # default=None first so a DB record that carries no chatbot_id leaves
+        # both the value and the explicitness flag untouched.
+        _db_chatbot_id = self._from_db(bot, 'chatbot_id', default=None)
+        if _db_chatbot_id is not None:
+            self.chatbot_id = str(_db_chatbot_id)
+            self._chatbot_id_explicit = True
         self.description = self._from_db(bot, 'description', default=self.description)
 
         # Bot personality and behavior

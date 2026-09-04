@@ -1349,7 +1349,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 conversation_history = await self.get_conversation_history(
                     user_id, session_id
                 ) or await self.create_conversation_history(user_id, session_id)
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524 stop-gap (TASK-2811): the system-prompt history digest
+                # is gone. TASK-2816 replaces this with render_history().
+                conversation_context = ""
 
             # Determine output mode
             if output_mode is None:
@@ -1417,7 +1419,6 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs,

@@ -1689,7 +1689,7 @@ class VoiceChatHandler:
         # connection.bot.conversation_memory above).
         if bot._llm is None:
             config = bot._resolve_llm_config()
-            bot._llm = bot._create_llm_client(config, bot.conversation_memory)
+            bot._llm = bot._create_llm_client(config)
 
         # FEAT-418 (TASK-2174): wrap the raw client so the now-INHERITED
         # VoiceSession._run_turn() (no more duplicated reconnection loop)
