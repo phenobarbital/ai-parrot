@@ -189,10 +189,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: Created `catalog/parrot/htmldocument.py` with `HTMLDOCUMENT_SCHEMA`
+(title required, `html`/`srcUrl` XOR via `oneOf`, optional `theme`) and
+`HtmlDocumentComponent` registered
+`tool_only=True, allowed_parents=["root","Column"]`. `lower()` builds
+`Card{child: Column[Text(title), Text("[HTML document: <title>]",
+extensions={parrot_role, parrot_src_url, parrot_inline_html})]}` — the raw
+`html` string is read only via `props.get("html") is not None` (a boolean
+check) and NEVER copied into the tree (verified:
+`test_lowering_never_embeds_html` checks a `<script>` payload doesn't
+survive lowering). Registered the module in `catalog/parrot/__init__.py`.
+Added `build_html_document()` to `builders.py` — Python-level XOR check
+(`ValueError` when neither/both of `html`/`src_url` given, mirroring the
+schema's `oneOf`) before calling `build_surface(..., origin=ProducerOrigin.TOOL)`
+(HtmlDocument's `tool_only` gate rejects the default `LLM` origin). Added
+golden `htmldocument_lowered.json` (generated once via the same lowering
+call the golden test exercises, then pinned) and a new
+`test_components_htmldocument.py` (registration flags, golden, no-HTML-echo,
+title/placeholder content, srcUrl extension) plus 4 new tests in
+`test_builders.py` (inline/url variants, XOR, tool-origin/LLM-origin gate).
+651/651 targeted tests pass (`pytest packages/ai-parrot/tests/outputs/a2ui`).
+`ruff check packages/ai-parrot/src/parrot/outputs/a2ui`: 1 pre-existing
+unrelated finding in `runtime/__init__.py` (untouched by this task); all 6
+touched files clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
