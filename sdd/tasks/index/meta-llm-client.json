@@ -32,7 +32,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Creates clients/meta/client.py, which TASK-2836/2837/2840 all then edit. Must land first.",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2834-metaclient-chat-completions.md"
+      "completed_at": "2026-09-04T14:16:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2834-metaclient-chat-completions.md"
     },
     {
       "id": "TASK-2835",

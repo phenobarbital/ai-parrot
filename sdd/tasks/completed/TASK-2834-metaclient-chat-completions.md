@@ -54,7 +54,13 @@ to `openai_base.py`, `base.py`, or `gpt.py`.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/clients/meta/client.py` | CREATE | `MetaClient` |
 | `packages/ai-parrot/src/parrot/clients/meta/__init__.py` | MODIFY | add `MetaClient` re-export |
-| `packages/ai-parrot/tests/clients/test_meta_client.py` | CREATE | Unit tests |
+| `tests/clients/test_meta_client.py` | CREATE | Unit tests |
+
+> **Codebase Contract correction (same as TASK-2833, re-verified
+> 2026-09-04)**: test path corrected from
+> `packages/ai-parrot/tests/clients/test_meta_client.py` to the root
+> `tests/clients/test_meta_client.py` — `pyproject.toml` sets
+> `testpaths = ["tests"]` and all sibling wire-client tests live there.
 
 ---
 
@@ -294,7 +300,17 @@ class TestMetaClient:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Created `MetaClient(OpenAIBaseClient)` in `clients/meta/client.py`.
+Credential chain `api_key` → `META_API_KEY` → `MODEL_API_KEY`, never
+`OPENAI_API_KEY` (regression-tested). `_default_model="muse-spark-1.3"`,
+`_default_timeout=120.0`, `provider_keys=("meta","muse","meta-muse")`,
+`models=MetaModel`. `__init__.py` re-exports `MetaClient` and `config` (the
+latter so tests can `monkeypatch.setattr("parrot.clients.meta.config.get",
+...)` per the sibling `test_moonshot_client.py` convention, extended one
+level for the package layout). `_chat_completion` NOT overridden — fully
+inherited. 15/15 unit tests pass, `ruff` clean.
+**Deviations from spec**: none beyond the test-path correction already
+noted in TASK-2833 (root `tests/clients/`, not
+`packages/ai-parrot/tests/clients/`).
