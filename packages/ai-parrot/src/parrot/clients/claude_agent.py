@@ -47,6 +47,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Sequence,
     TYPE_CHECKING,
     Union,
 )
@@ -66,6 +67,8 @@ else:
 from ..exceptions import InvokeError
 from ..models import AIMessage, AIMessageFactory
 from ..models.responses import InvokeResult
+from ..memory.render import HistoryMessage
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
 
 
@@ -560,9 +563,8 @@ class ClaudeAgentClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Any]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Any = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
@@ -586,7 +588,10 @@ class ClaudeAgentClient(AbstractClient):
             prompt: User prompt to send to the agent.
             model: Optional model override.
             run_options: Optional :class:`ClaudeAgentRunOptions` for this call.
-            session_id: Optional session id to attach to the run.
+            history: Accepted for ``AbstractClient`` compatibility (FEAT-524)
+                but NOT replayed: the Claude Code CLI keeps its own
+                server-side conversation, resumed via ``--resume``, so
+                re-sending ai-parrot's history would duplicate every turn.
             structured_output: Optional pre-parsed structured payload to
                 replace the assistant text in the returned ``AIMessage``.
             use_tools: FEAT-434 — ``False`` disables bridging the agent's
@@ -602,7 +607,12 @@ class ClaudeAgentClient(AbstractClient):
             ImportError: When ``claude_agent_sdk`` is not installed.
         """
         del max_tokens, files, tools  # not used by SDK; see docstring
+        del history  # not replayed; the CLI owns the conversation (see docstring)
         del deep_research, background, lazy_loading
+        # FEAT-524: ids are no longer ask() parameters. The CLI session map and
+        # the response metadata read them from the ContextVars BaseBot binds.
+        user_id = current_user_id.get()
+        session_id = current_session_id.get()
         resolved_model = self._resolve_model(model, self._default_model)
         turn_id = str(uuid.uuid4())
 
@@ -735,8 +745,7 @@ class ClaudeAgentClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Any]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
@@ -766,6 +775,7 @@ class ClaudeAgentClient(AbstractClient):
             prompt: User prompt to send to the agent.
             model: Optional model override.
             run_options: Optional :class:`ClaudeAgentRunOptions` for this call.
+            history: Accepted for compatibility, not replayed — see ``ask``.
 
         Yields:
             ``str`` chunks corresponding to consecutive ``TextBlock``s, then
@@ -774,10 +784,12 @@ class ClaudeAgentClient(AbstractClient):
         Raises:
             ImportError: When ``claude_agent_sdk`` is not installed.
         """
-        # Save user_id before del (needed for final AIMessage)
-        saved_user_id = user_id
+        # FEAT-524: ids come from the ContextVars BaseBot binds, not kwargs.
+        saved_user_id = current_user_id.get()
+        session_id = current_session_id.get()
         del tools  # not consumed; see docstring (FEAT-434 bridge instead)
-        del max_tokens, temperature, files, user_id, deep_research
+        del history  # not replayed; the CLI owns the conversation (see docstring)
+        del max_tokens, temperature, files, deep_research
         del agent_config, lazy_loading
         query, _, _ = _import_sdk()
 

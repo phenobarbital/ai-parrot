@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-from typing import AsyncIterator, Dict, List, Literal, Optional, Union, Any, TYPE_CHECKING
+from typing import AsyncIterator, Dict, List, Literal, Optional, Sequence, Union, Any, TYPE_CHECKING
 from typing import List as TypingList
 import base64
 import io
@@ -15,6 +15,11 @@ from navconfig import config
 # from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from .base import AbstractClient, BatchRequest, StreamingRetryConfig
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters. Response metadata and
+# HumanInteractionInterrupt read them from the per-call ContextVars that
+# BaseBot binds (FEAT-228), so nothing is lost by dropping the kwargs.
+from parrot.observability.context import current_session_id, current_user_id
 # FEAT-176: lifecycle events
 from parrot.core.events.lifecycle.events import (
     ClientStreamChunkEvent,
@@ -451,9 +456,8 @@ class AnthropicClient(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
@@ -461,9 +465,12 @@ class AnthropicClient(AbstractClient):
         lazy_loading: bool = False,
         context_1m: bool = False,
     ) -> AIMessage:
-        """Ask Claude a question with optional conversation memory.
+        """Ask Claude a question, optionally with rendered conversation history.
 
         Args:
+            history: Already-rendered conversation history supplied by the
+                owning bot (FEAT-524). The client formats it for the Anthropic
+                API and never loads or persists history itself.
             use_tools: If None, uses instance default. If True/False, overrides for this call.
             deep_research: If True, use enhanced system prompt for thorough research
             background: If True, execute research in background mode (not yet supported)
@@ -484,9 +491,7 @@ class AnthropicClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
+        messages = self._build_messages(prompt, files, history)
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time
@@ -649,7 +654,7 @@ class AnthropicClient(AbstractClient):
                         except Exception as e:
                             from parrot.core.exceptions import HumanInteractionInterrupt
                             if isinstance(e, HumanInteractionInterrupt):
-                                e.session_id = session_id
+                                e.session_id = current_session_id.get()
                                 # We MUST append the assistant's tool-use message so it is in the history when resuming
                                 e.messages = messages + [{"role": "assistant", "content": result["content"]}]
                                 e.tool_call_id = tool_id
@@ -718,34 +723,16 @@ class AnthropicClient(AbstractClient):
             except Exception:
                 final_output = text_content
 
-        # Extract assistant response text for conversation memory
-        assistant_response_text = "".join(
-            content_block.get("text", "")
-            for content_block in result.get("content", [])
-            if content_block.get("type") == "text"
-        )
-
-        # Update conversation memory with unified system
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used
-        )
+        # FEAT-524: no memory write here — AbstractBot.save_conversation_turn
+        # is the single writer and records the turn from the returned AIMessage.
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_claude(
             response=result,
             input_text=original_prompt,
             model=payload["model"] if used_fallback else model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
             tool_calls=all_tool_calls
@@ -899,8 +886,7 @@ class AnthropicClient(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -925,6 +911,8 @@ class AnthropicClient(AbstractClient):
         ``while True`` tool loop in :meth:`ask`.
 
         Args:
+            history: Already-rendered conversation history supplied by the
+                owning bot (FEAT-524).
             use_tools: Whether to include tool definitions and run the
                 streaming tool-call loop.  Defaults to ``True``.
             deep_research: If True, use enhanced system prompt for thorough research
@@ -940,9 +928,7 @@ class AnthropicClient(AbstractClient):
         if retry_config is None:
             retry_config = StreamingRetryConfig()
 
-        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
+        messages = self._build_messages(prompt, files, history)
 
         # Enhance system prompt for deep research mode
         if deep_research:
@@ -1069,7 +1055,7 @@ class AnthropicClient(AbstractClient):
                                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                                         if isinstance(e, HumanInteractionInterrupt):
-                                            e.session_id = session_id
+                                            e.session_id = current_session_id.get()
                                             e.messages = messages + [
                                                 {"role": "assistant", "content": result_content}
                                             ]
@@ -1157,14 +1143,13 @@ class AnthropicClient(AbstractClient):
                     break
 
         # Yield final AIMessage with full metadata
-        tools_used = [tc.name for tc in all_tool_calls]
         if final_message is not None:
             ai_message = AIMessageFactory.from_claude(
                 response=final_message.model_dump(),
                 input_text=original_prompt,
                 model=model,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 tool_calls=all_tool_calls,
             )
@@ -1180,30 +1165,14 @@ class AnthropicClient(AbstractClient):
                     completion_tokens=0,
                     total_tokens=0,
                 ),
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 tool_calls=all_tool_calls,
             )
-        # Update conversation memory BEFORE yielding the final AIMessage so the
-        # memory write executes even if the consumer stops iterating after receiving
-        # the sentinel (generators are not fully drained once the caller exits the
-        # async-for loop).
-        if assistant_content:
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_history,
-                messages + [{
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": assistant_content}]
-                }],
-                system_prompt,
-                turn_id,
-                original_prompt,
-                assistant_content,
-                tools_used,
-            )
+        # FEAT-524: the client no longer writes a turn here. The bot persists
+        # the round after the stream completes — including the partial-text
+        # case, which it handles in BaseBot.ask_stream's error path.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent for stream
         _lc_stream_usage = getattr(ai_message, 'usage', None)
@@ -1357,13 +1326,12 @@ class AnthropicClient(AbstractClient):
         temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
         count_objects: bool = False,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         system_prompt: Optional[str] = None,
         context_1m: bool = False,
     ) -> AIMessage:
         """
-        Ask Claude a question about an image with optional conversation memory.
+        Ask Claude a question about an image, optionally with conversation history.
 
         Args:
             prompt (str): The question or prompt about the image.
@@ -1377,8 +1345,8 @@ class AnthropicClient(AbstractClient):
                 Optional structured output format.
             count_objects (bool):
                 Whether to count objects in the image (enables default JSON output).
-            user_id (Optional[str]): User identifier for conversation memory.
-            session_id (Optional[str]): Session identifier for conversation memory.
+            history: Already-rendered conversation history supplied by the
+                owning bot (FEAT-524). Replayed before the image turn.
 
         Returns:
             AIMessage: The response from Claude about the image.
@@ -1389,29 +1357,11 @@ class AnthropicClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        # Get conversation history if available
-        conversation_history = None
-        messages = []
-
-        # Get conversation context (but don't include files since we handle images separately)
-        if user_id and session_id and self.conversation_memory:
-            chatbot_key = self._get_chatbot_key()
-            # Get or create conversation history
-            conversation_history = await self.conversation_memory.get_history(
-                user_id,
-                session_id,
-                chatbot_id=chatbot_key
-            )
-            if not conversation_history:
-                conversation_history = await self.conversation_memory.create_history(
-                    user_id,
-                    session_id,
-                    chatbot_id=chatbot_key
-                )
-
-            # Get previous conversation messages for context
-            # Convert turns to API message format
-            messages = conversation_history.get_messages_for_api()
+        # FEAT-524: history arrives already rendered. _build_messages() is not
+        # usable here because the current turn is an image payload assembled
+        # below rather than a plain _prepare_messages() text turn — so only the
+        # history half is formatted here, and the image turn is appended after.
+        messages = self._format_history(history or ())
 
         output_config = self._get_structured_config(
             structured_output
@@ -1537,20 +1487,7 @@ class AnthropicClient(AbstractClient):
         assistant_message = {"role": "assistant", "content": result["content"]}
         messages.append(assistant_message)
 
-        # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            messages + [{"role": "assistant", "content": result["content"]}],
-            system_prompt,
-            turn_id,
-            f"[Image Analysis]: {original_prompt}",  # Include image context in the stored prompt
-            text_content,
-            tools_used
-        )
-
+        # FEAT-524: no memory write — AbstractBot is the single writer.
 
 
         # Create AIMessage using factory
@@ -1558,8 +1495,8 @@ class AnthropicClient(AbstractClient):
             response=result,
             input_text=f"[Image Analysis]: {original_prompt}",
             model=model.value if isinstance(model, ClaudeModel) else model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
             tool_calls=all_tool_calls
