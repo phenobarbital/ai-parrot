@@ -29,6 +29,11 @@
 #                                 Fireflies MCP shares the account's API rate limits — see the backfill note below.
 #   WIKI_KB_MAX_CATCHUP_DAYS    — bound for a manual wide-window ingest(since=…/lookback_days=…) (default: 90)
 #                                 raise this (e.g. 280) for a one-time 2026 backfill (Jan 1 → today)
+#   WIKI_KB_INGEST_PROFILE      — cost/fidelity profile: "full" (default) or "backfill".
+#                                 "backfill" cuts LLM cost for the one-time historical import
+#                                 (summary-only classify, primary-project reconcile only, no
+#                                 contradiction detection, no per-run overview). Also per-call:
+#                                 ingest(profile="backfill"). Keep steady-state on "full".
 #   WIKI_KB_MAX_REPROCESS_ATTEMPTS — Module-17 quarantine auto-retry cap (default: 3)
 #   WIKI_KB_ACTIVE_WINDOW_DAYS  — rolling active window for archive/indexes (default: 14)
 #   WIKI_KB_PARTICIPANTS        — comma-separated participant-email allowlist (default: unset = all)
@@ -45,8 +50,8 @@
 #
 #   Inside `parrot attach`, trigger intents directly with /invoke (JSON args):
 #     /invoke ingest {}                                 # steady-state: process new meetings
-#     /invoke ingest {"since": "2026-01-01", "max_new": 100}   # backfill CHUNK: 100 new, oldest-first
-#     /invoke ingest {"since": "2026-01-01"}            # one-shot full backfill (Business/Ent. plan)
+#     /invoke ingest {"since": "2026-01-01", "max_new": 100, "profile": "backfill"}   # backfill CHUNK (cheap)
+#     /invoke ingest {"since": "2026-01-01", "profile": "backfill"}   # one-shot backfill (Business/Ent.)
 #     /invoke health {}                                 # fast operational check
 #     /invoke lint {"fix": false}                       # integrity lint (fix:true auto-repairs)
 #     /invoke archive {}                                # roll the active window
@@ -59,10 +64,12 @@
 #   a full 2026 backfill (~1000 meetings) is ~2000 calls.
 #   • Run the backfill OFF this schedule (the hourly job is for steady-state new
 #     meetings only). Set WIKI_KB_MAX_CATCHUP_DAYS=280 first for the 2026 window.
-#   • Business/Enterprise: one-shot `/invoke ingest {"since":"2026-01-01"}` is fine
-#     (~30-60 min of Fireflies + hours of LLM); it's resumable — re-run if it stops.
-#   • Pro/Free (or to bound LLM cost): chunk with max_new — repeat
-#     `/invoke ingest {"since":"2026-01-01","max_new":100}` until it reports 0 processed.
+#   Use profile:"backfill" for the historical import to cut LLM cost (the LLM
+#   spend dwarfs the Fireflies cost on ~1000 meetings).
+#   • Business/Enterprise: one-shot `/invoke ingest {"since":"2026-01-01","profile":"backfill"}`
+#     (~30-60 min of Fireflies + hours of LLM); resumable — re-run if it stops.
+#   • To bound cost/watch it build: chunk with max_new — repeat
+#     `/invoke ingest {"since":"2026-01-01","max_new":100,"profile":"backfill"}` until 0 processed.
 #     Each chunk walks further back (oldest-first) and bounds calls to ~2×max_new.
 #
 # ── Expose to Claude Code over MCP ────────────────────────────────────────
