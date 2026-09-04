@@ -6,7 +6,318 @@
   "base_branch": "dev",
   "created_at": "2026-09-04T00:00:00Z",
   "completed_at": null,
-  "tasks": [],
+  "tasks": [
+    {
+      "id": "TASK-2841",
+      "slug": "core-convention-google-and-live-voice",
+      "title": "Core convention prerequisites: google/ folder, enum split, LiveVoiceResponse move",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches parrot/models/__init__.py and parrot/models/google.py that every following folder-conversion task also edits; must land first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2841-core-convention-google-and-live-voice.md"
+    },
+    {
+      "id": "TASK-2842",
+      "slug": "openai-folder",
+      "title": "Convert gpt.py + Codex to parrot/clients/openai/ with OpenAIModel and DEPRECATIONS",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2841"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: edits parrot/models/__init__.py, factory.py import lines and the shared conformance test.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2842-openai-folder.md"
+    },
+    {
+      "id": "TASK-2843",
+      "slug": "openai-wire-wrapper-folders",
+      "title": "Convert moonshot, openrouter, nvidia, local, vllm to folders with their enums",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2841"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: shares factory.py import block, parrot/models/__init__.py and the conformance test with siblings.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2843-openai-wire-wrapper-folders.md"
+    },
+    {
+      "id": "TASK-2844",
+      "slug": "anthropic-groq-grok-zai-folders",
+      "title": "Convert claude\u2192anthropic/, groq/, grok/, zai/ folders with their enums",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2841"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: shares factory.py import block, parrot/models/__init__.py and the conformance test.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2844-anthropic-groq-grok-zai-folders.md"
+    },
+    {
+      "id": "TASK-2845",
+      "slug": "amazon-gemma4-hf-folders",
+      "title": "Convert bedrock+nova\u2192amazon/, gemma4/, hf/ folders with their enums",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2841"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: shares factory.py lazy closures and the conformance test with siblings.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2845-amazon-gemma4-hf-folders.md"
+    },
+    {
+      "id": "TASK-2846",
+      "slug": "core-callsite-hard-cut",
+      "title": "Hard-cut every provider-enum import outside parrot/clients/ and delete emptied parrot/models files",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2842",
+        "TASK-2843",
+        "TASK-2844",
+        "TASK-2845"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: touches conf.py and bots/agent.py which FEAT-525 may also touch \u2014 rebase-check.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2846-core-callsite-hard-cut.md"
+    },
+    {
+      "id": "TASK-2847",
+      "slug": "factory-discovery-and-catalogue",
+      "title": "LLMFactory: extend_path, entry-point discovery, list_providers/list_models, transitional registry",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2846"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: rewrites factory.py and clients/__init__.py which every satellite task then relies on.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2847-factory-discovery-and-catalogue.md"
+    },
+    {
+      "id": "TASK-2848",
+      "slug": "server-llm-handler-catalogue",
+      "title": "Server LLM handler lists models via LLMFactory.list_models (no enum imports)",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2847"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential after the factory API exists; disjoint files from the satellite tasks, but keep it before them so the server never imports a moved module.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2848-server-llm-handler-catalogue.md"
+    },
+    {
+      "id": "TASK-2849",
+      "slug": "satellites-openai-meta",
+      "title": "Satellites: ai-parrot-client-openai, ai-parrot-client-meta",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2847",
+        "TASK-2848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "parallel: true \u2014 moves a disjoint folder set (openai, meta) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2849-satellites-openai-meta.md"
+    },
+    {
+      "id": "TASK-2850",
+      "slug": "satellites-anthropic-amazon",
+      "title": "Satellites: ai-parrot-client-anthropic, ai-parrot-client-amazon",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2847",
+        "TASK-2848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "parallel: true \u2014 moves a disjoint folder set (anthropic, amazon) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2850-satellites-anthropic-amazon.md"
+    },
+    {
+      "id": "TASK-2851",
+      "slug": "satellites-google-gemma4-hf",
+      "title": "Satellites: ai-parrot-client-google, -gemma4, -hf",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2847",
+        "TASK-2848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "parallel: true \u2014 moves a disjoint folder set (google, gemma4, hf) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2851-satellites-google-gemma4-hf.md"
+    },
+    {
+      "id": "TASK-2852",
+      "slug": "satellites-groq-grok-zai",
+      "title": "Satellites: ai-parrot-client-groq, -grok, -zai",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2847",
+        "TASK-2848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "parallel: true \u2014 moves a disjoint folder set (groq, grok, zai) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2852-satellites-groq-grok-zai.md"
+    },
+    {
+      "id": "TASK-2853",
+      "slug": "satellites-nvidia-moonshot-openrouter-local-vllm",
+      "title": "Satellites: ai-parrot-client-nvidia, -moonshot, -openrouter, -local, -vllm",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2847",
+        "TASK-2848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "parallel: true \u2014 moves a disjoint folder set (nvidia, moonshot, openrouter, local, vllm) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2853-satellites-nvidia-moonshot-openrouter-local-vllm.md"
+    },
+    {
+      "id": "TASK-2854",
+      "slug": "core-extras-workspace-cleanup",
+      "title": "Core extras \u2192 satellites, drop extracted SDK pins, remove transitional registry",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2849",
+        "TASK-2850",
+        "TASK-2851",
+        "TASK-2852",
+        "TASK-2853"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: needs all 15 satellite names; edits core pyproject.toml and factory.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2854-core-extras-workspace-cleanup.md"
+    },
+    {
+      "id": "TASK-2855",
+      "slug": "tests-migration-verification",
+      "title": "Migration verification: import paths, factory create-all, editable install, convention conformance",
+      "feature_id": "FEAT-523",
+      "feature": "pep-420-llm-clients",
+      "spec": "sdd/specs/pep-420-llm-clients.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2854"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential: final gate over all satellites.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2855-tests-migration-verification.md"
+    }
+  ],
   "superseded_tasks": {
     "ids": [
       "TASK-2795",
@@ -24,5 +335,7 @@
       "TASK-2807"
     ],
     "reason": "spec v0.3 rewrite (2026-09-04) \u2014 regenerated by /sdd-task"
-  }
+  },
+  "spec_version": "0.3",
+  "tasks_regenerated_at": "2026-09-04T14:11:22Z"
 }
