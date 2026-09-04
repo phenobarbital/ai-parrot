@@ -1,6 +1,6 @@
 from __future__ import annotations
 import traceback
-from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING
+from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING, Sequence
 from pathlib import Path
 from logging import getLogger
 import uuid
@@ -10,6 +10,10 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .openai_base import OpenAIBaseClient
 from ..tools.manager import ToolFormat
 
@@ -339,9 +343,8 @@ class GroqClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[dict]] = None,
         use_tools: Optional[bool] = None,
         use_code_interpreter: Optional[bool] = None
@@ -355,10 +358,7 @@ class GroqClient(OpenAIBaseClient):
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_groq
         _lc_tc_groq = self._emit_before_call(
@@ -548,7 +548,7 @@ class GroqClient(OpenAIBaseClient):
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = messages.copy()
                             e.tool_call_id = tool_call.id
                             e.agent_name = model
@@ -690,20 +690,7 @@ class GroqClient(OpenAIBaseClient):
             })
 
         # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = result.content if isinstance(
-            result.content, str) else self._json.dumps(result.content)
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         structured_payload = None
@@ -716,8 +703,8 @@ class GroqClient(OpenAIBaseClient):
             response=response,
             input_text=original_prompt,
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=structured_payload
         )
@@ -754,8 +741,7 @@ class GroqClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[dict]] = None,
         deep_research: bool = False,
         agent_config: Optional[dict] = None,
@@ -772,10 +758,7 @@ class GroqClient(OpenAIBaseClient):
         turn_id = str(uuid.uuid4())
         model = model.value if isinstance(model, GroqModel) else model
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -850,8 +833,8 @@ class GroqClient(OpenAIBaseClient):
             model=model,
             provider="groq",
             usage=usage,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
         )
         # Update conversation memory BEFORE yielding the final AIMessage so the
@@ -863,18 +846,7 @@ class GroqClient(OpenAIBaseClient):
                 "role": "assistant",
                 "content": assistant_content
             })
-            tools_used = []
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages,
-                system_prompt,
-                turn_id,
-                prompt,
-                assistant_content,
-                tools_used
-            )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent (stream)
         _lc_groqs_usage = getattr(ai_message, 'usage', None)
@@ -1066,10 +1038,8 @@ class GroqClient(OpenAIBaseClient):
 
         system_prompt = system_prompt or "Summarize the following text:"
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1100,20 +1070,8 @@ class GroqClient(OpenAIBaseClient):
         })
 
         # Update conversation memory
-        tools_used = []
         # return only 100 characters of the summarized text
-        assistant_content = summarized_text[:100] if summarized_text else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'summarization',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_groq(
@@ -1174,10 +1132,8 @@ Your response should include:
 Format your response clearly with these sections.
             """
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1233,20 +1189,8 @@ Format your response clearly with these sections.
                 final_output = result.content
 
         # Update conversation memory
-        tools_used = []
         # return only 100 characters of the sentiment analysis result
-        assistant_content = sentiment_result[:100] if sentiment_result else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'sentiment_analysis',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_groq(
@@ -1303,10 +1247,8 @@ Format your response clearly with these sections.
             f"including sentiment, rating, and key features mentioned in the review."
         )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            original_prompt, None, user_id, session_id, system_prompt
-        )
-
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -1337,19 +1279,7 @@ Format your response clearly with these sections.
         })
 
         # Update conversation memory
-        tools_used = []
-        assistant_content = result.content[:100] if result.content else ""
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            'product_review_analysis',
-            assistant_content,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         # Handle structured output
         final_output = None
         # Prepare structured output configuration

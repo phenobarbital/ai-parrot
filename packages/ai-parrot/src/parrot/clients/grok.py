@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Optional, Union, AsyncIterator, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, AsyncIterator, TYPE_CHECKING, Sequence
 import os
 import json
 import uuid
@@ -8,6 +8,10 @@ from pathlib import Path
 from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
 
 if TYPE_CHECKING:
@@ -34,7 +38,6 @@ from ..models import (
 )
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
-from ..memory import ConversationTurn
 from ..tools.manager import ToolFormat
 
 class GrokModel(str, Enum):
@@ -196,9 +199,8 @@ class GrokClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
     ) -> MessageResponse:
@@ -262,13 +264,13 @@ class GrokClient(AbstractClient):
         if system_prompt:
             chat.append(system_fn(system_prompt))
 
-        if self.conversation_memory and user_id and session_id:
-            history = await self.get_conversation(user_id, session_id)
-            if history:
-                for turn in history.turns:
-                    chat.append(user_fn(turn.input))
-                    if turn.output:
-                        chat.append(assistant_fn(turn.output))
+        # FEAT-524: history arrives already rendered by the bot; grok's own
+        # loader/writer pair is gone.
+        for message in history or ():
+            if message.role == "assistant":
+                chat.append(assistant_fn(message.content))
+            else:
+                chat.append(user_fn(message.content))
 
         chat.append(user_fn(prompt))
 
@@ -390,8 +392,9 @@ class GrokClient(AbstractClient):
             response=final_response,
             input_text=prompt,
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
+            turn_id=turn_id,
             usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, 'usage') else None,
             text_response=text_content
         )
@@ -411,20 +414,8 @@ class GrokClient(AbstractClient):
             ai_message.is_structured = True
             ai_message.output = structured_payload
 
-        if user_id and session_id:
-            turn = ConversationTurn(
-                turn_id=turn_id,
-                user_id=user_id,
-                user_message=prompt,
-                assistant_response=ai_message.to_text,
-                tools_used=[t.name for t in ai_message.tool_calls] if ai_message.tool_calls else [],
-                metadata=ai_message.usage.dict() if ai_message.usage else None
-            )
-            await self.conversation_memory.add_turn(
-                user_id,
-                session_id,
-                turn
-            )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
+        # the single writer.
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
         _lc_grok2_usage = getattr(ai_message, 'usage', None)
@@ -445,9 +436,8 @@ class GrokClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
@@ -502,13 +492,13 @@ class GrokClient(AbstractClient):
         if system_prompt:
             chat.append(system_fn(system_prompt))
 
-        if self.conversation_memory and user_id and session_id:
-            history = await self.get_conversation(user_id, session_id)
-            if history:
-                for turn in history.turns:
-                    chat.append(user_fn(turn.input))
-                    if turn.output:
-                        chat.append(assistant_fn(turn.output))
+        # FEAT-524: history arrives already rendered by the bot; grok's own
+        # loader/writer pair is gone.
+        for message in history or ():
+            if message.role == "assistant":
+                chat.append(assistant_fn(message.content))
+            else:
+                chat.append(user_fn(message.content))
 
         chat.append(user_fn(prompt))
 
@@ -546,8 +536,8 @@ class GrokClient(AbstractClient):
             model=model or self.model or self.default_model,
             provider="grok",
             usage=usage,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
         )
         # FEAT-176: lifecycle event — AfterClientCallEvent
@@ -560,18 +550,7 @@ class GrokClient(AbstractClient):
         )
         yield ai_message
 
-        if user_id and session_id:
-            turn = ConversationTurn(
-                turn_id=turn_id,
-                user_id=user_id,
-                user_message=prompt,
-                assistant_response="".join(full_response)
-            )
-            await self.conversation_memory.add_turn(
-                user_id,
-                session_id,
-                turn
-            )
+        # FEAT-524: no memory write — the bot persists the round.
 
     async def resume(
         self,

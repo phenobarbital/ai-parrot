@@ -6,7 +6,7 @@ import time
 import uuid
 from dataclasses import is_dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
@@ -16,6 +16,10 @@ from ..models import AIMessage, CompletionUsage, OutputFormat, StructuredOutputC
 from ..models.responses import InvokeResult
 from ..models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
 from ..exceptions import InvokeError
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .openai_base import OpenAIBaseClient
 
 
@@ -125,22 +129,32 @@ class ZaiClient(OpenAIBaseClient):
             normalized.append(msg)
         return normalized
 
-    async def _build_messages(
+    def _build_zai_messages(
         self,
         prompt: str,
         files: Optional[List[Union[str, Path]]],
-        user_id: Optional[str],
-        session_id: Optional[str],
+        history: Optional[Sequence[HistoryMessage]],
         system_prompt: Optional[Union[str, list]],
-    ) -> tuple[List[Dict[str, Any]], Any, Optional[str]]:
+    ) -> tuple[List[Dict[str, Any]], Optional[str]]:
+        """Compose Z.AI messages: system prompt + history + current turn.
+
+        Renamed from ``_build_messages`` in FEAT-524 — that name now belongs to
+        :meth:`AbstractClient._build_messages`, which this method delegates to
+        rather than shadows. Z.AI needs two extras on top of the base result:
+        the system prompt as a leading ``system`` message, and content
+        normalization.
+
+        Args:
+            prompt: The current user prompt.
+            files: Optional attachments for the current turn.
+            history: Already-rendered conversation history.
+            system_prompt: Raw system prompt to resolve and prepend.
+
+        Returns:
+            ``(messages, resolved_system_prompt)``.
+        """
         resolved_system_prompt = self._resolve_system_prompt(system_prompt)
-        messages, conversation_history, _ = await self._prepare_conversation_context(
-            prompt,
-            files,
-            user_id,
-            session_id,
-            resolved_system_prompt,
-        )
+        messages = self._build_messages(prompt, files, history)
         if resolved_system_prompt:
             messages.insert(
                 0,
@@ -149,7 +163,7 @@ class ZaiClient(OpenAIBaseClient):
                     "content": resolved_system_prompt,
                 },
             )
-        return self._normalize_messages(messages), conversation_history, resolved_system_prompt
+        return self._normalize_messages(messages), resolved_system_prompt
 
     def _prepare_zai_tools(self) -> List[Dict[str, Any]]:
         tools: List[Dict[str, Any]] = []
@@ -414,9 +428,8 @@ class ZaiClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[Union[str, list]] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         thinking: Optional[Union[bool, str, Dict[str, Any]]] = None,
@@ -455,11 +468,10 @@ class ZaiClient(OpenAIBaseClient):
         max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
-        messages, conversation_history, resolved_system_prompt = await self._build_messages(
+        messages, resolved_system_prompt = self._build_zai_messages(
             prompt,
             files,
-            user_id,
-            session_id,
+            history,
             system_prompt,
         )
 
@@ -528,8 +540,8 @@ class ZaiClient(OpenAIBaseClient):
                 response=response,
                 input_text=prompt,
                 model=resolved_model,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 structured_output=parsed_output,
                 tool_calls=all_tool_calls,
@@ -554,17 +566,7 @@ class ZaiClient(OpenAIBaseClient):
             output_tokens=ai_message.usage.completion_tokens,
             finish_reason=ai_message.stop_reason,
         )
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            messages,
-            resolved_system_prompt,
-            turn_id,
-            prompt,
-            ai_message.response or "",
-            tools_used=[tool_call.name for tool_call in all_tool_calls],
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         return ai_message
 
     def _next_stream_item(self, iterator: Any) -> tuple[bool, Any]:
@@ -630,8 +632,7 @@ class ZaiClient(OpenAIBaseClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[Union[str, list]] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         thinking: Optional[Union[bool, str, Dict[str, Any]]] = None,
@@ -672,11 +673,10 @@ class ZaiClient(OpenAIBaseClient):
         resolved_model = self._model_value(model)
         turn_id = str(uuid.uuid4())
         started = time.perf_counter()
-        messages, conversation_history, resolved_system_prompt = await self._build_messages(
+        messages, resolved_system_prompt = self._build_zai_messages(
             prompt,
             files,
-            user_id,
-            session_id,
+            history,
             system_prompt,
         )
 
@@ -821,8 +821,8 @@ class ZaiClient(OpenAIBaseClient):
                 stop_reason=finish_reason,
                 finish_reason=finish_reason,
                 tool_calls=all_tool_calls,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 response_time=response_time,
                 raw_response=last_raw_chunk,
@@ -847,17 +847,7 @@ class ZaiClient(OpenAIBaseClient):
             output_tokens=usage.completion_tokens,
             finish_reason=finish_reason,
         )
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            messages,
-            resolved_system_prompt,
-            turn_id,
-            prompt,
-            content_text,
-            tools_used=[tool_call.name for tool_call in all_tool_calls],
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         yield ai_message
 
     async def resume(

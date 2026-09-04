@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, TYPE_CHECKING
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, TYPE_CHECKING, Sequence
 import io
 import json
 import uuid
@@ -13,6 +13,10 @@ from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
@@ -688,9 +692,8 @@ class OpenAIClient(OpenAIBaseClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
@@ -743,10 +746,7 @@ class OpenAIClient(OpenAIBaseClient):
                 model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research enabled: switching to {model_str}")
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_gpt
 
@@ -935,7 +935,7 @@ class OpenAIClient(OpenAIBaseClient):
             model_str=model_str,
             use_tools=_use_tools,
             args=args,
-            session_id=session_id,
+            session_id=current_session_id.get(),
             call_completion=_continue_call,
             lazy_loading=lazy_loading,
             active_tool_names=active_tool_names,
@@ -967,21 +967,7 @@ class OpenAIClient(OpenAIBaseClient):
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 
-        tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = (
-            result.content if isinstance(result.content, str) else self._json.dumps(result.content)
-        )
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         structured_payload = None
         if final_output is not None and not (isinstance(final_output, str) and final_output == response_text):
@@ -991,8 +977,8 @@ class OpenAIClient(OpenAIBaseClient):
             response=response,
             input_text=original_prompt,
             model=model_str,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=structured_payload,
         )
@@ -1036,8 +1022,7 @@ class OpenAIClient(OpenAIBaseClient):
         temperature: float = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: bool = True,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
@@ -1076,10 +1061,7 @@ class OpenAIClient(OpenAIBaseClient):
                 model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
         import time as _lc_time_gpts
         from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GPTStreamChunkEvent
@@ -1277,8 +1259,8 @@ class OpenAIClient(OpenAIBaseClient):
                 model=model_str,
                 provider="openai",
                 usage=resp_usage,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
             )
             # FEAT-176: lifecycle event — AfterClientCallEvent (Responses API path)
@@ -1399,7 +1381,7 @@ class OpenAIClient(OpenAIBaseClient):
                             from parrot.core.exceptions import HumanInteractionInterrupt
 
                             if isinstance(e, HumanInteractionInterrupt):
-                                e.session_id = session_id
+                                e.session_id = current_session_id.get()
                                 e.messages = list(messages)
                                 e.tool_call_id = tc_entry["id"]
                                 e.agent_name = model_str
@@ -1421,7 +1403,6 @@ class OpenAIClient(OpenAIBaseClient):
                 break
 
             # Build and yield final AIMessage for Chat Completions path
-            tools_used = [tc.name for tc in all_tool_calls]
             if usage_data is not None:
                 chat_usage = CompletionUsage.from_openai(usage_data)
             else:
@@ -1433,8 +1414,8 @@ class OpenAIClient(OpenAIBaseClient):
                 model=model_str,
                 provider="openai",
                 usage=chat_usage,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 tool_calls=all_tool_calls,
             )
@@ -1455,17 +1436,7 @@ class OpenAIClient(OpenAIBaseClient):
         if assistant_content:
             messages.append({"role": "assistant", "content": assistant_content})
             # Update conversation memory
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages,
-                system_prompt,
-                turn_id,
-                prompt,
-                assistant_content,
-                tools_used if 'tools_used' in dir() else [],
-            )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
     # batch_ask() moved to OpenAIBaseClient (FEAT-438 Module 2) — the
     # sequential loop over self.ask() is generic and now inherited
@@ -1484,24 +1455,23 @@ class OpenAIClient(OpenAIBaseClient):
         max_tokens: int = None,
         temperature: float = None,
         structured_output: Optional[type] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         no_memory: bool = False,
         low_quality: bool = False,
     ) -> AIMessage:
-        """Ask OpenAI a question about an image with optional conversation memory."""
+        """Ask OpenAI a question about an image, optionally with conversation history.
+
+        Args:
+            history: Already-rendered conversation history from the owning bot
+                (FEAT-524). Ignored when ``no_memory=True``.
+        """
         model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         if no_memory:
             messages = []
-            conversation_session = None
-            system_prompt = None
         else:
-            messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-                prompt, None, user_id, session_id, None
-            )
-
+            messages = self._format_history(history or ())
         content = [{"type": "text", "text": prompt}]
 
         primary_image_content = self._encode_image_for_openai(image, low_quality=low_quality)
@@ -1569,17 +1539,7 @@ class OpenAIClient(OpenAIBaseClient):
         messages.append(assistant_message)
 
         # Update conversation memory
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            prompt,
-            assistant_response_text,
-            [],
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         usage = response.usage.model_dump() if response.usage else {}
 
@@ -1587,8 +1547,8 @@ class OpenAIClient(OpenAIBaseClient):
             response=response,
             input_text=f"[Image Analysis]: {prompt}",
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
         )

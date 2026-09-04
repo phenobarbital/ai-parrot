@@ -24,7 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Sequence
 from datamodel.parsers.json import json_decoder
 from tenacity import (
     AsyncRetrying,
@@ -44,6 +44,10 @@ from ..models import (
 from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
 from ..utils.http_logging import quiet_http_loggers
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
 
 # The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
@@ -527,9 +531,8 @@ class OpenAIBaseClient(AbstractClient):
         temperature: float | None = None,
         files: list[str | Path] | None = None,
         system_prompt: str | None = None,
+        history: Sequence[HistoryMessage] | None = None,
         structured_output: type | StructuredOutputConfig | None = None,
-        user_id: str | None = None,
-        session_id: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         use_tools: bool | None = None,
         lazy_loading: bool = False,
@@ -579,10 +582,7 @@ class OpenAIBaseClient(AbstractClient):
                 "for this model; override ask() to handle it."
             )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         _lc_tc = self._emit_before_call(
             client_name=self.client_name,
             model=model_str,
@@ -690,7 +690,7 @@ class OpenAIBaseClient(AbstractClient):
             model_str=model_str,
             use_tools=_use_tools,
             args=args,
-            session_id=session_id,
+            session_id=current_session_id.get(),
             lazy_loading=lazy_loading,
             active_tool_names=active_tool_names,
             track_usage=True,
@@ -720,21 +720,7 @@ class OpenAIBaseClient(AbstractClient):
             except Exception:  # noqa: BLE001 pylint: disable=broad-except
                 final_output = response_text
 
-        tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = (
-            result.content if isinstance(result.content, str) else self._json.dumps(result.content)
-        )
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         structured_payload = None
         if final_output is not None and not (isinstance(final_output, str) and final_output == response_text):
@@ -744,8 +730,8 @@ class OpenAIBaseClient(AbstractClient):
             response=response,
             input_text=original_prompt,
             model=model_str,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=structured_payload,
         )
@@ -909,8 +895,7 @@ class OpenAIBaseClient(AbstractClient):
         temperature: float | None = None,
         files: list[str | Path] | None = None,
         system_prompt: str | None = None,
-        user_id: str | None = None,
-        session_id: str | None = None,
+        history: Sequence[HistoryMessage] | None = None,
         tools: list[dict[str, Any]] | None = None,
         use_tools: bool = True,
         structured_output: type | StructuredOutputConfig | None = None,
@@ -953,10 +938,7 @@ class OpenAIBaseClient(AbstractClient):
                 "streaming for this model; override ask_stream() to handle it."
             )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         _lc_tc = self._emit_before_call(
             client_name=self.client_name,
             model=model_str,
@@ -1117,7 +1099,7 @@ class OpenAIBaseClient(AbstractClient):
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = messages
                             e.tool_call_id = tc_info["id"]
                             e.agent_name = model_str
@@ -1142,7 +1124,6 @@ class OpenAIBaseClient(AbstractClient):
         else:
             usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
-        tools_used = [tc.name for tc in all_tool_calls]
         ai_message = AIMessage(
             input=prompt,
             output=assistant_content,
@@ -1150,8 +1131,8 @@ class OpenAIBaseClient(AbstractClient):
             model=model_str,
             provider=self.client_type,
             usage=usage,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
@@ -1166,18 +1147,8 @@ class OpenAIBaseClient(AbstractClient):
         )
         yield ai_message
 
-        if assistant_content:
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages,
-                system_prompt,
-                turn_id,
-                prompt,
-                assistant_content,
-                tools_used,
-            )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
+        # the single writer; the `if assistant_content:` guard went with it.
 
     async def invoke(
         self,

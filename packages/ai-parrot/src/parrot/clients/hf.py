@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 from pathlib import Path
 from enum import Enum
 
@@ -17,6 +17,10 @@ from transformers import (
     GenerationConfig
 )
 
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient, MessageResponse
 from ..models import (
     AIMessage,
@@ -335,22 +339,22 @@ class TransformersClient(AbstractClient):
         formatted += f"User: {prompt}\nAssistant:"
         return formatted
 
-    def _get_conversation_history(
-        self,
-        user_id: Optional[str],
-        session_id: Optional[str]
+    def _history_as_turns(
+        self, history: Optional[Sequence[HistoryMessage]]
     ) -> List[Dict[str, str]]:
-        """Get conversation history from memory."""
-        if not self.conversation_memory or not user_id or not session_id:
-            return []
+        """Adapt rendered history to the flat dicts ``_prepare_prompt`` expects.
 
-        try:
-            # This would be implemented based on your memory system
-            # For now, return empty list
-            return []
-        except Exception as e:
-            self.logger.warning(f"Could not retrieve conversation history: {e}")
-            return []
+        Replaces the old ``_get_conversation_history(user_id, session_id)``,
+        which was a stub that always returned ``[]`` — this client never
+        actually replayed history before FEAT-524.
+
+        Args:
+            history: Already-rendered conversation history, or ``None``.
+
+        Returns:
+            ``[{"role": ..., "content": ...}, ...]``.
+        """
+        return [{"role": m.role, "content": m.content} for m in history or ()]
 
     async def ask(
         self,
@@ -359,8 +363,7 @@ class TransformersClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
         **kwargs
@@ -391,10 +394,6 @@ class TransformersClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_hf
         _lc_tc_hf = self._emit_before_call(
@@ -416,10 +415,8 @@ class TransformersClient(AbstractClient):
             self.logger.warning(
                 "Tool calling not supported by TransformersClient"
             )
-        all_tool_calls = []
-
-        # Get conversation history
-        conversation_history = self._get_conversation_history(user_id, session_id)
+        # FEAT-524: history arrives already rendered from the bot.
+        conversation_history = self._history_as_turns(history)
 
         # Prepare the prompt
         formatted_prompt = self._prepare_prompt(prompt, system_prompt, conversation_history)
@@ -473,8 +470,8 @@ class TransformersClient(AbstractClient):
         ai_message = AIMessageFactory.create_message(
             response=response_text,
             input_text=original_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             model=self.model_name,
             text_response=response_text,
@@ -484,18 +481,7 @@ class TransformersClient(AbstractClient):
 
         # Store conversation turn if memory is available
         # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            response_text,
-            tools_used
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Handle structured output if requested
         if structured_output:
@@ -528,8 +514,7 @@ class TransformersClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs
     ) -> AsyncIterator[Union[str, AIMessage]]:
@@ -550,8 +535,8 @@ class TransformersClient(AbstractClient):
             temperature=temperature,
             files=files,
             system_prompt=system_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             tools=tools,
             **kwargs
         )

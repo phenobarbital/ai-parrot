@@ -15,13 +15,17 @@ import logging
 import uuid
 import time
 import mimetypes
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 from pathlib import Path
 from enum import Enum
 
 ## transformers and torch are imported lazily to avoid pulling in heavy
 ## dependencies when Gemma4Client is not actually used.
 
+from ..memory.render import HistoryMessage
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient, MessageResponse
 from ..models import (
     AIMessage,
@@ -467,8 +471,7 @@ class Gemma4Client(AbstractClient):
         temperature: float = 1.0,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
         **kwargs
@@ -506,11 +509,7 @@ class Gemma4Client(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = (
-            await self._prepare_conversation_context(
-                prompt, files, user_id, session_id, system_prompt
-            )
-        )
+        messages = self._build_messages(prompt, files, history)
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
         import time as _lc_time_g4
@@ -612,8 +611,8 @@ class Gemma4Client(AbstractClient):
         ai_message = AIMessageFactory.create_message(
             response=response_text,
             input_text=original_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             model=self.model_name,
             text_response=response_text,
@@ -626,18 +625,7 @@ class Gemma4Client(AbstractClient):
             ai_message.tool_calls = all_tool_calls
 
         # Update conversation memory
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            response_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         # Structured output
         if structured_output:
@@ -673,8 +661,7 @@ class Gemma4Client(AbstractClient):
         temperature: float = 1.0,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs
     ) -> AsyncIterator[Union[str, AIMessage]]:
@@ -691,8 +678,8 @@ class Gemma4Client(AbstractClient):
             temperature=temperature,
             files=files,
             system_prompt=system_prompt,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             tools=tools,
             **kwargs
         )
