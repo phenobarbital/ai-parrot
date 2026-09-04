@@ -130,7 +130,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Disjoint client files from TASK-2813 and TASK-2815; can run concurrently with TASK-2813 after TASK-2812.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2814-client-migration-openai-family.md"
+      "completed_at": "2026-09-04T01:24:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2814-client-migration-openai-family.md"
     },
     {
       "id": "TASK-2815",
