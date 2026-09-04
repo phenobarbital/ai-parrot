@@ -5,16 +5,13 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
-**Depends-on**: TASK-2820, TASK-2821, TASK-2822, TASK-2823 *(external prerequisite: FEAT-524 merged — see banner)*
+**Depends-on**: TASK-2820, TASK-2821, TASK-2822, TASK-2823
 **Assigned-to**: unassigned
 
-> ⚠️ **FEAT-524 prerequisite (spec C14 / §7 "Known Risks").** The template
-> method calls `super().__init__()`-initialised state. On `dev` (2026-09-04)
-> `RedisConversation.__init__` (:13-28) and `FileConversationMemory.__init__`
-> (:12-15) do **not** call `super().__init__()`; FEAT-524 adds it
-> (FEAT-524 branch: `redis.py:19`, `file.py:13`, `mem.py:9`). Confirm all
-> three call `super().__init__()` on your branch before starting; if not,
-> STOP — this task must not land before FEAT-524.
+> ✅ **FEAT-524 merged** (PR #1310, merge `729ef7367`, 2026-09-04). Every
+> FEAT-524 anchor below was re-verified on `dev` @ `198e6fecd` (after the
+> post-merge `black` reformat `4831528a4`); `memory/render.py`,
+> `ConversationTurn.from_ai_message` and `AbstractBot.memory_key_id` exist.
 
 ---
 
@@ -121,7 +118,7 @@ TASK-2830); `compact_history` (TASK-2828); any change to `storage/chat.py`
 
 ### Verified Imports
 ```python
-from parrot.memory.abstract import ConversationMemory, ConversationHistory, ConversationTurn   # dev: memory/abstract.py:135, 51, 11 (FEAT-524 branch :189, :130, :17)
+from parrot.memory.abstract import ConversationMemory, ConversationHistory, ConversationTurn   # dev 198e6fecd: memory/abstract.py:191, 130, 16
 from parrot.memory import InMemoryConversation, RedisConversation, FileConversationMemory       # dev: memory/__init__.py:10-12
 from parrot.memory.compaction.models import CompactionCommit, CompactionState, ToolInvocation, TokenCount   # TASK-2819
 from parrot.memory.compaction.normalize import normalize_turn                                    # TASK-2820
@@ -133,17 +130,17 @@ from datamodel.parsers.json import JSONContent                                  
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/src/parrot/memory/abstract.py  (dev @ f3a5fe7ea)
-class ConversationMemory(ABC):                                                  # :135
-    def __init__(self, debug: bool = False)                                     # :138  self.logger (:139), self._json = JSONContent() (:142), self.debug
-    @abstractmethod async def create_history(self, user_id, session_id, metadata=None, chatbot_id=None)   # :146
-    @abstractmethod async def get_history(self, user_id, session_id, chatbot_id=None)                     # :157
-    @abstractmethod async def update_history(self, history) -> None                                       # :167
-    @abstractmethod async def add_turn(self, user_id, session_id, turn, chatbot_id=None) -> None          # :172  ← becomes concrete
-    @abstractmethod async def clear_history(self, user_id, session_id, chatbot_id=None) -> None           # :183
-    @abstractmethod async def list_sessions(self, user_id, chatbot_id=None) -> List[str]                  # :193
-    @abstractmethod async def delete_history(self, user_id, session_id, chatbot_id=None) -> bool          # :202
-class ConversationHistory: metadata: Dict[str, Any] = field(default_factory=dict)   # :59 — home of metadata["compaction"]; add_turn(turn) :61
+# packages/ai-parrot/src/parrot/memory/abstract.py  (dev @ 198e6fecd — FEAT-524 merged)
+class ConversationMemory(ABC):                                                  # :191
+    def __init__(self, debug: bool = False)                                     # :194  self.logger (:195), self._json = JSONContent() (:196), self.debug
+    @abstractmethod async def create_history(self, user_id, session_id, metadata=None, chatbot_id=None)   # :200
+    @abstractmethod async def get_history(self, user_id, session_id, chatbot_id=None)                     # :207
+    @abstractmethod async def update_history(self, history) -> None                                       # :214
+    @abstractmethod async def add_turn(self, user_id, session_id, turn, chatbot_id=None) -> None          # :219  ← becomes concrete
+    @abstractmethod async def clear_history(self, user_id, session_id, chatbot_id=None) -> None           # :226
+    @abstractmethod async def list_sessions(self, user_id, chatbot_id=None) -> List[str]                  # :231
+    @abstractmethod async def delete_history(self, user_id, session_id, chatbot_id=None) -> bool          # :236
+class ConversationHistory: metadata: Dict[str, Any] = field(default_factory=dict)   # :139 — home of metadata["compaction"]; add_turn(turn) :141
 
 # packages/ai-parrot/src/parrot/memory/mem.py  (dev)
 class InMemoryConversation(ConversationMemory):                                # :5
@@ -153,27 +150,29 @@ class InMemoryConversation(ConversationMemory):                                #
     async def clear_history(...)                                               # :77-86
     async def delete_history(...) -> bool                                      # :107
 
-# packages/ai-parrot/src/parrot/memory/redis.py  (dev)
+# packages/ai-parrot/src/parrot/memory/redis.py  (dev @ 198e6fecd — FEAT-524 merged)
 class RedisConversation(ConversationMemory):                                   # :10
-    def __init__(self, redis_url=None, key_prefix="conversation", use_hash_storage=True)   # :13-28  self.redis = Redis.from_url(..., decode_responses=True) :22
-    def _get_key(self, user_id, session_id, chatbot_id=None) -> str           # :31
-    def _serialize_data(self, data) -> str / _deserialize_data(self, data)    # :56 / :66
-    async def get_history(...)   # hash mode: hgetall; 'metadata': self._deserialize_data(data.get('metadata','{}'))   # :126-150
-    async def update_history(history)   # hash mode mapping incl. 'metadata': self._serialize_data(...) ; one hset   # :170-191
-    async def add_turn(...)      # :193-228  hash mode: hget 'turns' → append → hset mapping {'turns','updated_at'[,'chatbot_id']} (:222)
-    async def clear_history(...) # :230-252  hash mode resets 'turns' via hset
-    async def delete_history(...) -> bool   # :266-279  delete key + srem sessions set
-# FEAT-524 branch: __init__ calls super().__init__() at :19; add_turn at :255 (lines shift) — re-verify
+    def __init__(self, redis_url=None, key_prefix="conversation", use_hash_storage=True)   # :13  super().__init__() :14 ; self.redis = Redis.from_url(..., decode_responses=True) :18-23
+    def _get_key(self, user_id, session_id, chatbot_id=None) -> str           # :27
+    def _serialize_data(self, data) -> str / _deserialize_data(self, data)    # :43 / :53
+    async def get_history(...)   # :107-147  FEAT-524 lazy legacy re-key: when the segmented key is empty it reads the legacy key via
+                                 #   _load_history(user_id, session_id, None) (:149) and WRITES it back under the segmented key (update_history :142)
+    async def update_history(history)   # :200-221  hash mode mapping incl. 'metadata': self._serialize_data(...) ; one hset (:217)
+    async def add_turn(...)      # :223-251  hash mode: hget 'turns' → append → hset mapping {'turns','updated_at'[,'chatbot_id']} (:245)
+    async def clear_history(...) # :253-273  hash mode resets 'turns' via hset (:262)
+    async def delete_history(...) -> bool   # :275  delete key + srem sessions set
 
-# packages/ai-parrot/src/parrot/memory/file.py  (dev)
+# packages/ai-parrot/src/parrot/memory/file.py  (dev @ 198e6fecd)
 class FileConversationMemory(ConversationMemory):                              # :9
-    def __init__(self, base_path: str = "./conversations")                     # :12-15  self.base_path = Path(...); self._lock = asyncio.Lock()
-    async def update_history(history)   # async with self._lock: aiofiles write json.dumps(history.to_dict(), default=str)   # :72-81
-    async def add_turn(...)             # :83-94  get_history → history.add_turn → update_history
-    async def clear_history(...) :96 ; async def delete_history(...) :142
-# FEAT-524 branch: super().__init__() at :13; add_turn at :144 — re-verify
+    def __init__(self, base_path: str = "./conversations")                     # :12-16  super().__init__() :13; self.base_path = Path(...) :14; self._lock = asyncio.Lock() :16
+    async def get_history(...)          # :41-76  same lazy legacy re-key as Redis (_read_history :78 / _write_history :104)
+    async def update_history(history)   # :114-117 → _write_history (:104, async with self._lock: aiofiles write)
+    async def add_turn(...)             # :119-126  get_history → history.add_turn → update_history
+    async def clear_history(...) :128 ; async def delete_history(...) :165
 
-# packages/ai-parrot/src/parrot/storage/chat.py (dev): self._redis = RedisConversation(key_prefix="chat") :54 ; await self._redis.add_turn(...) :209
+# packages/ai-parrot/src/parrot/storage/chat.py (dev): self._redis = RedisConversation(key_prefix="chat") :55 ;
+#   await self._redis.add_turn(user_id, session_id, turn, chatbot_id=agent_id) :204  ← chat tier passes chatbot_id=agent_id (omission_key uses it)
+#   get_context_for_agent now uses render_history (:636) — FEAT-524 fixed the stale get_messages_for_api call
 # packages/ai-parrot/src/parrot/models/basic.py: CompletionUsage.model_dump() emits BOTH prompt_tokens and input_tokens (docstring :48-62; populate_by_name :72)
 # Redis test precedent: packages/ai-parrot/tests/test_chat_storage.py (skip when Redis unreachable)
 ```
@@ -228,11 +227,12 @@ async def add_turn(self, user_id, session_id, turn, chatbot_id=None, *, compacti
 - `CompactionState.to_dict/from_dict` — reuse whatever TASK-2819/2823 provided; do not add a third serializer.
 - Redis: **one** `hset` per `_store_turn`; assert with a recording fake (`hset` called once, mapping contains both `turns` and `metadata` when a commit is given).
 - `_preview` keeps the first 200 chars so notices and RAW excerpts still show the head of the output.
-- Google-style docstrings; `self.logger`, never `print` (the existing `print` in `redis.py:150` is pre-existing — leave it).
+- Google-style docstrings; `self.logger`, never `print`.
+- The default `_get_compaction_state` goes through `get_history`, which may perform the FEAT-524 lazy legacy re-key (a write). Harmless, but the Redis override via `hget(key, 'metadata')` avoids it — implement the override.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/tools/abstract.py` — FEAT-391 `execute()` → `_execute()` template-method precedent.
-- `packages/ai-parrot/src/parrot/memory/redis.py:170-191` — hash-mode mapping incl. `metadata`.
+- `packages/ai-parrot/src/parrot/memory/redis.py:200-221` — hash-mode mapping incl. `metadata`.
 
 ---
 
@@ -311,7 +311,7 @@ async def test_normalize_off_escape_hatch(tmp_path):
 ## Agent Instructions
 
 1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — TASK-2820, 2821, 2822, 2823 in `sdd/tasks/completed/`; FEAT-524 merged (banner)
+2. **Check dependencies** — TASK-2820, 2821, 2822, 2823 in `sdd/tasks/completed/`
 3. **Verify the Codebase Contract** before writing any code; update it first if anything changed
 4. **Update status** in `sdd/tasks/index/per-turn-conversation-compaction.json` → `"in-progress"`
 5. **Implement** following the scope, contract, and notes above

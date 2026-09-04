@@ -66,7 +66,7 @@ network at import time.
 ```python
 import tiktoken                                                            # verified: 0.9.0 installed; pyproject.toml:61; get_encoding("o200k_base") loads locally (2026-09-04)
 import orjson                                                              # verified: 3.12.0
-from parrot.memory.abstract import ConversationTurn                        # verified: memory/abstract.py:11
+from parrot.memory.abstract import ConversationTurn                        # verified: memory/abstract.py:16 (dev 198e6fecd)
 from parrot.memory.compaction.models import TokenCount, ToolInvocation     # created by TASK-2819
 import logging                                                             # module logger: logging.getLogger(__name__)
 ```

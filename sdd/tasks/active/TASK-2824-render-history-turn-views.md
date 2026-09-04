@@ -5,16 +5,13 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-2819 *(external prerequisite: FEAT-524 merged to `dev` — see banner)*
+**Depends-on**: TASK-2819
 **Assigned-to**: unassigned
 
-> ⚠️ **FEAT-524 prerequisite (spec C14).** `packages/ai-parrot/src/parrot/memory/render.py`
-> is created by FEAT-524 TASK-2809. On 2026-09-04 it exists only on the
-> FEAT-524 branch (`.claude/worktrees/feat-FEAT-524-conversation-history-ownership`
-> @ `89acaeaab`), NOT on `dev`. Before writing any code confirm the file
-> exists on your branch; if not, STOP — FEAT-524 has not merged. Line numbers
-> below marked *(FEAT-524 branch)* were read from that worktree and must be
-> re-verified after the merge.
+> ✅ **FEAT-524 merged** (PR #1310, merge `729ef7367`, 2026-09-04). Every
+> FEAT-524 anchor below was re-verified on `dev` @ `198e6fecd` (after the
+> post-merge `black` reformat `4831528a4`); `memory/render.py`,
+> `ConversationTurn.from_ai_message` and `AbstractBot.memory_key_id` exist.
 
 ---
 
@@ -77,24 +74,26 @@ itself (TASK-2827/2828), any bot change (TASK-2830/2831).
 
 ### Verified Imports
 ```python
-from parrot.memory.render import HistoryMessage, render_history      # FEAT-524 branch: memory/render.py:44, :90 — re-verify after merge
-from parrot.memory import HistoryMessage, render_history             # FEAT-524 branch: memory/__init__.py:13 re-exports both
-from parrot.memory.abstract import ConversationHistory, ConversationTurn   # dev: memory/abstract.py:51, :11 (FEAT-524 branch :130, :17)
+from parrot.memory.render import HistoryMessage, render_history      # dev 198e6fecd: memory/render.py:42, :87
+from parrot.memory import HistoryMessage, render_history             # dev: memory/__init__.py:13 re-exports both
+from parrot.memory.abstract import ConversationHistory, ConversationTurn   # dev 198e6fecd: memory/abstract.py:130, :16
 from parrot.memory.compaction.models import TurnView, TurnState      # TASK-2819 — TYPE_CHECKING-only import inside render.py
 ```
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/src/parrot/memory/render.py  (FEAT-524 branch @ 89acaeaab)
-_MERGE_SEPARATOR = "\n\n"                                             # :40
+# packages/ai-parrot/src/parrot/memory/render.py  (dev @ 198e6fecd — FEAT-524 merged)
+from .abstract import ConversationHistory                             # :32  (the ONLY runtime parrot import)
+__all__ = ("HistoryMessage", "render_history")                        # :34
+_MERGE_SEPARATOR = "\n\n"                                             # :38
 @dataclass(frozen=True)
-class HistoryMessage:                                                 # :44
+class HistoryMessage:                                                 # :42
     role: Literal["user", "assistant"]; content: str
-    chatbot_id: Optional[str] = None; turn_id: Optional[str] = None   # :57-60
-def _append(out: List[HistoryMessage], message: HistoryMessage) -> None   # :63  merges same-role tail, keeps FIRST turn's ids
+    chatbot_id: Optional[str] = None; turn_id: Optional[str] = None   # :56-59
+def _append(out: List[HistoryMessage], message: HistoryMessage) -> None   # :62  merges same-role tail, keeps FIRST turn's ids
 def render_history(history: Optional[ConversationHistory], *, max_turns: Optional[int] = None,
                    current_chatbot_id: Optional[str] = None, include_other_agents: bool = True,
-                   other_agent_label: str = "[agent:{chatbot_id}]") -> List[HistoryMessage]   # :90
+                   other_agent_label: str = "[agent:{chatbot_id}]") -> List[HistoryMessage]   # :87
 #   body: None/empty → []; max_turns<=0 → []; skip blank assistant_response; foreign = current_chatbot_id is not None
 #         and turn.chatbot_id is not None and differ; label = other_agent_label.format(chatbot_id=…); f"{label} {text}"
 # Module rule (docstring :14-18 + test): imports ONLY from .abstract at runtime.
@@ -104,9 +103,9 @@ def render_history(history: Optional[ConversationHistory], *, max_turns: Optiona
 class TurnView: turn_id: str; chatbot_id: Optional[str]; user_text: str; assistant_text: str
                 assistant_suffix: str; state: TurnState; estimated_tokens: int
 
-# Regression fixtures (FEAT-524 branch): packages/ai-parrot/tests/unit/memory/test_render_history.py
+# Regression fixtures (dev): packages/ai-parrot/tests/unit/memory/test_render_history.py
 #   _turn(index, assistant="a", chatbot_id=None) :16 ; _history(*turns) :27 ; 
-#   test_render_module_does_not_import_storage_backends :211 — source-text scan for forbidden imports (copy this style)
+#   test_render_module_does_not_import_storage_backends :209 — source-text scan for `import/from .redis|.file|.mem|redis|aiofiles`; a TYPE_CHECKING `from .compaction.models import TurnView` does not match it
 ```
 
 ### Does NOT Exist
@@ -149,8 +148,8 @@ Then the existing loop consumes rows: blank assistant → skip; foreign label; `
 - Google-style docstrings; extend the `render_history` docstring's `Args` with the view behaviour.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/memory/render.py` (FEAT-524 branch) — the function you are widening.
-- `packages/ai-parrot/tests/unit/memory/test_render_history.py` (FEAT-524 branch) — fixtures + import-scan test style.
+- `packages/ai-parrot/src/parrot/memory/render.py:87-160` — the function you are widening.
+- `packages/ai-parrot/tests/unit/memory/test_render_history.py` — fixtures (`_turn` :16, `_history` :27) + import-scan test style (:209).
 
 ---
 
@@ -225,7 +224,7 @@ def test_render_imports_no_compaction():
 ## Agent Instructions
 
 1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — TASK-2819 in `sdd/tasks/completed/`; FEAT-524 merged (banner)
+2. **Check dependencies** — TASK-2819 in `sdd/tasks/completed/`
 3. **Verify the Codebase Contract** before writing any code; update it first if anything changed
 4. **Update status** in `sdd/tasks/index/per-turn-conversation-compaction.json` → `"in-progress"`
 5. **Implement** following the scope, contract, and notes above

@@ -36,15 +36,16 @@ green full suite.
   OmissionStore, TokenCount, TokenCounter, ToolInvocation, ToolStatus, TurnState, TurnView, compact_history)`
   and the same names in `__all__` (keep the alphabetical order the list already uses; do not touch the lazy
   dream-cycle block).
-- `docs/memory/per-turn-conversation-compaction.md` (create `docs/memory/` if FEAT-524's guide has not landed):
+- `docs/memory/per-turn-conversation-compaction.md` (sibling of FEAT-524's `docs/memory/conversation-history-ownership.md`, which exists on dev):
   the three tiers with the worked shape (50 chat turns → all verbatim; 10 database turns → latest verbatim, rest
   pruned), the `<tool-activity>` / `<tool-output-omitted>` formats, the kill switch (`context_budget=False`,
   `PARROT_COMPACTION_DISABLED=1`), tuning keys (`ContextBudget` fields, `max_context_turns` as ceiling, the
   `Chatbot` DB default change from 5 to "no override"), the two recovery tools (`read_omitted_content`,
   FEAT-380 `wm_get_result`), operator metadata (`history.metadata["compaction"]`), the write-time offload,
   and the `_store_turn` contract for custom `ConversationMemory` backends (hard cut: `add_turn` is final).
-- `.agent/CONTEXT.md`: extend the `memory/` line in "What Lives Where" (`:213`) and the "Active areas" bullet
-  (`:251`) with one sentence on the compaction package and the `_store_turn` template method.
+- `.agent/CONTEXT.md`: extend the "Conversation memory" core-abstraction section (`:78-86`, FEAT-524 wrote it and names
+  `render_history()` as the compaction extension point), the `memory/` line in "What Lives Where" (`:229-231`) and the
+  "Active areas" bullet (`:269`) with one sentence on the compaction package and the `_store_turn` template method.
 - Integration tests in `packages/ai-parrot/tests/unit/memory/compaction/test_integration_round_trip.py`
   (no network; stub client): `test_round_trip_database_agent_session` (12 rounds, 8k-token tool results → after
   round 3 older datasets are notices; `read_omitted_content` returns the exact bytes; every prompt's rendered
@@ -80,7 +81,7 @@ green full suite.
 ```python
 from parrot.memory import ConversationHistory, ConversationMemory, ConversationTurn     # dev: memory/__init__.py:3
 from parrot.memory import InMemoryConversation, RedisConversation, FileConversationMemory   # dev: memory/__init__.py:10-12
-from parrot.memory import HistoryMessage, render_history                                  # FEAT-524 branch: memory/__init__.py:13
+from parrot.memory import HistoryMessage, render_history                                  # dev: memory/__init__.py:13
 from parrot.memory.compaction import ...                                                  # TASK-2819..2829 modules: models, normalize, tokens, omission, budget, policies, compact, recover
 ```
 
@@ -91,17 +92,17 @@ from .abstract import ConversationHistory, ConversationMemory, ConversationTurn 
 from .file import FileConversationMemory ; from .mem import InMemoryConversation ; from .redis import RedisConversation   # :10-12
 _DREAM_EXPORTS / def __getattr__(name) / def __dir__()       # lazy FEAT-390 block — DO NOT touch
 __all__ = ["AgentMemory", "AnswerMemory", "BrainStore", "ContextAssembler", "ConversationHistory", ...]   # alphabetical; extend in order
-# FEAT-524 branch adds: from .render import HistoryMessage, render_history (:13) and both names in __all__ (:95, :102)
+# from .render import HistoryMessage, render_history (:13) ; both names in __all__ (:95, :102)
 
-# .agent/CONTEXT.md: "├── memory/           # Conversation memory (Redis-backed)" :213 ; "- `parrot/memory/` — Redis-based conversation memory" :251
-# docs/: no docs/memory/ directory on dev (2026-09-04); FEAT-524 TASK-2818 (in progress) creates docs/memory/conversation-history-ownership.md
+# .agent/CONTEXT.md (dev 198e6fecd): "### Conversation memory" :78-86 ; "├── memory/ …" :229-231 ; "- `parrot/memory/` — Redis-based conversation memory" :269
+# docs/memory/conversation-history-ownership.md exists (FEAT-524 TASK-2818, 9.7K) — match its tone/structure
 # Redis test precedent: packages/ai-parrot/tests/test_chat_storage.py (skip when unreachable)
-# Stub client precedent: FEAT-524 branch tests/unit/memory/test_history_ownership.py RecordingClient :43
+# Stub client precedent: tests/unit/memory/test_history_ownership.py RecordingClient :43
 # Suite hang gotcha: `pytest tests/unit` may hang after the summary — ALWAYS wrap in `timeout -s KILL` (memory note + spec §4)
 ```
 
 ### Does NOT Exist
-- ~~`docs/memory/`~~ — absent on dev; create it if FEAT-524's guide has not created it yet.
+- ~~A `docs/memory/` directory you must create~~ — it exists (FEAT-524 guide landed); only add the new file.
 - ~~`parrot.memory.compaction` public surface~~ — TASK-2819 created only a minimal `__init__.py` re-exporting models; this task completes it.
 - ~~`parrot.memory.compact_history` before this task~~ — not exported until here.
 - ~~`ChatStorage` budgeting~~ — non-goal; document as follow-up only.
@@ -118,7 +119,7 @@ __all__ = ["AgentMemory", "AnswerMemory", "BrainStore", "ContextAssembler", "Con
 - Completion Note must state the C14 re-verification (which FEAT-524 commit the contracts were re-verified against).
 
 ### References in Codebase
-- `docs/memory/conversation-history-ownership.md` (FEAT-524 TASK-2818, if landed) — sibling guide to match in tone and structure.
+- `docs/memory/conversation-history-ownership.md` — sibling guide to match in tone and structure.
 - `packages/ai-parrot/src/parrot/memory/__init__.py` — export style (explicit list + alphabetical `__all__`).
 
 ---

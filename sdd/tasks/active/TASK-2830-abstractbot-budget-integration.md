@@ -5,16 +5,13 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
-**Depends-on**: TASK-2823, TASK-2824, TASK-2826, TASK-2828, TASK-2829 *(external prerequisite: FEAT-524 merged — see banner)*
+**Depends-on**: TASK-2823, TASK-2824, TASK-2826, TASK-2828, TASK-2829
 **Assigned-to**: unassigned
 
-> ⚠️ **FEAT-524 prerequisite (spec C14).** This task extends
-> `AbstractBot.save_conversation_turn` in its FEAT-524 shape
-> (`(user_id, session_id, turn)`, keyed by `memory_key_id`, FEAT-524 branch
-> `bots/abstract.py:1868`) and relies on `memory_key_id` (`:1807`). The dev
-> shape (`bots/abstract.py:1836`, with a `chatbot_id` parameter) is NOT the
-> one to extend. Confirm `memory_key_id` exists on your branch; if not, STOP.
-> Line numbers marked *(FEAT-524 branch)* WILL shift after the merge.
+> ✅ **FEAT-524 merged** (PR #1310, merge `729ef7367`, 2026-09-04). Every
+> FEAT-524 anchor below was re-verified on `dev` @ `198e6fecd` (after the
+> post-merge `black` reformat `4831528a4`); `memory/render.py`,
+> `ConversationTurn.from_ai_message` and `AbstractBot.memory_key_id` exist.
 
 ---
 
@@ -35,8 +32,8 @@ entry points over to them.
 
 - `bots/abstract.py` — `__init__`:
   - `self._context_budget_raw: Optional[ContextBudget | bool] = kwargs.get('context_budget')` (set **before**
-    `configure_conversation_memory()` is called at dev `:1497`).
-  - `self.max_context_turns: Optional[int] = kwargs.get('max_context_turns')` — default `None` (was `50` at dev `:590`, FEAT-524 branch `:597`). Grep the file for other reads of `max_context_turns` (dev `:2925-2926` in the removed-by-FEAT-524 `build_conversation_context`; verify) and make each tolerate `None` (`self.max_context_turns or 30`).
+    `configure_conversation_memory()` is called at `:1408`).
+  - `self.max_context_turns: Optional[int] = kwargs.get('max_context_turns')` — default `None` (was `50` at `:541`). That is the only read of `max_context_turns` left in `abstract.py` (FEAT-524 removed `build_conversation_context`; verified 2026-09-04) — grep once more before editing.
   - `self._budget_window_logged: bool = False`.
 - `@property context_budget(self) -> Optional[ContextBudget]`:
   `raw is False or compaction_disabled_by_env()` ⇒ `None`; `isinstance(raw, ContextBudget)` ⇒
@@ -102,34 +99,34 @@ entry points over to them.
 
 ### Verified Imports
 ```python
-from parrot.memory import ConversationMemory, ConversationTurn, ConversationHistory     # dev: bots/abstract.py:48-55 already imports these
-from parrot.memory import HistoryMessage, render_history                                 # FEAT-524 branch: memory/__init__.py:13
+from parrot.memory import ConversationMemory, ConversationTurn, ConversationHistory     # dev 198e6fecd: bots/abstract.py:38-45 already imports these (NOT render_history/HistoryMessage — add those)
+from parrot.memory import HistoryMessage, render_history                                 # dev: memory/__init__.py:13
 from parrot.memory.compaction.models import ContextBudget, CompactionCommit, CompactionResult, FALLBACK_WINDOW   # TASK-2819
 from parrot.memory.compaction.budget import build_default_budget, compaction_disabled_by_env, resolve_window       # TASK-2823
 from parrot.memory.compaction.compact import compact_history                             # TASK-2828
 from parrot.memory.compaction.tokens import get_default_counter                          # TASK-2821
 from parrot.memory.compaction.recover import (READ_OMITTED_CONTENT_NAME, READ_OMITTED_CONTENT_DESCRIPTION,
                                               READ_OMITTED_CONTENT_SCHEMA, bind_read_omitted_content)             # TASK-2829
-from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext                 # dev: bots/abstract.py:128
-from parrot.core.events.lifecycle.events import MessageAddedEvent                        # dev: events/__init__.py:39 ; imported in abstract.py:134
+from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext                 # dev: bots/abstract.py:122
+from parrot.core.events.lifecycle.events import MessageAddedEvent                        # dev: events/__init__.py:39 ; imported in abstract.py:128
 from navigator_eventbus.lifecycle.base import LifecycleEvent                             # dev: events/message.py:8
 from dataclasses import replace
 ```
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/src/parrot/bots/abstract.py  (dev @ f3a5fe7ea | FEAT-524 branch @ 89acaeaab)
-self.chatbot_id = kwargs.get('chatbot_id', ...)                            # dev :353 | 524 :353-363 (+ self._chatbot_id_explicit :363)
-self.tool_manager: ToolManager = ToolManager(...)                          # dev :386 | 524 :393
-self._llm_model = _explicit_llm_model or self.default_model                # dev :506 | 524 :513   ← model name for MODEL_WINDOWS
-self.conversation_memory: Optional[ConversationMemory] = None              # dev :585
-self.max_context_turns: int = kwargs.get('max_context_turns', 50)          # dev :590 | 524 :597   ← becomes Optional, default None
-            self.configure_conversation_memory()                           # dev :1497 (inside __init__ configuration)
-def configure_conversation_memory(self) -> None                            # dev :1263-1279 | 524 :1274  (success branch + in-memory fallback)
-self._llm_model = config.model                                             # dev :1532 (model may change after init → do not cache the budget by model)
-@property def memory_key_id(self) -> str                                   # 524 :1807-1833
-async def get_conversation_history(self, user_id, session_id, ...)         # dev :1798 | 524 :1834
-async def save_conversation_turn(self, user_id, session_id, turn) -> None  # 524 :1868-1923:
+# packages/ai-parrot/src/parrot/bots/abstract.py  (dev @ 198e6fecd — FEAT-524 merged, black-formatted)
+self._chatbot_id_explicit: bool = kwargs.get("chatbot_id") is not None     # :334
+self.tool_manager: ToolManager = ToolManager(...)                          # :358
+self._llm_model = _explicit_llm_model or self.default_model                # :458   ← model name for MODEL_WINDOWS
+self.conversation_memory: Optional[ConversationMemory] = None              # :536
+self.max_context_turns: int = kwargs.get("max_context_turns", 50)          # :541   ← becomes Optional, default None
+def configure_conversation_memory(self) -> None                            # :1197  (success branch + in-memory fallback)
+            self.configure_conversation_memory()                           # :1408  (inside __init__ configuration; after tool_manager :358 and _llm_model :458)
+self._llm_model = config.model                                             # :1436  (model may change after init → do not cache the budget by model)
+@property def memory_key_id(self) -> str                                   # :1676-1700
+async def get_conversation_history(self, user_id, session_id, ...)         # :1703 ; create_conversation_history :1712
+async def save_conversation_turn(self, user_id, session_id, turn) -> None  # :1721-1773  (add_turn call :1754; MessageAddedEvent emit :1763-1773):
 #     if not self.conversation_memory: return
 #     chatbot_key = self.memory_key_id ; if turn.chatbot_id != chatbot_key: raise ValueError(...)
 #     await self.conversation_memory.add_turn(user_id, session_id, turn, chatbot_id=chatbot_key)
@@ -147,14 +144,14 @@ async def save_conversation_turn(self, user_id, session_id, turn) -> None  # 524
 # TASK-2824: render_history(history_or_views, *, max_turns=None, current_chatbot_id=None, ...) -> List[HistoryMessage]
 # TASK-2823: build_default_budget(model, *, max_turns=None) ; compaction_disabled_by_env() ; resolve_window(model)
 # TASK-2819: CompactionCommit(prompt_estimate, boundary_turn_id, stage2_needed, history_estimate=0, dropped_turns=0)
-# Test precedent for a bot + stub client: FEAT-524 branch tests/unit/memory/test_history_ownership.py (RecordingClient :43, bot fixture :137)
+# Test precedent for a bot + stub client: tests/unit/memory/test_history_ownership.py (RecordingClient :43, bot fixture :136)
 ```
 
 ### Does NOT Exist
 - ~~`AbstractBot.context_budget` / `render_context_history` / `estimate_prompt_tokens` / `build_compaction_commit` / `_register_recovery_tool`~~ — new here.
 - ~~`save_conversation_turn(..., chatbot_id=)`~~ — removed by FEAT-524; extend the 3-parameter form with a kw-only `compaction`.
 - ~~`Stage2CompactionNeededEvent`, `core/events/lifecycle/events/memory.py`~~ — new here.
-- ~~`AbstractBot.build_conversation_context` / `conversation_context`~~ — removed by FEAT-524; do not touch the history digest path (dev `:2925` disappears).
+- ~~`AbstractBot.build_conversation_context` / `conversation_context`~~ — removed by FEAT-524 (only a NOTE comment remains at `:2724-2728`).
 - ~~A per-model window table in `parrot/clients/*`~~ — none; use `build_default_budget` (TASK-2823).
 - ~~Any change under `parrot/clients/`~~ — forbidden (C11; verified by `git diff --stat -- packages/ai-parrot/src/parrot/clients` being empty).
 - ~~`PARROT_COMPRESSION_DISABLED` as the kill switch~~ — FEAT-380's variable; ours is `PARROT_COMPACTION_DISABLED` via `compaction_disabled_by_env()`.
@@ -187,11 +184,11 @@ async def render_context_history(self, history):
 - The kill-switch path must produce the **same object list** FEAT-524 produced (`test_kill_switch_byte_equality` lives in TASK-2831 but this helper is what it exercises).
 - Flush failure ⇒ plain render **and** `None` result ⇒ no commit ⇒ boundary unchanged (spec §5 bullet).
 - Stage-2 event: exactly once per session on the first `False → True` flip, decided on the **persisted** flag read before the write.
-- `_register_recovery_tool` must run after `self.tool_manager` exists (dev `:386` precedes `:1497` — verify order on the merged file).
+- `_register_recovery_tool` must run after `self.tool_manager` exists (`:358` precedes the `configure_conversation_memory()` call at `:1408` — verified).
 - Google-style docstrings; `self.logger`; no `print`.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/bots/abstract.py` (FEAT-524 branch `:1868-1923`) — body to extend.
+- `packages/ai-parrot/src/parrot/bots/abstract.py:1721-1773` — body to extend.
 - `packages/ai-parrot/src/parrot/core/events/lifecycle/events/message.py` — event file template.
 
 ---
@@ -267,7 +264,7 @@ async def test_flush_failure_falls_back_to_plain(bot, database_history, monkeypa
 ## Agent Instructions
 
 1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — TASK-2823, 2824, 2826, 2828, 2829 in `sdd/tasks/completed/`; FEAT-524 merged (banner)
+2. **Check dependencies** — TASK-2823, 2824, 2826, 2828, 2829 in `sdd/tasks/completed/`
 3. **Verify the Codebase Contract** before writing any code; update it first if anything changed
 4. **Update status** in `sdd/tasks/index/per-turn-conversation-compaction.json` → `"in-progress"`
 5. **Implement** following the scope, contract, and notes above

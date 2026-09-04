@@ -85,7 +85,7 @@ TASK-2830); a `prune_policy` attribute on `AbstractTool` (non-goal).
 
 ### Verified Imports
 ```python
-from parrot.memory.abstract import ConversationTurn                                   # dev: memory/abstract.py:11
+from parrot.memory.abstract import ConversationTurn                                   # dev 198e6fecd: memory/abstract.py:16
 from parrot.memory.compaction.models import ToolInvocation, ToolStatus, Omission, Limit   # TASK-2819
 from parrot.memory.compaction.omission import content_id                              # TASK-2822 ("om_" + blake2b-8 hexdigest)
 import orjson                                                                          # verified: 3.12.0

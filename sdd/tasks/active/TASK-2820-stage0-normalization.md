@@ -69,7 +69,7 @@ memory option (TASK-2826), token counting (TASK-2821).
 
 ### Verified Imports
 ```python
-from parrot.memory.abstract import ConversationTurn                       # verified: memory/abstract.py:11
+from parrot.memory.abstract import ConversationTurn                       # verified: memory/abstract.py:16 (dev 198e6fecd)
 from parrot.memory.compaction.models import ToolInvocation, ToolStatus   # created by TASK-2819 (verify it landed)
 import orjson                                                             # verified: 3.12.0 installed
 import re, unicodedata                                                    # stdlib

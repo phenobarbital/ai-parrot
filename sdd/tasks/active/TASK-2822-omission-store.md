@@ -53,25 +53,24 @@ store only; ownership wiring into `ConversationMemory` is TASK-2826.
 from parrot.memory.compaction.models import Omission                     # created by TASK-2819
 import hashlib, json, asyncio                                             # stdlib (blake2b, index JSON, file lock)
 from pathlib import Path
-from redis.asyncio import Redis                                           # verified: memory/redis.py imports `Redis` and calls Redis.from_url(..., decode_responses=True) at :22-28
+from redis.asyncio import Redis                                           # verified: memory/redis.py imports `Redis` and calls Redis.from_url(..., decode_responses=True) at :18-23 (dev 198e6fecd)
 from parrot.memory.redis import RedisConversation                         # verified: memory/redis.py:10 (tests: reuse its .redis client)
 ```
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/src/parrot/memory/redis.py  (dev a824f6535)
-class RedisConversation(ConversationMemory):                              # 10
-    def __init__(self, redis_url=None, key_prefix="conversation", use_hash_storage=True)   # 13-28
-    self.redis = Redis.from_url(self.redis_url, decode_responses=True, encoding="utf-8", ...)   # 22-28  ← the client to share
-    self.key_prefix = key_prefix                                          # 20
-    def _get_key(self, user_id, session_id, chatbot_id=None) -> str      # 31-42  "{prefix}[:{chatbot_id}]:{user}:{session}"
-    await self.redis.hset(key, mapping=mapping)                           # 222 (hash usage precedent)
-    # :490 — commented-out `expire` on an index key; NO expire on history keys anywhere
+# packages/ai-parrot/src/parrot/memory/redis.py  (dev @ 198e6fecd — FEAT-524 merged)
+class RedisConversation(ConversationMemory):                              # :10
+    def __init__(self, redis_url=None, key_prefix="conversation", use_hash_storage=True)   # :13  (super().__init__() :14)
+    self.redis = Redis.from_url(self.redis_url, decode_responses=True, encoding="utf-8", ...)   # :18-23  ← the client to share
+    def _get_key(self, user_id, session_id, chatbot_id=None) -> str      # :27  "{prefix}[:{chatbot_id}]:{user}:{session}"
+    await self.redis.hset(key, mapping=mapping)                           # :245 (hash usage precedent, inside add_turn :223-251)
+    # :455 — commented-out `expire` on an index key; NO expire on history keys anywhere
 
-# packages/ai-parrot/src/parrot/memory/file.py
-class FileConversationMemory(ConversationMemory):                         # 9
-    def __init__(self, base_path: str = "./conversations")                # 12  self.base_path = Path(base_path); self._lock = asyncio.Lock()
-    def _get_file_path(...)                                               # 17
+# packages/ai-parrot/src/parrot/memory/file.py  (dev @ 198e6fecd)
+class FileConversationMemory(ConversationMemory):                         # :9
+    def __init__(self, base_path: str = "./conversations")                # :12-16  super().__init__() :13; self.base_path = Path(base_path) :14; self._lock = asyncio.Lock() :16
+    def _get_file_path(...)                                               # :18
 
 # Redis-fixture precedent for tests: packages/ai-parrot/tests/test_chat_storage.py (uses RedisConversation)
 ```
@@ -111,7 +110,7 @@ class RedisOmissionStore(OmissionStore):
 - Logging via `logging.getLogger(__name__)`; no `print`.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/memory/redis.py:193-228` — hash write pattern.
+- `packages/ai-parrot/src/parrot/memory/redis.py:223-251` — hash write pattern.
 - `packages/ai-parrot/src/parrot/memory/file.py:12-30` — file layout + lock pattern.
 
 ---

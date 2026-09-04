@@ -5,17 +5,13 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
-**Depends-on**: none *(external prerequisite: FEAT-524 merged to `dev` — see banner)*
+**Depends-on**: none
 **Assigned-to**: unassigned
 
-> ⚠️ **FEAT-524 prerequisite (spec C14).** This task extends
-> `ConversationTurn.chatbot_id` and `from_ai_message()`, both created by
-> FEAT-524 M2. Before writing any code, confirm on the current branch that
-> `packages/ai-parrot/src/parrot/memory/render.py` exists and
-> `ConversationTurn.from_ai_message` is defined. If not, STOP — FEAT-524 has
-> not merged; do not re-implement it here. Every "FEAT-524 — unverified"
-> entry in the contract below must be re-verified with real line numbers
-> and the contract updated first.
+> ✅ **FEAT-524 merged** (PR #1310, merge `729ef7367`, 2026-09-04). Every
+> FEAT-524 anchor below was re-verified on `dev` @ `198e6fecd` (after the
+> post-merge `black` reformat `4831528a4`); `memory/render.py`,
+> `ConversationTurn.from_ai_message` and `AbstractBot.memory_key_id` exist.
 
 ---
 
@@ -96,7 +92,7 @@ the omission store (TASK-2822), `MODEL_WINDOWS`/`resolve_window`/`apply_*`
 
 ### Verified Imports
 ```python
-from parrot.memory.abstract import ConversationTurn, ConversationHistory   # verified: memory/abstract.py:11, 51 (dev a824f6535)
+from parrot.memory.abstract import ConversationTurn, ConversationHistory   # verified: memory/abstract.py:16, 130 (dev 198e6fecd)
 from parrot.models.basic import ToolCall, CompletionUsage                  # verified: models/basic.py:23, 48
 from parrot.models.responses import AIMessage                              # verified: models/responses.py:72
 import orjson                                                              # verified: 3.12.0 installed; pyproject.toml:164
@@ -105,21 +101,24 @@ from parrot.tools.compression.tee import attach_tee_pointer                # ver
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/src/parrot/memory/abstract.py  (dev a824f6535 — FEAT-524 adds chatbot_id + from_ai_message)
+# packages/ai-parrot/src/parrot/memory/abstract.py  (dev @ 198e6fecd — FEAT-524 merged, verified 2026-09-04)
+if TYPE_CHECKING: from parrot.models import AIMessage              # :9-13  (parrot.models is NOT a runtime dependency of parrot.memory — keep it that way)
 @dataclass
-class ConversationTurn:                                            # line 10-11
-    turn_id: str; user_id: str; user_message: str; assistant_response: str   # 13-16
-    context_used: Optional[str] = None                             # 17
-    tools_used: List[str] = field(default_factory=list)            # 18  ← keep as a real field
-    timestamp: datetime = field(default_factory=datetime.now)      # 19
-    metadata: Dict[str, Any] = field(default_factory=dict)         # 20
-    def to_dict(self) -> Dict[str, Any]                            # 22  (stdlib dataclass, hand-written dict)
-    @classmethod def from_dict(cls, data) -> 'ConversationTurn'    # 36  (uses data.get(..., default) for optionals)
-# FEAT-524 — unverified in code (spec conversation-history-ownership §2):
-#   chatbot_id: Optional[str] = None
-#   @classmethod from_ai_message(cls, *, user_message, response: "AIMessage", user_id, chatbot_id,
-#                                context_used=None, turn_id=None, assistant_text=None) -> "ConversationTurn"
-#   # tools_used = [tc.name for tc in response.tool_calls]; metadata = {model, provider, usage(dict), finish_reason, response_time}
+class ConversationTurn:                                            # :15-16
+    turn_id: str; user_id: str; user_message: str; assistant_response: str   # :19-22
+    context_used: Optional[str] = None                             # :23
+    tools_used: List[str] = field(default_factory=list)            # :24  ← keep as a real field
+    timestamp: datetime = field(default_factory=datetime.now)      # :25
+    metadata: Dict[str, Any] = field(default_factory=dict)         # :26
+    chatbot_id: Optional[str] = None                               # :30  (FEAT-524)
+    def to_dict(self) -> Dict[str, Any]                            # :32  (hand-written dict, emits 'chatbot_id')
+    @classmethod def from_dict(cls, data) -> "ConversationTurn"    # :47  (data.get(..., default) for optionals; chatbot_id=data.get("chatbot_id"))
+    @classmethod def from_ai_message(cls, *, user_message: str, response: "AIMessage", user_id: str, chatbot_id: str,
+                                     context_used: Optional[str] = None, turn_id: Optional[str] = None,
+                                     assistant_text: Optional[str] = None) -> "ConversationTurn"   # :63-72
+    #   body: answer = assistant_text or response.to_text ; tool_calls = getattr(response, "tool_calls", None) or [] (:108)
+    #         tools_used=[tc.name for tc in tool_calls] (:117)
+    #         metadata={"model", "provider", "usage": usage.model_dump() if hasattr(usage, "model_dump") else usage (:121), "finish_reason", "response_time"}
 
 # packages/ai-parrot/src/parrot/models/basic.py
 class ToolCall(BaseModel):                                         # 23
@@ -155,7 +154,7 @@ def attach_tee_pointer(payload, key, reason) -> Any                # 161: dict �
 
 ### Pattern to Follow
 ```python
-# memory/abstract.py:22-47 — hand-written dict round trip; extend, do not replace
+# memory/abstract.py:32-61 — hand-written dict round trip; extend, do not replace
 def to_dict(self) -> Dict[str, Any]:
     return {..., 'tools_used': self.tools_used, 'timestamp': self.timestamp.isoformat(), 'metadata': self.metadata,
             'chatbot_id': self.chatbot_id,                                   # FEAT-524
@@ -180,7 +179,7 @@ def from_dict(cls, data):
 - Google-style docstrings, strict type hints, no `print`.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/memory/abstract.py:10-47` — dataclass + dict round-trip convention.
+- `packages/ai-parrot/src/parrot/memory/abstract.py:15-61` — dataclass + dict round-trip convention; `:63-127` the `from_ai_message` body to extend.
 - `packages/ai-parrot/src/parrot/security/groundedness/models.py` — style of small frozen dataclasses in this repo.
 
 ---
@@ -254,7 +253,7 @@ def test_context_budget_validation():
 When you pick up this task:
 
 1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — verify FEAT-524 is merged (banner above)
+2. **Check dependencies** — none in-feature (FEAT-524 is merged)
 3. **Verify the Codebase Contract** — before writing ANY code:
    - Confirm every import in "Verified Imports" still exists (`grep` or `read` the source)
    - Confirm every class/method in "Existing Signatures" still has the listed attributes

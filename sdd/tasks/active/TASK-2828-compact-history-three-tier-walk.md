@@ -85,7 +85,7 @@ the policies themselves (TASK-2827).
 
 ### Verified Imports
 ```python
-from parrot.memory.abstract import ConversationHistory, ConversationTurn                        # dev: memory/abstract.py:51, :11
+from parrot.memory.abstract import ConversationHistory, ConversationTurn                        # dev 198e6fecd: memory/abstract.py:130, :16
 from parrot.memory.compaction.models import (ContextBudget, Limit, CompactionResult, TurnView, TurnState,
                                              Omission, TokenCount)                              # TASK-2819
 from parrot.memory.compaction.tokens import TokenCounter, count_turn, needs_recount, get_default_counter, HeuristicCounter   # TASK-2821
@@ -157,7 +157,7 @@ def compact_history(history, budget, *, policies=None, boundary_turn_id=None, co
 - Google-style docstrings; module docstring states purity.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/memory/render.py` (FEAT-524) — foreign-turn rule to mirror (`current_chatbot_id`/`include_other_agents`).
+- `packages/ai-parrot/src/parrot/memory/render.py:87-160` (FEAT-524, on dev) — foreign-turn rule to mirror (`current_chatbot_id`/`include_other_agents`).
 - `packages/ai-parrot/src/parrot/security/groundedness/normalize.py` — pure module style.
 
 ---
