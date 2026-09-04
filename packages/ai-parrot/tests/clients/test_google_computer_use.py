@@ -266,3 +266,13 @@ class TestZeroThinkingBudgetRejection:
         # An unaffected flash-lite still gets reasoning switched off.
         cfg = client._invoke_thinking_config("gemini-2.5-flash-lite", structured=True)
         assert cfg is not None and cfg.thinking_budget == 0
+
+    def test_thinking_budget_none_is_permitted(self):
+        """ThinkingConfig with thinking_budget=None is valid and serializes to empty dict."""
+        from google.genai import types, _common
+        cfg = types.ThinkingConfig(thinking_budget=None)
+        assert cfg.thinking_budget is None
+        # In google-genai, None thinking_budget serializes to empty dict, which the API accepts
+        serialized = _common.convert_to_dict(cfg)
+        assert "thinking_budget" not in serialized
+        assert "thinkingBudget" not in serialized
