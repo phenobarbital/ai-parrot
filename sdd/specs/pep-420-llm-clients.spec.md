@@ -63,10 +63,14 @@ This causes four concrete pain points:
   (`parrot.clients` group) plus a factory-level model catalogue
   (`list_providers()`, `list_models()`), so no core or server module needs to
   import a provider enum to enumerate models.
-- **G4**: Existing **client** import paths (`from parrot.clients.google import
-  GoogleGenAIClient`) keep working when the satellite is installed, via PEP 420
-  namespace merging. Provider **enum** import paths are a hard cut (see
-  Non-Goals).
+- **G4**: Client import paths whose module name is unchanged (`parrot.clients.google`,
+  `.groq`, `.grok`, `.zai`, `.nvidia`, `.moonshot`, `.openrouter`, `.vllm`,
+  `.gemma4`, `.hf`, `.meta`) keep working when the satellite is installed, via
+  PEP 420 namespace merging. Paths that the convention **renames** are a hard
+  cut with callers updated in-feature: `parrot.clients.gpt` → `.openai`,
+  `.claude` → `.anthropic`, `.localllm` → `.local`, `.bedrock`/`.nova` →
+  `.amazon`, `.live` → `.google.live`, and every `parrot.models.<provider>`
+  enum → `parrot.clients.<provider>.models` (see Non-Goals).
 - **G5**: Preserve `ai-parrot[llms]` as the single install command for all
   clients; each satellite has independent semver.
 
@@ -399,7 +403,9 @@ def block_satellites(monkeypatch):
   imports a `parrot.clients.<provider>` module or enum at module scope
   (`test_core_has_no_module_scope_provider_import`).
 - [ ] **AC-4**: `from parrot.clients.<provider> import <Client>` works for every
-  provider when its satellite is installed (PEP 420 via `extend_path`).
+  provider when its satellite is installed (PEP 420 via `extend_path`); the
+  renamed legacy paths listed in G4 are gone and no caller in `packages/*`,
+  `tests/`, `examples/` references them.
 - [ ] **AC-5**: `LLMFactory.create("<key>:<model>")` works for every key of every
   installed satellite via entry-point discovery; without the satellite it
   raises `ImportError` naming `ai-parrot-client-<provider>`.
