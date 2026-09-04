@@ -230,10 +230,23 @@ def test_prune_turn_fresh_output_and_empty():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/policies.py`:
+`PrunedInvocation`, `PrunePolicy` Protocol, `format_invocation_line`,
+`omission_notice`, a shared `_prune_shared()` helper implementing the
+common omission/error rule set (reused offloaded id → notice with no new
+`Omission`; fresh output → notice + one `Omission`; error always kept
+verbatim), the six built-ins (`DefaultPolicy` uses it unmodified; the
+other five each narrow the `in=` field to their relevant input keys via
+`dataclasses.replace` and — where the spec calls for it — add an
+`exit=`/`rows=`/`hits=` extra parsed best-effort from the output JSON),
+the starter alias table, `register_policy`/`get_policy`, and
+`prune_turn`. Verified via `test_policies_keep_errors_and_notice_shape`
+that all six built-ins emit the identical shared notice format
+(including `wm=`) for the same invocation — confirms the "all sharing
+this rule set" reading of spec §3 Module 7 (per-policy differences are
+in the `in=` narrowing only, not the omission/notice/error handling).
+All 4 task-specified tests pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
