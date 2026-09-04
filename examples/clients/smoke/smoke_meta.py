@@ -16,6 +16,7 @@ Usage:
 Environment Variables:
     META_API_KEY    Required. Skips (exit 0) if unset.
 """
+
 import os
 import sys
 

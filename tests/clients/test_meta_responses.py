@@ -3,6 +3,7 @@
 No live Meta API calls are made — the SDK client is mocked via
 ``get_client()``.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -96,9 +97,7 @@ class TestPrepareResponsesArgs:
 
     def test_sends_max_output_tokens_not_max_tokens(self):
         client = MetaClient(api_key="k")
-        req = client._prepare_responses_args(
-            messages=[{"role": "user", "content": "hi"}], args={"max_tokens": 999}
-        )
+        req = client._prepare_responses_args(messages=[{"role": "user", "content": "hi"}], args={"max_tokens": 999})
         assert req["max_output_tokens"] == 999
         assert "max_tokens" not in req
 
@@ -132,12 +131,8 @@ class TestPrepareResponsesArgs:
                 "function": {"name": "f", "description": "d", "parameters": {"type": "object"}},
             }
         ]
-        req = client._prepare_responses_args(
-            messages=[{"role": "user", "content": "hi"}], args={"tools": tools}
-        )
-        assert req["tools"] == [
-            {"type": "function", "name": "f", "description": "d", "parameters": {"type": "object"}}
-        ]
+        req = client._prepare_responses_args(messages=[{"role": "user", "content": "hi"}], args={"tools": tools})
+        assert req["tools"] == [{"type": "function", "name": "f", "description": "d", "parameters": {"type": "object"}}]
 
     def test_forwards_already_flat_tools_unchanged(self):
         """Non-function tools (e.g. web_search) are already flat — passthrough."""
@@ -178,9 +173,7 @@ class TestPrepareResponsesArgs:
             },
         ]
         req = client._prepare_responses_args(messages=messages, args={})
-        assert req["input"] == [
-            {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"}
-        ]
+        assert req["input"] == [{"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"}]
 
 
 class TestToResponsesTool:
@@ -276,9 +269,7 @@ class TestMetaResponsesRouting:
         round1.output_text = None
         round2 = MagicMock(
             status="completed",
-            output=[
-                {"type": "message", "content": [{"type": "output_text", "text": "It's sunny."}]}
-            ],
+            output=[{"type": "message", "content": [{"type": "output_text", "text": "It's sunny."}]}],
             usage=None,
         )
         round2.output_text = None

@@ -4,6 +4,7 @@ Exposes ``MetaModel`` (the model catalog) and ``MetaClient`` (the
 ``OpenAIBaseClient`` subclass for Meta's Muse Spark family). See
 ``sdd/specs/meta-llm-client.spec.md`` (FEAT-526).
 """
+
 from .models import (
     MetaModel,
     CONTRIBUTOR_MODELS,

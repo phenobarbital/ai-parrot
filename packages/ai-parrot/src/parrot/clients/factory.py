@@ -16,6 +16,7 @@ from .meta import MetaClient
 
 def _lazy_gemma4():
     from .gemma4 import Gemma4Client
+
     return Gemma4Client
 
 
@@ -32,6 +33,7 @@ def _lazy_bedrock_converse():
         The :class:`BedrockConverseClient` class.
     """
     from .bedrock import BedrockConverseClient
+
     return BedrockConverseClient
 
 
@@ -50,6 +52,7 @@ def _lazy_nova():
         The :class:`NovaClient` class.
     """
     from .nova import NovaClient
+
     return NovaClient
 
 
@@ -63,6 +66,7 @@ def _lazy_bedrock_mantle():
         The :class:`BedrockMantleClient` class.
     """
     from .nova.mantle import BedrockMantleClient
+
     return BedrockMantleClient
 
 
@@ -86,11 +90,11 @@ def _lazy_claude_agent():
     """
     try:
         from .claude_agent import ClaudeAgentClient
+
         return ClaudeAgentClient
     except ImportError as exc:
         raise ImportError(
-            "ClaudeAgentClient requires claude-agent-sdk. "
-            "Install with: pip install ai-parrot[claude-agent]"
+            "ClaudeAgentClient requires claude-agent-sdk. " "Install with: pip install ai-parrot[claude-agent]"
         ) from exc
 
 
@@ -102,6 +106,7 @@ def _lazy_openai_codex():
     SDK backend is used; the CLI backend can reuse installed Codex CLI auth.
     """
     from .codex_agent import OpenAICodexClient
+
     return OpenAICodexClient
 
 
@@ -172,6 +177,7 @@ class LLMFactory:
     - "provider" → uses default model for provider
     - Direct client class or instance
     """
+
     @staticmethod
     def parse_llm_string(llm: str) -> Tuple[str, Optional[str]]:
         """
@@ -189,17 +195,14 @@ class LLMFactory:
             >>> LLMFactory.parse_llm_string("anthropic")
             ('anthropic', None)
         """
-        if ':' in llm:
-            provider, model = llm.split(':', 1)
+        if ":" in llm:
+            provider, model = llm.split(":", 1)
             return provider.strip(), model.strip()
         return llm.strip(), None
 
     @staticmethod
     def create(
-        llm: str,
-        model_args: Optional[Dict[str, Any]] = None,
-        tool_manager: Optional[Any] = None,
-        **kwargs
+        llm: str, model_args: Optional[Dict[str, Any]] = None, tool_manager: Optional[Any] = None, **kwargs
     ) -> AbstractClient:
         """
         Create an LLM client instance from string specification.
@@ -227,9 +230,7 @@ class LLMFactory:
             ... )
         """
         if not isinstance(llm, str):
-            raise ValueError(
-                f"LLMFactory.create expects string, got {type(llm).__name__}"
-            )
+            raise ValueError(f"LLMFactory.create expects string, got {type(llm).__name__}")
 
         # Parse provider and model
         provider, model = LLMFactory.parse_llm_string(llm)
@@ -237,10 +238,7 @@ class LLMFactory:
 
         # Validate provider
         if provider not in SUPPORTED_CLIENTS:
-            raise ValueError(
-                f"Unsupported LLM provider: '{provider}'. "
-                f"Supported: {list(SUPPORTED_CLIENTS.keys())}"
-            )
+            raise ValueError(f"Unsupported LLM provider: '{provider}'. " f"Supported: {list(SUPPORTED_CLIENTS.keys())}")
 
         # Get client class (resolve lazy loaders)
         client_class = SUPPORTED_CLIENTS[provider]
@@ -252,16 +250,18 @@ class LLMFactory:
 
         # Add model if specified
         if model:
-            init_params['model'] = model
+            init_params["model"] = model
 
         # Add model_args parameters
         if model_args:
-            init_params.update({
-                'temperature': model_args.get('temperature'),
-                'top_k': model_args.get('top_k'),
-                'top_p': model_args.get('top_p'),
-                'max_tokens': model_args.get('max_tokens'),
-            })
+            init_params.update(
+                {
+                    "temperature": model_args.get("temperature"),
+                    "top_k": model_args.get("top_k"),
+                    "top_p": model_args.get("top_p"),
+                    "max_tokens": model_args.get("max_tokens"),
+                }
+            )
             # Remove None values
             init_params = {k: v for k, v in init_params.items() if v is not None}
 
@@ -272,7 +272,7 @@ class LLMFactory:
 
         # Add tool_manager if provided
         if tool_manager:
-            init_params['tool_manager'] = tool_manager
+            init_params["tool_manager"] = tool_manager
 
         # Merge additional kwargs
         init_params.update(kwargs)

@@ -11,6 +11,7 @@ by the existing AIMessage / CompletionUsage models.
     used as a library default — reserve them for synthetic end-to-end
     test prompts only.
 """
+
 from enum import Enum
 
 
@@ -40,32 +41,40 @@ class MetaModel(str, Enum):
 # Meta permission to train on your prompts and completions. Never use one
 # of these as a default anywhere in library code; synthetic e2e test
 # prompts only.
-CONTRIBUTOR_MODELS: frozenset[str] = frozenset({
-    MetaModel.MUSE_SPARK_1_3_CONTRIBUTOR.value,
-    MetaModel.MUSE_SPARK_1_2_CONTRIBUTOR.value,
-})
+CONTRIBUTOR_MODELS: frozenset[str] = frozenset(
+    {
+        MetaModel.MUSE_SPARK_1_3_CONTRIBUTOR.value,
+        MetaModel.MUSE_SPARK_1_2_CONTRIBUTOR.value,
+    }
+)
 
 # Muse Spark (text/agentic/coding) chat models — both Standard and
 # Contributor tiers.
-SPARK_MODELS: frozenset[str] = frozenset({
-    MetaModel.MUSE_SPARK_1_3.value,
-    MetaModel.MUSE_SPARK_1_3_CONTRIBUTOR.value,
-    MetaModel.MUSE_SPARK_1_2.value,
-    MetaModel.MUSE_SPARK_1_2_CONTRIBUTOR.value,
-    MetaModel.MUSE_SPARK_1_1.value,
-})
+SPARK_MODELS: frozenset[str] = frozenset(
+    {
+        MetaModel.MUSE_SPARK_1_3.value,
+        MetaModel.MUSE_SPARK_1_3_CONTRIBUTOR.value,
+        MetaModel.MUSE_SPARK_1_2.value,
+        MetaModel.MUSE_SPARK_1_2_CONTRIBUTOR.value,
+        MetaModel.MUSE_SPARK_1_1.value,
+    }
+)
 
 # Muse Image — reserved, out of scope (Non-Goal). No endpoint work exists
 # for this model; the enum member is a placeholder only.
-IMAGE_MODELS: frozenset[str] = frozenset({
-    MetaModel.MUSE_IMAGE_1_0.value,
-})
+IMAGE_MODELS: frozenset[str] = frozenset(
+    {
+        MetaModel.MUSE_IMAGE_1_0.value,
+    }
+)
 
 # Muse Voice Transcribe — reserved, out of scope (Non-Goal). No endpoint
 # work exists for this model; the enum member is a placeholder only.
-TRANSCRIBE_MODELS: frozenset[str] = frozenset({
-    MetaModel.MUSE_VOICE_TRANSCRIBE_1_0.value,
-})
+TRANSCRIBE_MODELS: frozenset[str] = frozenset(
+    {
+        MetaModel.MUSE_VOICE_TRANSCRIBE_1_0.value,
+    }
+)
 
 # Context window (in tokens), uniform across all Muse Spark models.
 CONTEXT_WINDOW: int = 1_048_576

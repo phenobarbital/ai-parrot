@@ -2,6 +2,7 @@
 
 No live Meta API calls are made.
 """
+
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,7 @@ class TestMetaClient:
 
     def test_package_layout_is_exactly_three_files(self):
         import parrot.clients.meta as pkg
+
         names = {p.name for p in Path(pkg.__file__).parent.glob("*.py")}
         assert names == {"__init__.py", "client.py", "models.py"}
 
@@ -73,6 +75,7 @@ class TestMetaClient:
 
     def test_not_exported_from_clients_init(self):
         import parrot.clients as clients_pkg
+
         assert not hasattr(clients_pkg, "MetaClient")
 
     @pytest.mark.asyncio
@@ -81,6 +84,7 @@ class TestMetaClient:
         client = MetaClient(api_key="k")
         sdk_client = await client.get_client()
         from openai import AsyncOpenAI
+
         assert isinstance(sdk_client, AsyncOpenAI)
         assert str(sdk_client.base_url) == "https://api.meta.ai/v1/"
 
@@ -114,6 +118,7 @@ class TestMetaClient:
                 return FakeResponse()
 
         import parrot.clients.meta.client as client_mod
+
         monkeypatch.setattr(client_mod.aiohttp, "ClientSession", FakeSession)
 
         client = MetaClient(api_key="k")
@@ -150,4 +155,5 @@ class TestMetaFactoryRegistration:
     def test_in_both_wire_rosters(self):
         from tests.clients.test_openai_compatible_defaults import WIRE_SUBCLASSES as A
         from tests.clients.test_openai_base_parity import WIRE_SUBCLASSES as B
+
         assert MetaClient in A and MetaClient in B

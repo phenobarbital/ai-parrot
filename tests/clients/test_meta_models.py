@@ -3,6 +3,7 @@
 Pure data tests — no I/O, no network. Model ids were verified live
 against ``GET /v1/models`` on 2026-09-04 (FEAT-526 research finding F013).
 """
+
 import pytest
 
 from parrot.clients.meta import (
@@ -14,9 +15,13 @@ from parrot.clients.meta import (
 from parrot.clients.meta.models import MetaModel as MetaModelDirect
 
 LIVE_CATALOG = {
-    "muse-spark-1.3", "muse-spark-1.3-contributor",
-    "muse-spark-1.2", "muse-spark-1.2-contributor",
-    "muse-spark-1.1", "muse-image-1.0", "muse-voice-transcribe-1.0",
+    "muse-spark-1.3",
+    "muse-spark-1.3-contributor",
+    "muse-spark-1.2",
+    "muse-spark-1.2-contributor",
+    "muse-spark-1.1",
+    "muse-image-1.0",
+    "muse-voice-transcribe-1.0",
 }
 
 
@@ -32,13 +37,16 @@ class TestMetaModel:
 
     def test_contributor_frozenset(self):
         assert CONTRIBUTOR_MODELS == {
-            "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
+            "muse-spark-1.3-contributor",
+            "muse-spark-1.2-contributor",
         }
 
     def test_spark_models_frozenset(self):
         assert SPARK_MODELS == {
-            "muse-spark-1.3", "muse-spark-1.3-contributor",
-            "muse-spark-1.2", "muse-spark-1.2-contributor",
+            "muse-spark-1.3",
+            "muse-spark-1.3-contributor",
+            "muse-spark-1.2",
+            "muse-spark-1.2-contributor",
             "muse-spark-1.1",
         }
 

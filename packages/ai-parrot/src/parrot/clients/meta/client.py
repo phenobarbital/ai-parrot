@@ -21,6 +21,7 @@ subclassed, or modified; some duplication is the accepted, reversible trade.
 
 See ``sdd/specs/meta-llm-client.spec.md`` (FEAT-526).
 """
+
 from __future__ import annotations
 
 import json
@@ -142,9 +143,7 @@ class MetaClient(OpenAIBaseClient):
         **kwargs: Any,
     ) -> None:
         self.use_responses = use_responses
-        resolved_key = (
-            api_key or config.get("META_API_KEY") or config.get("MODEL_API_KEY")
-        )
+        resolved_key = api_key or config.get("META_API_KEY") or config.get("MODEL_API_KEY")
         super().__init__(
             api_key=resolved_key,
             base_url=base_url or "https://api.meta.ai/v1",
@@ -168,8 +167,7 @@ class MetaClient(OpenAIBaseClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "MetaClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "MetaClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         return AsyncOpenAI(
             api_key=self.api_key,
@@ -305,9 +303,7 @@ class MetaClient(OpenAIBaseClient):
             return flat
         return tool
 
-    def _prepare_responses_args(
-        self, *, messages: list[dict[str, Any]], args: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _prepare_responses_args(self, *, messages: list[dict[str, Any]], args: dict[str, Any]) -> dict[str, Any]:
         """Map a Chat-Completions-style message list into a Responses payload.
 
         Lifts the first ``system`` message into ``instructions``; the rest
@@ -488,16 +484,16 @@ class MetaClient(OpenAIBaseClient):
         if isinstance(usage, dict):
             details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
         else:
-            details = getattr(usage, "prompt_tokens_details", None) or getattr(
-                usage, "input_tokens_details", None
-            )
+            details = getattr(usage, "prompt_tokens_details", None) or getattr(usage, "input_tokens_details", None)
         if details is None:
             return None
         if isinstance(details, dict):
             return details.get("cached_tokens")
         return getattr(details, "cached_tokens", None)
 
-    async def count_input_tokens(self, *, model: str | None = None, input: Any, **kwargs: Any) -> int:  # noqa: A002 — spec-mandated parameter name
+    async def count_input_tokens(
+        self, *, model: str | None = None, input: Any, **kwargs: Any
+    ) -> int:  # noqa: A002 — spec-mandated parameter name
         """Count input tokens for a prospective Responses API request.
 
         Standalone endpoint (``POST /v1/responses/input_tokens``) — it does

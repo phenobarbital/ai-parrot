@@ -2,6 +2,7 @@
 
 No live Meta API calls are made.
 """
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

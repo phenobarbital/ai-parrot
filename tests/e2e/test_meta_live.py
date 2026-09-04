@@ -18,6 +18,7 @@ of its output budget on private reasoning — 199 of 210 completion tokens
 visible text; ``test_live_chat_completion_returns_nonempty_visible_text``
 exists to catch exactly that.
 """
+
 import os
 import sys
 
@@ -60,9 +61,7 @@ class TestMetaLive:
         client = LLMFactory.create(E2E_MODEL, use_responses=False)
         async with client:
             result = await client.ask("Reply with exactly: pong")
-        assert result.output.strip(), (
-            "empty visible text — reasoning likely consumed the output budget"
-        )
+        assert result.output.strip(), "empty visible text — reasoning likely consumed the output budget"
 
     async def test_live_tool_calling_roundtrip(self):
         """A full tool-calling round trip on the (default) Responses path.
@@ -77,8 +76,7 @@ class TestMetaLive:
         client.register_tool(calculator)
         async with client:
             result = await client.ask(
-                "What is 87361 + 45213? Compute it using the calculator "
-                "tool and reply with only the final number.",
+                "What is 87361 + 45213? Compute it using the calculator " "tool and reply with only the final number.",
                 system_prompt=(
                     "You MUST use the calculator tool for every arithmetic "
                     "computation, no matter how simple. Never compute "
@@ -87,9 +85,7 @@ class TestMetaLive:
                 use_tools=True,
             )
         assert result.output.strip(), "empty visible text after tool round trip"
-        assert any(tc.name == "calculator" for tc in result.tool_calls), (
-            "calculator tool was never called"
-        )
+        assert any(tc.name == "calculator" for tc in result.tool_calls), "calculator tool was never called"
 
     async def test_live_structured_output(self):
         """Structured output on the Chat Completions path (not yet
@@ -107,9 +103,7 @@ class TestMetaLive:
         client = LLMFactory.create(E2E_MODEL)
         async with client:
             result = await client.ask("Reply with exactly: pong")
-        assert result.output.strip(), (
-            "empty visible text — reasoning likely consumed the output budget"
-        )
+        assert result.output.strip(), "empty visible text — reasoning likely consumed the output budget"
 
     async def test_live_search_grounding_emits_web_search_call(self):
         """Search grounding surfaces a web_search_call output item."""
@@ -119,9 +113,7 @@ class TestMetaLive:
                 "Search the web: what year is it right now?",
                 search_grounding=True,
             )
-        assert result.metadata.get("web_search_calls"), (
-            "no web_search_call output item surfaced for a grounded request"
-        )
+        assert result.metadata.get("web_search_calls"), "no web_search_call output item surfaced for a grounded request"
 
     async def test_live_count_input_tokens(self):
         """count_input_tokens() is standalone and returns a positive int."""
