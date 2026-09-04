@@ -77,7 +77,12 @@ def render_raw_view(
     omissions: List[Omission] = []
 
     for idx, inv in enumerate(considered):
-        if idx in oversize:
+        # An invocation renders through its PrunePolicy (a notice, not a
+        # raw excerpt) when the render-time oversize check flags it, OR
+        # when its output was already offloaded at write time — `inv.output`
+        # is then only the ≤200-char preview, and the line must still carry
+        # the write-time notice via the policy instead of a plain `out=`.
+        if idx in oversize or "output" in inv.omitted:
             policy = None
             if policies is not None and inv.tool_name in policies:
                 policy = policies[inv.tool_name]
@@ -228,13 +233,17 @@ def compact_history(
 
         tc = turn.token_count if not needs_recount(turn, counter) else count_turn(turn, counter)
 
+        # An invocation counts as "oversize" for the render-time rule when
+        # its current output still exceeds the threshold, OR when it was
+        # already offloaded at write time (`inv.output` is then just the
+        # preview — small, but the content is gone regardless of size).
         oversize = (
             ()
             if newest
             else tuple(
                 i
                 for i, inv in enumerate(turn.tool_invocations)
-                if counter.count(inv.output or "") > budget.oversize_tool_tokens
+                if "output" in inv.omitted or counter.count(inv.output or "") > budget.oversize_tool_tokens
             )
         )
 
