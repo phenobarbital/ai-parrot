@@ -1,0 +1,170 @@
+{
+  "feature": "meta-llm-client",
+  "feature_id": "FEAT-526",
+  "spec": "sdd/specs/meta-llm-client.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-04T13:45:29.930482+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2833",
+      "slug": "meta-model-catalog",
+      "title": "Meta model catalog (parrot/models/meta.py)",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure-data enum module; shares no files with any other task. Root of the dependency graph.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2833-meta-model-catalog.md"
+    },
+    {
+      "id": "TASK-2834",
+      "slug": "metaclient-chat-completions",
+      "title": "MetaClient core - Chat Completions path",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2833"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates clients/meta.py, which TASK-2836/2837/2840 all then edit. Must land first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2834-metaclient-chat-completions.md"
+    },
+    {
+      "id": "TASK-2835",
+      "slug": "factory-registration-and-rosters",
+      "title": "Factory registration + wire-subclass test rosters",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2834"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches factory.py and two roster files only - disjoint from clients/meta.py, so it CAN run beside TASK-2836 in a separate worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2835-factory-registration-and-rosters.md"
+    },
+    {
+      "id": "TASK-2836",
+      "slug": "responses-api-path",
+      "title": "Responses API path (MetaClient-local)",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2834"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits clients/meta.py, same file as TASK-2834/2837/2840. The main engineering task (D1).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2836-responses-api-path.md"
+    },
+    {
+      "id": "TASK-2837",
+      "slug": "search-grounding-token-counting",
+      "title": "Search grounding + count_input_tokens()",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2836"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits clients/meta.py and builds directly on the Responses path from TASK-2836.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2837-search-grounding-token-counting.md"
+    },
+    {
+      "id": "TASK-2838",
+      "slug": "live-e2e-suite",
+      "title": "Live end-to-end test suite",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2835",
+        "TASK-2837"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs factory registration AND the full capability surface before it can exercise them live.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2838-live-e2e-suite.md"
+    },
+    {
+      "id": "TASK-2839",
+      "slug": "smoke-script-and-docs",
+      "title": "Smoke script + client documentation",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2837"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Creates two new files (smoke script, doc page) touched by nothing else - CAN run beside TASK-2838.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2839-smoke-script-and-docs.md"
+    },
+    {
+      "id": "TASK-2840",
+      "slug": "tool-search-mapping",
+      "title": "Map search_tools onto native tool_search (DROPPABLE)",
+      "feature_id": "FEAT-526",
+      "feature": "meta-llm-client",
+      "spec": "sdd/specs/meta-llm-client.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2836"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits clients/meta.py. D2: last and explicitly droppable - nothing depends on it; intended cut if the phase runs long.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2840-tool-search-mapping.md"
+    }
+  ]
+}
