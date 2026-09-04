@@ -107,11 +107,11 @@ Keep `aioboto3` / `aws_sdk_bedrock_runtime` imports lazy exactly as today (see t
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.clients.amazon import BedrockConverseClient, NovaClient, BedrockMantleClient` works; `parrot.clients.bedrock` / `parrot.clients.nova` are gone
-- [ ] `from parrot.clients.gemma4 import Gemma4Model`, `from parrot.clients.hf import TransformersModel` work
-- [ ] `parrot/models/bedrock_models.py` deleted
-- [ ] `LLMFactory.create("bedrock-converse:…")`, `("nova:…")`, `("mantle:…")`, `("gemma4:…")` still resolve a class (lazy closures re-pointed)
-- [ ] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
+- [x] `from parrot.clients.amazon import BedrockConverseClient, NovaClient, BedrockMantleClient` works; `parrot.clients.bedrock` / `parrot.clients.nova` are gone
+- [x] `from parrot.clients.gemma4 import Gemma4Model`, `from parrot.clients.hf import TransformersModel` work
+- [x] `parrot/models/bedrock_models.py` deleted
+- [x] `LLMFactory.create("bedrock-converse:…")`, `("nova:…")`, `("mantle:…")`, `("gemma4:…")` still resolve a class (lazy closures re-pointed)
+- [x] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
 
 ---
 
@@ -148,10 +148,74 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented per scope. Commit `6a4e7dbcf` on
+`feat-FEAT-523-pep-420-llm-clients`.
+
+- Confirmed via `grep -n '^class '` that `bedrock_models.py` has zero
+  classes (just dicts + a `translate()` function) — followed the task's
+  own contingency: added a thin, non-authoritative `AmazonModel(str,
+  Enum)` in `amazon/models.py`, built from `PUBLIC_TO_BEDROCK`'s keys.
+  Verified programmatically that the enum's 30 values are an exact 1:1
+  set match against `PUBLIC_TO_BEDROCK.keys()` (no missing, no extra)
+  before wiring it as `models=` on all three Amazon clients.
+- `amazon/client.py` is a pure aggregator (re-exports only) exactly as
+  the task specified — the real `BedrockConverseClient`/
+  `BedrockConverseBase` code stays in `bedrock.py`, `NovaClient`/
+  `BedrockMantleClient` stay in `nova/`.
+- Every file inside the moved `nova/` directory needed its relative
+  import depth bumped by one extra level (it moved from
+  `clients/nova/*` to `clients/amazon/nova/*`) — fixed all of
+  `client.py`, `audio.py`, `generation.py`, `mantle.py`, double-checked
+  each with an explicit grep pass for stray 2-dot imports post-edit
+  (the TASK-2844 lesson) before running any tests.
+- `anthropic/backends.py`'s `BedrockBackend._resolve_model_id()` calls
+  `parrot.models.bedrock_models.translate()` — cross-provider, not this
+  task's own client, but its import target moved, so it had to be
+  repointed at `parrot.clients.amazon.models` (explicitly anticipated
+  by the task's own Scope bullet: "update callers of ... in
+  packages/*/src").
+- Blast radius: ~65 files. Beyond plain import-statement fixes, this
+  task's `monkeypatch.setattr("parrot.clients.nova.mantle.X", ...)` /
+  `"parrot.clients.nova.generation.AWS_CREDENTIALS"` patch-target
+  strings in `test_bedrock_mantle.py` / `test_nova_generation.py`
+  needed the same path fix as real imports — patch strings are
+  resolved via `importlib` + `getattr`, so they break identically to a
+  Python import statement, just without ever appearing as one.
+  `bedrock_models.py`'s own `logging.getLogger(__name__)` also changes
+  its dotted name post-move, so `caplog.at_level(...,
+  logger="parrot.models.bedrock_models")` assertions in both
+  `test_bedrock_models.py` files needed updating too, or they'd
+  silently stop capturing the warnings they test for.
+- Per the task's explicit "NOT in scope" line, did NOT add
+  `"hf"`/`"transformers"` to `SUPPORTED_CLIENTS` — `TransformersClient`
+  is still unreachable via `LLMFactory.create()` until TASK-2847's
+  entry-point discovery wires it (confirmed: `provider_keys` is set on
+  the class, ready to be picked up).
+
+**Deviations from spec**: none.
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/unit/clients -q` → 421 passed, 8
+  pre-existing failures (identical to TASK-2841/2842/2843/2844).
+- `pytest packages/ai-parrot/tests/unit/clients/test_folder_convention.py`
+  → 33/33 passed (14 providers total now).
+- AC-4 verified end-to-end (not just `SUPPORTED_CLIENTS[k]()` but the
+  actual `LLMFactory.create()` call): all four
+  `bedrock-converse:.../nova:.../mantle:.../gemma4:...` specs resolve
+  to the correct concrete class.
+- `ruff check` clean on every new/modified amazon/gemma4/hf file (one
+  genuine `E402` of my own making, fixed — `from enum import Enum`
+  placed mid-file when adding `AmazonModel`); `hf/client.py`'s
+  pre-existing `F821`/`F841` confirmed byte-identical on `dev`.
+- `packages/ai-parrot/tests/clients -k "bedrock or nova"` → 241 passed,
+  3 pre-existing failures (same three confirmed at TASK-2843's
+  verification: `test_bedrock_inference_config.py` ×2,
+  `test_nova_protocol_frames.py` ×1).
+- bedrock_models/factory test suites → 77 passed, 0 failed.
+- `tests/bots -k voice` and `tests/voice` sweeps → 11 total failures,
+  confirmed byte-identical test names on `dev`'s baseline, none
+  connected to this move.
