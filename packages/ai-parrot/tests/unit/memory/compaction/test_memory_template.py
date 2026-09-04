@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from parrot.memory import FileConversationMemory, InMemoryConversation, RedisConversation
-from parrot.memory.abstract import ConversationTurn
+from parrot.memory.abstract import ConversationHistory, ConversationTurn
 from parrot.memory.compaction.models import CompactionCommit, ToolInvocation
 from parrot.memory.compaction.omission import content_id
 from parrot.memory.compaction.tokens import HeuristicCounter
@@ -121,6 +121,53 @@ async def test_single_write_with_metadata_redis():
     await m.add_turn("u", "s", turn, chatbot_id="bot", compaction=CompactionCommit(100, "t0", False))
     assert len(fake.hset_calls) == 1
     assert {"turns", "metadata"} <= set(fake.hset_calls[0]["mapping"])
+
+
+async def test_single_write_with_metadata_file(tmp_path, monkeypatch):
+    """File backend: exactly one disk write (`_write_history`) carries both the
+    appended turn and `metadata["compaction"]` together."""
+    m = FileConversationMemory(str(tmp_path), token_counter=HeuristicCounter())
+    await m.create_history("u", "s", chatbot_id="bot")
+
+    write_calls: List[ConversationHistory] = []
+    original = m._write_history
+
+    async def _spy(history):
+        write_calls.append(history)
+        await original(history)
+
+    monkeypatch.setattr(m, "_write_history", _spy)
+
+    turn = ConversationTurn(turn_id="t1", user_id="u", user_message="q", assistant_response="a", chatbot_id="bot")
+    await m.add_turn("u", "s", turn, chatbot_id="bot", compaction=CompactionCommit(100, "t0", False))
+    assert len(write_calls) == 1
+    written = write_calls[0]
+    assert written.turns[-1].turn_id == "t1"
+    assert "compaction" in written.metadata
+
+
+async def test_single_write_with_metadata_memory(monkeypatch):
+    """InMemory backend: the turn append and `metadata["compaction"]` set land in
+    the same in-place mutation — `update_history` (a separate write path) is
+    never invoked by `_store_turn`."""
+    m = InMemoryConversation(token_counter=HeuristicCounter())
+    await m.create_history("u", "s", chatbot_id="bot")
+
+    update_calls: List[ConversationHistory] = []
+    original = m.update_history
+
+    async def _spy(history):
+        update_calls.append(history)
+        await original(history)
+
+    monkeypatch.setattr(m, "update_history", _spy)
+
+    turn = ConversationTurn(turn_id="t1", user_id="u", user_message="q", assistant_response="a", chatbot_id="bot")
+    await m.add_turn("u", "s", turn, chatbot_id="bot", compaction=CompactionCommit(100, "t0", False))
+    assert update_calls == []
+    stored = await m.get_history("u", "s", chatbot_id="bot")
+    assert stored.turns[-1].turn_id == "t1"
+    assert "compaction" in stored.metadata
 
 
 async def test_clear_delete_cascade(memory):

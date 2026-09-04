@@ -452,10 +452,17 @@ class ConversationMemory(ABC):
         Args:
             user_id: Owner of the conversation.
             session_id: Conversation session.
-            turn: The turn to persist. Not mutated — Stage 0 (when
-                enabled) rebinds it to a new, normalized turn first; the
-                offload step mutates that new turn's invocations, which
-                belong to the copy being stored, not the caller's object.
+            turn: The turn to persist. Not mutated when ``normalize=True``
+                (the default) — Stage 0 rebinds ``turn`` to a new,
+                normalized copy first, so the token-count and oversize-
+                offload steps that follow only touch that copy. When the
+                caller opts out with ``normalize=False``, that defensive
+                copy is skipped and this method mutates the caller's own
+                ``turn``/``ToolInvocation`` objects in place (stamps
+                ``schema_version``/``token_count``, and rewrites
+                ``inv.output``/``output_chars``/``omitted`` for any
+                oversize output) — do not reuse a ``turn`` object across
+                calls after opting out of normalization.
             chatbot_id: Agent attribution.
             compaction: The bot's commit for this round, or ``None`` for
                 writers that do not participate in the budget round-trip

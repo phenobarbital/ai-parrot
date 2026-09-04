@@ -9,6 +9,7 @@ backend (wired in TASK-2826); this module only defines the store.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -229,7 +230,7 @@ class FileOmissionStore(OmissionStore):
 
     async def _read_index(self, session_key: str) -> Dict[str, List[str]]:
         path = self._index_path(session_key)
-        if not path.exists():
+        if not await asyncio.to_thread(path.exists):
             return {}
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
             raw = await f.read()
@@ -243,9 +244,9 @@ class FileOmissionStore(OmissionStore):
     async def put(self, session_key: str, content: str, *, turn_id: Optional[str] = None) -> str:
         cid = content_id(content)
         session_dir = self._session_dir(session_key)
-        session_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(session_dir.mkdir, parents=True, exist_ok=True)
         content_path = session_dir / f"{cid}.txt"
-        if not content_path.exists():
+        if not await asyncio.to_thread(content_path.exists):
             async with aiofiles.open(content_path, "w", encoding="utf-8") as f:
                 await f.write(content)
         if turn_id is not None:
@@ -258,7 +259,7 @@ class FileOmissionStore(OmissionStore):
 
     async def get(self, session_key: str, content_id: str) -> Optional[str]:
         path = self._session_dir(session_key) / f"{content_id}.txt"
-        if not path.exists():
+        if not await asyncio.to_thread(path.exists):
             return None
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
             return await f.read()
@@ -269,5 +270,5 @@ class FileOmissionStore(OmissionStore):
 
     async def clear(self, session_key: str) -> None:
         session_dir = self._session_dir(session_key)
-        if session_dir.exists():
-            shutil.rmtree(session_dir, ignore_errors=True)
+        if await asyncio.to_thread(session_dir.exists):
+            await asyncio.to_thread(shutil.rmtree, session_dir, ignore_errors=True)
