@@ -438,7 +438,9 @@ agents-lite = [
 # embeddings extra removed from host in FEAT-201.
 
 mcp = [
-    "google-genai>=2.18.1",
+    # FEAT-523: google-genai removed — it was a stray pin core never imported
+    # directly (only parrot.clients.google, now ai-parrot-client-google,
+    # needs it); install that satellite (or `ai-parrot[google]`) instead.
     "openai==3.3.1",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",

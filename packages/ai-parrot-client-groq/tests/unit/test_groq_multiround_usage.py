@@ -58,11 +58,15 @@ def _mock_response(content, tool_calls, usage):
     resp.choices = [choice]
     resp.usage = usage
     resp.model = "llama-3.3-70b-versatile"
-    # AIMessageFactory.from_groq() falls back to response.__dict__ for
-    # raw_response when response.dict() is unavailable — delete the
-    # auto-mocked .dict attribute so hasattr(response, 'dict') is False and
-    # the (real, JSON-safe) MagicMock instance __dict__ is used instead.
-    del resp.dict
+    # AIMessageFactory.from_groq() builds raw_response from
+    # response.model_dump() first (checked before .dict()/__dict__) — a bare
+    # MagicMock auto-creates .model_dump too, but calling it returns another
+    # MagicMock rather than a dict, which fails AIMessage's raw_response
+    # dict_type validation. Give it a real, JSON-safe dict return value.
+    resp.model_dump.return_value = {
+        "model": "llama-3.3-70b-versatile",
+        "choices": [{"message": {"content": content}, "finish_reason": choice.finish_reason}],
+    }
     return resp
 
 
