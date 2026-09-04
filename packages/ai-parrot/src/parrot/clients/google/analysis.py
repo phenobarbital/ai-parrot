@@ -826,8 +826,7 @@ class GoogleAnalysis:
                         "Failed to parse structured output from document model: %s", parse_exc
                     )
 
-            # 12. Update memory (stateful) — use messages as-is (no duplicate user turn)
-            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # 12. FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
             # single writer; the `if not stateless` guard around it went with it.
 
             # 13. Parse response and return AIMessage
