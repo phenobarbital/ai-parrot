@@ -139,10 +139,109 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+`factory.py`: deleted `_IN_CORE_PROVIDERS` and the transitional walk
+branch in `_discover()` — entry points are now the sole discovery
+source. Rewrote the module docstring (was describing a two-source design
+that no longer exists) and the two docstrings/comments still referencing
+the transitional registry (`list_providers()`, `_PROVIDER_DIST`'s own
+comment). Verified for real: uninstalled all 15 satellites from the
+worktree venv and confirmed `LLMFactory.list_providers()` returns exactly
+`{}` and `from parrot.clients.factory import LLMFactory` still imports
+cleanly — the literal AC-2 check, not a mocked approximation.
+
+**Extras rewrite** (`packages/ai-parrot/pyproject.toml`): every
+provider-specific extra now references its satellite
+(`anthropic`/`bedrock`/`claude-agent` → `ai-parrot-client-anthropic`;
+`bedrock-native` → `ai-parrot-client-amazon`; `codex-agent` →
+`ai-parrot-client-openai[bridge]`; `openai`/`google`/`groq`/`zai` → their
+own satellites). Added the 9 extras the task named as missing
+(`grok`/`gemma4`/`hf`/`nvidia`/`moonshot`/`openrouter`/`local`/`vllm`/
+`meta`), and repointed the pre-existing `xai` extra (a separate,
+already-existing name for the exact same grok/xAI SDK) at
+`ai-parrot-client-grok` too, rather than leaving a duplicate/stale extra
+behind. `llms` now lists exactly the 15 satellite package names — no
+more, no less, matching this task's own Test Specification's literal
+`len(...) == 15` check.
+
+Added a `[tool.uv.sources]` section to core's `pyproject.toml` — core
+never needed one before this feature (it never depended on a sibling
+workspace package), mapping all 15 `ai-parrot-client-*` names to
+`{ workspace = true }`.
+
+**Contract corrections / judgment calls, each verified via grep before
+acting** (same discipline as every satellite task's own corrections):
+
+1. **`google` extra**: the Scope text said `google = ["ai-parrot-client-
+   google"]`, a full replacement. Verified via grep that
+   `google-api-python-client`/`google-cloud-texttospeech`/
+   `google-cloud-aiplatform` are NOT imported anywhere under
+   `parrot/clients/google/` (only `google.genai`/`google.oauth2`/
+   `google.auth` are) — they back `parrot.interfaces.http`'s
+   `googleapiclient` usage and other, unrelated core Google integrations.
+   Kept them alongside the new satellite reference rather than removing
+   them, which would have silently broken those unrelated features.
+2. **`aioboto3`**: grep found `parrot/interfaces/aws.py` and
+   `parrot/storage/backends/dynamodb.py` also `import aioboto3`
+   unconditionally, entirely unrelated to Bedrock. Did not strip
+   `aioboto3` from anywhere — `bedrock-native` now points at
+   `ai-parrot-client-amazon`, which itself declares `aioboto3>=13.2.0`,
+   so those two unrelated files stay satisfied transitively through the
+   same extra path as before (no regression).
+3. **`openai==3.3.1` → base dependency**: the task's own Test
+   Specification asserts `"openai" in deps` where `deps` is `project.
+   dependencies` (base), not an extra — this only holds if `openai`
+   becomes a base dependency. Moved it there (alongside the pre-existing
+   `tiktoken>=0.9.0`), justified the same way as the existing `tenacity`
+   base dependency: `OpenAIBaseClient` (core) is subclassed by **seven**
+   satellites (openai, groq, zai, moonshot, openrouter, local, nvidia),
+   not just one. Also corrected the `tenacity` comment's stale file
+   reference (`clients/gpt.py` → renamed `clients/openai/client.py` by
+   TASK-2842, since moved out of core entirely to the openai satellite).
+   Removed the redundant `openai==3.3.1` pin I'd first added to
+   `ai-parrot-client-openai`'s own `dependencies` once core covered it
+   transitively.
+4. **Root `pyproject.toml`**: the Scope said "all extra pulls
+   `ai-parrot[llms]` transitively (verify current shape first)" — per
+   that explicit instruction, verified first: root's own
+   `[project.optional-dependencies]` has no `all` key at all. Left root
+   completely untouched; nothing to fix.
+5. **`gemma4`/`hf` resolver conflict**: a pre-existing comment
+   ("REMOVED: gemma4 extra — was mutually exclusive with audio/images/
+   all/dev/security/ml-heavy (8 conflict pairs)") warned this exact
+   provider previously caused `uv lock` backtracking when its
+   `transformers`/`torch` pins lived inside core's own extras. Since
+   `gemma4` (and `hf`) are now separate packages with their own
+   dependency graphs, ran `uv lock` to confirm the conflict doesn't
+   resurface — it resolved cleanly (920 packages, no errors). Left the
+   historical comment in place (superseded, not deleted) with a note
+   explaining why the old constraint no longer applies.
+
+**Evidence**:
+- `uv lock` → resolved cleanly, no conflicts.
+- `uv sync --package ai-parrot --extra llms --extra <every other LLM
+  extra>` → all 15 satellites installed for real, zero errors
+  (`uv sync --all-extras` at the *workspace* level hits an unrelated,
+  pre-existing `tree-sitter-languages` cp313-wheel-availability gap from
+  an unrelated extra — confirmed via error message unrelated to any file
+  this task touched).
+- Uninstalled all 15 satellites → `LLMFactory.list_providers()` returns
+  `{}`; `from parrot.clients.factory import LLMFactory` imports cleanly.
+- `pytest packages/ai-parrot/tests/unit/clients -q` → **338/338 passed**
+  (337 + the new `test_core_has_no_sdk_pins.py`), zero failures, with all
+  15 satellites reinstalled afterward.
+- Full 15-satellite matrix re-run → clean except the two
+  already-documented pre-existing multiround failures (openai×4, groq×4).
+- `ruff check` on every touched Python file → clean.
+- Server studio+handlers+admin_catalog sweep (213 tests), pipelines sweep
+  (39/40, 1 pre-existing), top-level `tests/clients/` sweep (105/106, 1
+  pre-existing live-credit-balance failure), crew regression smoke test
+  (23/23) — all only the same already-documented pre-existing failures.
+
+**Deviations from spec**: the five contract corrections/judgment calls
+above, each verified via grep/`uv lock` before acting and documented
+in-line in the pyproject.toml comments themselves, not silent
+overrides.
