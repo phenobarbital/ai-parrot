@@ -142,10 +142,99 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+`git mv` both provider folders into `packages/ai-parrot-client-<p>/src/parrot/
+clients/<p>/` with `.gitkeep` at `src/parrot/` and `src/parrot/clients/`
+(no stray `__init__.py`, verified). Wrote `pyproject.toml` per the spec §7
+template for each: `ai-parrot-client-openai` depends on `ai-parrot` +
+`openai-codex>=0.1.0` (the `openai` SDK itself stays a core `ai-parrot
+[openai]` extra since `OpenAIBaseClient` lives in core), plus an added
+`bridge` optional extra (`mcp`, `starlette`, `uvicorn`) for
+`codex_tool_bridge.py` — verified that module is only ever imported lazily
+(`TYPE_CHECKING` / inside a method) from `codex_agent.py`, never at
+`parrot.clients.openai`'s own import time, so the base install stays
+light. `ai-parrot-client-meta` depends on `ai-parrot` only (no SDK).
+Entry points declared for every `provider_keys` alias on both classes.
+
+Moved the narrowly-scoped tests per the Scope text's literal anchor
+(`packages/ai-parrot/tests/unit/clients/` only — not the scattered
+`test_openai_client.py`/`test_prompt_caching_openai.py`/top-level
+`/tests/clients/test_meta_*.py` files elsewhere in the repo, which the
+Scope/AC never named and which keep working unchanged via the merged
+namespace once the satellite is installed): the `openai/` subdir
+(`test_deprecations.py` + `conftest.py`), `test_openai_multiround_usage.py`,
+`test_codex_agent.py`. `meta` had zero tests under that directory to move.
+
+Removed `"openai"` and `"meta"` from `factory.py`'s `_IN_CORE_PROVIDERS`.
+Updated the two TASK-2847 `test_factory_discovery.py` assertions that used
+`"openai"` as an example in-core provider (`test_list_models_active_
+deprecated`, `test_list_providers_lists_in_core_keys`) to use `"google"`/
+`"anthropic"` instead, so the core test suite no longer depends on any
+satellite being installed to pass.
+
+**Real py-packaging gotcha found and fixed**: naming the moved test
+directory bare `openai` one level directly under a non-package `tests/
+unit/` collides with the *real* top-level `openai` SDK module during
+pytest collection — pytest's rootdir-insertion walked up to `tests/unit/`
+(no `__init__.py` there) and put it on `sys.path`, making the test
+package importable as bare `openai`, shadowing the genuine SDK
+(`ImportError: cannot import name 'APIConnectionError' from 'openai'
+<- our test dir>`, breaking `test_codex_agent.py`/`test_openai_client.py`-
+style tests that need the real SDK). Fixed by adding `tests/unit/
+__init__.py` so pytest's insertion point moves one level higher
+(`packages/ai-parrot-client-openai/`), making the test package
+`tests.unit.openai` instead of bare `openai`. The original core location
+never hit this because `tests/unit/clients/__init__.py` already existed
+as an extra wrapper level.
+
+**Verification — two independent passes**:
+
+1. *Consumer-side simulation* (shared venv, synthetic `.dist-info` +
+   `entry_points.txt` written to a throwaway `/tmp` dir matching each
+   satellite's `pyproject.toml` exactly, never committed, never added to
+   the persistent PYTHONPATH file): `LLMFactory.create("openai:...")`,
+   `.create("meta")`, `.list_providers()["openai"] == "ai-parrot-client-
+   openai"`, both satellites' `test_entry_points_cover_provider_keys` —
+   all correct.
+2. *Genuine end-to-end* (discovered mid-task: a background process ran a
+   real `uv sync` against a **new worktree-local `.venv`** — isolated to
+   this worktree, not the shared repo venv, so no cross-session mutation
+   risk). Ran `uv sync --all-packages` there myself (the two new
+   satellites are optional, not root dependencies, so plain `uv sync`
+   alone doesn't pull them in) — both satellites built and installed for
+   real via their own `pyproject.toml` (`openai-codex==0.147.0` resolved
+   genuinely). `importlib.metadata.entry_points(group="parrot.clients")`
+   returned all 7 real entries (`openai`, `codex-agent`, `openai-codex`,
+   `codex-code`, `meta`, `muse`, `meta-muse`), each resolving to the
+   correct class via `LLMFactory.create()`/`.list_providers()`. This new
+   `.venv` will be reused (not recreated) for the remaining satellite
+   tasks (2850-2855) going forward, since it gives genuine verification
+   that the shared-venv simulation cannot.
+
+**Test results** (both venvs agree on non-pre-existing failures = none):
+- `packages/ai-parrot-client-openai/tests -q` → 50/54 passed (4
+  pre-existing `test_openai_multiround_usage.py` `MagicMock`/
+  `raw_response` failures, byte-identical to the ones already present at
+  the TASK-2848 commit — confirmed via `git stash`).
+- `packages/ai-parrot-client-meta/tests -q` → 1/1 passed.
+- `packages/ai-parrot/tests/unit/clients -q` → still green (only the
+  pre-existing groq/grok multiround failures + fresh-venv-only gaps from
+  optional SDKs not installed by `--all-packages` — `transformers`/
+  `google-genai` — unrelated to this task; the shared venv, which has
+  those extras, shows the identical pre-existing-only failure set).
+- `ruff check` on every touched/created file → clean except one
+  pre-existing finding (`InvokeResult` unused import in `openai/client.py`,
+  confirmed via `git show HEAD:...` on the pre-move file — untouched
+  content, `git mv` only).
+- Broader regression sweep unchanged from TASK-2848 (studio/handlers,
+  pipelines, byok) — same pre-existing failures only, none new.
+
+**Deviations from spec**: none beyond the `bridge` optional-extra addition
+(not explicitly requested by the base template, but necessary for
+`codex_tool_bridge.py`'s real dependencies to be installable at all once
+it left core, where they were previously bundled into the `codex-agent`
+extra) and the `tests/unit/__init__.py` naming-collision fix above (both
+documented in-line in the respective files).
