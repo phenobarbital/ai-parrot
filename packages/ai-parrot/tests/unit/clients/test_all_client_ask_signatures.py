@@ -36,12 +36,12 @@ CLIENT_MODULES = [
     "parrot.clients.groq",
     "parrot.clients.hf",
     "parrot.clients.google.live",
-    "parrot.clients.localllm",
-    "parrot.clients.moonshot",
-    "parrot.clients.nvidia",
+    "parrot.clients.local.client",
+    "parrot.clients.moonshot.client",
+    "parrot.clients.nvidia.client",
     "parrot.clients.openai_base",
-    "parrot.clients.openrouter",
-    "parrot.clients.vllm",
+    "parrot.clients.openrouter.client",
+    "parrot.clients.vllm.client",
     "parrot.clients.zai",
 ]
 

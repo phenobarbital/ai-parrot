@@ -4,17 +4,18 @@ Extends OpenAIClient to route requests through OpenRouter's multi-model
 API gateway, providing access to 200+ LLM models via a single endpoint.
 """
 from __future__ import annotations
+from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from logging import getLogger
 
 import aiohttp
 from navconfig import config
 
-from .openai_base import OpenAIBaseClient
+from ..openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
-from ..models.openrouter import (
+from .models import (
     OpenRouterModel,
     ProviderPreferences,
     OpenRouterUsage,
@@ -53,6 +54,10 @@ class OpenRouterClient(OpenAIBaseClient):
 
     client_type: str = "openrouter"
     client_name: str = "openrouter"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("openrouter",)
+    models: type[Enum] = OpenRouterModel
     _default_model: str = OpenRouterModel.DEEPSEEK_R1.value
 
     def __init__(

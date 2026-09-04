@@ -6,7 +6,7 @@ from .openai import OpenAIClient
 from .groq import GroqClient
 from .grok import GrokClient
 from .openrouter import OpenRouterClient
-from .localllm import LocalLLMClient
+from .local import LocalLLMClient
 from .vllm import vLLMClient
 from .nvidia import NvidiaClient
 from .zai import ZaiClient

@@ -23,7 +23,7 @@ def _make_mock_response(text: str = '{"answer": "42"}'):
 
 def _make_client(model: str = "llama3.1:8b"):
     """Create LocalLLMClient without network setup."""
-    from parrot.clients.localllm import LocalLLMClient
+    from parrot.clients.local import LocalLLMClient
     client = LocalLLMClient.__new__(LocalLLMClient)
     client.model = model
     client._lightweight_model = None

@@ -7,12 +7,12 @@ from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 
 from parrot.clients.factory import LLMFactory
-from parrot.clients.moonshot import _thinking_ctx as _moonshot_thinking_ctx
+from parrot.clients.moonshot.client import _thinking_ctx as _moonshot_thinking_ctx
 from parrot.flows.dev_loop.dispatchers._shared import DispatchExecutionError, T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchLabels, MoonshotCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.models.moonshot import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
+from parrot.clients.moonshot.models import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
 
 
 class MoonshotCodeDispatcher(LLMCodeDispatcher):

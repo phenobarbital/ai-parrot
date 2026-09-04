@@ -75,7 +75,7 @@ CLIENT_PATHS = [
     ("parrot.clients.grok", "GrokClient"),
     ("parrot.clients.zai", "ZaiClient"),
     ("parrot.clients.bedrock", "BedrockConverseBase"),
-    ("parrot.clients.localllm", "LocalLLMClient"),
+    ("parrot.clients.local.client", "LocalLLMClient"),
     ("parrot.clients.claude_agent", "ClaudeAgentClient"),
     ("parrot.clients.openai.codex_agent", "OpenAICodexClient"),
     ("parrot.clients.hf", "TransformersClient"),
@@ -289,7 +289,7 @@ class TestPerClientDefaults:
         assert GrokClient._default_max_tokens == 16000
 
     @pytest.mark.parametrize("module_path,class_name,expected", [
-        ("parrot.clients.localllm", "LocalLLMClient", 4096),
+        ("parrot.clients.local.client", "LocalLLMClient", 4096),
         ("parrot.clients.hf", "TransformersClient", 512),
         ("parrot.clients.gemma4", "Gemma4Client", 512),
     ])
@@ -321,7 +321,7 @@ class TestPerClientDefaults:
         assert GroqClient()._resolve_invoke_max_tokens(None, "openai/gpt-oss-120b") < 4096
 
     @pytest.mark.parametrize("module_path,class_name", [
-        ("parrot.clients.localllm", "LocalLLMClient"),
+        ("parrot.clients.local.client", "LocalLLMClient"),
         ("parrot.clients.hf", "TransformersClient"),
         ("parrot.clients.gemma4", "Gemma4Client"),
     ])

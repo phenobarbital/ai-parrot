@@ -11,14 +11,14 @@ from logging import getLogger
 
 from navconfig import config
 
-from .openai_base import OpenAIBaseClient
+from ..openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
-from ..models.localllm import LocalLLMModel
-from ..models import CompletionUsage, StructuredOutputConfig
-from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
+from .models import LocalLLMModel
+from ...models import CompletionUsage, StructuredOutputConfig
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
 
 logger = getLogger(__name__)
 
@@ -60,6 +60,10 @@ class LocalLLMClient(OpenAIBaseClient):
 
     client_type: str = "localllm"
     client_name: str = "localllm"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("local", "localllm", "ollama", "llamacpp")
+    models: type[Enum] = LocalLLMModel
     model: str = LocalLLMModel.LLAMA3_1_8B.value
     # _lightweight_model is inherited as None from OpenAIBaseClient
     # (FEAT-438) — _resolve_invoke_model() falls back to self.model.

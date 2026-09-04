@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 from unittest.mock import AsyncMock
 
-from parrot.clients import moonshot as moonshot_mod
+from parrot.clients.moonshot import client as moonshot_mod
 from parrot.flows.dev_loop import (
     DevelopmentOutput,
     DispatchExecutionError,
@@ -19,7 +19,7 @@ from parrot.flows.dev_loop import (
     MoonshotCodeDispatcher,
     ResearchOutput,
 )
-from parrot.models.moonshot import K_SERIES_MODELS, MoonshotModel
+from parrot.clients.moonshot.models import K_SERIES_MODELS, MoonshotModel
 
 
 # ---------------------------------------------------------------------------

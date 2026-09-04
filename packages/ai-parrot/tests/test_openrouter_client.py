@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from parrot.clients.openrouter import OpenRouterClient
-from parrot.models.openrouter import (
+from parrot.clients.openrouter.models import (
     ProviderPreferences,
     OpenRouterUsage,
     OpenRouterModel,
@@ -161,7 +161,7 @@ class TestOpenRouterUsageTracking:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("parrot.clients.openrouter.aiohttp.ClientSession",
+        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession",
                     return_value=mock_session):
             usage = await client.get_generation_stats("gen-abc123")
 
@@ -198,7 +198,7 @@ class TestOpenRouterUsageTracking:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("parrot.clients.openrouter.aiohttp.ClientSession",
+        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession",
                     return_value=mock_session):
             models = await client.list_models()
 

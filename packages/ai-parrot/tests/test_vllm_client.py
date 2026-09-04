@@ -5,9 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.vllm import vLLMClient
-from parrot.models.vllm import VLLMServerInfo
+from parrot.clients.vllm.models import VLLMServerInfo
 from pydantic import BaseModel
 
 
@@ -477,7 +477,7 @@ class TestVLLMClientHealthCheck:
         """health_check returns True when server responds 200."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession') as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 200
 
@@ -498,7 +498,7 @@ class TestVLLMClientHealthCheck:
         """health_check returns False when server responds non-200."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession') as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 503
 
@@ -519,7 +519,7 @@ class TestVLLMClientHealthCheck:
         """health_check returns False when connection fails."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession') as mock_session_cls:
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(side_effect=Exception("Connection refused"))
             mock_session.__aexit__ = AsyncMock()
@@ -539,7 +539,7 @@ class TestVLLMClientServerInfo:
         """server_info returns VLLMServerInfo on success."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession') as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 200
             mock_response.json = AsyncMock(return_value={
@@ -589,7 +589,7 @@ class TestVLLMClientServerInfo:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession', return_value=mock_session_ctx):
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession', return_value=mock_session_ctx):
             with pytest.raises(ConnectionError) as exc_info:
                 await client.server_info()
             assert "HTTP 500" in str(exc_info.value)
@@ -609,7 +609,7 @@ class TestVLLMClientServerInfo:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession', return_value=mock_session_ctx):
+        with patch('parrot.clients.vllm.client.aiohttp.ClientSession', return_value=mock_session_ctx):
             with pytest.raises(ConnectionError) as exc_info:
                 await client.server_info()
             assert "Cannot connect" in str(exc_info.value)

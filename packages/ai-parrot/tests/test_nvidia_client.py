@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from navconfig import config as _navconfig
 
-from parrot.clients.nvidia import (
+from parrot.clients.nvidia import NvidiaClient, NvidiaModel
+from parrot.clients.nvidia.client import (
     FREE_TIER_RPM,
-    NvidiaClient,
     NvidiaRateLimitError,
     SlidingWindowRateLimiter,
 )
-from parrot.models.nvidia import FREE_TIER_MODELS, NvidiaModel
+from parrot.clients.nvidia.models import FREE_TIER_MODELS
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
 
 
@@ -152,7 +152,7 @@ def env_key(monkeypatch):
     """Patch navconfig.config.get and clear os.environ so NvidiaClient()
     (no api_key) picks up the fake key through config, not the shell env.
     """
-    from parrot.clients import nvidia as nvidia_mod
+    from parrot.clients.nvidia import client as nvidia_mod
 
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     monkeypatch.setattr(
@@ -561,7 +561,7 @@ class TestNvidiaFreeTierFlag:
 
     def test_free_tier_env_override(self, monkeypatch):
         """free_tier=None reads NVIDIA_FREE_TIER via config.getboolean."""
-        from parrot.clients import nvidia as nvidia_mod
+        from parrot.clients.nvidia import client as nvidia_mod
 
         monkeypatch.setattr(
             nvidia_mod.config,
@@ -576,7 +576,7 @@ class TestNvidiaFreeTierFlag:
 
     def test_explicit_flag_beats_env(self, monkeypatch):
         """An explicit free_tier argument is not overridden by the env var."""
-        from parrot.clients import nvidia as nvidia_mod
+        from parrot.clients.nvidia import client as nvidia_mod
 
         monkeypatch.setattr(
             nvidia_mod.config,
@@ -803,10 +803,11 @@ class TestNvidiaModelEnum:
                 f"got {member.value!r}"
             )
 
-    def test_nvidia_model_importable_from_parrot_models(self):
-        """NvidiaModel is re-exported from parrot.models (not just parrot.models.nvidia)."""
-        from parrot.models import NvidiaModel as NM
-        assert NM is NvidiaModel
+    def test_nvidia_model_left_parrot_models(self):
+        """FEAT-523 (TASK-2843): NvidiaModel left parrot.models — it now lives
+        exclusively at parrot.clients.nvidia (folder convention, spec AC-2)."""
+        with pytest.raises(ImportError):
+            from parrot.models import NvidiaModel as NM  # noqa: F401
 
     def test_enum_has_no_withdrawn_slugs(self):
         """No end-of-life slug may reappear in the enum."""

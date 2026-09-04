@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.clients.moonshot import MoonshotClient
-from parrot.clients import moonshot as moonshot_mod
+from parrot.clients.moonshot import client as moonshot_mod
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
 from parrot.models import AIMessage, CompletionUsage
-from parrot.models.moonshot import (
+from parrot.clients.moonshot.models import (
     MoonshotModel,
     K_SERIES_MODELS,
     ALWAYS_THINKING_MODELS,

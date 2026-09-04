@@ -38,6 +38,7 @@ no longer overridden at all (inherited from ``OpenAIBaseClient`` unchanged)
 and K-series models now work through it instead of raising.
 """
 import contextvars
+from enum import Enum
 from typing import Any, AsyncIterator, Dict, Optional, Union
 
 from navconfig import config
@@ -48,9 +49,9 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..models import AIMessage
-from .openai_base import OpenAIBaseClient
-from ..models.moonshot import (
+from ...models import AIMessage
+from ..openai_base import OpenAIBaseClient
+from .models import (
     MoonshotModel,
     K_SERIES_MODELS,
     REASONING_EFFORT_MODELS,
@@ -114,6 +115,10 @@ class MoonshotClient(OpenAIBaseClient):
 
     client_type: str = "moonshot"
     client_name: str = "moonshot"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("moonshot", "kimi")
+    models: type[Enum] = MoonshotModel
     _default_model: str = MoonshotModel.KIMI_K2_6.value
     _fallback_model: str = MoonshotModel.MOONSHOT_V1_128K.value
     _min_cache_tokens: int = 0  # automatic caching, no explicit threshold

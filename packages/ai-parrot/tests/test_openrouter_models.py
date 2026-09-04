@@ -1,6 +1,6 @@
 """Unit tests for OpenRouter data models."""
 import pytest
-from parrot.models.openrouter import (
+from parrot.clients.openrouter.models import (
     OpenRouterModel,
     ProviderPreferences,
     OpenRouterUsage

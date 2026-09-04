@@ -17,7 +17,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from parrot.clients.nvidia import NvidiaClient
-from parrot.models.nvidia import NvidiaModel
+from parrot.clients.nvidia.models import NvidiaModel
 
 from .decorators import tool_schema
 from .toolkit import AbstractToolkit

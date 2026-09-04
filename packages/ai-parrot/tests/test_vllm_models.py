@@ -3,7 +3,7 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from parrot.models.vllm import (
+from parrot.clients.vllm.models import (
     VLLMConfig,
     VLLMSamplingParams,
     VLLMLoRARequest,

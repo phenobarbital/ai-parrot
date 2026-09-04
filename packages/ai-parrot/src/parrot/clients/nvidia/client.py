@@ -17,6 +17,7 @@ from OpenAIBaseClient unchanged. Two Nvidia-specific affordances are added:
 import asyncio
 import contextvars
 from collections import deque
+from enum import Enum
 from typing import Any, AsyncIterator, Deque, Dict, Optional
 
 from navconfig import config
@@ -28,10 +29,10 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..exceptions import ParrotError
-from ..models import AIMessage
-from .openai_base import OpenAIBaseClient
-from ..models.nvidia import NvidiaModel
+from ...exceptions import ParrotError
+from ...models import AIMessage
+from ..openai_base import OpenAIBaseClient
+from .models import NvidiaModel
 
 #: Requests-per-minute quota enforced on Nvidia's free NIM endpoints.
 FREE_TIER_RPM: int = 40
@@ -255,7 +256,7 @@ class NvidiaClient(OpenAIBaseClient):
         free_tier: When ``True`` (default), throttle requests to
             ``requests_per_minute``. When ``None``, the value is read from the
             ``NVIDIA_FREE_TIER`` env var, itself defaulting to ``True``.
-            :data:`~parrot.models.nvidia.FREE_TIER_MODELS` lists the models
+            :data:`~parrot.clients.nvidia.models.FREE_TIER_MODELS` lists the models
             NVIDIA publishes as free preview endpoints — the ones this
             throttle exists for. Note that a free endpoint answers ``503
             ResourceExhausted`` when it is at capacity; that is saturation,
@@ -295,6 +296,10 @@ class NvidiaClient(OpenAIBaseClient):
 
     client_type: str = "nvidia"
     client_name: str = "nvidia"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("nvidia",)
+    models: type[Enum] = NvidiaModel
     _default_model: str = NvidiaModel.MINIMAX_M3.value
 
     # NIM's reasoning models routinely take longer than the 60s

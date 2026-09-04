@@ -23,12 +23,13 @@ from typing import (
 import aiohttp
 from pydantic import BaseModel
 
-from .localllm import LocalLLMClient
-from ..models.vllm import (
+from ..local import LocalLLMClient
+from ..local.models import LocalLLMModel
+from .models import (
     pydantic_to_guided_json,
     VLLMServerInfo,
 )
-from ..models.responses import AIMessage
+from ...models.responses import AIMessage
 
 logger = getLogger(__name__)
 
@@ -83,6 +84,13 @@ class vLLMClient(LocalLLMClient):
 
     client_type: str = "vllm"
     client_name: str = "vllm"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    # No dedicated vLLM model enum exists in models.py (verified 2026-09-04);
+    # vLLM serves arbitrary self-hosted model ids, same catalogue shape as
+    # LocalLLMClient, so it reuses LocalLLMModel as its `models` attribute.
+    provider_keys: tuple[str, ...] = ("vllm",)
+    models: type[Enum] = LocalLLMModel
 
     def __init__(
         self,

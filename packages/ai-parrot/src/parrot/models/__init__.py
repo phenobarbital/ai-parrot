@@ -93,17 +93,6 @@ from .datasets import (
     DatasetDeleteResponse,
     DatasetErrorResponse,
 )
-from .vllm import (
-    VLLMConfig,
-    VLLMSamplingParams,
-    VLLMLoRARequest,
-    VLLMGuidedParams,
-    VLLMBatchRequest,
-    VLLMBatchResponse,
-    VLLMServerInfo,
-    pydantic_to_guided_json,
-)
-from .nvidia import NvidiaModel
 from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
@@ -166,15 +155,6 @@ __all__ = (
     "DatasetUploadResponse",
     "DatasetDeleteResponse",
     "DatasetErrorResponse",
-    # vLLM models
-    "VLLMConfig",
-    "VLLMSamplingParams",
-    "VLLMLoRARequest",
-    "VLLMGuidedParams",
-    "VLLMBatchRequest",
-    "VLLMBatchResponse",
-    "VLLMServerInfo",
-    "pydantic_to_guided_json",
     # Infographic models
     "BlockType",
     "ChartType",
@@ -221,8 +201,6 @@ __all__ = (
     "InfographicTemplate",
     "InfographicTemplateRegistry",
     "infographic_registry",
-    # Nvidia models
-    "NvidiaModel",
     # Crew definition models
     "ExecutionMode",
     "AgentDefinition",

@@ -2,9 +2,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-from parrot.models.localllm import LocalLLMModel
+from parrot.clients.local.models import LocalLLMModel
 
 
 # ---- Model Enum Tests ----

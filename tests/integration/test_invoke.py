@@ -208,7 +208,7 @@ def _make_grok_client(response_text: str = '{"name": "John", "age": 30}'):
 
 def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
     """LocalLLMClient with mocked SDK."""
-    from parrot.clients.localllm import LocalLLMClient
+    from parrot.clients.local import LocalLLMClient
     client = LocalLLMClient.__new__(LocalLLMClient)
     client.model = "llama3.1:8b"
     client._lightweight_model = None

@@ -62,7 +62,7 @@ import time
 
 from navconfig import config
 from parrot.clients.nvidia import NvidiaClient
-from parrot.models.nvidia import NvidiaModel
+from parrot.clients.nvidia.models import NvidiaModel
 
 from parrot.models import AIMessage
 

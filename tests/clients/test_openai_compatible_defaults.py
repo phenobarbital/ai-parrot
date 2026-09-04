@@ -25,7 +25,7 @@ import pytest
 from parrot.clients.claude import AnthropicClient
 from parrot.clients.openai import OpenAIClient
 from parrot.clients.groq import GroqClient
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
