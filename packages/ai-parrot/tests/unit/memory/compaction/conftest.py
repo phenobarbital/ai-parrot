@@ -12,7 +12,8 @@ from __future__ import annotations
 import pytest
 
 from parrot.memory.abstract import ConversationHistory, ConversationTurn
-from parrot.memory.compaction.models import ToolInvocation, ToolStatus
+from parrot.memory.compaction.models import ContextBudget, ToolInvocation, ToolStatus
+from parrot.memory.compaction.tokens import HeuristicCounter, TokenCounter
 
 
 def _sized_text(prefix: str, tokens: int) -> str:
@@ -54,8 +55,16 @@ def make_turn(
 
     Args:
         i: Turn index; used to derive the turn id and unique filler text.
-        tokens: Approximate combined heuristic-token size of the user and
-            assistant text.
+        tokens: Approximate combined heuristic-token size of the WHOLE
+            turn (user + assistant text + tool output), mirroring a
+            realistic round where a big tool result — not the
+            conversational text — dominates the size. When a
+            ``tool_output_chars`` output is attached, its estimated
+            heuristic token cost is subtracted from ``tokens`` first, so
+            the user/assistant baseline stays small (a database agent's
+            question and one-line answer, not another few thousand
+            tokens of prose); the remainder is floored at 10 tokens so
+            there is always some text.
         tool_output_chars: When > 0, attaches one ``ToolInvocation`` with an
             output of this many characters (used to model oversized tool
             results).
@@ -64,14 +73,19 @@ def make_turn(
     Returns:
         A fully populated :class:`ConversationTurn`.
     """
-    user_tokens = max(1, tokens // 3)
-    assistant_tokens = max(1, tokens - user_tokens)
+    tool_tokens_estimate = tool_output_chars // 4
+    body_tokens = max(10, tokens - tool_tokens_estimate)
+    user_tokens = max(1, body_tokens // 3)
+    assistant_tokens = max(1, body_tokens - user_tokens)
     user_message = _sized_text(f"u{i}_", user_tokens)
     assistant_response = _sized_text(f"a{i}_", assistant_tokens)
 
     tool_invocations: list[ToolInvocation] = []
     if tool_output_chars > 0:
-        output = "d" * tool_output_chars
+        # Prefixed with the turn index so identical-length outputs across
+        # turns still hash to distinct content ids (omission dedup keys
+        # on content, not on (turn_id, field)).
+        output = f"row{i}_" + "d" * tool_output_chars
         tool_invocations = [
             ToolInvocation(
                 tool_name="query_database",
@@ -109,3 +123,15 @@ def database_history() -> ConversationHistory:
     for i in range(10):
         history.turns.append(make_turn(i, tokens=8_000, tool_output_chars=30_000))
     return history
+
+
+@pytest.fixture
+def counter() -> TokenCounter:
+    """Deterministic, offline counter — no tiktoken download in CI."""
+    return HeuristicCounter()
+
+
+@pytest.fixture
+def budget() -> ContextBudget:
+    """Default budget: available = 19_712, verbatim 15_000, max_turns 30."""
+    return ContextBudget(window=32_000)
