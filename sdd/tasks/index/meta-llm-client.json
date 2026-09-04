@@ -92,7 +92,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Edits clients/meta/client.py and builds directly on the Responses path from TASK-2836.",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2837-search-grounding-token-counting.md"
+      "completed_at": "2026-09-04T14:36:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2837-search-grounding-token-counting.md"
     },
     {
       "id": "TASK-2838",
