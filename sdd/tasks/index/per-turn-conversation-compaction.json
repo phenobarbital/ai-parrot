@@ -195,7 +195,7 @@
       "feature_id": "FEAT-525",
       "feature": "per-turn-conversation-compaction",
       "spec": "sdd/specs/per-turn-conversation-compaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -207,8 +207,8 @@
       "parallelism_notes": "Own file (compaction/compact.py) but consumes tokens, budget and policies; can run alongside TASK-2826/2829.",
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2828-compact-history-three-tier-walk.md"
+      "completed_at": "2026-09-04T11:41:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2828-compact-history-three-tier-walk.md"
     },
     {
       "id": "TASK-2829",
