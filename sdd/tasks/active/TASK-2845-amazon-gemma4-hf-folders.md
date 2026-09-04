@@ -13,7 +13,7 @@
 
 ## Context
 
-Spec §2 map rows amazon/gemma4/hf. `amazon/` is the one multi-client folder (Bedrock Converse, Nova, Mantle share `parrot/models/bedrock_models.py`). `bedrock.py` and `nova/` are **renamed** paths (hard cut). `Gemma4Model` (`gemma4.py:38`) and `TransformersModel` (`hf.py:27`) leave their client files.
+Spec §2 map rows amazon/gemma4/hf. `amazon/` is a multi-client provider folder like `google/`, `anthropic/` and `openai/` (one package per provider, several clients per package): Bedrock Converse, Nova and Mantle share `parrot/models/bedrock_models.py`. `bedrock.py` and `nova/` are **renamed** paths (hard cut). `Gemma4Model` (`gemma4.py:38`) and `TransformersModel` (`hf.py:27`) leave their client files.
 
 ---
 

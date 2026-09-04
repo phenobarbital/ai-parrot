@@ -171,12 +171,16 @@ Rules:
 | `ai-parrot-client-moonshot` | `moonshot/` | `moonshot.py` | `MoonshotModel` (from `models/moonshot.py`) | — |
 | `ai-parrot-client-openrouter` | `openrouter/` | `openrouter.py` | `OpenRouterModel` (from `models/openrouter.py`) | — |
 | `ai-parrot-client-local` | `local/` | `localllm.py` | `LocalLLMModel` (from `models/localllm.py`) | — |
-| `ai-parrot-client-vllm` | `vllm/` | `vllm.py` | vLLM config models that are client-only (from `models/vllm.py`; shared request/response models stay in core, see §7) | — |
+| `ai-parrot-client-vllm` | `vllm/` | `vllm.py` | all of `models/vllm.py` (its only consumers are `clients/vllm.py` and the `parrot.models` re-exports, verified 2026-09-04) | — (depends on `ai-parrot-client-local`) |
 | `ai-parrot-client-meta` | `meta/` | `meta/` (landed by FEAT-526 in this shape) | `MetaModel` (already in `meta/models.py`) | — |
 
-The `amazon/` folder is the one deliberate exception to "one client per
-folder": Bedrock Converse, Nova and Mantle are one provider with three wire
-protocols and share `bedrock_models.py`.
+**Granularity is one package per provider, not one package per client.** A
+provider folder ships every client that vendor offers, sharing one `models.py`:
+`amazon/` = Bedrock Converse + Nova + Mantle; `google/` = GenAI (AI Studio and
+Vertex) + Gemini Live; `anthropic/` = Claude + Claude Agent SDK + the Bedrock /
+AWS-workspace backends; `openai/` = GPT + Codex. A new wire protocol or agent
+SDK from an existing vendor is added inside that vendor's folder, never as a
+sixteenth package.
 
 ### What stays in core (`packages/ai-parrot/src/parrot/clients/`)
 
@@ -581,10 +585,9 @@ from `parrot.models.google` — verify they need no change.
   `LiveVoiceResponse` from `.live`. Moving `live.py` into `google/` without
   first moving the type to `parrot/models/voice.py` makes core import a
   satellite. Do the type move in Module 1.
-- **`parrot/models/vllm.py` is mixed**: `VLLMConfig`, `VLLMSamplingParams`,
-  `VLLMBatchRequest/Response`, `VLLMServerInfo`, `pydantic_to_guided_json`
-  are re-exported from `parrot.models` and may be used by server handlers.
-  Inventory their consumers in Module 1; only client-private items move.
+- **`parrot/models/vllm.py` moves whole**: its only consumers are `clients/vllm.py`
+  and the `parrot.models.__init__` re-exports (drop them, hard cut). `vLLMClient`
+  subclasses `LocalLLMClient`, so the vllm satellite depends on `ai-parrot-client-local`.
 - **`bedrock_models.py` (17.5K)** is shared by Converse, Nova and Mantle — it
   becomes `amazon/models.py`; do not split it per wire protocol.
 - **Amazon satellite depends on `anthropic[aws]`** independently of the
