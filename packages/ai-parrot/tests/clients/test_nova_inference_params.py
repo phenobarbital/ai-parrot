@@ -13,7 +13,7 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def _client():

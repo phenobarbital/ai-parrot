@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 from parrot.tools import tool
 
 

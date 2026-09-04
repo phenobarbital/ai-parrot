@@ -12,7 +12,7 @@ per-model, not global.
 """
 import pytest
 
-from parrot.clients.bedrock import (
+from parrot.clients.amazon.bedrock import (
     NO_SAMPLING_MODEL_FAMILIES,
     BedrockConverseClient,
     rejects_sampling_params,

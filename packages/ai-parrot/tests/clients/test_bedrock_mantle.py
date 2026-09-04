@@ -12,7 +12,7 @@ No live Bedrock/AWS calls are made by default — ``test_live_mantle_ask`` is
 skip-gated behind ``RUN_MANTLE_LIVE_TEST``.
 
 Conf-var testing gotcha: ``parrot.conf`` values are read at *import time*
-into module-level constants inside ``parrot.clients.nova.mantle`` —
+into module-level constants inside ``parrot.clients.amazon.nova.mantle`` —
 ``monkeypatch.setenv`` after import does NOT change them. Tests patch the
 constants directly on the ``mantle`` module instead.
 """
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from parrot.clients.factory import SUPPORTED_CLIENTS, LLMFactory
-from parrot.clients.nova import BedrockMantleClient
+from parrot.clients.amazon.nova import BedrockMantleClient
 from parrot.models import AIMessage
 
 
@@ -29,13 +29,13 @@ from parrot.models import AIMessage
 def mantle_client(monkeypatch):
     """BedrockMantleClient isolated from the developer's real environment."""
     monkeypatch.setattr(
-        "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
+        "parrot.clients.amazon.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
     )
     monkeypatch.setattr(
-        "parrot.clients.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
+        "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
     )
     monkeypatch.setattr(
-        "parrot.clients.nova.mantle.BEDROCK_MANTLE_BASE_URL", None, raising=False
+        "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_BASE_URL", None, raising=False
     )
     return BedrockMantleClient(api_key="ABSK-test-key", region="us-east-1")
 
@@ -92,13 +92,13 @@ class TestBedrockMantleClient:
         """No region/base_url kwargs and conf region unset -> constructed
         default URL for the us-east-1 fallback."""
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_AWS_REGION", None, raising=False
+            "parrot.clients.amazon.nova.mantle.BEDROCK_AWS_REGION", None, raising=False
         )
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.AWS_REGION_NAME", None, raising=False
+            "parrot.clients.amazon.nova.mantle.AWS_REGION_NAME", None, raising=False
         )
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_MANTLE_BASE_URL", None, raising=False
+            "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_BASE_URL", None, raising=False
         )
         c = BedrockMantleClient(api_key="k")
         assert c.base_url == "https://bedrock-mantle.us-east-1.api.aws/v1"
@@ -107,7 +107,7 @@ class TestBedrockMantleClient:
         """BEDROCK_MANTLE_BASE_URL conf var beats region-constructed URL,
         but explicit base_url kwarg still wins over it."""
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_MANTLE_BASE_URL",
+            "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_BASE_URL",
             "https://conf-configured.example/v1",
             raising=False,
         )
@@ -122,10 +122,10 @@ class TestBedrockMantleClient:
     def test_api_key_resolution_order(self, monkeypatch):
         # kwarg wins over conf vars
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_MANTLE_API_KEY", "mantle-key", raising=False
+            "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_API_KEY", "mantle-key", raising=False
         )
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", "nova-key", raising=False
+            "parrot.clients.amazon.nova.mantle.AWS_NOVA_API_KEY", "nova-key", raising=False
         )
         c = BedrockMantleClient(api_key="explicit-key", region="us-east-1")
         assert c.api_key == "explicit-key"
@@ -136,7 +136,7 @@ class TestBedrockMantleClient:
 
         # AWS_NOVA_API_KEY used as final fallback
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
+            "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
         )
         c3 = BedrockMantleClient(region="us-east-1")
         assert c3.api_key == "nova-key"
@@ -162,10 +162,10 @@ class TestBedrockMantleClient:
         AbstractClient.__aenter__ (use_session=True) would send a real
         OPENAI_API_KEY as a bearer token to the Bedrock Mantle host."""
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
+            "parrot.clients.amazon.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
         )
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
+            "parrot.clients.amazon.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
         )
         monkeypatch.setattr(
             "parrot.clients.openai.client.config.get",
@@ -189,7 +189,7 @@ class TestBedrockMantleClient:
 class TestBedrockMantleFactory:
     def test_factory_creates_mantle_client(self, monkeypatch):
         monkeypatch.setattr(
-            "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", "test-key", raising=False
+            "parrot.clients.amazon.nova.mantle.AWS_NOVA_API_KEY", "test-key", raising=False
         )
         assert "bedrock-mantle" in SUPPORTED_CLIENTS
         assert "mantle" in SUPPORTED_CLIENTS

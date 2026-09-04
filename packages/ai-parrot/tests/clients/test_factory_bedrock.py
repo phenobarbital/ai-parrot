@@ -30,7 +30,7 @@ class TestFactoryBedrockConverse:
         """LLMFactory.create() end-to-end resolution — resolves the lazy
         loader and constructs a real BedrockConverseClient instance."""
         from parrot.clients.factory import LLMFactory
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
 
         client = LLMFactory.create("bedrock-converse:claude-sonnet-4-5")
         assert isinstance(client, BedrockConverseClient)

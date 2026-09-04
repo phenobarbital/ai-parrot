@@ -6,7 +6,7 @@ the counter-reviewer — and ``gpt-5.6-sol`` **cannot** run over the Codex
 CLI, so :class:`~parrot.flows.dev_loop.code_review.CodexAdversarialReviewDispatcher`
 is not a usable transport for it. AWS serves it over the OpenAI-compatible
 **bedrock-mantle** endpoint, which is what
-:class:`~parrot.clients.nova.mantle.BedrockMantleClient` speaks.
+:class:`~parrot.clients.amazon.nova.mantle.BedrockMantleClient` speaks.
 
 This module is a deliberate mirror of
 :class:`~parrot.flows.dev_loop.dispatchers.nova.NovaAdversarialReviewDispatcher`
@@ -41,7 +41,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from parrot import conf
-from parrot.clients.nova.mantle import BedrockMantleClient
+from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     CodeReviewDispatcherFactory,

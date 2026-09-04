@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.models.responses import AIMessage
 

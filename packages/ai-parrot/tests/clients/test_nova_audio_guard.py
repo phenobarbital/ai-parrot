@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from parrot.clients.nova.audio import NovaAudio
+from parrot.clients.amazon.nova.audio import NovaAudio
 
 
 def test_module_imports_without_sdk():

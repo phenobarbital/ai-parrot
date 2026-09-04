@@ -53,7 +53,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 DEFAULT_PROMPT = "A slow drone shot flying over a misty pine forest at dawn"
 DEFAULT_OUTPUT_DIR = Path("artifacts/nova-reel")

@@ -9,21 +9,23 @@ composes ``AbstractClient`` with ``GoogleGeneration``/``GoogleAnalysis``
         ...
 
 Text (``ask``/``ask_stream``/``invoke``/``resume``) is INHERITED from
-:class:`~parrot.clients.bedrock.BedrockConverseBase` — no delegation
+:class:`~parrot.clients.amazon.bedrock.BedrockConverseBase` — no delegation
 object, no reimplementation (resolved spec §8 U1). Voice
-(``stream_voice``) comes from :class:`~parrot.clients.nova.audio.NovaAudio`
+(``stream_voice``) comes from :class:`~parrot.clients.amazon.nova.audio.NovaAudio`
 (TASK-1807). Generation (``generate_image``/``video_generation``) comes
-from :class:`~parrot.clients.nova.generation.NovaGeneration` (TASK-1808).
+from :class:`~parrot.clients.amazon.nova.generation.NovaGeneration` (TASK-1808).
 
 See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 2) for the full
 design.
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict, Optional
 
-from ...models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
+from ....models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from ..bedrock import BedrockConverseBase
+from ..models import AmazonModel
 from .audio import NOVA_VOICE_CATALOG, NovaAudio
 from .generation import NovaGeneration
 
@@ -62,6 +64,10 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
 
     client_type: str = "nova"
     client_name: str = "nova"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("nova",)
+    models: type[Enum] = AmazonModel
     _default_model: str = "nova-2-lite"
     _fallback_model: str = "nova-lite"
 

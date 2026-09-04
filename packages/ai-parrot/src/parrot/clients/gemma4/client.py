@@ -23,24 +23,17 @@ from enum import Enum
 ## transformers and torch are imported lazily to avoid pulling in heavy
 ## dependencies when Gemma4Client is not actually used.
 
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .base import AbstractClient, MessageResponse
-from ..models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
-from ..models.basic import ToolCall
-from ..models.responses import InvokeResult
-from ..tools.manager import ToolFormat
-
-
-class Gemma4Model(Enum):
-    """Supported Gemma 4 model variants."""
-
-    GEMMA_4_E2B = "google/gemma-4-E2B-it"
-    GEMMA_4_E4B = "google/gemma-4-E4B-it"
-    GEMMA_4_26B_A4B = "google/gemma-4-26B-A4B-it"
+from ..base import AbstractClient, MessageResponse
+from ...models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
+from ...models.basic import ToolCall
+from ...models.responses import InvokeResult
+from ...tools.manager import ToolFormat
+from .models import Gemma4Model
 
 
 # Maximum tool-call loop iterations to prevent infinite loops.
@@ -60,6 +53,10 @@ class Gemma4Client(AbstractClient):
 
     client_type: str = "gemma4"
     client_name: str = "gemma4"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("gemma4",)
+    models: type[Enum] = Gemma4Model
     # Local Gemma generation is wall-clock expensive, so keep invoke()'s budget
     # conservative. Raise per-instance with ``invoke_max_tokens=``.
     _invoke_max_tokens: int = 4096

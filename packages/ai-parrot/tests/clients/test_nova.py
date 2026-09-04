@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def _make_client(**kwargs) -> NovaClient:
@@ -297,7 +297,7 @@ class TestStreamVoice:
              patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
              patch.object(nova_client, '_send_event', new=AsyncMock()), \
              patch.object(nova_client, '_iter_events', return_value=fake_events()), \
-             patch('parrot.clients.nova.audio.time.monotonic', side_effect=[0, 0, 10_000]):
+             patch('parrot.clients.amazon.nova.audio.time.monotonic', side_effect=[0, 0, 10_000]):
             responses = [
                 r async for r in nova_client.stream_voice(_fake_audio_iterator())
             ]

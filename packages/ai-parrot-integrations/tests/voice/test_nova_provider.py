@@ -34,7 +34,7 @@ class TestProviderResolution:
         assert resolve_voice_client_class(VoiceProvider.GOOGLE_LIVE) is GeminiLiveClient
 
     def test_resolve_nova_returns_nova_client(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert resolve_voice_client_class(VoiceProvider.NOVA) is NovaClient
 
     def test_resolve_nova_does_not_require_sdk_to_construct(self):
@@ -45,7 +45,7 @@ class TestProviderResolution:
 
     def test_voice_chat_handler_recognizes_nova(self):
         """VoiceChatHandler.resolve_provider_client() recognizes NOVA."""
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert VoiceChatHandler.resolve_provider_client(
             VoiceProvider.NOVA
         ) is NovaClient

@@ -62,7 +62,7 @@ def test_no_class_level_default_falls_through_to_none():
 
 
 def test_mantle_no_longer_needs_workaround():
-    from parrot.clients.nova.mantle import BedrockMantleClient
+    from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 
     c = BedrockMantleClient(api_key="k")
     assert c._fallback_model == "google.gemma-4-26b-a4b"

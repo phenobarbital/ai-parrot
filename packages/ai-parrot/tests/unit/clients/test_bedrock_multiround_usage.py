@@ -21,8 +21,8 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
-from parrot.clients.bedrock import BedrockConverseClient
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
+from parrot.clients.amazon.nova import NovaClient
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     BeforeClientCallEvent,

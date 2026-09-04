@@ -27,7 +27,7 @@ class TestVoiceCapableProtocol:
 
     def test_nova_satisfies_protocol(self):
         """NovaClient (via NovaAudio mixin) satisfies VoiceCapable."""
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert isinstance(NovaClient(), VoiceCapable)
 
     def test_plain_client_rejected(self):

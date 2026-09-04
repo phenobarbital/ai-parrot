@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 
 from parrot.clients.base import AbstractClient
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 from parrot.memory.render import HistoryMessage
 
 

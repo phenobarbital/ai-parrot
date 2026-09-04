@@ -2,7 +2,7 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 TOOL_USE = {"toolUse": {"toolName": "get_weather", "toolUseId": "tu_1",
                         "content": '{"location": "Miami"}'}}

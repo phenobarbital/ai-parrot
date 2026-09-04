@@ -35,7 +35,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 DEFAULT_PROMPT = "A futuristic city skyline at sunset, digital art style"
 DEFAULT_OUTPUT_DIR = Path("artifacts/nova-canvas")

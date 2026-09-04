@@ -13,7 +13,7 @@ Converse — ``BedrockConverseBase`` exposes no OpenAI-shaped
 ``_chat_completion``, so the base dispatcher's ``_chat_completion`` would
 raise ``DispatchExecutionError("... does not expose chat completion")``
 against it. Instead, the injected ``client_factory`` builds a
-:class:`~parrot.clients.nova.mantle.BedrockMantleClient` pointed at the
+:class:`~parrot.clients.amazon.nova.mantle.BedrockMantleClient` pointed at the
 bedrock-mantle base URL, reusing the inherited tool loop, Redis event
 streaming, cwd-safety guard, and output validation unchanged.
 
@@ -38,8 +38,8 @@ from pydantic import BaseModel
 
 from parrot import conf
 from parrot.clients.factory import LLMFactory
-from parrot.clients.nova import NovaClient
-from parrot.clients.nova.mantle import BedrockMantleClient
+from parrot.clients.amazon.nova import NovaClient
+from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
@@ -68,7 +68,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
     OpenAI-compatible client pointed at
     ``https://bedrock-mantle.{region}.api.aws/v1`` instead of the default
     ``LLMFactory``-resolved client (which would resolve ``"nova:"`` to
-    :class:`~parrot.clients.nova.client.NovaClient`, a Converse-only client
+    :class:`~parrot.clients.amazon.nova.client.NovaClient`, a Converse-only client
     with no chat-completion shape).
     """
 

@@ -22,7 +22,7 @@ structured output, guardrails (``apply_guardrail_text()``), and the
 Factory registration is Module 6 (TASK-1747).
 
 FEAT-315 (TASK-1806) extracted the engine into ``BedrockConverseBase`` so
-that :class:`~parrot.clients.nova.NovaClient` can inherit it directly
+that :class:`~parrot.clients.amazon.nova.NovaClient` can inherit it directly
 instead of delegating to a second internal client object, and fixed the
 ``aws_id`` credential-resolution bug described below.
 
@@ -35,24 +35,25 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 from parrot.observability.context import current_session_id, current_user_id
-from .base import AbstractClient
-from ..conf import (
+from ..base import AbstractClient
+from ...conf import (
     AWS_CREDENTIALS,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
     AWS_NOVA_API_KEY,
 )
-from ..exceptions import InvokeError
-from ..models.basic import CompletionUsage, ToolCall
-from ..models.bedrock_models import translate as translate_bedrock_model
-from ..models.responses import AIMessage, AIMessageFactory, InvokeResult
-from ..models.outputs import StructuredOutputConfig
-from ..tools.manager import ToolFormat
+from ...exceptions import InvokeError
+from ...models.basic import CompletionUsage, ToolCall
+from .models import translate as translate_bedrock_model, AmazonModel
+from ...models.responses import AIMessage, AIMessageFactory, InvokeResult
+from ...models.outputs import StructuredOutputConfig
+from ...tools.manager import ToolFormat
 
 # Model families that REJECT sampling parameters (2026 generation). Bedrock
 # answers a request carrying ``temperature``/``topP``/``topK`` for one of these
@@ -146,7 +147,7 @@ class BedrockConverseBase(AbstractClient):
     ``resume()``, ``invoke()``, guardrails, and structured output.
 
     Concrete subclasses (e.g. :class:`BedrockConverseClient`,
-    :class:`~parrot.clients.nova.NovaClient`) set the family-specific class
+    :class:`~parrot.clients.amazon.nova.NovaClient`) set the family-specific class
     attributes (``client_type``, ``client_name``, ``_default_model``,
     ``_fallback_model``, ...) and inherit the rest verbatim — no
     delegation object, no reimplementation (spec ``novaclient-amazon-aws``
@@ -192,7 +193,7 @@ class BedrockConverseBase(AbstractClient):
                 ``aioboto3.Session``.
             region_prefix: Cross-region inference-profile prefix (e.g.
                 ``"us"``, ``"eu"``, ``"apac"``) applied by
-                :func:`~parrot.models.bedrock_models.translate`.
+                :func:`~parrot.clients.amazon.models.translate`.
             guardrail_id: Bedrock guardrail identifier. Stored for use by
                 Module 5 (TASK-1746, Advanced Features); not yet applied to
                 requests in this Core implementation.
@@ -625,8 +626,8 @@ class BedrockConverseBase(AbstractClient):
         Calls Bedrock's ``apply_guardrail()`` API directly (not via
         ``converse()``) — useful for filtering text that did not originate
         from a Converse call (e.g. transcriptions, as used by
-        :class:`~parrot.clients.nova.audio.NovaAudio` via
-        :meth:`~parrot.clients.nova.audio.NovaAudio._apply_pii_guardrail`,
+        :class:`~parrot.clients.amazon.nova.audio.NovaAudio` via
+        :meth:`~parrot.clients.amazon.nova.audio.NovaAudio._apply_pii_guardrail`,
         TASK-1748/FEAT-315).
 
         Args:
@@ -1659,6 +1660,11 @@ class BedrockConverseClient(BedrockConverseBase):
 
     client_type: str = "bedrock-converse"
     client_name: str = "bedrock-converse"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("bedrock-converse",)
+    models: type[Enum] = AmazonModel
+
     _default_model: str = "claude-sonnet-4-5"
     _fallback_model: str = "claude-haiku-4-5"
     _lightweight_model: str = "claude-haiku-4-5-20251001"

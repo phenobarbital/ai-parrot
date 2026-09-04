@@ -19,14 +19,17 @@ This client coexists with, and does not replace, the native
 which use the boto/Converse API code path instead of the OpenAI SDK.
 """
 
-from ...conf import (
+from enum import Enum
+
+from ....conf import (
     AWS_NOVA_API_KEY,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
     BEDROCK_MANTLE_API_KEY,
     BEDROCK_MANTLE_BASE_URL,
 )
-from ..openai_base import OpenAIBaseClient
+from ...openai_base import OpenAIBaseClient
+from ..models import AmazonModel
 
 
 class BedrockMantleClient(OpenAIBaseClient):
@@ -69,7 +72,7 @@ class BedrockMantleClient(OpenAIBaseClient):
 
     Example::
 
-        from parrot.clients.nova import BedrockMantleClient
+        from parrot.clients.amazon.nova import BedrockMantleClient
 
         client = BedrockMantleClient(region="us-east-1")
         async with client:
@@ -81,6 +84,10 @@ class BedrockMantleClient(OpenAIBaseClient):
 
     client_type: str = "bedrock-mantle"
     client_name: str = "bedrock-mantle"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("bedrock-mantle", "mantle")
+    models: type[Enum] = AmazonModel
     _default_model: str = "openai.gpt-oss-120b"
     _fallback_model: str = "google.gemma-4-26b-a4b"
 

@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot.clients.google.live import GeminiLiveClient
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 async def empty_audio_iterator() -> AsyncIterator[bytes]:

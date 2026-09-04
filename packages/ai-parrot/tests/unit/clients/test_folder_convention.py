@@ -21,10 +21,12 @@ import pytest
 #: Providers already migrated to the `clients/<provider>/{__init__,client,
 #: models}.py` convention. TASK-2841 lands "google"; TASK-2842 appends
 #: "openai"; TASK-2843 appends the five OpenAI-wire wrapper providers;
-#: TASK-2844 appends anthropic/groq/grok/zai; later tasks append further.
+#: TASK-2844 appends anthropic/groq/grok/zai; TASK-2845 appends
+#: amazon/gemma4/hf; later tasks append further.
 CONVERTED = [
     "google", "openai", "moonshot", "openrouter", "nvidia", "local", "vllm",
     "anthropic", "groq", "grok", "zai",
+    "amazon", "gemma4", "hf",
 ]
 
 

@@ -23,16 +23,16 @@ def _lazy_gemma4():
 def _lazy_bedrock_converse():
     """Lazy loader for :class:`BedrockConverseClient` (FEAT-302).
 
-    Importing :mod:`parrot.clients.bedrock` is cheap — it only imports
-    ``aioboto3`` lazily inside ``get_client()`` — but this loader keeps the
-    same pattern as :func:`_lazy_gemma4` / :func:`_lazy_claude_agent` for
-    consistency and to defer the import until the client is actually
+    Importing :mod:`parrot.clients.amazon.bedrock` is cheap — it only
+    imports ``aioboto3`` lazily inside ``get_client()`` — but this loader
+    keeps the same pattern as :func:`_lazy_gemma4` / :func:`_lazy_claude_agent`
+    for consistency and to defer the import until the client is actually
     requested via the factory.
 
     Returns:
         The :class:`BedrockConverseClient` class.
     """
-    from .bedrock import BedrockConverseClient
+    from .amazon.bedrock import BedrockConverseClient
 
     return BedrockConverseClient
 
@@ -40,7 +40,7 @@ def _lazy_bedrock_converse():
 def _lazy_nova():
     """Lazy loader for :class:`NovaClient` (FEAT-315).
 
-    Importing :mod:`parrot.clients.nova` is cheap — the text/generation
+    Importing :mod:`parrot.clients.amazon.nova` is cheap — the text/generation
     paths only import ``aioboto3`` lazily inside ``get_client()``, and the
     Pre-Alpha voice SDK (``aws_sdk_bedrock_runtime``) is imported lazily
     inside ``stream_voice()`` — but this loader keeps the same pattern as
@@ -51,7 +51,7 @@ def _lazy_nova():
     Returns:
         The :class:`NovaClient` class.
     """
-    from .nova import NovaClient
+    from .amazon.nova import NovaClient
 
     return NovaClient
 
@@ -65,7 +65,7 @@ def _lazy_bedrock_mantle():
     Returns:
         The :class:`BedrockMantleClient` class.
     """
-    from .nova.mantle import BedrockMantleClient
+    from .amazon.nova.mantle import BedrockMantleClient
 
     return BedrockMantleClient
 

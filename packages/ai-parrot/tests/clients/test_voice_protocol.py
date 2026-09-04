@@ -29,13 +29,13 @@ def test_gemini_satisfies_protocol():
 
 
 def test_nova_satisfies_protocol():
-    from parrot.clients.nova import NovaClient
+    from parrot.clients.amazon.nova import NovaClient
     assert isinstance(NovaClient(), VoiceCapable)
 
 
 def test_descriptors_tell_current_truth():
     from parrot.clients.google.live import GeminiLiveClient
-    from parrot.clients.nova import NovaClient
+    from parrot.clients.amazon.nova import NovaClient
     gemini = GeminiLiveClient().voice_capabilities
     nova = NovaClient().voice_capabilities
     assert gemini.provider is VoiceProvider.GOOGLE_LIVE
@@ -78,30 +78,30 @@ class TestGeminiVoiceCapabilities:
 
 class TestNovaVoiceCapabilities:
     def test_audio_formats_pcm(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         caps = NovaClient().voice_capabilities
         assert caps.input_formats == frozenset({AudioFormat.PCM_16K})
         assert caps.output_formats == frozenset({AudioFormat.PCM_24K})
 
     def test_default_voice_is_matthew(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert NovaClient().voice_capabilities.default_voice == "matthew"
 
     def test_voice_catalog_has_three_documented_voices(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         caps = NovaClient().voice_capabilities
         assert caps.voice_catalog == frozenset({"matthew", "tiffany", "amy"})
 
     def test_max_session_seconds_matches_connection_limit(self):
-        from parrot.clients.nova import NovaClient
-        from parrot.clients.nova.audio import NovaAudio
+        from parrot.clients.amazon.nova import NovaClient
+        from parrot.clients.amazon.nova.audio import NovaAudio
         caps = NovaClient().voice_capabilities
         assert caps.max_session_seconds == NovaAudio._CONNECTION_LIMIT_SECONDS
 
     def test_supports_per_call_inference_already_true(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert NovaClient().voice_capabilities.supports_per_call_inference is True
 
     def test_supports_session_resumption_false(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert NovaClient().voice_capabilities.supports_session_resumption is False

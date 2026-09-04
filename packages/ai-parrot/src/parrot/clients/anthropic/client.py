@@ -106,7 +106,7 @@ class AnthropicClient(AbstractClient):
     # would break every call rather than lengthen it.
     #
     # This ceiling is the transport's, not the model's: the same Claude models
-    # accept 65,536 through :class:`~parrot.clients.bedrock.BedrockConverseClient`
+    # accept 65,536 through :class:`~parrot.clients.amazon.bedrock.BedrockConverseClient`
     # (boto3 Converse, verified live 2026-09-03), which is why that client sets
     # its own, much larger values. Lifting this one means teaching ``invoke()``
     # to stream for large budgets — a separate change.

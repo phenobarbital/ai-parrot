@@ -9,7 +9,7 @@ import sys
 import pytest
 from unittest.mock import patch
 
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 
 
 class TestBedrockErrors:

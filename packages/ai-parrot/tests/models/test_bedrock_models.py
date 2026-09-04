@@ -1,5 +1,5 @@
 """Unit tests for the Nova / multi-provider extensions to
-``parrot.models.bedrock_models`` (FEAT-302, TASK-1744).
+``parrot.clients.amazon.models`` (FEAT-302, TASK-1744).
 
 Complements the existing Claude-focused suite at
 ``packages/ai-parrot/tests/test_bedrock_models.py`` (TASK-1514) with
@@ -13,7 +13,7 @@ inversion that keeps ``region_prefix`` from leaking onto prefix-less vendor
 models (the day-one bug, [R6]).
 """
 import pytest
-from parrot.models.bedrock_models import (
+from parrot.clients.amazon.models import (
     PUBLIC_TO_BEDROCK,
     REQUIRES_REGION_PREFIX,
     _is_bedrock_id,
@@ -90,7 +90,7 @@ class TestPrefixPolicy:
         )
 
     def test_explicit_prefix_on_unmapped_model_warns(self, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             result = translate("minimax.minimax-m2.5", region_prefix="us")
         assert result == "minimax.minimax-m2.5"
         assert any("prefix" in r.message.lower() for r in caplog.records)
@@ -116,7 +116,7 @@ class TestPrefixPolicy:
         'ignoring the prefix' warning just because a caller (e.g.
         NovaClient's own region_prefix="us" default) also happens to pass
         region_prefix="us" redundantly — the id is already fully resolved."""
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             result = translate(already_prefixed_id, region_prefix="us")
         assert result == already_prefixed_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
@@ -134,7 +134,7 @@ class TestPassThrough:
         "minimax.minimax-m2.5", "zai.glm-5", "moonshotai.kimi-k2.5",
     ])
     def test_vendor_namespaces_no_warning(self, model_id, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate(model_id) == model_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
@@ -158,7 +158,7 @@ class TestNewMapEntries:
         assert "-v1:0" not in translate("claude-fable-5")
 
     def test_unknown_id_warns_and_passes_through(self, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate("totally-made-up-model") == "totally-made-up-model"
         assert any(r.levelname == "WARNING" for r in caplog.records)
 
@@ -218,7 +218,7 @@ class TestUnprefixedIdRepair:
 
     def test_no_version_suffix_is_ever_guessed(self, caplog):
         """An unknown model is passed through, never string-munged."""
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert (
                 translate("anthropic.claude-not-a-real-model")
                 == "anthropic.claude-not-a-real-model"
@@ -269,7 +269,7 @@ class TestThirdPartyBedrockModels:
     def test_qwen3_coder_mantle_id_passes_through_verbatim(self, caplog):
         """The Mantle id differs from the runtime id and must NOT be rewritten."""
         mantle_id = "qwen.qwen3-coder-480b-a35b-instruct"
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate(mantle_id) == mantle_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
 

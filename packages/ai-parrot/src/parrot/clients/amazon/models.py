@@ -39,6 +39,7 @@ Translation strategy (applied in order):
 from __future__ import annotations
 
 import logging
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -339,3 +340,73 @@ def translate(public_id: str, region_prefix: str | None = None) -> str:
         return f"{default_prefix}.{bedrock_id}"
 
     return bedrock_id
+
+
+# ---------------------------------------------------------------------------
+# AmazonModel (FEAT-523, TASK-2845)
+# ---------------------------------------------------------------------------
+# `grep -n '^class '` on this module (as `models/bedrock_models.py`, verified
+# 2026-09-04) returned nothing — the file exposes constants/dicts, not a
+# single catalogue Enum, because `translate()` accepts ANY public model ID
+# string and passes unknown ones through unchanged (see module docstring
+# step 6). This thin Enum is a documented, non-load-bearing convenience
+# wrapper over the public IDs that ARE in `PUBLIC_TO_BEDROCK` today, so
+# `BedrockConverseClient` / `NovaClient` / `BedrockMantleClient` have a
+# `models` class attribute per the folder convention. It is NOT the
+# authoritative catalogue (`PUBLIC_TO_BEDROCK` is, and `translate()` never
+# consults this Enum); members are string-valued so `AmazonModel.X.value`
+# round-trips to the exact public ID used as a `PUBLIC_TO_BEDROCK` key.
+
+
+class AmazonModel(str, Enum):
+    """Public model IDs known to :data:`PUBLIC_TO_BEDROCK` (documentation
+    convenience only — see module note above; ``translate()`` accepts any
+    string, not just these members)."""
+
+    # Claude 4.6
+    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
+    CLAUDE_OPUS_4_6 = "claude-opus-4-6"
+    # Claude 4.5
+    CLAUDE_SONNET_4_5_20250929 = "claude-sonnet-4-5-20250929"
+    CLAUDE_SONNET_4_5 = "claude-sonnet-4-5"
+    CLAUDE_HAIKU_4_5_20251001 = "claude-haiku-4-5-20251001"
+    CLAUDE_HAIKU_4_5 = "claude-haiku-4-5"
+    CLAUDE_OPUS_4_5_20251101 = "claude-opus-4-5-20251101"
+    CLAUDE_OPUS_4_5 = "claude-opus-4-5"
+    # Claude 4.1
+    CLAUDE_OPUS_4_1_20250805 = "claude-opus-4-1-20250805"
+    CLAUDE_OPUS_4_1 = "claude-opus-4-1"
+    # Claude Sonnet 4
+    CLAUDE_SONNET_4_20250514 = "claude-sonnet-4-20250514"
+    # Claude 3.x
+    CLAUDE_3_7_SONNET_20250219 = "claude-3-7-sonnet-20250219"
+    CLAUDE_3_5_HAIKU_20241022 = "claude-3-5-haiku-20241022"
+    # Claude 5 (2026 generation, FEAT-405)
+    CLAUDE_OPUS_5 = "claude-opus-5"
+    CLAUDE_SONNET_5 = "claude-sonnet-5"
+    CLAUDE_FABLE_5 = "claude-fable-5"
+    CLAUDE_FABLE_5_1 = "claude-fable-5-1"
+    # Third-party models served on Bedrock
+    LLAMA4_MAVERICK_17B_INSTRUCT = "llama4-maverick-17b-instruct"
+    QWEN3_CODER_480B_A35B = "qwen3-coder-480b-a35b"
+    GLM_5 = "glm-5"
+    KIMI_K2_5 = "kimi-k2.5"
+    # Amazon Nova (multi-provider, FEAT-302)
+    NOVA_SONIC = "nova-sonic"
+    NOVA_PRO = "nova-pro"
+    NOVA_LITE = "nova-lite"
+    NOVA_MICRO = "nova-micro"
+    NOVA_PREMIER = "nova-premier"
+    NOVA_CANVAS = "nova-canvas"
+    NOVA_REEL = "nova-reel"
+    # Amazon Nova 2
+    NOVA_2_SONIC = "nova-2-sonic"
+    NOVA_2_LITE = "nova-2-lite"
+
+
+__all__ = [
+    "translate",
+    "PUBLIC_TO_BEDROCK",
+    "REQUIRES_REGION_PREFIX",
+    "AmazonModel",
+]

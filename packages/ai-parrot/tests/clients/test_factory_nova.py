@@ -5,7 +5,7 @@ construction does not require them (lazy ``aioboto3``/Pre-Alpha SDK
 imports).
 """
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def test_nova_key_registered_lazy():

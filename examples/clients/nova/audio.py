@@ -1,7 +1,7 @@
 """End-to-end Nova 2 Sonic voice chat — aiohttp server + push-to-talk web UI.
 
 A single-file, self-contained demo of
-:meth:`parrot.clients.nova.audio.NovaAudio.stream_voice` (``NovaClient``)
+:meth:`parrot.clients.amazon.nova.audio.NovaAudio.stream_voice` (``NovaClient``)
 driven straight from a browser microphone. No ``VoiceBot``, no
 ``VoiceChatHandler`` — the WebSocket handler talks to the raw client so the
 client contract is visible end to end::
@@ -73,7 +73,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 from navconfig import config
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 from parrot.voice.session import VoiceSession
 
 # ---------------------------------------------------------------------------

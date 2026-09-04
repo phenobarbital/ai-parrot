@@ -14,38 +14,15 @@ from enum import Enum
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .base import AbstractClient, MessageResponse
-from ..models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
-from ..models.responses import InvokeResult
-
-
-class TransformersModel(Enum):
-    """Enum for supported transformer models."""
-
-    DIALOPT_MEDIUM = "microsoft/DialoGPT-medium"
-    DIALOPT_SMALL = "microsoft/DialoGPT-small"
-    DIALOPT_LARGE = "microsoft/DialoGPT-large"
-    TINY_LLM = "arnir0/Tiny-LLM"
-    GEMMA_2B = "google/gemma-2-2b-it"
-    GEMMA_9B = "google/gemma-2-9b-it"
-    GEMMA_3_4B = "google/gemma-3-4b-it"
-    GEMMA_3_1B = "google/gemma-3-1b-pt"
-    QWEN_1_5B = "Qwen/Qwen2.5-1.5B-Instruct"
-    QWEN_3B = "Qwen/Qwen2.5-3B-Instruct"
-    QWEN_7B = "Qwen/Qwen2.5-7B-Instruct"
-    BCCARD_QWEN_32B = "BCCard/Qwen2.5-VL-32B-Instruct-FP8-Dynamic"
-    PHI_3_MINI = "microsoft/Phi-3-mini-4k-instruct"
-    PHI_3_SMALL = "microsoft/Phi-3-small-8k-instruct"
-    PHI_3_5_MINI = "microsoft/Phi-3.5-mini-instruct"
-    OPENAI_GPT_20B = "openai/gpt-oss-20b"
-    HUGGINGFACE_TB_SMOLLM2_1_7B = "HuggingFaceTB/SmolLM2-1.7B"
-    DEEPSEEK_R1_1B = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-    DEEPSEEK_R1_7B = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+from ..base import AbstractClient, MessageResponse
+from ...models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
+from ...models.responses import InvokeResult
+from .models import TransformersModel
 
 
 class TransformersClient(AbstractClient):
@@ -58,6 +35,12 @@ class TransformersClient(AbstractClient):
 
     client_type: str = "transformers"
     client_name: str = "transformers"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    # New keys ("hf", "transformers") — not registered in SUPPORTED_CLIENTS
+    # today; TASK-2847's entry-point discovery wires them, per task scope.
+    provider_keys: tuple[str, ...] = ("hf", "transformers")
+    models: type[Enum] = TransformersModel
     # Local transformer generation is wall-clock expensive and these models
     # have small context windows, so keep invoke()'s budget conservative.
     # Raise per-instance with ``invoke_max_tokens=``.

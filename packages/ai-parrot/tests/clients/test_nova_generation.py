@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot.clients.nova.generation import NovaGeneration
+from parrot.clients.amazon.nova.generation import NovaGeneration
 from parrot.exceptions import InvokeError
 
 
@@ -97,7 +97,7 @@ class TestVideoGeneration:
     async def test_video_generation_requires_s3_config(self):
         host = Host(AsyncMock())
         with patch(
-            "parrot.clients.nova.generation.AWS_CREDENTIALS", {"default": {}}
+            "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS", {"default": {}}
         ):
             with pytest.raises(ValueError, match="s3_output_uri|bucket_name"):
                 await host.video_generation("a dancing robot")
@@ -110,7 +110,7 @@ class TestVideoGeneration:
         host = Host(AsyncMock())
         host._aws_id = "monitoring"
         with patch(
-            "parrot.clients.nova.generation.AWS_CREDENTIALS",
+            "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS",
             {"monitoring": {}, "default": {"bucket_name": "default-bucket"}},
         ):
             uri = host._resolve_s3_output_uri(None)
@@ -120,7 +120,7 @@ class TestVideoGeneration:
         host = Host(AsyncMock())
         host._aws_id = "monitoring"
         with patch(
-            "parrot.clients.nova.generation.AWS_CREDENTIALS",
+            "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS",
             {
                 "monitoring": {"bucket_name": "monitoring-bucket"},
                 "default": {"bucket_name": "default-bucket"},
@@ -160,7 +160,7 @@ class TestVideoGeneration:
         with patch("aioboto3.Session", return_value=fake_session), \
                 patch("asyncio.sleep", new=AsyncMock()), \
                 patch(
-                    "parrot.clients.nova.generation.AWS_CREDENTIALS",
+                    "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS",
                     {"default": {"bucket_name": "my-bucket"}},
                 ):
             msg = await host.video_generation(

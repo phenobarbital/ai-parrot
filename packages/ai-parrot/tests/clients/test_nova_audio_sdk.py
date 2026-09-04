@@ -37,8 +37,8 @@ pytest.importorskip(
 # collected when the Pre-Alpha SDK is absent.
 from aws_sdk_bedrock_runtime import models as sdk_models
 from aws_sdk_bedrock_runtime.config import Config
-from parrot.clients.nova import NovaClient
-from parrot.clients.nova import audio as audio_mod
+from parrot.clients.amazon.nova import NovaClient
+from parrot.clients.amazon.nova import audio as audio_mod
 
 
 def _make_client(**kwargs) -> NovaClient:

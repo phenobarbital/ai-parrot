@@ -43,7 +43,7 @@ class VoiceProvider(str, Enum):
     OPENAI_REALTIME = "openai_realtime"
     WHISPER_TTS = "whisper_tts"
     # FEAT-302/FEAT-315: Amazon Nova 2 Sonic bidirectional voice —
-    # backed by parrot.clients.nova.NovaClient. FEAT-315 breaking change:
+    # backed by parrot.clients.amazon.nova.NovaClient. FEAT-315 breaking change:
     # renamed from the previous snake-case provider key; no alias kept.
     NOVA = "nova"
 

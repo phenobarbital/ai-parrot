@@ -99,7 +99,7 @@ class BedrockBackend:
     """Backend strategy for AWS Bedrock (``AsyncAnthropicBedrock``).
 
     Translates public model IDs to Bedrock IDs via
-    :func:`parrot.models.bedrock_models.translate` before every SDK call.
+    :func:`parrot.clients.amazon.models.translate` before every SDK call.
     AWS credentials are optional — pass ``None`` to fall through to the
     standard AWS credential chain (``~/.aws/credentials`` / IAM role / IMDS).
 
@@ -163,7 +163,7 @@ class BedrockBackend:
     def translate_model(self, model: str) -> str:
         """Translate *model* to its AWS Bedrock ID.
 
-        Delegates to :func:`parrot.models.bedrock_models.translate` with the
+        Delegates to :func:`parrot.clients.amazon.models.translate` with the
         configured ``region_prefix``.
 
         Args:
@@ -172,7 +172,7 @@ class BedrockBackend:
         Returns:
             Translated Bedrock model ID string.
         """
-        from parrot.models.bedrock_models import translate
+        from parrot.clients.amazon.models import translate
         return translate(model, region_prefix=self.region_prefix)
 
 

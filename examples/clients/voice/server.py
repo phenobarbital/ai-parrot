@@ -219,7 +219,7 @@ def build_capabilities() -> dict[str, Any]:
     gemini_client: VoiceCapable = GeminiLiveClient(voice_name="Puck")
     capabilities = {"gemini": _capabilities_to_json(gemini_client.voice_capabilities)}
 
-    from parrot.clients.nova import NovaClient
+    from parrot.clients.amazon.nova import NovaClient
 
     nova_client: VoiceCapable = NovaClient(model="nova-2-sonic", voice_id="matthew")
     capabilities["nova"] = _capabilities_to_json(nova_client.voice_capabilities)

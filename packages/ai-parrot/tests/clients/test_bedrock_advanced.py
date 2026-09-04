@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 
 
 class TestExtendedThinking:

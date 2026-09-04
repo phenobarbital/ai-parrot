@@ -54,8 +54,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from ...models.bedrock_models import translate as translate_bedrock_model
-from ...models.voice import (
+from ..models import translate as translate_bedrock_model
+from ....models.voice import (
     LiveCompletionUsage,
     LiveToolCall,
     LiveVoiceResponse,

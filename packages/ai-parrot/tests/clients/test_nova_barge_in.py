@@ -2,7 +2,7 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 ASSISTANT = {"contentStart": {"role": "ASSISTANT", "type": "TEXT",
              "additionalModelFields": '{"generationStage": "SPECULATIVE"}'}}
@@ -67,7 +67,7 @@ class TestBargeIn:
         """Regression guard: neither phantom key drives detection any more."""
         from pathlib import Path
 
-        from parrot.clients.nova import audio as audio_mod
+        from parrot.clients.amazon.nova import audio as audio_mod
         source = Path(audio_mod.__file__).read_text(encoding="utf-8")
         assert '"interruption" in event' not in source
         assert 'stopReason") == "INTERRUPTED"' not in source

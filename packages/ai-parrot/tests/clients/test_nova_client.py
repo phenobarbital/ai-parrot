@@ -4,10 +4,10 @@ Verifies the MRO/defaults, that text methods are inherited (not
 delegated), and that voice/generation capabilities are present on
 instances — no real AWS credentials or network access required.
 """
-from parrot.clients.bedrock import BedrockConverseBase
-from parrot.clients.nova import NovaClient
-from parrot.clients.nova.audio import NovaAudio
-from parrot.clients.nova.generation import NovaGeneration
+from parrot.clients.amazon.bedrock import BedrockConverseBase
+from parrot.clients.amazon.nova import NovaClient
+from parrot.clients.amazon.nova.audio import NovaAudio
+from parrot.clients.amazon.nova.generation import NovaGeneration
 
 
 class TestNovaClientComposition:

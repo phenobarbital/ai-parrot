@@ -1,7 +1,7 @@
 """NovaGeneration — Nova Canvas image + Nova Reel video generation (FEAT-315).
 
 Capability mixin composed into
-:class:`~parrot.clients.nova.client.NovaClient` alongside
+:class:`~parrot.clients.amazon.nova.client.NovaClient` alongside
 ``BedrockConverseBase`` and ``NovaAudio`` (spec ``novaclient-amazon-aws``
 §2/§3 Module 4), with method names mirroring
 :class:`~parrot.clients.google.generation.GoogleGeneration`
@@ -31,11 +31,11 @@ from typing import Any, Dict, Optional, Union
 
 import aiofiles
 
-from ...conf import AWS_CREDENTIALS
-from ...exceptions import InvokeError
-from ...models.basic import CompletionUsage
-from ...models.bedrock_models import translate as translate_bedrock_model
-from ...models.responses import AIMessage, AIMessageFactory
+from ....conf import AWS_CREDENTIALS
+from ....exceptions import InvokeError
+from ....models.basic import CompletionUsage
+from ..models import translate as translate_bedrock_model
+from ....models.responses import AIMessage, AIMessageFactory
 
 
 class NovaGeneration:
@@ -43,7 +43,7 @@ class NovaGeneration:
 
     Plain mixin — defines NO ``__init__`` (MRO constraint, spec §7) and
     reads the following attributes from the composed client (set by
-    :class:`~parrot.clients.nova.client.NovaClient` / inherited from
+    :class:`~parrot.clients.amazon.nova.client.NovaClient` / inherited from
     ``BedrockConverseBase``): ``self._translate_model(model)``,
     ``self._ensure_client()`` (per-loop cached ``aioboto3`` Bedrock Runtime
     client), ``self._aws_id``, ``self._aws_access_key``,
@@ -64,9 +64,9 @@ class NovaGeneration:
         (``self._translate_model``, which applies ``self._region_prefix``
         unconditionally), generation model IDs must NEVER be prefixed even
         when the composed client defaults ``region_prefix="us"`` (as
-        :class:`~parrot.clients.nova.client.NovaClient` does, for the
+        :class:`~parrot.clients.amazon.nova.client.NovaClient` does, for the
         unrelated Nova 2 Lite/Premier text models). Calls
-        :func:`~parrot.models.bedrock_models.translate` directly with
+        :func:`~parrot.clients.amazon.models.translate` directly with
         ``region_prefix=None``, bypassing ``self._region_prefix`` entirely.
         """
         return translate_bedrock_model(model, region_prefix=None)

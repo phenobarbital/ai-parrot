@@ -190,7 +190,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         VoiceBot is provider-aware via ``self.voice_config.provider``
         (FEAT-302, renamed FEAT-315): ``"google_live"`` (default) resolves
         to ``GeminiLiveClient``; ``"nova"`` (experimental) resolves to
-        :class:`~parrot.clients.nova.NovaClient` (unified Nova client —
+        :class:`~parrot.clients.amazon.nova.NovaClient` (unified Nova client —
         supersedes the now-deleted ``NovaSonicClient``). The provider
         selection is independent of whatever ``llm``/text-only provider
         string was passed to the bot — voice interactions always go
@@ -201,7 +201,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         provider = getattr(self.voice_config, "provider", "google_live")
 
         if provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             # NovaClient's default model (nova-2-lite) is the TEXT model —
             # voice sessions need the Sonic model explicitly unless the
@@ -291,7 +291,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
         if config.provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             client = NovaClient(
                 model=config.model,

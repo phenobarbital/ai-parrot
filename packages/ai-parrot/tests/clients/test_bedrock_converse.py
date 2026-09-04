@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 from parrot.models.responses import AIMessage
 
 

@@ -74,12 +74,12 @@ CLIENT_PATHS = [
     ("parrot.clients.groq.client", "GroqClient"),
     ("parrot.clients.grok.client", "GrokClient"),
     ("parrot.clients.zai.client", "ZaiClient"),
-    ("parrot.clients.bedrock", "BedrockConverseBase"),
+    ("parrot.clients.amazon.bedrock", "BedrockConverseBase"),
     ("parrot.clients.local.client", "LocalLLMClient"),
     ("parrot.clients.anthropic.claude_agent", "ClaudeAgentClient"),
     ("parrot.clients.openai.codex_agent", "OpenAICodexClient"),
-    ("parrot.clients.hf", "TransformersClient"),
-    ("parrot.clients.gemma4", "Gemma4Client"),
+    ("parrot.clients.hf.client", "TransformersClient"),
+    ("parrot.clients.gemma4.client", "Gemma4Client"),
 ]
 
 
@@ -280,7 +280,7 @@ class TestPerClientDefaults:
         assert _bare(AnthropicClient)._resolve_max_tokens() is not None
 
     def test_bedrock_keeps_conservative_converse_cap(self):
-        bedrock = pytest.importorskip("parrot.clients.bedrock")
+        bedrock = pytest.importorskip("parrot.clients.amazon.bedrock")
         assert bedrock.BedrockConverseBase._default_max_tokens == 4096
 
     def test_grok_preserves_its_large_budget(self):
@@ -290,8 +290,8 @@ class TestPerClientDefaults:
 
     @pytest.mark.parametrize("module_path,class_name,expected", [
         ("parrot.clients.local.client", "LocalLLMClient", 4096),
-        ("parrot.clients.hf", "TransformersClient", 512),
-        ("parrot.clients.gemma4", "Gemma4Client", 512),
+        ("parrot.clients.hf.client", "TransformersClient", 512),
+        ("parrot.clients.gemma4.client", "Gemma4Client", 512),
     ])
     def test_local_backends_ask_budget_stays_conservative(
         self, module_path, class_name, expected
@@ -322,8 +322,8 @@ class TestPerClientDefaults:
 
     @pytest.mark.parametrize("module_path,class_name", [
         ("parrot.clients.local.client", "LocalLLMClient"),
-        ("parrot.clients.hf", "TransformersClient"),
-        ("parrot.clients.gemma4", "Gemma4Client"),
+        ("parrot.clients.hf.client", "TransformersClient"),
+        ("parrot.clients.gemma4.client", "Gemma4Client"),
     ])
     def test_local_backends_stay_conservative(self, module_path, class_name):
         module = pytest.importorskip(module_path)
@@ -532,21 +532,21 @@ class TestMeasuredProviderLimits:
     """Limits measured against live providers on 2026-09-03."""
 
     def test_bedrock_lifts_opus_5(self):
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
         client = BedrockConverseClient()
         assert client._resolve_max_tokens(None, "us.anthropic.claude-opus-5", for_invoke=True) == 65536
 
     def test_bedrock_holds_qwen3_32b_down(self):
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
         client = BedrockConverseClient()
         assert client._resolve_max_tokens(None, "qwen.qwen3-32b-v1:0", for_invoke=True) == 16384
 
     def test_nova_pro_stays_under_its_10k_limit(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-pro-v1:0", for_invoke=True) == 8192
 
     def test_nova_2_lite_gets_its_larger_limit(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
         assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-2-lite-v1:0", for_invoke=True) == 32768
 
 
@@ -576,7 +576,7 @@ class TestAnthropicNonStreamingCeiling:
 
     def test_the_ceiling_is_the_transports_not_the_models(self):
         # boto3 Converse has no such guard, so the same model gets far more room.
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
         from parrot.clients.anthropic import AnthropicClient
         assert (
             BedrockConverseClient()._resolve_max_tokens(None, "claude-opus-5")
