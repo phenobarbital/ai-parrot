@@ -26,6 +26,11 @@ ALLOWED_REVIEW_TYPES = frozenset(
         # Module 17 (failure quarantine / bounded reprocess):
         "failed-processing",  # LLM could not compile; quarantined, will auto-retry
         "reprocess-exhausted",  # auto-retry cap reached; needs a human
+        # Best-effort enrichment failure — the meeting itself compiled, but a
+        # single entity/concept page could not be resolved this run (the wikilink
+        # remains; a future meeting mentioning it will create the page). Surfaced
+        # so the operator knows, never silently dropped.
+        "entity-resolution-failed",
     }
 )
 

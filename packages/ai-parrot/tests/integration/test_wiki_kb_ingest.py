@@ -197,9 +197,9 @@ async def test_ingest_chronological_batch(tmp_path: Path, monkeypatch: pytest.Mo
     processed_order: list[str] = []
     original = runner_module._process_one_meeting
 
-    async def _spy(agent_, toolkit, registry, vault_path, meeting):
+    async def _spy(agent_, toolkit, registry, vault_path, meeting, **kwargs):
         processed_order.append(meeting.fireflies_id)
-        return await original(agent_, toolkit, registry, vault_path, meeting)
+        return await original(agent_, toolkit, registry, vault_path, meeting, **kwargs)
 
     monkeypatch.setattr(runner_module, "_process_one_meeting", _spy)
 
@@ -486,3 +486,233 @@ async def test_ingest_wiki_index_lists_nested_project_pages(tmp_path: Path, monk
     index_content = (tmp_path / "Wiki" / "index.md").read_text()
     assert "Acme Rollout" in index_content
     assert "None yet" not in index_content
+
+
+@pytest.mark.asyncio
+async def test_ingest_creates_project_meeting_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """§18 — ingesting a meeting into a project must create/maintain that
+    project's ``Meeting Summaries/index.md``. Regression: reconciliation
+    wrote only ``Projects/<Name>/<Name>.md``, so new projects never got
+    the required meeting-index structure (and the §31 archive workflow
+    only re-splits an index that already exists)."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    index_dir = tmp_path / "Projects" / "Acme Rollout" / "Meeting Summaries"
+    # The active index is always created; the §31 archive step (which runs at
+    # the end of ingest against the real wall-clock) may relocate an old entry
+    # to Meeting Summaries/Archive/index.md — so assert across both to avoid a
+    # fixed-date time-bomb.
+    index_files = list(index_dir.rglob("index.md"))
+    assert index_files, "project Meeting Summaries/index.md was not created"
+    combined = "\n".join(f.read_text() for f in index_files)
+    assert "2026-08-20" in combined
+    assert "Wiki/Sources/Meetings/" in combined
+
+
+@pytest.mark.asyncio
+async def test_archive_discovers_nested_project_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """§31 — the archive workflow must find canonical project pages, which
+    are nested at ``Projects/<Name>/<Name>.md``. Regression: it listed
+    ``Projects/`` non-recursively (like the old Wiki-index bug), so it
+    found zero projects and never split any meeting index."""
+    from datetime import date
+
+    from parrot.flows.wiki_ingest import vault as vault_module
+    from parrot.flows.wiki_ingest.nodes.archive import run_archive
+
+    toolkit = vault_module.build_vault_toolkit(str(tmp_path))
+    await vault_module.initialize_vault(toolkit)
+
+    # A nested canonical project page + a meeting index with one entry well
+    # outside the active window (so archive must move it).
+    await toolkit.create_note("Projects/Acme Rollout/Acme Rollout.md", "# Acme Rollout\n")
+    await toolkit.create_note(
+        "Projects/Acme Rollout/Meeting Summaries/index.md",
+        "# Acme Rollout - Meeting Summaries\n\n## Active Meetings\n\n"
+        "- 2020-01-01 - [[Wiki/Sources/Meetings/Old Sync|Old Sync]] - old sync\n",
+    )
+
+    registry = vault_module.build_meeting_registry(str(tmp_path))
+    report = await run_archive(toolkit, registry, today=date(2026, 9, 1))
+
+    # The nested project was discovered and its stale meeting entry archived.
+    assert any(name == "Acme Rollout" for name, _ in report.archived_project_meeting_refs), report
+    archive_index = tmp_path / "Projects" / "Acme Rollout" / "Meeting Summaries" / "Archive" / "index.md"
+    assert archive_index.is_file()
+    assert "Old Sync" in archive_index.read_text()
+
+
+@pytest.mark.asyncio
+async def test_ingest_entity_resolver_failure_surfaces_review_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A best-effort entity/concept resolver failure must be SURFACED to
+    the Review Queue (not silently swallowed) while the meeting itself
+    still compiles — one flaky entity must not discard an otherwise-good
+    ingest."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    monkeypatch.setattr(
+        runner_module.entities_node,
+        "run_entity_resolve",
+        AsyncMock(side_effect=RuntimeError("resolver boom")),
+    )
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    # The meeting still compiled successfully.
+    assert report.processed == 1
+    assert report.failed == 0
+    # ...and the resolver failure was surfaced, not swallowed.
+    queue_content = (tmp_path / "Wiki" / "Review Queue.md").read_text()
+    assert "entity-resolution-failed" in queue_content
+    assert "resolver boom" in queue_content
+
+
+@pytest.mark.asyncio
+async def test_ingest_bookkeeping_failure_does_not_abort_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-validation bookkeeping failure (e.g. ``record_synced``
+    raising) for one meeting must NOT abort the whole batch — the error is
+    surfaced and the remaining meetings still process. Regression: the
+    success path ran outside any try/except, so one failure aborted the
+    entire run."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=2,
+        entries=(
+            _listing_entry("id-old", "Acme Earlier Sync", "2026-08-10T10:00:00-05:00")
+            + _listing_entry("id-new", "Acme Later Sync", "2026-08-25T10:00:00-05:00")
+        ),
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    from parrot.agents.meeting_registry import MeetingRegistry
+
+    real_record_synced = MeetingRegistry.record_synced
+    calls = {"n": 0}
+
+    async def _flaky_record_synced(self, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:  # fail the FIRST meeting only (id-old, oldest)
+            raise RuntimeError("registry write boom")
+        return await real_record_synced(self, *args, **kwargs)
+
+    monkeypatch.setattr(MeetingRegistry, "record_synced", _flaky_record_synced)
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    # The batch did NOT abort: the second meeting still processed.
+    assert report.processed == 1
+    assert any("id-old" in e and "bookkeeping" in e for e in report.errors), report.errors
+
+
+@pytest.mark.asyncio
+async def test_ingest_limit_caps_combined_fresh_and_retry_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-run limit bounds the COMBINED fresh + Module-17 retry
+    batch, not just freshly-fetched meetings — oldest-first, so retries
+    (older) get priority and the overflow stays quarantined for next run.
+    Regression: retries were appended after the limit was applied, so
+    ``limit=3`` with 2 fresh + 2 retries processed 4."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=2,
+        entries=(
+            _listing_entry("id-a", "A", "2026-08-20T10:00:00-05:00")
+            + _listing_entry("id-b", "B", "2026-08-21T10:00:00-05:00")
+        ),
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    from parrot.flows.wiki_ingest.nodes.fetch_gate import GatedMeeting
+
+    retries = [
+        (GatedMeeting(fireflies_id="r1", source_id="fireflies:r1", title="R1", meeting_date="2026-08-01", outcome="fetch"), 1),
+        (GatedMeeting(fireflies_id="r2", source_id="fireflies:r2", title="R2", meeting_date="2026-08-02", outcome="fetch"), 1),
+    ]
+    monkeypatch.setattr(runner_module.quarantine_node, "build_retry_batch", lambda vault_path, cap: retries)
+    monkeypatch.setattr(runner_module.quarantine_node, "discard_failed_dir", lambda *a, **k: None)
+
+    processed_ids: list[str] = []
+
+    async def _spy(agent_, toolkit, registry, vault_path, meeting, **kwargs):
+        processed_ids.append(meeting.fireflies_id)
+        return runner_module._MeetingOutcome(
+            validation_passed=True, meeting_source_link="Wiki/Sources/Meetings/x"
+        )
+
+    monkeypatch.setattr(runner_module, "_process_one_meeting", _spy)
+
+    ctx = WikiIngestContext(agent=agent, limit=3)
+    await run_ingest(ctx)
+
+    # 4 candidates (2 fresh + 2 retry) but limit=3 → only 3 processed,
+    # oldest-first: the two retries (Aug 1/2) then the oldest fresh (Aug 20);
+    # the newest fresh (Aug 21) is dropped and stays for the next run.
+    assert processed_ids == ["r1", "r2", "id-a"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_passes_existing_context_to_classify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§12/§15.1 — the classifier must receive the vault's existing-knowledge
+    candidates so it can match-before-create (rule #6). Regression:
+    ``run_classify`` was called with no context, so the classifier always
+    saw empty lists and could duplicate an existing project."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    from parrot.flows.wiki_ingest import vault as vault_module
+
+    toolkit = vault_module.build_vault_toolkit(str(tmp_path))
+    await vault_module.initialize_vault(toolkit)
+    await toolkit.create_note("Projects/Existing Proj/Existing Proj.md", "# Existing Proj\n")
+    await toolkit.create_note("Wiki/Entities/People/Jane Doe.md", "# Jane Doe\n")
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    captured: dict = {}
+    original = runner_module.classify_node.run_classify
+
+    async def _spy_classify(client, meeting, *, context=None, **kwargs):
+        captured["context"] = context
+        return await original(client, meeting, context=context, **kwargs)
+
+    monkeypatch.setattr(runner_module.classify_node, "run_classify", _spy_classify)
+
+    ctx = WikiIngestContext(agent=agent)
+    await run_ingest(ctx)
+
+    context = captured["context"]
+    assert context is not None
+    assert "Existing Proj" in context.candidate_projects
+    assert "Jane Doe" in context.candidate_people

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ from parrot.tools.obsidian import ObsidianToolkit
 from ..models import EntityFrontmatter
 from ..naming import now_iso, title_case_name
 from ..render.entity import EntityState, render_entity_page
-from ..render.project import SourcedClaim, _parse_section
+from ..render.project import SourcedClaim, _parse_section, _parse_section_raw
 
 logger = logging.getLogger(__name__)
 
@@ -178,9 +178,11 @@ async def run_entity_resolve(
     match = await find_matching_page(toolkit, candidate_name, folder=folder)
 
     existing_state: EntityState | None = None
+    existing_frontmatter: dict[str, Any] = {}
     if match is not None:
         existing_note = await toolkit.read_note(match.path)
         existing_state = _parse_entity_body(existing_note["content"])
+        existing_frontmatter = existing_note.get("frontmatter", {}) or {}
 
     prompt = "\n".join(
         [
@@ -238,14 +240,39 @@ async def run_entity_resolve(
         human_notes=existing_state.human_notes if existing_state else "",
     )
 
+    # §10.3 — on an UPDATE, preserve stable metadata from the existing
+    # frontmatter instead of overwriting it: keep the original `created`
+    # timestamp, and MERGE (never replace) `projects`/`aliases`/`tags`, so
+    # processing a later meeting for another project does not erase this
+    # entity's prior project associations or reset its creation time.
+    existing_projects = [str(p) for p in (existing_frontmatter.get("projects") or [])]
+    merged_projects = list(existing_projects)
+    if project_name and project_name not in merged_projects:
+        merged_projects.append(project_name)
+
+    existing_aliases = [str(a) for a in (existing_frontmatter.get("aliases") or [])]
+    merged_aliases = list(match.aliases) if match else []
+    for alias in existing_aliases:
+        if alias not in merged_aliases:
+            merged_aliases.append(alias)
+
+    merged_source_pages = list(sources)
+    for source_page in (str(p) for p in (existing_frontmatter.get("source_pages") or [])):
+        if source_page not in merged_source_pages:
+            merged_source_pages.append(source_page)
+
+    created = str(existing_frontmatter.get("created") or now)
+    existing_tags = [str(t) for t in (existing_frontmatter.get("tags") or [])]
+
     frontmatter = EntityFrontmatter(
         id=f"{entity_type}:{canonical_name.lower().replace(' ', '-')}",
         type=entity_type,
         title=canonical_name,
-        aliases=match.aliases if match else [],
-        projects=[project_name] if project_name else [],
-        source_pages=sources,
-        created=now,
+        aliases=merged_aliases,
+        projects=merged_projects,
+        source_pages=merged_source_pages,
+        tags=existing_tags,
+        created=created,
         updated=now,
     )
     content = render_entity_page(frontmatter, state)
@@ -270,8 +297,9 @@ def _parse_entity_body(content: str) -> EntityState:
     summary = _parse_section(body, "Summary")
     if summary.lower() == "not established":
         summary = ""
-    human_notes = _parse_section(body, "Human Notes")
-    if human_notes == "(none)":
+    # §2 rule 13 — Human Notes round-trip verbatim (no whitespace stripping).
+    human_notes = _parse_section_raw(body, "Human Notes")
+    if human_notes.strip() == "(none)":
         human_notes = ""
 
     known_roles = []

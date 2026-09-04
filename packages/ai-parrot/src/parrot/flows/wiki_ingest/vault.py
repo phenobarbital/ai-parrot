@@ -103,10 +103,24 @@ def build_vault_toolkit(vault_path: str | Path | None = None, **backend_kwargs: 
         A new :class:`ObsidianToolkit` scoped to the operations this
         subsystem needs (read/list/search/create/update/move/delete) —
         never a shared instance with any other agent (G11).
+
+    Note:
+        Contract §1 forbids ANY access to ``Private/`` — "Do not read,
+        list, search, index, summarize, move, modify, or traverse it."
+        The backend's default skip set only excludes
+        ``.obsidian``/``.trash``/``.git``, so ``Private`` is added here
+        explicitly. Without it, whole-vault ``search_notes``/
+        ``catalog_notes`` (query, entity matching, lint, overview) would
+        traverse and surface private notes. Mirrors the graph loader's
+        ``extra_skip_patterns=["Private"]`` (Module 13).
     """
+    extra_skip_patterns = list(backend_kwargs.pop("extra_skip_patterns", None) or [])
+    if "Private" not in extra_skip_patterns:
+        extra_skip_patterns.append("Private")
     return ObsidianToolkit(
         vault_path=str(vault_path or conf.WIKI_KB_VAULT_PATH),
         allowed_operations={"read", "list", "search", "create", "update", "move", "delete"},
+        extra_skip_patterns=extra_skip_patterns,
         **backend_kwargs,
     )
 

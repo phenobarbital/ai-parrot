@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -176,12 +177,18 @@ async def run_archive(
 
     archived_refs: list[tuple[str, int]] = []
     try:
-        projects_listing = await toolkit.list_notes(folder="Projects", recursive=False)
+        # Canonical project pages are nested one level — Projects/<Name>/
+        # <Name>.md — so a non-recursive listing of Projects/ finds none.
+        # List recursively and keep only that exact canonical shape.
+        projects_listing = await toolkit.list_notes(folder="Projects", recursive=True)
     except FileNotFoundError:
         projects_listing = {"notes": []}
 
     for note in projects_listing.get("notes", []):
-        project_name = note["path"].rsplit("/", 1)[-1].removesuffix(".md")
+        note_path = Path(note["path"])
+        if len(note_path.relative_to("Projects").parts) != 2 or note_path.stem != note_path.parent.name:
+            continue
+        project_name = note_path.stem
         moved = await _archive_project_meeting_refs(toolkit, project_name, active_window_days=window, today=reference)
         if moved:
             archived_refs.append((project_name, moved))

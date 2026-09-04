@@ -23,8 +23,38 @@ from parrot.flows.wiki_ingest.nodes.project_reconcile import (
 from parrot.flows.wiki_ingest.render.project import (
     ProjectState,
     SourcedClaim,
+    parse_project_page,
     render_project_page,
 )
+
+
+def test_human_notes_round_trip_preserves_leading_indentation() -> None:
+    """§2 rule 13 — Human Notes are human-authored and preserved verbatim.
+    A render→parse cycle must NOT strip leading indentation (e.g. an
+    indented code block). Regression: ``_parse_section`` used ``.strip()``,
+    silently de-indenting Human Notes on every reconcile."""
+    notes = "    indented code line\n        deeper indent\n    back to four"
+    frontmatter = ProjectFrontmatter(
+        id="project:x",
+        title="X",
+        created="2026-01-01T00:00:00+00:00",
+        updated="2026-01-01T00:00:00+00:00",
+    )
+    page = render_project_page(frontmatter, ProjectState(human_notes=notes))
+    parsed = parse_project_page(page)
+    assert parsed.human_notes == notes
+
+
+def test_human_notes_placeholder_parses_as_empty() -> None:
+    """The ``(none)`` placeholder still round-trips to an empty string."""
+    frontmatter = ProjectFrontmatter(
+        id="project:x",
+        title="X",
+        created="2026-01-01T00:00:00+00:00",
+        updated="2026-01-01T00:00:00+00:00",
+    )
+    page = render_project_page(frontmatter, ProjectState(human_notes=""))
+    assert parse_project_page(page).human_notes == ""
 
 
 def _meeting(meeting_date: str = "2026-08-20") -> GatedMeeting:

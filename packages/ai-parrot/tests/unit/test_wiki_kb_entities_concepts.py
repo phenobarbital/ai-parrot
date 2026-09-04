@@ -116,6 +116,59 @@ async def test_entity_resolve_updates_existing_not_duplicate(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_entity_update_preserves_created_and_merges_projects(tmp_path: Path) -> None:
+    """§10.3 — updating a matched entity for a NEW project must preserve
+    the original ``created`` timestamp and MERGE ``projects``/``aliases``
+    (never overwrite them). Regression: the update previously reset
+    ``created`` to now and set ``projects`` to only the current meeting's
+    project, silently erasing prior associations."""
+    companies_dir = tmp_path / "Wiki" / "Entities" / "Companies"
+    companies_dir.mkdir(parents=True)
+    (companies_dir / "Acme Corporation.md").write_text(
+        "---\n"
+        "id: company:acme-corporation\n"
+        "type: company\n"
+        "title: Acme Corporation\n"
+        "aliases: [Acme]\n"
+        "projects: [Legacy Rollout]\n"
+        "source_pages: [Wiki/Sources/Meetings/old]\n"
+        "created: '2020-01-01T00:00:00+00:00'\n"
+        "updated: '2020-01-01T00:00:00+00:00'\n"
+        "---\n\n"
+        "# Acme Corporation\n\n## Summary\nAn existing client.\n\n"
+        "## Known Roles or Characteristics\n- Not established\n\n"
+        "## Project Relationships\n- None identified\n\n"
+        "## Related Entities\n- None identified\n\n"
+        "## Open Questions or Ambiguities\n- None identified\n\n"
+        "## Sources\n- [[Wiki/Sources/Meetings/old]]\n\n## Human Notes\n(none)\n",
+        encoding="utf-8",
+    )
+    toolkit = _toolkit(tmp_path)
+    client = _fake_client(EntityExtraction(materially_relevant=True, summary="Still a key client.", known_roles=[]))
+
+    result = await run_entity_resolve(
+        client,
+        toolkit,
+        "Acme",
+        "company",
+        project_name="Acme Rollout",
+        meeting_source_link="Wiki/Sources/Meetings/new",
+        meeting_summary="Discussed the new rollout with Acme.",
+    )
+
+    assert result.action == "updated"
+    assert result.frontmatter is not None
+    # created preserved, updated advanced
+    assert result.frontmatter.created == "2020-01-01T00:00:00+00:00"
+    assert result.frontmatter.updated != "2020-01-01T00:00:00+00:00"
+    # projects merged, not replaced
+    assert "Legacy Rollout" in result.frontmatter.projects
+    assert "Acme Rollout" in result.frontmatter.projects
+    # aliases preserved even though we matched by the alias
+    assert "Acme" in result.frontmatter.aliases
+
+
+@pytest.mark.asyncio
 async def test_entity_resolve_creates_new(tmp_path: Path) -> None:
     toolkit = _toolkit(tmp_path)
     client = _fake_client(EntityExtraction(materially_relevant=True, summary="A new person.", known_roles=["Attendee"]))

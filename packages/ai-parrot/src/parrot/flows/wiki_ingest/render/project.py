@@ -235,6 +235,28 @@ def _parse_section(content: str, heading: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _parse_section_raw(content: str, heading: str) -> str:
+    """Extract a section body WITHOUT normalizing whitespace.
+
+    Unlike :func:`_parse_section`, this preserves the author's leading
+    indentation and internal whitespace verbatim — required for sections
+    the contract must round-trip byte-for-byte (e.g. ``## Human Notes``,
+    §2 rule 13 / §19: "preserve Human Notes verbatim"). Only the single
+    structural trailing newline the renderer appends is removed.
+
+    Args:
+        content: The full page body (post-frontmatter).
+        heading: The exact heading text (without ``##``).
+
+    Returns:
+        The section's raw text with only the structural trailing newline
+        stripped. Empty string if the heading is not found.
+    """
+    pattern = re.compile(rf"^## {re.escape(heading)}\n(.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL)
+    match = pattern.search(content)
+    return match.group(1).removesuffix("\n") if match else ""
+
+
 def _parse_subsection(content: str, heading: str, subheading: str) -> str:
     """Extract a ``### <subheading>`` body nested under ``## <heading>``."""
     section = _parse_section(content, heading)
@@ -330,8 +352,11 @@ def parse_project_page(content: str) -> ProjectState:
     current_status = _parse_section(body, "Current Status")
     if current_status.lower() == "not established":
         current_status = ""
-    human_notes = _parse_section(body, "Human Notes")
-    if human_notes == "(none)":
+    # §2 rule 13 — Human Notes are human-authored and must round-trip
+    # verbatim; parse them WITHOUT stripping so leading indentation
+    # (e.g. an indented code block) survives every reconcile.
+    human_notes = _parse_section_raw(body, "Human Notes")
+    if human_notes.strip() == "(none)":
         human_notes = ""
 
     return ProjectState(

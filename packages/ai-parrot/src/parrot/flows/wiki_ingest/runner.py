@@ -182,6 +182,109 @@ def _project_vault_path(project_name: str) -> str:
     return f"Projects/{name}/{name}.md"
 
 
+def _is_canonical_project_note(path: str) -> bool:
+    """True for a ``Projects/<Name>/<Name>.md`` canonical project page."""
+    note_path = Path(path)
+    try:
+        rel = note_path.relative_to("Projects")
+    except ValueError:
+        return False
+    return len(rel.parts) == 2 and note_path.stem == note_path.parent.name
+
+
+async def _build_existing_context(toolkit: Any) -> classify_node.ExistingContext:
+    """§12/§15.1 — read the vault's existing-knowledge candidates once.
+
+    The classifier's contract is match-before-create (rule #6): without
+    these candidate lists it receives empty context and can return a
+    spelling/alias variant of an existing project, which the subsequent
+    exact-path lookup then treats as new — creating a duplicate canonical
+    page. Building this once per run (the §12 startup-context model) keeps
+    it cheap (vault listings, no LLM).
+
+    Args:
+        toolkit: This subsystem's own vault toolkit.
+
+    Returns:
+        The populated :class:`~.nodes.classify.ExistingContext`.
+    """
+
+    async def _stems(folder: str) -> list[str]:
+        try:
+            listing = await toolkit.list_notes(folder=folder, recursive=True)
+        except FileNotFoundError:
+            return []
+        return sorted(
+            {Path(n["path"]).stem for n in listing.get("notes", []) if Path(n["path"]).stem.lower() != "index"}
+        )
+
+    async def _project_names() -> list[str]:
+        try:
+            listing = await toolkit.list_notes(folder="Projects", recursive=True)
+        except FileNotFoundError:
+            return []
+        return sorted({Path(n["path"]).stem for n in listing.get("notes", []) if _is_canonical_project_note(n["path"])})
+
+    async def _excerpt(path: str, limit: int = 1500) -> str:
+        try:
+            note = await toolkit.read_note(path)
+        except FileNotFoundError:
+            return ""
+        return str(note.get("content", ""))[:limit]
+
+    return classify_node.ExistingContext(
+        index_summary=await _excerpt("Wiki/index.md"),
+        overview_summary=await _excerpt("Wiki/overview.md"),
+        candidate_projects=await _project_names(),
+        candidate_clients=await _stems("Wiki/Entities/Companies"),
+        candidate_people=await _stems("Wiki/Entities/People"),
+        candidate_products=await _stems("Wiki/Entities/Products"),
+        candidate_concepts=await _stems("Wiki/Concepts"),
+    )
+
+
+async def _upsert_project_meeting_index(
+    toolkit: Any,
+    project_name: str,
+    *,
+    meeting: fetch_gate_node.GatedMeeting,
+    meeting_source_link: str,
+    significance: str,
+    writes: list[_PageWrite],
+) -> None:
+    """§18 — keep a project's active ``Meeting Summaries/index.md`` current.
+
+    A newly-created project would otherwise never get this required
+    structure: the §31 archive workflow only re-splits an index that
+    already exists, so without seeding it here the project's meetings are
+    absent from project navigation and archival processing. Idempotent —
+    an entry for ``meeting_source_link`` is de-duplicated on reprocess.
+    The write is recorded in ``writes`` so a §34 failure rolls it back.
+
+    Args:
+        toolkit: This subsystem's own vault toolkit.
+        project_name: The project's name (Title-Cased internally).
+        meeting: The meeting being added to the index.
+        meeting_source_link: Wikilink target of the meeting source page.
+        significance: One-line significance for the index entry.
+        writes: The meeting's rollback journal.
+    """
+    from .nodes.archive import _parse_meeting_index
+    from .nodes.indexes import render_project_meeting_index_active
+
+    name = title_case_name(project_name)
+    index_path = f"Projects/{name}/Meeting Summaries/index.md"
+    try:
+        note = await toolkit.read_note(index_path)
+        entries = _parse_meeting_index(note["content"])
+    except FileNotFoundError:
+        entries = []
+    entries = [e for e in entries if e[1] != meeting_source_link]
+    entries.append((meeting.meeting_date, meeting_source_link, significance))
+    entries.sort(key=lambda e: e[0], reverse=True)
+    await _write_note(toolkit, index_path, render_project_meeting_index_active(name, entries), writes)
+
+
 async def _queue_review_item(
     toolkit: Any,
     report: IngestReport,
@@ -311,6 +414,8 @@ async def _process_one_meeting(
     registry: Any,
     vault_path: str,
     meeting: fetch_gate_node.GatedMeeting,
+    *,
+    existing_context: classify_node.ExistingContext | None = None,
 ) -> _MeetingOutcome:
     """Run the §27 per-meeting pipeline (steps 3-21) for one gated meeting."""
     writes: list[_PageWrite] = []
@@ -367,7 +472,12 @@ async def _process_one_meeting(
     validation_ctx.existing_raw_files = [p for p in (processed.transcript_path, processed.summary_path) if p]
 
     # --- §15 classify -----------------------------------------------------
-    classification_result = await classify_node.run_classify(agent.strong_client, meeting)
+    # Pass the vault's existing-knowledge context so the classifier can
+    # match-before-create (rule #6) — without it, a variant project name
+    # would create a duplicate canonical page.
+    classification_result = await classify_node.run_classify(
+        agent.strong_client, meeting, context=existing_context
+    )
     classification = classification_result.classification
     if classification_result.review_item:
         review_items.append(classification_result.review_item)
@@ -504,6 +614,17 @@ async def _process_one_meeting(
                 validation_ctx.new_wikilinks.append(reconcile_result.vault_path.removesuffix(".md"))
                 validation_ctx.existing_or_queued_pages.append(reconcile_result.vault_path.removesuffix(".md"))
                 projects_touched.append(classification.primary_project)
+                # §18 — seed/maintain the project's active meeting index so a
+                # newly-created project gets the required structure (archive
+                # only re-splits an index that already exists).
+                await _upsert_project_meeting_index(
+                    toolkit,
+                    classification.primary_project,
+                    meeting=meeting,
+                    meeting_source_link=meeting_source_link,
+                    significance=meeting.title,
+                    writes=writes,
+                )
 
         # --- §20/§21 entities + concepts -----------------------------------------
         entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]
@@ -528,8 +649,22 @@ async def _process_one_meeting(
                     validation_ctx.new_wikilinks.append(entity_result.vault_path.removesuffix(".md"))
                     validation_ctx.existing_or_queued_pages.append(entity_result.vault_path.removesuffix(".md"))
                     validation_ctx.written_filenames.append(Path(entity_result.vault_path).name)
-            except Exception:
+            except Exception as exc:
+                # Best-effort enrichment: the meeting itself compiled and its
+                # pages link the entity — a future meeting mentioning it will
+                # create the page. Surface the failure to the Review Queue
+                # instead of swallowing it silently (do NOT fail the whole
+                # meeting for one flaky entity — that would let a single
+                # problematic name permanently block an otherwise-good ingest).
                 logger.warning("Entity resolve failed for %r", name, exc_info=True)
+                review_items.append(
+                    classify_node.ReviewItemDraft(
+                        review_type="entity-resolution-failed",
+                        source_id=meeting.source_id,
+                        issue=f"Entity resolution failed for {name!r} ({kind}); page not created this run",
+                        evidence=str(exc)[:300],
+                    )
+                )
 
         for concept_name in classification.concepts:
             try:
@@ -547,8 +682,17 @@ async def _process_one_meeting(
                     validation_ctx.new_wikilinks.append(concept_result.vault_path.removesuffix(".md"))
                     validation_ctx.existing_or_queued_pages.append(concept_result.vault_path.removesuffix(".md"))
                     validation_ctx.written_filenames.append(Path(concept_result.vault_path).name)
-            except Exception:
+            except Exception as exc:
+                # Best-effort enrichment (see the entity loop above).
                 logger.warning("Concept resolve failed for %r", concept_name, exc_info=True)
+                review_items.append(
+                    classify_node.ReviewItemDraft(
+                        review_type="entity-resolution-failed",
+                        source_id=meeting.source_id,
+                        issue=f"Concept resolution failed for {concept_name!r}; page not created this run",
+                        evidence=str(exc)[:300],
+                    )
+                )
 
         # --- §23 daily synthesis --------------------------------------------------
         daily_path = f"Diary/Daily Notes/{meeting.meeting_date}.md"
@@ -697,6 +841,11 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     # §12 startup context / §11 idempotent init.
     await vault.initialize_vault(toolkit)
 
+    # §12/§15.1 — read existing-knowledge candidates once, so every meeting's
+    # classification can match-before-create (rule #6) instead of duplicating
+    # a project/entity that only differs by spelling.
+    existing_context = await _build_existing_context(toolkit)
+
     raw_processed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Processed"
     raw_failed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Failed"
 
@@ -721,6 +870,13 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     # G5 — sort the WHOLE batch (freshly-fetched + Module 17 retries) oldest → newest.
     fetched = [m for m in gated if m.outcome == "fetch"]
     to_process = sorted(fetched + [m for m, _ in retry_batch], key=lambda m: m.meeting_date)
+    # Bounded chunk (spec Module 6): the per-run limit applies to the COMBINED
+    # fresh + retry batch, not just fresh meetings — otherwise a large retry
+    # backlog would blow the cap. Oldest-first ordering means retries (older)
+    # get priority; anything over the cap stays quarantined and retries next run.
+    effective_limit = ctx.limit if ctx.limit is not None else conf.WIKI_KB_INGEST_LIMIT
+    if effective_limit is not None:
+        to_process = to_process[:effective_limit]
     skipped = len([m for m in gated if m.outcome != "fetch"])
 
     report = IngestReport(skipped=skipped)
@@ -757,7 +913,9 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
             await asyncio.to_thread(quarantine_node.discard_failed_dir, vault_path, meeting.fireflies_id)
 
         try:
-            outcome = await _process_one_meeting(agent, toolkit, registry, vault_path, meeting)
+            outcome = await _process_one_meeting(
+                agent, toolkit, registry, vault_path, meeting, existing_context=existing_context
+            )
         except Exception as exc:
             logger.exception("Ingest failed for %s", meeting.source_id)
             # Module 17 — _process_one_meeting already rolled back its compiled writes;
@@ -800,54 +958,69 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
                 )
             continue
 
-        # §34 passed — if this was a Module 17 retry, clear its quarantine review items.
-        if is_retry:
-            await _resolve_quarantine_items(toolkit, meeting.source_id)
+        # §34 passed — post-validation bookkeeping (review items + registry +
+        # log). The compiled pages are already written and the raw bundle is
+        # already in Raw/Processed/, so a failure here must NOT abort the whole
+        # batch (subsequent meetings would silently never process) — it is
+        # caught, surfaced as an error, and the loop continues. The pages
+        # remain in the vault; the raw-id gate correctly skips the meeting on
+        # the next run.
+        try:
+            # If this was a Module 17 retry, clear its quarantine review items.
+            if is_retry:
+                await _resolve_quarantine_items(toolkit, meeting.source_id)
 
-        # §34 passed — persist review items (best-effort, not gated) + registry + log.
-        for item in outcome.review_items:
-            await _queue_review_item(
-                toolkit,
-                report,
-                review_type=item.review_type,
-                title=item.issue,
-                source_id=item.source_id,
-                issue=item.issue,
-                evidence=item.evidence,
-                recommended_action="See issue/evidence above.",
+            for item in outcome.review_items:
+                await _queue_review_item(
+                    toolkit,
+                    report,
+                    review_type=item.review_type,
+                    title=item.issue,
+                    source_id=item.source_id,
+                    issue=item.issue,
+                    evidence=item.evidence,
+                    recommended_action="See issue/evidence above.",
+                )
+
+            await registry.record_synced(
+                fireflies_id=meeting.fireflies_id,
+                note_path=Path(vault_path) / f"{outcome.meeting_source_link}.md",
+                title=meeting.title,
+                meeting_date=meeting.meeting_date,
+                participants=meeting.participants,
+                duration_minutes=meeting.duration_minutes,
+                fingerprint=meeting.fingerprint or "",
+                summary_fingerprint=meeting.summary_fingerprint,
+                reset_analysis=False,
             )
 
-        await registry.record_synced(
-            fireflies_id=meeting.fireflies_id,
-            note_path=Path(vault_path) / f"{outcome.meeting_source_link}.md",
-            title=meeting.title,
-            meeting_date=meeting.meeting_date,
-            participants=meeting.participants,
-            duration_minutes=meeting.duration_minutes,
-            fingerprint=meeting.fingerprint or "",
-            summary_fingerprint=meeting.summary_fingerprint,
-            reset_analysis=False,
-        )
-
-        log_entry = log_node.render_ingest_log_entry(
-            timestamp=now_iso(),
-            meeting_title=meeting.title,
-            source_id=meeting.source_id,
-            source_page=outcome.meeting_source_link,
-            projects=[_project_vault_path(p).removesuffix(".md") for p in outcome.projects],
-            processing_mode=outcome.processing_mode,
-            created=[w.path for w in outcome.writes if w.previous_content is None],
-            updated=[w.path for w in outcome.writes if w.previous_content is not None],
-            contradictions=outcome.contradiction_links,
-            validation="Passed",
-        )
-        try:
-            log_note = await toolkit.read_note("Wiki/log.md")
-            log_content = log_note["content"]
-        except FileNotFoundError:
-            log_content = "# Operation Log\n\n"
-        log_content = log_node.append_log_entry(log_content, log_entry)
-        await toolkit.update_note("Wiki/log.md", log_content, preserve_frontmatter=False)
+            log_entry = log_node.render_ingest_log_entry(
+                timestamp=now_iso(),
+                meeting_title=meeting.title,
+                source_id=meeting.source_id,
+                source_page=outcome.meeting_source_link,
+                projects=[_project_vault_path(p).removesuffix(".md") for p in outcome.projects],
+                processing_mode=outcome.processing_mode,
+                created=[w.path for w in outcome.writes if w.previous_content is None],
+                updated=[w.path for w in outcome.writes if w.previous_content is not None],
+                contradictions=outcome.contradiction_links,
+                validation="Passed",
+            )
+            try:
+                log_note = await toolkit.read_note("Wiki/log.md")
+                log_content = log_note["content"]
+            except FileNotFoundError:
+                log_content = "# Operation Log\n\n"
+            log_content = log_node.append_log_entry(log_content, log_entry)
+            await toolkit.update_note("Wiki/log.md", log_content, preserve_frontmatter=False)
+        except Exception:
+            logger.exception(
+                "Post-validation bookkeeping failed for %s; pages are written but "
+                "registry/log may be incomplete (continuing with the batch)",
+                meeting.source_id,
+            )
+            report.errors.append(f"{meeting.source_id}: post-validation bookkeeping failed")
+            continue
 
         report.processed += 1
         report.created.extend(w.path for w in outcome.writes if w.previous_content is None)

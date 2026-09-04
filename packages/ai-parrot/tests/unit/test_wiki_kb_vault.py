@@ -125,6 +125,42 @@ async def test_registry_dir_for_vault() -> None:
     assert vault.registry_dir_for_vault("/tmp/my-vault") == Path("/tmp/my-vault/Wiki/Registry")
 
 
+async def test_build_vault_toolkit_excludes_private(tmp_path: Path) -> None:
+    """Contract §1 — the wiki-KB vault toolkit must NEVER read, list,
+    search, or traverse ``Private/``. ``build_vault_toolkit`` adds
+    ``Private`` to the backend's skip patterns so whole-vault
+    list/search/catalog never surface a private note (regression: before
+    this fix only the graph loader excluded Private/, while query/lint/
+    entity-matching used the backend defaults and leaked it)."""
+    (tmp_path / "Private").mkdir()
+    (tmp_path / "Private" / "Secret.md").write_text("# Secret\n\nconfidential salary data\n", encoding="utf-8")
+    (tmp_path / "Wiki").mkdir()
+    (tmp_path / "Wiki" / "Public.md").write_text("# Public\n\nnothing confidential here\n", encoding="utf-8")
+
+    toolkit = vault.build_vault_toolkit(tmp_path)
+    assert "Private" in toolkit.vault.skip_patterns
+
+    await toolkit.vault.open()
+    await toolkit.vault.build_index()
+
+    listing = await toolkit.list_notes(recursive=True)
+    paths = [n["path"] for n in listing.get("notes", [])]
+    assert any("Public" in p for p in paths), paths
+    assert not any(p.startswith("Private/") or p == "Private" for p in paths), paths
+
+    hits = await toolkit.search_notes("confidential", limit=20)
+    hit_paths = [h.get("path", "") for h in hits.get("hits", [])]
+    assert not any(p.startswith("Private/") for p in hit_paths), hit_paths
+
+
+def test_extra_skip_patterns_default_unchanged() -> None:
+    """A backend built WITHOUT extra_skip_patterns keeps the default set
+    (backward-compatible — every other caller is unaffected)."""
+    toolkit = ObsidianToolkit(vault_path="/tmp", allowed_operations={"read"})
+    assert "Private" not in toolkit.vault.skip_patterns
+    assert {".obsidian", ".trash", ".git"} <= set(toolkit.vault.skip_patterns)
+
+
 async def test_regenerate_mirror_matches_db(tmp_path: Path) -> None:
     """§25 — the mirror is regenerated from the registry's records."""
 
