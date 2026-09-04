@@ -268,10 +268,37 @@ async def test_bind_after_defaulting(bot_with_recording_memory, entry):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Added `current_memory_key_id` ContextVar + `invocation_context(...,
+memory_key_id=)` to `observability/context.py`. In `bots/base.py`:
+`conversation()` now defaults `session_id`/`user_id` in the wrapper
+*before* binding (hoisted per Scope, `_conversation_body`'s own
+defaulting lines become no-ops); `invoke`/`ask`/`ask_stream` now bind
+all three ContextVars immediately after their existing defaulting
+lines, with tokens pre-declared to `None` before `try:` and `finally`
+resets guarded by `is not None` (defensive against an exception raised
+between `try:` and the new bind point — a case the old bind-before-try
+code never had to handle). `bots/data.py` `ask` and `bots/voice.py`
+`ask`/`ask_stream` (which bound nothing before) now bind the same three
+variables after their defaults, wrapped in `try/finally` (added a
+`finally` to `data.py`'s existing `try/except`; wrapped `voice.py`'s
+`ask` body in a new `try/finally` since it had none). Verified via a
+real `BaseBot` + stub client + `RecordingMemory(InMemoryConversation)`
+fixture that all four entry points reach `add_turn` with all three
+ContextVars matching the defaulted ids / `memory_key_id`, restored to
+`None` after. All 11 acceptance-criteria tests pass; confirmed via
+git-show baseline diff that lint findings are 100% pre-existing (same
+15 findings, shifted line numbers only); confirmed via stash-based
+bisection that 5 unrelated `bots/` suite failures (test-order-dependent
+flakiness in `test_flex_dashboard_agent`/`test_infographic_authoring_mixin`/
+`test_pandasagent_stale_data_variables`) are present on the pre-task
+baseline too.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — added defensive `None`-guarded finally
+resets in `invoke`/`ask`/`ask_stream` (not shown in the task's own
+"Pattern to Follow" snippet, but flagged as acceptable there: "guard the
+reset with `if _memkey_token is not None`") because moving the bind
+inside the existing single `try:` (after `ctx` resolution / output-mode
+routing) introduces a small window where an early exception could hit
+`finally` before the tokens are set.
