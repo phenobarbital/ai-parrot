@@ -36,6 +36,11 @@ from ..clients.live import (
 from ..clients.protocols import VoiceCapable
 from ..mcp import MCPEnabledMixin, MCPServerConfig
 from ..memory import ConversationTurn, render_history
+from ..observability.context import (
+    current_memory_key_id,
+    current_session_id,
+    current_user_id,
+)
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
 from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
@@ -492,6 +497,12 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
+
         try:
             # Handle different input types
             if isinstance(audio_input, bytes):
@@ -654,6 +665,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             yield LiveVoiceResponse(
                 text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def ask_voice(
         self, audio_input: bytes, session_id: Optional[str] = None, user_id: Optional[str] = None, **kwargs
@@ -721,65 +736,76 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
-        # Build context for system prompt
-        vector_metadata = {"activated_kbs": []}
-        ctx = kwargs.get("ctx", None)
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
 
-        # Get vector context (method handles use_vectors check internally)
-        vector_context, vector_meta = await self._build_vector_context(
-            question,
-            use_vectors=kwargs.get("use_vector_context", False),
-        )
-        if vector_meta:
-            vector_metadata["vector"] = vector_meta
+        try:
+            # Build context for system prompt
+            vector_metadata = {"activated_kbs": []}
+            ctx = kwargs.get("ctx", None)
 
-        # Get user-specific context
-        user_context = await self._build_user_context(
-            user_id=user_id,
-            session_id=session_id,
-        )
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
+                question,
+                use_vectors=kwargs.get("use_vector_context", False),
+            )
+            if vector_meta:
+                vector_metadata["vector"] = vector_meta
 
-        # Get knowledge base context
-        kb_context, kb_meta = await self._build_kb_context(
-            question,
-            user_id=user_id,
-            session_id=session_id,
-            ctx=ctx,
-        )
-        if kb_meta.get("activated_kbs"):
-            vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
-
-        # Get conversation context if available
-        rendered_history = []
-        if self.conversation_memory:
-            conversation_history = await self.get_conversation_history(user_id, session_id)
-            # FEAT-524: history goes to the provider as alternating messages.
-            rendered_history = render_history(
-                conversation_history,
-                max_turns=self.max_context_turns,
-                current_chatbot_id=self.memory_key_id,
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
             )
 
-        # Create system prompt dynamically
-        system_prompt = await self.create_system_prompt(
-            kb_context=kb_context,
-            vector_context=vector_context,
-            metadata=vector_metadata,
-            user_context=user_context,
-            **kwargs,
-        )
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
-        # Ensure LLM client is configured
-        if self._llm is None:
-            config = self._resolve_llm_config()
-            self._llm = self._create_llm_client(config)
+            # Get conversation context if available
+            rendered_history = []
+            if self.conversation_memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                # FEAT-524: history goes to the provider as alternating messages.
+                rendered_history = render_history(
+                    conversation_history,
+                    max_turns=self.max_context_turns,
+                    current_chatbot_id=self.memory_key_id,
+                )
 
-        # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
-        async with self._llm as client:
-            async for response in client.ask(
-                question=question, system_prompt=system_prompt, history=rendered_history, **kwargs
-            ):
-                yield response
+            # Create system prompt dynamically
+            system_prompt = await self.create_system_prompt(
+                kb_context=kb_context,
+                vector_context=vector_context,
+                metadata=vector_metadata,
+                user_context=user_context,
+                **kwargs,
+            )
+
+            # Ensure LLM client is configured
+            if self._llm is None:
+                config = self._resolve_llm_config()
+                self._llm = self._create_llm_client(config)
+
+            # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
+            async with self._llm as client:
+                async for response in client.ask(
+                    question=question, system_prompt=system_prompt, history=rendered_history, **kwargs
+                ):
+                    yield response
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def close(self):
         """Close any resources if needed."""

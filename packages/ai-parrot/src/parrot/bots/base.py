@@ -56,8 +56,10 @@ from parrot.core.events.lifecycle.events import (
 
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 # user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
+# current_memory_key_id (FEAT-525): scopes read_omitted_content's omission-store lookup
 from parrot.observability.context import (
     current_agent_name,
+    current_memory_key_id,
     current_session_id,
     current_user_id,
 )
@@ -198,12 +200,21 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        # FEAT-525: default the ids HERE, before binding, so
+        # current_user_id/current_session_id/current_memory_key_id never
+        # observe a call that hasn't been scoped yet (binding-order hazard,
+        # spec §7). _conversation_body's own defaulting lines become no-ops
+        # once it receives already-defaulted ids.
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         # Token-based set/reset is nested-safe (inner agents restore outer value).
         # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
         try:
             return await self._conversation_body(
                 question=question,
@@ -227,6 +238,7 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
+            current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)
@@ -621,10 +633,11 @@ class BaseBot(AbstractBot):
             AIMessage: The response from the LLM
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -632,6 +645,11 @@ class BaseBot(AbstractBot):
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             turn_id = str(uuid.uuid4())
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             _trusted_source = kwargs.pop("_trusted_source", False)
 
             # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
@@ -772,8 +790,12 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
@@ -983,10 +1005,11 @@ class BaseBot(AbstractBot):
             AIMessage or formatted output based on output_mode
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
         # branch below reads both. Anything that raises earlier than their
         # original in-try assignment — the input guardrail pipeline, for one —
@@ -1014,6 +1037,11 @@ class BaseBot(AbstractBot):
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             turn_id = str(uuid.uuid4())
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             _trusted_source = kwargs.pop("_trusted_source", False)
 
             # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
@@ -1588,8 +1616,12 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1615,10 +1647,11 @@ class BaseBot(AbstractBot):
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1628,6 +1661,11 @@ class BaseBot(AbstractBot):
             output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             # Maintain turn identifier generation for parity with ask()
             _turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
@@ -1962,6 +2000,10 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228

@@ -34,6 +34,11 @@ from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
 from ..memory.render import render_history
+from ..observability.context import (
+    current_memory_key_id,
+    current_session_id,
+    current_user_id,
+)
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -1336,6 +1341,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
 
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
+
         # Use default temperature of 0 if not specified
         if "temperature" not in kwargs:
             kwargs["temperature"] = 0.0
@@ -2128,6 +2139,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             self.logger.error(f"Error in PandasAgent.ask(): {e}")
             # Return error response
             raise
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     def add_dataframe(
         self, name: str, df: pd.DataFrame, metadata: Optional[Dict[str, Any]] = None, regenerate_guide: bool = True
