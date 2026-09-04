@@ -33,6 +33,8 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+from parrot.observability.context import current_session_id
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 
@@ -747,8 +749,15 @@ class TestSessionResume:
                 lambda **kw: SimpleNamespace(**kw),
             ),
         ):
-            await client.ask("first", session_id="conv-1")
-            await client.ask("second", session_id="conv-1")
+            # FEAT-524: ask() no longer takes session_id. The CLI-resume id
+            # comes from the ContextVar BaseBot binds per call, so the test
+            # binds it directly — this is the contract a direct caller must use.
+            token = current_session_id.set("conv-1")
+            try:
+                await client.ask("first")
+                await client.ask("second")
+            finally:
+                current_session_id.reset(token)
 
         first, second = captured
         # Turn 1 creates the CLI session...
@@ -776,8 +785,12 @@ class TestSessionResume:
                 lambda **kw: SimpleNamespace(**kw),
             ),
         ):
-            await client.ask("a", session_id="conv-a")
-            await client.ask("b", session_id="conv-b")
+            for conversation in ("conv-a", "conv-b"):
+                token = current_session_id.set(conversation)
+                try:
+                    await client.ask(conversation[-1])
+                finally:
+                    current_session_id.reset(token)
 
         # Each conversation creates its own CLI session.
         assert [getattr(o, "session_id", None) for o in captured] == [
