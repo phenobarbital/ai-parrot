@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-525
 **Date**: 2026-09-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0 (the minor after FEAT-524's 0.29.0 — this feature cannot ship before FEAT-524 merges)
 
 > **Source documents**: `sdd/proposals/per-turn-conversation-compaction.brainstorm.md`
