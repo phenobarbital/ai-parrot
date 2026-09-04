@@ -110,10 +110,10 @@ green (import-clean, `pytest packages/ai-parrot/tests/unit/clients -q`) when the
 
 ## Acceptance Criteria
 
-- [ ] Five folders exist with the three canonical files; enums importable from `parrot.clients.<x>`
-- [ ] `parrot/models/{moonshot,openrouter,nvidia,localllm,vllm}.py` deleted; `parrot.models` no longer exports `NvidiaModel` or `VLLM*`
-- [ ] `LocalLLMClient.provider_keys == ("local", "localllm", "ollama", "llamacpp")`; `MoonshotClient.provider_keys == ("moonshot", "kimi")`
-- [ ] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
+- [x] Five folders exist with the three canonical files; enums importable from `parrot.clients.<x>`
+- [x] `parrot/models/{moonshot,openrouter,nvidia,localllm,vllm}.py` deleted; `parrot.models` no longer exports `NvidiaModel` or `VLLM*`
+- [x] `LocalLLMClient.provider_keys == ("local", "localllm", "ollama", "llamacpp")`; `MoonshotClient.provider_keys == ("moonshot", "kimi")`
+- [x] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
 
 ---
 
@@ -153,10 +153,58 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented per scope. Commit `e31792176` on
+`feat-FEAT-523-pep-420-llm-clients`.
+
+- All five providers converted; `local/` did land before `vllm/` per the
+  task's ordering constraint, and `vLLMClient` imports `LocalLLMClient`
+  from `..local` cleanly.
+- `vLLMClient.models = LocalLLMModel` — verified `models/vllm.py` has no
+  dedicated model enum (only Pydantic config/request/response classes),
+  documented the choice inline in the class attribute comment.
+- `factory.py` needed only one rename (`.localllm` → `.local`); the
+  other four keep their module name since the folder replaces the file
+  under the same name.
+- **Important lesson from this task**: grep-based sweeps for stale
+  import paths miss `from parrot.clients import <provider> as
+  <alias>_mod` module-alias patterns that then read/patch
+  module-*level* globals (`_thinking_ctx`, `config`) via
+  `<alias>_mod.<global>`. These only surface by *running* the affected
+  test suites, not by grepping for the string `parrot.clients.<provider>`
+  (the alias import itself greps clean; it's the downstream attribute
+  access that breaks, with an `AttributeError` far from the import
+  line). Found and fixed three: `dev_loop/dispatchers/moonshot.py`'s own
+  test, and `test_nvidia_client.py` (×2, one is a fixture named
+  `env_key` used across the init tests). Recommend later tasks in this
+  feature (TASK-2844/2845/2854) explicitly re-run affected test suites,
+  not just grep, before declaring green.
+- `test_nvidia_client.py::test_nvidia_model_importable_from_parrot_models`
+  encoded the pre-FEAT-523 contract directly and had to be inverted —
+  not a deviation, a necessary correction: this feature's AC-2 requires
+  `parrot.models` to stop exporting provider enums, and this test
+  literally asserted the opposite.
+
+**Deviations from spec**: none.
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/unit/clients -q` → 407 passed, 8
+  pre-existing failures (identical to TASK-2841/2842).
+- `pytest packages/ai-parrot/tests/unit/clients/test_folder_convention.py`
+  → 19/19 passed (7 providers × conformance checks + relocation tests).
+- Explicit AC assertions (`LocalLLMClient.provider_keys`,
+  `MoonshotClient.provider_keys`, `parrot.models` no longer has
+  `NvidiaModel`/`VLLMConfig`) → all pass.
+- `ruff check` clean on every new/modified file under
+  `clients/{moonshot,openrouter,nvidia,local,vllm}/`, `factory.py`,
+  `models/__init__.py`, `test_folder_convention.py`.
+- External provider-specific suites (`test_openrouter_{factory,client,
+  models}.py`, `test_nvidia_client.py`, `test_localllm_client.py`,
+  `test_vllm_{client,models}.py`, `test_moonshot_code_dispatcher.py`) →
+  206 passed, 7 pre-existing failures confirmed byte-identical on `dev`
+  (4 in `test_localllm_client.py`, 3 in `test_vllm_client.py`, all the
+  same `AbstractClient.client` loop-local-property assignment issue,
+  unconnected to this move).
