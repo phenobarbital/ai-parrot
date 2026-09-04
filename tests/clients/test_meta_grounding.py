@@ -130,7 +130,7 @@ class TestCountInputTokens:
     async def test_returns_positive_int(self, monkeypatch):
         client = MetaClient(api_key="k")
         sdk = MagicMock()
-        sdk.responses.input_tokens = AsyncMock(return_value=MagicMock(input_tokens=169))
+        sdk.responses.input_tokens.count = AsyncMock(return_value=MagicMock(input_tokens=169))
         monkeypatch.setattr(client, "get_client", AsyncMock(return_value=sdk))
         assert await client.count_input_tokens(input="Count these.") == 169
 
@@ -138,7 +138,7 @@ class TestCountInputTokens:
     async def test_works_with_responses_disabled(self, monkeypatch):
         client = MetaClient(api_key="k", use_responses=False)
         sdk = MagicMock()
-        sdk.responses.input_tokens = AsyncMock(return_value=MagicMock(input_tokens=42))
+        sdk.responses.input_tokens.count = AsyncMock(return_value=MagicMock(input_tokens=42))
         monkeypatch.setattr(client, "get_client", AsyncMock(return_value=sdk))
         assert await client.count_input_tokens(input="Count these too.") == 42
 
@@ -146,11 +146,11 @@ class TestCountInputTokens:
     async def test_passes_resolved_model_and_input(self, monkeypatch):
         client = MetaClient(api_key="k")
         sdk = MagicMock()
-        sdk.responses.input_tokens = AsyncMock(return_value=MagicMock(input_tokens=5))
+        sdk.responses.input_tokens.count = AsyncMock(return_value=MagicMock(input_tokens=5))
         monkeypatch.setattr(client, "get_client", AsyncMock(return_value=sdk))
 
         await client.count_input_tokens(input="hi")
 
-        _, kwargs = sdk.responses.input_tokens.call_args
+        _, kwargs = sdk.responses.input_tokens.count.call_args
         assert kwargs["model"] == "muse-spark-1.3"
         assert kwargs["input"] == "hi"

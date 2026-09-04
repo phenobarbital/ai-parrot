@@ -270,16 +270,55 @@ class MetaClient(OpenAIBaseClient):
             )
         return tool_calls
 
+    @staticmethod
+    def _to_responses_tool(tool: dict[str, Any]) -> dict[str, Any]:
+        """Convert a Chat-Completions-shaped function tool to the Responses shape.
+
+        Chat Completions nests the function definition:
+        ``{"type": "function", "function": {"name", "description",
+        "parameters", ...}}`` (what ``AbstractClient._prepare_tools()``
+        always produces). The Responses API expects the same fields
+        **flattened** onto the tool dict itself:
+        ``{"type": "function", "name", "description", "parameters", ...}``
+        — sending the nested Chat-Completions shape live 400s with
+        ``'tools[0]' missing required field 'name'``.
+
+        Non-function tools (e.g. ``{"type": "web_search"}``, already flat)
+        pass through unchanged.
+
+        Args:
+            tool: A single tool dict, in either shape.
+
+        Returns:
+            The Responses-shaped tool dict.
+        """
+        if isinstance(tool, dict) and tool.get("type") == "function" and "function" in tool:
+            function = tool["function"]
+            flat: dict[str, Any] = {
+                "type": "function",
+                "name": function.get("name"),
+                "description": function.get("description"),
+                "parameters": function.get("parameters", {}),
+            }
+            if "strict" in function:
+                flat["strict"] = function["strict"]
+            return flat
+        return tool
+
     def _prepare_responses_args(
         self, *, messages: list[dict[str, Any]], args: dict[str, Any]
     ) -> dict[str, Any]:
         """Map a Chat-Completions-style message list into a Responses payload.
 
         Lifts the first ``system`` message into ``instructions``; the rest
-        become the ``input`` list. Tool-call round trips are represented the
-        same way :class:`~parrot.clients.gpt.OpenAIClient` mirrors them
-        (``tool_output``/``tool_call`` content blocks) — read as a structural
-        reference only, per D1.
+        become the ``input`` list. Tool-call round trips are represented as
+        top-level ``function_call``/``function_call_output`` input items —
+        the *real*, live-verified Responses wire shape (NOT a
+        ``role``/``content`` wrapper like Chat Completions; NOT the
+        ``tool_output``/``tool_call`` content-block shape
+        :class:`~parrot.clients.gpt.OpenAIClient` mirrors, which was tried
+        first here and 400s live with ``'input[N].content' did not match
+        any supported type`` — corrected during implementation).
 
         Args:
             messages: Chat-Completions-shaped message dicts.
@@ -291,31 +330,14 @@ class MetaClient(OpenAIBaseClient):
             A Responses API request payload (without ``model``).
         """
 
-        def _content_blocks(role: str, content: Any, message: dict[str, Any]) -> list[dict[str, Any]]:
-            if role == "tool":
-                if isinstance(content, list):
-                    text = "\n".join(
-                        str(part) if not isinstance(part, dict) else str(part.get("text") or part.get("output") or "")
-                        for part in content
-                    )
-                else:
-                    text = "" if content is None else str(content)
-                block: dict[str, Any] = {
-                    "type": "tool_output",
-                    "tool_call_id": message.get("tool_call_id"),
-                    "output": text,
-                }
-                if message.get("name"):
-                    block["name"] = message["name"]
-                return [block]
-
+        def _text_content(role: str, content: Any) -> list[dict[str, Any]]:
             text_type = "input_text" if role in {"user", "system"} else "output_text"
             parts: list[dict[str, Any]] = []
             if isinstance(content, list):
                 for item in content:
                     if isinstance(item, dict):
                         item_type = item.get("type")
-                        if item_type in {"input_text", "output_text", "tool_output", "tool_call"}:
+                        if item_type in {"input_text", "output_text"}:
                             parts.append(item)
                         elif item_type == "text":
                             text_val = item.get("text")
@@ -327,18 +349,6 @@ class MetaClient(OpenAIBaseClient):
                         parts.append({"type": text_type, "text": str(item)})
             elif content:
                 parts.append({"type": text_type, "text": str(content)})
-
-            if role == "assistant" and message.get("tool_calls"):
-                for tool_call in message["tool_calls"]:
-                    function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
-                    parts.append(
-                        {
-                            "type": "tool_call",
-                            "id": tool_call.get("id") if isinstance(tool_call, dict) else None,
-                            "name": function.get("name"),
-                            "arguments": function.get("arguments"),
-                        }
-                    )
             return parts
 
         instructions = None
@@ -346,19 +356,55 @@ class MetaClient(OpenAIBaseClient):
         for message in messages:
             role = message.get("role")
             content = message.get("content")
+
             if role == "system" and instructions is None:
                 instructions = content if isinstance(content, str) else str(content)
                 continue
-            item: dict[str, Any] = {"role": role, "content": _content_blocks(role, content, message)}
-            if message.get("tool_call_id"):
-                item["tool_call_id"] = message["tool_call_id"]
-            input_msgs.append(item)
+
+            if role == "tool":
+                # Real Responses input item for a tool result: a top-level
+                # `function_call_output`, keyed by `call_id` — NOT a
+                # `{"role": "tool", ...}` message wrapper.
+                if isinstance(content, list):
+                    output_text = "\n".join(
+                        str(part) if not isinstance(part, dict) else str(part.get("text") or part.get("output") or "")
+                        for part in content
+                    )
+                else:
+                    output_text = "" if content is None else str(content)
+                input_msgs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": message.get("tool_call_id"),
+                        "output": output_text,
+                    }
+                )
+                continue
+
+            if role == "assistant" and message.get("tool_calls"):
+                # Real text (if any) first, then one top-level `function_call`
+                # item per tool call — NOT nested inside the message content.
+                if content:
+                    input_msgs.append({"role": role, "content": _text_content(role, content)})
+                for tool_call in message["tool_calls"]:
+                    function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+                    input_msgs.append(
+                        {
+                            "type": "function_call",
+                            "call_id": tool_call.get("id") if isinstance(tool_call, dict) else None,
+                            "name": function.get("name"),
+                            "arguments": function.get("arguments"),
+                        }
+                    )
+                continue
+
+            input_msgs.append({"role": role, "content": _text_content(role, content)})
 
         req: dict[str, Any] = {"input": input_msgs}
         if instructions:
             req["instructions"] = instructions
         if args.get("tools"):
-            req["tools"] = args["tools"]
+            req["tools"] = [self._to_responses_tool(tool) for tool in args["tools"]]
         # Meta HTTP 400s on any tool_choice value other than "auto" (spec §7
         # gotcha 2) — never forward a caller-supplied override.
         if "tool_choice" in args:
@@ -470,7 +516,13 @@ class MetaClient(OpenAIBaseClient):
         """
         await self._ensure_client()
         model_str = self._resolve_model(model)
-        resp = await self.client.responses.input_tokens(model=model_str, input=input, **kwargs)
+        # `responses.input_tokens` is an SDK sub-resource (`AsyncInputTokens`),
+        # not directly callable — the actual RPC is `.count(...)`. Verified
+        # against the installed `openai` SDK during implementation; earlier
+        # revisions of this method called `responses.input_tokens(...)`
+        # directly, which raises `TypeError: 'AsyncInputTokens' object is
+        # not callable`.
+        resp = await self.client.responses.input_tokens.count(model=model_str, input=input, **kwargs)
         count = getattr(resp, "input_tokens", None)
         if count is None and isinstance(resp, dict):
             count = resp.get("input_tokens")

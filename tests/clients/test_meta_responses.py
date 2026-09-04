@@ -118,24 +118,90 @@ class TestPrepareResponsesArgs:
         )
         assert req["tool_choice"] == "auto"
 
-    def test_forwards_tools(self):
+    def test_forwards_tools_flattened_to_responses_shape(self):
+        """Chat-Completions-nested tools are flattened for Responses.
+
+        Sending the nested shape live 400s with
+        `'tools[0]' missing required field 'name'` — this is a regression
+        guard for that live-discovered defect.
+        """
         client = MetaClient(api_key="k")
-        tools = [{"type": "function", "function": {"name": "f"}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "f", "description": "d", "parameters": {"type": "object"}},
+            }
+        ]
         req = client._prepare_responses_args(
             messages=[{"role": "user", "content": "hi"}], args={"tools": tools}
         )
-        assert req["tools"] == tools
+        assert req["tools"] == [
+            {"type": "function", "name": "f", "description": "d", "parameters": {"type": "object"}}
+        ]
 
-    def test_tool_role_becomes_tool_output_block(self):
+    def test_forwards_already_flat_tools_unchanged(self):
+        """Non-function tools (e.g. web_search) are already flat — passthrough."""
+        client = MetaClient(api_key="k")
+        req = client._prepare_responses_args(
+            messages=[{"role": "user", "content": "hi"}],
+            args={"tools": [{"type": "web_search"}]},
+        )
+        assert req["tools"] == [{"type": "web_search"}]
+
+    def test_tool_role_becomes_function_call_output_item(self):
+        """A `role: tool` message becomes a top-level `function_call_output`
+        item, keyed by `call_id` — NOT a `role`/`content` wrapper.
+
+        Sending the wrapped shape live 400s with `'input[N].content' did
+        not match any supported type` — this is a regression guard for
+        that live-discovered defect.
+        """
         client = MetaClient(api_key="k")
         messages = [
             {"role": "tool", "tool_call_id": "call_1", "name": "f", "content": "42"},
         ]
         req = client._prepare_responses_args(messages=messages, args={})
-        block = req["input"][0]["content"][0]
-        assert block["type"] == "tool_output"
-        assert block["tool_call_id"] == "call_1"
-        assert block["output"] == "42"
+        item = req["input"][0]
+        assert item == {"type": "function_call_output", "call_id": "call_1", "output": "42"}
+
+    def test_assistant_tool_calls_become_function_call_items(self):
+        """An assistant message with `tool_calls` becomes one top-level
+        `function_call` item per call — NOT a `tool_call` content block."""
+        client = MetaClient(api_key="k")
+        messages = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_1", "function": {"name": "f", "arguments": "{}"}},
+                ],
+            },
+        ]
+        req = client._prepare_responses_args(messages=messages, args={})
+        assert req["input"] == [
+            {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"}
+        ]
+
+
+class TestToResponsesTool:
+    def test_flattens_function_tool(self):
+        tool = {
+            "type": "function",
+            "function": {"name": "f", "description": "d", "parameters": {"type": "object"}},
+        }
+        assert MetaClient._to_responses_tool(tool) == {
+            "type": "function",
+            "name": "f",
+            "description": "d",
+            "parameters": {"type": "object"},
+        }
+
+    def test_preserves_strict_flag(self):
+        tool = {"type": "function", "function": {"name": "f", "strict": True, "parameters": {}}}
+        assert MetaClient._to_responses_tool(tool)["strict"] is True
+
+    def test_passes_through_non_function_tool(self):
+        assert MetaClient._to_responses_tool({"type": "web_search"}) == {"type": "web_search"}
 
 
 class TestMetaResponsesRouting:
