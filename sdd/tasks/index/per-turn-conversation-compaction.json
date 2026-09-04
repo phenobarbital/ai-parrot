@@ -263,7 +263,7 @@
       "feature_id": "FEAT-525",
       "feature": "per-turn-conversation-compaction",
       "spec": "sdd/specs/per-turn-conversation-compaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -274,8 +274,8 @@
       "parallelism_notes": "Edits the same bots/base.py, data.py, voice.py entry points as TASK-2825 and depends on every AbstractBot helper from TASK-2830.",
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2831-bot-entry-points-budget-switch.md"
+      "completed_at": "2026-09-04T12:11:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2831-bot-entry-points-budget-switch.md"
     },
     {
       "id": "TASK-2832",
