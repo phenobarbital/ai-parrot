@@ -197,12 +197,107 @@ async def test_redis_end_to_end(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: `memory/compaction/__init__.py`: full public re-export
+(`ContextBudget`, `Limit`, `CompactionCommit`, `CompactionResult`,
+`CompactionState`, `Omission`, `OmissionStore` + 3 backends, `TokenCount`,
+`TokenCounter`, `TiktokenCounter`, `HeuristicCounter`, `ToolInvocation`,
+`ToolStatus`, `TurnState`, `TurnView`, `PrunePolicy`, `register_policy`,
+`get_policy`, `compact_history`, `render_tool_activity`, `normalize_turn`,
+`count_turn`, `build_default_budget`, `resolve_window`, `MODEL_WINDOWS`,
+`FALLBACK_WINDOW`, `bind_read_omitted_content`,
+`READ_OMITTED_CONTENT_SCHEMA`) with a real `__all__`. Discovered and
+fixed a genuine import-cycle: `abstract.py`'s top-level `from
+.compaction.omission import ...` triggers `compaction/__init__.py`
+execution as a side effect of Python's package-import mechanics, so
+eagerly importing `.tokens`/`.normalize`/`.policies`/`.compact`/`.recover`
+(all of which import `ConversationTurn`/`ConversationMemory` from
+`abstract`) there deadlocks the very first `import parrot.memory` —
+empirically reproduced (`ImportError: cannot import name
+'ConversationTurn' from partially initialized module`). Fixed with a
+PEP 562 lazy `__getattr__` block for exactly those five modules'
+exports (mirrors the FEAT-390 dream-cycle pattern already in
+`memory/__init__.py`); `.models`/`.omission`/`.budget` (which don't
+import `abstract`) stay eager. `memory/__init__.py`: added the
+requested 12-name `from .compaction import (...)` plus alphabetical
+`__all__` entries, dream-cycle block untouched. `docs/memory/
+per-turn-conversation-compaction.md` (sibling of the FEAT-524 guide):
+three tiers with worked shapes, rendered text formats, the write path
++ custom-backend contract, the budgeted read path, the kill switch,
+tuning, both recovery tools, operator metadata, non-goals.
+`.agent/CONTEXT.md`: extended the "Conversation memory" section, the
+`memory/` tree line, and the "Active areas" bullet.
+`test_integration_round_trip.py`: `test_round_trip_database_agent_session`
+(12 rounds, 8k-token tool results, boundary monotonicity, watermark
+compliance, lossless `read_omitted_content` recovery — all pass);
+`test_round_trip_chat_session_unchanged` (40 rounds, budget on vs.
+`context_budget=False`, byte-identical per round); `test_redis_end_to_end`
+(real-Redis connectivity probe via `redis.from_url(...).ping()`,
+`@pytest.mark.skipif`; skipped in this sandbox — no Redis reachable).
+Writing the integration tests surfaced and fixed one real design gap in
+`compact.py`: `render_raw_view`'s non-oversize branch checked only the
+render-time oversize flag, so an invocation already write-time-offloaded
+(small preview, `"output" in inv.omitted`) rendered its preview as a
+plain `out=` excerpt instead of the write-time `<tool-output-omitted>`
+notice the spec's own Module 8 scope calls for ("the line carries the
+write-time notice via the policy instead of `out=`"). Fixed by checking
+`"output" in inv.omitted` alongside the oversize-set membership in both
+`render_raw_view` and `compact_history`'s own oversize-set computation
+(so an already-offloaded turn is also disqualified from RAW
+classification, consistent with TASK-2828's oversize-disqualifies-RAW
+resolution) — re-ran the full compaction suite (63 tests) afterward,
+zero regressions. Verified: `from parrot.memory import ContextBudget,
+CompactionResult, CompactionCommit, OmissionStore, TokenCounter,
+TokenCount, ToolInvocation, ToolStatus, TurnState, TurnView, Limit,
+compact_history` succeeds; `parrot.memory.__all__` lists every one with
+none missing; `parrot.memory.render` still has no runtime compaction
+import (existing purity test still green); `git diff --stat dev --
+packages/ai-parrot/src/parrot/clients pyproject.toml` empty (C11/C15).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**C14 record**: FEAT-524 merge commit on `dev` against which every
+FEAT-524 §6 contract entry was re-verified before `/sdd-task` ran:
+`729ef7367` (PR #1310 merge commit), with anchors re-checked against
+`198e6fecd` (post-merge `black` reformat `4831528a4`) — recorded in the
+per-spec index's `notes` field and echoed in every task's ">✅ FEAT-524
+merged" banner.
 
-**C14 record**: FEAT-524 merge commit on `dev` against which §6 was re-verified: `<sha>`
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) The full-suite gate
+(`timeout -s KILL 600 pytest tests/unit -q` and `timeout -s KILL 900
+pytest packages/ai-parrot/tests -q`) could not be run to completion in
+this session for the SECOND command: `packages/ai-parrot/tests` (the
+whole package tree, not just `tests/unit/`) is far larger than either
+number implies — a `--continue-on-collection-errors` run was still at
+12% after 376s (linear extrapolation: ~50+ minutes), so it was
+terminated rather than left to exhaust the 900s KILL budget with no
+useful signal gained from the wait itself. In its place: (a)
+`timeout -s KILL 600 pytest tests/unit -q` (the OTHER explicitly
+required command) ran to completion — 777 passed, 63 failed, 8 skipped,
+20s — every failure independently bisected against a scratch worktree
+at the pristine pre-FEAT-525 `dev` tip (`7ff79be8b`) and reproduced
+identically there (`test_agentcrew_from_definition.py`,
+`test_execution_history_handler.py`, `test_sql_toolkit.py`, etc. —
+`pydantic_core.ValidationError`/`AttributeError` root causes in
+AgentCrew/execution-history/SQL-toolkit code this feature never
+touches). (b) Every test directory this feature's changed files could
+plausibly affect ran to completion directly:
+`packages/ai-parrot/tests/unit/{memory,bots,tools,events}` together
+(658 tests, 13.97s) and `packages/ai-parrot/tests/unit/memory/compaction`
+alone (63 tests) — the only failures are the same 13
+independently-pre-verified-unrelated ones already documented in TASK-2825/
+2828/2829/2830/2831's Completion Notes (flex-dashboard/infographic/
+pandasagent-stale-vars test-order flakiness, one PII-naming test in
+`test_client_events_agent_name.py`). (c) The interrupted
+`--continue-on-collection-errors` partial run showed 26 pre-existing
+collection errors, none touching `memory`/`bots`/`compaction` files
+(missing `agents/expense_approval.py` data file, `aiohttp.web` version
+mismatch, PEP-420 dynamic-import shim fragility already known from prior
+worktree sessions), and zero `FAILED` lines matching
+`memory|compaction|bots|context_budget|save_conversation` in the ~12%
+it did collect before termination. (2) `test_redis_end_to_end` uses a
+real `redis.from_url(...).ping()` connectivity probe (`redis` sync
+client, 1s timeout) rather than the mocked-Redis pattern
+`tests/test_chat_storage.py` actually uses — chosen because the task's
+own Scope/acceptance-criteria text describes it as "skipped without
+Redis" (an availability check), which a mock can never trigger; it
+skipped here (no Redis reachable in this sandbox) exactly as designed.
