@@ -68,7 +68,10 @@ def test_create_missing_satellite(monkeypatch):
 
 def test_list_models_active_deprecated(monkeypatch):
     _reset(monkeypatch)
-    out = factory.LLMFactory.list_models("openai")
+    # FEAT-523 (TASK-2849): "openai" was extracted to ai-parrot-client-openai
+    # — use "google", which stays in _IN_CORE_PROVIDERS, so this core test
+    # doesn't depend on any satellite being installed.
+    out = factory.LLMFactory.list_models("google")
     assert set(out) == {"active", "deprecated"}
     assert out["active"]
 
@@ -76,8 +79,10 @@ def test_list_models_active_deprecated(monkeypatch):
 def test_list_providers_lists_in_core_keys(monkeypatch):
     _reset(monkeypatch)
     providers = factory.LLMFactory.list_providers()
-    assert providers.get("openai") == "ai-parrot"
+    # FEAT-523 (TASK-2849): "openai" was extracted to ai-parrot-client-openai
+    # — assert against "google"/"anthropic", which stay in _IN_CORE_PROVIDERS.
     assert providers.get("google") == "ai-parrot"
+    assert providers.get("anthropic") == "ai-parrot"
 
 
 def test_provider_backend_discovered():
