@@ -277,6 +277,85 @@ class TestTASK2544:
         assert len(art.metadata["degraded"]) == 1
 
 
+class TestNewChartTypesDegradation:
+    """FEAT-527: donut/radar are Chart.js natives; gauge/funnel/waterfall/
+    heatmap/treemap have no Chart.js equivalent and must degrade — visibly
+    AND recorded, never silently."""
+
+    @pytest.mark.parametrize(
+        "chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"]
+    )
+    async def test_unsupported_chart_type_degrades_to_bar_with_record(self, chart_type):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                data=[{"m": "a", "v": 1}],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert any(chart_type in d.get("reason", "") for d in art.metadata["degraded"])
+        # Visible caption naming the original type.
+        assert chart_type in doc
+        assert "rendered as bar" in doc
+        # The embedded Chart.js config itself must degrade to "bar".
+        config = json.loads(re.search(r'data-chart-config="([^"]*)"', doc).group(1).replace("&quot;", '"'))
+        assert config["type"] == "bar"
+        # Self-contained invariant unaffected by the degradation caption.
+        assert "<script src=" not in doc
+
+    @pytest.mark.parametrize("chart_type,expected", [("donut", "doughnut"), ("radar", "radar")])
+    async def test_donut_and_radar_are_chartjs_natives_not_degraded(self, chart_type, expected):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                data=[{"m": "a", "v": 1}],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert art.metadata.get("degraded", []) == []
+        assert "rendered as bar" not in doc
+        config = json.loads(re.search(r'data-chart-config="([^"]*)"', doc).group(1).replace("&quot;", '"'))
+        assert config["type"] == chart_type
+
+    async def test_supported_chart_type_no_degradation(self):
+        env = _envelope(
+            Component(id="root", component="Chart", type="bar", x="m", y=["v"], data=[{"m": "a", "v": 1}])
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert art.metadata.get("degraded", []) == []
+
+    async def test_nested_chart_in_infographic_records_degradation(self):
+        """Degradations from a Chart nested inside an Infographic section
+        must reach the top-level RenderedArtifact.metadata['degraded']."""
+        env = _envelope(
+            Component(
+                id="root",
+                component="Infographic",
+                title="T",
+                sections=[
+                    {
+                        "heading": "S",
+                        "components": [
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "type": "gauge", "x": "m", "y": ["v"],
+                                    "data": [{"m": "a", "v": 1}],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert any("gauge" in d.get("reason", "") for d in art.metadata["degraded"])
+
+
 class TestMapDispatch:
     """FEAT-522 TASK-2793: Map dispatch integration — top-level, Infographic-
     nested, and the offline srcdoc escaping-loophole guardrail."""

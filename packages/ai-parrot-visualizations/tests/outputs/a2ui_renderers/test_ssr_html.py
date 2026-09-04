@@ -208,3 +208,50 @@ class TestTASK2543:
         doc = art.content.decode()
         assert 'href="https://resume/x?token=t"' in doc
         assert art.deep_links[0].token_id == "t"
+
+
+class TestNewChartTypesDegradation:
+    """FEAT-527: gauge/funnel/waterfall/heatmap/treemap have no native visual
+    on this static renderer — the type caption still shows the original type
+    (``ChartComponent.lower()``'s generic text summary), and each is
+    additionally recorded in ``metadata['degraded']`` (never silent)."""
+
+    @pytest.mark.parametrize(
+        "chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"]
+    )
+    async def test_unsupported_chart_type_recorded_as_degraded(self, chart_type):
+        env = CreateSurface(
+            surfaceId="s", catalogId="c",
+            components=[
+                Component(
+                    id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                    data=[{"m": "a", "v": 1}],
+                )
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert f"Chart ({chart_type})" in doc  # caption prints the original type
+        assert any(chart_type in d.get("reason", "") for d in art.metadata["degraded"])
+        record = next(d for d in art.metadata["degraded"] if d["component"] == "Chart")
+        assert record["id"] == "root"
+
+    @pytest.mark.parametrize("chart_type", ["bar", "donut", "radar"])
+    async def test_pre_existing_chart_types_not_recorded_as_degraded(self, chart_type):
+        env = CreateSurface(
+            surfaceId="s", catalogId="c",
+            components=[
+                Component(
+                    id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                    data=[{"m": "a", "v": 1}],
+                )
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert f"Chart ({chart_type})" in doc
+        assert art.metadata.get("degraded", []) == []

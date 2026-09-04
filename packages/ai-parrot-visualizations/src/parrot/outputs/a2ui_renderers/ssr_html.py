@@ -74,6 +74,14 @@ _SURFACE_NAME = "ssr_html"
 #: recursively (the CSS class used for the wrapping ``<div>``).
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 
+#: Chart types with no native visual on this static renderer — ALL chart
+#: types already lower to the same generic text summary
+#: (``ChartComponent.lower()``, which prints the type in its caption), but
+#: these 5 (FEAT-527) are additionally recorded as a degradation: before
+#: FEAT-527 the adapter collapsed them to a supported type, so this static
+#: renderer never saw the literal type before.
+_UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap", "treemap"})
+
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
     """Union ``parent.metadata.extensions`` onto every component ``lowered``
@@ -198,17 +206,17 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         # here so cell rendering can re-derive it later (TASK-2711).
         table_columns_by_id = self._collect_table_columns(envelope)
 
+        degradations: list[dict[str, Any]] = []
         # Lower every composite BEFORE baking — a composite (e.g. DataTable)
         # may lower to a row `ChildTemplate`, and template/binding expansion
         # is exclusively `bake_envelope`'s job, which must see the fully
         # flattened wire graph (never a still-composite one).
-        lowered_envelope = self._lower_composites(envelope)
+        lowered_envelope = self._lower_composites(envelope, degradations)
         # Static renderer: always bake so the document has zero live bindings.
         baked_components = bake_envelope(lowered_envelope)
         by_id = {bc["id"]: bc for bc in baked_components}
 
         self._table_cell_columns = {}
-        degradations: list[dict[str, Any]] = []
         body_parts: list[str] = []
         if "root" in by_id:
             root = self._reconstruct(by_id["root"]["id"], by_id)
@@ -244,7 +252,9 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
 
     # -- lowering (composites -> flat primitives, BEFORE baking) -------------
 
-    def _lower_composites(self, envelope: CreateSurface) -> CreateSurface:
+    def _lower_composites(
+        self, envelope: CreateSurface, degradations: list[dict[str, Any]]
+    ) -> CreateSurface:
         """Replace every non-primitive (Parrot composite) component with its
         lowered + flattened primitive equivalents, in place, in the envelope's
         own flat component list.
@@ -254,9 +264,26 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         ``catalog/parrot/datatable.py``), so any OTHER component's
         ``child``/``children`` reference into that id remains valid after
         lowering — no cross-reference rewriting is needed.
+
+        FEAT-527: a ``Chart`` whose ``type`` has no native visual on this
+        static renderer (:data:`_UNSUPPORTED_CHART_TYPES`) still lowers to
+        the same generic text-summary tree (``ChartComponent.lower()``
+        already prints the original type in its caption) — but is
+        additionally recorded into ``degradations`` here, before lowering
+        discards the original (not-yet-lowered) component.
         """
         new_components: list[Component] = []
         for comp in envelope.components:
+            if comp.component == "Chart":
+                chart_type = (comp.model_extra or {}).get("type")
+                if chart_type in _UNSUPPORTED_CHART_TYPES:
+                    degradations.append(
+                        degradation_record(
+                            BasicNode(id=comp.id, component="Chart"),
+                            f"{_SURFACE_NAME} has no native visual for chart type "
+                            f"'{chart_type}'; rendered as a text data summary",
+                        )
+                    )
             try:
                 entry = get_component(comp.component)
             except KeyError:

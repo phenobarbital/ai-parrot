@@ -44,7 +44,18 @@ _SERIES_TYPE = {
     "area": "line",
     "scatter": "scatter",
     "pie": "pie",
+    "donut": "pie",
+    "radar": "radar",
+    "gauge": "gauge",
+    "funnel": "funnel",
+    "treemap": "treemap",
+    "heatmap": "heatmap",
 }
+
+#: Chart types with a fundamentally different ECharts series shape than the
+#: standard "one series per y column, values = column values" loop — built by
+#: their own dedicated methods below (FEAT-527).
+_ROW_NATIVE_TYPES = frozenset({"gauge", "funnel", "treemap", "heatmap", "waterfall", "radar"})
 
 
 @register_a2ui_renderer(
@@ -136,6 +147,12 @@ class EChartsRenderer(AbstractA2UIRenderer):
         (top-level ``color``). Every new prop is read with a default that
         preserves the pre-FEAT-473 option shape when absent (regression
         safety — envelopes without these props render exactly as before).
+
+        FEAT-527: ``gauge``/``funnel``/``treemap``/``heatmap``/``waterfall``/
+        ``radar`` have a fundamentally different ECharts series shape than
+        the standard per-y-column loop below and are built by their own
+        dedicated ``_build_*`` methods (early return); ``donut`` reuses the
+        standard ``pie`` loop with a ``radius`` tweak.
         """
         chart_type = props.get("type", "bar")
         series_type = _SERIES_TYPE.get(chart_type, "bar")
@@ -148,12 +165,30 @@ class EChartsRenderer(AbstractA2UIRenderer):
         trendline = bool(props.get("trendline"))
 
         categories = [row.get(x) for row in rows if isinstance(row, dict)] if x else []
+
+        base_option: dict[str, Any] = {
+            "title": {"text": props.get("title", "")},
+            "legend": {"show": bool(props.get("showLegend", True))},
+        }
+
+        if chart_type in _ROW_NATIVE_TYPES:
+            base_option["series"] = self._build_row_native_series(chart_type, x, y_cols, rows, categories)
+            if chart_type == "heatmap":
+                base_option["visualMap"] = self._heatmap_visual_map(base_option["series"])
+                base_option["xAxis"] = {"type": "category", "data": categories}
+                base_option["yAxis"] = {"type": "category", "data": list(y_cols)}
+            elif chart_type == "radar":
+                base_option["radar"] = {"indicator": [{"name": str(c)} for c in categories]}
+            return base_option
+
         series = []
         for col in y_cols:
             values = [row.get(col) for row in rows if isinstance(row, dict)]
             series_entry: dict[str, Any] = {"name": col, "type": series_type, "data": values}
             if chart_type == "area":
                 series_entry["areaStyle"] = {}
+            if chart_type == "donut":
+                series_entry["radius"] = ["40%", "70%"]
             if stacked:
                 series_entry["stack"] = "total"
             series.append(series_entry)
@@ -245,6 +280,135 @@ class EChartsRenderer(AbstractA2UIRenderer):
         slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric)) / denom
         intercept = mean_y - slope * mean_x
         return [slope * x + intercept for x in xs]
+
+    def _build_row_native_series(
+        self,
+        chart_type: str,
+        x: str | None,
+        y_cols: list[str],
+        rows: list[dict[str, Any]],
+        categories: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Build the ``series`` list for a chart type with a native, non-
+        per-y-column ECharts shape (FEAT-527).
+
+        Args:
+            chart_type: One of ``gauge``/``funnel``/``treemap``/``heatmap``/
+                ``waterfall``/``radar``.
+            x: The x/category column name.
+            y_cols: Value column names.
+            rows: Bound data rows.
+            categories: Pre-extracted ``row[x]`` values (row order).
+
+        Returns:
+            The ECharts ``series`` array for this chart type.
+        """
+        if chart_type == "gauge":
+            # One data point per y column — gauge ignores x entirely.
+            return [
+                {
+                    "name": col,
+                    "type": "gauge",
+                    "data": [{"value": next((row.get(col) for row in rows if isinstance(row, dict)), None), "name": col}],
+                }
+                for col in y_cols
+            ]
+
+        if chart_type == "funnel":
+            first_col = y_cols[0] if y_cols else None
+            data = [
+                {"value": row.get(first_col), "name": row.get(x)}
+                for row in rows
+                if isinstance(row, dict)
+            ]
+            return [{"name": first_col, "type": "funnel", "data": data}]
+
+        if chart_type == "treemap":
+            first_col = y_cols[0] if y_cols else None
+            data = [
+                {"name": row.get(x), "value": row.get(first_col)}
+                for row in rows
+                if isinstance(row, dict)
+            ]
+            return [{"name": first_col, "type": "treemap", "data": data}]
+
+        if chart_type == "heatmap":
+            # One [xIdx, yIdx, value] triple per (row, y column) combination —
+            # the y-axis category dimension is the series (y_cols), not `x`.
+            data: list[list[Any]] = []
+            for x_idx, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                for y_idx, col in enumerate(y_cols):
+                    data.append([x_idx, y_idx, row.get(col)])
+            return [{"name": "heatmap", "type": "heatmap", "data": data}]
+
+        if chart_type == "waterfall":
+            # Stacked-bar technique: a transparent "placeholder" series holds
+            # each bar's running base, and a visible "delta" series holds the
+            # signed magnitude — both stacked so the visible bar floats at
+            # the correct height (ECharts has no native waterfall type).
+            first_col = y_cols[0] if y_cols else None
+            values = [row.get(first_col) for row in rows if isinstance(row, dict)]
+            placeholder_data: list[float] = []
+            delta_data: list[float] = []
+            base = 0.0
+            for v in values:
+                v = v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+                if v >= 0:
+                    placeholder_data.append(base)
+                    delta_data.append(v)
+                    base += v
+                else:
+                    base += v
+                    placeholder_data.append(base)
+                    delta_data.append(-v)
+            return [
+                {
+                    "name": "placeholder",
+                    "type": "bar",
+                    "stack": "total",
+                    "itemStyle": {"color": "transparent"},
+                    "data": placeholder_data,
+                },
+                {"name": first_col or "delta", "type": "bar", "stack": "total", "data": delta_data},
+            ]
+
+        if chart_type == "radar":
+            # One radar trace per y column; each trace's values are that
+            # column across all rows, with the x/category values (already
+            # extracted into `categories`) as the radar indicator dimensions.
+            return [
+                {
+                    "type": "radar",
+                    "data": [
+                        {
+                            "name": col,
+                            "value": [row.get(col) for row in rows if isinstance(row, dict)],
+                        }
+                        for col in y_cols
+                    ],
+                }
+            ]
+
+        return []  # pragma: no cover — chart_type is always one of the above
+
+    @staticmethod
+    def _heatmap_visual_map(series: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build a ``visualMap`` spanning the min/max value in a heatmap series."""
+        values = [
+            triple[2]
+            for entry in series
+            for triple in entry.get("data", [])
+            if isinstance(triple[2], (int, float)) and not isinstance(triple[2], bool)
+        ]
+        return {
+            "min": min(values) if values else 0,
+            "max": max(values) if values else 1,
+            "calculable": True,
+            "orient": "horizontal",
+            "left": "center",
+        }
 
     def _wrap_html(self, option: dict[str, Any], title: str) -> str:
         """Wrap an option in a self-contained HTML doc inlining the vendored bundle."""

@@ -182,7 +182,27 @@ class TestGoldensUntouched:
         # (TASK-2715); catalog/parrot/__init__.py registering the new
         # `filterbar` module in its import list is the one other
         # unavoidable touch — every new catalog component requires it.
-        assert all("filterbar" in c or c.endswith("catalog/parrot/__init__.py") for c in changed), changed
+        #
+        # FEAT-527 (TASK-2859/2860) is an explicit, spec-sanctioned exception:
+        # "FEAT-493 froze them for its scope; this feature legitimately
+        # changes lower() output for Infographic/Chart/KPICard/DataTable"
+        # (spec §7 "Golden fixtures"). Presentation-parity props (chart
+        # types/layout, KPICard icon/color, DataTable style, Infographic
+        # half-width Row grouping) are additive and gated on the value being
+        # present, so none of the FROZEN goldens actually changed byte-for-
+        # byte — only the `lower()` source allowing the NEW behavior did.
+        _FEAT_527_FILES = (
+            "catalog/parrot/chart.py",
+            "catalog/parrot/datatable.py",
+            "catalog/parrot/infographic.py",
+            "catalog/parrot/kpicard.py",
+        )
+        assert all(
+            "filterbar" in c
+            or c.endswith("catalog/parrot/__init__.py")
+            or c.endswith(_FEAT_527_FILES)
+            for c in changed
+        ), changed
 
 
 class TestTailwindCoverageIntegration:

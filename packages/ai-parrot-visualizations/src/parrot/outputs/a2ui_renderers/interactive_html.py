@@ -157,14 +157,23 @@ _CHART_JS_PATH = Path(__file__).parent.parent / "formats" / "assets" / "chart.um
 #: never changes at runtime.
 _CHART_JS_SOURCE = _CHART_JS_PATH.read_text(encoding="utf-8")
 
-# A2UI Chart type -> Chart.js chart type.
+# A2UI Chart type -> Chart.js chart type. FEAT-527: donut/radar are Chart.js
+# natives (doughnut/radar); the 5 new types (gauge/funnel/waterfall/heatmap/
+# treemap) have no Chart.js equivalent and degrade to "bar" — see
+# `_UNSUPPORTED_CHART_TYPES` and `_render_chart()`.
 _CHART_TYPE = {
     "bar": "bar",
     "line": "line",
     "area": "line",
     "scatter": "scatter",
     "pie": "pie",
+    "donut": "doughnut",
+    "radar": "radar",
 }
+
+#: Chart types with no Chart.js native equivalent — degrade to "bar" with a
+#: recorded, visible degradation (never silent). FEAT-527.
+_UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap", "treemap"})
 
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 
@@ -190,7 +199,13 @@ _BEHAVIOR_JS = r"""
     });
   }
 
-  var chartTypeMap = { bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie" };
+  // FEAT-527: donut/radar are Chart.js natives; the 5 new types with no
+  // Chart.js equivalent already arrive here pre-degraded to "bar" by
+  // _render_chart() (Python side) — this map only needs the natives.
+  var chartTypeMap = {
+    bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie",
+    donut: "doughnut", radar: "radar",
+  };
 
   // Populated as each chart is created below; consulted by the FilterBar
   // runtime (TASK-2716) to re-render a chart's ALREADY-embedded rows
@@ -692,22 +707,22 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
     ) -> str:
         name = comp["component"]
         if name == "Chart":
-            return self._render_chart(comp)
+            return self._render_chart(comp, degradations)
         if name == "DataTable":
             return self._render_datatable(comp)
         if name == "Infographic":
-            return self._render_infographic(comp)
+            return self._render_infographic(comp, degradations)
         if name == "Map":
             return self._render_map(comp)
         node = self._reconstruct(comp["id"], by_id)
         return self._render_basic(node, degradations)
 
-    def _render_descriptor(self, descriptor: dict[str, Any]) -> str:
+    def _render_descriptor(self, descriptor: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render a nested component descriptor (e.g. inside an Infographic section)."""
         name = descriptor.get("component")
         properties = descriptor.get("properties") or {}
         if name == "Chart":
-            return self._render_chart(properties)
+            return self._render_chart(properties, degradations)
         if name == "DataTable":
             return self._render_datatable(properties)
         if name == "Map":
@@ -1002,7 +1017,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         escaped = html.escape(document.decode("utf-8"))
         return f'<iframe sandbox="allow-scripts allow-popups" srcdoc="{escaped}"></iframe>'
 
-    def _render_chart(self, props: dict[str, Any]) -> str:
+    def _render_chart(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render a live Chart.js ``<canvas>`` from RESOLVED Chart properties.
 
         Bypasses catalog lowering entirely (``ChartComponent.lower()``
@@ -1010,14 +1025,32 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         renderer concern, same precedent as ``EChartsRenderer``). ``props``
         is the baked component's own top-level dict (v1.0 — never nested
         under a "properties" key).
+
+        FEAT-527: ``gauge``/``funnel``/``waterfall``/``heatmap``/``treemap``
+        have no Chart.js equivalent — they render as ``"bar"`` AND append a
+        record to ``degradations`` (never a silent substitution), plus a
+        visible caption naming the original type.
         """
         chart_id = f"chart-{uuid.uuid4().hex[:8]}"
         rows = props.get("data")
         rows = rows if isinstance(rows, list) else []
         y_columns = props.get("y") or []
         tabs = props.get("tabs")
+        original_type = props.get("type", "bar")
+        degraded_caption = ""
+        if original_type in _UNSUPPORTED_CHART_TYPES:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=props.get("id", chart_id), component="Chart"),
+                    f"{_SURFACE_NAME} renders '{original_type}' as bar (no {original_type} support in this surface)",
+                )
+            )
+            degraded_caption = (
+                '<p class="a2ui-notice">'
+                f"rendered as bar (no {html.escape(str(original_type))} support in this surface)</p>"
+            )
         config: dict[str, Any] = {
-            "type": props.get("type", "bar"),
+            "type": "bar" if original_type in _UNSUPPORTED_CHART_TYPES else original_type,
             "x": props.get("x"),
             "y": y_columns,
             "data": rows,
@@ -1028,6 +1061,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         title = props.get("title")
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
+        title_html += degraded_caption
 
         tabs_html = ""
         if isinstance(tabs, list) and tabs:
@@ -1133,7 +1167,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             f'<tbody>{"".join(body_rows)}</tbody></table>{pager_html}{notice_html}</div>'
         )
 
-    def _render_infographic(self, props: dict[str, Any]) -> str:
+    def _render_infographic(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render an Infographic's title/subtitle/sections, recursing into
         nested descriptors via :meth:`_render_descriptor` (Chart/DataTable
         aware) rather than delegating to ``InfographicComponent.lower()``
@@ -1159,7 +1193,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 section_parts.append(f'<p class="a2ui-text a2ui-body">{html.escape(str(text))}</p>')
             for descriptor in section.get("components") or []:
                 if isinstance(descriptor, dict):
-                    section_parts.append(self._render_descriptor(descriptor))
+                    section_parts.append(self._render_descriptor(descriptor, degradations))
             parts.append(f'<div class="a2ui-col a2ui-section">{"".join(section_parts)}</div>')
 
         return f'<div class="a2ui-card" data-variant="infographic">{"".join(parts)}</div>'
