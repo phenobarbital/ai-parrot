@@ -11,6 +11,7 @@ traceability (spec Module 16 Implementation Notes).
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,11 @@ from parrot.flows.wiki_ingest.nodes.concepts import ConceptExtraction
 from parrot.flows.wiki_ingest.nodes.contradictions import ContradictionDetectionResult
 from parrot.flows.wiki_ingest.nodes.daily import DailySynthesisProposal
 from parrot.flows.wiki_ingest.nodes.entities import EntityExtraction
+from parrot.flows.wiki_ingest.nodes.entity_concept_batch import (
+    BatchConceptItem,
+    BatchEntityItem,
+    BatchExtraction,
+)
 from parrot.flows.wiki_ingest.nodes.indexes import OverviewChangeAssessment
 from parrot.flows.wiki_ingest.nodes.lint import run_lint
 from parrot.flows.wiki_ingest.nodes.log import ALLOWED_LOG_OPS
@@ -80,6 +86,46 @@ def _make_strong_client(*, primary_project: str = "Acme Rollout") -> AsyncMock:
     return client
 
 
+def _fake_batch_extraction(prompt: str) -> BatchExtraction:
+    """Echo the batch prompt's candidates back as materially-relevant items —
+    stands in for the cheap-tier batch entity/concept extraction so the
+    entity/concept pages actually get created (and their wikilinks resolve)."""
+    entities: list[BatchEntityItem] = []
+    concepts: list[BatchConceptItem] = []
+    section = None
+    for line in prompt.splitlines():
+        if line.startswith("Entity candidates"):
+            section = "entities"
+            continue
+        if line.startswith("Concept candidates"):
+            section = "concepts"
+            continue
+        if section == "entities":
+            m = re.match(r"^- (.+) \((person|company|product)\) \[existing:", line)
+            if m:
+                entities.append(
+                    BatchEntityItem(
+                        name=m.group(1),
+                        entity_type=m.group(2),  # type: ignore[arg-type]
+                        materially_relevant=True,
+                        summary="Key contact.",
+                        known_roles=[],
+                    )
+                )
+        elif section == "concepts":
+            m = re.match(r"^- (.+) \[existing:", line)
+            if m:
+                concepts.append(
+                    BatchConceptItem(
+                        name=m.group(1),
+                        materially_relevant=True,
+                        definition="A concept.",
+                        why_it_matters="It matters.",
+                    )
+                )
+    return BatchExtraction(entities=entities, concepts=concepts)
+
+
 def _make_cheap_client() -> AsyncMock:
     async def _invoke(prompt, *, output_type=None, **kwargs):
         if output_type is MeetingPageExtraction:
@@ -93,6 +139,8 @@ def _make_cheap_client() -> AsyncMock:
             )
         if output_type is DailySynthesisProposal:
             return _FakeInvokeResult(DailySynthesisProposal(daily_summary="Acme progressed the rollout."))
+        if output_type is BatchExtraction:
+            return _FakeInvokeResult(_fake_batch_extraction(prompt))
         return _FakeInvokeResult(None)
 
     client = AsyncMock()

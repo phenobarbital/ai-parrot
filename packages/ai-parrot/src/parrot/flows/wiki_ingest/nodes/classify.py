@@ -175,6 +175,7 @@ async def run_classify(
     *,
     context: ExistingContext | None = None,
     force_transcript: bool = False,
+    allow_transcript_fallback: bool = True,
 ) -> ClassificationResult:
     """Classify one meeting: summary-first, confidence, transcript fallback.
 
@@ -189,13 +190,20 @@ async def run_classify(
         force_transcript: User-requested full-transcript processing
             (§15.4 — "the user explicitly requests full-transcript
             processing").
+        allow_transcript_fallback: When ``False``, classify summary-only —
+            never read the full transcript (neither the high-impact keyword
+            trigger nor the confidence-based fallback fires). Used by the
+            reduced-fidelity ``backfill`` profile to avoid the expensive
+            full-transcript strong-tier pass on a one-time historical import.
 
     Returns:
         The :class:`ClassificationResult`.
     """
     context = context or ExistingContext()
 
-    deterministic_trigger = _deterministic_fallback_trigger(meeting, force_transcript=force_transcript)
+    deterministic_trigger = allow_transcript_fallback and _deterministic_fallback_trigger(
+        meeting, force_transcript=force_transcript
+    )
 
     prompt = _build_prompt(meeting, context, include_transcript=deterministic_trigger)
     result = await strong_client.invoke(
@@ -204,7 +212,7 @@ async def run_classify(
     classification: Classification = result.output
     transcript_read = deterministic_trigger
 
-    if not transcript_read and classification.confidence in ("medium", "low"):
+    if allow_transcript_fallback and not transcript_read and classification.confidence in ("medium", "low"):
         # §15.4 — confidence-triggered fallback: reclassify with the
         # transcript included.
         prompt = _build_prompt(meeting, context, include_transcript=True)

@@ -569,8 +569,8 @@ async def test_ingest_entity_resolver_failure_surfaces_review_item(
     agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
 
     monkeypatch.setattr(
-        runner_module.entities_node,
-        "run_entity_resolve",
+        runner_module.entity_concept_batch_node,
+        "run_entities_and_concepts",
         AsyncMock(side_effect=RuntimeError("resolver boom")),
     )
 
@@ -771,3 +771,77 @@ async def test_ingest_reconciles_additional_projects(tmp_path: Path, monkeypatch
     assert "Wiki/Sources/Meetings/" in additional.read_text()
     # Both projects get their own meeting index.
     assert list((tmp_path / "Projects" / "Beta Initiative" / "Meeting Summaries").rglob("index.md"))
+
+
+@pytest.mark.asyncio
+async def test_backfill_profile_reconciles_primary_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reduced-fidelity ``backfill`` profile reconciles the PRIMARY project
+    only — skipping the per-additional-project strong-tier reconcile (the
+    biggest per-meeting LLM saving on a bulk historical import). Contrast with
+    test_ingest_reconciles_additional_projects (full profile)."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Joint Program Sync", "2026-08-20T10:00:00-05:00")
+    )
+
+    contradiction_calls = {"n": 0}
+
+    async def _strong_invoke(prompt, *, output_type=None, **kwargs):
+        if output_type is Classification:
+            return _FakeInvokeResult(
+                Classification(
+                    confidence="high",
+                    primary_project="Acme Rollout",
+                    primary_client="Acme Corp",
+                    additional_projects=["Beta Initiative"],
+                )
+            )
+        if output_type is ContradictionDetectionResult:
+            contradiction_calls["n"] += 1
+            return _FakeInvokeResult(ContradictionDetectionResult(conflicts=[]))
+        if output_type is NewProjectJustification:
+            return _FakeInvokeResult(NewProjectJustification(justified=True, reason="Ongoing."))
+        return _FakeInvokeResult(None)
+
+    strong_client = AsyncMock()
+    strong_client.invoke = AsyncMock(side_effect=_strong_invoke)
+    agent = _make_agent(listing, strong_client, _make_cheap_client())
+
+    ctx = WikiIngestContext(agent=agent, profile="backfill")
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    # Primary reconciled; additional project NOT reconciled under backfill.
+    assert (tmp_path / "Projects" / "Acme Rollout" / "Acme Rollout.md").is_file()
+    assert not (tmp_path / "Projects" / "Beta Initiative").exists()
+    # Contradiction detection (strong tier) is skipped by the backfill profile.
+    assert contradiction_calls["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_backfill_profile_classify_is_summary_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backfill profile classifies summary-only — never the expensive
+    strong-tier full-transcript fallback."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    agent = _make_agent(listing, _make_strong_client(), _make_cheap_client())
+
+    captured: dict = {}
+    original = runner_module.classify_node.run_classify
+
+    async def _spy_classify(client, meeting, *, context=None, allow_transcript_fallback=True, **kwargs):
+        captured["allow_transcript_fallback"] = allow_transcript_fallback
+        return await original(client, meeting, context=context, allow_transcript_fallback=allow_transcript_fallback)
+
+    monkeypatch.setattr(runner_module.classify_node, "run_classify", _spy_classify)
+
+    ctx = WikiIngestContext(agent=agent, profile="backfill")
+    await run_ingest(ctx)
+
+    assert captured["allow_transcript_fallback"] is False

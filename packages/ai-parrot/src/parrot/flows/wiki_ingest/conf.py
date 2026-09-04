@@ -29,6 +29,7 @@ __all__ = (
     "WIKI_KB_ACTIVE_WINDOW_DAYS",
     "WIKI_KB_INGEST_CRON",
     "WIKI_KB_INGEST_LIMIT",
+    "WIKI_KB_INGEST_PROFILE",
     "WIKI_KB_LLM_CHEAP",
     "WIKI_KB_LLM_STRONG",
     "WIKI_KB_MAX_CATCHUP_DAYS",
@@ -90,6 +91,15 @@ WIKI_KB_LLM_CHEAP: str = config.get("WIKI_KB_LLM_CHEAP", fallback="google:gemini
 #: 5-field cron expression (minute hour day month day_of_week), hourly by
 #: default so each iteration processes a small batch (G10).
 WIKI_KB_INGEST_CRON: str = config.get("WIKI_KB_INGEST_CRON", fallback="0 * * * *")
+
+#: Cost/fidelity profile for an ingest run. ``"full"`` (default) runs the whole
+#: contract pipeline at full fidelity for steady-state. ``"backfill"`` trades
+#: fidelity for cost on a one-time historical import — summary-only classify
+#: (no strong-tier transcript fallback), primary-project reconcile only (no
+#: per-additional-project reconcile), no contradiction detection, no per-run
+#: overview update; entities/concepts are still resolved (batched, cheap tier).
+#: Also passable per-call via ``ingest(profile="backfill")``.
+WIKI_KB_INGEST_PROFILE: str = config.get("WIKI_KB_INGEST_PROFILE", fallback="full")
 
 #: Per-run cap on the number of meetings processed (bounded chunks — spec
 #: Module 6). ``None`` (unset) means no cap.

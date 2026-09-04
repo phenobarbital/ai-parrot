@@ -189,6 +189,116 @@ async def test_entity_resolve_creates_new(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_resolves_entities_and_concepts_in_one_call(tmp_path: Path) -> None:
+    """The batch resolver issues ONE (cheap-tier) extraction call for ALL of a
+    meeting's entities + concepts and produces the same pages the per-candidate
+    resolvers would — the core FEAT-481 LLM cost optimization."""
+    from parrot.flows.wiki_ingest.nodes.entity_concept_batch import (
+        BatchConceptItem,
+        BatchEntityItem,
+        BatchExtraction,
+        run_entities_and_concepts,
+    )
+
+    toolkit = _toolkit(tmp_path)
+    calls = {"n": 0}
+
+    async def _invoke(prompt, *, output_type=None, **kwargs):
+        calls["n"] += 1
+        return _FakeInvokeResult(
+            BatchExtraction(
+                entities=[
+                    BatchEntityItem(name="Jane Doe", entity_type="person", materially_relevant=True, summary="Attendee."),
+                    BatchEntityItem(name="Acme Corp", entity_type="company", materially_relevant=True, summary="Client."),
+                ],
+                concepts=[
+                    BatchConceptItem(
+                        name="OAuth2", materially_relevant=True, definition="Auth pattern.", why_it_matters="SSO."
+                    )
+                ],
+            )
+        )
+
+    client = AsyncMock()
+    client.invoke = AsyncMock(side_effect=_invoke)
+
+    entity_results, concept_results = await run_entities_and_concepts(
+        client,
+        toolkit,
+        entity_candidates=[("Jane Doe", "person"), ("Acme Corp", "company")],
+        concept_candidates=["OAuth2"],
+        project_name="Acme Rollout",
+        meeting_source_link="Wiki/Sources/Meetings/new",
+        meeting_summary="Discussed OAuth2 SSO with Acme's Jane.",
+    )
+
+    assert calls["n"] == 1  # ONE call for all three candidates, not three
+    assert {r.vault_path for r in entity_results} == {
+        "Wiki/Entities/People/Jane Doe.md",
+        "Wiki/Entities/Companies/Acme Corp.md",
+    }
+    assert all(r.action == "created" for r in entity_results)
+    assert concept_results[0].vault_path == "Wiki/Concepts/OAuth2.md"
+
+
+@pytest.mark.asyncio
+async def test_batch_immaterial_items_not_created(tmp_path: Path) -> None:
+    """A batch item flagged not materially relevant produces no page (§20/§21)."""
+    from parrot.flows.wiki_ingest.nodes.entity_concept_batch import (
+        BatchEntityItem,
+        BatchExtraction,
+        run_entities_and_concepts,
+    )
+
+    toolkit = _toolkit(tmp_path)
+
+    async def _invoke(prompt, *, output_type=None, **kwargs):
+        return _FakeInvokeResult(
+            BatchExtraction(
+                entities=[BatchEntityItem(name="Someone", entity_type="person", materially_relevant=False, summary="")]
+            )
+        )
+
+    client = AsyncMock()
+    client.invoke = AsyncMock(side_effect=_invoke)
+
+    entity_results, _ = await run_entities_and_concepts(
+        client,
+        toolkit,
+        entity_candidates=[("Someone", "person")],
+        concept_candidates=[],
+        project_name=None,
+        meeting_source_link="Wiki/Sources/Meetings/new",
+        meeting_summary="Someone said hi.",
+    )
+    assert entity_results[0].action == "not_created"
+    assert entity_results[0].content is None
+
+
+@pytest.mark.asyncio
+async def test_batch_no_candidates_makes_no_call(tmp_path: Path) -> None:
+    """No entity/concept candidates → no LLM call at all."""
+    from parrot.flows.wiki_ingest.nodes.entity_concept_batch import run_entities_and_concepts
+
+    toolkit = _toolkit(tmp_path)
+    client = AsyncMock()
+    client.invoke = AsyncMock()
+
+    entity_results, concept_results = await run_entities_and_concepts(
+        client,
+        toolkit,
+        entity_candidates=[],
+        concept_candidates=[],
+        project_name=None,
+        meeting_source_link="Wiki/Sources/Meetings/new",
+        meeting_summary="x",
+    )
+    assert entity_results == []
+    assert concept_results == []
+    client.invoke.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_no_concept_for_every_noun(tmp_path: Path) -> None:
     """materially_relevant=False produces no page (§21 — not every noun)."""
     toolkit = _toolkit(tmp_path)

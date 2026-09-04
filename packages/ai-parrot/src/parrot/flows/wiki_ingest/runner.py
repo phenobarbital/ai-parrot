@@ -30,10 +30,9 @@ from pydantic import BaseModel, Field
 from . import conf
 from .naming import meeting_source_filename, now_iso, title_case_name
 from .nodes import classify as classify_node
-from .nodes import concepts as concepts_node
 from .nodes import contradictions as contradictions_node
 from .nodes import daily as daily_node
-from .nodes import entities as entities_node
+from .nodes import entity_concept_batch as entity_concept_batch_node
 from .nodes import fetch_gate as fetch_gate_node
 from .nodes import indexes as indexes_node
 from .nodes import log as log_node
@@ -46,6 +45,61 @@ from .render.project import parse_project_page
 from .validation import ValidationContext, validate
 
 logger = logging.getLogger(__name__)
+
+
+class IngestProfile(BaseModel):
+    """Cost/fidelity profile for one ingest run.
+
+    The ``full`` profile runs the whole contract pipeline at full fidelity
+    (steady-state). The ``backfill`` profile trades fidelity for LLM cost on a
+    one-time historical import, toggling off the most expensive strong-tier
+    work while still producing the core pages. Entity/concept resolution stays
+    ON in both — it is cheap (batched, cheap tier) after the FEAT-481 cost pass.
+
+    Attributes:
+        name: Profile name (``"full"`` / ``"backfill"``).
+        reconcile_additional_projects: Reconcile every additional related
+            project, not just the primary (the FEAT-481 #6 behavior).
+        detect_contradictions: Run §22 contradiction detection (strong tier).
+        classify_transcript_fallback: Allow the §15.4 full-transcript
+            classification fallback (strong tier, long input).
+        resolve_entities_concepts: Resolve §20/§21 entities + concepts.
+        update_overview: Update ``Wiki/overview.md`` per run (§24.2).
+    """
+
+    name: str = "full"
+    reconcile_additional_projects: bool = True
+    detect_contradictions: bool = True
+    classify_transcript_fallback: bool = True
+    resolve_entities_concepts: bool = True
+    update_overview: bool = True
+
+
+_PROFILES: dict[str, IngestProfile] = {
+    "full": IngestProfile(name="full"),
+    "backfill": IngestProfile(
+        name="backfill",
+        reconcile_additional_projects=False,
+        detect_contradictions=False,
+        classify_transcript_fallback=False,
+        resolve_entities_concepts=True,
+        update_overview=False,
+    ),
+}
+
+
+def resolve_profile(name: str | None) -> IngestProfile:
+    """Resolve an ingest profile by name (falls back to conf, then ``full``).
+
+    Args:
+        name: Requested profile name, or ``None`` to use
+            :data:`conf.WIKI_KB_INGEST_PROFILE`.
+
+    Returns:
+        The matching :class:`IngestProfile` (``full`` for an unknown name).
+    """
+    key = (name or conf.WIKI_KB_INGEST_PROFILE or "full").lower()
+    return _PROFILES.get(key, _PROFILES["full"])
 
 
 class WikiIngestContext(BaseModel):
@@ -66,6 +120,9 @@ class WikiIngestContext(BaseModel):
         lookback_days: Alternative to ``since`` — how many days back to
             widen the fetch window (bounded by
             :data:`~parrot.flows.wiki_ingest.conf.WIKI_KB_MAX_CATCHUP_DAYS`).
+        profile: Cost/fidelity profile name (``"full"`` / ``"backfill"``);
+            ``None`` uses :data:`conf.WIKI_KB_INGEST_PROFILE`. See
+            :class:`IngestProfile`.
         agent: The :class:`~parrot.flows.wiki_ingest.agent.FirefliesWikiKBAgent`
             instance — supplies ``strong_client``/``cheap_client`` (built
             in ``configure()``) and the MCP tool surface the fetch-gate
@@ -81,6 +138,7 @@ class WikiIngestContext(BaseModel):
     force_refetch: bool = False
     since: str | None = None
     lookback_days: int | None = None
+    profile: str | None = None
     agent: Any = None
 
 
@@ -149,6 +207,28 @@ async def _write_note(toolkit: Any, path: str, content: str, writes: list[_PageW
     except FileNotFoundError:
         await toolkit.create_note(path, content)
     writes.append(_PageWrite(path=path, previous_content=previous_content))
+
+
+async def _write_enrichment_page(
+    toolkit: Any,
+    vault_path: str,
+    content: str,
+    *,
+    writes: list[_PageWrite],
+    validation_ctx: ValidationContext,
+    touched_paths: list[str],
+) -> None:
+    """Write one resolved entity/concept page and record §34 evidence.
+
+    Shared by the batched entity + concept write loops so both record the
+    same rollback journal entry, wikilink/queued-page evidence, and
+    written-filename check.
+    """
+    await _write_note(toolkit, vault_path, content, writes)
+    touched_paths.append(vault_path)
+    validation_ctx.new_wikilinks.append(vault_path.removesuffix(".md"))
+    validation_ctx.existing_or_queued_pages.append(vault_path.removesuffix(".md"))
+    validation_ctx.written_filenames.append(Path(vault_path).name)
 
 
 async def _rollback(toolkit: Any, writes: list[_PageWrite]) -> None:
@@ -514,8 +594,10 @@ async def _process_one_meeting(
     meeting: fetch_gate_node.GatedMeeting,
     *,
     existing_context: classify_node.ExistingContext | None = None,
+    profile: IngestProfile | None = None,
 ) -> _MeetingOutcome:
     """Run the §27 per-meeting pipeline (steps 3-21) for one gated meeting."""
+    profile = profile or _PROFILES["full"]
     writes: list[_PageWrite] = []
     review_items: list[Any] = []
     validation_ctx = ValidationContext()
@@ -574,7 +656,10 @@ async def _process_one_meeting(
     # match-before-create (rule #6) — without it, a variant project name
     # would create a duplicate canonical page.
     classification_result = await classify_node.run_classify(
-        agent.strong_client, meeting, context=existing_context
+        agent.strong_client,
+        meeting,
+        context=existing_context,
+        allow_transcript_fallback=profile.classify_transcript_fallback,
     )
     classification = classification_result.classification
     if classification_result.review_item:
@@ -618,7 +703,7 @@ async def _process_one_meeting(
     try:
         # --- §9/§22 contradiction detection (before destination/meeting page) -
         contradiction_links: list[str] = []
-        if classification.primary_project:
+        if profile.detect_contradictions and classification.primary_project:
             project_path = _project_vault_path(classification.primary_project)
             touched_paths.append(project_path)
             try:
@@ -684,8 +769,12 @@ async def _process_one_meeting(
         reconcile_targets: list[tuple[str, list[str]]] = []
         if classification.primary_project:
             reconcile_targets.append((classification.primary_project, contradiction_titles))
-        for additional_project in classification.additional_projects:
-            reconcile_targets.append((additional_project, []))
+        # The backfill profile reconciles the primary project only — skipping
+        # the per-additional-project strong-tier reconcile call is the single
+        # biggest per-meeting saving on a bulk historical import.
+        if profile.reconcile_additional_projects:
+            for additional_project in classification.additional_projects:
+                reconcile_targets.append((additional_project, []))
 
         seen_projects: set[str] = set()
         for target_name, target_contradictions in reconcile_targets:
@@ -711,72 +800,61 @@ async def _process_one_meeting(
                 projects_touched.append(touched_project)
 
         # --- §20/§21 entities + concepts -----------------------------------------
-        entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]
-        entity_candidates += [(p, "product") for p in classification.products]
-        if classification.primary_client:
-            entity_candidates.append((classification.primary_client, "company"))
+        # Resolved in ONE cheap-tier batch call (was one strong-tier call per
+        # candidate — the dominant per-meeting LLM cost). The match-before-create
+        # lookup stays deterministic; only the extraction is batched. Same pages.
+        if profile.resolve_entities_concepts:
+            entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]
+            entity_candidates += [(p, "product") for p in classification.products]
+            if classification.primary_client:
+                entity_candidates.append((classification.primary_client, "company"))
 
-        for name, kind in entity_candidates:
             try:
-                entity_result = await entities_node.run_entity_resolve(
-                    agent.strong_client,
+                entity_results, concept_results = await entity_concept_batch_node.run_entities_and_concepts(
+                    agent.cheap_client,
                     toolkit,
-                    name,
-                    kind,  # type: ignore[arg-type]
+                    entity_candidates=entity_candidates,
+                    concept_candidates=list(classification.concepts),
                     project_name=classification.primary_project,
                     meeting_source_link=meeting_source_link,
                     meeting_summary=meeting.summary_text or "",
                 )
-                if entity_result.content and entity_result.vault_path:
-                    await _write_note(toolkit, entity_result.vault_path, entity_result.content, writes)
-                    touched_paths.append(entity_result.vault_path)
-                    validation_ctx.new_wikilinks.append(entity_result.vault_path.removesuffix(".md"))
-                    validation_ctx.existing_or_queued_pages.append(entity_result.vault_path.removesuffix(".md"))
-                    validation_ctx.written_filenames.append(Path(entity_result.vault_path).name)
             except Exception as exc:
                 # Best-effort enrichment: the meeting itself compiled and its
-                # pages link the entity — a future meeting mentioning it will
-                # create the page. Surface the failure to the Review Queue
-                # instead of swallowing it silently (do NOT fail the whole
-                # meeting for one flaky entity — that would let a single
-                # problematic name permanently block an otherwise-good ingest).
-                logger.warning("Entity resolve failed for %r", name, exc_info=True)
+                # pages link the entities/concepts — a future meeting will create
+                # the pages. Surface the failure to the Review Queue instead of
+                # failing the whole meeting for a flaky enrichment call.
+                logger.warning("Entity/concept batch resolve failed for %s", meeting.source_id, exc_info=True)
+                entity_results, concept_results = [], []
                 review_items.append(
                     classify_node.ReviewItemDraft(
                         review_type="entity-resolution-failed",
                         source_id=meeting.source_id,
-                        issue=f"Entity resolution failed for {name!r} ({kind}); page not created this run",
+                        issue="Entity/concept batch resolution failed; pages not created this run",
                         evidence=str(exc)[:300],
                     )
                 )
 
-        for concept_name in classification.concepts:
-            try:
-                concept_result = await concepts_node.run_concept_resolve(
-                    agent.strong_client,
-                    toolkit,
-                    concept_name,
-                    project_name=classification.primary_project,
-                    meeting_source_link=meeting_source_link,
-                    meeting_summary=meeting.summary_text or "",
-                )
-                if concept_result.content and concept_result.vault_path:
-                    await _write_note(toolkit, concept_result.vault_path, concept_result.content, writes)
-                    touched_paths.append(concept_result.vault_path)
-                    validation_ctx.new_wikilinks.append(concept_result.vault_path.removesuffix(".md"))
-                    validation_ctx.existing_or_queued_pages.append(concept_result.vault_path.removesuffix(".md"))
-                    validation_ctx.written_filenames.append(Path(concept_result.vault_path).name)
-            except Exception as exc:
-                # Best-effort enrichment (see the entity loop above).
-                logger.warning("Concept resolve failed for %r", concept_name, exc_info=True)
-                review_items.append(
-                    classify_node.ReviewItemDraft(
-                        review_type="entity-resolution-failed",
-                        source_id=meeting.source_id,
-                        issue=f"Concept resolution failed for {concept_name!r}; page not created this run",
-                        evidence=str(exc)[:300],
+            for entity_result in entity_results:
+                if entity_result.content and entity_result.vault_path:
+                    await _write_enrichment_page(
+                        toolkit,
+                        entity_result.vault_path,
+                        entity_result.content,
+                        writes=writes,
+                        validation_ctx=validation_ctx,
+                        touched_paths=touched_paths,
                     )
-                )
+            for concept_result in concept_results:
+                if concept_result.content and concept_result.vault_path:
+                    await _write_enrichment_page(
+                        toolkit,
+                        concept_result.vault_path,
+                        concept_result.content,
+                        writes=writes,
+                        validation_ctx=validation_ctx,
+                        touched_paths=touched_paths,
+                    )
 
         # --- §23 daily synthesis --------------------------------------------------
         daily_path = f"Diary/Daily Notes/{meeting.meeting_date}.md"
@@ -930,6 +1008,9 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     # a project/entity that only differs by spelling.
     existing_context = await _build_existing_context(toolkit)
 
+    profile = resolve_profile(ctx.profile)
+    logger.info("Ingest profile: %s", profile.name)
+
     raw_processed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Processed"
     raw_failed_root = Path(vault_path) / conf.WIKI_KB_RAW_ROOT / "Failed"
 
@@ -1007,7 +1088,7 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
 
         try:
             outcome = await _process_one_meeting(
-                agent, toolkit, registry, vault_path, meeting, existing_context=existing_context
+                agent, toolkit, registry, vault_path, meeting, existing_context=existing_context, profile=profile
             )
         except Exception as exc:
             logger.exception("Ingest failed for %s", meeting.source_id)
@@ -1127,8 +1208,10 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     except Exception:
         logger.warning("Wiki index rebuild failed", exc_info=True)
 
-    # §24.2 overview — updated only on a material change.
-    if report.created or report.updated:
+    # §24.2 overview — updated only on a material change (skipped entirely by
+    # the backfill profile; a single overview rebuild after the import is
+    # cheaper than one strong-tier materiality check per run).
+    if profile.update_overview and (report.created or report.updated):
         try:
             await _maybe_update_overview(agent.strong_client, toolkit, report)
         except Exception:

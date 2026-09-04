@@ -174,17 +174,55 @@ async def run_entity_resolve(
     Returns:
         The :class:`EntityResolveResult`.
     """
+    match, existing_state, existing_frontmatter = await resolve_existing_entity(toolkit, candidate_name, entity_type)
+    prompt = build_entity_prompt(candidate_name, entity_type, meeting_source_link, meeting_summary, existing_state)
+    result = await strong_client.invoke(
+        prompt, output_type=EntityExtraction, system_prompt=_SYSTEM_PROMPT, temperature=0.0
+    )
+    return apply_entity_extraction(
+        result.output,
+        candidate_name=candidate_name,
+        entity_type=entity_type,
+        match=match,
+        existing_state=existing_state,
+        existing_frontmatter=existing_frontmatter,
+        project_name=project_name,
+        meeting_source_link=meeting_source_link,
+    )
+
+
+async def resolve_existing_entity(
+    toolkit: ObsidianToolkit,
+    candidate_name: str,
+    entity_type: Literal["person", "company", "product"],
+) -> tuple[PageMatch | None, EntityState | None, dict[str, Any]]:
+    """Deterministic (no-LLM) match-before-create lookup + existing-page read.
+
+    Split out of :func:`run_entity_resolve` so the batch resolver
+    (:mod:`~.entity_concept_batch`) can gather this context for every
+    candidate BEFORE issuing a single shared extraction call.
+
+    Returns:
+        ``(match, existing_state, existing_frontmatter)`` — ``match`` is
+        ``None`` for a new entity; the state/frontmatter are then empty.
+    """
     folder = _ENTITY_FOLDERS[entity_type]
     match = await find_matching_page(toolkit, candidate_name, folder=folder)
+    if match is None:
+        return None, None, {}
+    existing_note = await toolkit.read_note(match.path)
+    return match, _parse_entity_body(existing_note["content"]), (existing_note.get("frontmatter", {}) or {})
 
-    existing_state: EntityState | None = None
-    existing_frontmatter: dict[str, Any] = {}
-    if match is not None:
-        existing_note = await toolkit.read_note(match.path)
-        existing_state = _parse_entity_body(existing_note["content"])
-        existing_frontmatter = existing_note.get("frontmatter", {}) or {}
 
-    prompt = "\n".join(
+def build_entity_prompt(
+    candidate_name: str,
+    entity_type: str,
+    meeting_source_link: str,
+    meeting_summary: str,
+    existing_state: EntityState | None,
+) -> str:
+    """Build the §20 single-entity extraction prompt."""
+    return "\n".join(
         [
             f"Entity name: {candidate_name} ({entity_type})",
             f"Meeting: {meeting_source_link}",
@@ -192,14 +230,28 @@ async def run_entity_resolve(
             f"Existing summary: {existing_state.summary if existing_state else '(new entity)'}",
         ]
     )
-    result = await strong_client.invoke(
-        prompt, output_type=EntityExtraction, system_prompt=_SYSTEM_PROMPT, temperature=0.0
-    )
-    extraction: EntityExtraction = result.output
 
+
+def apply_entity_extraction(
+    extraction: EntityExtraction,
+    *,
+    candidate_name: str,
+    entity_type: Literal["person", "company", "product"],
+    match: PageMatch | None,
+    existing_state: EntityState | None,
+    existing_frontmatter: dict[str, Any],
+    project_name: str | None,
+    meeting_source_link: str,
+) -> EntityResolveResult:
+    """Merge one entity extraction with existing state + render (no LLM).
+
+    Pure post-extraction logic, shared by the single-entity resolver and
+    the batch resolver so both produce byte-identical pages.
+    """
     if not extraction.materially_relevant:
         return EntityResolveResult(action="not_created")
 
+    folder = _ENTITY_FOLDERS[entity_type]
     canonical_name = match.canonical_name if match else title_case_name(candidate_name)
     now = now_iso()
 

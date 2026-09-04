@@ -22,7 +22,7 @@ from ..models import ConceptFrontmatter
 from ..naming import now_iso, title_case_name
 from ..render.concept import ConceptState, render_concept_page
 from ..render.project import _parse_section
-from .entities import find_matching_page
+from .entities import PageMatch, find_matching_page
 
 logger = logging.getLogger(__name__)
 
@@ -98,14 +98,41 @@ async def run_concept_resolve(
     Returns:
         The :class:`ConceptResolveResult`.
     """
+    match, existing_state = await resolve_existing_concept(toolkit, candidate_name)
+    prompt = build_concept_prompt(candidate_name, meeting_source_link, meeting_summary, existing_state)
+    result = await strong_client.invoke(
+        prompt, output_type=ConceptExtraction, system_prompt=_SYSTEM_PROMPT, temperature=0.0
+    )
+    return apply_concept_extraction(
+        result.output,
+        candidate_name=candidate_name,
+        match=match,
+        existing_state=existing_state,
+        project_name=project_name,
+        meeting_source_link=meeting_source_link,
+    )
+
+
+async def resolve_existing_concept(
+    toolkit: ObsidianToolkit, candidate_name: str
+) -> tuple[PageMatch | None, ConceptState | None]:
+    """Deterministic (no-LLM) match-before-create lookup + existing-page read.
+
+    Split out of :func:`run_concept_resolve` so the batch resolver can
+    gather this context for every candidate before one shared call.
+    """
     match = await find_matching_page(toolkit, candidate_name, folder=_CONCEPTS_FOLDER)
+    if match is None:
+        return None, None
+    existing_note = await toolkit.read_note(match.path)
+    return match, _parse_concept_body(existing_note["content"])
 
-    existing_state: ConceptState | None = None
-    if match is not None:
-        existing_note = await toolkit.read_note(match.path)
-        existing_state = _parse_concept_body(existing_note["content"])
 
-    prompt = "\n".join(
+def build_concept_prompt(
+    candidate_name: str, meeting_source_link: str, meeting_summary: str, existing_state: ConceptState | None
+) -> str:
+    """Build the §21 single-concept extraction prompt."""
+    return "\n".join(
         [
             f"Concept name: {candidate_name}",
             f"Meeting: {meeting_source_link}",
@@ -113,11 +140,22 @@ async def run_concept_resolve(
             f"Existing definition: {existing_state.definition if existing_state else '(new concept)'}",
         ]
     )
-    result = await strong_client.invoke(
-        prompt, output_type=ConceptExtraction, system_prompt=_SYSTEM_PROMPT, temperature=0.0
-    )
-    extraction: ConceptExtraction = result.output
 
+
+def apply_concept_extraction(
+    extraction: ConceptExtraction,
+    *,
+    candidate_name: str,
+    match: PageMatch | None,
+    existing_state: ConceptState | None,
+    project_name: str | None,
+    meeting_source_link: str,
+) -> ConceptResolveResult:
+    """Merge one concept extraction with existing state + render (no LLM).
+
+    Pure post-extraction logic, shared by the single-concept resolver and
+    the batch resolver so both produce byte-identical pages.
+    """
     if not extraction.materially_relevant:
         return ConceptResolveResult(action="not_created")
 

@@ -115,6 +115,7 @@ class FirefliesWikiKBAgent(Agent):
         force_refetch: bool = False,
         since: str | None = None,
         lookback_days: int | None = None,
+        profile: str | None = None,
     ) -> IngestReport:
         """Run the §27 ingest workflow (fetch → compile → validate).
 
@@ -137,6 +138,11 @@ class FirefliesWikiKBAgent(Agent):
             since: ISO date lower bound for a manual wide-window ingest.
             lookback_days: Alternative to ``since`` — how many days back
                 to widen the fetch window.
+            profile: Cost/fidelity profile — ``"full"`` (default) or
+                ``"backfill"`` (reduced-fidelity, lower-cost historical
+                import: summary-only classify, primary-project reconcile
+                only, no contradiction detection, no per-run overview).
+                Defaults to :data:`conf.WIKI_KB_INGEST_PROFILE`.
 
         Returns:
             The :class:`IngestReport` produced by the run.
@@ -149,6 +155,7 @@ class FirefliesWikiKBAgent(Agent):
             force_refetch=force_refetch,
             since=since,
             lookback_days=lookback_days,
+            profile=profile,
             agent=self,
         )
         if self.strong_client is None or self.cheap_client is None:
