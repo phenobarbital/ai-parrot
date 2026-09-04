@@ -421,6 +421,61 @@ class MetaClient(OpenAIBaseClient):
 
         return _ResponsesCompatResult(raw=resp, message=message, finish_reason=finish_reason)
 
+    @staticmethod
+    def _extract_cached_tokens(usage: Any) -> int | None:
+        """Extract ``cached_tokens`` from either usage-details shape.
+
+        Chat Completions reports it at ``usage.prompt_tokens_details.cached_tokens``;
+        Responses reports the same value at
+        ``usage.input_tokens_details.cached_tokens``. Prompt caching itself
+        is automatic server-side — this is observability only (spec §1
+        Non-Goals).
+
+        Args:
+            usage: The raw SDK usage object (or dict) from either wire shape.
+
+        Returns:
+            The cached-token count, or ``None`` if not present.
+        """
+        if usage is None:
+            return None
+        if isinstance(usage, dict):
+            details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
+        else:
+            details = getattr(usage, "prompt_tokens_details", None) or getattr(
+                usage, "input_tokens_details", None
+            )
+        if details is None:
+            return None
+        if isinstance(details, dict):
+            return details.get("cached_tokens")
+        return getattr(details, "cached_tokens", None)
+
+    async def count_input_tokens(self, *, model: str | None = None, input: Any, **kwargs: Any) -> int:  # noqa: A002 — spec-mandated parameter name
+        """Count input tokens for a prospective Responses API request.
+
+        Standalone endpoint (``POST /v1/responses/input_tokens``) — it does
+        not depend on the generation path, only on the client's
+        credentials and base URL, so it works regardless of
+        ``self.use_responses``.
+
+        Args:
+            model: Model to count for, or ``None`` to use the configured one.
+            input: The Responses-shaped ``input`` payload to count tokens for.
+            **kwargs: Additional args forwarded to the SDK call (e.g.
+                ``instructions``, ``tools``).
+
+        Returns:
+            The input token count.
+        """
+        await self._ensure_client()
+        model_str = self._resolve_model(model)
+        resp = await self.client.responses.input_tokens(model=model_str, input=input, **kwargs)
+        count = getattr(resp, "input_tokens", None)
+        if count is None and isinstance(resp, dict):
+            count = resp.get("input_tokens")
+        return int(count) if count is not None else 0
+
     async def ask(
         self,
         prompt: str,
@@ -434,6 +489,7 @@ class MetaClient(OpenAIBaseClient):
         tools: list[dict[str, Any]] | None = None,
         use_tools: bool | None = None,
         lazy_loading: bool = False,
+        search_grounding: bool = False,
     ) -> AIMessage:
         """Ask Meta Model API a question, routing via ``use_responses``.
 
@@ -445,7 +501,8 @@ class MetaClient(OpenAIBaseClient):
         loop (:meth:`~parrot.clients.openai_base.OpenAIBaseClient._run_tool_call_loop`)
         so a full tool-calling round trip works on both paths.
 
-        Keeps the base's signature exactly (spec §6/§7) so the funnel-parity
+        Keeps the base's signature exactly, plus the additive
+        ``search_grounding`` keyword (spec §6/§7), so the funnel-parity
         sweep in ``tests/clients/test_openai_base_parity.py`` continues to
         pass.
 
@@ -463,10 +520,30 @@ class MetaClient(OpenAIBaseClient):
             tools: Tools to register for this call.
             use_tools: Whether to use tools; defaults to ``self.enable_tools``.
             lazy_loading: If ``True``, enable dynamic tool searching.
+            search_grounding: If ``True``, inject Meta's native web-search
+                tool (``{"type": "web_search"}``) into the Responses
+                request, enabling live retrieval grounding. Opt-in and
+                ``False`` by default — it triggers live web requests and
+                bills for extra model iterations. Requires
+                ``self.use_responses`` (Responses-API only); citation/
+                annotation extraction is explicitly NOT implemented — a
+                verified-good grounded response returned empty
+                ``annotations`` (spec §7 gotcha 5).
 
         Returns:
             The response from the model.
+
+        Raises:
+            ValueError: If ``search_grounding=True`` while
+                ``self.use_responses`` is ``False``.
         """
+        if search_grounding and not self.use_responses:
+            raise ValueError(
+                "search_grounding requires the Responses API path "
+                "(use_responses=True); this client was configured with "
+                "use_responses=False."
+            )
+
         if not self.use_responses:
             return await super().ask(
                 prompt,
@@ -513,6 +590,13 @@ class MetaClient(OpenAIBaseClient):
             args["tools"] = prepared_tools
             args["tool_choice"] = "auto"
 
+        if search_grounding:
+            web_search_tool = {"type": "web_search"}
+            existing_tools = args.get("tools") or []
+            if web_search_tool not in existing_tools:
+                args["tools"] = [*existing_tools, web_search_tool]
+                args["tool_choice"] = "auto"
+
         resolved_max_tokens = self._resolve_max_tokens(max_tokens)
         if resolved_max_tokens is not None:
             args["max_output_tokens"] = resolved_max_tokens
@@ -553,6 +637,31 @@ class MetaClient(OpenAIBaseClient):
             ai_message.usage = accumulated_usage
 
         ai_message.tool_calls = all_tool_calls
+
+        # Surface web_search_call output items so callers can distinguish a
+        # grounded answer from an ungrounded one. Deliberately NOT extracting
+        # citations/annotations here — a verified-good grounded response
+        # returned empty `annotations` (spec §7 gotcha 5); no promise the
+        # API does not currently keep.
+        raw_output = getattr(response.raw, "output", None)
+        if raw_output is None and isinstance(response.raw, dict):
+            raw_output = response.raw.get("output")
+        web_search_call_ids = [
+            (item.get("id") if isinstance(item, dict) else getattr(item, "id", None))
+            for item in (raw_output or [])
+            if (item.get("type") if isinstance(item, dict) else getattr(item, "type", None)) == "web_search_call"
+        ]
+        if web_search_call_ids:
+            ai_message.metadata["web_search_calls"] = web_search_call_ids
+            ai_message.metadata["search_grounded"] = True
+
+        # Cached-token observability (spec §1 Non-Goal: caching itself is
+        # automatic server-side; nothing to implement beyond surfacing it).
+        raw_usage = getattr(response.raw, "usage", None)
+        cached_tokens = self._extract_cached_tokens(raw_usage)
+        if cached_tokens is not None:
+            ai_message.usage.extra_usage["cached_tokens"] = cached_tokens
+
         return ai_message
 
     async def ask_stream(
