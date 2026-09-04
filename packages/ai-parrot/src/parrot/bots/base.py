@@ -14,7 +14,7 @@ import asyncio
 import time
 import warnings
 from pydantic import BaseModel
-from ..memory import ConversationTurn, render_history
+from ..memory import ConversationTurn
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
@@ -329,6 +329,7 @@ class BaseBot(AbstractBot):
             # Get conversation history using unified memory
             conversation_history = None
             rendered_history = []
+            compaction_result = None
 
             memory = memory or self.conversation_memory
 
@@ -342,11 +343,9 @@ class BaseBot(AbstractBot):
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
                 # conversation-context metadata below.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -546,7 +545,13 @@ class BaseBot(AbstractBot):
                             chatbot_id=self.memory_key_id,
                             context_used=vector_context if use_vector_context else None,
                         )
-                        await self.save_conversation_turn(user_id, session_id, turn)
+                        commit = None
+                        if compaction_result is not None:
+                            commit = self.build_compaction_commit(
+                                compaction_result,
+                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                            )
+                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
 
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
@@ -693,6 +698,7 @@ class BaseBot(AbstractBot):
             # Get conversation history using unified memory
             conversation_history = None
             rendered_history = []
+            compaction_result = None
 
             memory = memory or self.conversation_memory
 
@@ -706,11 +712,9 @@ class BaseBot(AbstractBot):
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
                 # conversation-context metadata below.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(user_id=user_id, session_id=session_id, **kwargs)
@@ -770,7 +774,13 @@ class BaseBot(AbstractBot):
                         chatbot_id=self.memory_key_id,
                         context_used=None,  # invoke does not use vector context,
                     )
-                    await self.save_conversation_turn(user_id, session_id, turn)
+                    commit = None
+                    if compaction_result is not None:
+                        commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
@@ -1118,6 +1128,7 @@ class BaseBot(AbstractBot):
             # Get conversation history
             conversation_history = None
             rendered_history = []
+            compaction_result = None
             memory = memory or self.conversation_memory
 
             phase_started = time.perf_counter()
@@ -1131,11 +1142,9 @@ class BaseBot(AbstractBot):
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
                 # conversation-context metadata below.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
             self.logger.debug(
                 "[%s] ask timing: conversation_history_ms=%.1f",
                 self.name,
@@ -1372,7 +1381,13 @@ class BaseBot(AbstractBot):
                         chatbot_id=self.memory_key_id,
                         context_used=vector_context if use_vector_context else None,
                     )
-                    await self.save_conversation_turn(user_id, session_id, turn)
+                    commit = None
+                    if compaction_result is not None:
+                        commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
                     self.name,
@@ -1720,6 +1735,7 @@ class BaseBot(AbstractBot):
             search_kwargs = search_kwargs or {}
 
             rendered_history = []
+            compaction_result = None
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
@@ -1732,11 +1748,9 @@ class BaseBot(AbstractBot):
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
                 # conversation-context metadata below.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}

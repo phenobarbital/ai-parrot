@@ -35,7 +35,7 @@ from ..clients.live import (
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
 from ..mcp import MCPEnabledMixin, MCPServerConfig
-from ..memory import ConversationTurn, render_history
+from ..memory import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
     current_session_id,
@@ -776,11 +776,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             if self.conversation_memory:
                 conversation_history = await self.get_conversation_history(user_id, session_id)
                 # FEAT-524: history goes to the provider as alternating messages.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise. This
+                # method has no save site (no rendered prompt to pair for
+                # calibration), so the CompactionResult is discarded.
+                rendered_history, _compaction_result = await self.render_context_history(conversation_history)
 
             # Create system prompt dynamically
             system_prompt = await self.create_system_prompt(

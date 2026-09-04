@@ -218,7 +218,7 @@ class Chatbot(BaseBot):
         # Memory and conversation configuration
         self.memory_type = getattr(self, "memory_type", "memory")
         self.memory_config = getattr(self, "memory_config", {})
-        self.max_context_turns = getattr(self, "max_context_turns", 5)
+        self.max_context_turns = getattr(self, "max_context_turns", None)
         self.use_conversation_history = getattr(self, "use_conversation_history", True)
 
         # Context and retrieval settings — fall back to per-model catalog
@@ -375,7 +375,12 @@ class Chatbot(BaseBot):
         # Memory and conversation configuration
         self.memory_type = self._from_db(bot, "memory_type", default="memory")
         self.memory_config = self._from_db(bot, "memory_config", default={})
-        self.max_context_turns = self._from_db(bot, "max_context_turns", default=5)
+        # FEAT-525: absent (None) means "use ContextBudget.max_turns (30)
+        # as the ceiling"; an explicit DB value overrides it. Note `_from_db`
+        # returns `value or default`, so a DB record with an explicit `0`
+        # also falls through to `None` here — acceptable: `0` is not a
+        # meaningful turn ceiling either way.
+        self.max_context_turns = self._from_db(bot, "max_context_turns", default=None)
         self.use_conversation_history = self._from_db(bot, "use_conversation_history", default=True)
 
         # Context and retrieval settings — fall back to per-model catalog
@@ -535,7 +540,7 @@ class Chatbot(BaseBot):
                         "context_score_threshold": getattr(self, "context_score_threshold", 0.7),
                         "memory_type": getattr(self, "memory_type", "memory"),
                         "memory_config": getattr(self, "memory_config", {}),
-                        "max_context_turns": getattr(self, "max_context_turns", 5),
+                        "max_context_turns": getattr(self, "max_context_turns", None),
                         "use_conversation_history": getattr(self, "use_conversation_history", True),
                         "permissions": self._permissions,
                         "language": getattr(self, "language", "en"),
@@ -583,7 +588,7 @@ class Chatbot(BaseBot):
             "llm": self._llm,
             "model_name": self._llm_model,
             "memory_type": getattr(self, "memory_type", "memory"),
-            "max_context_turns": getattr(self, "max_context_turns", 5),
+            "max_context_turns": getattr(self, "max_context_turns", None),
             "auto_tool_detection": getattr(self, "auto_tool_detection", True),
             "tool_threshold": getattr(self, "tool_threshold", 0.7),
             "language": getattr(self, "language", "en"),
