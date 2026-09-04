@@ -197,10 +197,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Implemented the dual-emit routing rule in both
+`PandasAgent.ask()` (`data.py` post-loop, replacing the old
+switch-to-A2UI-if-envelope branch) and `BaseBot.ask()` (`base.py`, same
+replacement). Both now: (1) `output_mode==A2UI` + envelope present →
+`finalize_a2ui_response` + `response.artifact_id` + `response.metadata`
+populated with `html_url`/`artifact_id`/`template_name`/`theme`/`enhanced`,
+explanation captured before any overwrite and restored after; (2) default
+mode (or A2UI-requested-but-no-envelope, with a logged warning) → existing
+`_finalize_infographic_response` HTML-primary path, PLUS `response.a2ui_envelope`
+set when an envelope is available (never dropped). `ask()` in both classes is
+too large to invoke directly in a unit test (existing convention already
+established by `TestPandasAgentRoutesA2UI`), so the routing rule is verified
+via source-level assertions (ordering of the warning vs. the fallback call,
+presence of the metadata keys, presence of the additive `a2ui_envelope`
+assignment) plus behavioural tests of the small, self-independent
+`_finalize_infographic_response` helpers. Added
+`test_basebot_infographic_dual_emit.py` (new) and extended
+`test_pandasagent_infographic.py` with `TestPandasAgentDualEmitRouting`;
+updated two pre-existing source-string assertions in
+`TestPandasAgentRoutesA2UI` that referenced the old
+`infographic_envelope.a2ui_envelope` attribute-access literal (now
+`getattr(infographic_envelope, "a2ui_envelope", None)`). 39/41 targeted
+tests pass; the 2 failures (`test_flex_dashboard_agent.py` and
+`test_infographic_authoring_mixin.py::test_validation_gate_blocks_before_render`)
+are confirmed pre-existing on the base commit (verified via `git stash`),
+unrelated to this change. `ruff check` on `data.py`/`base.py` shows only
+pre-existing findings outside the edited regions (verified by line number).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
