@@ -1,43 +1,34 @@
 """LLM client factory: string-spec parsing + provider discovery/catalogue.
 
-FEAT-523 (TASK-2847): core no longer statically imports every concrete
-provider client at module scope. Instead ``SUPPORTED_CLIENTS`` is a
-lazily-populated registry, filled in by :func:`_discover` from two
-sources:
+FEAT-523 (TASK-2854): core no longer statically imports any concrete
+provider client at module scope, and no longer knows about any provider
+by name — ``SUPPORTED_CLIENTS`` is a lazily-populated registry, filled in
+by :func:`_discover` purely from **entry points**
+(``importlib.metadata.entry_points(group="parrot.clients")``): each
+installed satellite distribution (``ai-parrot-client-<provider>``)
+declares one entry point per provider key; the value is a zero-arg loader
+(``EntryPoint.load``) resolved lazily, exactly like the pre-existing
+``_lazy_*`` closures this module used to hand-write before TASK-2847.
 
-1. **Entry points** (``importlib.metadata.entry_points(group="parrot.clients")``)
-   — the long-term mechanism. Each installed satellite distribution
-   (``ai-parrot-client-<provider>``) declares one entry point per provider
-   key; the value is a zero-arg loader (``EntryPoint.load``) resolved lazily,
-   exactly like the pre-existing ``_lazy_*`` closures this module used to
-   hand-write.
-2. **The transitional in-core registry** (``_IN_CORE_PROVIDERS``) — providers
-   that still live inside ``ai-parrot`` core because their satellite
-   extraction (TASK-2849..2853) has not landed yet. For each, the
-   ``parrot.clients.<provider>`` package is imported dynamically and every
-   re-exported class in its ``__all__`` that carries a non-empty
-   ``provider_keys`` tuple is registered under each of those keys.
+TASK-2847..2853 introduced and then emptied out a second, transitional
+source — an in-core provider walk (``_IN_CORE_PROVIDERS``) for providers
+that still lived inside ``ai-parrot`` core while their satellite
+extraction was in flight. That tuple and its consuming branch in
+:func:`_discover` are gone as of this task: with all 15 providers
+extracted, entry points are the only source, and a venv with zero
+satellites installed now genuinely sees zero registered providers
+(``LLMFactory.list_providers() == {}``), rather than falling back to
+importing anything from ``ai-parrot`` itself.
 
-First registration wins — an entry point discovered before the transitional
-walk claims its key; if the transitional walk later tries to register the
-same key with a *different* class, the collision is logged and the
-existing registration keeps precedence. This lets a real satellite
-supersede the in-core fallback simply by being installed, without this
-module needing to know about it.
-
-Discovery is intentionally **not** run eagerly at import time: several
-in-core providers (e.g. ``gemma4``, ``hf``) carry heavier optional ML
-dependencies, and importing them just because some unrelated module
-imported ``parrot.clients.factory`` would defeat the "core must resolve
-clients without importing them" goal this feature exists for. Instead,
-``SUPPORTED_CLIENTS`` is a small ``dict`` subclass that triggers
-:func:`_discover` lazily, on first read (``in``, ``[]``, ``.get``,
+Discovery is intentionally **not** run eagerly at import time — importing
+``parrot.clients.factory`` must never import any provider, satellite or
+not. Instead, ``SUPPORTED_CLIENTS`` is a small ``dict`` subclass that
+triggers :func:`_discover` lazily, on first read (``in``, ``[]``, ``.get``,
 ``.keys()``, ``.items()``, ``.values()``, iteration, ``len()``) — this
 keeps every existing ``from parrot.clients.factory import SUPPORTED_CLIENTS``
 call site (there are about a dozen across core/server/pipelines) working
 unchanged, whether they read it inline or hold on to the imported name.
 """
-import importlib
 import importlib.metadata as importlib_metadata
 import logging
 from typing import Any, Dict, Optional, Tuple
@@ -46,22 +37,6 @@ from .base import AbstractClient
 
 logger = logging.getLogger(__name__)
 
-# Providers still living inside ai-parrot core (transitional — spec §2).
-# Removed one at a time as TASK-2849..2853 extract each into its own
-# ai-parrot-client-<provider> satellite distribution (TASK-2854 drops this
-# tuple entirely once every provider has an entry point).
-_IN_CORE_PROVIDERS: Tuple[str, ...] = (
-    # Empty: every provider has been extracted to its own
-    # ai-parrot-client-<provider> satellite distribution and registers via
-    # a real `parrot.clients` entry point instead —
-    # "openai"/"meta" (TASK-2849), "anthropic"/"amazon" (TASK-2850),
-    # "google"/"gemma4"/"hf" (TASK-2851), "groq"/"grok"/"zai" (TASK-2852),
-    # "nvidia"/"moonshot"/"openrouter"/"local"/"vllm" (TASK-2853).
-    # The tuple and the transitional walk that consumes it are kept as-is
-    # (not deleted) per this task's own "NOT in scope: Removing the
-    # transitional registry (TASK-2854)" — that cleanup is TASK-2854's job.
-)
-
 # Guards _discover() so repeated calls (from create()/list_providers()/
 # list_models()/supported_clients(), or from every SUPPORTED_CLIENTS read)
 # are no-ops after the first successful pass. Tests reset this directly
@@ -69,9 +44,8 @@ _IN_CORE_PROVIDERS: Tuple[str, ...] = (
 # to force a fresh discovery pass against mocked entry points.
 _DISCOVERED = False
 
-# key -> distribution name ("ai-parrot" for the transitional in-core
-# registry, or the installed satellite's distribution name for an
-# entry-point-sourced key). Backs LLMFactory.list_providers().
+# key -> distribution name (the installed satellite's distribution name
+# that supplied the entry point). Backs LLMFactory.list_providers().
 _PROVIDER_DIST: Dict[str, str] = {}
 
 
@@ -157,33 +131,21 @@ def _register(key: str, value: Any, dist_name: str) -> None:
 
 
 def _discover() -> None:
-    """Populate ``SUPPORTED_CLIENTS`` from entry points + the transitional
-    in-core registry. Idempotent, guarded by :data:`_DISCOVERED`."""
+    """Populate ``SUPPORTED_CLIENTS`` from installed satellites' entry
+    points. Idempotent, guarded by :data:`_DISCOVERED`.
+
+    FEAT-523 (TASK-2854): this is now the *only* source. With zero
+    ``ai-parrot-client-*`` satellites installed, ``SUPPORTED_CLIENTS``
+    stays empty and ``LLMFactory.list_providers()`` returns ``{}`` — core
+    genuinely does not know about any provider until one is installed.
+    """
     global _DISCOVERED
     if _DISCOVERED:
         return
 
-    # (a) External satellites, via importlib.metadata entry points.
     for ep in importlib_metadata.entry_points(group="parrot.clients"):
         dist_name = ep.dist.name if getattr(ep, "dist", None) is not None else ep.name
         _register(ep.name, ep.load, dist_name)
-
-    # (b) Transitional: providers still living inside ai-parrot core.
-    for provider in _IN_CORE_PROVIDERS:
-        try:
-            pkg = importlib.import_module(f"parrot.clients.{provider}")
-        except ImportError as exc:
-            logger.warning("In-core LLM provider '%s' failed to import: %s", provider, exc)
-            continue
-        for name in getattr(pkg, "__all__", ()):
-            cls = getattr(pkg, name, None)
-            if not isinstance(cls, type):
-                continue
-            provider_keys = getattr(cls, "provider_keys", None)
-            if not provider_keys:
-                continue
-            for key in provider_keys:
-                _register(key, cls, "ai-parrot")
 
     _DISCOVERED = True
 
@@ -251,9 +213,9 @@ class LLMFactory:
 
     @staticmethod
     def list_providers() -> Dict[str, str]:
-        """Return every discovered provider key mapped to its source
-        distribution name (``"ai-parrot"`` for the transitional in-core
-        registry, or the installed satellite's distribution name).
+        """Return every discovered provider key mapped to the installed
+        satellite distribution name that supplied it. Empty with zero
+        ``ai-parrot-client-*`` satellites installed.
         """
         _discover()
         return dict(_PROVIDER_DIST)

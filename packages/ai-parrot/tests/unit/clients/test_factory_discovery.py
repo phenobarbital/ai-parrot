@@ -1,9 +1,9 @@
 """TASK-2847: entry-point discovery + catalogue tests for ``LLMFactory``.
 
 Spec §4 Module 3 rows. Exercises ``factory._discover()`` in isolation via
-mocked ``importlib.metadata.entry_points`` and the transitional
-``_IN_CORE_PROVIDERS`` registry, plus the new ``list_providers()`` /
-``list_models()`` catalogue methods.
+mocked ``importlib.metadata.entry_points`` — the sole discovery source
+since TASK-2854 removed the transitional ``_IN_CORE_PROVIDERS`` registry
+— plus the ``list_providers()``/``list_models()`` catalogue methods.
 """
 import importlib.metadata as md
 
@@ -59,9 +59,11 @@ def test_duplicate_entry_point_warning(monkeypatch, caplog):
 
 
 def test_create_missing_satellite(monkeypatch):
+    # FEAT-523 (TASK-2854): _IN_CORE_PROVIDERS no longer exists — entry
+    # points are the only discovery source now, so an empty entry_points()
+    # result alone is enough to simulate zero satellites installed.
     _reset(monkeypatch)
     monkeypatch.setattr(md, "entry_points", lambda group=None: [])
-    monkeypatch.setattr(factory, "_IN_CORE_PROVIDERS", ())
     with pytest.raises(ImportError, match="ai-parrot-client-claude"):
         factory.LLMFactory.create("claude:x")
 

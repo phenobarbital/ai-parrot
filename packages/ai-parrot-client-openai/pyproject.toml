@@ -14,10 +14,12 @@ authors = [
 ]
 dependencies = [
     "ai-parrot",
-    # The `openai` SDK itself stays a core `ai-parrot[openai]` extra —
-    # OpenAIBaseClient (parrot/clients/openai_base.py) lives in core and
-    # OpenAIClient subclasses it. `openai-codex` (the Codex CLI/SDK agent)
-    # is the only dependency genuinely new to this satellite.
+    # The `openai` SDK itself is a base `ai-parrot` dependency (FEAT-523/
+    # TASK-2854 core-extras cleanup — OpenAIBaseClient, which stays in
+    # core, is subclassed by seven satellites including this one), so
+    # `ai-parrot` transitively brings it; not re-pinned here.
+    # `openai-codex` (the Codex CLI/SDK agent) is the only dependency
+    # genuinely new to this satellite.
     "openai-codex>=0.1.0",
 ]
 
