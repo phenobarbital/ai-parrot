@@ -3,12 +3,12 @@
   "id_provisional": true,
   "id_note": "Ledger reservation via scripts/sdd/reserve_ids.py was refused: the shared main checkout has uncommitted changes from another session. FEAT-526 matches .id_ledger.json next_feature_id at time of writing. /sdd-spec must perform the authoritative reservation.",
   "slug": "meta-llm-client",
-  "phase": "qa_complete",
+  "phase": "accepted",
   "mode": "enrichment",
   "type": "feature",
   "base_branch": "dev",
   "started_at": "2026-09-04T13:27:00Z",
-  "updated_at": "2026-09-04T14:05:00Z",
+  "updated_at": "2026-09-04T14:20:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -52,8 +52,8 @@
     },
     "qa": {
       "status": "complete",
-      "questions_total": 3,
-      "questions_answered": 3
+      "questions_total": 5,
+      "questions_answered": 5
     },
     "output": {
       "proposal_path": "sdd/proposals/meta-llm-client.proposal.md",

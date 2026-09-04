@@ -4,7 +4,7 @@ title: Meta Model API (Muse Spark) LLM client for parrot.clients
 slug: meta-llm-client
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -196,7 +196,10 @@ Unlocks, both **verified live**:
 - **Tool search** — `{"type": "tool_search"}` **plus** `defer_loading: true` on
   individual functions; without a deferred tool it returns HTTP 400 (F017).
 
-**Where this layer belongs is the remaining open design choice** — see §5 D1.
+**Where this layer lives is settled (D1)**: `MetaClient`-local. `OpenAIClient`
+keeps its own separate Responses implementation; some duplication is accepted in
+exchange for a self-contained, reversible feature. Promote to a shared mixin
+only if a second provider ever needs it.
 
 ### What Changes
 
@@ -247,10 +250,14 @@ Unlocks, both **verified live**:
   back **empty** on a successful grounded answer despite docs advertising inline
   citations (F016). *Mitigation*: do **not** write citation extraction into
   acceptance criteria without re-verifying.
-- **Two overlapping tool-search mechanisms (medium).** parrot already has a
-  client-side `search_tools` lazy-loading path (`base.py:1298/1322`); Meta has a
-  native server-side one. *Mitigation*: decide deliberately (§5 D2), don't let
-  them collide by accident. *Evidence*: F017
+- **Two overlapping tool-search mechanisms (resolved — D2).** parrot has a
+  client-side `search_tools` path (`base.py:1298/1322`); Meta has a native
+  server-side one. **Decision**: map them together, as the **final** task group.
+  parrot's client-side path stays the **default** — the user reports measured
+  evidence that Meta's hosted `tool_search` is **slower** than parrot's own
+  search. *Consequence*: this is the lowest-priority item in the feature and the
+  safest to drop if the phase runs long, since nothing else depends on it.
+  *Evidence*: F017 + user measurement (not independently reproduced here).
 - **`logprobs` 400s and `reasoning_content` is redacted to empty** for external
   keys — never surface it as thinking output. *Evidence*: F011, C11
 
@@ -310,53 +317,65 @@ Distribution: **13** high, **1** medium, **2** low.
   *Note*: I kept `MODEL_API_KEY` as a **secondary** fallback so upstream vendor
   examples work unmodified — say the word if you'd rather it be dropped entirely.
 
-### Unresolved (design decisions for `/sdd-spec`)
+- [x] **D1 — Where should Responses-API support live?**
+  *Resolved*: recommendation accepted → **`MetaClient`-local**.
+  *Consequence*: `OpenAIBaseClient` keeps its "wire protocol only, no provider
+  opinions" charter intact; `OpenAIClient`'s existing Responses code is not
+  touched or shared. Duplication is a deliberate, reversible trade.
 
-- [ ] **D1 — Where should Responses-API support live?** *Owner*: tbd
-  *Plausible answers*:
-  a) **`MetaClient`-local** — smallest blast radius; `OpenAIClient` keeps its own
-     separate Responses implementation. Some duplication.
-  b) **A shared `ResponsesMixin`** — reusable by `OpenAIClient` later; more
-     upfront design, touches a second client.
-  c) **In `OpenAIBaseClient`** — widest reuse, but contradicts that layer's
-     stated "wire protocol only, no provider opinions" charter (F005) and puts
-     the most-shared file in the repo at risk.
-  *Recommendation*: **(a)** for this phase — it keeps FEAT-526 self-contained and
-  reversible; promote to (b) if a second provider ever needs it.
+- [x] **D2 — Native `tool_search` vs. parrot's client-side `search_tools`?**
+  *Resolved*: **map them together, as the last task group.**
+  *Rationale (user)*: *"tool_search based on proof is slower than parrot search"* —
+  so parrot's client-side path remains the default and Meta's native hosted mode
+  is the mapped-in alternative, not the preferred one.
+  *Assumption I am proceeding under*: "map together" means one unified
+  `search_tools` surface that can dispatch to Meta's native `tool_search`, with
+  parrot's own path as the default on latency grounds — **not** replacing
+  parrot's path with the native one. Say so if you meant the reverse.
+  *Note*: the latency comparison is your measurement; my only live `tool_search`
+  probe returned HTTP 400 (missing a deferred tool), so I have no timing data of
+  my own to corroborate it.
 
-- [ ] **D2 — Native `tool_search` vs. parrot's client-side `search_tools`?**
-  *Owner*: tbd · *Blocks*: C4-adjacent scope · *Evidence*: F017
-  *Plausible answers*: a) opt-in `MetaClient` flag, parrot's path stays default
-  (lowest risk) · b) map `search_tools` onto the native hosted mode ·
-  c) native only, for Meta.
+### Unresolved
+
+None. All scope and design questions are closed — the feature is ready to spec.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-526`** — *Rationale*: all three blocking unknowns are resolved,
-the model catalog and both protocols are **live-verified**, and the file list is
-pre-determined by an enforced convention. The two remaining items (D1, D2) are
-bounded design choices with a recommended default each — they belong **in** the
-spec, not in another research round.
+**`/sdd-spec FEAT-526`** — *Rationale*: every scope and design question is now
+closed (U1-U3, D1, D2), the model catalog and both protocols are live-verified,
+and the file list is pre-determined by an enforced convention. Nothing further
+is gained by another research or brainstorm round.
 
-The spec should carry **three task groups**:
-1. **Foundation** — `parrot/models/meta.py`, `MetaClient` over Chat Completions,
-   factory registration, both test rosters. *Mechanical; the recipe is written.*
-2. **Responses API** — the adapter, search grounding, tool search, and
-   `count_input_tokens()`. *The real engineering; resolve D1 first.*
+The spec should carry **four task groups, in dependency order**:
+
+1. **Foundation** — `parrot/models/meta.py` (`MetaModel` + capability
+   frozensets), `MetaClient` over Chat Completions, factory registration
+   (`"meta"` + aliases), and both `WIRE_SUBCLASSES` rosters.
+   *Mechanical; the 7-step recipe is already written.*
+2. **Responses API (MetaClient-local, per D1)** — the `output[]` adapter,
+   search grounding, and `count_input_tokens()`.
+   *The real engineering in this feature.*
 3. **Live e2e + docs** — `smoke_meta.py` against `muse-spark-1.3-contributor`,
    mirroring the existing live-OpenAI tests, plus `docs/clients/meta.md`.
+4. **`search_tools` ↔ native `tool_search` mapping (per D2)** — **last**, and
+   explicitly the droppable item if the phase runs long. parrot's client-side
+   path stays the default on the measured latency grounds.
 
 **Carry F015 into the spec as an explicit acceptance criterion** — a
-non-empty-visible-text assertion under a realistic output budget. It is the one
-finding most likely to cause a confusing failure if left implicit.
+non-empty-visible-text assertion under a realistic output budget. Muse Spark
+spent 199 of 210 output tokens on reasoning to say `pong`; left implicit, this
+will surface as a confusing "returned nothing" bug.
+
+**Re-check `.id_ledger.json` before running `/sdd-spec`** — FEAT-526 is still
+provisional (see the banner at the top of this document).
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-526`** — justified only if you want D1 explored as a
-  full options analysis before committing. Given the recommendation above is
-  low-risk and reversible, this looks like avoidable ceremony.
-- **`/sdd-task FEAT-526`** — no; the feature now spans two protocols, a new
-  model module, two test rosters, live e2e and docs.
+- **`/sdd-brainstorm FEAT-526`** — no longer justified; D1 was the only item
+  that could have warranted options analysis and it is now decided.
+- **`/sdd-task FEAT-526`** — no; the feature spans two protocols, a new model
+  module, two test rosters, live e2e and docs.
 
 ## 7. Research Audit
 

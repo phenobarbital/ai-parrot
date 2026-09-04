@@ -243,18 +243,22 @@
     {
       "id": "D1",
       "question": "Where should Responses-API support live?",
-      "resolved": false,
-      "recommendation": "MetaClient-local for this phase"
+      "resolved": true,
+      "recommendation": "MetaClient-local for this phase",
+      "user_answer": "accept recommendation - MetaClient-local"
     },
     {
       "id": "D2",
       "question": "Native tool_search vs parrot client-side search_tools?",
-      "resolved": false,
-      "recommendation": "opt-in MetaClient flag"
+      "resolved": true,
+      "recommendation": "opt-in MetaClient flag",
+      "user_answer": "map them together, at the end; Meta tool_search measured slower than parrot search",
+      "assumption": "unified search_tools surface dispatching to native tool_search, parrot path default on latency grounds; not independently reproduced"
     }
   ],
   "recommended_next_command": {
     "command": "sdd-spec",
     "rationale": "Localization is high-confidence and the convention is documented and test-enforced; the only genuine fork (U1: protocol scope) is a scoping decision, not an architecture exploration."
-  }
+  },
+  "status": "accepted"
 }
