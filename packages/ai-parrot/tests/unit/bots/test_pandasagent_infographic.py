@@ -295,7 +295,7 @@ class TestPandasAgentRoutesA2UI:
 
     def test_infographic_result_with_an_envelope_is_finalized_as_a2ui(self):
         source = self._ask_source()
-        assert "infographic_envelope.a2ui_envelope" in source
+        assert 'getattr(infographic_envelope, "a2ui_envelope", None)' in source
         assert "finalize_a2ui_response(response)" in source
 
     def test_interactive_result_with_an_envelope_is_finalized_as_a2ui(self):
@@ -314,3 +314,49 @@ class TestPandasAgentRoutesA2UI:
         import parrot.bots.data as data_module
 
         assert hasattr(data_module, "finalize_a2ui_response")
+
+
+class TestPandasAgentDualEmitRouting:
+    """FEAT-527: dual-emit routing — requested ``output_mode`` decides the
+    PRIMARY shape; the other emission rides along additively. Source-level
+    assertions, same technique as ``TestPandasAgentRoutesA2UI`` above (``ask``
+    is a single huge method not amenable to direct invocation in a unit test).
+    """
+
+    def _ask_source(self) -> str:
+        import inspect
+
+        try:
+            from parrot.bots.data import PandasAgent
+        except Exception as exc:  # noqa: BLE001 - namespace/Cython worktree layout
+            pytest.skip(f"cannot import parrot.bots.data: {exc}")
+        return inspect.getsource(PandasAgent.ask)
+
+    def test_a2ui_requested_checks_output_mode_before_finalizing(self):
+        source = self._ask_source()
+        assert "if output_mode == OutputMode.A2UI:" in source
+        assert 'a2ui_envelope = getattr(infographic_envelope, "a2ui_envelope", None)' in source
+
+    def test_a2ui_primary_populates_metadata_and_artifact_id(self):
+        source = self._ask_source()
+        assert "response.artifact_id = infographic_envelope.artifact_id" in source
+        assert '"html_url": infographic_envelope.html_url,' in source
+        assert '"template_name": infographic_envelope.template_name,' in source
+
+    def test_a2ui_requested_without_envelope_logs_warning_and_falls_back(self):
+        source = self._ask_source()
+        assert "requested output_mode=A2UI but no" in source
+        # the warning must appear before the HTML-primary finalize call in the
+        # SAME branch, i.e. the fallback happens instead of an early return.
+        warning_idx = source.index("requested output_mode=A2UI but no")
+        html_finalize_idx = source.index("explanation = self._finalize_infographic_response(")
+        assert warning_idx < html_finalize_idx
+
+    def test_html_primary_still_carries_the_a2ui_envelope(self):
+        source = self._ask_source()
+        # After the HTML-primary finalize call, the envelope additionally
+        # rides along on response.a2ui_envelope (G2/G6 — additive, never lost).
+        finalize_idx = source.index("explanation = self._finalize_infographic_response(")
+        tail = source[finalize_idx:]
+        assert "if a2ui_envelope is not None:" in tail
+        assert "response.a2ui_envelope = a2ui_envelope" in tail
