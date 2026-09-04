@@ -70,7 +70,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Edits bots/abstract.py, bots/chatbot.py and a 4-line stop-gap in bots/base.py that TASK-2816 replaces; must precede TASK-2816.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2811-abstractbot-single-writer-memory-key-id.md"
+      "completed_at": "2026-09-04T00:59:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2811-abstractbot-single-writer-memory-key-id.md"
     },
     {
       "id": "TASK-2812",

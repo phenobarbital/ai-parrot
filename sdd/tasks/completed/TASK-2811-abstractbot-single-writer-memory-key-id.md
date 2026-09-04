@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2809
@@ -199,8 +199,71 @@ async def test_save_conversation_turn_keys_by_memory_key_id():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- `AbstractBot._chatbot_id_explicit` set at `abstract.py:353-364` from
+  `kwargs.get('chatbot_id') is not None`; `memory_key_id` property added next to the
+  conversation helpers.
+- `save_conversation_turn(user_id, session_id, turn)` — `chatbot_id` parameter removed,
+  keys by `self.memory_key_id`, raises `ValueError` on attribution mismatch **before**
+  writing or emitting, `MessageAddedEvent` emission unchanged.
+- All six read/write helpers (`get_/create_/clear_/delete_conversation_history`,
+  `list_user_conversations`, `save_conversation_turn`) now resolve
+  `str(chatbot_id) if chatbot_id else self.memory_key_id`, replacing the old
+  `chatbot_id or getattr(self, 'chatbot_id', None)` fallback that resolved to the
+  random uuid.
+- Removed `build_conversation_context` (with its three `print()` debug lines) and the
+  entire `conversation_context` plumbing: the kwarg on both `_build_prompt` and
+  `create_system_prompt`, their docstring lines, the `"chat_history"` template slot,
+  the `## Conversation Context:` section, and the `conversation_context` entry in the
+  dynamic-value provider context. `chat_history=""` is now passed to the template so
+  the placeholder resolves empty instead of leaking a literal `$chat_history`.
+- `_create_llm_client(self, config)` — parameter and both injection sites gone.
+- Verified AC: `grep -rn "build_conversation_context\|conversation_context=" packages/ai-parrot/src`
+  returns **zero** lines.
+- Tests: `test_memory_key_id.py`, 20 passed. Regression check against `dev` (same
+  command run in both trees):
+  * `packages/ai-parrot/tests/unit/bots`: worktree 263 passed / 5 failed vs dev 243
+    passed / 5 failed — **identical failure set**, all pre-existing
+    (`test_flex_dashboard_agent`, `test_infographic_authoring_mixin`, 3×
+    `test_pandasagent_stale_data_variables`; the first two pass in isolation and fail
+    only under whole-directory pollution, on `dev` too).
+  * `packages/ai-parrot/tests/bots`: worktree 70 failed / 1429 passed vs dev 71 failed /
+    1428 passed. Set diff shows **zero real regressions** — the only worktree-only
+    failures are 3 `test_porygon_identity_migration` tests that read `agents/porygon.py`
+    and `agents/porygon/identity/role.md`; `/agents/` is gitignored (`.gitignore:294`) so
+    those files simply do not exist in a worktree. 4 `test_chrome_runner` tests are
+    flaky in the opposite direction (fail on dev, pass here).
+  * `packages/ai-parrot/tests/unit/memory`: TASK-2808's 3 tests still red as designed —
+    now failing on `'ConversationHistory' object has no attribute 'get_messages_for_api'`
+    from `clients/base.py:2322`, which TASK-2812 deletes.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`get_infographic` needed no change — the task's contract is wrong.** It states
+   `get_infographic` calls `client.ask(..., session_id=, user_id=)` at `:4412`. The call
+   is actually `self.ask(...)` — the BOT's own entry point, which legitimately keeps
+   `user_id`/`session_id` (only the CLIENT loses them). Verified: `get_infographic`'s
+   body contains no direct client call. Removing the ids there would have disabled
+   history for infographics entirely.
+2. **`_create_llm_client` has 5 call sites and an override, not the 1 the task lists.**
+   Changing the signature forced updating all of them in lock-step, three of which are
+   outside this task's declared file list:
+   `bots/voice.py` (the `VoiceCapable` override + 2 calls + 2 client-constructor
+   `conversation_memory=` kwargs), `interfaces/tools.py:321` (`configure_llm`), and
+   `packages/ai-parrot-integrations/.../voice/handler.py:1692`. Leaving any of them would
+   be a hard `TypeError` at runtime.
+3. **The digest stop-gap needed 7 sites, not the 4 the task lists.** `bots/base.py` ×4
+   (as specified) plus `bots/data.py:1352` and `bots/voice.py:569/803`. Same reason: the
+   method being removed had callers the task did not enumerate. All are now
+   `conversation_context = ""` with a `FEAT-524 stop-gap (TASK-2811)` comment pointing at
+   TASK-2816.
+4. **10 new transitional `ruff F841` warnings** (`conversation_history` /
+   `conversation_context` assigned but unused) across `base.py`, `data.py`, `voice.py`.
+   They exist precisely because the digest is gone but `render_history` is not yet wired;
+   TASK-2816 consumes both variables again. Deliberately NOT silenced with `# noqa` —
+   adding markers only to delete them one task later is churn. Baseline note: these files
+   already carried 28 ruff errors on `dev`, so "ruff clean" was never true for them.
+5. `_smart_truncate` / `_simple_truncate` are now unreferenced (they existed only for
+   `build_conversation_context`). Left in place — removing them is outside this task's
+   scope and they are harmless generic helpers.
