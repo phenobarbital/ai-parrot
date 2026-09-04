@@ -195,10 +195,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
 **Notes**:
+- `A2UISurface.svelte`: finds `root` (fallback `components[0]`), dispatches
+  `Infographic`/`Report` → `A2UIInfographic`, else → `A2UINode` as a widget
+  (descriptor built from the flat `WireComponent` itself, since v1.0 props
+  live top-level); "Unsupported surface" placeholder when no root.
+- `A2UIInfographic.svelte`: title/subtitle, then sections — single section
+  stacks, >1 uses the existing `AppTabs` (bits-ui) wrapper (confirmed via
+  `ls`; `Tabs.Trigger` renders `role="tab"`, matching the test spec's
+  `getAllByRole("tab")`). `groupByLayout()` mirrors TASK-2860's backend
+  `_lower_section` Row-grouping: consecutive `properties.layout === "half"`
+  descriptors pair into a 2-column CSS grid row.
+- `A2UINode.svelte`: dispatch table for KPICard (reused
+  `InfographicHeroCardBlock.svelte` — verified its props via Read; `unit`
+  has no matching slot on that component and is dropped, a documented,
+  minor, cosmetic gap), Chart (via `a2ui-chart-adapter.ts` +
+  `InfographicChartBlock`, gated `{#if features.charts}`), DataTable (via
+  `InfographicTableBlock`, reshaping `{name,title?}` columns + resolved
+  row-objects into its positional-array shape), Timeline (via
+  `InfographicTimelineBlock`, `events[]` → `items[]`), InfoCard (rendered
+  inline — no existing component matches its title/subtitle/body/badge/
+  footer shape), Text/Image/Divider/CheckBox (inline), List/Row/Column
+  (recurse via a self-import — NOT `<svelte:self>`, which is legacy in
+  Svelte 5; a plain `import A2UINode from './A2UINode.svelte'` inside its
+  own file works for recursion), Tabs (nested `{title, child}` pairs,
+  recurses the same way), HtmlDocument (sandboxed
+  `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer">`,
+  `srcdoc` when `html` is present else `src={srcUrl}` — never both), and a
+  visible `"<component> is not supported in this view"` placeholder for
+  everything else (action-bearing Button/TextField/FilterBar/Map included)
+  — never throws.
+- `a2ui-chart-adapter.ts`: pure `toChartBlockData()`, unit-tested separately
+  (7 tests: bar/donut-not-collapsed/colorBySign+colors/half-layout/palette-
+  per-series/unknown-type-fallback/unresolved-binding). Confirmed
+  `_X_COLUMN = "label"` in the backend adapter before writing the mapping.
+- **Testing**: `pnpm install` (fresh `node_modules`) + `pnpm test` → 42 test
+  files / 271 tests, ALL passing (26 new: 7 chart-adapter + 14 A2UINode + 5
+  A2UISurface). `tsc --noEmit`: zero errors reference any file this task
+  touched (verified via grep; the project has no `svelte-check` installed
+  — same pre-existing gap noted in TASK-2866's completion note).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
