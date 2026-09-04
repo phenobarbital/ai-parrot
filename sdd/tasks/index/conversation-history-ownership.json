@@ -14,7 +14,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Test-only, new file; shares nothing with TASK-2809. Committed red; goes green at TASK-2816.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2808-regression-test-single-turn-per-round.md"
+      "completed_at": "2026-09-04T00:29:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2808-regression-test-single-turn-per-round.md"
     },
     {
       "id": "TASK-2809",
