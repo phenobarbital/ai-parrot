@@ -10,6 +10,8 @@ Covers:
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 from aiohttp import web
@@ -430,3 +432,64 @@ def test_infographic_talk_does_not_redefine_pbac_helpers():
             f"{attr} should not be redefined on InfographicTalk "
             f"(inherited from AgentTalk)"
         )
+
+
+# ── Dual-emit envelope contract (FEAT-527) ─────────────────────────────────
+#
+# The generation endpoint above (agent.get_infographic()) is a separate,
+# out-of-scope lane (spec Non-Goal). These tests exercise the documented
+# INFOGRAPHIC JSON envelope produced by AgentTalk._format_infographic_response
+# — the chat-turn path PandasAgent/BaseBot route into (TASK-2857) — reusing
+# this module's sample_infographic_response fixture to build the AIMessage.
+
+class TestFormatInfographicResponseA2UIContract:
+    def _handler(self):
+        import logging
+        from types import SimpleNamespace
+        from parrot.handlers.agent import AgentTalk
+
+        h = AgentTalk.__new__(AgentTalk)
+        h.logger = logging.getLogger("test.infographic_handler_a2ui")
+        h._request = SimpleNamespace(headers={}, query={})
+        return h
+
+    def test_a2ui_envelope_present_when_response_carries_one(
+        self, sample_infographic_response
+    ):
+        response = AIMessage(
+            input="Render Q1",
+            output="<html>Q1</html>",
+            response="Q1 explanation",
+            model="test-model",
+            provider="test",
+            usage=CompletionUsage(),
+            artifact_id="infographic-xyz",
+        )
+        response.structured_output = sample_infographic_response
+        response.a2ui_envelope = {
+            "version": "v1.0",
+            "createSurface": {"surfaceId": "infographic-xyz", "components": []},
+        }
+
+        resp = self._handler()._format_infographic_response(response=response, format_kwargs={})
+        body = json.loads(resp.text)
+
+        assert body["output_mode"] == "infographic"
+        assert body["a2ui_envelope"]["createSurface"]["surfaceId"] == "infographic-xyz"
+
+    def test_a2ui_envelope_key_absent_when_none(self, sample_infographic_response):
+        response = AIMessage(
+            input="Render Q1",
+            output="<html>Q1</html>",
+            response="Q1 explanation",
+            model="test-model",
+            provider="test",
+            usage=CompletionUsage(),
+            artifact_id="infographic-xyz",
+        )
+        response.structured_output = sample_infographic_response
+
+        resp = self._handler()._format_infographic_response(response=response, format_kwargs={})
+        body = json.loads(resp.text)
+
+        assert "a2ui_envelope" not in body
