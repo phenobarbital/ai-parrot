@@ -116,10 +116,10 @@ green (import-clean, `pytest packages/ai-parrot/tests/unit/clients -q`) when the
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.clients.anthropic import AnthropicClient, ClaudeAgentClient, ClaudeModel` works; `parrot.clients.claude` is gone
-- [ ] `AnthropicClient.provider_keys == ("claude", "anthropic", "bedrock", "anthropic-aws")`; `GrokClient.provider_keys == ("grok", "xai")`
-- [ ] `parrot/models/{claude,groq,zai}.py` deleted; `parrot.models` has no `ZaiModel`
-- [ ] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
+- [x] `from parrot.clients.anthropic import AnthropicClient, ClaudeAgentClient, ClaudeModel` works; `parrot.clients.claude` is gone
+- [x] `AnthropicClient.provider_keys == ("claude", "anthropic", "bedrock", "anthropic-aws")`; `GrokClient.provider_keys == ("grok", "xai")`
+- [x] `parrot/models/{claude,groq,zai}.py` deleted; `parrot.models` has no `ZaiModel`
+- [x] `pytest packages/ai-parrot/tests/unit/clients -q` green; `ruff` clean
 
 ---
 
@@ -157,10 +157,59 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented per scope. Commit `60bf9b58e` on
+`feat-FEAT-523-pep-420-llm-clients`.
+
+- `anthropic_backends.py` moved inside the folder as `backends.py` per
+  the Key Constraints note; `claude.py`'s internal `from
+  .anthropic_backends import ...` fixed to `from .backends import ...`.
+- `GrokModel` cut from `grok.py:39` into a new `grok/models.py` — the
+  ONLY genuinely-new file this task creates (every other models.py is a
+  pure `git mv`).
+- `ClaudeClient = AnthropicClient` alias (module-scope in `client.py`,
+  pre-existing) added to `anthropic/__init__.py`'s re-exports —
+  discovered via `examples/next/claude.py`, which imported it; not
+  explicitly named in the task's Files table but required for that
+  caller not to break, analogous to `GoogleClient` in `google/__init__.py`.
+- Left `ZaiClient` in `clients/__init__.py:17` exactly as instructed —
+  verified `.zai` still resolves (now via the package's `__init__.py`
+  instead of the flat module).
+- **Recurring lesson (flagged in TASK-2843's note, confirmed again
+  here)**: grep for stale import paths is necessary but not sufficient.
+  Found 6 more instances of the module-alias gotcha this task — five in
+  tests, but ALSO one in **production code**: `grok/client.py` itself
+  had a mid-file `from ..models.responses import AIMessageFactory` at
+  two-dot depth (correct for the OLD flat-file location, wrong after
+  the move to a folder one level deeper) that only surfaced by running
+  `test_grok_multiround_usage.py`, not by grep (the import statement
+  itself greps clean; it's a `ModuleNotFoundError` at call time). Every
+  subsequent task in this feature MUST run the affected test suites,
+  not just grep, before declaring green — grep only catches import
+  *statements*, not `inspect.getfile()`/`inspect.getsource()` +
+  attribute-access patterns, nor same-file relative-import depth bugs.
+
+**Deviations from spec**: none.
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/unit/clients -q` → 415 passed, 8
+  pre-existing failures (identical to TASK-2841/2842/2843).
+- `pytest packages/ai-parrot/tests/unit/clients/test_folder_convention.py`
+  → 27/27 passed (11 providers total now).
+- Explicit AC assertions (`AnthropicClient.models is ClaudeModel`,
+  `provider_keys` superset check, `GrokClient.models is GrokModel`) →
+  pass.
+- `ruff check` clean on every new/modified anthropic/groq/grok/zai file;
+  `grok/client.py`'s 4 pre-existing `E402` + 1 `F841` confirmed
+  byte-identical on `dev` (a stray function definition sitting between
+  two import blocks, predates this move).
+- Broad external sweep (anthropic client/backends/model-guards/factory/
+  prompt-caching, groq/grok/zai clients, zai code-dispatcher,
+  claude-agent ×2 files, compression manager integration) → 120 passed;
+  9 failed + 10 errors confirmed to EXACTLY match `dev`'s baseline set
+  (same test names) — grok/groq environment-dependent mock-patch issues
+  and one live `claude-agent-sdk` process smoke test, none touched by
+  this move.

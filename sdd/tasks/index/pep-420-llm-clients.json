@@ -72,7 +72,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Sequential: shares factory.py import block, parrot/models/__init__.py and the conformance test.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2844-anthropic-groq-grok-zai-folders.md"
+      "completed_at": "2026-09-04T18:11:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2844-anthropic-groq-grok-zai-folders.md"
     },
     {
       "id": "TASK-2845",
