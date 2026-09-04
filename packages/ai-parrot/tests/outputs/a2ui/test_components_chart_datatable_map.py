@@ -143,6 +143,28 @@ class TestDataTableComponent:
         assert body.template_source is not None
         assert body.children.component_id == body.template_source.id
 
+    def test_datatable_schema_accepts_style(self):
+        """FEAT-527."""
+        props = datatable.DATATABLE_SCHEMA["properties"]
+        assert "style" in props
+        assert set(props["style"]["enum"]) == {
+            "default", "striped", "bordered", "compact", "comparison",
+        }
+
+    def test_datatable_lower_records_style_extension(self):
+        comp = Component(
+            id="blk-001", component="DataTable",
+            columns=[{"name": "region"}], style="striped",
+        )
+        tree = datatable.DataTableComponent().lower(comp, {})
+        body = tree.child.children[-1]
+        assert body.metadata.extensions.root["parrot_style"] == "striped"
+
+    def test_datatable_lower_omits_style_extension_when_absent(self):
+        tree = datatable.DataTableComponent().lower(_datatable_component(), {})
+        body = tree.child.children[-1]
+        assert "parrot_style" not in body.metadata.extensions.root
+
     def test_datatable_emits_v1_primitives(self):
         comp = Component(id="t1", component="DataTable", columns=[{"name": "a"}, {"name": "b"}])
         tree = datatable.DataTableComponent().lower(comp, {})

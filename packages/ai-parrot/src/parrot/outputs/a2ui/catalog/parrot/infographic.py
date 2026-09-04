@@ -67,7 +67,9 @@ INFOGRAPHIC_INSTRUCTIONS = (
     "optional `subtitle`/`theme`, and ordered `sections`. Each section has a "
     "`heading`, optional `text`, and a `components` list nesting other catalog "
     "components (KPICard, Chart, InfoCard, ...). Sections render in the order given "
-    "(as Tabs when there is more than one). Display-only."
+    "(as Tabs when there is more than one). Consecutive nested components whose "
+    "`properties.layout` is `\"half\"` render side-by-side in pairs (FEAT-527). "
+    "Display-only."
 )
 
 
@@ -117,8 +119,20 @@ def _lower_child(descriptor: dict[str, Any], data_model: dict[str, Any], child_i
     return entry.component_cls().lower(child, data_model)
 
 
+def _is_half_layout(descriptor: dict[str, Any]) -> bool:
+    """True when a nested component descriptor declares ``layout: "half"``."""
+    return (descriptor.get("properties") or {}).get("layout") == "half"
+
+
 def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_id: str) -> BasicNode:
-    """Lower one section (heading + text + nested components) to a Column."""
+    """Lower one section (heading + text + nested components) to a Column.
+
+    FEAT-527: consecutive children whose ``properties.layout == "half"``
+    lower pairwise into a ``Row`` (``metadata.extensions.parrot_layout ==
+    "half"``) so they render side-by-side; an odd trailing half-width child
+    stays in its own single-child ``Row``. Any other child (including a
+    ``"full"``/omitted layout) lowers unchanged as a direct Column child.
+    """
     section_children: list[BasicNode] = []
     if section.get("heading") is not None:
         section_children.append(
@@ -136,8 +150,33 @@ def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_
                 metadata={"extensions": {"parrot_role": "body"}},
             )
         )
-    for ci, descriptor in enumerate(section.get("components") or []):
-        section_children.append(_lower_child(descriptor, data_model, f"{section_id}-c{ci}"))
+
+    descriptors = section.get("components") or []
+    ci = 0
+    i = 0
+    while i < len(descriptors):
+        descriptor = descriptors[i]
+        if _is_half_layout(descriptor):
+            pair = [descriptor]
+            if i + 1 < len(descriptors) and _is_half_layout(descriptors[i + 1]):
+                pair.append(descriptors[i + 1])
+                i += 1
+            row_children = []
+            for d in pair:
+                row_children.append(_lower_child(d, data_model, f"{section_id}-c{ci}"))
+                ci += 1
+            section_children.append(
+                BasicNode(
+                    component="Row",
+                    children=row_children,
+                    metadata={"extensions": {"parrot_layout": "half"}},
+                )
+            )
+        else:
+            section_children.append(_lower_child(descriptor, data_model, f"{section_id}-c{ci}"))
+            ci += 1
+        i += 1
+
     return BasicNode(component="Column", children=section_children)
 
 

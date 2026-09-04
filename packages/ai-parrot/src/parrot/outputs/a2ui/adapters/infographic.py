@@ -50,12 +50,10 @@ Block              A2UI v1.0 component
 =================  =====================================================
 
 Known lossy degradations (spec §8, OQ-C; FEAT-527 removed the chart-type
-collapse — see below):
+collapse and now forwards table ``style``, bullet ``columns``, hero-card
+``icon``/``color``/``comparison_period``, and chart presentation fields —
+nothing presentation-relevant is dropped any more):
 
-* Presentation-only fields not yet forwarded (table ``style``, bullet
-  ``columns``, hero-card ``icon``/``color``/``comparison_period``) are
-  dropped: A2UI carries data and semantics, the renderer owns presentation.
-  (FEAT-527 TASK-2860 forwards these.)
 * ``InfoCard`` ``title`` is omitted for blocks with no title-like field. The
   lowering in ``catalog/parrot/infocard.py`` skips absent properties, so this
   degrades to a title-less card rather than an invented heading.
@@ -316,18 +314,24 @@ class _Converter:
             "totalRows": len(rows),
             "data": self._bind_rows("tables", key, rows),
         }
+        if block.get("style") is not None:
+            properties["style"] = block["style"]
         return _descriptor("DataTable", properties)
 
     def _hero_card(self, block: dict[str, Any]) -> dict[str, Any]:
-        return _descriptor(
-            "KPICard",
-            {
-                "label": block.get("label") or "",
-                "value": block.get("value") or "",
-                "delta": block.get("trend_value"),
-                "trend": block.get("trend"),
-            },
-        )
+        properties: dict[str, Any] = {
+            "label": block.get("label") or "",
+            "value": block.get("value") or "",
+            "delta": block.get("trend_value"),
+            "trend": block.get("trend"),
+        }
+        if block.get("icon") is not None:
+            properties["icon"] = block["icon"]
+        if block.get("color") is not None:
+            properties["color"] = block["color"]
+        if block.get("comparison_period") is not None:
+            properties["comparisonPeriod"] = block["comparison_period"]
+        return _descriptor("KPICard", properties)
 
     def _timeline(self, block: dict[str, Any]) -> dict[str, Any]:
         events = []
@@ -366,7 +370,16 @@ class _Converter:
             _descriptor("Text", {"text": item if isinstance(item, str) else str(item)})
             for item in (block.get("items") or [])
         ]
-        return _descriptor("List", {"direction": "vertical", "children": items})
+        properties: dict[str, Any] = {"direction": "vertical", "children": items}
+        # FEAT-527: `columns` is presentation-only (grid layout hint) — record
+        # it as metadata.extensions on the List descriptor rather than a
+        # visible prop. `List` is a Basic Catalog primitive, so this
+        # "metadata" key reaches `_lower_child`'s primitive branch verbatim
+        # (`BasicNode(id=child_id, component=name, **props)`), landing on the
+        # lowered BasicNode's own `metadata` field.
+        if block.get("columns") is not None:
+            properties["metadata"] = {"extensions": {"parrot_columns": block["columns"]}}
+        return _descriptor("List", properties)
 
     def _checklist(self, block: dict[str, Any]) -> dict[str, Any]:
         """Map a ``checklist`` block to a ``List`` of ``CheckBox{label, value}``."""
