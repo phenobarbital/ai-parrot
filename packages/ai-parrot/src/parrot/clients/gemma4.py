@@ -658,8 +658,7 @@ class Gemma4Client(AbstractClient):
             temperature=temperature,
             files=files,
             system_prompt=system_prompt,
-            user_id=current_user_id.get(),
-            session_id=current_session_id.get(),
+            history=history,
             tools=tools,
             **kwargs,
         )

@@ -11,8 +11,10 @@ still gets checked.
 
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
+import textwrap
 from typing import Any, Dict
 
 import pytest
@@ -133,6 +135,79 @@ def test_no_client_instance_exposes_memory_api(client_id: str):
         "delete_conversation",
     ):
         assert not hasattr(client, attribute), f"{client_id} still has {attribute}"
+
+
+@pytest.mark.parametrize("client_id", CLIENT_IDS)
+@pytest.mark.parametrize("method", ["ask", "ask_stream"])
+def test_declared_history_is_actually_consumed(client_id: str, method: str):
+    """A client that DECLARES ``history`` must actually read it.
+
+    Regression guard for a real bug: ``gemma4`` and ``hf`` implement
+    ``ask_stream`` by delegating to their own ``ask()`` and chunking the
+    result. Both declared ``history`` in the signature — so
+    ``test_all_client_ask_signatures`` passed — but forwarded
+    ``user_id=``/``session_id=`` instead of ``history=``, silently dropping the
+    whole conversation on every streamed round. Checking the signature is not
+    enough; the parameter has to be *used*.
+
+    A client that deliberately ignores history (``claude_agent``, ``live`` —
+    both own a provider-side session) must say so explicitly with ``del
+    history``, which counts as consuming it.
+    """
+    function = inspect.unwrap(getattr(CLIENTS[client_id], method))
+    try:
+        source = textwrap.dedent(inspect.getsource(function))
+    except (OSError, TypeError):  # pragma: no cover - C or generated code
+        pytest.skip(f"no source available for {client_id}.{method}")
+
+    tree = ast.parse(source)
+    node = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == method
+    )
+    params = {a.arg for a in node.args.args + node.args.kwonlyargs}
+    if "history" not in params:
+        pytest.skip(f"{client_id}.{method} takes history via **kwargs")
+
+    uses = [
+        n for n in ast.walk(node)
+        if isinstance(n, ast.Name)
+        and n.id == "history"
+        and isinstance(n.ctx, (ast.Load, ast.Del))
+    ]
+    assert uses, (
+        f"{client_id}.{method} declares `history` but never reads or `del`s it — "
+        "the rendered conversation is being silently dropped"
+    )
+
+
+@pytest.mark.parametrize("client_id", CLIENT_IDS)
+@pytest.mark.parametrize("method", ["ask", "ask_stream"])
+def test_no_client_forwards_removed_ids_to_itself(client_id: str, method: str):
+    """No client passes ``user_id=``/``session_id=`` into another ask() call.
+
+    Those kwargs no longer exist on any ``ask``/``ask_stream``, so a surviving
+    ``self.ask(..., user_id=...)`` either lands in ``**kwargs`` and reaches the
+    provider SDK as an unknown argument, or masks a dropped ``history=``.
+    """
+    function = inspect.unwrap(getattr(CLIENTS[client_id], method))
+    try:
+        source = textwrap.dedent(inspect.getsource(function))
+    except (OSError, TypeError):  # pragma: no cover
+        pytest.skip(f"no source available for {client_id}.{method}")
+
+    tree = ast.parse(source)
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        func = call.func
+        # Only self.ask(...) / self.ask_stream(...) style delegations.
+        if not (isinstance(func, ast.Attribute) and func.attr in ("ask", "ask_stream")):
+            continue
+        forwarded = {kw.arg for kw in call.keywords if kw.arg}
+        offenders = forwarded & {"user_id", "session_id"}
+        assert not offenders, (
+            f"{client_id}.{method} forwards {sorted(offenders)} into "
+            f"self.{func.attr}(), which no longer accepts them"
+        )
 
 
 @pytest.mark.parametrize("client_id", CLIENT_IDS)
