@@ -86,6 +86,22 @@ class TestChartComponent:
         props = chart.CHART_SCHEMA["properties"]
         assert {"type", "x", "y", "showLegend"} <= set(props)
 
+    def test_chart_schema_type_enum_includes_new_chart_types(self):
+        """FEAT-527: gauge/funnel/waterfall/heatmap/treemap parity."""
+        enum = chart.CHART_SCHEMA["properties"]["type"]["enum"]
+        for t in ("gauge", "funnel", "waterfall", "heatmap", "treemap", "donut", "radar"):
+            assert t in enum
+
+    def test_chart_schema_has_layout(self):
+        """FEAT-527: layout ('full'/'half') added to StructuredChartConfig."""
+        props = chart.CHART_SCHEMA["properties"]
+        assert "layout" in props
+        # Optional[Literal[...]] renders as anyOf: [{enum: [...]}, {type: null}].
+        layout_enum = next(
+            branch["enum"] for branch in props["layout"]["anyOf"] if "enum" in branch
+        )
+        assert set(layout_enum) == {"full", "half"}
+
     def test_chart_lowering_golden(self):
         comp = _chart_component()
         one = _dump(chart.ChartComponent().lower(comp, {}))

@@ -211,10 +211,12 @@ class TestChartMapping:
         ]
 
     @pytest.mark.parametrize(
-        "source,expected",
-        [("donut", "pie"), ("gauge", "bar"), ("radar", "line"), ("area", "area")],
+        "source",
+        ["donut", "radar", "gauge", "funnel", "waterfall", "heatmap", "treemap", "area"],
     )
-    def test_unsupported_chart_types_degrade_to_the_nearest_neighbour(self, source, expected):
+    def test_no_chart_type_is_collapsed_anymore(self, source):
+        """FEAT-527: the A2UI Chart schema now accepts every legacy chart_type
+        directly, so CHART_TYPE_MAP is the identity map — nothing degrades."""
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -227,7 +229,11 @@ class TestChartMapping:
                 ]
             )
         )
-        assert _sections(envelope)[0]["components"][0]["properties"]["type"] == expected
+        assert _sections(envelope)[0]["components"][0]["properties"]["type"] == source
+
+    def test_donut_and_radar_are_not_collapsed(self):
+        for t in ("donut", "radar", "gauge", "funnel", "waterfall", "heatmap", "treemap"):
+            assert CHART_TYPE_MAP[t] == t
 
     def test_every_mapped_type_is_in_the_a2ui_chart_enum(self):
         allowed = set(get_component("Chart").definition.schema_["properties"]["type"]["enum"])
@@ -275,6 +281,84 @@ class TestChartMapping:
         }
         envelope = infographic_response_to_envelope(_response(blocks=[chart, chart]))
         assert sorted(envelope.data_model["charts"]) == ["chart-0", "chart-1"]
+
+
+class TestChartPresentationFieldsForwarded:
+    """FEAT-527: presentation fields the Chart schema already accepts are
+    forwarded from the block, omitted when the block's value is None."""
+
+    def test_chart_presentation_fields_forwarded(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "chart",
+                        "chart_type": "bar",
+                        "layout": "half",
+                        "color_by_sign": True,
+                        "positive_color": "#0a0",
+                        "negative_color": "#a00",
+                        "x_axis_label": "Month",
+                        "y_axis_label": "Revenue",
+                        "description": "Revenue by month",
+                        "labels": ["a"],
+                        "series": [{"name": "d", "values": [1]}],
+                    }
+                ]
+            )
+        )
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["colorBySign"] is True
+        assert props["layout"] == "half"
+        assert props["positiveColor"] == "#0a0"
+        assert props["negativeColor"] == "#a00"
+        assert props["xAxisLabel"] == "Month"
+        assert props["yAxisLabel"] == "Revenue"
+        assert props["description"] == "Revenue by month"
+        assert "palette" not in props  # no per-series colours given
+
+    def test_absent_presentation_fields_are_omitted(self):
+        # NOTE: color_by_sign/stacked/show_legend default to False/True (not
+        # None) on ChartBlock, so they are always forwarded — only fields
+        # whose block default is genuinely None are omissible here.
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "chart",
+                        "chart_type": "bar",
+                        "labels": ["a"],
+                        "series": [{"name": "d", "values": [1]}],
+                    }
+                ]
+            )
+        )
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        for key in (
+            "positiveColor", "negativeColor", "layout",
+            "xAxisLabel", "yAxisLabel", "description", "palette", "trendline",
+        ):
+            assert key not in props
+        assert props["colorBySign"] is False
+
+    def test_per_series_colors_become_palette(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "chart",
+                        "chart_type": "bar",
+                        "labels": ["a"],
+                        "series": [
+                            {"name": "d1", "values": [1], "color": "#111"},
+                            {"name": "d2", "values": [2], "color": "#222"},
+                        ],
+                    }
+                ]
+            )
+        )
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["palette"] == ["#111", "#222"]
 
 
 class TestTableMapping:

@@ -308,9 +308,11 @@ class ProductReview(BaseModel):
 
 ChartType = Literal[
     "bar", "horizontalBar", "line", "area", "scatter",
-    "pie", "donut", "radar", "map"
+    "pie", "donut", "radar", "map",
+    "gauge", "funnel", "waterfall", "heatmap", "treemap",
 ]
-"""Supported chart types for StructuredChartConfig."""
+"""Supported chart types for StructuredChartConfig (FEAT-527 added gauge,
+funnel, waterfall, heatmap, treemap for A2UI/infographic parity)."""
 
 XAxisMode = Literal["category", "time"]
 """X-axis mode: 'category' for categorical labels, 'time' for ISO 8601 date strings."""
@@ -337,6 +339,7 @@ class StructuredChartConfig(BaseModel):
         negative_color: Hex colour for negative values when colorBySign is True.
         map_name: GeoJSON map identifier (required when type="map").
         data: Flat row list — INPUT-ONLY; excluded from output by the renderer.
+        layout: "full" or "half" width hint (FEAT-527).
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -380,6 +383,14 @@ class StructuredChartConfig(BaseModel):
     y_axis_label: Optional[str] = Field(
         default=None, alias="yAxisLabel",
         description="Human-readable y-axis display label",
+    )
+    layout: Optional[Literal["full", "half"]] = Field(
+        default=None,
+        description=(
+            "Layout hint for the frontend renderer. 'half' marks the chart as "
+            "half-width so consecutive half-width charts render side-by-side; "
+            "omit or set to 'full' for full-width rendering (FEAT-527)."
+        ),
     )
     map_name: Optional[str] = Field(
         default=None, alias="mapName",
