@@ -72,7 +72,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Edits clients/meta/client.py, same file as TASK-2834/2837/2840. The main engineering task (D1).",
       "assigned_to": null,
       "started_at": "2026-09-04T14:09:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2836-responses-api-path.md"
+      "completed_at": "2026-09-04T14:31:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2836-responses-api-path.md"
     },
     {
       "id": "TASK-2837",
