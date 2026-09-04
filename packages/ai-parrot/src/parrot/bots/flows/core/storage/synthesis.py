@@ -15,7 +15,6 @@ FEAT-163 additions:
 """
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from navconfig.logging import logging
