@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-527
 **Date**: 2026-09-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 **Source proposal**: `sdd/proposals/infographic-a2ui-migration.proposal.md` (research audit: `sdd/state/FEAT-527/`)
 
