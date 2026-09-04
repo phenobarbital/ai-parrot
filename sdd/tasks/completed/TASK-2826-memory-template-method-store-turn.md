@@ -324,10 +324,41 @@ async def test_normalize_off_escape_hatch(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Made `ConversationMemory.add_turn` concrete (normalize → count
+→ offload oversized outputs → `schema_version=2` → `apply_commit` →
+`_store_turn`); added abstract `_store_turn`, concrete overridable
+`_get_compaction_state`, `report_usage`, `token_counter`/`omission_store`
+properties (lazy default resolution), `omission_key`. Cascade decision
+(spec §8 open item): **explicit `omission_store.clear()` call in each
+backend's `clear_history`/`delete_history`** (not template wrappers) —
+simpler, and the three backends' clear/delete bodies already differ
+enough (hash-mode vs full-rewrite) that a shared wrapper would need its
+own backend hook anyway. Renamed `add_turn` → `_store_turn` in
+`mem.py`/`redis.py`/`file.py`; Redis does exactly one `hset` per write
+(read-modify-write on the existing `metadata` blob for `compaction_state`)
+and overrides `_get_compaction_state` with a single targeted `hget` to
+skip the FEAT-524 lazy legacy re-key. Constructors gained
+`token_counter`/`omission_store`/`normalize` (+ Redis `omission_ttl`);
+each backend builds its matching default store (`InMemoryOmissionStore`/
+`RedisOmissionStore(self.redis, ...)`/`FileOmissionStore(self.base_path)`).
+Resolved the `abstract.py` import-cycle guard: `CompactionCommit`/
+`CompactionState`/`OmissionStore`/`InMemoryOmissionStore`/`apply_commit`/
+`apply_usage` (none of their modules import `abstract.py`) are imported
+at module level; `normalize_turn`/`count_turn`/`needs_recount`/
+`get_default_counter`/`TokenCounter` (whose modules import
+`ConversationTurn` from `abstract.py`) are lazy-imported inside methods,
+with `TokenCounter` under `TYPE_CHECKING` for the type hints. All 13
+task-specified tests pass (×3 backends parametrized + Redis-specific +
+escape-hatch + chat-tier + report_usage); full `tests/unit/memory/`
+regression suite (108 tests) green; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `tests/test_chat_storage.py` (the task's other
+named acceptance-criteria test target) was NOT run as part of the
+acceptance gate — it fails to even collect on `dev` before this feature
+touched anything (`ImportError: cannot import name
+'CONVERSATIONS_COLLECTION' from 'parrot.storage.chat'`), confirmed via
+`git show` on the merged FEAT-524 commit `198e6fecd`. Pre-existing,
+unrelated to FEAT-525; not fixed here (out of scope — this task does not
+touch `storage/chat.py`).
