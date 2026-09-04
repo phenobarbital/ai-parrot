@@ -93,7 +93,7 @@
       "feature_id": "FEAT-525",
       "feature": "per-turn-conversation-compaction",
       "spec": "sdd/specs/per-turn-conversation-compaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Own file (compaction/budget.py + its test); independent of 2820/2821/2822/2824/2825.",
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2823-budget-resolution-calibration.md"
+      "completed_at": "2026-09-04T11:04:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2823-budget-resolution-calibration.md"
     },
     {
       "id": "TASK-2824",
