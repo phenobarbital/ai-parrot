@@ -235,10 +235,34 @@ def test_recovery_tool_registered_and_hidden():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/recover.py`:
+schema/messages constants, `bind_read_omitted_content` (fail-closed
+before any store access, `by content_id` / `by turn_id` / no-args
+paths, never raises). `tools/manager.py`: added module-level
+`_INTERNAL_TOOL_NAMES` frozenset and changed `rank_tools`'s guard to
+`if name in _INTERNAL_TOOL_NAMES`; `clone()` untouched (still gates
+only `"search_tools"`, per spec). All 3 task-specified tests pass;
+`tests/test_toolmanager_ranker.py` (15 tests) still green; `ruff check`
+clean on both new/modified files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) `test_internal_tool_exclusion.py`'s given
+assertion `json.loads(tm.search_tools("omitted"))` fails on the
+no-match branch — `search_tools()` returns a plain "No tools found
+matching '...'" string, not JSON, when nothing matches
+(`tools/manager.py:659`), which is exactly what correct exclusion
+produces here. Replaced with a substring check (`"read_omitted_content"
+not in tm.search_tools("omitted")`) that covers both the JSON and
+plain-text return shapes. (2) `tests/test_dynamic_tool_search.py`
+(`test_ask_lazy_flow`, `test_prepare_lazy_tools`) were in this task's
+own acceptance-criteria test list but fail identically with and without
+this task's `manager.py` change (confirmed via `git stash` bisection) —
+pre-existing, unrelated (an `AbstractClient.client` deprecated-setter
+issue and a `_prepare_lazy_tools` lookup issue in `clients/base.py`,
+neither touched here); not fixed, out of scope. (3) A set of 7 failures
+in `tests/unit/infographic_*`/`test_adhoc_dataset_adapter.py` appear
+only when the full `tests/unit/tools/` directory runs together —
+confirmed via bisection (stashing this task's `manager.py` change
+reproduces the identical 7 failures), so this is pre-existing
+test-order-dependent flakiness, not caused by this task.
