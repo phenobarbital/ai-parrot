@@ -784,7 +784,10 @@ class OpenAIClient(OpenAIBaseClient):
                 system_prompt = "\n\n".join(s.text for s in system_prompt)
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        messages.append({"role": "user", "content": prompt})
+        # FEAT-524: do NOT append the current turn here. _build_messages()
+        # already placed it last, after the rendered history; appending again
+        # sent the prompt twice and produced two consecutive `user` messages,
+        # which strict-alternation providers reject.
 
         output_config = self._get_structured_config(structured_output)
 
