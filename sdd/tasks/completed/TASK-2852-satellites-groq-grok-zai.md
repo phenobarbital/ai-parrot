@@ -143,10 +143,96 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Same shape as TASK-2849/2850/2851, no Codebase Contract corrections
+needed this time — all three SDKs (`groq==0.33.0`, `xai-sdk>=1.12.0`,
+`zai-sdk>=0.2.3`) are genuinely used by their respective clients (verified
+via grep: each imports its native SDK lazily inside `__init__`/methods —
+`groq.AsyncGroq`, `xai_sdk.AsyncClient`, `zai.ZaiClient` — but that SDK is
+the class's primary transport, not a secondary feature, so it's declared
+as a hard satellite dependency, unlike `aws_sdk_bedrock_runtime`/`torch`
+in earlier tasks). `groq`/`zai` both extend `OpenAIBaseClient`
+(OpenAI-compatible API), `grok` extends `AbstractClient` directly.
+
+`git mv` all three folders + moved `test_grok_multiround_usage.py` +
+`test_grok_no_private_memory.py` (grok) and `test_groq_multiround_usage.py`
+(groq) from `tests/unit/clients/`. `zai` had zero tests under that
+directory. `factory.py`: removed `"groq"`, `"grok"`, `"zai"` from
+`_IN_CORE_PROVIDERS` (only `nvidia`, `moonshot`, `openrouter`, `local`,
+`vllm` remain transitional — TASK-2853 finishes the set).
+`test_factory_discovery.py`'s two example-in-core-provider assertions
+(previously `"groq"`/`"zai"`) now use `"nvidia"`/`"moonshot"`.
+
+**Cross-cutting bugfix** (not caused by groq/grok/zai themselves, but by
+"google" becoming a real entry-point-sourced provider back in TASK-2851 —
+found via this task's own regression sweep): four call sites read
+`SUPPORTED_CLIENTS` directly and instantiated the value without resolving
+the zero-arg lazy-loader shape a real entry point produces (`ep.load`,
+not the class itself — `LLMFactory.create()` already resolves this, and
+`bots/abstract.py` already had a `_resolve_supported_client()` helper for
+exactly this, but these four call sites predate that helper's use here):
+
+1. `parrot_pipelines/abstract.py::_get_llm()` — confirmed genuinely
+   broken via a real `TypeError: EntryPoint.load() got an unexpected
+   keyword argument 'model'`, surfaced by
+   `test_planogram_types.py::test_unknown_type_raises_valueerror` in this
+   task's own pipelines regression sweep (its default provider is
+   `"google"`). Fixed inline with the same two-line resolve pattern.
+2. `parrot/bots/voice.py`, `parrot/advisors/mixin.py`,
+   `parrot/interfaces/tools.py` — same latent bug, found via a targeted
+   grep sweep of every remaining direct `SUPPORTED_CLIENTS` consumer
+   (all default to or resolve `"google"`). Fixed inline, same pattern.
+3. `parrot/bots/flows/crew/crew.py` had a second, more serious issue: a
+   **module-scope** `from ....clients.google import GoogleGenAIClient` —
+   core importing a provider unconditionally at import time (spec AC-3),
+   which would hard-fail merely importing `crew.py` if
+   `ai-parrot-client-google` isn't installed. Made lazy (moved to the one
+   real instantiation site at `run_loop()`'s default-LLM fallback). Its
+   three separate `SUPPORTED_CLIENTS` instantiation sites (constructor's
+   3-way branch ×2, `synthesize_report()`'s `executive_summary` default)
+   now import and reuse `bots.abstract`'s existing
+   `_resolve_supported_client()` helper rather than duplicating the
+   resolve logic a third time in this file.
+
+**Evidence**:
+- `uv sync --all-packages` (worktree-local `.venv`) installed all three
+  satellites for real; `groq==0.33.0`, `xai-sdk==1.19.0`, `zai-sdk==0.2.3`
+  genuinely resolved. Entry points confirmed for all 10 satellites
+  extracted so far via `importlib.metadata.entry_points(group=
+  "parrot.clients")`.
+- `LLMFactory.create("groq:llama-3.3-70b-versatile")` →
+  `GroqClient`; `.create("grok:grok-4-fast")` → `GrokClient`;
+  `.create("zai")` raises the *expected* `ValueError: ZAI_API_KEY is
+  required` (a real runtime credential check, not an import/resolution
+  bug — confirms the class resolves and instantiates correctly up to
+  that point).
+- Satellite suites: groq 1/5 passed (4 pre-existing multiround failures,
+  confirmed byte-identical to the ones that moved WITH the test file);
+  grok 13/13 passed; zai 1/1 passed.
+- Core `pytest packages/ai-parrot/tests/unit/clients -q` → **337/337
+  passed, zero failures** — the previously-documented pre-existing
+  groq/grok multiround failures moved out of core along with their test
+  files, so core itself is now fully clean.
+- `ruff check` on every touched/created file (both the 3 satellites and
+  the 5 lazy-loader-resolution fixes) → clean; the 5 pre-existing
+  findings in `grok/client.py` (4×E402 + 1×F841) confirmed unrelated to
+  my edits (none on lines I touched).
+- Regression sweep: pipelines went from 38 passed/2 failed (before the
+  lazy-loader fix) to **39 passed/1 failed** (the remaining failure is
+  the pre-existing, unrelated `test_endcap_no_shelves_promotional.py`
+  product-name-matching assertion). Full crew regression suite (7 files)
+  → **84/84 passed, zero failures** — confirms both the crew.py
+  module-scope-import fix and its three resolve-wrapped call sites are
+  correct. Server/studio sweep unaffected (same 3 pre-existing
+  `test_meta_agent.py` failures only).
+
+**Deviations from spec**: the four-file lazy-loader-resolution bugfix and
+the crew.py module-scope-import fix are not literally within this task's
+Scope text (which only names groq/grok/zai), but were required to keep
+"the tree... green" (per Implementation Notes) once google's TASK-2851
+extraction exposed them — deferring would have left a confirmed,
+reproducible regression in already-merged code. Documented here rather
+than silently expanding scope.

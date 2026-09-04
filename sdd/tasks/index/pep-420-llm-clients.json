@@ -238,7 +238,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -249,8 +249,8 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (groq, grok, zai) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2852-satellites-groq-grok-zai.md"
+      "completed_at": "2026-09-04T20:58:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2852-satellites-groq-grok-zai.md"
     },
     {
       "id": "TASK-2853",
