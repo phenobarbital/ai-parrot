@@ -194,7 +194,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Sweeps ~30 test files after all production changes land.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2817-test-suite-migration.md"
+      "completed_at": "2026-09-04T03:17:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2817-test-suite-migration.md"
     },
     {
       "id": "TASK-2818",
