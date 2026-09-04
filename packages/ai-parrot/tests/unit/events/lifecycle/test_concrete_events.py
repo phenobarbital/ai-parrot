@@ -20,6 +20,7 @@ from parrot.core.events.lifecycle.events import (
     AfterToolCallEvent,
     ToolCallFailedEvent,
     MessageAddedEvent,
+    Stage2CompactionNeededEvent,
 )
 from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
 
@@ -40,6 +41,7 @@ ALL_CLASSES = [
     AfterToolCallEvent,
     ToolCallFailedEvent,
     MessageAddedEvent,
+    Stage2CompactionNeededEvent,
     SubscriberErrorEvent,
 ]
 

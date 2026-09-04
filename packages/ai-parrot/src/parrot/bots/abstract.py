@@ -3,9 +3,10 @@ Abstract Bot interface.
 """
 
 from __future__ import annotations
-from typing import Any, ClassVar, Dict, List, Tuple, Type, Union, Optional, AsyncIterator, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Sequence, Tuple, Type, Union, Optional, AsyncIterator, TYPE_CHECKING
 from collections.abc import Callable
 from abc import ABC, abstractmethod
+from dataclasses import replace
 import os
 import re
 import uuid
@@ -42,6 +43,18 @@ from ..memory import (
     InMemoryConversation,
     FileConversationMemory,
     RedisConversation,
+    HistoryMessage,
+    render_history,
+)
+from ..memory.compaction.models import ContextBudget, CompactionCommit, CompactionResult, FALLBACK_WINDOW
+from ..memory.compaction.budget import build_default_budget, compaction_disabled_by_env, resolve_window
+from ..memory.compaction.compact import compact_history
+from ..memory.compaction.tokens import get_default_counter
+from ..memory.compaction.recover import (
+    READ_OMITTED_CONTENT_NAME,
+    READ_OMITTED_CONTENT_DESCRIPTION,
+    READ_OMITTED_CONTENT_SCHEMA,
+    bind_read_omitted_content,
 )
 from .kb import KBSelector
 from ..utils.helpers import RequestContext, _current_ctx
@@ -126,6 +139,7 @@ from parrot.core.events.lifecycle.events import (
     ToolManagerReadyEvent,
     AgentStatusChangedEvent,
     MessageAddedEvent,
+    Stage2CompactionNeededEvent,
 )
 from parrot.core.events.lifecycle.legacy_bridge import _LegacyEventBridge
 
@@ -456,6 +470,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         )
         self._llm_model_explicit = _explicit_llm_model not in (None, "")
         self._llm_model = _explicit_llm_model or self.default_model
+        # FEAT-525: raw context_budget kwarg, resolved lazily by the
+        # `context_budget` property (set before `configure_conversation_memory()`
+        # runs later in __init__ — the property is read from there via
+        # `_register_recovery_tool()`).
+        self._context_budget_raw: Optional[Union[ContextBudget, bool]] = kwargs.get("context_budget")
+        self._budget_window_logged: bool = False
         self._llm_preset: str = kwargs.get("preset", None)
         self._llm: Optional[AbstractClient] = None
         self._llm_config: Optional[LLMConfig] = None
@@ -538,7 +558,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self.memory_config: dict = kwargs.get("memory_config", {})
 
         # Conversation settings
-        self.max_context_turns: int = kwargs.get("max_context_turns", 50)
+        # FEAT-525: default changed from 50 to None. `None` means "use
+        # ContextBudget.max_turns (30)"; an explicit kwarg (or a DB value,
+        # for Chatbot) overrides that ceiling only — see `context_budget`.
+        self.max_context_turns: Optional[int] = kwargs.get("max_context_turns")
         # FEAT-140 follow-up: when the operator does NOT pass an explicit
         # context_search_limit / context_score_threshold, fall back to the
         # per-model recommendation in the embeddings catalog before the
@@ -1204,6 +1227,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # Fallback to in-memory
             self.conversation_memory = self.get_conversation_memory("memory")
             self.logger.warning("Fallback to in-memory conversation storage")
+        # FEAT-525: register the recovery tool once memory (and therefore a
+        # budget decision) is known — both the success and fallback paths
+        # end up with a configured `self.conversation_memory` here.
+        self._register_recovery_tool()
 
     def _define_prompt(self, config: Optional[dict] = None, **kwargs):
         """
@@ -1673,6 +1700,169 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             raise ValueError(f"Unknown storage type: {storage_type}")
 
     @property
+    def context_budget(self) -> Optional[ContextBudget]:
+        """The bot's per-turn compaction budget, or ``None`` when compaction is disabled.
+
+        Resolution (FEAT-525, spec G3/C3):
+
+        - ``context_budget=False`` (constructor kwarg) or the
+          ``PARROT_COMPACTION_DISABLED=1`` environment kill switch ⇒
+          ``None`` — every render/save goes through FEAT-524's plain path,
+          byte for byte.
+        - An explicit :class:`ContextBudget` instance ⇒ used as given,
+          except its ``max_turns`` is overridden by ``self.max_context_turns``
+          when that is set.
+        - ``None``/``True`` (the default) ⇒ auto-built from
+          :func:`~parrot.memory.compaction.budget.build_default_budget`
+          using ``self._llm_model``, with ``max_turns=self.max_context_turns``.
+          When the model is unknown (falls back to the 32k window), this
+          is logged once per bot at INFO — not once per call.
+
+        Returns:
+            The resolved budget, or ``None`` when compaction is disabled.
+        """
+        raw = self._context_budget_raw
+        if raw is False or compaction_disabled_by_env():
+            return None
+        if isinstance(raw, ContextBudget):
+            if self.max_context_turns:
+                return replace(raw, max_turns=self.max_context_turns)
+            return raw
+        # raw is None or True: auto-build from the model.
+        if not self._budget_window_logged and resolve_window(self._llm_model) == FALLBACK_WINDOW:
+            self.logger.info(
+                "[%s] context window unknown for model %r; using the %s-token fallback for compaction.",
+                self.name,
+                self._llm_model,
+                FALLBACK_WINDOW,
+            )
+            self._budget_window_logged = True
+        return build_default_budget(self._llm_model, max_turns=self.max_context_turns)
+
+    async def render_context_history(
+        self, history: Optional[ConversationHistory]
+    ) -> Tuple[List[HistoryMessage], Optional[CompactionResult]]:
+        """Render a history for this round, budgeted when a `context_budget` is active.
+
+        With no active budget (disabled, or no history/memory), this is
+        byte-identical to FEAT-524's plain ``render_history(history,
+        max_turns=..., current_chatbot_id=...)``. Otherwise, runs the pure
+        :func:`~parrot.memory.compaction.compact.compact_history` pre-pass,
+        flushes its omissions, and renders the resulting views. A flush
+        failure degrades to the plain path for this call only — the
+        boundary is never advanced on a failed flush.
+
+        Args:
+            history: The history to render. ``None`` renders to ``[]``.
+
+        Returns:
+            A tuple of ``(rendered_messages, compaction_result)``.
+            ``compaction_result`` is ``None`` whenever the plain path was
+            used (budget disabled, no history, no memory, or a flush
+            failure) — callers use this to decide whether to build a
+            :class:`CompactionCommit` for ``save_conversation_turn``.
+        """
+        memory = self.conversation_memory
+        budget = self.context_budget
+
+        def _plain() -> List[HistoryMessage]:
+            return render_history(
+                history, max_turns=self.max_context_turns or 30, current_chatbot_id=self.memory_key_id
+            )
+
+        if budget is None or history is None or memory is None:
+            return _plain(), None
+
+        state = history.metadata.get("compaction") or {}
+        result = compact_history(
+            history,
+            budget,
+            boundary_turn_id=state.get("boundary_turn_id"),
+            calibration=float(state.get("calibration", 1.0)),
+            counter=memory.token_counter,
+            current_chatbot_id=self.memory_key_id,
+        )
+        try:
+            await memory.omission_store.put_many(
+                memory.omission_key(history.user_id, history.session_id, self.memory_key_id), result.omissions
+            )
+        except Exception as exc:  # noqa: BLE001 — degrade, never fail the round
+            self.logger.warning(
+                "[%s] omission flush failed (%s); rendering plain history this round", self.name, exc
+            )
+            return _plain(), None
+
+        return render_history(result.views, current_chatbot_id=self.memory_key_id), result
+
+    def estimate_prompt_tokens(
+        self, rendered: Sequence[HistoryMessage], system_prompt: Optional[str], prompt: str
+    ) -> int:
+        """Estimate the prompt's token cost for calibration pairing.
+
+        Args:
+            rendered: The messages about to be sent to the client.
+            system_prompt: The effective system prompt for this round.
+            prompt: The user's prompt for this round.
+
+        Returns:
+            The sum of the memory's token counter over every rendered
+            message's content, the system prompt, and the prompt.
+        """
+        counter = self.conversation_memory.token_counter if self.conversation_memory else get_default_counter()
+        total = sum(counter.count(m.content) for m in rendered)
+        total += counter.count(system_prompt or "")
+        total += counter.count(prompt or "")
+        return total
+
+    def build_compaction_commit(
+        self, result: Optional[CompactionResult], prompt_estimate: int
+    ) -> Optional[CompactionCommit]:
+        """Build the commit `save_conversation_turn` folds into the persisted state.
+
+        Args:
+            result: The :class:`CompactionResult` from
+                :meth:`render_context_history`, or ``None`` when the plain
+                path was used this round.
+            prompt_estimate: This round's estimated prompt token cost (see
+                :meth:`estimate_prompt_tokens`).
+
+        Returns:
+            ``None`` when ``result`` is ``None``; otherwise a
+            :class:`CompactionCommit` carrying the new boundary,
+            ``stage2_needed``, and telemetry for the Stage-2 event.
+        """
+        if result is None:
+            return None
+        return CompactionCommit(
+            prompt_estimate=prompt_estimate,
+            boundary_turn_id=result.boundary_turn_id,
+            stage2_needed=result.stage2_needed,
+            history_estimate=result.history_estimate,
+            dropped_turns=len(result.dropped_turn_ids),
+        )
+
+    def _register_recovery_tool(self) -> None:
+        """Register the `read_omitted_content` recovery tool, once, when budgeted.
+
+        Called at the end of :meth:`configure_conversation_memory` (both
+        the success and the in-memory-fallback branch). A no-op when
+        there is no conversation memory, compaction is disabled
+        (``context_budget is None``), or the tool is already registered.
+        """
+        if not self.conversation_memory:
+            return
+        if self.context_budget is None:
+            return
+        if READ_OMITTED_CONTENT_NAME in self.tool_manager.list_tools():
+            return
+        self.tool_manager.register_tool(
+            name=READ_OMITTED_CONTENT_NAME,
+            description=READ_OMITTED_CONTENT_DESCRIPTION,
+            input_schema=READ_OMITTED_CONTENT_SCHEMA,
+            function=bind_read_omitted_content(self.conversation_memory),
+        )
+
+    @property
     def memory_key_id(self) -> str:
         """Stable per-agent segment of the conversation storage key (FEAT-524).
 
@@ -1723,8 +1913,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         user_id: str,
         session_id: str,
         turn: ConversationTurn,
+        *,
+        compaction: Optional[CompactionCommit] = None,
     ) -> None:
-        """Persist one conversation turn — the single writer (FEAT-524).
+        """Persist one conversation turn — the single writer (FEAT-524, FEAT-525).
 
         Every bot entry point routes its turn through here. The turn is always
         stored under ``self.memory_key_id``; the ``chatbot_id`` parameter this
@@ -1737,6 +1929,13 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             turn: The turn to persist. Its ``chatbot_id`` MUST equal
                 ``self.memory_key_id`` — attribution and storage key are two
                 views of the same fact and must not disagree.
+            compaction: This round's :class:`CompactionCommit` (FEAT-525),
+                built via :meth:`build_compaction_commit`. When given, the
+                memory folds it into ``metadata["compaction"]`` (calibration
+                EWMA, boundary, ``stage2_needed``) in the same write as the
+                turn. ``None`` for writers that do not participate in the
+                budget round-trip (e.g. an ``ask_stream`` partial save on
+                error).
 
         Raises:
             ValueError: If ``turn.chatbot_id`` does not match
@@ -1751,7 +1950,18 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 f"memory_key_id={chatbot_key!r}; a turn must be attributed to "
                 "the agent whose history it is stored in."
             )
-        await self.conversation_memory.add_turn(user_id, session_id, turn, chatbot_id=chatbot_key)
+
+        # FEAT-525: read the PERSISTED stage2_needed flag before the write,
+        # so the event fires exactly once, on the first False -> True flip.
+        was_stage2_needed = False
+        if compaction is not None and compaction.stage2_needed:
+            prev_history = await self.conversation_memory.get_history(user_id, session_id, chatbot_id=chatbot_key)
+            if prev_history is not None:
+                was_stage2_needed = bool((prev_history.metadata.get("compaction") or {}).get("stage2_needed"))
+
+        await self.conversation_memory.add_turn(
+            user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
+        )
         # FEAT-176: emit MessageAddedEvent after persisting to memory.
         # Use the active invocation's trace context when available.
         # ConversationTurn stores both user_message and assistant_response;
@@ -1771,6 +1981,23 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 source_name=self.name,
             )
         )
+
+        # FEAT-525: Stage-2 trigger surface — fires exactly once per session,
+        # on the first False -> True flip of the persisted stage2_needed flag.
+        if compaction is not None and compaction.stage2_needed and not was_stage2_needed:
+            budget = self.context_budget
+            await self.events.emit(
+                Stage2CompactionNeededEvent(
+                    trace_context=trace_ctx,
+                    agent_name=self.name,
+                    session_id=session_id,
+                    history_estimate=compaction.history_estimate,
+                    available=budget.available if budget else 0,
+                    dropped_turns=compaction.dropped_turns,
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
 
     async def clear_conversation_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Clear conversation history using unified memory system."""
