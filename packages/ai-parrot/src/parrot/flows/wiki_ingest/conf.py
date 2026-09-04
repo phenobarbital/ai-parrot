@@ -32,6 +32,7 @@ __all__ = (
     "WIKI_KB_LLM_CHEAP",
     "WIKI_KB_LLM_STRONG",
     "WIKI_KB_MAX_CATCHUP_DAYS",
+    "WIKI_KB_MAX_NEW_PER_RUN",
     "WIKI_KB_MAX_REPROCESS_ATTEMPTS",
     "WIKI_KB_PARTICIPANTS",
     "WIKI_KB_RAW_ROOT",
@@ -93,6 +94,16 @@ WIKI_KB_INGEST_CRON: str = config.get("WIKI_KB_INGEST_CRON", fallback="0 * * * *
 #: Per-run cap on the number of meetings processed (bounded chunks — spec
 #: Module 6). ``None`` (unset) means no cap.
 WIKI_KB_INGEST_LIMIT: int | None = config.getint("WIKI_KB_INGEST_LIMIT", fallback=0) or None
+
+#: Per-run cap on the number of NEW meetings fetched+compiled (the backfill
+#: chunk size). Distinct from ``WIKI_KB_INGEST_LIMIT``: that bounds the listing
+#: examined (steady-state throughput), whereas this bounds actual NEW meetings
+#: while the fetch-gate pages PAST already-known ones — which is what lets a
+#: chunked backfill progress instead of re-listing the newest (already-done)
+#: meetings and stalling. It also bounds per-run Fireflies calls (~2×this) and
+#: per-run LLM cost. ``0``/unset means no cap (process every new meeting in the
+#: window in one run). Also passable per-call via ``ingest(max_new=…)``.
+WIKI_KB_MAX_NEW_PER_RUN: int | None = config.getint("WIKI_KB_MAX_NEW_PER_RUN", fallback=0) or None
 
 #: Large-backlog guard: a manual wide-window ``ingest(lookback_days=…)``
 #: is bounded by this many days to avoid an unbounded catch-up run.

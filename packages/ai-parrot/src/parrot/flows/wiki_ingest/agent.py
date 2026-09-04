@@ -111,6 +111,7 @@ class FirefliesWikiKBAgent(Agent):
         self,
         *,
         limit: int | None = None,
+        max_new: int | None = None,
         force_refetch: bool = False,
         since: str | None = None,
         lookback_days: int | None = None,
@@ -123,8 +124,15 @@ class FirefliesWikiKBAgent(Agent):
         surface.
 
         Args:
-            limit: Per-run cap on meetings processed (defaults to
+            limit: Per-run cap on the listing examined (defaults to
                 :data:`conf.WIKI_KB_INGEST_LIMIT`).
+            max_new: Per-run cap on NEW meetings fetched+compiled — the
+                backfill chunk size. The fetch-gate pages past already-known
+                meetings to find this many new ones, so a chunked backfill
+                progresses instead of stalling on the newest page; it also
+                bounds per-run Fireflies calls (~2×this) and LLM cost. For a
+                large one-shot backfill leave it ``None`` and set ``since``.
+                Defaults to :data:`conf.WIKI_KB_MAX_NEW_PER_RUN`.
             force_refetch: Bypass the fetch-gate cheap-skip path.
             since: ISO date lower bound for a manual wide-window ingest.
             lookback_days: Alternative to ``since`` — how many days back
@@ -137,6 +145,7 @@ class FirefliesWikiKBAgent(Agent):
 
         ctx = WikiIngestContext(
             limit=limit if limit is not None else conf.WIKI_KB_INGEST_LIMIT,
+            max_new=max_new,
             force_refetch=force_refetch,
             since=since,
             lookback_days=lookback_days,

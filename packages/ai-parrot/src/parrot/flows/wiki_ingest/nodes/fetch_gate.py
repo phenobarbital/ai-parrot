@@ -40,6 +40,28 @@ logger = logging.getLogger(__name__)
 #: FirefliesObsidianAgent.sync_fireflies_transcripts).
 _PAGE_SIZE_CAP = 50
 
+#: Consecutive content-fetch failures after which the fetch loop stops early.
+#: The MCP tool wrapper surfaces a rate-limit (-32429, after its own bounded
+#: backoff) as a FAILED ToolResult, not an exception — so a sustained
+#: rate-limit makes every fetch fail. Rather than paging the whole window
+#: producing only failures (and burning listing calls), stop after this many
+#: consecutive fetch failures and resume next run (the raw-id gate makes that
+#: cheap). A single permanent-failure meeting therefore does not halt the run.
+_MAX_CONSECUTIVE_FETCH_FAILURES = 3
+
+
+class _FetchError(RuntimeError):
+    """A Fireflies content fetch returned no usable result.
+
+    The MCP tool wrapper catches transport errors (including a -32429
+    rate-limit) and returns ``ToolResult(status="error", result=None)``
+    instead of raising. Passing that ``None`` through would fabricate an
+    EMPTY transcript that then gets hashed and stored as an immutable raw
+    bundle and permanently skipped by the raw-id gate — silent corruption.
+    This is raised instead so the caller skips the meeting THIS run (leaving
+    it unknown and reprocessable) and retries it next run.
+    """
+
 
 class GatedMeeting(BaseModel):
     """One Fireflies listing item after the dedup gate has run.
@@ -268,6 +290,7 @@ async def run_fetch_gate(
     raw_processed_root: Path | None = None,
     raw_failed_root: Path | None = None,
     limit: int | None = None,
+    max_new: int | None = None,
     force_refetch: bool = False,
     since: str | None = None,
     lookback_days: int | None = None,
@@ -292,8 +315,15 @@ async def run_fetch_gate(
         raw_failed_root: The vault's ``Raw/Failed/`` directory (Module 17).
             Quarantined ids found here are treated as known (never
             re-downloaded); the orchestrator retries them from local bytes.
-        limit: Max meetings to fetch, total across pages (default: no
-            cap beyond the API's own page size).
+        limit: Cap on the total listing examined across pages (steady-state
+            throughput bound; default: no cap beyond the API's page size).
+        max_new: Cap on the number of NEW meetings fetched+gated this run
+            (the backfill chunk size). Unlike ``limit``, the loop pages PAST
+            already-known meetings (cheap metadata, no content fetch) until it
+            finds this many new ones — so a chunked backfill progresses
+            instead of re-listing the newest (already-processed) meetings and
+            stalling. Also bounds per-run Fireflies calls (~2×this) and LLM
+            cost. ``None`` means no new-meeting cap.
         force_refetch: Bypass the cheap-skip path and always refetch +
             fingerprint a known id (still yields ``duplicate-skip`` if the
             id is already recorded — R3 is unconditional).
@@ -322,7 +352,15 @@ async def run_fetch_gate(
     if from_date is not None:
         filter_args["fromDate"] = from_date
 
-    effective_limit = limit if limit is not None else conf.WIKI_KB_INGEST_LIMIT
+    # `limit` caps the total listing examined; `max_new` caps the NEW meetings
+    # fetched. When `max_new` governs (backfill), do NOT also apply the conf
+    # listing default — the loop must be free to page past already-known
+    # meetings to find `max_new` new ones (otherwise it stalls on the newest,
+    # already-processed page).
+    if max_new is not None:
+        effective_limit = limit
+    else:
+        effective_limit = limit if limit is not None else conf.WIKI_KB_INGEST_LIMIT
 
     raw_known_ids = _scan_raw_processed_ids(raw_processed_root) if raw_processed_root is not None else set()
     # Module 17 — a quarantined id (Raw/Failed/) is "known": never re-download it.
@@ -330,10 +368,19 @@ async def run_fetch_gate(
     if raw_failed_root is not None:
         raw_known_ids |= _scan_raw_processed_ids(raw_failed_root)
 
-    listing: list[dict[str, Any]] = []
+    gated: list[GatedMeeting] = []
+    new_count = 0
+    consecutive_failures = 0
     skip = 0
-    while effective_limit is None or len(listing) < effective_limit:
-        page_limit = _PAGE_SIZE_CAP if effective_limit is None else min(_PAGE_SIZE_CAP, effective_limit - len(listing))
+    stop = False
+    while not stop:
+        if max_new is not None and new_count >= max_new:
+            break
+        if effective_limit is not None and len(gated) >= effective_limit:
+            break
+        page_limit = _PAGE_SIZE_CAP
+        if effective_limit is not None:
+            page_limit = min(_PAGE_SIZE_CAP, effective_limit - len(gated))
         if page_limit <= 0:
             break
         tool_result = await _call_fireflies_tool(
@@ -342,30 +389,63 @@ async def run_fetch_gate(
         if not tool_result or not getattr(tool_result, "success", False):
             break
         page = _parse_fireflies_listing(tool_result.result)
-        listing.extend(page)
+        if not page:
+            break
+
+        for item in page:
+            fireflies_id = item["id"]
+            if fireflies_id in raw_known_ids:
+                gated.append(
+                    GatedMeeting(
+                        fireflies_id=fireflies_id,
+                        source_id=f"fireflies:{fireflies_id}",
+                        title=item.get("title", "Untitled Meeting"),
+                        meeting_date=item.get("date", ""),
+                        meeting_date_iso=item.get("date_iso"),
+                        participants=item.get("participants", []),
+                        duration_minutes=item.get("duration", 0.0),
+                        outcome="skip",
+                    )
+                )
+                continue
+
+            try:
+                result = await _classify_one(agent, registry, item, force_refetch=force_refetch)
+            except _FetchError as exc:
+                # No usable content (likely a rate-limit surfaced as a failed
+                # ToolResult) — never fabricate an empty bundle. Skip this
+                # meeting this run (it stays unknown → retried next run). Stop
+                # early after repeated failures rather than paging the whole
+                # window producing only skips; the raw-id gate makes resuming cheap.
+                consecutive_failures += 1
+                logger.warning("Skipping %s this run: %s", fireflies_id, exc)
+                if consecutive_failures >= _MAX_CONSECUTIVE_FETCH_FAILURES:
+                    logger.warning(
+                        "Stopping fetch after %d consecutive failures (likely rate-limited); "
+                        "gated %d new this run, will resume next run.",
+                        consecutive_failures,
+                        new_count,
+                    )
+                    stop = True
+                    break
+                continue
+
+            consecutive_failures = 0
+            gated.append(result)
+            if result.outcome == "fetch":
+                new_count += 1
+                if max_new is not None and new_count >= max_new:
+                    stop = True
+                    break
+            if effective_limit is not None and len(gated) >= effective_limit:
+                stop = True
+                break
+
+        if stop:
+            break
         if len(page) < page_limit:
             break
         skip += page_limit
-
-    gated: list[GatedMeeting] = []
-    for item in listing:
-        fireflies_id = item["id"]
-        if fireflies_id in raw_known_ids:
-            gated.append(
-                GatedMeeting(
-                    fireflies_id=fireflies_id,
-                    source_id=f"fireflies:{fireflies_id}",
-                    title=item.get("title", "Untitled Meeting"),
-                    meeting_date=item.get("date", ""),
-                    meeting_date_iso=item.get("date_iso"),
-                    participants=item.get("participants", []),
-                    duration_minutes=item.get("duration", 0.0),
-                    outcome="skip",
-                )
-            )
-            continue
-
-        gated.append(await _classify_one(agent, registry, item, force_refetch=force_refetch))
 
     return gated
 
@@ -397,7 +477,13 @@ async def _classify_one(
 
     async def _fetch(tid: str) -> str:
         result = await _call_fireflies_tool(agent, "fireflies_get_transcript", {"transcriptId": tid})
-        return result.result if hasattr(result, "result") else str(result)
+        if result is None or not getattr(result, "success", False) or getattr(result, "result", None) is None:
+            error = getattr(result, "error", None) if result is not None else "no result"
+            # Never fabricate an empty transcript (it would be hashed + stored as
+            # an immutable raw bundle and permanently skipped). Fail loudly so the
+            # caller skips + retries this meeting.
+            raise _FetchError(f"transcript fetch failed for {tid}: {error}")
+        return result.result
 
     async def _fetch_summary(tid: str) -> str | None:
         try:

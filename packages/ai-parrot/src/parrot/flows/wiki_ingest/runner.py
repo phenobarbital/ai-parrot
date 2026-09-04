@@ -52,8 +52,14 @@ class WikiIngestContext(BaseModel):
     """Parameters for one :func:`run_ingest` invocation.
 
     Attributes:
-        limit: Per-run cap on the number of meetings processed (bounded
-            chunks — spec Module 6). ``None`` means no cap.
+        limit: Per-run cap on the total listing examined (steady-state
+            throughput bound — spec Module 6). ``None`` means no cap.
+        max_new: Per-run cap on NEW meetings fetched+compiled (the backfill
+            chunk size). Distinct from ``limit`` — the fetch-gate pages past
+            already-known meetings to find this many new ones, so a chunked
+            backfill progresses instead of stalling on the newest page. Also
+            bounds per-run Fireflies calls and LLM cost. ``None`` falls back
+            to :data:`conf.WIKI_KB_MAX_NEW_PER_RUN`.
         force_refetch: Bypass the fetch-gate cheap-skip path and always
             fetch + fingerprint already-known meeting ids.
         since: ISO date lower bound for a manual wide-window ingest.
@@ -71,6 +77,7 @@ class WikiIngestContext(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     limit: int | None = None
+    max_new: int | None = None
     force_refetch: bool = False
     since: str | None = None
     lookback_days: int | None = None
@@ -933,12 +940,18 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     retry_batch = await asyncio.to_thread(quarantine_node.build_retry_batch, vault_path, cap=reprocess_cap)
     retry_prior: dict[str, int] = {m.fireflies_id: prior for m, prior in retry_batch}
 
+    # `max_new` (per-call or conf default) is the backfill chunk knob: it caps
+    # NEW meetings fetched while the gate pages past already-known ones. When it
+    # governs, it (not `limit`) bounds the run.
+    max_new = ctx.max_new if ctx.max_new is not None else conf.WIKI_KB_MAX_NEW_PER_RUN
+
     gated = await fetch_gate_node.run_fetch_gate(
         agent,
         registry=registry,
         raw_processed_root=raw_processed_root,
         raw_failed_root=raw_failed_root,
         limit=ctx.limit if ctx.limit is not None else conf.WIKI_KB_INGEST_LIMIT,
+        max_new=max_new,
         force_refetch=ctx.force_refetch,
         since=ctx.since,
         lookback_days=ctx.lookback_days,
@@ -951,9 +964,12 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
     # fresh + retry batch, not just fresh meetings — otherwise a large retry
     # backlog would blow the cap. Oldest-first ordering means retries (older)
     # get priority; anything over the cap stays quarantined and retries next run.
-    effective_limit = ctx.limit if ctx.limit is not None else conf.WIKI_KB_INGEST_LIMIT
-    if effective_limit is not None:
-        to_process = to_process[:effective_limit]
+    # When `max_new` governs (backfill), the fetch-gate already bounded the new
+    # meetings this run, so don't also truncate here (that would drop retries).
+    if max_new is None:
+        effective_limit = ctx.limit if ctx.limit is not None else conf.WIKI_KB_INGEST_LIMIT
+        if effective_limit is not None:
+            to_process = to_process[:effective_limit]
     skipped = len([m for m in gated if m.outcome != "fetch"])
 
     report = IngestReport(skipped=skipped)

@@ -84,6 +84,113 @@ def _tools(get_transcripts_result: ToolResult, transcript_calls: list[str]) -> d
     }
 
 
+class _FetchingRegistry(_FakeRegistry):
+    """Like _FakeRegistry but actually calls ``fetch`` (transcript) — so a
+    failed transcript ToolResult surfaces as ``_FetchError`` (mirrors the
+    real MeetingRegistry._fetch_and_fingerprint path)."""
+
+    async def classify(self, item, *, fetch, fetch_summary=None, force_refetch=False) -> Classified:
+        self.classify_calls.append(item)
+        text = await fetch(item["id"])  # raises _FetchError if the tool result failed
+        if fetch_summary is not None:
+            await fetch_summary(item["id"])
+        return Classified(action="create", fetched_text=text, fingerprint="fp")
+
+
+def _multi_listing(count: int) -> str:
+    entries = "".join(
+        f'  - id: id-{i}\n    title: "Meeting {i}"\n    dateString: "2026-08-{10 + i:02d}T10:00:00-05:00"\n    duration: 30\n'
+        for i in range(1, count + 1)
+    )
+    return f"[{count}]:\n{entries}"
+
+
+@pytest.mark.asyncio
+async def test_max_new_caps_new_and_pages_past_known(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """max_new caps the number of NEW meetings fetched while the gate pages
+    PAST already-known ones — this is what makes a chunked backfill progress
+    (a bare `limit` re-lists the newest, already-processed page and stalls)."""
+    (tmp_path / "id-1").mkdir()
+    (tmp_path / "id-1" / "transcript.md").write_text("x", encoding="utf-8")  # id-1 already known
+
+    transcript_calls: list[str] = []
+    agent = _FakeAgent(_tools(ToolResult(success=True, result=_LISTING), transcript_calls))
+    registry = _FetchingRegistry(Classified(action="create"))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    gated = await fetch_gate.run_fetch_gate(agent, registry=registry, raw_processed_root=tmp_path, max_new=1)
+
+    fetched = [m for m in gated if m.outcome == "fetch"]
+    assert len(fetched) == 1
+    assert fetched[0].fireflies_id == "id-2", "should page past the known id-1 to the new id-2"
+    assert transcript_calls == ["id-2"]  # only the new meeting cost a content fetch
+
+
+@pytest.mark.asyncio
+async def test_failed_transcript_fetch_skips_meeting_no_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed content fetch (e.g. a rate-limit surfaced as a failed
+    ToolResult) must NOT fabricate an empty transcript — the meeting is
+    skipped this run (stays unknown → retried next run), never gated as a
+    fetch with empty content."""
+
+    async def _get_transcripts(**kwargs):
+        return ToolResult(success=True, result=_LISTING)
+
+    async def _get_transcript(**kwargs):
+        return ToolResult(success=False, result=None, error="Too many requests (-32429)")
+
+    async def _get_summary(**kwargs):
+        return ToolResult(success=True, result="s")
+
+    agent = _FakeAgent(
+        {
+            "mcp_fireflies_fireflies_get_transcripts": _FakeTool(AsyncMock(side_effect=_get_transcripts)),
+            "mcp_fireflies_fireflies_get_transcript": _FakeTool(AsyncMock(side_effect=_get_transcript)),
+            "mcp_fireflies_fireflies_get_summary": _FakeTool(AsyncMock(side_effect=_get_summary)),
+        }
+    )
+    registry = _FetchingRegistry(Classified(action="create"))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    gated = await fetch_gate.run_fetch_gate(agent, registry=registry)
+
+    # Neither meeting was fetched; no corrupt empty-transcript bundle produced.
+    assert not any(m.outcome == "fetch" for m in gated)
+
+
+@pytest.mark.asyncio
+async def test_stops_after_consecutive_fetch_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sustained fetch failures (rate-limit) stop the run early rather than
+    paging the whole window producing only failures."""
+    attempted: list[str] = []
+
+    async def _get_transcripts(**kwargs):
+        return ToolResult(success=True, result=_multi_listing(6))
+
+    async def _get_transcript(**kwargs):
+        attempted.append(kwargs["transcriptId"])
+        return ToolResult(success=False, result=None, error="rate limited")
+
+    async def _get_summary(**kwargs):
+        return ToolResult(success=True, result="s")
+
+    agent = _FakeAgent(
+        {
+            "mcp_fireflies_fireflies_get_transcripts": _FakeTool(AsyncMock(side_effect=_get_transcripts)),
+            "mcp_fireflies_fireflies_get_transcript": _FakeTool(AsyncMock(side_effect=_get_transcript)),
+            "mcp_fireflies_fireflies_get_summary": _FakeTool(AsyncMock(side_effect=_get_summary)),
+        }
+    )
+    registry = _FetchingRegistry(Classified(action="create"))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    gated = await fetch_gate.run_fetch_gate(agent, registry=registry)
+
+    # Stopped after _MAX_CONSECUTIVE_FETCH_FAILURES (3), not all 6 meetings.
+    assert len(attempted) == fetch_gate._MAX_CONSECUTIVE_FETCH_FAILURES
+    assert not any(m.outcome == "fetch" for m in gated)
+
+
 def test_resolve_from_date_precedence() -> None:
     """since > lookback_days > suggested watermark; every override is
     still bounded by the max-catchup floor (G10 large-backlog guard)."""
