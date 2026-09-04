@@ -268,18 +268,36 @@ class TestDataSpliceLane:
         assert _surface(envelope)["components"][0]["component"] == "DataTable"
         assert _surface(envelope)["dataModel"] == {"rows": [{"region": "N"}]}
 
-    def test_without_a_layout_it_falls_back_to_the_minimal_surface(self, toolkit):
+    def test_without_a_layout_it_falls_back_to_the_html_document_surface(self, toolkit):
+        # FEAT-527: the layout-less fallback wraps the rendered HTML as an
+        # opaque HtmlDocument surface — no more synthetic Infographic blocks.
         envelope = toolkit._build_a2ui_envelope_from_layout(
-            None, {"beta": 1, "alpha": 2}, "art-7", title="Dash", template_name="dash"
+            None,
+            {"beta": 1, "alpha": 2},
+            "art-7",
+            title="Dash",
+            template_name="dash",
+            html="<html><body>dash</body></html>",
+            html_url="https://signed/art-7.html",
         )
-        props = _infographic(envelope)
-        assert props["title"] == "Dash"
-        # Keys sorted so the envelope stays deterministic.
-        assert props["sections"][0]["text"] == "Data: alpha, beta"
+        component = _surface(envelope)["components"][0]
+        assert component["component"] == "HtmlDocument"
+        assert component["title"] == "Dash"
+        assert component["html"] == "<html><body>dash</body></html>"
+        assert "srcUrl" not in component
 
     def test_descriptor_without_layout_uses_the_same_fallback(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope_from_layout(self._descriptor(), {"a": 1}, "art-8", template_name="dash")
-        assert _infographic(envelope)["title"] == "dash"
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            self._descriptor(),
+            {"a": 1},
+            "art-8",
+            template_name="dash",
+            html="<html/>",
+            html_url="https://signed/art-8.html",
+        )
+        component = _surface(envelope)["components"][0]
+        assert component["component"] == "HtmlDocument"
+        assert component["title"] == "Infographic — dash"
 
     def test_empty_payload_yields_no_data_model(self, toolkit):
         envelope = toolkit._build_a2ui_envelope_from_layout(None, {}, "art-9", title="Empty", template_name="dash")

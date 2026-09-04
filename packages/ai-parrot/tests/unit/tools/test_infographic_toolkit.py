@@ -545,3 +545,49 @@ class TestBlocksVariable:
             blocks_variable="fp_blocks",
         )
         assert out == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# render_template / render_data_template — HtmlDocument envelope (FEAT-527)
+# ---------------------------------------------------------------------------
+
+class TestRenderTemplateHtmlDocumentEnvelope:
+    @pytest.fixture
+    def toolkit_with_template(self, fake_artifact_store):
+        tk = InfographicToolkit(
+            artifact_store=fake_artifact_store,
+            templates={"hello": "<html><body>{{ data.title }}</body></html>"},
+        )
+        return tk
+
+    @pytest.fixture
+    def toolkit_with_big_template(self, fake_artifact_store):
+        big_html = "<html><body>" + ("x" * 60_000) + "</body></html>"
+        tk = InfographicToolkit(
+            artifact_store=fake_artifact_store,
+            templates={"big": big_html},
+        )
+        return tk
+
+    @pytest.mark.asyncio
+    async def test_render_template_emits_htmldocument_inline(self, toolkit_with_template):
+        res = await toolkit_with_template.render_template("hello", data={"title": "Hi"})
+        root = res.a2ui_envelope["createSurface"]["components"][0]
+        assert root["component"] == "HtmlDocument"
+        assert root["html"].startswith("<") and "srcUrl" not in root
+        assert res.a2ui_envelope["createSurface"]["surfaceId"] == res.artifact_id
+        assert root["title"] == "Infographic — hello"
+
+    @pytest.mark.asyncio
+    async def test_render_template_large_document_uses_src_url(self, toolkit_with_big_template):
+        res = await toolkit_with_big_template.render_template("big")
+        root = res.a2ui_envelope["createSurface"]["components"][0]
+        assert root["srcUrl"] == res.html_url
+        assert "html" not in root
+        assert res.html_inline is None
+
+    @pytest.mark.asyncio
+    async def test_render_template_explicit_title_used(self, toolkit_with_template):
+        res = await toolkit_with_template.render_template("hello", data={"title": "Hi"}, title="Custom Title")
+        root = res.a2ui_envelope["createSurface"]["components"][0]
+        assert root["title"] == "Custom Title"

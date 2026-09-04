@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field, ValidationError as PydanticValidationErro
 
 from parrot.auth.permission import build_principal_context
 from parrot.tools.toolkit import AbstractToolkit
-from parrot.template.engine import TemplateEngine
+from parrot.template.engine import JinjaConfig, TemplateEngine
 from parrot.models.infographic import (
     InfographicBlock,
     InfographicResponse,
@@ -267,7 +267,17 @@ class InfographicToolkit(AbstractToolkit):
         # a trusted Jinja engine built lazily from developer-supplied templates.
         self._template_engine: Optional[TemplateEngine] = None
         if template_dirs is not None or templates:
-            self._template_engine = TemplateEngine(template_dirs=template_dirs)
+            # FEAT-527: force autoescape ON unconditionally for this toolkit's
+            # engine. JinjaConfig's default (`select_autoescape(...)`) only
+            # auto-escapes templates whose NAME ends in a recognised
+            # extension (.html/.xml/.j2/.jinja/.jinja2) — an in-memory
+            # template registered under a bare name (as `templates=` and
+            # `add_template()` commonly are) would otherwise render
+            # unescaped. The rendered HTML now also reaches consumers via the
+            # HtmlDocument A2UI surface, not just the HTML artifact.
+            self._template_engine = TemplateEngine(
+                template_dirs=template_dirs, config=JinjaConfig(autoescape=True)
+            )
             if templates:
                 self._template_engine.add_templates(templates)
 
@@ -347,7 +357,7 @@ class InfographicToolkit(AbstractToolkit):
             source: HTML+Jinja template source.
         """
         if self._template_engine is None:
-            self._template_engine = TemplateEngine()
+            self._template_engine = TemplateEngine(config=JinjaConfig(autoescape=True))
         self._template_engine.add_templates({name: source})
 
     def get_tools(self, **kwargs):
@@ -620,21 +630,16 @@ class InfographicToolkit(AbstractToolkit):
 
         a2ui_envelope = None
         if self._emit_a2ui:
-            # The Jinja lane has no typed blocks — the template owns the layout.
-            # Model what IS known semantically: the heading, plus the payload keys
-            # the template was given. Anything richer would be fabricated.
-            synthetic_blocks: List[Dict[str, Any]] = [{"type": "title", "title": title or template_name}]
-            if isinstance(data, dict) and data:
-                synthetic_blocks.append(
-                    {
-                        "type": "summary",
-                        "content": "Data: " + ", ".join(sorted(map(str, data))),
-                    }
-                )
-            a2ui_envelope = self._build_a2ui_envelope(
-                InfographicResponse(template=template_name, theme=theme, blocks=synthetic_blocks),
-                artifact_id,
-                title=title,
+            # FEAT-527: the Jinja lane wraps its rendered HTML as an opaque
+            # HtmlDocument surface — the synthetic title+summary envelope
+            # this used to build fabricated structure the template never
+            # declared; the real HTML is the only faithful representation.
+            a2ui_envelope = self._build_html_document_envelope(
+                html=html,
+                html_url=html_url,
+                artifact_id=artifact_id,
+                title=title or f"Infographic — {template_name}",
+                theme=theme,
             )
 
         return InfographicRenderResult(
@@ -765,6 +770,8 @@ class InfographicToolkit(AbstractToolkit):
                 artifact_id,
                 title=title,
                 template_name=template_name,
+                html=html,
+                html_url=html_url,
             )
 
         return InfographicRenderResult(
@@ -904,6 +911,59 @@ class InfographicToolkit(AbstractToolkit):
             )
             return None
 
+    def _build_html_document_envelope(
+        self,
+        *,
+        html: str,
+        html_url: str,
+        artifact_id: str,
+        title: str,
+        theme: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a validated A2UI ``HtmlDocument`` envelope wrapping a rendered
+        HTML artifact (FEAT-527, spec G5 — the Jinja lane's opaque surface).
+
+        Inlines ``html`` when it is under :data:`_INLINE_THRESHOLD`, else
+        carries the signed ``html_url`` as ``srcUrl`` instead — mirrors the
+        ``html_inline`` decision every ``InfographicRenderResult`` already
+        makes for the HTML lane, so both never disagree about "is this small
+        enough to inline".
+
+        Args:
+            html: The rendered HTML document.
+            html_url: The signed artifact URL (used as ``srcUrl`` when ``html``
+                is too large to inline).
+            artifact_id: Persisted artifact id, used verbatim as the surface id.
+            title: Surface/document title.
+            theme: Optional theme hint.
+
+        Returns:
+            The serialised A2UI v1.0 wire envelope, or ``None`` when the build
+            fails — additive lane (spec G7): a failure degrades to an
+            HTML-only result instead of breaking the render.
+        """
+        from parrot.outputs.a2ui.builders import build_html_document
+        from parrot.outputs.a2ui.serialization import serialize
+
+        inline = len(html) < _INLINE_THRESHOLD
+        try:
+            envelope = build_html_document(
+                title=title,
+                html=html if inline else None,
+                src_url=None if inline else html_url,
+                theme=theme,
+                surface_id=artifact_id,
+            )
+            return serialize(envelope)
+        except Exception:
+            self.logger.warning(
+                "A2UI HtmlDocument envelope build failed for infographic %s; "
+                "falling back to HTML-only result.",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
+
     def _build_a2ui_envelope_from_layout(
         self,
         descriptor: Optional["SectionDescriptor"],
@@ -912,6 +972,8 @@ class InfographicToolkit(AbstractToolkit):
         *,
         title: Optional[str] = None,
         template_name: str = "",
+        html: str = "",
+        html_url: str = "",
     ) -> Optional[Dict[str, Any]]:
         """Build an envelope for the data-splice lane (FEAT-326 + FEAT-420).
 
@@ -926,8 +988,9 @@ class InfographicToolkit(AbstractToolkit):
 
         Without a declared layout there is no component structure to model — the
         template owns the layout and the payload shape is arbitrary. That case
-        falls back to the same minimal surface ``render_template`` emits: the
-        heading plus the payload's top-level keys, never invented structure.
+        falls back to the same ``HtmlDocument`` surface ``render_template``
+        emits (FEAT-527): the rendered HTML wrapped opaquely, never invented
+        structure.
 
         Args:
             descriptor: Optional section descriptor; its ``layout`` is the only
@@ -936,6 +999,8 @@ class InfographicToolkit(AbstractToolkit):
             artifact_id: Persisted artifact id, used to derive the surface id.
             title: Optional explicit surface title.
             template_name: Template name, used as the title fallback.
+            html: The rendered HTML document (FEAT-527, layout-less branch only).
+            html_url: The signed artifact URL (FEAT-527, layout-less branch only).
 
         Returns:
             The serialised A2UI v1.0 wire envelope
@@ -951,18 +1016,11 @@ class InfographicToolkit(AbstractToolkit):
 
         try:
             if layout is None:
-                blocks: List[Dict[str, Any]] = [{"type": "title", "title": title or template_name}]
-                if isinstance(payload, dict) and payload:
-                    blocks.append(
-                        {
-                            "type": "summary",
-                            "content": "Data: " + ", ".join(sorted(map(str, payload))),
-                        }
-                    )
-                return self._build_a2ui_envelope(
-                    InfographicResponse(template=template_name, blocks=blocks),
-                    artifact_id,
-                    title=title,
+                return self._build_html_document_envelope(
+                    html=html,
+                    html_url=html_url,
+                    artifact_id=artifact_id,
+                    title=title or f"Infographic — {template_name}",
                 )
 
             # v2 LayoutSpec (FEAT-470 TASK-2542): props live top-level, not
