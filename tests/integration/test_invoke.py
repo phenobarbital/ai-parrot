@@ -78,7 +78,7 @@ def _init_json(client):
 
 def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
     """AnthropicClient with mocked SDK."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
     client = AnthropicClient.__new__(AnthropicClient)
     client.model = "claude-sonnet-4-5"
     client._lightweight_model = "claude-haiku-4-5-20251001"
@@ -383,7 +383,7 @@ class TestInvokeErrors:
         original_error = RuntimeError("API unavailable")
 
         # Detect client type and patch the relevant SDK call
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         from parrot.clients.google.client import GoogleGenAIClient
         from parrot.clients.grok import GrokClient
         if isinstance(mock_client, AnthropicClient):

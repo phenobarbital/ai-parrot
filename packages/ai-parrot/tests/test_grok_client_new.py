@@ -5,7 +5,7 @@ from parrot.models import AIMessage
 
 @pytest.fixture
 def mock_xai_client():
-    with patch("parrot.clients.grok.AsyncClient") as mock:
+    with patch("parrot.clients.grok.client.AsyncClient") as mock:
         client_instance = AsyncMock()
         # client.chat.create is synchronous in the xAI SDK usage shown in grok.py
         client_instance.chat.create = MagicMock()

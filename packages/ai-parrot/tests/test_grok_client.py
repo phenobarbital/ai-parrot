@@ -9,7 +9,7 @@ class TestGrokClient:
     
     @pytest.fixture
     def mock_xai_client(self):
-        with patch("parrot.clients.grok.AsyncClient") as mock:
+        with patch("parrot.clients.grok.client.AsyncClient") as mock:
             client_instance = AsyncMock()
             mock.return_value = client_instance
             yield client_instance
@@ -24,7 +24,7 @@ class TestGrokClient:
             # Verify AsyncClient creation
             await client.get_client()
             mock_xai_client.assert_not_called() # Should be called on get_client? No, patch is on init.
-            # wait, patch("parrot.clients.grok.AsyncClient") patches the class constructor.
+            # wait, patch("parrot.clients.grok.client.AsyncClient") patches the class constructor.
             # So when we call AsyncClient(api_key=..., timeout=...) in get_client, verify it.
             
     @pytest.fixture

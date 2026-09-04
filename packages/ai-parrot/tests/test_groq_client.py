@@ -7,7 +7,7 @@ from parrot.models import AIMessage
 @pytest.mark.asyncio
 async def test_groq_ask():
     # Mock the Groq client class
-    with patch('parrot.clients.groq.AsyncGroq') as mock_groq_cls:
+    with patch('parrot.clients.groq.client.AsyncGroq') as mock_groq_cls:
         # Client instance mock
         mock_client_instance = MagicMock()
         mock_groq_cls.return_value = mock_client_instance
@@ -34,7 +34,7 @@ async def test_groq_ask():
         client.logger = MagicMock()
 
         # Patch AIMessageFactory
-        with patch('parrot.clients.groq.AIMessageFactory') as mock_factory:
+        with patch('parrot.clients.groq.client.AIMessageFactory') as mock_factory:
             mock_factory.from_groq.return_value = AIMessage(content="Hello, Groq!")
 
             # Test ask
@@ -51,7 +51,7 @@ def mock_stream_chunk(text):
 
 @pytest.mark.asyncio
 async def test_groq_ask_stream():
-    with patch('parrot.clients.groq.AsyncGroq') as mock_groq_cls:
+    with patch('parrot.clients.groq.client.AsyncGroq') as mock_groq_cls:
         mock_client_instance = MagicMock()
         mock_groq_cls.return_value = mock_client_instance
         

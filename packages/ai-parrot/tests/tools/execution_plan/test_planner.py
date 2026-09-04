@@ -16,7 +16,7 @@ import pytest
 from parrot.bots.flows.plan import ExecutionPlan
 from parrot.bots.flows.plan.validator import validate_plan
 from parrot.clients.base import AbstractClient
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.tools.execution_plan.catalog import ToolCatalogEntry
 from parrot.tools.execution_plan.planner import (
     PlanAuthoringError,

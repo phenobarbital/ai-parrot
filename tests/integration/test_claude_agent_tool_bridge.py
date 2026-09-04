@@ -43,7 +43,7 @@ from parrot.bots.guardrails import (
     GuardrailResult,
     GuardrailStage,
 )
-from parrot.clients.claude_agent import ClaudeAgentClient, ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentClient, ClaudeAgentRunOptions
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 

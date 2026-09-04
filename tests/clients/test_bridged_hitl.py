@@ -37,7 +37,7 @@ from parrot.auth.confirmation import (
     InMemoryConfirmationWindowStore,
 )
 from parrot.auth.permission import PermissionContext, UserSession
-from parrot.clients.claude_agent_bridge import ClaudeAgentToolBridge
+from parrot.clients.anthropic.claude_agent_bridge import ClaudeAgentToolBridge
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 

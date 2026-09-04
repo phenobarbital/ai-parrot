@@ -25,12 +25,14 @@ except ImportError:
     DEPRECATIONS = None
 
 try:
-    from parrot.models.groq import GroqModel
+    # FEAT-523 (TASK-2844): relocated; TASK-2848 replaces this with LLMFactory.list_models()
+    from parrot.clients.groq.models import GroqModel
 except ImportError:
     GroqModel = None
 
 try:
-    from parrot.clients.claude import ClaudeModel
+    # FEAT-523 (TASK-2844): relocated; TASK-2848 replaces this with LLMFactory.list_models()
+    from parrot.clients.anthropic import ClaudeModel
 except ImportError:
     ClaudeModel = None
 

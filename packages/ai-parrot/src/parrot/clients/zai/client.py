@@ -5,6 +5,7 @@ import json
 import time
 import uuid
 from dataclasses import is_dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 
@@ -12,16 +13,16 @@ from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 
-from ..models import AIMessage, CompletionUsage, OutputFormat, StructuredOutputConfig, ToolCall
-from ..models.responses import InvokeResult
-from ..models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
-from ..exceptions import InvokeError
-from ..memory.render import HistoryMessage
+from ...models import AIMessage, CompletionUsage, OutputFormat, StructuredOutputConfig, ToolCall
+from ...models.responses import InvokeResult
+from .models import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
+from ...exceptions import InvokeError
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .openai_base import OpenAIBaseClient
+from ..openai_base import OpenAIBaseClient
 
 
 class ZaiClient(OpenAIBaseClient):
@@ -46,6 +47,10 @@ class ZaiClient(OpenAIBaseClient):
 
     client_type: str = "zai"
     client_name: str = "zai"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("zai", "z.ai")
+    models: type[Enum] = ZaiModel
     model: str = ZaiModel.GLM_5_2.value
     _default_model: str = ZaiModel.GLM_5_2.value
     _lightweight_model: str = ZaiModel.GLM_4_5_FLASH_FREE.value

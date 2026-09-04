@@ -67,16 +67,16 @@ class _StubClient(AbstractClient):
 
 CLIENT_PATHS = [
     ("parrot.clients.base", "AbstractClient"),
-    ("parrot.clients.claude", "AnthropicClient"),
+    ("parrot.clients.anthropic.client", "AnthropicClient"),
     ("parrot.clients.google.client", "GoogleGenAIClient"),
     ("parrot.clients.openai_base", "OpenAIBaseClient"),
     ("parrot.clients.openai.client", "OpenAIClient"),
-    ("parrot.clients.groq", "GroqClient"),
-    ("parrot.clients.grok", "GrokClient"),
-    ("parrot.clients.zai", "ZaiClient"),
+    ("parrot.clients.groq.client", "GroqClient"),
+    ("parrot.clients.grok.client", "GrokClient"),
+    ("parrot.clients.zai.client", "ZaiClient"),
     ("parrot.clients.bedrock", "BedrockConverseBase"),
     ("parrot.clients.local.client", "LocalLLMClient"),
-    ("parrot.clients.claude_agent", "ClaudeAgentClient"),
+    ("parrot.clients.anthropic.claude_agent", "ClaudeAgentClient"),
     ("parrot.clients.openai.codex_agent", "OpenAICodexClient"),
     ("parrot.clients.hf", "TransformersClient"),
     ("parrot.clients.gemma4", "Gemma4Client"),
@@ -274,7 +274,7 @@ class TestPerClientDefaults:
 
     def test_anthropic_default_is_non_none(self):
         """The Anthropic SDK multiplies max_tokens for its timeout calc."""
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         assert AnthropicClient._default_max_tokens is not None
         assert _bare(AnthropicClient)._resolve_max_tokens() is not None
@@ -563,21 +563,21 @@ class TestAnthropicNonStreamingCeiling:
     NON_STREAMING_CEILING = 128_000 * 600 // 3600  # 21_333
 
     def test_default_sits_at_the_sdk_ceiling(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         assert AnthropicClient._default_max_tokens == self.NON_STREAMING_CEILING
 
     @pytest.mark.parametrize(
         "model", ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"]
     )
     def test_no_model_resolves_above_the_ceiling(self, model):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         budget = AnthropicClient()._resolve_max_tokens(None, model, for_invoke=True)
         assert budget <= self.NON_STREAMING_CEILING
 
     def test_the_ceiling_is_the_transports_not_the_models(self):
         # boto3 Converse has no such guard, so the same model gets far more room.
         from parrot.clients.bedrock import BedrockConverseClient
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         assert (
             BedrockConverseClient()._resolve_max_tokens(None, "claude-opus-5")
             > AnthropicClient()._resolve_max_tokens(None, "claude-opus-5")

@@ -370,7 +370,7 @@ def test_grok_get_client_no_longer_self_caches(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "fake-key-for-test")
 
     from parrot.clients.grok import GrokClient
-    import parrot.clients.grok as _grok_mod
+    import parrot.clients.grok.client as _grok_mod
 
     captured: list = []
 

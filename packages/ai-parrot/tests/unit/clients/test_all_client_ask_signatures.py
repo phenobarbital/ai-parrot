@@ -24,16 +24,16 @@ from parrot.clients.base import AbstractClient
 #: Every module under ``parrot.clients`` that defines a concrete client.
 #: Modules whose optional SDK is missing are skipped, not failed.
 CLIENT_MODULES = [
-    "parrot.clients.anthropic_backends",
+    "parrot.clients.anthropic.backends",
     "parrot.clients.bedrock",
-    "parrot.clients.claude",
-    "parrot.clients.claude_agent",
+    "parrot.clients.anthropic.client",
+    "parrot.clients.anthropic.claude_agent",
     "parrot.clients.openai.codex_agent",
     "parrot.clients.gemma4",
     "parrot.clients.google.client",
     "parrot.clients.openai.client",
-    "parrot.clients.grok",
-    "parrot.clients.groq",
+    "parrot.clients.grok.client",
+    "parrot.clients.groq.client",
     "parrot.clients.hf",
     "parrot.clients.google.live",
     "parrot.clients.local.client",
@@ -42,7 +42,7 @@ CLIENT_MODULES = [
     "parrot.clients.openai_base",
     "parrot.clients.openrouter.client",
     "parrot.clients.vllm.client",
-    "parrot.clients.zai",
+    "parrot.clients.zai.client",
 ]
 
 

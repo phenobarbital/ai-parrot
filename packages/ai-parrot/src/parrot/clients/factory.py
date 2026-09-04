@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 from .base import AbstractClient
-from .claude import AnthropicClient
+from .anthropic import AnthropicClient
 from .google import GoogleGenAIClient
 from .openai import OpenAIClient
 from .groq import GroqClient
@@ -73,8 +73,8 @@ def _lazy_bedrock_mantle():
 def _lazy_claude_agent():
     """Lazy loader for :class:`ClaudeAgentClient`.
 
-    Importing :mod:`parrot.clients.claude_agent` is itself cheap (it does
-    not pull in :mod:`claude_agent_sdk` at module scope), but
+    Importing :mod:`parrot.clients.anthropic.claude_agent` is itself cheap
+    (it does not pull in :mod:`claude_agent_sdk` at module scope), but
     instantiating the client and calling any of its methods will require
     the optional ``ai-parrot[claude-agent]`` extra to be installed. This
     loader catches a missing-SDK ``ImportError`` and re-raises it with an
@@ -89,7 +89,7 @@ def _lazy_claude_agent():
             wrapped with a hint to install the ``[claude-agent]`` extra.
     """
     try:
-        from .claude_agent import ClaudeAgentClient
+        from .anthropic.claude_agent import ClaudeAgentClient
 
         return ClaudeAgentClient
     except ImportError as exc:

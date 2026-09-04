@@ -15,8 +15,8 @@ from navconfig import config
 
 # from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
-from .base import AbstractClient, BatchRequest, StreamingRetryConfig
-from ..memory.render import HistoryMessage
+from ..base import AbstractClient, BatchRequest, StreamingRetryConfig
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters. Response metadata and
 # HumanInteractionInterrupt read them from the per-call ContextVars that
@@ -31,7 +31,7 @@ from parrot.core.events.lifecycle.events import (
 )
 
 # FEAT-232: AWS / Bedrock conf constants
-from ..conf import (
+from ...conf import (
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
     AWS_REGION_NAME,
@@ -45,9 +45,9 @@ if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
     # SDKs to be installed at runtime when this client is unused.
     from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicAWS
-    from parrot.clients.anthropic_backends import AnthropicBackendProtocol
+    from parrot.clients.anthropic.backends import AnthropicBackendProtocol
     from PIL import Image
-from ..models import (
+from ...models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
@@ -56,11 +56,11 @@ from ..models import (
     CompletionUsage,
     ObjectDetectionResult,
 )
-from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
-from ..models.claude import ClaudeModel
-from ..models.outputs import SentimentAnalysis, ProductReview
-from ..utils.http_logging import quiet_http_loggers
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
+from .models import ClaudeModel
+from ...models.outputs import SentimentAnalysis, ProductReview
+from ...utils.http_logging import quiet_http_loggers
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
 # Silence the underlying HTTP stack used by the Anthropic SDK; its DEBUG
@@ -78,6 +78,12 @@ class AnthropicClient(AbstractClient):
     version: str = "2023-06-01"
     client_type: str = "anthropic"
     client_name: str = "claude"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory). Includes
+    # the PROVIDER_BACKEND keys (bedrock/anthropic-aws) so future entry-point
+    # discovery / list_providers() see them too (spec §7 gotcha).
+    provider_keys: tuple[str, ...] = ("claude", "anthropic", "bedrock", "anthropic-aws")
+    models: type[Enum] = ClaudeModel
     use_session: bool = False
     _default_model: str = "claude-sonnet-4-5"
     _fallback_model: str = "claude-sonnet-4.5"
@@ -177,7 +183,7 @@ class AnthropicClient(AbstractClient):
         _aws_api_key = api_key or ANTHROPIC_AWS_API_KEY or self.api_key
 
         # ── Instantiate the matching backend strategy ─────────────────────────
-        from .anthropic_backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
+        from .backends import DirectBackend, BedrockBackend, AWSWorkspaceBackend
 
         if backend == "bedrock":
             self._backend: "AnthropicBackendProtocol" = BedrockBackend(
@@ -256,7 +262,7 @@ class AnthropicClient(AbstractClient):
         uniformly at every model-resolution site.
 
         Args:
-            model: A model identifier — a :class:`~parrot.models.claude.ClaudeModel`
+            model: A model identifier — a :class:`~parrot.clients.anthropic.models.ClaudeModel`
                 enum member, a plain string, or ``None``.  ``None`` / falsy
                 values fall back to ``self.model`` then ``self.default_model``.
 

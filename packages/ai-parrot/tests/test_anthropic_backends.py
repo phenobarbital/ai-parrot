@@ -1,4 +1,4 @@
-"""Unit tests for parrot.clients.anthropic_backends (TASK-1517).
+"""Unit tests for parrot.clients.anthropic.backends (TASK-1517).
 
 SDK classes are mocked throughout so these tests run without AWS credentials
 or the anthropic[aws] extra installed.
@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 
-from parrot.clients.anthropic_backends import (
+from parrot.clients.anthropic.backends import (
     DirectBackend,
     BedrockBackend,
     AWSWorkspaceBackend,

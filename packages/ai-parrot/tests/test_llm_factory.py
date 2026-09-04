@@ -1,7 +1,7 @@
 """Tests for LLMFactory FEAT-232 additions (TASK-1519).
 
 Verifies that the new ``bedrock`` and ``anthropic-aws`` provider keys
-resolve to :class:`~parrot.clients.claude.AnthropicClient` with the
+resolve to :class:`~parrot.clients.anthropic.AnthropicClient` with the
 correct ``backend`` attribute pre-bound, and that all existing providers
 remain unaffected.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS, PROVIDER_BACKEND
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 
 
 # ── FEAT-232 new keys ────────────────────────────────────────────────────────

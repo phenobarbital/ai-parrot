@@ -1,5 +1,6 @@
 from __future__ import annotations
 import traceback
+from enum import Enum
 from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING, Sequence
 from pathlib import Path
 from logging import getLogger
@@ -10,17 +11,17 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .openai_base import OpenAIBaseClient
-from ..tools.manager import ToolFormat
+from ..openai_base import OpenAIBaseClient
+from ...tools.manager import ToolFormat
 
 if TYPE_CHECKING:
     from groq import AsyncGroq
-from ..models import (
+from ...models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
@@ -28,10 +29,10 @@ from ..models import (
     StructuredOutputConfig,
     OutputFormat,
 )
-from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
-from ..models.groq import GroqModel
-from ..models.outputs import SentimentAnalysis, ProductReview
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
+from .models import GroqModel
+from ...models.outputs import SentimentAnalysis, ProductReview
 
 getLogger("httpx").setLevel("WARNING")
 getLogger("httpcore").setLevel("WARNING")
@@ -77,6 +78,10 @@ class GroqClient(OpenAIBaseClient):
 
     client_type: str = "groq"
     client_name: str = "groq"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("groq",)
+    models: type[Enum] = GroqModel
     tool_format: ToolFormat = ToolFormat.GROQ
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = "openai/gpt-oss-120b"

@@ -1,7 +1,7 @@
 """Claude Code-backed agent target for the Agent CLI Daemon (agentd).
 
 Serves an :class:`~parrot.bots.agent.Agent` whose LLM is a
-:class:`~parrot.clients.claude_agent.ClaudeAgentClient`, so every turn is
+:class:`~parrot.clients.anthropic.claude_agent.ClaudeAgentClient`, so every turn is
 delegated to a local Claude Code sub-agent authenticated with the
 credentials the bundled ``claude`` CLI already holds (``claude auth`` /
 claude.ai login) rather than an ``ANTHROPIC_API_KEY``.

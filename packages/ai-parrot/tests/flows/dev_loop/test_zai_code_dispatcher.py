@@ -19,7 +19,7 @@ from parrot.flows.dev_loop import (
     ZaiCodeDispatchProfile,
     ZaiCodeDispatcher,
 )
-from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
+from parrot.clients.zai.models import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
 
 
 # ---------------------------------------------------------------------------

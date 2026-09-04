@@ -9,7 +9,7 @@ to a Claude Code sub-agent.
 Highlights:
 
 * The ``claude_agent_sdk`` import is **strictly lazy** — performed inside
-  every method that needs it. ``import parrot.clients.claude_agent`` is
+  every method that needs it. ``import parrot.clients.anthropic.claude_agent`` is
   therefore safe even when the optional ``ai-parrot[claude-agent]`` extra
   is not installed; the failure surfaces only when the user actually
   calls a method (with a clear ``ImportError``).
@@ -41,6 +41,7 @@ import json
 import logging
 import uuid
 from dataclasses import is_dataclass
+from enum import Enum
 from typing import (
     Any,
     AsyncIterator,
@@ -65,12 +66,13 @@ else:
     # here; AgentDefinition shape validation lives upstream in the SDK.
     AgentsMapping = Dict[str, Any]
 
-from ..exceptions import InvokeError
-from ..models import AIMessage, AIMessageFactory
-from ..models.responses import InvokeResult
-from ..memory.render import HistoryMessage
+from ...exceptions import InvokeError
+from ...models import AIMessage, AIMessageFactory
+from ...models.responses import InvokeResult
+from ...memory.render import HistoryMessage
 from parrot.observability.context import current_session_id, current_user_id
-from .base import AbstractClient
+from ..base import AbstractClient
+from .models import ClaudeModel
 
 logging.getLogger("claude_agent_sdk").setLevel(logging.WARNING)
 
@@ -278,6 +280,10 @@ class ClaudeAgentClient(AbstractClient):
 
     client_type: str = "claude_agent"
     client_name: str = "claude-agent"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("claude-agent", "claude-code")
+    models: type[Enum] = ClaudeModel
     use_session: bool = False
     _default_model: str = "claude-sonnet-4-6"
     _lightweight_model: str = "claude-haiku-4-5-20251001"
@@ -509,7 +515,7 @@ class ClaudeAgentClient(AbstractClient):
         """Coerce a model argument (Enum / str / None) into a model id."""
         if model is None:
             return fallback
-        # Support enum-like inputs (parrot.models.claude.ClaudeModel).
+        # Support enum-like inputs (parrot.clients.anthropic.models.ClaudeModel).
         return getattr(model, "value", model)
 
     # ------------------------------------------------------------------

@@ -12,7 +12,7 @@ class TestFactoryBedrockConverse:
         assert "bedrock-converse" in SUPPORTED_CLIENTS
 
     def test_bedrock_legacy_preserved(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         client_cls = SUPPORTED_CLIENTS["bedrock"]
         if callable(client_cls) and not isinstance(client_cls, type):
             client_cls = client_cls()

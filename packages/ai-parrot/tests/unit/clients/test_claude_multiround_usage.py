@@ -13,7 +13,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     ClientRoundEvent,

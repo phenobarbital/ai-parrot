@@ -36,7 +36,7 @@ import os
 import shutil
 import sys
 
-from parrot.clients.claude_agent import ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
 
 

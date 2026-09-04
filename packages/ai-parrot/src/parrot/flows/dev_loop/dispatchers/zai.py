@@ -12,7 +12,7 @@ from parrot.flows.dev_loop.dispatchers._shared import T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchLabels, ZaiCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
+from parrot.clients.zai.models import THINKING_CAPABLE_ZAI_MODELS
 
 
 class ZaiCodeDispatcher(LLMCodeDispatcher):

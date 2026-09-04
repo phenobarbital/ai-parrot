@@ -10,8 +10,8 @@ The guards mirror ``GoogleGenAIClient._requires_thinking``.
 """
 import pytest
 
-from parrot.clients.claude import AnthropicClient
-from parrot.models.claude import ClaudeModel
+from parrot.clients.anthropic import AnthropicClient
+from parrot.clients.anthropic.models import ClaudeModel
 
 
 @pytest.fixture(scope="module")

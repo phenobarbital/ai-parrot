@@ -3,7 +3,7 @@
 The dispatcher is the heart of FEAT-129. It is intentionally a *thin*
 class: it owns the global concurrency cap, the Redis stream plumbing,
 and the profile → run-options resolver, but delegates all SDK work to
-:class:`parrot.clients.claude_agent.ClaudeAgentClient` (FEAT-124) via
+:class:`parrot.clients.anthropic.claude_agent.ClaudeAgentClient` (FEAT-124) via
 :class:`parrot.clients.factory.LLMFactory`.
 
 Responsibilities (per spec §3 Module 2):
@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.clients.claude_agent import ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
 from parrot.core.events.lifecycle import TraceContext
 from parrot.core.events.lifecycle.events.client import (

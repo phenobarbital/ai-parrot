@@ -124,7 +124,7 @@ class OutputFormatter:
 
     Example usage with retry:
         ```python
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         from parrot.outputs.formatter import OutputFormatter, OutputRetryConfig
 
         # Create LLM client for retries

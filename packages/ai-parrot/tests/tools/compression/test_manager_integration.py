@@ -176,9 +176,9 @@ def test_no_second_compression_call_site():
     """G1: compression logic exists in exactly ONE place (this stage's
     call site in `manager.py`). Non-Google clients must not grow their own
     tool-result truncation/compression logic."""
-    import parrot.clients.claude as claude_mod
-    import parrot.clients.groq as groq_mod
-    import parrot.clients.grok as grok_mod
+    import parrot.clients.anthropic.client as claude_mod
+    import parrot.clients.groq.client as groq_mod
+    import parrot.clients.grok.client as grok_mod
     for mod in (claude_mod, groq_mod, grok_mod):
         src = inspect.getsource(mod)
         assert "compression" not in src.lower()

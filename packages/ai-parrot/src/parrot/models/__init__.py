@@ -93,7 +93,6 @@ from .datasets import (
     DatasetDeleteResponse,
     DatasetErrorResponse,
 )
-from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
     AgentDefinition,
@@ -121,7 +120,6 @@ __all__ = (
     "OutputFormat",
     "ToolCall",
     "CompletionUsage",
-    "ZaiModel",
     "ToolConfig",
     "AIMessage",
     "AIMessageFactory",

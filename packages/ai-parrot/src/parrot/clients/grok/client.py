@@ -8,12 +8,13 @@ from pathlib import Path
 from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 
-from ..memory.render import HistoryMessage
+from ...memory.render import HistoryMessage
 
 # FEAT-524: ids are no longer ask() parameters; response metadata reads them
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
-from .base import AbstractClient
+from ..base import AbstractClient
+from .models import GrokModel
 
 if TYPE_CHECKING:
     from xai_sdk import AsyncClient
@@ -30,25 +31,10 @@ def _xai_chat_helpers():
     return user, system, assistant, tool_result
 
 
-from ..models import MessageResponse, CompletionUsage, AIMessage, StructuredOutputConfig, ToolCall
-from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
-from ..tools.manager import ToolFormat
-
-
-class GrokModel(str, Enum):
-    """Grok model versions (xAI API, July 2026)."""
-
-    GROK_4_3 = "grok-4.3"
-    GROK_4_20 = "grok-4.20"
-    GROK_4_20_NON_REASONING = "grok-4.20-non-reasoning"
-    GROK_4_20_REASONING = "grok-4.20-reasoning"
-    GROK_4_20_MULTI_AGENT = "grok-4.20-multi-agent"
-    GROK_BUILD_0_1 = "grok-build-0.1"
-    GROK_CODE_FAST_1 = "grok-code-fast-1"
-    GROK_IMAGINE_IMAGE = "grok-imagine-image"
-    GROK_IMAGINE_IMAGE_QUALITY = "grok-imagine-image-quality"
-    GROK_IMAGINE_VIDEO = "grok-imagine-video"
+from ...models import MessageResponse, CompletionUsage, AIMessage, StructuredOutputConfig, ToolCall
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
+from ...tools.manager import ToolFormat
 
 
 class GrokClient(AbstractClient):
@@ -58,6 +44,10 @@ class GrokClient(AbstractClient):
 
     client_type: str = "xai"
     client_name: str = "grok"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("grok", "xai")
+    models: type[Enum] = GrokModel
     _default_model: str = GrokModel.GROK_4_3.value
     _lightweight_model: str = GrokModel.GROK_4_20_NON_REASONING.value
     # Grok models are reasoning-heavy and xAI allows large completions;
@@ -348,7 +338,7 @@ class GrokClient(AbstractClient):
         if not final_response:
             final_response = response
 
-        from ..models.responses import AIMessageFactory
+        from ...models.responses import AIMessageFactory
 
         text_content = final_response.content if hasattr(final_response, "content") else str(final_response)
 
@@ -553,7 +543,7 @@ class GrokClient(AbstractClient):
         ``user`` turn) and continues the tool-call loop until a final response
         is produced.
         """
-        from ..models.responses import AIMessageFactory
+        from ...models.responses import AIMessageFactory
 
         client = await self.get_client()
         messages: List[Dict[str, Any]] = state.get("messages", [])

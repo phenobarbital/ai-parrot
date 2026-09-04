@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from parrot.clients import grok as grok_module
+from parrot.clients.grok import client as grok_module
 from parrot.clients.grok import GrokClient
 
 _SOURCE = Path(inspect.getfile(grok_module)).read_text(encoding="utf-8")

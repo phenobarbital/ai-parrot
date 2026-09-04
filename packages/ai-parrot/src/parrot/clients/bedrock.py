@@ -9,7 +9,7 @@ Llama/Mistral-oriented public surface byte-compatible.
 
 ``BedrockConverseBase`` talks to the AWS Bedrock Runtime *Converse* API
 directly via ``aioboto3`` — as opposed to
-:class:`~parrot.clients.claude.AnthropicClient`'s ``backend="bedrock"``,
+:class:`~parrot.clients.anthropic.AnthropicClient`'s ``backend="bedrock"``,
 which routes through the Anthropic SDK's ``AsyncAnthropicBedrock`` transport
 (FEAT-232) and is therefore limited to Claude models.
 
@@ -672,7 +672,7 @@ class BedrockConverseBase(AbstractClient):
         ``invoke_model()`` using the Anthropic-native request/response
         payload format directly (``anthropic_version`` +
         ``messages``/``content`` blocks with ``"type"`` keys — the same
-        shape :class:`~parrot.clients.claude.AnthropicClient` sends).
+        shape :class:`~parrot.clients.anthropic.AnthropicClient` sends).
 
         Args:
             messages: Anthropic-native messages (``{"role", "content":

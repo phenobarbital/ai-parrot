@@ -71,7 +71,7 @@ def _make_anthropic_client():
     base machinery (logger, conversation memory, …) just to assert pure
     branching logic on exceptions or payload shaping.
     """
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     client = AnthropicClient.__new__(AnthropicClient)
     client._fallback_model = "claude-sonnet-4.5"
@@ -87,7 +87,7 @@ def test_anthropic_imports_097():
 
     The ai-parrot codebase depends on these specific names being importable
     from the published ``anthropic`` package; a regression here would surface
-    as ``ImportError`` at module load time of ``parrot.clients.claude``.
+    as ``ImportError`` at module load time of ``parrot.clients.anthropic``.
     """
     from anthropic import (  # noqa: F401
         APIStatusError,
@@ -154,7 +154,7 @@ async def test_anthropic_betas_param_passthrough():
     The test is fully mocked so it neither talks to the network nor depends on
     a configured ANTHROPIC_API_KEY.
     """
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     # Mock the response object the SDK returns.
     mock_response = MagicMock()
@@ -198,7 +198,7 @@ async def test_anthropic_betas_param_passthrough():
 @pytest.mark.asyncio
 async def test_anthropic_betas_param_omitted_by_default():
     """Without ``context_1m=True`` the betas header must NOT be forwarded."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="ok", type="text")]
@@ -247,7 +247,7 @@ async def test_anthropic_live_smoke():
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set; live test skipped.")
 
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     client = AnthropicClient()
     result = await client.ask("ping")

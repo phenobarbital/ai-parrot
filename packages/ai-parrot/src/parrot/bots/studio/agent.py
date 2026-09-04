@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from parrot.bots.agent import Agent
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.conf import STUDIO_AGENT_MODEL
 from parrot.skills.mixin import SkillRegistryMixin
 

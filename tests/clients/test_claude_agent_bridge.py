@@ -109,7 +109,7 @@ def captured_server(monkeypatch):
 
 
 def _make_bridge(tool_manager=None, **kwargs):
-    from parrot.clients.claude_agent_bridge import ClaudeAgentToolBridge
+    from parrot.clients.anthropic.claude_agent_bridge import ClaudeAgentToolBridge
 
     return ClaudeAgentToolBridge(tool_manager or MagicMock(), **kwargs)
 
@@ -329,14 +329,14 @@ class TestRecoverableFailures:
 class TestLazyImport:
     def test_module_imports_without_sdk(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "claude_agent_sdk", None)
-        sys.modules.pop("parrot.clients.claude_agent_bridge", None)
+        sys.modules.pop("parrot.clients.anthropic.claude_agent_bridge", None)
 
-        import parrot.clients.claude_agent_bridge as bridge_module
+        import parrot.clients.anthropic.claude_agent_bridge as bridge_module
 
         assert bridge_module.ClaudeAgentToolBridge is not None
 
     def test_build_server_raises_import_error_with_hint_when_sdk_missing(self, monkeypatch):
-        import parrot.clients.claude_agent_bridge as bridge_module
+        import parrot.clients.anthropic.claude_agent_bridge as bridge_module
 
         monkeypatch.setitem(sys.modules, "claude_agent_sdk", None)
         bridge = bridge_module.ClaudeAgentToolBridge(MagicMock())

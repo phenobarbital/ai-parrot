@@ -22,7 +22,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.clients.openai import OpenAIClient
 from parrot.clients.groq import GroqClient
 from parrot.clients.local import LocalLLMClient

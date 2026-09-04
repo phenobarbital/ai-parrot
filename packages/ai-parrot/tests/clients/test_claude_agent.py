@@ -7,7 +7,7 @@ dispatcher: ``agents``, ``setting_sources``, ``extra_args``, and
 
 from __future__ import annotations
 
-from parrot.clients.claude_agent import ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 
 
 class TestExtendedRunOptions:
@@ -61,7 +61,7 @@ class TestBuildOptionsForwardsExtensions:
     """
 
     def test_build_options_forwards_agents_and_setting_sources(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured = {}
 
@@ -89,7 +89,7 @@ class TestBuildOptionsForwardsExtensions:
         }
 
     def test_build_options_omits_unset_extension_fields(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured = {}
 

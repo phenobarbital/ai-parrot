@@ -24,7 +24,7 @@ def _make_mock_response(text: str = '{"name": "Alice", "age": 30}'):
 
 def _make_client():
     """Create AnthropicClient without network setup."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
     client = AnthropicClient.__new__(AnthropicClient)
     client.model = "claude-sonnet-4-5"
     client._lightweight_model = "claude-haiku-4-5-20251001"

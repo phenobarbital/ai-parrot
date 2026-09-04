@@ -19,7 +19,7 @@ free — this module adds no guardrail logic of its own.
 
 `claude_agent_sdk` is an optional extra (`ai-parrot[claude-agent]`) and is
 imported strictly lazily (inside `build_server()`, never at module scope)
-so `import parrot.clients.claude_agent_bridge` always succeeds.
+so `import parrot.clients.anthropic.claude_agent_bridge` always succeeds.
 """
 
 from __future__ import annotations
