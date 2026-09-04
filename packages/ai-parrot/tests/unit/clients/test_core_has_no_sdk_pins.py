@@ -18,7 +18,13 @@ import tomllib
 _CORE_PYPROJECT = pathlib.Path(__file__).resolve().parents[3] / "pyproject.toml"
 
 _FORBIDDEN_SDKS = (
-    "anthropic", "google-genai", "groq", "xai-sdk", "zai-sdk", "aioboto3", "claude-agent-sdk",
+    "anthropic",
+    "google-genai",
+    "groq",
+    "xai-sdk",
+    "zai-sdk",
+    "aioboto3",
+    "claude-agent-sdk",
 )
 
 _DIST_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+")
