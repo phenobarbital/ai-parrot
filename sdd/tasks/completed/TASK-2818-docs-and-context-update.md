@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2816
@@ -108,8 +108,59 @@ Docs task — no tests. Optional: `python -c "import parrot.memory.render as r; 
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- **CREATED `docs/memory/conversation-history-ownership.md`** (~190 lines). `docs/memory/`
+  did not exist; created it rather than filing the guide under an unrelated section.
+  Covers: the three-layer ownership table + an ASCII call-flow, the
+  `(chatbot, user, session)` storage key with the per-backend key formats, the
+  `memory_key_id` rule and *why* it is not `self.chatbot_id`, the lazy legacy re-key,
+  how to call a client standalone, how a bot persists a turn, the `render_history`
+  guarantees, and the 0.29.0 breaking-change list.
+  **All signatures were copied from the shipped code**, not from the spec — extracted
+  with `inspect.signature` against the post-TASK-2816 tree, as the AC requires. That
+  caught two places where the spec's draft signature no longer matched: `_build_messages`
+  ships with defaults (`files=None, history=None`), and `from_ai_message` ships with the
+  extra `assistant_text` override added for the streaming partial save.
+  Also documented the three provider deviations a future reader would otherwise
+  rediscover the hard way: Bedrock's and Google's `_format_history` overrides, Google's
+  extra `_dict_messages` (because `resume()` re-parses `state["messages"]` as dicts), and
+  that `claude_agent.py`/`live.py` accept `history` but deliberately do not replay it.
+- **MODIFIED `.agent/CONTEXT.md`**:
+  * fixed the stale `parrot/clients/abstract_client.py` path → `parrot/clients/base.py`,
+    and corrected the "Implement …" line, which listed `completion()/stream()/embed()` —
+    none of which exist. The real abstract methods are
+    `ask/ask_stream/invoke/resume/get_client`;
+  * added the "memory-less (FEAT-524)" bullet to the `AbstractClient` entry;
+  * added a new **"### Conversation memory"** section under Core Abstractions pointing at
+    the new guide;
+  * expanded the `memory/` line in the "What Lives Where" tree (it said only
+    "Redis-backed", which was wrong on two counts — there are three backends, and it
+    now also holds the render layer).
+  * `grep -c "abstract_client.py" .agent/CONTEXT.md` → **0**.
+- **MODIFIED `CHANGELOG.md`** — new `### Breaking Changes` block at the top of
+  `[Unreleased]` (the file already uses that heading, cf. `[0.27.0]`), listing every
+  removal and addition grouped by `AbstractClient` / `parrot.memory` / `AbstractBot`,
+  plus the storage-key change and the lazy re-key. Links to both the guide and the spec.
+- Verified the doc's factual claims rather than asserting them: the "19 concrete clients"
+  figure comes from `test_all_client_ask_signatures.CLIENTS` (172 passing assertions over
+  19 discovered classes), not from counting files by hand.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **The compaction-proposal pointer was SKIPPED, as the task's own conditional
+   instructs.** `sdd/proposals/per-turn-conversation-compactation.proposal.md` is **still
+   untracked** in this repo (`git ls-files --error-unmatch` → "did not match any file
+   known to git"; it shows as `??` in `git status`). Editing an untracked working-copy
+   file would produce a change that cannot be committed and that no reviewer would see.
+   The information is not lost: `render_history` is documented as "the extension point"
+   in the new guide, which the compaction spec author will reach via `.agent/CONTEXT.md`.
+   **Follow-up for the author**: when that proposal is committed, add the one-line note
+   that the extension point is `parrot.memory.render.render_history`, not
+   `get_messages_for_api(budget=)`.
+2. `.agent/CONTEXT.md` is excluded by the repo-local `.git/info/exclude` (`.agent/`), but
+   the file itself is tracked in HEAD. Staged with `git add -u` so the tracked
+   modification is committed without force-adding anything newly ignored.
+3. Went slightly past the task's "~150 lines" guidance (~190). The extra length is the
+   breaking-change list and the provider-override table, both of which the task
+   separately requires.
