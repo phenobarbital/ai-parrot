@@ -1,4 +1,5 @@
 """HTTP handler for Google multimodal generation workflows."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +10,13 @@ from aiohttp import web
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navigator.views import BaseView, BaseHandler
 
-from parrot.models import ImageGenerationPrompt, MusicGenerationRequest, SpeechGenerationPrompt, VideoGenerationPrompt, VideoReelRequest
+from parrot.models import (
+    ImageGenerationPrompt,
+    MusicGenerationRequest,
+    SpeechGenerationPrompt,
+    VideoGenerationPrompt,
+    VideoReelRequest,
+)
 from parrot.models.google import (
     ALL_VOICE_PROFILES,
     ConversationalScriptConfig,
@@ -33,6 +40,7 @@ class GoogleGenerationHelper(BaseHandler):
         # provider module at module scope (AC-3). TASK-2848 replaces this
         # with LLMFactory.list_models().
         from parrot.clients.google.models import GoogleModel
+
         return [model.value for model in GoogleModel]
 
     @staticmethod
@@ -100,6 +108,7 @@ class GoogleGeneration(BaseView):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.google import GoogleGenAIClient
+
         data = await self.request.json()
         action = str(data.get("action", "")).lower().strip()
 
@@ -165,7 +174,9 @@ class GoogleGeneration(BaseView):
         response = await client.generate_speech(prompt_data=prompt_data)
         return self.json_response(json_encoder(response))
 
-    async def _stream_file(self, file_path: Path, content_type: str, chunk_size: int = 256 * 1024) -> web.StreamResponse:
+    async def _stream_file(
+        self, file_path: Path, content_type: str, chunk_size: int = 256 * 1024
+    ) -> web.StreamResponse:
         if not file_path.exists():
             return self.error(f"File not found for streaming: {file_path}", status=404)
 

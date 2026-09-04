@@ -47,6 +47,7 @@ one itself. Any confirming tool the agent registers is therefore already
 bridged through the real HITL channel (never Telegram, never
 self-granted) once served this way.
 """
+
 from __future__ import annotations
 
 import os
@@ -120,8 +121,7 @@ def make_agent(force_cc_auth: bool | None = None, **kwargs: Any) -> Agent:
 
     agent = Agent(**kwargs)
     agent.logger.info(
-        "claude-code agent target ready (dropped %d invalid env names, "
-        "auth vars dropped: %s)",
+        "claude-code agent target ready (dropped %d invalid env names, " "auth vars dropped: %s)",
         len(dropped["invalid"]),
         dropped["auth"] or "none",
     )

@@ -17,6 +17,7 @@ history (spec §8 Q2, resolved) — it forwards ``system_prompt`` and
 ``session_id`` on every turn (and on reconnect, TASK-2150); the caller
 (``VoiceBot``, ``VoiceChatHandler``) owns memory persistence.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -140,24 +141,21 @@ class VoiceSession:
         notices: list[dict] = []
         caps = self.client.voice_capabilities
 
-        if (
-            options.stt_only
-            and not caps.native_stt_only
-            and "stt_only" not in self._notified_capabilities
-        ):
+        if options.stt_only and not caps.native_stt_only and "stt_only" not in self._notified_capabilities:
             self._notified_capabilities.add("stt_only")
             message = (
-                f"{caps.provider.value} does not natively support "
-                f"stt_only — the model response is still generated."
+                f"{caps.provider.value} does not natively support " f"stt_only — the model response is still generated."
             )
             self.logger.warning("VoiceSession: %s", message)
-            notices.append({
-                "type": "capability_notice",
-                "session_id": self.session_id,
-                "capability": "stt_only",
-                "provider": caps.provider.value,
-                "message": message,
-            })
+            notices.append(
+                {
+                    "type": "capability_notice",
+                    "session_id": self.session_id,
+                    "capability": "stt_only",
+                    "provider": caps.provider.value,
+                    "message": message,
+                }
+            )
 
         return notices
 
@@ -171,11 +169,13 @@ class VoiceSession:
         self._queue = asyncio.Queue()
         self._task = asyncio.create_task(self._run_turn(self._turn_no))
 
-        await self._send({
-            "type": "turn_started",
-            "turn": self._turn_no,
-            "session_id": self.session_id,
-        })
+        await self._send(
+            {
+                "type": "turn_started",
+                "turn": self._turn_no,
+                "session_id": self.session_id,
+            }
+        )
 
     async def push_audio(self, pcm: bytes) -> None:
         """Forward one PCM chunk (per ``voice_config.input_format``) to the
@@ -215,9 +215,10 @@ class VoiceSession:
                 await asyncio.sleep(0.02)
             await self._queue.put(None)
             self.logger.info(
-                "end_turn: pushed %d silence frames + None "
-                "(queue was %d, now %d)",
-                num_frames, qsize_before, self._queue.qsize(),
+                "end_turn: pushed %d silence frames + None " "(queue was %d, now %d)",
+                num_frames,
+                qsize_before,
+                self._queue.qsize(),
             )
         else:
             self.logger.warning("end_turn: _queue is None — nothing pushed")
@@ -258,7 +259,9 @@ class VoiceSession:
         assert queue is not None  # set by start_turn() before the task starts
 
         self.logger.info(
-            "Turn %d starting (session=%s)", turn_no, self.session_id,
+            "Turn %d starting (session=%s)",
+            turn_no,
+            self.session_id,
         )
         try:
             # FEAT-416 (TASK-2150): outer loop enables transparent
@@ -297,18 +300,17 @@ class VoiceSession:
                         # complete (spec §7 8-minute reconnection race).
                         await self._relay(resp, turn_no)
 
-                        if not (
-                            resp.metadata.get("reconnect_required")
-                            and self.voice_config.reconnect_on_limit
-                        ):
+                        if not (resp.metadata.get("reconnect_required") and self.voice_config.reconnect_on_limit):
                             continue
 
                         if self._reconnect_count >= self.voice_config.max_reconnects:
-                            await self._send({
-                                "type": "error",
-                                "message": "max reconnections reached",
-                                "session_id": self.session_id,
-                            })
+                            await self._send(
+                                {
+                                    "type": "error",
+                                    "message": "max reconnections reached",
+                                    "session_id": self.session_id,
+                                }
+                            )
                             # Tear down directly rather than via close()/
                             # _cancel_turn() — this coroutine IS self._task,
                             # so awaiting self._task here would deadlock
@@ -323,11 +325,13 @@ class VoiceSession:
                             return
 
                         self._reconnect_count += 1
-                        await self._send({
-                            "type": "reconnect",
-                            "session_id": self.session_id,
-                            "reconnect_count": self._reconnect_count,
-                        })
+                        await self._send(
+                            {
+                                "type": "reconnect",
+                                "session_id": self.session_id,
+                                "reconnect_count": self._reconnect_count,
+                            }
+                        )
                         reconnecting = True
                         break
                 finally:
@@ -345,11 +349,13 @@ class VoiceSession:
             raise
         except Exception as exc:  # surface any failure to the caller
             self.logger.exception("Turn %d failed", turn_no)
-            await self._send({
-                "type": "error",
-                "turn": turn_no,
-                "message": f"{type(exc).__name__}: {exc}",
-            })
+            await self._send(
+                {
+                    "type": "error",
+                    "turn": turn_no,
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+            )
         finally:
             if self._task is asyncio.current_task():
                 self._queue = None
@@ -381,39 +387,47 @@ class VoiceSession:
         # empty message, and treating that as "no error" silently reports
         # the turn as complete.
         if "error" in resp.metadata:
-            frames.append({
-                "type": "error",
-                "turn": turn_no,
-                "message": resp.metadata["error"] or "Unknown voice provider error",
-            })
+            frames.append(
+                {
+                    "type": "error",
+                    "turn": turn_no,
+                    "message": resp.metadata["error"] or "Unknown voice provider error",
+                }
+            )
             return frames
 
         if resp.text:
-            frames.append({
-                "type": "text",
-                "turn": turn_no,
-                "text": resp.text,
-                "role": resp.role,
-            })
+            frames.append(
+                {
+                    "type": "text",
+                    "turn": turn_no,
+                    "text": resp.text,
+                    "role": resp.role,
+                }
+            )
 
         if resp.audio_data:
-            frames.append({
-                "type": "audio",
-                "turn": turn_no,
-                "audio_base64": base64.b64encode(resp.audio_data).decode("ascii"),
-                "audio_format": resp.audio_format,
-                "sample_rate": self.voice_config.output_sample_rate,
-            })
+            frames.append(
+                {
+                    "type": "audio",
+                    "turn": turn_no,
+                    "audio_base64": base64.b64encode(resp.audio_data).decode("ascii"),
+                    "audio_format": resp.audio_format,
+                    "sample_rate": self.voice_config.output_sample_rate,
+                }
+            )
 
         for call in resp.tool_calls:
-            frames.append({
-                "type": "tool_call",
-                "turn": turn_no,
-                "name": call.name,
-                "arguments": call.arguments,
-                "result": str(call.result) if call.result is not None else None,
-                "error": call.error,
-            })
+            frames.append(
+                {
+                    "type": "tool_call",
+                    "turn": turn_no,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                    "result": str(call.result) if call.result is not None else None,
+                    "error": call.error,
+                }
+            )
 
         if resp.is_interrupted:
             frames.append({"type": "interrupted", "turn": turn_no})
@@ -423,22 +437,29 @@ class VoiceSession:
             if usage:
                 self.logger.info(
                     "Turn %d usage: %d input / %d output / %d total tokens%s",
-                    turn_no, usage.prompt_tokens, usage.completion_tokens,
+                    turn_no,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
                     usage.total_tokens,
-                    f" ({usage.tool_calls_executed} tool call(s))"
-                    if usage.tool_calls_executed else "",
+                    f" ({usage.tool_calls_executed} tool call(s))" if usage.tool_calls_executed else "",
                 )
-            frames.append({
-                "type": "turn_complete",
-                "turn": turn_no,
-                "reconnect_required": bool(resp.metadata.get("reconnect_required")),
-                "usage": {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                    "tool_calls_executed": usage.tool_calls_executed,
-                } if usage else None,
-            })
+            frames.append(
+                {
+                    "type": "turn_complete",
+                    "turn": turn_no,
+                    "reconnect_required": bool(resp.metadata.get("reconnect_required")),
+                    "usage": (
+                        {
+                            "prompt_tokens": usage.prompt_tokens,
+                            "completion_tokens": usage.completion_tokens,
+                            "total_tokens": usage.total_tokens,
+                            "tool_calls_executed": usage.tool_calls_executed,
+                        }
+                        if usage
+                        else None
+                    ),
+                }
+            )
 
         return frames
 

@@ -15,6 +15,7 @@ integrations ``parrot.voice.models.VoiceConfig`` is now a deprecation-warning
 re-export of this class (see that module for the shim); ``VoiceProvider`` is
 re-exported there too, without a deprecation warning (a move, not a rename).
 """
+
 import base64
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,6 +26,7 @@ from typing import Any, Dict, List, Optional
 # Voice models
 class AudioFormat(Enum):
     """Audio formats for voice sessions."""
+
     PCM_16K = "audio/pcm;rate=16000"
     PCM_24K = "audio/pcm;rate=24000"
 
@@ -39,6 +41,7 @@ class VoiceProvider(str, Enum):
     keep working once ``VoiceConfig.__post_init__`` coerces the
     ``provider`` field to this enum.
     """
+
     GOOGLE_LIVE = "google_live"
     OPENAI_REALTIME = "openai_realtime"
     WHISPER_TTS = "whisper_tts"
@@ -58,6 +61,7 @@ class VoiceConfig:
     ``max_reconnects``), and parallel-tool-execution fields introduced by
     the Voice Agent Framework (spec §2).
     """
+
     # Provider
     provider: VoiceProvider = VoiceProvider.GOOGLE_LIVE
 
@@ -167,6 +171,7 @@ class VoiceStreamOptions:
         enable_input_transcription: Whether to transcribe user audio.
         enable_output_transcription: Whether to transcribe model audio.
     """
+
     temperature: float = 0.7
     max_tokens: int = 4096
     top_p: float = 0.9
@@ -214,6 +219,7 @@ class VoiceCapabilities:
         voice_catalog: The set of provider-native voice names.
         default_voice: The provider's default voice name.
     """
+
     provider: VoiceProvider
 
     # Behavioral knobs

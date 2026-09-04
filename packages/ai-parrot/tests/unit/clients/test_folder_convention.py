@@ -21,6 +21,7 @@ cases (not a failure; see ``test_core_independence.py`` for the
 "core imports with none installed" guarantee this file does not need to
 provide).
 """
+
 from __future__ import annotations
 
 import enum
@@ -72,12 +73,10 @@ def test_client_class_attrs(provider: str) -> None:
     assert clients, f"no *Client classes re-exported from parrot.clients.{provider}"
     for cls in clients:
         assert cls.provider_keys, f"{cls.__name__}.provider_keys is empty"
-        assert isinstance(cls.provider_keys, tuple), (
-            f"{cls.__name__}.provider_keys must be a tuple, got {type(cls.provider_keys)}"
-        )
-        assert issubclass(cls.models, enum.Enum), (
-            f"{cls.__name__}.models must be an Enum subclass"
-        )
+        assert isinstance(
+            cls.provider_keys, tuple
+        ), f"{cls.__name__}.provider_keys must be a tuple, got {type(cls.provider_keys)}"
+        assert issubclass(cls.models, enum.Enum), f"{cls.__name__}.models must be an Enum subclass"
 
 
 def test_google_media_models_intact() -> None:
@@ -121,9 +120,7 @@ def test_protocols_does_not_import_live() -> None:
     """parrot.clients.protocols no longer imports the .live submodule."""
     import ast
 
-    protocols_path = (
-        pathlib.Path(importlib.import_module("parrot.clients.protocols").__file__)
-    )
+    protocols_path = pathlib.Path(importlib.import_module("parrot.clients.protocols").__file__)
     tree = ast.parse(protocols_path.read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "live":

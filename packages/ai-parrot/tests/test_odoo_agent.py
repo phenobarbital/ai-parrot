@@ -18,6 +18,7 @@ Module loading strategy:
     lets ``oddie.py`` import ``parrot.*`` modules from whatever source is
     already on sys.path (the main repo's compiled packages).
 """
+
 from __future__ import annotations
 
 import sys
@@ -58,8 +59,10 @@ def _ensure_parrot_utils_stubs() -> None:
     # parrot.utils.types (Cython .pyx → .so missing in worktree)
     if "parrot.utils.types" not in sys.modules:
         stub = _t.ModuleType("parrot.utils.types")
+
         class SafeDict(dict):
             """Stub."""
+
         stub.SafeDict = SafeDict
         sys.modules["parrot.utils.types"] = stub
 
@@ -71,10 +74,14 @@ def _ensure_parrot_utils_stubs() -> None:
 
     if "parrot.utils.parsers.toml" not in sys.modules:
         pt = _t.ModuleType("parrot.utils.parsers.toml")
-        _TOMLParser = type("TOMLParser", (), {
-            "__init__": lambda self, *a, **kw: None,
-            "parse": lambda self, *a, **kw: {},
-        })
+        _TOMLParser = type(
+            "TOMLParser",
+            (),
+            {
+                "__init__": lambda self, *a, **kw: None,
+                "parse": lambda self, *a, **kw: {},
+            },
+        )
         pt.TOMLParser = _TOMLParser
         sys.modules["parrot.utils.parsers.toml"] = pt
 
@@ -108,8 +115,7 @@ def _load_oddie_module() -> Any:
     # lacks register_toolkit, set_confirmation_guard, get_tools).  Remove the stubs
     # so the REAL parrot.bots modules load from the compiled packages on sys.path.
     for _key in list(sys.modules):
-        if _key in ("parrot.bots", "parrot.bots.agent", "parrot.bots.abstract",
-                    "parrot.bots.base"):
+        if _key in ("parrot.bots", "parrot.bots.agent", "parrot.bots.abstract", "parrot.bots.base"):
             del sys.modules[_key]
 
     # Ensure agents/ is on sys.path for `import oddie`
@@ -118,6 +124,7 @@ def _load_oddie_module() -> Any:
         sys.path.insert(0, agents_dir)
 
     import importlib as _il
+
     mod = _il.import_module("oddie")
     return mod
 
@@ -164,13 +171,7 @@ def test_structured_response_skill_frontmatter() -> None:
     """structured-operation-response/SKILL.md must have valid frontmatter."""
     import yaml
 
-    p = (
-        _AGENTS_DIR
-        / "odoo_agent"
-        / "skills"
-        / "structured-operation-response"
-        / "SKILL.md"
-    )
+    p = _AGENTS_DIR / "odoo_agent" / "skills" / "structured-operation-response" / "SKILL.md"
     assert p.is_file(), f"SKILL.md not found at {p}"
     text = p.read_text()
     assert text.startswith("---"), f"SKILL.md does not start with '---': {text[:50]!r}"
@@ -187,9 +188,7 @@ def test_model_is_gemini_3_5_flash(oddie_module: Any) -> None:
     OdooAgent = oddie_module.OdooAgent
 
     model_val = getattr(OdooAgent.model, "value", OdooAgent.model)
-    assert model_val == "gemini-3.5-flash", (
-        f"Expected 'gemini-3.5-flash', got {model_val!r}"
-    )
+    assert model_val == "gemini-3.5-flash", f"Expected 'gemini-3.5-flash', got {model_val!r}"
 
 
 def test_model_is_gemini_enum_member(oddie_module: Any) -> None:
@@ -207,9 +206,7 @@ def test_agent_registered(oddie_module: Any) -> None:
     from parrot.registry import agent_registry
 
     # Loading oddie_module already triggered @register_agent
-    assert agent_registry.has("odoo_agent"), (
-        "OdooAgent was not registered under 'odoo_agent'"
-    )
+    assert agent_registry.has("odoo_agent"), "OdooAgent was not registered under 'odoo_agent'"
 
 
 # ── Tool construction ─────────────────────────────────────────────────────────
@@ -219,9 +216,11 @@ def test_agent_tools_include_odoo_tools(oddie_module: Any) -> None:
     """agent_tools() must include at least odoo_search_records."""
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -230,9 +229,7 @@ def test_agent_tools_include_odoo_tools(oddie_module: Any) -> None:
         tools = agent.agent_tools()
 
     tool_names = {t.name for t in tools}
-    assert any("odoo" in name for name in tool_names), (
-        f"No odoo_* tools found in agent_tools(): {tool_names}"
-    )
+    assert any("odoo" in name for name in tool_names), f"No odoo_* tools found in agent_tools(): {tool_names}"
     assert "odoo_search_records" in tool_names
 
 
@@ -240,10 +237,12 @@ def test_odoo_toolkit_uses_test_env(oddie_module: Any) -> None:
     """OdooToolkit must be constructed from ODOO_TEST_* env vars."""
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "OdooToolkit") as mock_tk_cls, \
-         patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"):
+    with (
+        patch.object(oddie_module, "OdooToolkit") as mock_tk_cls,
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+    ):
         mock_tk = MagicMock()
         mock_tk.get_tools.return_value = []
         mock_tk_cls.return_value = mock_tk
@@ -273,10 +272,12 @@ async def test_working_memory_registered_after_configure(oddie_module: Any) -> N
 
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"), \
-         patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+        patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -286,9 +287,7 @@ async def test_working_memory_registered_after_configure(oddie_module: Any) -> N
             await agent.configure()
 
     tool_names = {t.name for t in agent.tool_manager.get_tools()}
-    assert any("wm" in name for name in tool_names), (
-        f"No wm_* tools found after configure(): {tool_names}"
-    )
+    assert any("wm" in name for name in tool_names), f"No wm_* tools found after configure(): {tool_names}"
 
 
 @pytest.mark.asyncio
@@ -298,10 +297,12 @@ async def test_confirmation_guard_attached_after_configure(oddie_module: Any) ->
 
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"), \
-         patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+        patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -310,9 +311,9 @@ async def test_confirmation_guard_attached_after_configure(oddie_module: Any) ->
         with patch.object(Agent, "configure", new_callable=AsyncMock):
             await agent.configure()
 
-    assert agent.tool_manager.confirmation_guard is not None, (
-        "ConfirmationGuard was not attached to tool_manager after configure()"
-    )
+    assert (
+        agent.tool_manager.confirmation_guard is not None
+    ), "ConfirmationGuard was not attached to tool_manager after configure()"
 
 
 @pytest.mark.asyncio
@@ -323,10 +324,12 @@ async def test_userinfo_kb_registered_after_configure(oddie_module: Any) -> None
 
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"), \
-         patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+        patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -337,9 +340,7 @@ async def test_userinfo_kb_registered_after_configure(oddie_module: Any) -> None
 
     user_infos = [kb for kb in agent.knowledge_bases if isinstance(kb, UserInfo)]
     assert len(user_infos) >= 1, "UserInfo KB was not registered"
-    assert all(kb.always_active for kb in user_infos), (
-        "UserInfo KB must have always_active=True"
-    )
+    assert all(kb.always_active for kb in user_infos), "UserInfo KB must have always_active=True"
 
 
 # ── Skill paths ───────────────────────────────────────────────────────────────
@@ -352,10 +353,12 @@ async def test_skill_paths_set_to_odoo_agent_skills(oddie_module: Any) -> None:
 
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"), \
-         patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+        patch.object(OdooAgent, "_configure_skill_registry", new_callable=AsyncMock),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -365,9 +368,9 @@ async def test_skill_paths_set_to_odoo_agent_skills(oddie_module: Any) -> None:
             await agent.configure()
 
     skill_dirs = getattr(agent, "skill_paths", [])
-    assert any("odoo_agent" in str(p) and "skills" in str(p) for p in skill_dirs), (
-        f"skill_paths does not point to agents/odoo_agent/skills/: {skill_dirs}"
-    )
+    assert any(
+        "odoo_agent" in str(p) and "skills" in str(p) for p in skill_dirs
+    ), f"skill_paths does not point to agents/odoo_agent/skills/: {skill_dirs}"
 
 
 # ── cleanup() ─────────────────────────────────────────────────────────────────
@@ -380,9 +383,11 @@ async def test_cleanup_releases_odoo_toolkit(oddie_module: Any) -> None:
 
     OdooAgent = oddie_module.OdooAgent
 
-    with patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls, \
-         patch.object(oddie_module, "GoogleGenAIClient"), \
-         patch.object(oddie_module, "PageIndexLLMAdapter"):
+    with (
+        patch.object(oddie_module, "PageIndexToolkit") as mock_pi_cls,
+        patch.object(oddie_module, "GoogleGenAIClient"),
+        patch.object(oddie_module, "PageIndexLLMAdapter"),
+    ):
         mock_pi = MagicMock()
         mock_pi.get_tools.return_value = []
         mock_pi_cls.return_value = mock_pi
@@ -441,9 +446,7 @@ async def test_hitl_guard_fail_closed_without_human_manager() -> None:
         f"Expected fail-closed denial, got allowed={decision.allowed!r}. "
         "ConfirmationGuard with human_manager=None must deny all confirming tools."
     )
-    assert decision.status == "cancelled", (
-        f"Expected status='cancelled', got {decision.status!r}"
-    )
-    assert "fail-closed" in (decision.reason or "").lower() or "no human manager" in (
-        decision.reason or ""
-    ).lower(), f"Unexpected reason: {decision.reason!r}"
+    assert decision.status == "cancelled", f"Expected status='cancelled', got {decision.status!r}"
+    assert (
+        "fail-closed" in (decision.reason or "").lower() or "no human manager" in (decision.reason or "").lower()
+    ), f"Unexpected reason: {decision.reason!r}"

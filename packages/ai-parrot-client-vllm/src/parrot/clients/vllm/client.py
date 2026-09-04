@@ -92,13 +92,7 @@ class vLLMClient(LocalLLMClient):
     provider_keys: tuple[str, ...] = ("vllm",)
     models: type[Enum] = LocalLLMModel
 
-    def __init__(
-        self,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        timeout: int = 120,
-        **kwargs
-    ):
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, timeout: int = 120, **kwargs):
         """Initialize vLLMClient.
 
         Args:
@@ -110,22 +104,11 @@ class vLLMClient(LocalLLMClient):
         """
         # Resolve vLLM-specific env vars first, then fall back to LocalLLM vars
         resolved_url = (
-            base_url
-            or os.getenv("VLLM_BASE_URL")
-            or os.getenv("LOCAL_LLM_BASE_URL")
-            or "http://localhost:8000/v1"
+            base_url or os.getenv("VLLM_BASE_URL") or os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:8000/v1"
         )
-        resolved_key = (
-            api_key
-            or os.getenv("VLLM_API_KEY")
-            or os.getenv("LOCAL_LLM_API_KEY")
-        )
+        resolved_key = api_key or os.getenv("VLLM_API_KEY") or os.getenv("LOCAL_LLM_API_KEY")
 
-        super().__init__(
-            base_url=resolved_url,
-            api_key=resolved_key,
-            **kwargs
-        )
+        super().__init__(base_url=resolved_url, api_key=resolved_key, **kwargs)
         self.timeout = timeout
 
     async def _chat_completion(
@@ -158,9 +141,7 @@ class vLLMClient(LocalLLMClient):
         ctx_extra_body = _extra_body_ctx.get()
         if ctx_extra_body and "extra_body" not in kwargs:
             kwargs["extra_body"] = ctx_extra_body
-        return await super()._chat_completion(
-            model=model, messages=messages, use_tools=use_tools, **kwargs
-        )
+        return await super()._chat_completion(model=model, messages=messages, use_tools=use_tools, **kwargs)
 
     async def ask(
         self,
@@ -182,7 +163,7 @@ class vLLMClient(LocalLLMClient):
         min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         length_penalty: float = 1.0,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """Send a prompt to vLLM with optional guided output and LoRA support.
 
@@ -216,12 +197,14 @@ class vLLMClient(LocalLLMClient):
             guided_json = pydantic_to_guided_json(structured_output)
 
         # Validate mutually exclusive guided parameters
-        guided_count = sum([
-            guided_json is not None,
-            guided_regex is not None,
-            guided_choice is not None,
-            guided_grammar is not None,
-        ])
+        guided_count = sum(
+            [
+                guided_json is not None,
+                guided_regex is not None,
+                guided_choice is not None,
+                guided_grammar is not None,
+            ]
+        )
         if guided_count > 1:
             raise ValueError(
                 "Only one guided constraint can be specified: "
@@ -266,11 +249,7 @@ class vLLMClient(LocalLLMClient):
         token = _extra_body_ctx.set(extra_body or None)
         try:
             return await super().ask(
-                prompt=prompt,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
+                prompt=prompt, model=model, temperature=temperature, max_tokens=max_tokens, **kwargs
             )
         finally:
             _extra_body_ctx.reset(token)
@@ -295,7 +274,7 @@ class vLLMClient(LocalLLMClient):
         min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         length_penalty: float = 1.0,
-        **kwargs
+        **kwargs,
     ) -> AsyncGenerator[str, None]:
         """Stream response from vLLM with optional guided output and LoRA support.
 
@@ -329,12 +308,14 @@ class vLLMClient(LocalLLMClient):
             guided_json = pydantic_to_guided_json(structured_output)
 
         # Validate mutually exclusive guided parameters
-        guided_count = sum([
-            guided_json is not None,
-            guided_regex is not None,
-            guided_choice is not None,
-            guided_grammar is not None,
-        ])
+        guided_count = sum(
+            [
+                guided_json is not None,
+                guided_regex is not None,
+                guided_choice is not None,
+                guided_grammar is not None,
+            ]
+        )
         if guided_count > 1:
             raise ValueError(
                 "Only one guided constraint can be specified: "
@@ -380,11 +361,7 @@ class vLLMClient(LocalLLMClient):
         token = _extra_body_ctx.set(extra_body or None)
         try:
             async for chunk in super().ask_stream(
-                prompt=prompt,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
+                prompt=prompt, model=model, temperature=temperature, max_tokens=max_tokens, **kwargs
             ):
                 yield chunk
         finally:
@@ -413,10 +390,7 @@ class vLLMClient(LocalLLMClient):
         base = self._get_base_url_root()
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{base}/health",
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as resp:
+                async with session.get(f"{base}/health", timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     return resp.status == 200
         except Exception as e:
             logger.debug("vLLM health check failed: %s", e)
@@ -436,10 +410,7 @@ class vLLMClient(LocalLLMClient):
         base = self._get_base_url_root()
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{base}/version",
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as resp:
+                async with session.get(f"{base}/version", timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         return VLLMServerInfo(
@@ -449,13 +420,9 @@ class vLLMClient(LocalLLMClient):
                             max_model_len=data.get("max_model_len"),
                             tensor_parallel_size=data.get("tensor_parallel_size"),
                         )
-                    raise ConnectionError(
-                        f"Failed to get vLLM server info: HTTP {resp.status}"
-                    )
+                    raise ConnectionError(f"Failed to get vLLM server info: HTTP {resp.status}")
         except aiohttp.ClientError as e:
-            raise ConnectionError(
-                f"Cannot connect to vLLM server at {base}: {e}"
-            ) from e
+            raise ConnectionError(f"Cannot connect to vLLM server at {base}: {e}") from e
 
     async def list_models(self) -> List[str]:
         """List available models on the vLLM server.
@@ -473,15 +440,9 @@ class vLLMClient(LocalLLMClient):
             models = await self.client.models.list()
             return [m.id for m in models.data]
         except Exception as e:
-            raise ConnectionError(
-                f"Cannot list models from vLLM server at {self.base_url}: {e}"
-            ) from e
+            raise ConnectionError(f"Cannot list models from vLLM server at {self.base_url}: {e}") from e
 
-    async def batch_process(
-        self,
-        requests: List[Dict[str, Any]],
-        **kwargs
-    ) -> List[AIMessage]:
+    async def batch_process(self, requests: List[Dict[str, Any]], **kwargs) -> List[AIMessage]:
         """Process multiple requests concurrently for optimal throughput.
 
         vLLM excels at batching requests, and this method leverages

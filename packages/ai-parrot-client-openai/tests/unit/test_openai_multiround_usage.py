@@ -5,6 +5,7 @@ that AIMessage.usage carries the accumulated total (not just the last
 round's usage), that ClientRoundEvent fires once per tool round, and
 that AfterClientCallEvent carries the accumulated totals too.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +39,9 @@ def _mock_usage(prompt: int, completion: int, total: int):
     usage.completion_tokens = completion
     usage.total_tokens = total
     usage.model_dump.return_value = {
-        "prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total,
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
     }
     return usage
 
@@ -126,7 +129,9 @@ class TestOpenAIMultiroundUsage:
         assert round_events[0].input_tokens == 100
         assert round_events[1].input_tokens == 150
         assert round_events[0].raw_usage == {
-            "prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+            "total_tokens": 110,
         }
 
         assert len(after_events) == 1
@@ -199,10 +204,7 @@ def _mock_raw_responses_api(output_text, tool_calls, usage):
     raw.output_text = output_text
     raw.usage = usage
     if tool_calls:
-        parts = [
-            {"type": "tool_call", "id": tid, "name": name, "arguments": {}}
-            for tid, name in tool_calls
-        ]
+        parts = [{"type": "tool_call", "id": tid, "name": name, "arguments": {}} for tid, name in tool_calls]
         raw.output = [_RespItem(parts)]
     else:
         raw.output = []

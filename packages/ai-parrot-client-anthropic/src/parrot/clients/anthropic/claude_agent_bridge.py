@@ -37,10 +37,7 @@ if TYPE_CHECKING:
     from parrot.tools.abstract import AbstractTool
     from parrot.tools.manager import ToolManager
 
-_INSTALL_HINT = (
-    "claude_agent_sdk is not installed. "
-    "Install with: pip install ai-parrot[claude-agent]"
-)
+_INSTALL_HINT = "claude_agent_sdk is not installed. " "Install with: pip install ai-parrot[claude-agent]"
 
 
 def _import_sdk():
@@ -115,17 +112,14 @@ class ClaudeAgentToolBridge:
         # named "search_tools" as a structural rule, not a narrowing
         # decision — mirror that here so it never shows up as "dropped".
         all_tools = [
-            tool
-            for tool in self.tool_manager.get_all_tools()
-            if getattr(tool, "name", None) != "search_tools"
+            tool for tool in self.tool_manager.get_all_tools() if getattr(tool, "name", None) != "search_tools"
         ]
         total = len(all_tools)
 
         if limit <= 0:
             if all_tools:
                 self.logger.warning(
-                    "Narrowing budget is %d — dropping all %d registered "
-                    "tool(s): %s",
+                    "Narrowing budget is %d — dropping all %d registered " "tool(s): %s",
                     limit,
                     total,
                     [getattr(tool, "name", "?") for tool in all_tools],
@@ -140,14 +134,9 @@ class ClaudeAgentToolBridge:
 
         if total > limit:
             selected_names = {getattr(tool, "name", None) for tool in selected}
-            dropped = [
-                tool
-                for tool in all_tools
-                if getattr(tool, "name", None) not in selected_names
-            ]
+            dropped = [tool for tool in all_tools if getattr(tool, "name", None) not in selected_names]
             self.logger.warning(
-                "Narrowing budget (%d) exceeded by %d registered tool(s); "
-                "dropping %d: %s",
+                "Narrowing budget (%d) exceeded by %d registered tool(s); " "dropping %d: %s",
                 limit,
                 total,
                 len(dropped),
@@ -303,18 +292,14 @@ class ClaudeAgentToolBridge:
         requires_confirmation = bool((tool.routing_meta or {}).get("requires_confirmation"))
 
         async def handler(args: dict[str, Any]) -> dict[str, Any]:
-            call = self.tool_manager.execute_tool(
-                tool_name, args, permission_context
-            )
+            call = self.tool_manager.execute_tool(tool_name, args, permission_context)
             try:
                 if self.tool_timeout is not None and not requires_confirmation:
                     raw = await asyncio.wait_for(call, timeout=self.tool_timeout)
                 else:
                     raw = await call
             except TimeoutError:
-                self.logger.warning(
-                    "Bridged tool %r timed out after %ss", tool_name, self.tool_timeout
-                )
+                self.logger.warning("Bridged tool %r timed out after %ss", tool_name, self.tool_timeout)
                 result = ToolResult(
                     success=False,
                     status="timeout",

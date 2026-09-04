@@ -2,6 +2,7 @@
 
 FEAT-181 — Provider-Agnostic Prompt Caching (TASK-1222).
 """
+
 from parrot.bots.prompts.segments import CacheableSegment
 from parrot.clients.anthropic import AnthropicClient
 
@@ -10,6 +11,7 @@ class TestAnthropicCacheTranslator:
     def _make_client(self):
         """Create a bare AnthropicClient instance without full init."""
         import logging
+
         client = AnthropicClient.__new__(AnthropicClient)
         client.logger = logging.getLogger("test")
         return client

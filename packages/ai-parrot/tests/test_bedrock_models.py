@@ -6,6 +6,7 @@ Tests cover the three translation branches:
 - Pass-through: already-Bedrock IDs / ARNs returned verbatim
 - Unknown fallback: unknown public ID returned unchanged + warning logged
 """
+
 import logging
 
 import pytest

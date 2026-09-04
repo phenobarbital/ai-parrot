@@ -11,6 +11,7 @@ silently reset any subclass's class-level ``_fallback_model`` default to
 default (now declared on ``AbstractClient`` itself so ``getattr`` never
 fails for clients that don't set their own).
 """
+
 from parrot.clients.base import AbstractClient
 
 

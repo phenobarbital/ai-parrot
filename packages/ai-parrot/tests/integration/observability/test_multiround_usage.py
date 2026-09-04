@@ -27,10 +27,10 @@ from parrot.core.events.lifecycle.events import (
 from parrot.observability.context import agent_identity
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors tests/integration/observability/test_poc.py)
 # ---------------------------------------------------------------------------
+
 
 def _make_meter_provider(reader: InMemoryMetricReader) -> MeterProvider:
     """Build a MeterProvider that exposes metrics via *reader*."""

@@ -21,6 +21,7 @@ description, input_schema, handler) our code builds without depending on
 `claude_agent_sdk`'s internal ``mcp.server.Server``/wire-protocol layer,
 which is out of scope for this bridge module.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -208,9 +209,7 @@ class TestHandlerDispatch:
 
         await handler({"text": "hi"})
 
-        tool_manager.execute_tool.assert_awaited_once_with(
-            "echo_tool", {"text": "hi"}, permission_context
-        )
+        tool_manager.execute_tool.assert_awaited_once_with("echo_tool", {"text": "hi"}, permission_context)
 
     async def test_handler_never_calls_tool_execute_directly(self, captured_server, monkeypatch):
         tool_manager = MagicMock()
@@ -404,9 +403,7 @@ class TestSelection:
             selected = bridge.select("anything", limit=15)
 
         assert len(selected) == 1
-        assert not any(
-            record.levelname == "WARNING" for record in caplog.records
-        )
+        assert not any(record.levelname == "WARNING" for record in caplog.records)
 
     def test_dropped_names_are_logged(self, wide_manager, caplog):
         bridge = _make_bridge(wide_manager)

@@ -5,6 +5,7 @@ The canned client double is a real ``AbstractClient`` subclass (so
 abstract method stubbed and ``ask()`` returning scripted responses — no
 network, no real provider.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,9 +84,7 @@ class TestResolvePlannerClient:
         assert isinstance(client, AnthropicClient)
 
     def test_dict_config(self) -> None:
-        client = resolve_planner_client(
-            {"name": "openai", "model": "gpt-5", "temperature": 0.2}
-        )
+        client = resolve_planner_client({"name": "openai", "model": "gpt-5", "temperature": 0.2})
         assert client.model == "gpt-5"
         assert client.temperature == 0.2
 

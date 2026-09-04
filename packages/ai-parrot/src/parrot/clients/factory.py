@@ -29,6 +29,7 @@ keeps every existing ``from parrot.clients.factory import SUPPORTED_CLIENTS``
 call site (there are about a dozen across core/server/pipelines) working
 unchanged, whether they read it inline or hold on to the imported name.
 """
+
 import importlib.metadata as importlib_metadata
 import logging
 from typing import Any, Dict, Optional, Tuple
@@ -119,8 +120,7 @@ def _register(key: str, value: Any, dist_name: str) -> None:
         if existing is value:
             return
         logger.warning(
-            "Duplicate LLM provider key '%s' from distribution '%s' ignored; "
-            "already registered by '%s'.",
+            "Duplicate LLM provider key '%s' from distribution '%s' ignored; " "already registered by '%s'.",
             key,
             dist_name,
             _PROVIDER_DIST.get(key, "?"),

@@ -12,6 +12,7 @@ Requires:
     - GOOGLE_API_KEY (for PageIndex's LLM walk).
     - sentence-transformers (already a dependency of FAISSStore).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,6 @@ from examples.orchestrator.knowledge.retrieval import (
     attach_faiss,
     attach_pageindex,
 )
-
 
 _LOG = logging.getLogger("orchestrator.ingest")
 
@@ -98,10 +98,12 @@ async def _build_faiss() -> object:
         for heading, body in split_into_sections(text):
             if not body.strip():
                 continue
-            documents.append(Document(
-                page_content=f"{heading}\n\n{body}",
-                metadata={"source": md_path.name, "section": heading},
-            ))
+            documents.append(
+                Document(
+                    page_content=f"{heading}\n\n{body}",
+                    metadata={"source": md_path.name, "section": heading},
+                )
+            )
 
     if documents:
         async with store as opened:
@@ -132,13 +134,8 @@ async def build_all(reset: bool = False) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--reset", action="store_true",
-        help="Wipe and rebuild the indexes from scratch."
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Enable debug logging."
-    )
+    parser.add_argument("--reset", action="store_true", help="Wipe and rebuild the indexes from scratch.")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
 

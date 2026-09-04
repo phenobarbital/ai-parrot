@@ -9,6 +9,7 @@ Follows the same authenticated-endpoint pattern as
 ``parrot.server.ui.status.AdminStatusHandler`` (TASK-2524): the response
 models here are also the TS codegen source (``scripts/generate_ts_types.py``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,13 +77,13 @@ def _knowledge_base_options() -> list[KnowledgeBaseOption]:
     """
     options = [
         KnowledgeBaseOption(
-            class_path=(
-                f"{RedisKnowledgeBase.__module__}.{RedisKnowledgeBase.__qualname__}"
-            ),
+            class_path=(f"{RedisKnowledgeBase.__module__}.{RedisKnowledgeBase.__qualname__}"),
             name=RedisKnowledgeBase.__name__,
-            description=(RedisKnowledgeBase.__doc__ or "").strip().splitlines()[0]
-            if (RedisKnowledgeBase.__doc__ or "").strip()
-            else None,
+            description=(
+                (RedisKnowledgeBase.__doc__ or "").strip().splitlines()[0]
+                if (RedisKnowledgeBase.__doc__ or "").strip()
+                else None
+            ),
         ),
     ]
     try:
@@ -92,17 +93,15 @@ def _knowledge_base_options() -> list[KnowledgeBaseOption]:
             KnowledgeBaseOption(
                 class_path=f"{LocalKB.__module__}.{LocalKB.__qualname__}",
                 name=LocalKB.__name__,
-                description=(LocalKB.__doc__ or "").strip().splitlines()[0]
-                if (LocalKB.__doc__ or "").strip()
-                else None,
+                description=(
+                    (LocalKB.__doc__ or "").strip().splitlines()[0] if (LocalKB.__doc__ or "").strip() else None
+                ),
             )
         )
     except Exception as exc:  # noqa: BLE001
         # ai-parrot-embeddings absent (or any other import-time failure) —
         # degrade gracefully, never raise from the catalog builder.
-        logging.getLogger(__name__).warning(
-            "LocalKB unavailable, dropping from Admin UI catalog: %s", exc
-        )
+        logging.getLogger(__name__).warning("LocalKB unavailable, dropping from Admin UI catalog: %s", exc)
     return options
 
 

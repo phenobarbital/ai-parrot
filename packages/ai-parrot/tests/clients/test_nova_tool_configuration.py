@@ -27,8 +27,7 @@ class TestToolConfiguration:
         fake.get_schema.return_value = {
             "name": "get_weather",
             "description": "Get the current weather for a location.",
-            "parameters": {"type": "object",
-                           "properties": {"location": {"type": "string"}}},
+            "parameters": {"type": "object", "properties": {"location": {"type": "string"}}},
         }
         client.tool_manager = MagicMock(all_tools=MagicMock(return_value=[fake]))
 

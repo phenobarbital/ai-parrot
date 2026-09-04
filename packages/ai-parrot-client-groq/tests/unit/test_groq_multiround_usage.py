@@ -7,6 +7,7 @@ AfterClientCallEvent carries the accumulated totals too, and that Groq's
 timing fields (completion_time etc.) survive accumulation via
 CompletionUsage.__add__'s None-aware sum.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,9 @@ def _mock_usage(prompt: int, completion: int, total: int, completion_time: float
     usage.queue_time = None
     usage.total_time = None
     usage.model_dump.return_value = {
-        "prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total,
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
         "completion_time": completion_time,
     }
     return usage
@@ -94,15 +97,18 @@ class TestGroqMultiroundUsage:
         """3-round loop (2 tool rounds + final) → AIMessage.usage = sum of 3 rounds."""
         responses = [
             _mock_response(
-                None, [_mock_tool_call("tu_1", "get_weather", {})],
+                None,
+                [_mock_tool_call("tu_1", "get_weather", {})],
                 _mock_usage(100, 10, 110, completion_time=0.5),
             ),
             _mock_response(
-                None, [_mock_tool_call("tu_2", "search", {})],
+                None,
+                [_mock_tool_call("tu_2", "search", {})],
                 _mock_usage(150, 20, 170, completion_time=0.5),
             ),
             _mock_response(
-                "Final answer", None,
+                "Final answer",
+                None,
                 _mock_usage(200, 30, 230, completion_time=0.5),
             ),
         ]

@@ -19,7 +19,7 @@ from .outputs import (
     ImageGenerationPrompt,
     SpeakerConfig,
     SpeechGenerationPrompt,
-    VideoGenerationPrompt
+    VideoGenerationPrompt,
 )
 from .infographic import (
     BlockType,

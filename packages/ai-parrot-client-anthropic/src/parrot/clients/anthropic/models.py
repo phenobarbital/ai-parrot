@@ -10,17 +10,17 @@ class ClaudeModel(Enum):
     """
 
     # ── Claude 5 family (2026) ───────────────────────────────────────────────
-    FABLE_5_1 = "claude-fable-5-1"         # latest Fable (5.1)
-    FABLE_5 = "claude-fable-5"             # Fable 5.0
-    SONNET_5 = "claude-sonnet-5"           # Sonnet 5
+    FABLE_5_1 = "claude-fable-5-1"  # latest Fable (5.1)
+    FABLE_5 = "claude-fable-5"  # Fable 5.0
+    SONNET_5 = "claude-sonnet-5"  # Sonnet 5
 
     # ── Claude Opus 4.7 / 4.8 (2026) ─────────────────────────────────────────
-    OPUS_4_8 = "claude-opus-4-8"           # alias → latest Opus 4.8 (current Opus)
-    OPUS_4_7 = "claude-opus-4-7"           # alias → latest Opus 4.7
+    OPUS_4_8 = "claude-opus-4-8"  # alias → latest Opus 4.8 (current Opus)
+    OPUS_4_7 = "claude-opus-4-7"  # alias → latest Opus 4.7
 
     # ── Claude 4.6 (Feb 2026) ────────────────────────────────────────────────
-    OPUS_4_6 = "claude-opus-4-6"           # alias → latest Opus 4.6
-    SONNET_4_6 = "claude-sonnet-4-6"       # alias → latest Sonnet 4.6
+    OPUS_4_6 = "claude-opus-4-6"  # alias → latest Opus 4.6
+    SONNET_4_6 = "claude-sonnet-4-6"  # alias → latest Sonnet 4.6
 
     # ── Claude 4.5 (Oct–Nov 2025) ────────────────────────────────────────────
     OPUS_4_5 = "claude-opus-4-5-20251101"
@@ -29,7 +29,7 @@ class ClaudeModel(Enum):
 
     # ── Claude 4.1 / 4.0 (May–Aug 2025) ─────────────────────────────────────
     OPUS_4_1 = "claude-opus-4-1-20250805"
-    OPUS_4_1_ALIAS = "claude-opus-4-1"     # alias → latest Opus 4.1
+    OPUS_4_1_ALIAS = "claude-opus-4-1"  # alias → latest Opus 4.1
     SONNET_4 = "claude-sonnet-4-20250514"
 
     # ── Claude 3.x (still valid) ─────────────────────────────────────────────

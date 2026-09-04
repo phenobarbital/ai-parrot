@@ -12,12 +12,11 @@ fully-provisioned environment, `from parrot.bots import VoiceBot` (used by
 ``TestVoiceBotExport`` below, per the task's own Test Specification) works
 normally.
 """
+
 import ast
 from pathlib import Path
 
-VOICE_BOT_SOURCE = (
-    Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
-)
+VOICE_BOT_SOURCE = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
 
 
 def _get_method_source(method_name: str) -> str:
@@ -26,10 +25,7 @@ def _get_method_source(method_name: str) -> str:
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "VoiceBot":
             for item in node.body:
-                if (
-                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and item.name == method_name
-                ):
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method_name:
                     return ast.get_source_segment(source, item)
     raise AssertionError(f"Method {method_name} not found in VoiceBot")
 
@@ -37,10 +33,12 @@ def _get_method_source(method_name: str) -> str:
 class TestVoiceBotExport:
     def test_import_from_bots(self):
         from parrot.bots import VoiceBot
+
         assert VoiceBot is not None
 
     def test_voicebot_in_all(self):
         import parrot.bots
+
         assert "VoiceBot" in parrot.bots.__all__
 
 
@@ -54,10 +52,7 @@ class TestVoiceBotLazyExport:
     for the same reason as the rest of this module.
     """
 
-    BOTS_INIT = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "parrot" / "bots" / "__init__.py"
-    )
+    BOTS_INIT = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "__init__.py"
 
     def _tree(self) -> ast.Module:
         return ast.parse(self.BOTS_INIT.read_text())
@@ -71,14 +66,8 @@ class TestVoiceBotLazyExport:
                 )
 
     def test_defines_module_getattr(self):
-        names = {
-            node.name
-            for node in self._tree().body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        assert "__getattr__" in names, (
-            "lazy exports require a PEP 562 module-level __getattr__"
-        )
+        names = {node.name for node in self._tree().body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        assert "__getattr__" in names, "lazy exports require a PEP 562 module-level __getattr__"
 
 
 class TestVoiceBotSttOnly:

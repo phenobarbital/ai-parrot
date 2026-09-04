@@ -8,6 +8,7 @@ into _send_voice_response — with no resampling (same bytes, no transform).
 All transport layers (AvatarWebSocket, LiveAvatarClient, LiveKitRoomManager) are
 mocked.  No real network, LiveKit, or LiveAvatar connections.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -18,8 +19,8 @@ from parrot.models.voice import LiveVoiceResponse
 from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection
 
-
 # patched_stack fixture lives in conftest.py (shared with unit tests)
+
 
 @pytest.fixture
 def handler():
@@ -64,9 +65,7 @@ async def test_gemini_audio_to_avatar_end_to_end(patched_stack, handler, connect
     _, _, ws, _ = patched_stack
 
     # Build a real VoiceAvatarSession over the mocked transport
-    avatar_session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="sess-1", tenant_id=None
-    )
+    avatar_session = await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None)
     connection.avatar_session = avatar_session
 
     # Ensure browser send_json is tracked (ws fixture above already uses AsyncMock)
@@ -86,11 +85,7 @@ async def test_gemini_audio_to_avatar_end_to_end(patched_stack, handler, connect
 
     # Browser also received at least one message (response_complete / ready_to_speak)
     assert connection.ws.send_json.await_count >= 1
-    sent_types = [
-        c.args[0]["type"]
-        for c in connection.ws.send_json.await_args_list
-        if c.args
-    ]
+    sent_types = [c.args[0]["type"] for c in connection.ws.send_json.await_args_list if c.args]
     # response_complete and/or ready_to_speak must appear (is_complete=True path)
     assert any(t in sent_types for t in ("response_complete", "ready_to_speak"))
 
@@ -100,9 +95,7 @@ async def test_gemini_audio_mid_turn_no_finish(patched_stack, handler, connectio
     """Mid-turn audio chunk (is_complete=False): speak called, finish_speaking NOT called."""
     _, _, ws, _ = patched_stack
 
-    avatar_session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="sess-1", tenant_id=None
-    )
+    avatar_session = await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None)
     connection.avatar_session = avatar_session
 
     pcm = b"\x00\x01" * 2400
@@ -122,9 +115,7 @@ async def test_barge_in_clears_avatar(patched_stack, handler, connection):
     """
     _, _, ws, _ = patched_stack
 
-    avatar_session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="sess-1", tenant_id=None
-    )
+    avatar_session = await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None)
     connection.avatar_session = avatar_session
 
     await handler._send_voice_response(
@@ -143,12 +134,10 @@ async def test_pcm_bytes_unchanged_no_resample(patched_stack, handler, connectio
     """
     _, _, ws, _ = patched_stack
 
-    avatar_session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="sess-1", tenant_id=None
-    )
+    avatar_session = await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None)
     connection.avatar_session = avatar_session
 
-    original_pcm = b"\xAB\xCD" * 1200  # 1200 samples @ 24 kHz ≈ 50 ms
+    original_pcm = b"\xab\xcd" * 1200  # 1200 samples @ 24 kHz ≈ 50 ms
 
     await handler._send_voice_response(
         connection,

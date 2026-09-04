@@ -1,6 +1,7 @@
 """Unit tests for the ``bedrock-converse`` factory registration
 (FEAT-302, TASK-1747).
 """
+
 import tomllib
 from pathlib import Path
 
@@ -13,6 +14,7 @@ class TestFactoryBedrockConverse:
 
     def test_bedrock_legacy_preserved(self):
         from parrot.clients.anthropic import AnthropicClient
+
         client_cls = SUPPORTED_CLIENTS["bedrock"]
         if callable(client_cls) and not isinstance(client_cls, type):
             client_cls = client_cls()

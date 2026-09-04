@@ -222,6 +222,7 @@ class MinimaxProvider:
         # FEAT-523 (TASK-2846): lazy import — core/satellites must not
         # import a provider client at module scope (AC-3).
         from parrot.clients.nvidia import NvidiaClient
+
         self.client = client or NvidiaClient(model=default_model)
         self.default_model = default_model
 

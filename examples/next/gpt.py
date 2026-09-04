@@ -10,6 +10,7 @@ from parrot.models import VideoGenerationPrompt
 @dataclass
 class SummaryOutput:
     """Data structure for summary output."""
+
     title: str
     key_points: List[str]
     sentiment: str
@@ -17,6 +18,7 @@ class SummaryOutput:
 
 class SummaryResponse(TypedDict):
     """TypedDict for structured summary response."""
+
     title: str
     key_points: List[str]
     sentiment: str
@@ -35,7 +37,7 @@ async def example_usage():
                 "New York": "Sunny, 22°C",
                 "London": "Rainy, 18°C",
                 "Tokyo": "Cloudy, 26°C",
-                "Paris": "Sunny, 20°C"
+                "Paris": "Sunny, 20°C",
             }
             return weather_data.get(location, "Weather data not available")
 
@@ -44,22 +46,14 @@ async def example_usage():
             description="Get the current weather for a given location",
             input_schema={
                 "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The name of the city"
-                    }
-                },
-                "required": ["location"]
+                "properties": {"location": {"type": "string", "description": "The name of the city"}},
+                "required": ["location"],
             },
-            function=get_weather
+            function=get_weather,
         )
 
         # Simple question
-        response = await client.ask(
-            "What's the weather like in New York?",
-            model=OpenAIModel.O3
-        )
+        response = await client.ask("What's the weather like in New York?", model=OpenAIModel.O3)
         # response is an AIMessage object
         print("Weather response:", response.output)
 
@@ -75,11 +69,11 @@ async def example_usage():
                 "type": "object",
                 "properties": {
                     "length": {"type": "number", "description": "Length of rectangle"},
-                    "width": {"type": "number", "description": "Width of rectangle"}
+                    "width": {"type": "number", "description": "Width of rectangle"},
                 },
-                "required": ["length", "width"]
+                "required": ["length", "width"],
             },
-            function=calculate_area
+            function=calculate_area,
         )
 
         # Start a conversation with memory
@@ -90,16 +84,12 @@ async def example_usage():
 
         # Multi-turn conversation with memory
         response1 = await client.ask(
-            "My name is Jesus and I like Python programming",
-            user_id=user_id,
-            session_id=session_id
+            "My name is Jesus and I like Python programming", user_id=user_id, session_id=session_id
         )
         print("Response 1:", response1)
 
         response2 = await client.ask(
-            prompt="What's my name and what do I like?",
-            user_id=user_id,
-            session_id=session_id
+            prompt="What's my name and what do I like?", user_id=user_id, session_id=session_id
         )
         print("Response 2:", response2)
 
@@ -116,14 +106,13 @@ async def example_usage():
         weather_response = await client.ask(
             "Give me a weather report for Tokyo using the available tools",
             structured_output=WeatherReport,
-            model=OpenAIModel.GPT_4_1_MINI
+            model=OpenAIModel.GPT_4_1_MINI,
         )
         print("Structured weather response:")
         print("- Is structured:", weather_response.is_structured)
         print("- Output type:", type(weather_response.output))
         print("- Weather data:", weather_response.output)
         print("- Tools used:", [tc.name for tc in weather_response.tool_calls])
-
 
         # Streaming response
         async for chunk in client.ask_stream("Tell me a story about AI"):

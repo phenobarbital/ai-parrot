@@ -4,6 +4,7 @@ errors, missing ``aioboto3``, invalid model IDs, and response-shape edge
 cases (empty/reasoning-only/multi-block content). All AWS calls are
 mocked — no real network access is used.
 """
+
 import sys
 
 import pytest
@@ -19,6 +20,7 @@ class TestBedrockErrors:
         with patch.dict(sys.modules, {"aioboto3": None}):
             with pytest.raises(ImportError):
                 import asyncio
+
                 asyncio.run(client.get_client())
 
     @pytest.mark.asyncio
@@ -45,14 +47,11 @@ class TestBedrockErrors:
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "ok via fallback"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5}
+            "usage": {"inputTokens": 10, "outputTokens": 5},
         }
-        client = BedrockConverseClient(
-            model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5"
-        )
+        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5")
         with patch.object(
-            client, '_sdk_create',
-            side_effect=[ThrottlingException("slow down"), final_response]
+            client, "_sdk_create", side_effect=[ThrottlingException("slow down"), final_response]
         ) as mock_create:
             result = await client.ask("Hello")
             assert result.output == "ok via fallback"
@@ -68,9 +67,7 @@ class TestBedrockErrors:
             pass
 
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(
-            client, '_sdk_create', side_effect=ValidationException("bad request")
-        ):
+        with patch.object(client, "_sdk_create", side_effect=ValidationException("bad request")):
             with pytest.raises(ValidationException, match="bad request"):
                 await client.ask("Hello")
 
@@ -88,9 +85,10 @@ class TestBedrockErrors:
             async def _events():
                 yield {"contentBlockDelta": {"delta": {"text": "partial"}}}
                 raise ModelStreamErrorException("stream broke")
+
             return _events()
 
-        with patch.object(client, '_sdk_stream', side_effect=fake_stream):
+        with patch.object(client, "_sdk_stream", side_effect=fake_stream):
             received = []
             with pytest.raises(ModelStreamErrorException, match="stream broke"):
                 async for item in client.ask_stream("Hello"):
@@ -104,10 +102,10 @@ class TestBedrockErrors:
         response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 5}
+            "usage": {"inputTokens": 5, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="totally-unknown-model-xyz")
-        with patch.object(client, '_sdk_create', return_value=response) as mock_create:
+        with patch.object(client, "_sdk_create", return_value=response) as mock_create:
             with caplog.at_level("WARNING"):
                 await client.ask("Hello")
             sent_payload = mock_create.call_args[0][0]
@@ -120,10 +118,10 @@ class TestBedrockErrors:
         response = {
             "output": {"message": {"role": "assistant", "content": []}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 0}
+            "usage": {"inputTokens": 5, "outputTokens": 0},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=response):
+        with patch.object(client, "_sdk_create", return_value=response):
             result = await client.ask("Hello")
             assert result.output == ""
 
@@ -133,39 +131,48 @@ class TestBedrockErrors:
         crash and yields empty text output; reasoning is preserved in
         raw_response."""
         response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"reasoningContent": {
-                    "reasoningText": {"text": "Just thinking, no answer yet."},
-                    "signature": "sig_only"
-                }}
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "reasoningContent": {
+                                "reasoningText": {"text": "Just thinking, no answer yet."},
+                                "signature": "sig_only",
+                            }
+                        }
+                    ],
+                }
+            },
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5}
+            "usage": {"inputTokens": 10, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=response):
+        with patch.object(client, "_sdk_create", return_value=response):
             result = await client.ask("Hello")
             assert result.output == ""
-            reasoning = [
-                b for b in result.raw_response["output"]["message"]["content"]
-                if "reasoningContent" in b
-            ]
+            reasoning = [b for b in result.raw_response["output"]["message"]["content"] if "reasoningContent" in b]
             assert reasoning[0]["reasoningContent"]["signature"] == "sig_only"
 
     @pytest.mark.asyncio
     async def test_multiple_text_blocks_concatenated(self):
         """Multiple {"text": ...} content blocks are concatenated in order."""
         response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"text": "Hello, "},
-                {"text": "world"},
-                {"text": "!"},
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"text": "Hello, "},
+                        {"text": "world"},
+                        {"text": "!"},
+                    ],
+                }
+            },
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5}
+            "usage": {"inputTokens": 10, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=response):
+        with patch.object(client, "_sdk_create", return_value=response):
             result = await client.ask("Hello")
             assert result.output == "Hello, world!"
 
@@ -175,16 +182,19 @@ class TestBedrockErrors:
         without truncation or error."""
         large_result = "x" * 200_000
         tool_response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"toolUse": {"toolUseId": "tu_1", "name": "big_tool", "input": {}}}
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [{"toolUse": {"toolUseId": "tu_1", "name": "big_tool", "input": {}}}],
+                }
+            },
             "stopReason": "tool_use",
-            "usage": {"inputTokens": 10, "outputTokens": 5}
+            "usage": {"inputTokens": 10, "outputTokens": 5},
         }
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "done"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 15, "outputTokens": 5}
+            "usage": {"inputTokens": 15, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         captured = []
@@ -193,15 +203,14 @@ class TestBedrockErrors:
             captured.append(payload)
             return tool_response if len(captured) == 1 else final_response
 
-        with patch.object(client, '_sdk_create', side_effect=fake_create):
-            with patch.object(client, '_execute_tool', return_value=large_result):
+        with patch.object(client, "_sdk_create", side_effect=fake_create):
+            with patch.object(client, "_execute_tool", return_value=large_result):
                 result = await client.ask("Run big tool", use_tools=True)
                 assert result.output == "done"
 
         second_payload_messages = captured[1]["messages"]
         tool_result_msg = next(
-            m for m in second_payload_messages
-            if m["role"] == "user" and any("toolResult" in b for b in m["content"])
+            m for m in second_payload_messages if m["role"] == "user" and any("toolResult" in b for b in m["content"])
         )
         tool_result_block = next(b for b in tool_result_msg["content"] if "toolResult" in b)
         assert len(tool_result_block["toolResult"]["content"][0]["text"]) == 200_000

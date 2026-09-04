@@ -12,7 +12,13 @@ from parrot.models.detections import (
 from parrot.models.compliance import (
     ComplianceStatus,
 )
-from .types import ProductOnShelves, GraphicPanelDisplay, ProductCounter, EndcapNoShelvesPromotional, EndcapBacklitMultitier
+from .types import (
+    ProductOnShelves,
+    GraphicPanelDisplay,
+    ProductCounter,
+    EndcapNoShelvesPromotional,
+    EndcapBacklitMultitier,
+)
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -42,14 +48,9 @@ class PlanogramCompliance(AbstractPipeline):
         llm: Any = None,
         llm_provider: str = "google",
         llm_model: Optional[str] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ):
-        super().__init__(
-            llm=llm,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            **kwargs
-        )
+        super().__init__(llm=llm, llm_provider=llm_provider, llm_model=llm_model, **kwargs)
         self.planogram_config = planogram_config
 
         # Endcap geometry defaults
@@ -64,10 +65,7 @@ class PlanogramCompliance(AbstractPipeline):
         composable_cls = self._PLANOGRAM_TYPES.get(ptype)
         if composable_cls is None:
             available = ", ".join(sorted(self._PLANOGRAM_TYPES.keys()))
-            raise ValueError(
-                f"Unknown planogram_type '{ptype}'. "
-                f"Available types: {available}"
-            )
+            raise ValueError(f"Unknown planogram_type '{ptype}'. " f"Available types: {available}")
         self._type_handler = composable_cls(pipeline=self, config=planogram_config)
 
     async def run(
@@ -75,7 +73,7 @@ class PlanogramCompliance(AbstractPipeline):
         image: Union[str, Path, Image.Image],
         output_dir: Optional[Union[str, Path]] = None,
         image_id: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Run the planogram compliance pipeline.
 
@@ -84,9 +82,7 @@ class PlanogramCompliance(AbstractPipeline):
         orchestration logic (image loading, debug rendering, result assembly).
         """
         _sfx = f"_{image_id}" if image_id else ""
-        self.logger.info(
-            "Starting Pure-LLM Planogram Compliance Pipeline"
-        )
+        self.logger.info("Starting Pure-LLM Planogram Compliance Pipeline")
 
         # Step 1: Find Poster/Endcap (type-specific ROI detection)
         img = self.open_image(image)
@@ -101,14 +97,9 @@ class PlanogramCompliance(AbstractPipeline):
 
         try:
             endcap, ad, brand, panel_text, raw_dets = await self._type_handler.compute_roi(img)
-            detections_step1 = {
-                "endcap": endcap,
-                "dataset": raw_dets
-            }
+            detections_step1 = {"endcap": endcap, "dataset": raw_dets}
         except Exception as e:
-            self.logger.error(
-                f"Step 1 Failed: {e}"
-            )
+            self.logger.error(f"Step 1 Failed: {e}")
 
         if output_dir:
             try:
@@ -118,10 +109,10 @@ class PlanogramCompliance(AbstractPipeline):
 
                 if detections_step1.get("dataset"):
                     for d in detections_step1["dataset"]:
-                        if hasattr(d, 'bbox'):
+                        if hasattr(d, "bbox"):
                             b = d.bbox
                             x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                            label = getattr(d, 'label', None) or 'unknown'
+                            label = getattr(d, "label", None) or "unknown"
                             color = "blue" if "poster" in label else "green"
                             debug_draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
                             debug_draw.text((x1, y1), label, fill=color)
@@ -134,22 +125,21 @@ class PlanogramCompliance(AbstractPipeline):
 
                 debug_path = Path(output_dir) / f"debug_step1_roi{_sfx}.png"
                 debug_img.save(debug_path)
-                self.logger.info(
-                    f"Saved Step 1 Debug Image to {debug_path}"
-                )
+                self.logger.info(f"Saved Step 1 Debug Image to {debug_path}")
             except Exception as e:
-                self.logger.warning(
-                    f"Failed to save Step 1 debug image: {e}"
-                )
+                self.logger.warning(f"Failed to save Step 1 debug image: {e}")
 
         # Step 2: Object Detection & Identification (type-specific)
         identified_products, shelf_regions = await self._type_handler.detect_objects(
-            img, roi=endcap, macro_objects=None,
+            img,
+            roi=endcap,
+            macro_objects=None,
         )
 
         self.logger.info(
             "Step 2 detected %d products, %d shelf regions",
-            len(identified_products), len(shelf_regions),
+            len(identified_products),
+            len(shelf_regions),
         )
 
         # Build visual features lookup from planogram config (Pydantic objects)
@@ -203,7 +193,11 @@ class PlanogramCompliance(AbstractPipeline):
                         text_reqs_prompt = ""
                         if item_text_reqs:
                             req_texts = [
-                                r.get("required_text", r) if isinstance(r, dict) else getattr(r, "required_text", str(r))
+                                (
+                                    r.get("required_text", r)
+                                    if isinstance(r, dict)
+                                    else getattr(r, "required_text", str(r))
+                                )
                                 for r in item_text_reqs
                             ]
                             r_list = "\n".join([f'- "{t}"' for t in req_texts if t])
@@ -219,7 +213,7 @@ class PlanogramCompliance(AbstractPipeline):
                                 prompt=ocr_prompt,
                                 model="gemini-3.5-flash",
                                 no_memory=True,
-                                max_tokens=1024
+                                max_tokens=1024,
                             )
                             found_content = msg.output if msg else ""
                             if found_content:
@@ -228,7 +222,7 @@ class PlanogramCompliance(AbstractPipeline):
                                 confirmed_features = []
                                 found_texts = []
                                 clean_text_parts = []
-                                for line in found_content.split('\n'):
+                                for line in found_content.split("\n"):
                                     if "CONFIRMED:" in line:
                                         feat = line.split("CONFIRMED:", 1)[1].strip()
                                         confirmed_features.append(feat)
@@ -259,10 +253,11 @@ class PlanogramCompliance(AbstractPipeline):
                                 brand_in_ocr = brand_lower and brand_lower in clean_text.lower()
                                 brand_in_model = brand_lower and brand_lower in (p.product_model or "").lower()
                                 brand_in_features = brand_lower and any(
-                                    brand_lower in (f or "").lower()
-                                    for f in (confirmed_features or [])
+                                    brand_lower in (f or "").lower() for f in (confirmed_features or [])
                                 )
-                                if planogram_description.brand and (brand_in_ocr or brand_in_model or brand_in_features):
+                                if planogram_description.brand and (
+                                    brand_in_ocr or brand_in_model or brand_in_features
+                                ):
                                     p.brand = planogram_description.brand
                                     self.logger.info(f"Verified brand '{p.brand}' via OCR on {p.product_model}")
                 except Exception as e:
@@ -271,9 +266,7 @@ class PlanogramCompliance(AbstractPipeline):
         # Generate virtual shelves from Step 1 Endcap ROI (type-specific)
         if endcap and endcap.bbox:
             if hasattr(self._type_handler, "_generate_virtual_shelves"):
-                self.logger.info(
-                    "Generating virtual shelves from Endcap ROI..."
-                )
+                self.logger.info("Generating virtual shelves from Endcap ROI...")
                 virtual_shelves = self._type_handler._generate_virtual_shelves(
                     endcap.bbox, img.size, planogram_description
                 )
@@ -287,9 +280,7 @@ class PlanogramCompliance(AbstractPipeline):
         # Optionally refine shelf boundaries from detected fact-tag rows
         _pg_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
         if _pg_cfg.get("use_fact_tag_boundaries") and shelf_regions:
-            shelf_regions = self._type_handler._refine_shelves_from_fact_tags(
-                shelf_regions, identified_products
-            )
+            shelf_regions = self._type_handler._refine_shelves_from_fact_tags(shelf_regions, identified_products)
 
         # Assign products to shelves (type-specific)
         if hasattr(self._type_handler, "_assign_products_to_shelves"):
@@ -302,7 +293,9 @@ class PlanogramCompliance(AbstractPipeline):
         if _pg_cfg.get("use_fact_tag_boundaries"):
             if hasattr(self._type_handler, "_ocr_fact_tags"):
                 _ft_shelf_map = await self._type_handler._ocr_fact_tags(
-                    identified_products, img, planogram_description,
+                    identified_products,
+                    img,
+                    planogram_description,
                     shelf_regions=shelf_regions,
                 )
                 if hasattr(self._type_handler, "_corroborate_products_with_fact_tags"):
@@ -311,7 +304,7 @@ class PlanogramCompliance(AbstractPipeline):
                     )
 
         # Inject poster text as product if found
-        if panel_text and getattr(panel_text, 'content', None):
+        if panel_text and getattr(panel_text, "content", None):
             self.logger.info(f"Injecting poster text: {panel_text.content}")
             ocr_content = panel_text.content.strip()
             text_product = IdentifiedProduct(
@@ -320,20 +313,20 @@ class PlanogramCompliance(AbstractPipeline):
                     y1=int(panel_text.bbox.y1 * img.height),
                     x2=int(panel_text.bbox.x2 * img.width),
                     y2=int(panel_text.bbox.y2 * img.height),
-                    confidence=float(getattr(panel_text, 'confidence', 1.0)),
-                    ocr_text=ocr_content
+                    confidence=float(getattr(panel_text, "confidence", 1.0)),
+                    ocr_text=ocr_content,
                 ),
                 product_type="text_overlay",
                 product_model="poster_text",
-                confidence=float(getattr(panel_text, 'confidence', 1.0)),
+                confidence=float(getattr(panel_text, "confidence", 1.0)),
                 visual_features=[f"ocr:{ocr_content}"],
-                shelf_location="header"
+                shelf_location="header",
             )
             identified_products.append(text_product)
 
         # Inject brand logo if found
         if brand:
-            brand_conf = float(getattr(brand, 'confidence', 1.0))
+            brand_conf = float(getattr(brand, "confidence", 1.0))
             bx1 = int(brand.bbox.x1 * img.width)
             by1 = int(brand.bbox.y1 * img.height)
             bx2 = int(brand.bbox.x2 * img.width)
@@ -344,15 +337,13 @@ class PlanogramCompliance(AbstractPipeline):
                 product_model=brand.label or "brand_logo",
                 confidence=brand_conf,
                 brand=planogram_description.brand,
-                shelf_location="header"
+                shelf_location="header",
             )
             identified_products.append(brand_product)
             self.logger.info(f"Injecting brand logo: {brand_product.brand}")
 
         # Step 3: Planogram Compliance Verification (type-specific)
-        compliance_results = self._type_handler.check_planogram_compliance(
-            identified_products, planogram_description
-        )
+        compliance_results = self._type_handler.check_planogram_compliance(identified_products, planogram_description)
         overall_score = 0.0
         overall_compliant = True
         if compliance_results:
@@ -364,7 +355,7 @@ class PlanogramCompliance(AbstractPipeline):
             img,
             shelf_regions=shelf_regions,
             identified_products=identified_products,
-            save_to=str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None
+            save_to=str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None,
         )
 
         return {
@@ -375,7 +366,7 @@ class PlanogramCompliance(AbstractPipeline):
             "identified_products": identified_products,
             "shelf_regions": shelf_regions,
             "rendered_image": rendered_image,
-            "overlay_path": str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None
+            "overlay_path": str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None,
         }
 
     # =========================================================================
@@ -398,6 +389,7 @@ class PlanogramCompliance(AbstractPipeline):
         Uses colors from self._type_handler.get_render_colors() for
         type-specific color schemes.
         """
+
         def _norm_box(x1, y1, x2, y2):
             x1, x2, y1, y2 = int(x1), int(x2), int(y1), int(y2)
             if x1 > x2:
@@ -457,13 +449,9 @@ class PlanogramCompliance(AbstractPipeline):
                     x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
                     x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                     draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
-                    _txt(
-                        draw, (x1 + 3, max(0, y1 - 14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0)
-                    )
+                    _txt(draw, (x1 + 3, max(0, y1 - 14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
                 except Exception as e:
-                    self.logger.warning(
-                        f"Could not draw shelf {sr.level}: {e}"
-                    )
+                    self.logger.warning(f"Could not draw shelf {sr.level}: {e}")
 
         if identified_products:
             for i, p in enumerate(identified_products):
@@ -483,9 +471,7 @@ class PlanogramCompliance(AbstractPipeline):
                     if p.confidence:
                         label += f" ({p.confidence:.2f})"
 
-                    _txt(
-                        draw, (x1, max(0, y1 - 20)), label, fill=color, bg=(0, 0, 0)
-                    )
+                    _txt(draw, (x1, max(0, y1 - 20)), label, fill=color, bg=(0, 0, 0))
                 except Exception as e:
                     self.logger.warning(f"Failed to draw product: {e}")
 

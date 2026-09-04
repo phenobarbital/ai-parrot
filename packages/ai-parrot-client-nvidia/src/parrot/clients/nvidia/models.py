@@ -5,6 +5,7 @@ Provides model enums for Nvidia's NIM-hosted OpenAI-compatible API gateway
 Nvidia's response shape matches the OpenAI Chat Completion shape and is
 already covered by existing AIMessage / CompletionUsage models.
 """
+
 from enum import Enum
 
 
@@ -103,9 +104,7 @@ class NvidiaModel(str, Enum):
     #: ``max_tokens`` and a generous timeout — both are the NvidiaClient
     #: defaults (65536 / 300s). Optionally cap the thinking with
     #: ``reasoning_budget``.
-    NEMOTRON_3_NANO_OMNI_30B_REASONING = (
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
-    )
+    NEMOTRON_3_NANO_OMNI_30B_REASONING = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
     #: Reasoning-capable; confirmed emitting ``reasoning_content``.
     NEMOTRON_3_5_LIGHTNING_30B = "nvidia/nemotron-3.5-lightning-30b-a3b"
@@ -159,5 +158,3 @@ FREE_TIER_MODELS: frozenset[str] = frozenset(
         NvidiaModel.MISTRAL_NEMOTRON.value,
     }
 )
-
-

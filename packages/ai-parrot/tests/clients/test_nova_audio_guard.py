@@ -5,6 +5,7 @@ it, never requires the Pre-Alpha ``aws_sdk_bedrock_runtime`` package —
 only calling ``stream_voice()`` does, and it raises an actionable
 ``ImportError`` when the package is missing.
 """
+
 import sys
 
 import pytest
@@ -30,6 +31,7 @@ class _Host(NovaAudio):
 
     def __init__(self):
         import logging
+
         self.logger = logging.getLogger(__name__)
 
 

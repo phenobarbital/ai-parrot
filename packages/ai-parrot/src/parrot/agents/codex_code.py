@@ -5,6 +5,7 @@ Serves an :class:`~parrot.bots.agent.Agent` whose LLM is an
 delegated to the local Codex runtime authenticated with the credentials the
 ``codex`` CLI already has installed.
 """
+
 from __future__ import annotations
 
 import os
@@ -57,8 +58,7 @@ def make_agent(force_local_auth: bool | None = None, **kwargs: Any) -> Agent:
 
     agent = Agent(**kwargs)
     agent.logger.info(
-        "codex-code agent target ready (dropped %d invalid env names, "
-        "auth vars dropped: %s)",
+        "codex-code agent target ready (dropped %d invalid env names, " "auth vars dropped: %s)",
         len(dropped["invalid"]),
         dropped["auth"] or "none",
     )
@@ -66,8 +66,7 @@ def make_agent(force_local_auth: bool | None = None, **kwargs: Any) -> Agent:
     surviving = [name for name in _AUTH_OVERRIDE_VARS if name in os.environ]
     if surviving:
         agent.logger.warning(
-            "%s still set: spawned Codex turns may use that credential instead "
-            "of the installed Codex login.",
+            "%s still set: spawned Codex turns may use that credential instead " "of the installed Codex login.",
             " and ".join(surviving),
         )
     return agent

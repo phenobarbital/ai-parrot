@@ -54,6 +54,7 @@ Then open http://localhost:8080, hold the button to talk on Gemini, flip
 the toggle, hold to talk on Nova. Confirm: same agent behavior, same tool
 call, only the voice differs.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -110,6 +111,7 @@ SYSTEM_PROMPT = (
 # comparable across providers (spec §3 Module 12 Key Constraints).
 # ---------------------------------------------------------------------------
 
+
 @tool
 def get_weather(location: str) -> str:
     """Get the current weather for a location."""
@@ -123,6 +125,7 @@ SHARED_TOOLS = [get_weather]
 # Nova SDK availability (Pre-Alpha, Python >= 3.12 only) — checked once at
 # startup so the Nova route can degrade instead of failing the whole app.
 # ---------------------------------------------------------------------------
+
 
 def _nova_sdk_available() -> bool:
     """Whether the optional ``aws_sdk_bedrock_runtime`` package is
@@ -147,6 +150,7 @@ NOVA_UNAVAILABLE_REASON = (
 # WebSocket connection (see _handle_start_session), so each factory must
 # build a brand-new VoiceBot rather than returning a shared instance.
 # ---------------------------------------------------------------------------
+
 
 def make_gemini_bot() -> VoiceBot:
     """Fresh VoiceBot for a new /ws/gemini connection — Google Gemini Live."""
@@ -185,6 +189,7 @@ def make_nova_bot() -> VoiceBot:
 # descriptor (never hardcoded, so it can't silently drift, spec §3 Module 12
 # Key Constraints) and serialized to JSON-safe values.
 # ---------------------------------------------------------------------------
+
 
 def _capabilities_to_json(caps: VoiceCapabilities) -> dict[str, Any]:
     """Convert a frozen ``VoiceCapabilities`` dataclass (which carries
@@ -229,6 +234,7 @@ def build_capabilities() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # aiohttp wiring
 # ---------------------------------------------------------------------------
+
 
 async def index_handler(request: web.Request) -> web.Response:
     """Serve the provider-switch UI, templated with provider/capability data."""
@@ -314,7 +320,9 @@ def main() -> None:
     app = build_app()
     logger.info(
         "Provider-switch voice demo on http://%s:%d  (nova_available=%s)",
-        args.host, args.port, NOVA_AVAILABLE,
+        args.host,
+        args.port,
+        NOVA_AVAILABLE,
     )
     web.run_app(app, host=args.host, port=args.port, print=None)
 

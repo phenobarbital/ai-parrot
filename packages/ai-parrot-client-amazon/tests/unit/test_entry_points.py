@@ -2,6 +2,7 @@
 provider_keys entry must be discoverable as a real `parrot.clients` entry
 point, resolving to the exact class.
 """
+
 import importlib
 from importlib.metadata import entry_points
 

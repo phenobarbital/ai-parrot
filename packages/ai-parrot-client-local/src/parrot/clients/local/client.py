@@ -4,6 +4,7 @@ Extends OpenAIBaseClient (FEAT-438) to support local/self-hosted
 OpenAI-compatible LLM servers such as Ollama, vLLM, llama.cpp, and LM
 Studio.
 """
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 from enum import Enum
@@ -76,30 +77,13 @@ class LocalLLMClient(OpenAIBaseClient):
     _default_max_tokens: int = 4096
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
-        **kwargs
+        self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None, **kwargs
     ):
-        resolved_key = api_key or config.get('LOCAL_LLM_API_KEY') or None
-        resolved_url = (
-            base_url
-            or config.get('LOCAL_LLM_BASE_URL')
-            or 'http://localhost:8000/v1'
-        )
-        resolved_model = (
-            model
-            or kwargs.pop('model', None)
-            or config.get('LOCAL_LLM_MODEL')
-            or self._default_model
-        )
-        kwargs['model'] = resolved_model
-        super().__init__(
-            api_key=resolved_key,
-            base_url=resolved_url,
-            **kwargs
-        )
+        resolved_key = api_key or config.get("LOCAL_LLM_API_KEY") or None
+        resolved_url = base_url or config.get("LOCAL_LLM_BASE_URL") or "http://localhost:8000/v1"
+        resolved_model = model or kwargs.pop("model", None) or config.get("LOCAL_LLM_MODEL") or self._default_model
+        kwargs["model"] = resolved_model
+        super().__init__(api_key=resolved_key, base_url=resolved_url, **kwargs)
         # Re-set after super().__init__ because AbstractClient may overwrite
         self.api_key = resolved_key
         self.base_url = resolved_url
@@ -117,13 +101,12 @@ class LocalLLMClient(OpenAIBaseClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "LocalLLMClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "LocalLLMClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         return AsyncOpenAI(
             api_key=self.api_key or "no-key",
             base_url=self.base_url,
-            timeout=config.get('LOCAL_LLM_TIMEOUT', 120),
+            timeout=config.get("LOCAL_LLM_TIMEOUT", 120),
         )
 
     # _is_responses_model override deleted (FEAT-438 TASK-2300) —
@@ -131,12 +114,7 @@ class LocalLLMClient(OpenAIBaseClient):
     # so local servers never route to the (OpenAI-only) Responses API
     # without needing this override.
 
-    async def ask(
-        self,
-        prompt: str,
-        model: Union[str, LocalLLMModel] = None,
-        **kwargs
-    ):
+    async def ask(self, prompt: str, model: Union[str, LocalLLMModel] = None, **kwargs):
         """Ask the local LLM a question.
 
         Overrides OpenAIBaseClient.ask() to use the local default model
@@ -156,12 +134,7 @@ class LocalLLMClient(OpenAIBaseClient):
             model = model.value
         return await super().ask(prompt, model=model, **kwargs)
 
-    async def ask_stream(
-        self,
-        prompt: str,
-        model: Union[str, LocalLLMModel] = None,
-        **kwargs
-    ):
+    async def ask_stream(self, prompt: str, model: Union[str, LocalLLMModel] = None, **kwargs):
         """Stream the local LLM's response.
 
         Overrides OpenAIBaseClient.ask_stream() to use the local default model.
@@ -310,9 +283,7 @@ class LocalLLMClient(OpenAIBaseClient):
                     )
 
             usage = CompletionUsage.from_openai(response.usage)
-            return self._build_invoke_result(
-                output, output_type, resolved_model, usage, response
-            )
+            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
         except InvokeError:
             raise
         except Exception as exc:

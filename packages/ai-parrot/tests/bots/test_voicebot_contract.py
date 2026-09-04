@@ -7,6 +7,7 @@ _resolve_llm_config(), and conversation memory accumulating from the
 canonical role attribute instead of the removed
 metadata["user_transcription"] key.
 """
+
 from parrot.bots import VoiceBot
 from parrot.models.voice import LiveVoiceResponse
 from parrot.models.voice import VoiceConfig
@@ -20,12 +21,16 @@ class _RecordingClient:
         self.calls = []
         self._responses = responses or [
             LiveVoiceResponse(
-                text="what's the weather", role="user",
-                turn_id="turn-1", is_complete=False,
+                text="what's the weather",
+                role="user",
+                turn_id="turn-1",
+                is_complete=False,
             ),
             LiveVoiceResponse(
-                text="It's sunny.", role="assistant",
-                turn_id="turn-1", is_complete=True,
+                text="It's sunny.",
+                role="assistant",
+                turn_id="turn-1",
+                is_complete=True,
             ),
         ]
 
@@ -35,9 +40,16 @@ class _RecordingClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return False
 
-    async def stream_voice(self, audio_iterator=None, system_prompt=None,
-                            session_id=None, user_id=None, stt_only=False,
-                            options=None, **kwargs):
+    async def stream_voice(
+        self,
+        audio_iterator=None,
+        system_prompt=None,
+        session_id=None,
+        user_id=None,
+        stt_only=False,
+        options=None,
+        **kwargs,
+    ):
         self.calls.append(options)
         for resp in self._responses:
             yield resp
@@ -161,8 +173,7 @@ class TestMemoryFromRole:
         — role/text alone drive memory now, not metadata."""
         responses = [
             LiveVoiceResponse(text="hello", role="user", turn_id="t1", metadata={}),
-            LiveVoiceResponse(text="hi there", role="assistant", turn_id="t1",
-                               is_complete=True, metadata={}),
+            LiveVoiceResponse(text="hi there", role="assistant", turn_id="t1", is_complete=True, metadata={}),
         ]
         bot = VoiceBot(voice_config=VoiceConfig())
         bot._llm = _RecordingClient(responses=responses)

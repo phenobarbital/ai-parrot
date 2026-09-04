@@ -5,19 +5,20 @@ installed packages; this test simulates a *brand new* satellite that was
 never `pip install`-ed, only added to `sys.path`, the way an editable
 install's `.pth` entry effectively does).
 """
+
 from __future__ import annotations
 
 import importlib
 import sys
 
-FAKEPROV_INIT = '''\
+FAKEPROV_INIT = """\
 from .client import FakeProvClient
 from .models import FakeProvModel
 
 __all__ = ["FakeProvClient", "FakeProvModel"]
-'''
+"""
 
-FAKEPROV_CLIENT = '''\
+FAKEPROV_CLIENT = """\
 from enum import Enum
 from ..base import AbstractClient
 
@@ -31,15 +32,15 @@ class FakeProvClient(AbstractClient):
     client_name = "fakeprov"
     provider_keys = ("fakeprov",)
     models = FakeProvModel
-'''
+"""
 
-FAKEPROV_MODELS = '''\
+FAKEPROV_MODELS = """\
 from enum import Enum
 
 
 class FakeProvModel(str, Enum):
     FAKE_MODEL = "fakeprov-model"
-'''
+"""
 
 
 def test_extend_path_merges_satellite(tmp_path):

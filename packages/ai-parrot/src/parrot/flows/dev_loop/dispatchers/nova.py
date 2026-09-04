@@ -124,6 +124,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.amazon.nova.mantle import BedrockMantleClient
+
         _provider, model = LLMFactory.parse_llm_string(llm)
         init_params: Dict[str, Any] = {}
         if model:
@@ -295,6 +296,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.amazon.nova import NovaClient
+
         self._client = client or NovaClient()
         self.logger = logging.getLogger(__name__)
 
@@ -543,6 +545,7 @@ async def summarize_pr_changes(
     # FEAT-523 (TASK-2846): lazy import — core must not import a
     # provider module at module scope (AC-3).
     from parrot.clients.amazon.nova import NovaClient
+
     log = logger or logging.getLogger(__name__)
     # code-review fix: DEV_LOOP_NOVA_MECHANICAL_MODEL was declared in
     # conf.py but never actually consumed anywhere — wire it into the

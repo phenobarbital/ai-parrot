@@ -22,8 +22,16 @@ class TestLiveVoiceResponseRole:
         """Regression guard: consumers depend on these exact keys."""
         msg = LiveVoiceResponse(text="hi").to_websocket_message()
         for key in (
-            "type", "text", "audio_base64", "audio_format", "is_complete",
-            "is_interrupted", "tool_calls", "usage", "metadata",
-            "session_id", "turn_id",
+            "type",
+            "text",
+            "audio_base64",
+            "audio_format",
+            "is_complete",
+            "is_interrupted",
+            "tool_calls",
+            "usage",
+            "metadata",
+            "session_id",
+            "turn_id",
         ):
             assert key in msg

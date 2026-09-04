@@ -35,7 +35,6 @@ from ...models.responses import InvokeResult
 from ...tools.manager import ToolFormat
 from .models import Gemma4Model
 
-
 # Maximum tool-call loop iterations to prevent infinite loops.
 MAX_TOOL_ROUNDS = 10
 

@@ -2,6 +2,7 @@
 ``LLMFactory.list_models()`` — no provider enum imports, no per-provider
 ``if`` chain.
 """
+
 import inspect
 
 import parrot.handlers.llm as h

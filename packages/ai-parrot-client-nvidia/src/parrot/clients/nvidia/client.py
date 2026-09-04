@@ -14,6 +14,7 @@ from OpenAIBaseClient unchanged. Two Nvidia-specific affordances are added:
    ``free_tier=False`` — or ``NVIDIA_FREE_TIER=false`` in the environment — for
    paid/self-hosted NIM endpoints that carry no such cap.
 """
+
 import asyncio
 import contextvars
 from collections import deque
@@ -44,17 +45,13 @@ RATE_LIMIT_WINDOW: float = 60.0
 # ask / ask_stream down to _chat_completion without altering the parent's
 # call signatures.  Using a ContextVar is safe for concurrent async calls
 # because each asyncio Task inherits an isolated copy of the context.
-_thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
-    "_nvidia_thinking_ctx", default={}
-)
+_thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("_nvidia_thinking_ctx", default={})
 
 # Sampling parameters that ``OpenAIBaseClient.ask`` cannot accept.  Its signature is
 # fixed and carries no ``**kwargs``, so passing ``top_p``/``seed`` to it raises
 # TypeError.  They ride the same ContextVar channel as the thinking flags and
 # are merged into the request inside ``_chat_completion``.
-_sampling_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
-    "_nvidia_sampling_ctx", default={}
-)
+_sampling_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("_nvidia_sampling_ctx", default={})
 
 #: Sampling parameters this client can inject that the parent cannot forward.
 #: ``top_p`` is deliberately NOT defaulted from ``self.top_p``: ``AbstractClient``
@@ -350,14 +347,10 @@ class NvidiaClient(OpenAIBaseClient):
         if free_tier is None:
             free_tier = config.getboolean("NVIDIA_FREE_TIER", fallback=True)
         self.free_tier: bool = bool(free_tier)
-        self.requests_per_minute: int = int(
-            requests_per_minute if requests_per_minute is not None else FREE_TIER_RPM
-        )
+        self.requests_per_minute: int = int(requests_per_minute if requests_per_minute is not None else FREE_TIER_RPM)
         self.rate_limit_max_wait: Optional[float] = rate_limit_max_wait
         self._rate_limiter: Optional[SlidingWindowRateLimiter] = (
-            SlidingWindowRateLimiter(self.requests_per_minute, RATE_LIMIT_WINDOW)
-            if self.free_tier
-            else None
+            SlidingWindowRateLimiter(self.requests_per_minute, RATE_LIMIT_WINDOW) if self.free_tier else None
         )
 
         # Per-instance sampling defaults for the parameters the parent drops.
@@ -387,11 +380,7 @@ class NvidiaClient(OpenAIBaseClient):
         resolved = {
             "top_p": top_p if top_p is not None else self._default_top_p,
             "seed": seed if seed is not None else self.seed,
-            "reasoning_budget": (
-                reasoning_budget
-                if reasoning_budget is not None
-                else self.reasoning_budget
-            ),
+            "reasoning_budget": (reasoning_budget if reasoning_budget is not None else self.reasoning_budget),
         }
         return {key: value for key, value in resolved.items() if value is not None}
 
@@ -411,9 +400,7 @@ class NvidiaClient(OpenAIBaseClient):
         """
         if self._rate_limiter is None:
             return 0.0
-        waited = await self._rate_limiter.acquire(
-            max_wait=self.rate_limit_max_wait
-        )
+        waited = await self._rate_limiter.acquire(max_wait=self.rate_limit_max_wait)
         if waited > 0:
             self.logger.warning(
                 "Nvidia free-tier limit (%s rpm) reached; throttled for %.2fs. "
@@ -501,6 +488,7 @@ class NvidiaClient(OpenAIBaseClient):
             APITimeoutError,
             RateLimitError,
         )
+
         thinking = _thinking_ctx.get()
         if thinking.get("enable_thinking"):
             kwargs["extra_body"] = self._merge_thinking_extra_body(
@@ -519,11 +507,7 @@ class NvidiaClient(OpenAIBaseClient):
             if name in INJECTABLE_SAMPLING_PARAMS and kwargs.get(name) is None:
                 kwargs[name] = value
 
-        nim_params = {
-            name: value
-            for name, value in sampling.items()
-            if name in INJECTABLE_EXTRA_BODY_PARAMS
-        }
+        nim_params = {name: value for name, value in sampling.items() if name in INJECTABLE_EXTRA_BODY_PARAMS}
         if nim_params:
             extra_body = dict(kwargs.get("extra_body") or {})
             # An explicit extra_body entry always wins, mirroring the rule
@@ -541,9 +525,7 @@ class NvidiaClient(OpenAIBaseClient):
         # caller which knob actually fixes it.
         retry_policy = AsyncRetrying(
             retry=(
-                retry_if_exception_type(
-                    (APIConnectionError, RateLimitError, APIError)
-                )
+                retry_if_exception_type((APIConnectionError, RateLimitError, APIError))
                 & retry_if_not_exception_type(APITimeoutError)
             ),
             wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -610,12 +592,8 @@ class NvidiaClient(OpenAIBaseClient):
             separate from the answer in ``AIMessage.output``.
         """
         kwargs.setdefault("model", self.model or self._default_model)
-        thinking_token = _thinking_ctx.set(
-            {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
-        )
-        sampling_token = _sampling_ctx.set(
-            self._resolve_sampling(top_p, seed, reasoning_budget)
-        )
+        thinking_token = _thinking_ctx.set({"enable_thinking": enable_thinking, "clear_thinking": clear_thinking})
+        sampling_token = _sampling_ctx.set(self._resolve_sampling(top_p, seed, reasoning_budget))
         try:
             return await super().ask(prompt, **kwargs)
         finally:
@@ -686,12 +664,8 @@ class NvidiaClient(OpenAIBaseClient):
         # single completion funnel, TASK-2298), which already reserves a
         # slot per attempt. A second reservation here would double-count
         # every streamed call against the 40 rpm free-tier quota.
-        thinking_token = _thinking_ctx.set(
-            {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
-        )
-        sampling_token = _sampling_ctx.set(
-            self._resolve_sampling(top_p, seed, reasoning_budget)
-        )
+        thinking_token = _thinking_ctx.set({"enable_thinking": enable_thinking, "clear_thinking": clear_thinking})
+        sampling_token = _sampling_ctx.set(self._resolve_sampling(top_p, seed, reasoning_budget))
         try:
             async for chunk in super().ask_stream(prompt, **kwargs):
                 yield chunk

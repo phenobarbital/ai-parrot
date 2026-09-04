@@ -66,6 +66,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
 
     from parrot.core.events.lifecycle import EventRegistry
+
     # FEAT-523 (TASK-2846): type-check-only — core must not import a
     # provider module at module scope (AC-3); the real import is deferred
     # to _resolve_run_options().
@@ -550,6 +551,7 @@ class ClaudeCodeDispatcher:
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
+
         agents_dict: Optional[Dict[str, Any]] = None
         system_prompt: Optional[str] = None
 

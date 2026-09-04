@@ -3,6 +3,7 @@
 Provides model enums, provider routing preferences, and usage tracking
 models for the OpenRouter API integration.
 """
+
 from enum import Enum
 from typing import Optional, List
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ class OpenRouterModel(str, Enum):
     These are convenience constants for frequently used models.
     Any valid OpenRouter model string can be used directly.
     """
+
     DEEPSEEK_R1 = "deepseek/deepseek-r1"
     DEEPSEEK_V3 = "deepseek/deepseek-chat"
     LLAMA_3_3_70B = "meta-llama/llama-3.3-70b-instruct"
@@ -36,29 +38,18 @@ class ProviderPreferences(BaseModel):
         ignore: List of providers to exclude from routing.
         quantizations: Allowed quantization levels, e.g. ['bf16', 'fp8'].
     """
-    allow_fallbacks: bool = Field(
-        default=True,
-        description="Allow OpenRouter to fall back to alternative providers"
-    )
+
+    allow_fallbacks: bool = Field(default=True, description="Allow OpenRouter to fall back to alternative providers")
     require_parameters: bool = Field(
-        default=False,
-        description="Only use providers that support all requested parameters"
+        default=False, description="Only use providers that support all requested parameters"
     )
-    data_collection: Optional[str] = Field(
-        default=None,
-        description="Data collection preference: 'deny' or 'allow'"
-    )
+    data_collection: Optional[str] = Field(default=None, description="Data collection preference: 'deny' or 'allow'")
     order: Optional[List[str]] = Field(
-        default=None,
-        description="Ordered list of preferred providers, e.g. ['DeepInfra', 'Together']"
+        default=None, description="Ordered list of preferred providers, e.g. ['DeepInfra', 'Together']"
     )
-    ignore: Optional[List[str]] = Field(
-        default=None,
-        description="List of providers to exclude"
-    )
+    ignore: Optional[List[str]] = Field(default=None, description="List of providers to exclude")
     quantizations: Optional[List[str]] = Field(
-        default=None,
-        description="Allowed quantization levels, e.g. ['bf16', 'fp8']"
+        default=None, description="Allowed quantization levels, e.g. ['bf16', 'fp8']"
     )
 
 
@@ -78,6 +69,7 @@ class OpenRouterUsage(BaseModel):
         native_tokens_completion: Native token count for completion (provider-specific).
         provider_name: Name of the upstream provider that served the request.
     """
+
     generation_id: Optional[str] = None
     model: Optional[str] = None
     total_cost: Optional[float] = None

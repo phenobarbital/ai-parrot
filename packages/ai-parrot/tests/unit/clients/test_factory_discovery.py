@@ -5,6 +5,7 @@ mocked ``importlib.metadata.entry_points`` — the sole discovery source
 since TASK-2854 removed the transitional ``_IN_CORE_PROVIDERS`` registry
 — plus the ``list_providers()``/``list_models()`` catalogue methods.
 """
+
 import importlib.metadata as md
 
 import pytest
@@ -147,9 +148,7 @@ def test_no_provider_import_at_module_scope():
     import pathlib
 
     src = pathlib.Path(factory.__file__).read_text()
-    from_dot_lines = [
-        line for line in src.splitlines() if line.startswith("from .")
-    ]
+    from_dot_lines = [line for line in src.splitlines() if line.startswith("from .")]
     assert from_dot_lines == ["from .base import AbstractClient"]
 
 

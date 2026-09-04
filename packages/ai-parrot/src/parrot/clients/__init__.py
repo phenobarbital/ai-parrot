@@ -3,6 +3,7 @@ Client for Interactions with LLMs (Language Models)
 This module provides a client interface for interacting with various LLMs.
 It includes functionality for sending requests, receiving responses, and handling errors.
 """
+
 # FEAT-523: PEP 420 namespace merging — lets satellite distributions
 # (ai-parrot-client-<provider>) contribute their own `parrot/clients/<provider>/`
 # folder into this same namespace without core ever importing them directly.

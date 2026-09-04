@@ -7,6 +7,7 @@ initial call AND every loop round (not just the initial response's usage —
 the pre-existing bug), that ClientRoundEvent fires once per tool round, and
 that AfterClientCallEvent carries the accumulated totals too.
 """
+
 from __future__ import annotations
 
 import asyncio

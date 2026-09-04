@@ -13,6 +13,7 @@ test suite depend on a satellite being installed), so ``FakeClient`` also
 carries ``models``/``deprecated_models`` for those two tests to exercise
 via a mocked entry point.
 """
+
 from enum import Enum
 
 

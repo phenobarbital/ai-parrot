@@ -49,6 +49,7 @@ build new work on it without a migration plan.
 
 See examples/agents/aws/README.md for full setup instructions.
 """
+
 import argparse
 import asyncio
 from pathlib import Path
@@ -65,32 +66,46 @@ def _parse_args() -> argparse.Namespace:
         description="Generate a video with Amazon Nova Reel on AWS Bedrock.",
     )
     parser.add_argument(
-        "prompt", nargs="?", default=DEFAULT_PROMPT,
+        "prompt",
+        nargs="?",
+        default=DEFAULT_PROMPT,
         help=f"Text prompt for the video (default: {DEFAULT_PROMPT!r})",
     )
     parser.add_argument(
-        "--duration", type=int, default=6,
+        "--duration",
+        type=int,
+        default=6,
         help="Video duration in seconds (default: 6)",
     )
     parser.add_argument(
-        "--s3", default=None, metavar="S3_URI",
+        "--s3",
+        default=None,
+        metavar="S3_URI",
         help="S3 output location, e.g. s3://my-bucket/nova-reel/. Falls back "
-             "to AWS_CREDENTIALS[<profile>]['bucket_name'].",
+        "to AWS_CREDENTIALS[<profile>]['bucket_name'].",
     )
     parser.add_argument(
-        "--reference-image", type=Path, default=None,
+        "--reference-image",
+        type=Path,
+        default=None,
         help="Optional starting-frame image for the video",
     )
     parser.add_argument(
-        "--out", type=Path, default=DEFAULT_OUTPUT_DIR,
+        "--out",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
         help=f"Directory the MP4 is downloaded to (default: {DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
-        "--poll-interval", type=float, default=10.0,
+        "--poll-interval",
+        type=float,
+        default=10.0,
         help="Seconds between job-status polls (default: 10)",
     )
     parser.add_argument(
-        "--timeout", type=float, default=900.0,
+        "--timeout",
+        type=float,
+        default=900.0,
         help="Give up after this many seconds (default: 900)",
     )
     return parser.parse_args()
@@ -119,22 +134,27 @@ async def main() -> int:
         )
     except ValueError as exc:
         print(f"❌ {exc}")
-        print("   Nova Reel writes to S3 first: pass --s3 s3://bucket/prefix, "
-              "or set bucket_name for your AWS profile.")
+        print(
+            "   Nova Reel writes to S3 first: pass --s3 s3://bucket/prefix, " "or set bucket_name for your AWS profile."
+        )
         return 1
     except AttributeError as exc:
         # The installed botocore predates StartAsyncInvoke (Dec 2024), so the
         # operation does not exist on the client at all — a far more confusing
         # failure than a service error unless it is named.
         print(f"❌ {exc}")
-        print("   The installed botocore has no StartAsyncInvoke operation — "
-              "it predates the Nova Reel launch (Dec 2024).")
+        print(
+            "   The installed botocore has no StartAsyncInvoke operation — "
+            "it predates the Nova Reel launch (Dec 2024)."
+        )
         print("   Upgrade the SDK: uv pip install -U boto3 botocore aioboto3")
         return 1
     except Exception as exc:
         print(f"❌ Generation failed: {type(exc).__name__}: {exc}")
-        print("   Nova Reel is in-region only (us-east-1, eu-west-1, "
-              "ap-northeast-1) and must be enabled under Bedrock model access.")
+        print(
+            "   Nova Reel is in-region only (us-east-1, eu-west-1, "
+            "ap-northeast-1) and must be enabled under Bedrock model access."
+        )
         return 1
 
     print(f"✅ Model:    {result.model}")

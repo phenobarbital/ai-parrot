@@ -17,14 +17,14 @@ if TYPE_CHECKING:
 def split_text(text, max_length):
     """Split text into chunks of a maximum length, ensuring not to break words."""
     # Split the transcript into paragraphs
-    paragraphs = text.split('\n\n')
+    paragraphs = text.split("\n\n")
     chunks = []
     current_chunk = ""
     for paragraph in paragraphs:
         # If the paragraph is too large, split it into sentences
         if len(paragraph) > max_length:
             # Split paragraph into sentences
-            sentences = re.split(r'(?<=[.!?]) +', paragraph)
+            sentences = re.split(r"(?<=[.!?]) +", paragraph)
             for sentence in sentences:
                 if len(current_chunk) + len(sentence) + 1 > max_length:
                     # Save the current chunk and start a new one
@@ -58,17 +58,17 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
     # Try to extract JSON from the response
     try:
         # Look for JSON blocks
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
         if json_match:
             json_data = json.loads(json_match.group())
-            if 'scenes' in json_data:
-                return json_data['scenes']
+            if "scenes" in json_data:
+                return json_data["scenes"]
     except json.JSONDecodeError:
         pass
 
     # Fallback: Parse text-based scenes
     # Look for scene markers like "Scene 1:", "Step 1:", etc.
-    scene_pattern = r'(?:Scene|Step)\s*(\d+)[:.]?\s*(.*?)(?=(?:Scene|Step)\s*\d+|$)'
+    scene_pattern = r"(?:Scene|Step)\s*(\d+)[:.]?\s*(.*?)(?=(?:Scene|Step)\s*\d+|$)"
     matches = re.findall(scene_pattern, response_text, re.DOTALL | re.IGNORECASE)
 
     for i, (scene_num, content) in enumerate(matches):
@@ -76,27 +76,29 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
         quotes = re.findall(r'"([^"]*)"', content)
 
         # Extract instructions (non-quoted text)
-        instructions = re.sub(r'"[^"]*"', '', content).strip()
-        instructions = re.sub(r'\s+', ' ', instructions)
+        instructions = re.sub(r'"[^"]*"', "", content).strip()
+        instructions = re.sub(r"\s+", " ", instructions)
 
         scene_data = {
-            'scene_number': int(scene_num) if scene_num.isdigit() else i + 1,
-            'instructions': instructions,
-            'spoken_text': ' '.join(quotes) if quotes else '',
-            'content': content.strip(),
-            'timestamp': f"Scene {scene_num}" if scene_num else f"Scene {i + 1}"
+            "scene_number": int(scene_num) if scene_num.isdigit() else i + 1,
+            "instructions": instructions,
+            "spoken_text": " ".join(quotes) if quotes else "",
+            "content": content.strip(),
+            "timestamp": f"Scene {scene_num}" if scene_num else f"Scene {i + 1}",
         }
         scenes.append(scene_data)
 
     # If no scenes found, create one scene with all content
     if not scenes:
-        scenes.append({
-            'scene_number': 1,
-            'instructions': response_text,
-            'spoken_text': '',
-            'content': response_text,
-            'timestamp': 'Full Video'
-        })
+        scenes.append(
+            {
+                "scene_number": 1,
+                "instructions": response_text,
+                "spoken_text": "",
+                "content": response_text,
+                "timestamp": "Full Video",
+            }
+        )
 
     return scenes
 
@@ -106,7 +108,8 @@ class VideoUnderstandingLoader(BaseVideoLoader):
     Video analysis loader using Google GenAI for understanding video content.
     Extracts step-by-step instructions and spoken text from training videos.
     """
-    extensions: List[str] = ['.mp4', '.webm', '.avi', '.mov', '.mkv']
+
+    extensions: List[str] = [".mp4", ".webm", ".avi", ".mov", ".mkv"]
 
     def __init__(
         self,
@@ -114,20 +117,14 @@ class VideoUnderstandingLoader(BaseVideoLoader):
         *,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
-        source_type: str = 'video_understanding',
+        source_type: str = "video_understanding",
         model: str = "gemini-3.1-pro-preview",
         temperature: float = 0.2,
         prompt: Optional[str] = None,
         custom_instructions: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ):
-        super().__init__(
-            source,
-            tokenizer=tokenizer,
-            text_splitter=text_splitter,
-            source_type=source_type,
-            **kwargs
-        )
+        super().__init__(source, tokenizer=tokenizer, text_splitter=text_splitter, source_type=source_type, **kwargs)
 
         # Google GenAI configuration
         self.model = model
@@ -159,6 +156,7 @@ Video Analysis Instructions:
             # FEAT-523 (TASK-2846): lazy import — core/satellites must not
             # import a provider client at module scope (AC-3).
             from parrot.clients.google import GoogleGenAIClient
+
             self.google_client = GoogleGenAIClient(model=self.model)
         return self.google_client
 
@@ -179,10 +177,10 @@ Video Analysis Instructions:
                     prompt=prompt,
                     prompt_instruction=instructions,
                     temperature=self.temperature,
-                    stateless=True
+                    stateless=True,
                 )
 
-                return response.output if hasattr(response, 'output') else str(response)
+                return response.output if hasattr(response, "output") else str(response)
 
         except Exception as e:
             self.logger.error(f"Error analyzing video with AI: {e}")
@@ -199,10 +197,10 @@ Video Analysis Instructions:
         self.logger.info(f"Processing video: {path.name}")
 
         # Base metadata
-        _model_used = str(self.model.value if hasattr(self.model, 'value') else self.model)
+        _model_used = str(self.model.value if hasattr(self.model, "value") else self.model)
         base_metadata = self.create_metadata(
             path,
-            doctype='video_understanding',
+            doctype="video_understanding",
             source_type=self._source_type,
             model_used=_model_used,
             analysis_type="video_understanding",
@@ -216,8 +214,8 @@ Video Analysis Instructions:
             ai_response = await self._analyze_video_with_ai(path)
 
             # Save AI response to file
-            response_path = path.with_suffix('.ai_analysis.txt')
-            self.saving_file(response_path, ai_response.encode('utf-8'))
+            response_path = path.with_suffix(".ai_analysis.txt")
+            self.saving_file(response_path, ai_response.encode("utf-8"))
 
             # Extract scenes from AI response
             scenes = extract_scenes_from_response(ai_response)
@@ -245,16 +243,10 @@ Video Analysis Instructions:
                         "chunk_number": i + 1,
                         "total_chunks": len(chunks),
                     }
-                    doc = Document(
-                        page_content=chunk,
-                        metadata=chunk_metadata
-                    )
+                    doc = Document(page_content=chunk, metadata=chunk_metadata)
                     documents.append(doc)
             else:
-                doc = Document(
-                    page_content=ai_response,
-                    metadata=main_doc_metadata
-                )
+                doc = Document(page_content=ai_response, metadata=main_doc_metadata)
                 documents.append(doc)
 
             # Create individual scene documents
@@ -264,28 +256,25 @@ Video Analysis Instructions:
                     "type": "video_scene",
                     "source": f"{path.name}: {scene.get('timestamp', 'Scene')}",
                     "document_meta": {**base_metadata["document_meta"], "type": "video_scene"},
-                    "scene_number": scene.get('scene_number', 1),
-                    "scene_timestamp": scene.get('timestamp', ''),
-                    "has_spoken_text": bool(scene.get('spoken_text', '').strip()),
-                    "has_instructions": bool(scene.get('instructions', '').strip()),
+                    "scene_number": scene.get("scene_number", 1),
+                    "scene_timestamp": scene.get("timestamp", ""),
+                    "has_spoken_text": bool(scene.get("spoken_text", "").strip()),
+                    "has_instructions": bool(scene.get("instructions", "").strip()),
                 }
 
                 # Create content combining instructions and spoken text
                 content_parts = []
 
-                if scene.get('instructions'):
+                if scene.get("instructions"):
                     content_parts.append(f"INSTRUCTIONS:\n{scene['instructions']}")
 
-                if scene.get('spoken_text'):
+                if scene.get("spoken_text"):
                     content_parts.append(f"SPOKEN TEXT:\n\"{scene['spoken_text']}\"")
 
-                scene_content = "\n\n".join(content_parts) if content_parts else scene.get('content', '')
+                scene_content = "\n\n".join(content_parts) if content_parts else scene.get("content", "")
 
                 if scene_content.strip():
-                    scene_doc = Document(
-                        page_content=scene_content,
-                        metadata=scene_metadata
-                    )
+                    scene_doc = Document(page_content=scene_content, metadata=scene_metadata)
                     documents.append(scene_doc)
 
             # Create separate documents for instructions and spoken text if needed
@@ -293,9 +282,9 @@ Video Analysis Instructions:
             all_spoken = []
 
             for scene in scenes:
-                if scene.get('instructions'):
+                if scene.get("instructions"):
                     all_instructions.append(f"Scene {scene.get('scene_number', '')}: {scene['instructions']}")
-                if scene.get('spoken_text'):
+                if scene.get("spoken_text"):
                     all_spoken.append(f"Scene {scene.get('scene_number', '')}: \"{scene['spoken_text']}\"")
 
             # Instructions summary document
@@ -313,10 +302,7 @@ Video Analysis Instructions:
 
                 instructions_content = "STEP-BY-STEP INSTRUCTIONS:\n\n" + "\n\n".join(all_instructions)
 
-                instructions_doc = Document(
-                    page_content=instructions_content,
-                    metadata=instructions_metadata
-                )
+                instructions_doc = Document(page_content=instructions_content, metadata=instructions_metadata)
                 documents.append(instructions_doc)
 
             # Spoken text summary document
@@ -334,10 +320,7 @@ Video Analysis Instructions:
 
                 spoken_content = "SPOKEN TEXT TRANSCRIPT:\n\n" + "\n\n".join(all_spoken)
 
-                spoken_doc = Document(
-                    page_content=spoken_content,
-                    metadata=spoken_metadata
-                )
+                spoken_doc = Document(page_content=spoken_content, metadata=spoken_metadata)
                 documents.append(spoken_doc)
 
             self.logger.info(f"Generated {len(documents)} documents from video analysis")
@@ -353,10 +336,7 @@ Video Analysis Instructions:
                 "error_timestamp": datetime.now().isoformat(),
             }
 
-            error_doc = Document(
-                page_content=f"Error analyzing video {path.name}: {str(e)}",
-                metadata=error_metadata
-            )
+            error_doc = Document(page_content=f"Error analyzing video {path.name}: {str(e)}", metadata=error_metadata)
             documents.append(error_doc)
 
         return documents

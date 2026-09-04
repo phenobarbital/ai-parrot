@@ -31,7 +31,7 @@ from .splitters import (
     TokenTextSplitter,
 )
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class AbstractLoader(ABC):
@@ -39,7 +39,8 @@ class AbstractLoader(ABC):
     Base class for all loaders.
     Loaders are responsible for loading data from various sources.
     """
-    extensions: ClassVar[list[str]] = ['.*']
+
+    extensions: ClassVar[list[str]] = [".*"]
     skip_directories: ClassVar[list[str]] = []
 
     def __init__(
@@ -48,9 +49,9 @@ class AbstractLoader(ABC):
         *,
         tokenizer: str | Callable | None = None,
         text_splitter: str | Callable | None = None,
-        source_type: str = 'file',
-        language: str = 'en',
-        **kwargs
+        source_type: str = "file",
+        language: str = "en",
+        **kwargs,
     ):
         """
         Initialize the AbstractLoader.
@@ -65,40 +66,37 @@ class AbstractLoader(ABC):
                 by this loader unless overridden per call.
             **kwargs: Additional keyword arguments for configuration
         """
-        self.chunk_size: int = kwargs.get('chunk_size', 2048)
-        self.chunk_overlap: int = kwargs.get('chunk_overlap', 200)
-        self.min_chunk_size: int = kwargs.get('min_chunk_size', 30)
-        self.full_document: bool = kwargs.get('full_document', True)
-        self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
-        self.extensions = kwargs.get('extensions', self.extensions)  # type: ignore[misc]
-        self.skip_directories = kwargs.get(  # type: ignore[misc]
-            'skip_directories',
-            self.skip_directories
-        )
-        self.encoding = kwargs.get('encoding', 'utf-8')
+        self.chunk_size: int = kwargs.get("chunk_size", 2048)
+        self.chunk_overlap: int = kwargs.get("chunk_overlap", 200)
+        self.min_chunk_size: int = kwargs.get("min_chunk_size", 30)
+        self.full_document: bool = kwargs.get("full_document", True)
+        self.semaphore = asyncio.Semaphore(kwargs.get("semaphore", 10))
+        self.extensions = kwargs.get("extensions", self.extensions)  # type: ignore[misc]
+        self.skip_directories = kwargs.get("skip_directories", self.skip_directories)  # type: ignore[misc]
+        self.encoding = kwargs.get("encoding", "utf-8")
         self._source_type = source_type
-        self._recursive: bool = kwargs.get('recursive', False)
-        self.category: str = kwargs.get('category', 'document')
-        self.doctype: str = kwargs.get('doctype', 'text')
+        self._recursive: bool = kwargs.get("recursive", False)
+        self.category: str = kwargs.get("category", "document")
+        self.doctype: str = kwargs.get("doctype", "text")
         self.language: str = language
         # Chunking configuration
-        self._use_markdown_splitter: bool = kwargs.get('use_markdown_splitter', True)
-        self._use_huggingface_splitter: bool = kwargs.get('use_huggingface_splitter', False)
-        self._auto_detect_content_type: bool = kwargs.get('auto_detect_content_type', True)
+        self._use_markdown_splitter: bool = kwargs.get("use_markdown_splitter", True)
+        self._use_huggingface_splitter: bool = kwargs.get("use_huggingface_splitter", False)
+        self._auto_detect_content_type: bool = kwargs.get("auto_detect_content_type", True)
 
         # Advanced features
-        self._summarization = kwargs.get('summarization', False)
-        self._summary_model: Any | None = kwargs.get('summary_model', None)
-        self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
-        self._use_translation_pipeline: bool = kwargs.get('use_translation_pipeline', False)
-        self._translation = kwargs.get('translation', False)
+        self._summarization = kwargs.get("summarization", False)
+        self._summary_model: Any | None = kwargs.get("summary_model", None)
+        self._use_summary_pipeline: bool = kwargs.get("use_summary_pipeline", False)
+        self._use_translation_pipeline: bool = kwargs.get("use_translation_pipeline", False)
+        self._translation = kwargs.get("translation", False)
 
         # Handle source/path initialization
         self.path = None
         if source is not None:
             self.path = source
-        elif 'path' in kwargs:
-            self.path = kwargs['path']
+        elif "path" in kwargs:
+            self.path = kwargs["path"]
 
         # Normalize path if it's a string. URL-like strings must be kept
         # verbatim: ``Path("https://example.com").resolve()`` corrupts the
@@ -107,7 +105,7 @@ class AbstractLoader(ABC):
         # from loaders that expect URL sources (e.g. WebScrapingLoader).
         # Lists of URLs are also preserved as-is.
         def _is_url(value: Any) -> bool:
-            return isinstance(value, str) and value.startswith(('http://', 'https://'))
+            return isinstance(value, str) and value.startswith(("http://", "https://"))
 
         if self.path is not None:
             if isinstance(self.path, list):
@@ -128,69 +126,47 @@ class AbstractLoader(ABC):
         # Tokenizer
         self.tokenizer = tokenizer
         # Text Splitter
-        self.text_splitter = kwargs.get('text_splitter', None)
-        self.markdown_splitter = kwargs.get('markdown_splitter', None)
+        self.text_splitter = kwargs.get("text_splitter", None)
+        self.markdown_splitter = kwargs.get("markdown_splitter", None)
 
         # Initialize text splitter based on configuration
         self._setup_text_splitters(tokenizer, text_splitter, kwargs)
 
         # Summarization Model:
-        self.summarization_model = kwargs.get('summarizer', None)
+        self.summarization_model = kwargs.get("summarizer", None)
         # LLM (if required)
         self._setup_llm(kwargs)
         # Logger
-        self.logger = logging.getLogger(
-            f"Parrot.Loaders.{self.__class__.__name__}"
-        )
+        self.logger = logging.getLogger(f"Parrot.Loaders.{self.__class__.__name__}")
         # JSON encoder:
         self._encoder = JSONContent()
         # Use CUDA if available:
         self._setup_device(kwargs)
 
     def _get_token_splitter(
-        self,
-        model_name: str = "gpt-4.1-mini",
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200
+        self, model_name: str = "gpt-4.1-mini", chunk_size: int = 4000, chunk_overlap: int = 200
     ) -> TokenTextSplitter:
         """Create a TokenTextSplitter with common settings"""
         if self.text_splitter:
             return self.text_splitter
-        return TokenTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            model_name=model_name
-        )
+        return TokenTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, model_name=model_name)
 
     def _get_markdown_splitter(
-        self,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200,
-        strip_headers: bool = False
+        self, chunk_size: int = 4000, chunk_overlap: int = 200, strip_headers: bool = False
     ) -> MarkdownTextSplitter:
         """Create a MarkdownTextSplitter with common settings"""
         if self.text_splitter:
             return self.text_splitter
-        return MarkdownTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            strip_headers=strip_headers
-        )
+        return MarkdownTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, strip_headers=strip_headers)
 
     def _create_hf_token_splitter(
-        self,
-        model_name: str,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200
+        self, model_name: str, chunk_size: int = 4000, chunk_overlap: int = 200
     ) -> TokenTextSplitter:
         """Create a TokenTextSplitter using a HuggingFace Tokenizer"""
         from transformers import AutoTokenizer
+
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        return TokenTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            tokenizer=tokenizer
-        )
+        return TokenTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, tokenizer=tokenizer)
 
     def _setup_text_splitters(self, tokenizer, text_splitter, kwargs):
         """Initialize text splitters based on configuration.
@@ -201,8 +177,7 @@ class AbstractLoader(ABC):
         """
         # Always create a markdown splitter (for explicit markdown use)
         self.markdown_splitter = self._get_markdown_splitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap
+            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
         )
 
         # If user provided an explicit text_splitter, use it
@@ -213,29 +188,25 @@ class AbstractLoader(ABC):
         # Choose primary text splitter based on configuration
         if self._use_huggingface_splitter:
             self.text_splitter = self._create_hf_token_splitter(
-                model_name=kwargs.get('model_name', 'gpt-4.1-mini'),
+                model_name=kwargs.get("model_name", "gpt-4.1-mini"),
                 chunk_size=self.chunk_size,
-                chunk_overlap=self.chunk_overlap
+                chunk_overlap=self.chunk_overlap,
             )
         elif not self._use_markdown_splitter:
             # Explicitly disabled markdown splitter — use TokenTextSplitter
             if isinstance(tokenizer, str):
                 self.text_splitter = self._get_token_splitter(
-                    model_name=tokenizer,
-                    chunk_size=self.chunk_size,
-                    chunk_overlap=self.chunk_overlap
+                    model_name=tokenizer, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
                 )
             elif callable(tokenizer):
                 self.text_splitter = TokenTextSplitter(
-                    chunk_size=self.chunk_size,
-                    chunk_overlap=self.chunk_overlap,
-                    tokenizer_function=tokenizer
+                    chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap, tokenizer_function=tokenizer
                 )
             else:
                 self.text_splitter = TokenTextSplitter(
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
-                    model_name=kwargs.get('model_name', 'gpt-4.1-mini')
+                    model_name=kwargs.get("model_name", "gpt-4.1-mini"),
                 )
         else:
             # Default: SemanticTextSplitter (replaces MarkdownTextSplitter)
@@ -243,15 +214,15 @@ class AbstractLoader(ABC):
                 chunk_size=self.chunk_size,
                 chunk_overlap=self.chunk_overlap,
                 min_chunk_size=self.min_chunk_size,
-                model_name=kwargs.get('model_name', 'gpt-4'),
+                model_name=kwargs.get("model_name", "gpt-4"),
             )
 
     def _setup_llm(self, kwargs):
         """Initialize LLM if required."""
-        self._use_llm = kwargs.get('use_llm', False)
-        self._llm_model = kwargs.get('llm_model', None)
-        self._llm_model_kwargs = kwargs.get('model_kwargs', {})
-        self._llm = kwargs.get('llm', None)
+        self._use_llm = kwargs.get("use_llm", False)
+        self._llm_model = kwargs.get("llm_model", None)
+        self._llm_model_kwargs = kwargs.get("model_kwargs", {})
+        self._llm = kwargs.get("llm", None)
         if self._use_llm:
             self._llm = self.get_default_llm(
                 model=self._llm_model,
@@ -263,7 +234,7 @@ class AbstractLoader(ABC):
         model: str | None = None,
         model_kwargs: dict | None = None,
         use_groq: bool = False,
-        use_openai: bool = False
+        use_openai: bool = False,
     ) -> Any:
         """Return a AI Client instance."""
         if not model_kwargs:
@@ -274,30 +245,19 @@ class AbstractLoader(ABC):
             }
         if use_groq:
             return LLMFactory.create(
-                llm=f"groq:{model or DEFAULT_GROQ_MODEL}" if model else "groq",
-                model_kwargs=model_kwargs
+                llm=f"groq:{model or DEFAULT_GROQ_MODEL}" if model else "groq", model_kwargs=model_kwargs
             )
         elif use_openai:
-            return LLMFactory.create(
-                llm=f"openai:{model}" if model else "openai",
-                model_kwargs=model_kwargs
-            )
-        return LLMFactory.create(
-            llm=model or DEFAULT_LLM_MODEL,
-            model_kwargs=model_kwargs
-        )
+            return LLMFactory.create(llm=f"openai:{model}" if model else "openai", model_kwargs=model_kwargs)
+        return LLMFactory.create(llm=model or DEFAULT_LLM_MODEL, model_kwargs=model_kwargs)
 
     def _setup_device(self, kwargs):
         """Initialize device configuration."""
-        self.device_name = kwargs.get('device', CUDA_DEFAULT_DEVICE)
-        self.cuda_number = kwargs.get('cuda_number', CUDA_DEFAULT_DEVICE_NUMBER)
+        self.device_name = kwargs.get("device", CUDA_DEFAULT_DEVICE)
+        self.cuda_number = kwargs.get("cuda_number", CUDA_DEFAULT_DEVICE_NUMBER)
         self._device = None
 
-    def _get_device(
-        self,
-        device_type: str | None = None,
-        cuda_number: int = 0
-    ):
+    def _get_device(self, device_type: str | None = None, cuda_number: int = 0):
         """
         Get device configuration for Torch and transformers.
 
@@ -308,15 +268,16 @@ class AbstractLoader(ABC):
             - dtype: torch data type for model weights
         """
         import torch
+
         # Default values for CPU usage
         pipeline_idx = -1  # This is what HuggingFace pipeline expects for CPU
         torch_dev = torch.device("cpu")
         dtype = torch.float32
 
         # Check if we're forcing CPU usage globally
-        if CUDA_DEFAULT_DEVICE == 'cpu' or device_type == 'cpu':
+        if CUDA_DEFAULT_DEVICE == "cpu" or device_type == "cpu":
             # CPU is explicitly requested
-            return -1, torch.device('cpu'), torch.float32
+            return -1, torch.device("cpu"), torch.float32
 
         # Check for CUDA availability and use it if possible
         if torch.cuda.is_available():
@@ -347,6 +308,7 @@ class AbstractLoader(ABC):
         self.text_splitter = None  # Reset the text splitter
         try:
             import torch
+
             torch.cuda.synchronize()  # Wait for all kernels to finish
             torch.cuda.empty_cache()  # Clear unused memory
         except Exception as e:  # noqa: BLE001
@@ -380,35 +342,35 @@ class AbstractLoader(ABC):
             Content type string ('markdown', 'code', 'text', etc.)
         """
         if not self._auto_detect_content_type:
-            return 'text'
+            return "text"
 
         # Check metadata for hints
         metadata = document.metadata or {}
-        filename = metadata.get('filename', '').lower()
-        source_type = metadata.get('source_type', '').lower()
+        filename = metadata.get("filename", "").lower()
+        source_type = metadata.get("source_type", "").lower()
 
         # File extension based detection
-        if filename.endswith(('.md', '.markdown')):
-            return 'markdown'
-        elif filename.endswith(('.py', '.pyx', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
-            return 'code'
-        elif filename.endswith(('.html', '.htm', '.xml')):
-            return 'html'
-        elif source_type in ['markdown', 'md']:
-            return 'markdown'
+        if filename.endswith((".md", ".markdown")):
+            return "markdown"
+        elif filename.endswith((".py", ".pyx", ".js", ".java", ".cpp", ".c", ".go", ".rs")):
+            return "code"
+        elif filename.endswith((".html", ".htm", ".xml")):
+            return "html"
+        elif source_type in ["markdown", "md"]:
+            return "markdown"
 
         # Content based detection
         content = document.page_content[:1000].lower()  # Check first 1000 chars
 
         # Simple heuristics for markdown
-        markdown_indicators = ['#', '```', '**', '*', '[', '](', '|', '---']
+        markdown_indicators = ["#", "```", "**", "*", "[", "](", "|", "---"]
         markdown_score = sum(1 for indicator in markdown_indicators if indicator in content)
 
         if markdown_score >= 3:  # If multiple markdown indicators found
-            return 'markdown'
+            return "markdown"
 
         # Default to text
-        return 'text'
+        return "text"
 
     def _select_splitter_for_content(self, content_type: str):
         """Select the appropriate text splitter based on content type.
@@ -423,12 +385,10 @@ class AbstractLoader(ABC):
         Returns:
             Appropriate text splitter.
         """
-        if content_type == 'code':
+        if content_type == "code":
             # Use token splitter with smaller chunks for code
             return TokenTextSplitter(
-                chunk_size=min(self.chunk_size, 2048),
-                chunk_overlap=self.chunk_overlap,
-                model_name='gpt-4'
+                chunk_size=min(self.chunk_size, 2048), chunk_overlap=self.chunk_overlap, model_name="gpt-4"
             )
         else:
             # Both 'markdown' and 'text' use semantic splitter
@@ -436,7 +396,7 @@ class AbstractLoader(ABC):
 
     def is_valid_path(self, path: str | Path) -> bool:
         """Check if a path is valid."""
-        if self.extensions == '*':
+        if self.extensions == "*":
             return True
         if isinstance(path, str):
             path = Path(path)
@@ -469,12 +429,7 @@ class AbstractLoader(ABC):
             List[Document]: A list of Parrot Documents.
         """
 
-    async def from_path(
-        self,
-        path: str | Path,
-        recursive: bool = False,
-        **kwargs
-    ) -> list[asyncio.Task]:
+    async def from_path(self, path: str | Path, recursive: bool = False, **kwargs) -> list[asyncio.Task]:
         """
         Load data from a path.
         """
@@ -485,28 +440,18 @@ class AbstractLoader(ABC):
             for ext in self.extensions:
                 glob_method = path.rglob if recursive else path.glob
                 # Use glob to find all files with the specified extension
-                for item in glob_method(f'*{ext}'):
+                for item in glob_method(f"*{ext}"):
                     # Check if the item is a directory and if it should be skipped
                     if set(item.parts).isdisjoint(self.skip_directories) and self.is_valid_path(item):
-                        tasks.append(
-                            asyncio.create_task(self._load(item, **kwargs))
-                        )
+                        tasks.append(asyncio.create_task(self._load(item, **kwargs)))
         elif path.is_file():
             if self.is_valid_path(path):
-                tasks.append(
-                    asyncio.create_task(self._load(path, **kwargs))
-                )
+                tasks.append(asyncio.create_task(self._load(path, **kwargs)))
         else:
-            self.logger.warning(
-                f"Path {path} is not valid."
-            )
+            self.logger.warning(f"Path {path} is not valid.")
         return tasks
 
-    async def from_url(
-        self,
-        url: str | list[str],
-        **kwargs
-    ) -> list[asyncio.Task]:
+    async def from_url(self, url: str | list[str], **kwargs) -> list[asyncio.Task]:
         """
         Load data from a URL.
         """
@@ -514,30 +459,21 @@ class AbstractLoader(ABC):
         if isinstance(url, str):
             url = [url]
         for item in url:
-            tasks.append(
-                asyncio.create_task(self._load(item, **kwargs))
-            )
+            tasks.append(asyncio.create_task(self._load(item, **kwargs)))
         return tasks
 
-    async def from_dataframe(
-        self,
-        source: pd.DataFrame,
-        **kwargs
-    ) -> list[asyncio.Task]:
+    async def from_dataframe(self, source: pd.DataFrame, **kwargs) -> list[asyncio.Task]:
         """
         Load data from a pandas DataFrame.
         """
         tasks = []
         try:
             import pandas as pd
+
             if isinstance(source, pd.DataFrame):
-                tasks.append(
-                    asyncio.create_task(self._load(source, **kwargs))
-                )
+                tasks.append(asyncio.create_task(self._load(source, **kwargs)))
             else:
-                self.logger.warning(
-                    f"Source {source} is not a valid pandas DataFrame."
-                )
+                self.logger.warning(f"Source {source} is not a valid pandas DataFrame.")
         except ImportError:
             self.logger.warning("Pandas not installed, cannot load from DataFrame")
         return tasks
@@ -553,10 +489,11 @@ class AbstractLoader(ABC):
             List[T]: Chunks of the original list, each of size at most n
         """
         for i in range(0, len(lst), n):
-            yield lst[i:i + n]
+            yield lst[i : i + n]
 
     async def _async_map(self, func: Callable, iterable: list) -> list:
         """Run a function on a list of items asynchronously."""
+
         async def async_func(item):
             async with self.semaphore:
                 return await func(item)
@@ -613,7 +550,7 @@ class AbstractLoader(ABC):
         vector_store=None,
         store_full_document: bool = True,
         auto_detect_content_type: bool | None = None,
-        **kwargs
+        **kwargs,
     ) -> list[Document]:
         """
         Load data from a source and return it as a list of Documents.
@@ -649,45 +586,35 @@ class AbstractLoader(ABC):
 
         if isinstance(source, (str, Path, PosixPath, PurePath)):
             # Check if it's a URL
-            if isinstance(source, str) and source.startswith(('http://', 'https://')):
+            if isinstance(source, str) and source.startswith(("http://", "https://")):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a file path or directory
-                tasks = await self.from_path(
-                    source,
-                    recursive=self._recursive,
-                    **kwargs
-                )
+                tasks = await self.from_path(source, recursive=self._recursive, **kwargs)
         elif isinstance(source, list):
             # Check if it's a list of URLs or paths
-            if all(
-                isinstance(item, str) and item.startswith(('http://', 'https://'))
-                for item in source
-            ):
+            if all(isinstance(item, str) and item.startswith(("http://", "https://")) for item in source):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a list of file paths
                 path_tasks = []
                 for path in source:
-                    path_tasks.extend(
-                        await self.from_path(path, recursive=self._recursive, **kwargs)
-                    )
+                    path_tasks.extend(await self.from_path(path, recursive=self._recursive, **kwargs))
                 tasks = path_tasks
         else:
             # Check for DataFrame lazily
             is_dataframe = False
             try:
                 import pandas as pd
+
                 if isinstance(source, pd.DataFrame):
                     is_dataframe = True
                     tasks = await self.from_dataframe(source, **kwargs)
             except ImportError:
                 pass
-            
+
             if not is_dataframe:
-                raise ValueError(
-                    f"Unsupported source type: {type(source)}"
-                )
+                raise ValueError(f"Unsupported source type: {type(source)}")
         # Load tasks and get raw documents
         documents = []
         if tasks:
@@ -696,26 +623,20 @@ class AbstractLoader(ABC):
 
         # Apply chunking if requested
         if split_documents and documents:
-            self.logger.debug(
-                f"Splitting {len(documents)} documents into chunks..."
-            )
+            self.logger.debug(f"Splitting {len(documents)} documents into chunks...")
 
             if late_chunking and vector_store is None:
-                raise ValueError(
-                    "Vector store is required when using late_chunking=True"
-                )
+                raise ValueError("Vector store is required when using late_chunking=True")
 
             documents = await self.chunk_documents(
                 documents=documents,
                 use_late_chunking=late_chunking,
                 vector_store=vector_store,
                 store_full_document=store_full_document,
-                auto_detect_content_type=auto_detect_content_type
+                auto_detect_content_type=auto_detect_content_type,
             )
 
-            self.logger.debug(
-                f"Document chunking complete: {len(documents)} final documents"
-            )
+            self.logger.debug(f"Document chunking complete: {len(documents)} final documents")
 
         return documents
 
@@ -723,12 +644,9 @@ class AbstractLoader(ABC):
     # Canonical keys for the closed-shape document_meta sub-dict.
     # Loaders MUST NOT add extra keys inside document_meta.
     # ------------------------------------------------------------------
-    _CANONICAL_DOC_META_KEYS: frozenset = frozenset(
-        {"source_type", "category", "type", "language", "title"}
-    )
+    _CANONICAL_DOC_META_KEYS: frozenset = frozenset({"source_type", "category", "type", "language", "title"})
     _CANONICAL_TOP_LEVEL_KEYS: frozenset = frozenset(
-        {"url", "source", "filename", "type", "source_type", "created_at",
-         "category", "document_meta"}
+        {"url", "source", "filename", "type", "source_type", "created_at", "category", "document_meta"}
     )
 
     def _derive_title(self, path: str | PurePath) -> str:
@@ -755,16 +673,11 @@ class AbstractLoader(ABC):
             # URL detection
             if path.startswith(("http://", "https://")):
                 parsed = urlparse(path)
-                segments = [
-                    seg for seg in parsed.path.split("/") if seg
-                ]
+                segments = [seg for seg in parsed.path.split("/") if seg]
                 if segments:
                     last = unquote(segments[-1])
                     # Strip common file extensions
-                    for ext in (
-                        ".html", ".htm", ".pdf", ".txt", ".md",
-                        ".json", ".xml", ".csv"
-                    ):
+                    for ext in (".html", ".htm", ".pdf", ".txt", ".md", ".json", ".xml", ".csv"):
                         if last.lower().endswith(ext):
                             last = last[: -len(ext)]
                             break
@@ -811,8 +724,7 @@ class AbstractLoader(ABC):
         for key, default in defaults.items():
             if key not in metadata:
                 self.logger.warning(
-                    "Metadata missing canonical field '%s'; auto-filling "
-                    "with default value. Loader: %s",
+                    "Metadata missing canonical field '%s'; auto-filling " "with default value. Loader: %s",
                     key,
                     self.__class__.__name__,
                 )
@@ -839,8 +751,7 @@ class AbstractLoader(ABC):
         for key, default in doc_meta_defaults.items():
             if key not in doc_meta:
                 self.logger.warning(
-                    "document_meta missing canonical key '%s'; auto-filling. "
-                    "Loader: %s",
+                    "document_meta missing canonical key '%s'; auto-filling. " "Loader: %s",
                     key,
                     self.__class__.__name__,
                 )
@@ -850,8 +761,7 @@ class AbstractLoader(ABC):
         extra_keys = set(doc_meta.keys()) - self._CANONICAL_DOC_META_KEYS
         for key in extra_keys:
             self.logger.warning(
-                "document_meta contains non-canonical key '%s'; hoisting to "
-                "top level. Loader: %s",
+                "document_meta contains non-canonical key '%s'; hoisting to " "top level. Loader: %s",
                 key,
                 self.__class__.__name__,
             )
@@ -862,13 +772,13 @@ class AbstractLoader(ABC):
     def create_metadata(
         self,
         path: str | PurePath,
-        doctype: str = 'document',
-        source_type: str = 'source',
+        doctype: str = "document",
+        source_type: str = "source",
         doc_metadata: dict | None = None,
         *,
         language: str | None = None,
         title: str | None = None,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """Build a canonical ``Document.metadata`` dict.
 
@@ -912,12 +822,12 @@ class AbstractLoader(ABC):
         # Resolve path-derived fields
         if isinstance(path, PurePath):
             origin = path.name
-            url = f'file://{path}'
+            url = f"file://{path}"
             filename = str(path)
         else:
             origin = path
             url = path
-            filename = f'file://{path}'
+            filename = f"file://{path}"
 
         # Resolve language and title
         resolved_language = language if language is not None else self.language
@@ -936,9 +846,7 @@ class AbstractLoader(ABC):
         resolved_language = canonical_from_legacy.get("language", resolved_language)
         resolved_title = canonical_from_legacy.get("title", resolved_title)
         resolved_doctype = canonical_from_legacy.get("type", doctype)
-        resolved_source_type = canonical_from_legacy.get(
-            "source_type", source_type or self._source_type
-        )
+        resolved_source_type = canonical_from_legacy.get("source_type", source_type or self._source_type)
         resolved_category = canonical_from_legacy.get("category", self.category)
 
         document_meta = {
@@ -965,13 +873,7 @@ class AbstractLoader(ABC):
         }
         return metadata
 
-    def create_document(
-        self,
-        content: Any,
-        path: str | PurePath,
-        metadata: dict | None = None,
-        **kwargs
-    ) -> Document:
+    def create_document(self, content: Any, path: str | PurePath, metadata: dict | None = None, **kwargs) -> Document:
         """Create a Parrot Document from content.
 
         If *metadata* is ``None``, ``create_metadata`` is called with
@@ -994,41 +896,24 @@ class AbstractLoader(ABC):
         if metadata:
             _meta = metadata
         else:
-            _meta = self.create_metadata(
-                path=path,
-                doctype=self.doctype,
-                source_type=self._source_type,
-                **kwargs
-            )
+            _meta = self.create_metadata(path=path, doctype=self.doctype, source_type=self._source_type, **kwargs)
         _meta = self._validate_metadata(_meta)
-        return Document(
-            page_content=content,
-            metadata=_meta
-        )
+        return Document(page_content=content, metadata=_meta)
 
-    async def summary_from_text(
-        self,
-        text: str,
-        max_length: int = 500,
-        min_length: int = 50
-    ) -> str:
+    async def summary_from_text(self, text: str, max_length: int = 500, min_length: int = 50) -> str:
         """
         Get a summary of a text.
         """
         if not text:
-            return ''
+            return ""
         try:
             summarizer = self.get_summarization_model()
             if self._use_summary_pipeline:
                 # Use Huggingface pipeline
                 content = summarizer(
-                    text,
-                    max_length=max_length,
-                    min_length=min_length,
-                    do_sample=False,
-                    truncation=True
+                    text, max_length=max_length, min_length=min_length, do_sample=False, truncation=True
                 )
-                return content[0].get('summary_text', '')
+                return content[0].get("summary_text", "")
             # Use Summarize Method from GoogleGenAIClient (synchronous)
             summary = await asyncio.to_thread(
                 summarizer.summarize_text,
@@ -1038,31 +923,24 @@ class AbstractLoader(ABC):
             )
             return summary.output
         except Exception as e:  # noqa: BLE001
-            self.logger.error(
-                f'ERROR on summary_from_text: {e}'
-            )
+            self.logger.error(f"ERROR on summary_from_text: {e}")
             return ""
 
-    def get_summarization_model(
-        self,
-        model_name: str = 'facebook/bart-large-cnn'
-    ):
+    def get_summarization_model(self, model_name: str = "facebook/bart-large-cnn"):
         if not self._summary_model:
             if self._use_summary_pipeline:
                 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+
                 _, pipe_dev, torch_dtype = self._get_device()
                 summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,
                 )
-                summarize_tokenizer = AutoTokenizer.from_pretrained(
-                    model_name,
-                    padding_side="left"
-                )
+                summarize_tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
                 self._summary_model = pipeline(
                     "summarization",
                     model=summarize_model,
                     tokenizer=summarize_tokenizer,
-                    device=pipe_dev,             # 0 for CUDA, mps device, or -1
+                    device=pipe_dev,  # 0 for CUDA, mps device, or -1
                     torch_dtype=torch_dtype if pipe_dev != -1 else None,
                 )
             else:
@@ -1071,16 +949,11 @@ class AbstractLoader(ABC):
                     llm="google:gemini-2.5-flash-lite",
                     model_kwargs={
                         "temperature": 0.1,
-                    }
+                    },
                 )
         return self._summary_model
 
-    def translate_text(
-        self,
-        text: str,
-        source_lang: str | None = None,
-        target_lang: str = "es"
-    ) -> str:
+    def translate_text(self, text: str, source_lang: str | None = None, target_lang: str = "es") -> str:
         """
         Translate text from source language to target language.
 
@@ -1093,17 +966,15 @@ class AbstractLoader(ABC):
             Translated text
         """
         if not text:
-            return ''
+            return ""
         try:
             translator = self.get_translation_model(source_lang, target_lang)
             if self._use_translation_pipeline:
                 # Use Huggingface pipeline
                 content = translator(
-                    text,
-                    max_length=len(text) * 2,  # Allow for expansion in target language
-                    truncation=True
+                    text, max_length=len(text) * 2, truncation=True  # Allow for expansion in target language
                 )
-                return content[0].get('translation_text', '')
+                return content[0].get("translation_text", "")
             else:
                 # Use LLM for translation
                 translation = translator.translate_text(
@@ -1112,19 +983,14 @@ class AbstractLoader(ABC):
                     target_lang=target_lang,
                     model="gemini-2.5-flash-lite",
                     temperature=0.1,
-                    max_tokens=1000
+                    max_tokens=1000,
                 )
-                return translation.output if hasattr(translation, 'output') else str(translation)
+                return translation.output if hasattr(translation, "output") else str(translation)
         except Exception as e:  # noqa: BLE001
-            self.logger.error(f'ERROR on translate_text: {e}')
+            self.logger.error(f"ERROR on translate_text: {e}")
             return ""
 
-    def get_translation_model(
-        self,
-        source_lang: str = "en",
-        target_lang: str = "es",
-        model_name: str | None = None
-    ):
+    def get_translation_model(self, source_lang: str = "en", target_lang: str = "es", model_name: str | None = None):
         """
         Get or create a translation model.
 
@@ -1140,12 +1006,13 @@ class AbstractLoader(ABC):
         cache_key = f"{source_lang}_{target_lang}"
 
         # Check if we already have a model for this language pair
-        if not hasattr(self, '_translation_models'):
+        if not hasattr(self, "_translation_models"):
             self._translation_models = {}
 
         if cache_key not in self._translation_models:
             if self._use_translation_pipeline:
                 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+
                 # Select appropriate model based on language pair if not specified
                 if model_name is None:
                     if source_lang == "en" and target_lang in ["es", "fr", "de", "it", "pt", "ru"]:
@@ -1161,32 +1028,22 @@ class AbstractLoader(ABC):
                     translate_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
                     self._translation_models[cache_key] = pipeline(
-                        "translation",
-                        model=translate_model,
-                        tokenizer=translate_tokenizer
+                        "translation", model=translate_model, tokenizer=translate_tokenizer
                     )
                 except Exception as e:  # noqa: BLE001
-                    self.logger.error(
-                        f"Error loading translation model {model_name}: {e}"
-                    )
+                    self.logger.error(f"Error loading translation model {model_name}: {e}")
                     # Fallback to using LLM for translation
                     self._use_translation_pipeline = False
 
             if not self._use_translation_pipeline:
                 # Use LLM for translation
-                translation_model = self.get_default_llm(
-                    model="gemini-2.5-flash-lite"
-                )
+                translation_model = self.get_default_llm(model="gemini-2.5-flash-lite")
                 self._translation_models[cache_key] = translation_model
 
         return self._translation_models[cache_key]
 
     def create_translated_document(
-        self,
-        content: str,
-        metadata: dict,
-        source_lang: str = "en",
-        target_lang: str = "es"
+        self, content: str, metadata: dict, source_lang: str = "en", target_lang: str = "es"
     ) -> Document:
         """
         Create a document with translated content.
@@ -1204,16 +1061,9 @@ class AbstractLoader(ABC):
 
         # Clone the metadata and add translation info
         translation_metadata = metadata.copy()
-        translation_metadata.update({
-            "original_language": source_lang,
-            "language": target_lang,
-            "is_translation": True
-        })
+        translation_metadata.update({"original_language": source_lang, "language": target_lang, "is_translation": True})
 
-        return Document(
-            page_content=translated_content,
-            metadata=translation_metadata
-        )
+        return Document(page_content=translated_content, metadata=translation_metadata)
 
     def saving_file(self, filename: PurePath, data: Any):
         """Save data to a file.
@@ -1222,7 +1072,7 @@ class AbstractLoader(ABC):
             filename (PurePath): The path to the file.
             data (Any): The data to save.
         """
-        with open(filename, 'wb') as f:
+        with open(filename, "wb") as f:
             f.write(data)
             f.flush()
         self.logger.info("Saved file on %s", filename)
@@ -1233,7 +1083,7 @@ class AbstractLoader(ABC):
         use_late_chunking: bool = False,
         vector_store=None,
         store_full_document: bool = True,
-        auto_detect_content_type: bool | None = None
+        auto_detect_content_type: bool | None = None,
     ) -> list[Document]:
         """
         Chunk documents using the configured text splitter or late chunking strategy.
@@ -1249,18 +1099,12 @@ class AbstractLoader(ABC):
             List of chunked documents
         """
         if use_late_chunking:
-            return await self._chunk_with_late_chunking(
-                documents, vector_store, store_full_document
-            )
+            return await self._chunk_with_late_chunking(documents, vector_store, store_full_document)
         else:
-            return self._chunk_with_text_splitter(
-                documents, auto_detect_content_type
-            )
+            return self._chunk_with_text_splitter(documents, auto_detect_content_type)
 
     def _chunk_with_text_splitter(
-        self,
-        documents: list[Document],
-        auto_detect_content_type: bool | None = None
+        self, documents: list[Document], auto_detect_content_type: bool | None = None
     ) -> list[Document]:
         """
         Chunk documents using regular text splitters.
@@ -1273,55 +1117,62 @@ class AbstractLoader(ABC):
             List of chunked documents
         """
         chunked_docs = []
-        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type
+        detect_content = (
+            auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type
+        )
 
         # Content kinds that are ATOMIC-by-design — loaders emit them as
         # already-final units (e.g. a single HTML tag, a named selector hit,
         # a single video URL). Re-splitting them pollutes the vector store
         # with sub-min_chunk_size chunks because the splitter has no sibling
         # content inside the same Document to merge them with.
-        _ATOMIC_CONTENT_KINDS = frozenset({
-            'fragment',
-            'video_link',
-            'navigation',
-            'selector',
-            'faq',
-            'table',
-            'video_dialog',
-            'video_transcript',
-            'jsonld-product',
-            'jsonld-event',
-            'jsonld-person',
-            'jsonld-place',
-            'jsonld-recipe',
-            'jsonld-article',
-            'jsonld-organization',
-            'jsonld-howto',
-            'jsonld-breadcrumb',
-        })
+        _ATOMIC_CONTENT_KINDS = frozenset(
+            {
+                "fragment",
+                "video_link",
+                "navigation",
+                "selector",
+                "faq",
+                "table",
+                "video_dialog",
+                "video_transcript",
+                "jsonld-product",
+                "jsonld-event",
+                "jsonld-person",
+                "jsonld-place",
+                "jsonld-recipe",
+                "jsonld-article",
+                "jsonld-organization",
+                "jsonld-howto",
+                "jsonld-breadcrumb",
+            }
+        )
 
         for doc in documents:
             try:
                 # Skip atomic/pre-chunked documents: pass them through as-is.
-                content_kind = doc.metadata.get('content_kind')
+                content_kind = doc.metadata.get("content_kind")
                 if content_kind in _ATOMIC_CONTENT_KINDS:
                     self.logger.debug(
                         "Skipping split for atomic content_kind=%s (len=%d)",
-                        content_kind, len(doc.page_content or ''),
+                        content_kind,
+                        len(doc.page_content or ""),
                     )
                     # Mark as a chunk so downstream stores keep a consistent
                     # schema, but don't re-split it.
                     passthrough_meta = {
                         **doc.metadata,
-                        'is_chunk': True,
-                        'chunk_index': 0,
-                        'total_chunks': 1,
-                        'splitter_type': 'passthrough',
+                        "is_chunk": True,
+                        "chunk_index": 0,
+                        "total_chunks": 1,
+                        "splitter_type": "passthrough",
                     }
-                    chunked_docs.append(Document(
-                        page_content=doc.page_content,
-                        metadata=passthrough_meta,
-                    ))
+                    chunked_docs.append(
+                        Document(
+                            page_content=doc.page_content,
+                            metadata=passthrough_meta,
+                        )
+                    )
                     continue
 
                 # Detect content type and select appropriate splitter
@@ -1330,14 +1181,11 @@ class AbstractLoader(ABC):
                     splitter = self._select_splitter_for_content(content_type)
                     # self.logger.debug(f"Detected content type: {content_type} for document")
                 else:
-                    content_type = 'text'
+                    content_type = "text"
                     splitter = self.text_splitter
 
                 # Create chunks using the selected splitter
-                chunks = splitter.create_chunks(
-                    text=doc.page_content,
-                    metadata=doc.metadata
-                )
+                chunks = splitter.create_chunks(text=doc.page_content, metadata=doc.metadata)
 
                 # Convert chunks to Document objects
                 for chunk in chunks:
@@ -1345,15 +1193,15 @@ class AbstractLoader(ABC):
                         page_content=chunk.text,
                         metadata={
                             **chunk.metadata,
-                            'chunk_id': chunk.chunk_id,
-                            'token_count': chunk.token_count,
-                            'start_position': chunk.start_position,
-                            'end_position': chunk.end_position,
-                            'content_type': content_type,
-                            'splitter_type': splitter.__class__.__name__,
-                            'is_chunk': True,
-                            'parent_document_id': doc.metadata.get('document_id', f"doc_{uuid.uuid4().hex[:8]}")
-                        }
+                            "chunk_id": chunk.chunk_id,
+                            "token_count": chunk.token_count,
+                            "start_position": chunk.start_position,
+                            "end_position": chunk.end_position,
+                            "content_type": content_type,
+                            "splitter_type": splitter.__class__.__name__,
+                            "is_chunk": True,
+                            "parent_document_id": doc.metadata.get("document_id", f"doc_{uuid.uuid4().hex[:8]}"),
+                        },
                     )
                     chunked_docs.append(chunked_doc)
 
@@ -1410,9 +1258,7 @@ class AbstractLoader(ABC):
             plus child docs for 2-level documents.
         """
         if LateChunkingProcessor is None:
-            self.logger.warning(
-                "LateChunkingProcessor not available, falling back to regular chunking"
-            )
+            self.logger.warning("LateChunkingProcessor not available, falling back to regular chunking")
             return self._chunk_with_text_splitter(documents)
 
         if vector_store is None:
@@ -1422,17 +1268,12 @@ class AbstractLoader(ABC):
 
         # Initialize late chunking processor
         chunking_processor = LateChunkingProcessor(
-            vector_store=vector_store,
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap
+            vector_store=vector_store, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
         )
 
         for doc_idx, document in enumerate(documents):
             try:
-                document_id = document.metadata.get(
-                    'document_id',
-                    f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}"
-                )
+                document_id = document.metadata.get("document_id", f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}")
 
                 # FEAT-128: Route by document size.
                 token_count = chunking_processor._count_tokens(document.page_content)
@@ -1442,18 +1283,17 @@ class AbstractLoader(ABC):
                     # Oversized doc: split into parent_chunks first, then
                     # child chunks per parent_chunk.  Original doc NOT stored.
                     self.logger.info(
-                        "Document %s (%d chars) exceeds threshold %d — "
-                        "using 3-level chunking path.",
-                        document_id, token_count, parent_chunk_threshold_tokens,
+                        "Document %s (%d chars) exceeds threshold %d — " "using 3-level chunking path.",
+                        document_id,
+                        token_count,
+                        parent_chunk_threshold_tokens,
                     )
-                    parent_chunks, child_infos = (
-                        await chunking_processor.process_document_three_level(
-                            document_text=document.page_content,
-                            document_id=document_id,
-                            metadata=document.metadata,
-                            parent_chunk_size_tokens=parent_chunk_size_tokens,
-                            parent_chunk_overlap_tokens=parent_chunk_overlap_tokens,
-                        )
+                    parent_chunks, child_infos = await chunking_processor.process_document_three_level(
+                        document_text=document.page_content,
+                        document_id=document_id,
+                        metadata=document.metadata,
+                        parent_chunk_size_tokens=parent_chunk_size_tokens,
+                        parent_chunk_overlap_tokens=parent_chunk_overlap_tokens,
                     )
                     # Emit parent_chunk docs first, then child docs.
                     chunked_docs.extend(parent_chunks)
@@ -1468,20 +1308,18 @@ class AbstractLoader(ABC):
                 else:
                     # ── 2-level path (unchanged behaviour) ──────────────────
                     _, chunk_infos = await chunking_processor.process_document_late_chunking(
-                        document_text=document.page_content,
-                        document_id=document_id,
-                        metadata=document.metadata
+                        document_text=document.page_content, document_id=document_id, metadata=document.metadata
                     )
 
                     # Store full document if requested
                     if store_full_document:
                         full_doc_metadata = {
                             **(document.metadata or {}),
-                            'document_id': document_id,
-                            'is_full_document': True,
-                            'total_chunks': len(chunk_infos),
-                            'document_type': 'parent',
-                            'chunking_strategy': 'late_chunking'
+                            "document_id": document_id,
+                            "is_full_document": True,
+                            "total_chunks": len(chunk_infos),
+                            "document_type": "parent",
+                            "chunking_strategy": "late_chunking",
                         }
                         chunked_docs.append(
                             Document(
@@ -1504,7 +1342,5 @@ class AbstractLoader(ABC):
                 # Fall back to adding the original document
                 chunked_docs.append(document)
 
-        self.logger.info(
-            f"Late chunking processed {len(documents)} documents into {len(chunked_docs)} items"
-        )
+        self.logger.info(f"Late chunking processed {len(documents)} documents into {len(chunked_docs)} items")
         return chunked_docs

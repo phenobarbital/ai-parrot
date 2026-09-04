@@ -28,6 +28,7 @@ pattern as :class:`JiraSpecialist` so a deployment that already runs
 JiraSpecialist needs no extra plumbing beyond a new ``@register_agent``
 subclass per watched repository.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +39,15 @@ import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import (
-    Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
 )
 
 from navconfig import config
@@ -46,6 +55,7 @@ from pydantic import BaseModel, Field
 
 from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
+
 # FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
 from parrot.core.hooks import GitHubWebhookConfig, HookEvent
@@ -57,7 +67,6 @@ from parrot_tools.gittoolkit import (
     WeeklyCodeFrequency,
 )
 from parrot_tools.jiratoolkit import JiraToolkit
-
 
 ChatId = Union[int, str]
 
@@ -85,8 +94,14 @@ def _flatten_adf(node: Any) -> str:
 
     inner = _flatten_adf(node.get("content"))
     block_types = {
-        "paragraph", "heading", "bulletList", "orderedList",
-        "listItem", "codeBlock", "blockquote", "rule",
+        "paragraph",
+        "heading",
+        "bulletList",
+        "orderedList",
+        "listItem",
+        "codeBlock",
+        "blockquote",
+        "rule",
     }
     if node.get("type") in block_types and inner:
         return f"{inner}\n"
@@ -97,20 +112,14 @@ def _flatten_adf(node: Any) -> str:
 # Structured output
 # ──────────────────────────────────────────────────────────────
 
+
 class Discrepancy(BaseModel):
     """Single mismatch between the PR and the Jira acceptance criteria."""
 
-    criterion: str = Field(
-        description="The acceptance criterion or ticket requirement not met."
-    )
-    issue: str = Field(
-        description="What the PR misses, contradicts or deviates from."
-    )
+    criterion: str = Field(description="The acceptance criterion or ticket requirement not met.")
+    issue: str = Field(description="What the PR misses, contradicts or deviates from.")
     severity: Literal["minor", "major", "blocker"] = Field(
-        description=(
-            "Severity. 'blocker' = MUST fix before merge, "
-            "'major' = should fix, 'minor' = nice-to-have."
-        ),
+        description=("Severity. 'blocker' = MUST fix before merge, " "'major' = should fix, 'minor' = nice-to-have."),
     )
 
 
@@ -263,6 +272,7 @@ _WEEKLY_LLM_SYSTEM_PROMPT = (
 # GitHubReviewer
 # ──────────────────────────────────────────────────────────────
 
+
 class GitHubReviewer(Agent):
     """Reviews GitHub PRs against linked Jira ticket acceptance criteria.
 
@@ -385,9 +395,7 @@ class GitHubReviewer(Agent):
             secret = config.get("GITHUB_REVIEW_WEBHOOK_SECRET")
 
         listeners: List[Callable[[HookEvent], Awaitable[None]]] = []
-        dispatch_logger = _stdlib_logging.getLogger(
-            f"parrot.hooks.{name}.dispatch"
-        )
+        dispatch_logger = _stdlib_logging.getLogger(f"parrot.hooks.{name}.dispatch")
 
         async def _dispatch(event: HookEvent) -> None:
             # Fan out to every registered listener; one listener raising
@@ -398,7 +406,9 @@ class GitHubReviewer(Agent):
                 except Exception as exc:  # noqa: BLE001
                     dispatch_logger.error(
                         "Listener %r raised on %s: %s",
-                        listener, event.event_type, exc,
+                        listener,
+                        event.event_type,
+                        exc,
                         exc_info=True,
                     )
 
@@ -463,16 +473,10 @@ class GitHubReviewer(Agent):
             env_cap = config.get("GITHUB_REVIEWER_MAX_TOOL_CALLS", fallback=5)
             self.max_review_tool_calls = int(env_cap)
 
-        self._ac_field_id: str = config.get(
-            "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
-        )
-        self._jira_fields: str = ",".join(
-            sorted({"summary", "description", "status", self._ac_field_id})
-        )
+        self._ac_field_id: str = config.get("JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100")
+        self._jira_fields: str = ",".join(sorted({"summary", "description", "status", self._ac_field_id}))
 
-        self._ticket_key_regex = re.compile(
-            rf"\b{re.escape(self.jira_project)}-\d+\b"
-        )
+        self._ticket_key_regex = re.compile(rf"\b{re.escape(self.jira_project)}-\d+\b")
 
         self.git_toolkit: Optional[GitToolkit] = None
         self.jira_toolkit: Optional[JiraToolkit] = None
@@ -556,7 +560,8 @@ class GitHubReviewer(Agent):
                 await hook.start()
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "GitHubReviewer: hook.start() raised: %s", exc,
+                    "GitHubReviewer: hook.start() raised: %s",
+                    exc,
                 )
             self.app[self._WEBHOOK_STARTED_KEY] = True
 
@@ -569,7 +574,9 @@ class GitHubReviewer(Agent):
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "GitHubReviewer: failed to register %s tools: %s",
-                name, exc, exc_info=True,
+                name,
+                exc,
+                exc_info=True,
             )
             return
         if not tools:
@@ -640,8 +647,7 @@ class GitHubReviewer(Agent):
                 )
             except Exception as exc:  # noqa: BLE001 — fail closed
                 self.logger.error(
-                    "GitHubReviewer: failed to build GitHub App toolkit: %s. "
-                    "The agent will disable itself.",
+                    "GitHubReviewer: failed to build GitHub App toolkit: %s. " "The agent will disable itself.",
                     exc,
                 )
                 return None
@@ -684,20 +690,16 @@ class GitHubReviewer(Agent):
             password = config.get("JIRA_API_TOKEN")
             if not (username and password):
                 self.logger.error(
-                    "GitHubReviewer: basic_auth requires JIRA_USERNAME and "
-                    "JIRA_API_TOKEN; Jira lookups disabled."
+                    "GitHubReviewer: basic_auth requires JIRA_USERNAME and " "JIRA_API_TOKEN; Jira lookups disabled."
                 )
                 return None
             toolkit_kwargs["username"] = username
             toolkit_kwargs["password"] = password
         elif effective == "token_auth":
-            token = (
-                config.get("JIRA_SECRET_TOKEN") or config.get("JIRA_API_TOKEN")
-            )
+            token = config.get("JIRA_SECRET_TOKEN") or config.get("JIRA_API_TOKEN")
             if not token:
                 self.logger.error(
-                    "GitHubReviewer: token_auth requires JIRA_SECRET_TOKEN or "
-                    "JIRA_API_TOKEN; Jira lookups disabled."
+                    "GitHubReviewer: token_auth requires JIRA_SECRET_TOKEN or " "JIRA_API_TOKEN; Jira lookups disabled."
                 )
                 return None
             toolkit_kwargs["token"] = token
@@ -736,8 +738,7 @@ class GitHubReviewer(Agent):
             )
         elif status == "no_permission":
             self.logger.warning(
-                "GitHubReviewer: token lacks admin:repo_hook on %s; "
-                "configure the webhook manually pointing to %s.",
+                "GitHubReviewer: token lacks admin:repo_hook on %s; " "configure the webhook manually pointing to %s.",
                 self.repository,
                 self.webhook_public_url,
             )
@@ -753,9 +754,7 @@ class GitHubReviewer(Agent):
     # Hook entry point
     # ------------------------------------------------------------------
 
-    async def handle_hook_event(
-        self, event: HookEvent
-    ) -> Optional[Dict[str, Any]]:
+    async def handle_hook_event(self, event: HookEvent) -> Optional[Dict[str, Any]]:
         """Route :class:`HookEvent` instances from :class:`GitHubWebhookHook`."""
         if event.event_type not in (
             "github.pr_opened",
@@ -786,9 +785,7 @@ class GitHubReviewer(Agent):
                 return match.group(0)
         return None
 
-    async def review_pull_request(
-        self, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def review_pull_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Run a single PR review and return a summary dict.
 
         Used both by :meth:`handle_hook_event` (via webhook) and as a public
@@ -814,7 +811,9 @@ class GitHubReviewer(Agent):
         if head_sha and self._reviewed_shas.get(repo_key) == head_sha:
             self.logger.info(
                 "PR %s#%s already reviewed at SHA %s; skipping.",
-                repo, pr_number, head_sha,
+                repo,
+                pr_number,
+                head_sha,
             )
             return {
                 "status": "already_reviewed",
@@ -822,9 +821,7 @@ class GitHubReviewer(Agent):
                 "head_sha": head_sha,
             }
 
-        ticket_key = self._extract_ticket_key(
-            payload.get("pr_body") or "", payload.get("pr_title") or ""
-        )
+        ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
         if not ticket_key:
             self.logger.info(
                 "PR %s#%s does not reference a %s ticket; skipping.",
@@ -836,9 +833,7 @@ class GitHubReviewer(Agent):
                 "status": "no_ticket",
                 "pr_number": pr_number,
             }
-            comment = await self._notify_missing_ticket(
-                repo=repo, pr_number=pr_number, payload=payload
-            )
+            comment = await self._notify_missing_ticket(repo=repo, pr_number=pr_number, payload=payload)
             if comment is not None:
                 outcome["comment"] = comment
             return outcome
@@ -851,9 +846,7 @@ class GitHubReviewer(Agent):
                 "pr_number": pr_number,
             }
 
-        diff_text, diff_truncated, diff_available = await self._fetch_diff(
-            repo, pr_number
-        )
+        diff_text, diff_truncated, diff_available = await self._fetch_diff(repo, pr_number)
 
         result = await self._ask_llm_for_review(
             payload=payload,
@@ -878,10 +871,7 @@ class GitHubReviewer(Agent):
         event = "APPROVE" if result.approve else "REQUEST_CHANGES"
         # APPROVE has no actionable findings to alert about; only ping
         # Telegram when discrepancies were raised.
-        should_post_review = (
-            self.git_toolkit is not None
-            and (result.approve or result.discrepancies)
-        )
+        should_post_review = self.git_toolkit is not None and (result.approve or result.discrepancies)
         if should_post_review:
             try:
                 review_response = await self.git_toolkit.submit_pr_review(
@@ -894,14 +884,16 @@ class GitHubReviewer(Agent):
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
                     "GitHubReviewer: failed to submit %s review on %s#%s: %s",
-                    event, repo, pr_number, exc, exc_info=True,
+                    event,
+                    repo,
+                    pr_number,
+                    exc,
+                    exc_info=True,
                 )
                 outcome["review_error"] = str(exc)
 
             if not result.approve and result.discrepancies:
-                outcome["alerts"] = await self._notify_telegram_alert(
-                    payload, ticket_key, result
-                )
+                outcome["alerts"] = await self._notify_telegram_alert(payload, ticket_key, result)
 
         if head_sha:
             self._reviewed_shas[repo_key] = head_sha
@@ -931,9 +923,10 @@ class GitHubReviewer(Agent):
             return None
         if self.git_toolkit is None:
             self.logger.warning(
-                "GitHubReviewer: cannot comment about missing %s ticket on "
-                "%s#%s — git_toolkit is not configured.",
-                self.jira_project, repo, pr_number,
+                "GitHubReviewer: cannot comment about missing %s ticket on " "%s#%s — git_toolkit is not configured.",
+                self.jira_project,
+                repo,
+                pr_number,
             )
             return None
 
@@ -947,7 +940,10 @@ class GitHubReviewer(Agent):
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "GitHubReviewer: failed to post no-ticket comment on %s#%s: %s",
-                repo, pr_number, exc, exc_info=True,
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
             )
             return None
 
@@ -999,9 +995,7 @@ class GitHubReviewer(Agent):
             return None
         return envelope.get("data")
 
-    async def _fetch_diff(
-        self, repo: str, pr_number: int
-    ) -> Tuple[str, bool, bool]:
+    async def _fetch_diff(self, repo: str, pr_number: int) -> Tuple[str, bool, bool]:
         """Return ``(diff_text, truncated, available)``.
 
         ``available`` is ``False`` when the diff could not be retrieved
@@ -1019,7 +1013,9 @@ class GitHubReviewer(Agent):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "GitHubReviewer: get_pull_request_diff failed for %s#%s: %s",
-                repo, pr_number, exc,
+                repo,
+                pr_number,
+                exc,
             )
             return ("", False, False)
         return (data.get("diff", ""), bool(data.get("truncated")), True)
@@ -1048,17 +1044,14 @@ class GitHubReviewer(Agent):
         # The acceptance-criteria custom field id was resolved in __init__
         # from JIRA_ACCEPTANCE_CRITERIA_FIELD (fallback: customfield_10100)
         # and is included in the Jira ``fields=`` request.
-        acceptance_criteria = self._clamp(
-            _flatten_adf(fields.get(self._ac_field_id))
-        ) or "(not provided)"
+        acceptance_criteria = self._clamp(_flatten_adf(fields.get(self._ac_field_id))) or "(not provided)"
 
         if diff_available:
             diff_block = diff_text or "(empty diff — PR adds/removes nothing)"
             header = f"=== PR diff (truncated={diff_truncated}) ==="
         else:
             diff_block = (
-                "(diff unavailable — could not be retrieved from GitHub. "
-                "Do NOT conclude that the PR is empty.)"
+                "(diff unavailable — could not be retrieved from GitHub. " "Do NOT conclude that the PR is empty.)"
             )
             header = "=== PR diff (unavailable) ==="
 
@@ -1151,14 +1144,10 @@ class GitHubReviewer(Agent):
         """
         if result.approve:
             header = f"## Automated review — acceptance criteria satisfied ({ticket_key})"
-            default_summary = (
-                "All acceptance criteria are addressed by this PR."
-            )
+            default_summary = "All acceptance criteria are addressed by this PR."
         else:
             header = f"## Automated review — discrepancies vs. {ticket_key}"
-            default_summary = (
-                "Discrepancies detected against the linked ticket."
-            )
+            default_summary = "Discrepancies detected against the linked ticket."
         lines: List[str] = [
             header,
             "",
@@ -1168,9 +1157,7 @@ class GitHubReviewer(Agent):
         if result.discrepancies:
             lines.append("### Findings")
             for d in result.discrepancies:
-                lines.append(
-                    f"- **[{d.severity.upper()}] {d.criterion}** — {d.issue}"
-                )
+                lines.append(f"- **[{d.severity.upper()}] {d.criterion}** — {d.issue}")
             lines.append("")
         lines.extend(
             [
@@ -1276,9 +1263,7 @@ class GitHubReviewer(Agent):
             return {"status": "error", "reason": "git_toolkit not configured"}
 
         try:
-            pulls = await self.git_toolkit.list_pull_requests(
-                repository=self.repository, state="open", per_page=100
-            )
+            pulls = await self.git_toolkit.list_pull_requests(repository=self.repository, state="open", per_page=100)
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "GitHubReviewer: list_pull_requests failed for %s: %s",
@@ -1313,9 +1298,7 @@ class GitHubReviewer(Agent):
                 repo_html = html.escape(self.repository)
                 for pr in stale:
                     title = html.escape(str(pr.get("title") or ""))
-                    url = html.escape(
-                        str(pr.get("html_url") or ""), quote=True
-                    )
+                    url = html.escape(str(pr.get("html_url") or ""), quote=True)
                     user = html.escape(str(pr.get("user") or "unknown"))
                     text = (
                         f"<b>Stale PR</b> on <code>{repo_html}</code>\n"
@@ -1422,9 +1405,7 @@ class GitHubReviewer(Agent):
         prev_period_start = period_start - timedelta(days=7)
 
         # 2. Build lookup for code_freq by week_start (for totals).
-        cf_by_week: Dict[datetime, WeeklyCodeFrequency] = {
-            cf.week_start: cf for cf in code_freq
-        }
+        cf_by_week: Dict[datetime, WeeklyCodeFrequency] = {cf.week_start: cf for cf in code_freq}
 
         # 3. Per-contributor processing.
         active: List[_ContributorWindowSummary] = []
@@ -1436,9 +1417,7 @@ class GitHubReviewer(Agent):
                 continue
 
             # Build a lookup from week_start to week slice.
-            week_by_start: Dict[datetime, ContributorWeek] = {
-                w.week_start: w for w in cs.weeks
-            }
+            week_by_start: Dict[datetime, ContributorWeek] = {w.week_start: w for w in cs.weeks}
 
             # Current week slice.
             current_slice = week_by_start.get(period_start)
@@ -1482,9 +1461,7 @@ class GitHubReviewer(Agent):
                 silent.append(summary_entry)
 
         # 4. Sort active: commits desc, then additions+deletions desc, then login.
-        active.sort(
-            key=lambda c: (-c.commits_this_week, -(c.additions + c.deletions), c.login)
-        )
+        active.sort(key=lambda c: (-c.commits_this_week, -(c.additions + c.deletions), c.login))
         active = active[:top_n]
 
         # 5. Sort silent: weeks_silent desc, then login.
@@ -1495,10 +1472,7 @@ class GitHubReviewer(Agent):
             c.commits_this_week for c in silent if c.commits_this_week > 0
         )
         # Re-sum from all contributors (active list is truncated).
-        all_this_week = [
-            cs for cs in contributors
-            if cs.login is not None
-        ]
+        all_this_week = [cs for cs in contributors if cs.login is not None]
         total_commits = 0
         total_additions = 0
         total_deletions = 0
@@ -1556,10 +1530,7 @@ class GitHubReviewer(Agent):
         """
         repo = html.escape(summary.repository)
         # Display period as Sun → Sat (period_end is the following Sunday, so -1 day)
-        period = (
-            f"{summary.period_start:%Y-%m-%d} → "
-            f"{(summary.period_end - timedelta(days=1)):%Y-%m-%d}"
-        )
+        period = f"{summary.period_start:%Y-%m-%d} → " f"{(summary.period_end - timedelta(days=1)):%Y-%m-%d}"
 
         def pct(curr: int, prev: int) -> str:
             """Format a percentage delta string with direction arrow."""
@@ -1575,10 +1546,7 @@ class GitHubReviewer(Agent):
             f"<b>Weekly activity — <code>{repo}</code></b>",
             f"Period: {period}",
             "",
-            (
-                f"<b>{summary.total_commits}</b> commits "
-                f"({pct(summary.total_commits, summary.prev_total_commits)})"
-            ),
+            (f"<b>{summary.total_commits}</b> commits " f"({pct(summary.total_commits, summary.prev_total_commits)})"),
             (
                 f"{summary.total_additions:,} added / "
                 f"{summary.total_deletions:,} removed "
@@ -1592,8 +1560,7 @@ class GitHubReviewer(Agent):
             for i, c in enumerate(summary.contributors_active, start=1):
                 login = html.escape(c.login)
                 lines.append(
-                    f"{i}. <code>{login}</code> — {c.commits_this_week} commits, "
-                    f"{c.additions:,} / {c.deletions:,}"
+                    f"{i}. <code>{login}</code> — {c.commits_this_week} commits, " f"{c.additions:,} / {c.deletions:,}"
                 )
 
         if summary.contributors_silent:
@@ -1601,9 +1568,7 @@ class GitHubReviewer(Agent):
             lines.append("<b>Silent contributors</b>")
             for c in summary.contributors_silent:
                 login = html.escape(c.login)
-                lines.append(
-                    f"<code>{login}</code> — silent {c.weeks_silent} weeks"
-                )
+                lines.append(f"<code>{login}</code> — silent {c.weeks_silent} weeks")
 
         lines.append("")
         lines.append("<i>Posted by the GitHubReviewer agent.</i>")
@@ -1654,9 +1619,7 @@ class GitHubReviewer(Agent):
                 system_prompt=self._WEEKLY_LLM_SYSTEM_PROMPT,
             )
         except Exception as exc:  # noqa: BLE001
-            raise WeeklyLLMSummarizationError(
-                f"LLM weekly summarization failed: {exc}"
-            ) from exc
+            raise WeeklyLLMSummarizationError(f"LLM weekly summarization failed: {exc}") from exc
 
         output = getattr(response, "output", response)
         if isinstance(output, str):
@@ -1703,10 +1666,7 @@ class GitHubReviewer(Agent):
             ``rendered_via``, ``telegram_sent``.
         """
         if self.git_toolkit is None:
-            self.logger.warning(
-                "GitHubReviewer: weekly activity report skipped — "
-                "git_toolkit not configured."
-            )
+            self.logger.warning("GitHubReviewer: weekly activity report skipped — " "git_toolkit not configured.")
             return {"status": "error", "reason": "git_toolkit not configured"}
 
         try:
@@ -1766,8 +1726,7 @@ class GitHubReviewer(Agent):
                 rendered_via = "llm"
             except WeeklyLLMSummarizationError as exc:
                 self.logger.warning(
-                    "GitHubReviewer: LLM summary failed (%s); falling back to "
-                    "templated output.",
+                    "GitHubReviewer: LLM summary failed (%s); falling back to " "templated output.",
                     exc,
                 )
                 text = self._format_weekly_activity_html(summary)
@@ -1787,7 +1746,8 @@ class GitHubReviewer(Agent):
                 telegram_sent = 1
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "GitHubReviewer: failed to send weekly report: %s", exc,
+                    "GitHubReviewer: failed to send weekly report: %s",
+                    exc,
                 )
 
         self.logger.info(

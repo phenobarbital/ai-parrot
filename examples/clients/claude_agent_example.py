@@ -29,6 +29,7 @@ Both clients coexist: install both extras
 (``ai-parrot[anthropic]`` and ``ai-parrot[claude-agent]``) when you need
 both surfaces.
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -194,9 +194,7 @@ async def test_cli_backend_survives_the_client_context_manager() -> None:
     async with client:
         message = await client.ask(
             "hello",
-            run_options=CodexAgentRunOptions(
-                backend="cli", model="", cwd="/tmp", expose_parrot_tools=False
-            ),
+            run_options=CodexAgentRunOptions(backend="cli", model="", cwd="/tmp", expose_parrot_tools=False),
         )
     assert message.response == "ok"
 

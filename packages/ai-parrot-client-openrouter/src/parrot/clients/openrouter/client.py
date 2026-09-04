@@ -3,6 +3,7 @@
 Extends OpenAIClient to route requests through OpenRouter's multi-model
 API gateway, providing access to 200+ LLM models via a single endpoint.
 """
+
 from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -66,21 +67,13 @@ class OpenRouterClient(OpenAIBaseClient):
         app_name: Optional[str] = None,
         site_url: Optional[str] = None,
         provider_preferences: Optional[ProviderPreferences] = None,
-        **kwargs
+        **kwargs,
     ):
-        self.app_name = app_name or config.get(
-            'OPENROUTER_APP_NAME', 'AI-Parrot'
-        )
-        self.site_url = site_url or config.get(
-            'OPENROUTER_SITE_URL', ''
-        )
+        self.app_name = app_name or config.get("OPENROUTER_APP_NAME", "AI-Parrot")
+        self.site_url = site_url or config.get("OPENROUTER_SITE_URL", "")
         self.provider_preferences = provider_preferences
-        resolved_key = api_key or config.get('OPENROUTER_API_KEY')
-        super().__init__(
-            api_key=resolved_key,
-            base_url="https://openrouter.ai/api/v1",
-            **kwargs
-        )
+        resolved_key = api_key or config.get("OPENROUTER_API_KEY")
+        super().__init__(api_key=resolved_key, base_url="https://openrouter.ai/api/v1", **kwargs)
         # Re-set after super().__init__ because AbstractClient may overwrite
         self.api_key = resolved_key
 
@@ -94,8 +87,7 @@ class OpenRouterClient(OpenAIBaseClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "OpenRouterClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "OpenRouterClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         headers = {
             "HTTP-Referer": self.site_url,
@@ -105,7 +97,7 @@ class OpenRouterClient(OpenAIBaseClient):
             api_key=self.api_key,
             base_url=self.base_url,
             default_headers=headers,
-            timeout=config.get('OPENAI_TIMEOUT', 60),
+            timeout=config.get("OPENAI_TIMEOUT", 60),
         )
 
     def _build_provider_extra_body(self) -> Optional[Dict[str, Any]]:
@@ -116,17 +108,9 @@ class OpenRouterClient(OpenAIBaseClient):
         """
         if self.provider_preferences is None:
             return None
-        return {
-            "provider": self.provider_preferences.model_dump(exclude_none=True)
-        }
+        return {"provider": self.provider_preferences.model_dump(exclude_none=True)}
 
-    async def _chat_completion(
-        self,
-        model: str,
-        messages: Any,
-        use_tools: bool = False,
-        **kwargs
-    ):
+    async def _chat_completion(self, model: str, messages: Any, use_tools: bool = False, **kwargs):
         """Override to inject provider preferences via extra_body.
 
         Args:
@@ -139,16 +123,9 @@ class OpenRouterClient(OpenAIBaseClient):
         if extra:
             existing = kwargs.get("extra_body", {}) or {}
             kwargs["extra_body"] = {**existing, **extra}
-        return await super()._chat_completion(
-            model=model,
-            messages=messages,
-            use_tools=use_tools,
-            **kwargs
-        )
+        return await super()._chat_completion(model=model, messages=messages, use_tools=use_tools, **kwargs)
 
-    async def get_generation_stats(
-        self, generation_id: str
-    ) -> OpenRouterUsage:
+    async def get_generation_stats(self, generation_id: str) -> OpenRouterUsage:
         """Fetch cost/usage stats for a specific generation.
 
         Calls OpenRouter's generation endpoint to retrieve token counts,

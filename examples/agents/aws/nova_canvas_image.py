@@ -31,6 +31,7 @@ build new work on it without a migration plan.
 
 See examples/agents/aws/README.md for full setup instructions.
 """
+
 import argparse
 import asyncio
 from pathlib import Path
@@ -47,25 +48,34 @@ def _parse_args() -> argparse.Namespace:
         description="Generate images with Amazon Nova Canvas on AWS Bedrock.",
     )
     parser.add_argument(
-        "prompt", nargs="?", default=DEFAULT_PROMPT,
+        "prompt",
+        nargs="?",
+        default=DEFAULT_PROMPT,
         help=f"Text prompt for the image (default: {DEFAULT_PROMPT!r})",
     )
     parser.add_argument(
-        "--negative", default=None,
+        "--negative",
+        default=None,
         help="Negative prompt describing what to avoid",
     )
     parser.add_argument(
-        "--count", type=int, default=1,
+        "--count",
+        type=int,
+        default=1,
         help="Number of candidate images to request (default: 1)",
     )
     parser.add_argument("--width", type=int, default=1024, help="Width in pixels")
     parser.add_argument("--height", type=int, default=1024, help="Height in pixels")
     parser.add_argument(
-        "--seed", type=int, default=None,
+        "--seed",
+        type=int,
+        default=None,
         help="Generation seed, for reproducible output",
     )
     parser.add_argument(
-        "--out", type=Path, default=DEFAULT_OUTPUT_DIR,
+        "--out",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
         help=f"Directory the PNGs are written to (default: {DEFAULT_OUTPUT_DIR})",
     )
     return parser.parse_args()
@@ -93,8 +103,10 @@ async def main() -> int:
         )
     except Exception as exc:
         print(f"❌ Generation failed: {type(exc).__name__}: {exc}")
-        print("   Nova Canvas is in-region only (us-east-1, eu-west-1, "
-              "ap-northeast-1) and must be enabled under Bedrock model access.")
+        print(
+            "   Nova Canvas is in-region only (us-east-1, eu-west-1, "
+            "ap-northeast-1) and must be enabled under Bedrock model access."
+        )
         return 1
 
     print(f"✅ Model:    {result.model}")

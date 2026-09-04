@@ -1,4 +1,5 @@
 """HTTP handler for image and video understanding via Google GenAI."""
+
 from __future__ import annotations
 
 import shutil
@@ -138,9 +139,7 @@ class UnderstandingHandler(BaseView):
                     sources.append((url, detected))
 
             if not prompt:
-                return self.error(
-                    "Missing required field: 'prompt'.", status=400
-                )
+                return self.error("Missing required field: 'prompt'.", status=400)
 
             if not sources:
                 return self.error(
@@ -165,15 +164,11 @@ class UnderstandingHandler(BaseView):
 
                     if source.startswith(("http://", "https://")):
                         if temp_dir is None:
-                            temp_dir = tempfile.mkdtemp(
-                                prefix="understanding_download_"
-                            )
+                            temp_dir = tempfile.mkdtemp(prefix="understanding_download_")
                         try:
                             source = await self._download_url(source, temp_dir)
                         except Exception as exc:
-                            self.logger.error(
-                                "Failed to download media URL: %s", exc
-                            )
+                            self.logger.error("Failed to download media URL: %s", exc)
                             return self.error(
                                 f"Could not download media URL: {exc}",
                                 status=400,
@@ -216,6 +211,7 @@ class UnderstandingHandler(BaseView):
             # FEAT-523 (TASK-2846): lazy import — core must not import a
             # provider module at module scope (AC-3).
             from parrot.clients.google import GoogleGenAIClient
+
             client = GoogleGenAIClient(**client_kwargs)
             async with client:
                 try:
@@ -237,12 +233,8 @@ class UnderstandingHandler(BaseView):
                             timeout=req_kwargs.get("timeout", 600),
                         )
                 except Exception as exc:
-                    self.logger.error(
-                        "GoogleGenAIClient call failed: %s", exc, exc_info=True
-                    )
-                    return self.error(
-                        f"Analysis failed: {exc}", status=500
-                    )
+                    self.logger.error("GoogleGenAIClient call failed: %s", exc, exc_info=True)
+                    return self.error(f"Analysis failed: {exc}", status=500)
 
             response = UnderstandingResponse.from_ai_message(result)
             return self.json_response(response.model_dump())
@@ -265,12 +257,8 @@ class UnderstandingHandler(BaseView):
         payload: dict[str, Any] = {
             "schema": schema,
             "supported_media_types": ["image", "video"],
-            "image_extensions": sorted(
-                [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"]
-            ),
-            "video_extensions": sorted(
-                [".mp4", ".mov", ".avi", ".webm", ".mkv", ".flv", ".wmv"]
-            ),
+            "image_extensions": sorted([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"]),
+            "video_extensions": sorted([".mp4", ".mov", ".avi", ".webm", ".mkv", ".flv", ".wmv"]),
             "defaults": {
                 "detect_objects": True,
                 "as_image": True,
@@ -281,17 +269,13 @@ class UnderstandingHandler(BaseView):
                     "Upload one or more 'file' parts plus a 'prompt' field. "
                     "Multiple files may be sent in a single request."
                 ),
-                "json": (
-                    "Send a JSON body with 'prompt' and either 'media_url' "
-                    "(single) or 'media_urls' (list)."
-                ),
+                "json": ("Send a JSON body with 'prompt' and either 'media_url' " "(single) or 'media_urls' (list)."),
             },
             "multi_source": {
                 "images_only": "Pass N images → image_understanding(images=[...]).",
                 "one_video_only": "Pass 1 video → video_understanding(video=...).",
                 "video_with_images": (
-                    "Pass 1 video + N images → video_understanding with the "
-                    "images as reference_images."
+                    "Pass 1 video + N images → video_understanding with the " "images as reference_images."
                 ),
                 "multiple_videos": "Rejected with 400.",
             },
@@ -382,9 +366,7 @@ class UnderstandingHandler(BaseView):
 
         return prompt, file_entries, media_type_override, model_override, temp_dir
 
-    async def _download_url(
-        self, url: str, dest_dir: str
-    ) -> Path:
+    async def _download_url(self, url: str, dest_dir: str) -> Path:
         """Download a remote media URL to a local temp file.
 
         Args:
@@ -408,9 +390,7 @@ class UnderstandingHandler(BaseView):
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
                 if resp.status != 200:
-                    raise ValueError(
-                        f"HTTP {resp.status} when downloading {url}"
-                    )
+                    raise ValueError(f"HTTP {resp.status} when downloading {url}")
                 with open(dest, "wb") as fh:
                     async for chunk in resp.content.iter_chunked(65536):
                         fh.write(chunk)

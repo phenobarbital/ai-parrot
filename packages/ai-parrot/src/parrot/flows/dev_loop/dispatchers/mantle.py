@@ -175,6 +175,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.amazon.nova.mantle import BedrockMantleClient
+
         self._client = client or BedrockMantleClient()
         self._event_registry_resolver = event_registry_resolver
         self.logger = logging.getLogger(__name__)

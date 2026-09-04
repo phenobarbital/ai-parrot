@@ -1,4 +1,5 @@
 """Unit tests for LocalLLMClient.invoke() (TASK-487)."""
+
 import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -10,6 +11,7 @@ from parrot.exceptions import InvokeError
 
 class SimpleResult(BaseModel):
     """Fixture Pydantic model."""
+
     answer: str
 
 
@@ -24,6 +26,7 @@ def _make_mock_response(text: str = '{"answer": "42"}'):
 def _make_client(model: str = "llama3.1:8b"):
     """Create LocalLLMClient without network setup."""
     from parrot.clients.local import LocalLLMClient
+
     client = LocalLLMClient.__new__(LocalLLMClient)
     client.model = model
     client._lightweight_model = None
@@ -34,6 +37,7 @@ def _make_client(model: str = "llama3.1:8b"):
     client._tool_manager.get_tool_schemas.return_value = []
     client._tool_manager.tools = {}
     from datamodel.parsers.json import JSONContent
+
     client._json = JSONContent()
     # __new__ skips __init__, which is where AbstractClient sets up the
     # per-loop client cache (FEAT-112). Without these, the legacy
@@ -50,9 +54,7 @@ def mock_localllm_client(bind_sdk_client):
     sdk = MagicMock()
     sdk.chat = MagicMock()
     sdk.chat.completions = MagicMock()
-    sdk.chat.completions.create = AsyncMock(
-        return_value=_make_mock_response()
-    )
+    sdk.chat.completions.create = AsyncMock(return_value=_make_mock_response())
     bind_sdk_client(client, sdk)
     return client
 
@@ -65,9 +67,7 @@ class TestLocalLLMInvoke:
         mock_localllm_client.client.chat.completions.create = AsyncMock(
             return_value=_make_mock_response('{"answer": "42"}')
         )
-        result = await mock_localllm_client.invoke(
-            "Answer this", output_type=SimpleResult
-        )
+        result = await mock_localllm_client.invoke("Answer this", output_type=SimpleResult)
         assert isinstance(result, InvokeResult)
         # Verify response_format was set
         call_kwargs = mock_localllm_client.client.chat.completions.create.call_args[1]
@@ -76,9 +76,7 @@ class TestLocalLLMInvoke:
 
     async def test_no_lightweight_model(self, mock_localllm_client):
         """Uses self.model when _lightweight_model is None."""
-        mock_localllm_client.client.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response("ok")
-        )
+        mock_localllm_client.client.chat.completions.create = AsyncMock(return_value=_make_mock_response("ok"))
         result = await mock_localllm_client.invoke("Hello")
         assert result.model == mock_localllm_client.model
 
@@ -93,9 +91,7 @@ class TestLocalLLMInvoke:
 
     async def test_error_wrapped(self, mock_localllm_client):
         """Provider errors wrapped in InvokeError."""
-        mock_localllm_client.client.chat.completions.create = AsyncMock(
-            side_effect=RuntimeError("Connection refused")
-        )
+        mock_localllm_client.client.chat.completions.create = AsyncMock(side_effect=RuntimeError("Connection refused"))
         with pytest.raises(InvokeError):
             await mock_localllm_client.invoke("test")
 
@@ -116,20 +112,14 @@ class TestLocalLLMInvoke:
             return result
 
         mock_localllm_client.client.chat.completions.create = mock_create
-        result = await mock_localllm_client.invoke(
-            "Answer this", output_type=SimpleResult
-        )
+        result = await mock_localllm_client.invoke("Answer this", output_type=SimpleResult)
         assert isinstance(result, InvokeResult)
         assert call_count == 2  # Two calls were made
 
     async def test_model_override(self, mock_localllm_client):
         """Explicit model param overrides self.model."""
-        mock_localllm_client.client.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response("ok")
-        )
-        result = await mock_localllm_client.invoke(
-            "test", model="mistral:7b"
-        )
+        mock_localllm_client.client.chat.completions.create = AsyncMock(return_value=_make_mock_response("ok"))
+        result = await mock_localllm_client.invoke("test", model="mistral:7b")
         assert result.model == "mistral:7b"
 
     async def test_not_initialized_raises(self):
@@ -143,9 +133,7 @@ class TestLocalLLMInvoke:
         """custom_parser in StructuredOutputConfig is applied."""
         from parrot.models.outputs import StructuredOutputConfig, OutputFormat
 
-        mock_localllm_client.client.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response("some text")
-        )
+        mock_localllm_client.client.chat.completions.create = AsyncMock(return_value=_make_mock_response("some text"))
         parsed = SimpleResult(answer="custom")
         config = StructuredOutputConfig(
             output_type=SimpleResult,

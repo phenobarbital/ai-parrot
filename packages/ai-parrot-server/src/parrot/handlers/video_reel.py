@@ -1,4 +1,5 @@
 """HTTP handler for video reel generation with background job support."""
+
 from __future__ import annotations
 
 import json
@@ -50,7 +51,7 @@ class VideoReelHandler(BaseView):
     @classmethod
     def setup(cls, app: WebApp, route: str = "/api/v1/google/generation/video_reel"):
         """Register routes and ensure JobManager is available."""
-        _app = app.get_app() if hasattr(app, 'get_app') else app
+        _app = app.get_app() if hasattr(app, "get_app") else app
         _app.router.add_view(route, cls)
         _app.router.add_view(f"{route}/{{job_id}}", cls)
 
@@ -62,19 +63,15 @@ class VideoReelHandler(BaseView):
     def job_manager(self) -> JobManager:
         """Resolve JobManager lazily from the request's app."""
         app = self.request.app
-        if 'job_manager' in app:
-            return app['job_manager']
-        raise RuntimeError(
-            "JobManager not configured. Call configure_job_manager(app) during startup."
-        )
+        if "job_manager" in app:
+            return app["job_manager"]
+        raise RuntimeError("JobManager not configured. Call configure_job_manager(app) during startup.")
 
     # ------------------------------------------------------------------
     # Storage configuration
     # ------------------------------------------------------------------
 
-    def _create_file_manager(
-        self, output_directory: Optional[Path] = None
-    ) -> Optional[FileManagerInterface]:
+    def _create_file_manager(self, output_directory: Optional[Path] = None) -> Optional[FileManagerInterface]:
         """Create a FileManagerInterface from server-side configuration.
 
         Reads storage settings from environment variables:
@@ -237,6 +234,7 @@ class VideoReelHandler(BaseView):
                 # FEAT-523 (TASK-2846): lazy import — core must not import a
                 # provider module at module scope (AC-3).
                 from parrot.clients.google import GoogleGenAIClient
+
                 client = GoogleGenAIClient(model=model)
                 async with client:
                     result = await client.generate_video_reel(
@@ -247,9 +245,9 @@ class VideoReelHandler(BaseView):
                         session_id=session_id,
                     )
                     # Serialize AIMessage to dict for JSON-safe storage.
-                    if hasattr(result, 'model_dump'):
+                    if hasattr(result, "model_dump"):
                         return result.model_dump()
-                    if hasattr(result, 'to_dict'):
+                    if hasattr(result, "to_dict"):
                         return result.to_dict()
                     return result
             finally:

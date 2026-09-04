@@ -18,6 +18,7 @@ from :class:`~parrot.clients.amazon.nova.generation.NovaGeneration` (TASK-1808).
 See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 2) for the full
 design.
 """
+
 from __future__ import annotations
 
 from enum import Enum

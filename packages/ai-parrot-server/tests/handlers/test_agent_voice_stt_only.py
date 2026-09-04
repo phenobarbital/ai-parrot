@@ -18,6 +18,7 @@ and ``parrot.clients.google.live`` points to the *main* repo.  We extend
 directories so Python resolves the worktree's modified copies.  This mirrors
 the pattern used by the project's test suite (see conftest.py).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -28,7 +29,6 @@ from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Locate the worktree source directories.
@@ -57,6 +57,7 @@ _prepend_path(_PARROT_SRC)
 # was already loaded from the main-repo editable install.
 try:
     import parrot as _parrot_pkg  # noqa: E402
+
     for _src_dir in (_INTEGRATIONS_SRC / "parrot", _PARROT_SRC / "parrot"):
         _dir_str = str(_src_dir)
         if _dir_str not in _parrot_pkg.__path__:
@@ -80,6 +81,7 @@ importlib.invalidate_caches()
 # Inject google.genai stub so parrot.clients.google.live can be imported without the
 # real google-genai distribution (which may not be installed in the test env).
 # ---------------------------------------------------------------------------
+
 
 def _inject_genai_stub() -> None:
     """Inject a minimal google.genai stub into sys.modules."""
@@ -107,10 +109,20 @@ def _inject_genai_stub() -> None:
         MEDIA_RESOLUTION_LOW = "low"
 
     for _name in [
-        "AudioTranscriptionConfig", "LiveConnectConfig", "SpeechConfig",
-        "VoiceConfig", "PrebuiltVoiceConfig", "ContextWindowCompressionConfig",
-        "SlidingWindow", "RealtimeInputConfig", "AutomaticActivityDetection",
-        "Tool", "FunctionDeclaration", "FunctionResponse", "Content", "Part",
+        "AudioTranscriptionConfig",
+        "LiveConnectConfig",
+        "SpeechConfig",
+        "VoiceConfig",
+        "PrebuiltVoiceConfig",
+        "ContextWindowCompressionConfig",
+        "SlidingWindow",
+        "RealtimeInputConfig",
+        "AutomaticActivityDetection",
+        "Tool",
+        "FunctionDeclaration",
+        "FunctionResponse",
+        "Content",
+        "Part",
         # FEAT-418 (TASK-2168): _build_live_config() now always requests
         # session resumption via types.SessionResumptionConfig(...).
         "SessionResumptionConfig",
@@ -262,20 +274,14 @@ async def test_stt_only_emits_user_transcription():
     await handler._send_voice_response(connection, response)
 
     msg_types = _sent_types(connection)
-    assert "transcription" in msg_types, (
-        "Expected a 'transcription' frame to be sent in STT-only mode."
-    )
+    assert "transcription" in msg_types, "Expected a 'transcription' frame to be sent in STT-only mode."
 
     sent_msgs = [
-        call.args[0]
-        for call in connection.ws.send_json.await_args_list
-        if call.args and isinstance(call.args[0], dict)
+        call.args[0] for call in connection.ws.send_json.await_args_list if call.args and isinstance(call.args[0], dict)
     ]
     transcription_msgs = [m for m in sent_msgs if m.get("type") == "transcription"]
     assert transcription_msgs, "No transcription message found."
-    assert transcription_msgs[0].get("is_user") is True, (
-        "transcription frame must have is_user=True for user speech."
-    )
+    assert transcription_msgs[0].get("is_user") is True, "transcription frame must have is_user=True for user speech."
     assert transcription_msgs[0].get("text") == "Hello world"
 
 
@@ -296,8 +302,7 @@ async def test_stt_only_suppresses_model_response():
 
     msg_types = _sent_types(connection)
     assert "response_chunk" not in msg_types, (
-        "STT-only mode must NOT emit response_chunk frames (double-brain guard). "
-        f"Sent types: {msg_types}"
+        "STT-only mode must NOT emit response_chunk frames (double-brain guard). " f"Sent types: {msg_types}"
     )
 
 
@@ -321,9 +326,7 @@ async def test_stt_only_suppresses_response_complete():
     await handler._send_voice_response(connection, response)
 
     msg_types = _sent_types(connection)
-    assert "response_complete" not in msg_types, (
-        "STT-only mode must NOT emit response_complete. Got: %s" % msg_types
-    )
+    assert "response_complete" not in msg_types, "STT-only mode must NOT emit response_complete. Got: %s" % msg_types
     assert "ready_to_speak" not in msg_types, (
         "STT-only mode must NOT emit ready_to_speak from model turn. Got: %s" % msg_types
     )
@@ -343,8 +346,7 @@ async def test_default_still_full_duplex():
 
     msg_types = _sent_types(connection)
     assert "response_chunk" in msg_types, (
-        "Full-duplex mode must emit response_chunk for model audio. "
-        f"Sent types: {msg_types}"
+        "Full-duplex mode must emit response_chunk for model audio. " f"Sent types: {msg_types}"
     )
 
 
@@ -382,22 +384,14 @@ async def test_stt_only_parsed_from_start_session():
     }
     await handler._handle_start_session(connection, message)
 
-    assert connection.stt_only is True, (
-        "connection.stt_only must be True after start_session with stt_only=true."
-    )
+    assert connection.stt_only is True, "connection.stt_only must be True after start_session with stt_only=true."
 
     sent_msgs = [
-        call.args[0]
-        for call in connection.ws.send_json.await_args_list
-        if call.args and isinstance(call.args[0], dict)
+        call.args[0] for call in connection.ws.send_json.await_args_list if call.args and isinstance(call.args[0], dict)
     ]
-    session_started = next(
-        (m for m in sent_msgs if m.get("type") == "session_started"), None
-    )
+    session_started = next((m for m in sent_msgs if m.get("type") == "session_started"), None)
     assert session_started is not None, "session_started message not sent."
-    assert session_started.get("stt_only") is True, (
-        "session_started message must echo stt_only=true."
-    )
+    assert session_started.get("stt_only") is True, "session_started message must echo stt_only=true."
 
     # Clean up the voice task.
     connection.shutdown_event.set()
@@ -412,6 +406,7 @@ async def test_stt_only_absent_defaults_to_false():
     """``start_session`` without ``stt_only`` defaults to full-duplex (False)."""
     bot = MagicMock()
     bot.close = AsyncMock()
+
     # ask_stream must be an async generator that terminates immediately so
     # the voice session task doesn't block the test.
     async def _empty_stream(*args, **kwargs):
@@ -433,9 +428,7 @@ async def test_stt_only_absent_defaults_to_false():
     }
     await handler._handle_start_session(connection, message)
 
-    assert connection.stt_only is False, (
-        "connection.stt_only must default to False when absent from start_session."
-    )
+    assert connection.stt_only is False, "connection.stt_only must default to False when absent from start_session."
 
     # Clean up the voice task to avoid leaving dangling asyncio tasks.
     connection.shutdown_event.set()
@@ -443,6 +436,7 @@ async def test_stt_only_absent_defaults_to_false():
         connection.voice_task.cancel()
         import contextlib
         import asyncio as _asyncio
+
         with contextlib.suppress(_asyncio.CancelledError):
             await connection.voice_task
 
@@ -478,15 +472,11 @@ def test_build_live_config_stt_only_sets_empty_modalities():
 
     config = client._build_live_config(stt_only=True)
 
-    assert config.response_modalities == [], (
-        "STT-only mode must set response_modalities=[] to suppress model output."
-    )
-    assert config.input_audio_transcription is not None, (
-        "input_audio_transcription must be set in STT-only mode."
-    )
-    assert config.output_audio_transcription is None, (
-        "output_audio_transcription must be None in STT-only mode (no model output)."
-    )
+    assert config.response_modalities == [], "STT-only mode must set response_modalities=[] to suppress model output."
+    assert config.input_audio_transcription is not None, "input_audio_transcription must be set in STT-only mode."
+    assert (
+        config.output_audio_transcription is None
+    ), "output_audio_transcription must be None in STT-only mode (no model output)."
 
 
 def test_build_live_config_default_full_duplex():
@@ -506,8 +496,6 @@ def test_build_live_config_default_full_duplex():
 
     config = client._build_live_config(stt_only=False)
 
-    assert "AUDIO" in config.response_modalities, (
-        "Default full-duplex mode must include AUDIO in response_modalities."
-    )
+    assert "AUDIO" in config.response_modalities, "Default full-duplex mode must include AUDIO in response_modalities."
     assert config.input_audio_transcription is not None
     assert config.output_audio_transcription is not None

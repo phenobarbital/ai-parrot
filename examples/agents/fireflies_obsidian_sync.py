@@ -100,10 +100,7 @@ async def main():
                 print(f"     - {failure['note']}: {failure['error']}")
 
     except Exception as e:
-        logger.error(
-            f"Agent failed: {e}",
-            exc_info=True
-        )
+        logger.error(f"Agent failed: {e}", exc_info=True)
 
     finally:
         # Optional: cleanup

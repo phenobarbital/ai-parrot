@@ -16,6 +16,7 @@ Text methods (``ask``/``ask_stream``/``invoke``/``resume``) are asserted to
 be INHERITED from ``BedrockConverseBase`` — no internal delegate client
 object exists post-FEAT-315 (spec §8 resolved U1).
 """
+
 import asyncio
 import base64
 import sys
@@ -64,13 +65,14 @@ class TestNovaClientDefaults:
     def test_no_nova_sonic_module(self):
         """spec §5 acceptance criterion: nova_sonic.py is deleted."""
         import importlib
+
         with pytest.raises(ImportError):
             importlib.import_module("parrot.clients.nova_sonic")
 
 
 @pytest.fixture
 def nova_client():
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         yield _make_client()
 
 
@@ -108,13 +110,13 @@ class TestStreamVoice:
             for e in events:
                 yield e
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=AsyncMock()), \
-             patch.object(nova_client, '_iter_events', return_value=fake_events()):
-            responses = [
-                r async for r in nova_client.stream_voice(_fake_audio_iterator())
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=AsyncMock()),
+            patch.object(nova_client, "_iter_events", return_value=fake_events()),
+        ):
+            responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
         text_responses = [r for r in responses if r.text]
         audio_responses = [r for r in responses if r.audio_data]
@@ -141,10 +143,12 @@ class TestStreamVoice:
             captured_model_ids.append(model_id)
             return AsyncMock()
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', new=capture_open_stream), \
-             patch.object(nova_client, '_send_event', new=AsyncMock()), \
-             patch.object(nova_client, '_iter_events', return_value=_empty_events()):
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", new=capture_open_stream),
+            patch.object(nova_client, "_send_event", new=AsyncMock()),
+            patch.object(nova_client, "_iter_events", return_value=_empty_events()),
+        ):
             async for _ in nova_client.stream_voice(_fake_audio_iterator()):
                 pass
 
@@ -168,13 +172,13 @@ class TestStreamVoice:
             for e in events:
                 yield e
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=AsyncMock()), \
-             patch.object(nova_client, '_iter_events', return_value=fake_events()):
-            responses = [
-                r async for r in nova_client.stream_voice(_fake_audio_iterator())
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=AsyncMock()),
+            patch.object(nova_client, "_iter_events", return_value=fake_events()),
+        ):
+            responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
         audio_responses = [r for r in responses if r.audio_data]
         assert audio_responses[0].audio_data == raw_pcm
@@ -195,10 +199,12 @@ class TestStreamVoice:
             yield raw_pcm
             yield None
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=capture_send), \
-             patch.object(nova_client, '_iter_events', return_value=_empty_events()):
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=capture_send),
+            patch.object(nova_client, "_iter_events", return_value=_empty_events()),
+        ):
             async for _ in nova_client.stream_voice(audio_iterator()):
                 pass
 
@@ -215,8 +221,7 @@ class TestStreamVoice:
         the result is sent as a three-frame contentStart/toolResult/contentEnd
         envelope keyed by contentName, not toolUseId."""
         events = [
-            {"toolUse": {"toolUseId": "tu_1", "toolName": "get_weather",
-                        "content": '{"city": "NYC"}'}},
+            {"toolUse": {"toolUseId": "tu_1", "toolName": "get_weather", "content": '{"city": "NYC"}'}},
             {"contentEnd": {"type": "TOOL"}},
             {"completionEnd": {}},
         ]
@@ -230,14 +235,14 @@ class TestStreamVoice:
         async def capture_send(_stream, event):
             sent_events.append(event)
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=capture_send), \
-             patch.object(nova_client, '_iter_events', return_value=fake_events()), \
-             patch.object(nova_client, '_execute_tool', return_value="Sunny, 25C"):
-            responses = [
-                r async for r in nova_client.stream_voice(_fake_audio_iterator())
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=capture_send),
+            patch.object(nova_client, "_iter_events", return_value=fake_events()),
+            patch.object(nova_client, "_execute_tool", return_value="Sunny, 25C"),
+        ):
+            responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
         # Two frames carry tool_calls: the immediate per-call response, and
         # the final turn-complete response (mirrors GeminiLiveClient, which
@@ -270,13 +275,13 @@ class TestStreamVoice:
             for e in events:
                 yield e
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=AsyncMock()), \
-             patch.object(nova_client, '_iter_events', return_value=fake_events()):
-            responses = [
-                r async for r in nova_client.stream_voice(_fake_audio_iterator())
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=AsyncMock()),
+            patch.object(nova_client, "_iter_events", return_value=fake_events()),
+        ):
+            responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
         interrupted = [r for r in responses if r.is_interrupted]
         assert len(interrupted) == 1
@@ -293,14 +298,14 @@ class TestStreamVoice:
             while True:
                 yield {"textOutput": {"content": "still talking"}}
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=AsyncMock()), \
-             patch.object(nova_client, '_iter_events', return_value=fake_events()), \
-             patch('parrot.clients.amazon.nova.audio.time.monotonic', side_effect=[0, 0, 10_000]):
-            responses = [
-                r async for r in nova_client.stream_voice(_fake_audio_iterator())
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=AsyncMock()),
+            patch.object(nova_client, "_iter_events", return_value=fake_events()),
+            patch("parrot.clients.amazon.nova.audio.time.monotonic", side_effect=[0, 0, 10_000]),
+        ):
+            responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
         assert responses[-1].metadata.get("reconnect_required") is True
 
@@ -314,17 +319,17 @@ class TestStreamVoice:
         async def capture_send(_stream, event):
             sent_events.append(event)
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(nova_client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(nova_client, '_send_event', new=capture_send), \
-             patch.object(nova_client, '_iter_events', return_value=_empty_events()):
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
+            patch.object(nova_client, "_send_event", new=capture_send),
+            patch.object(nova_client, "_iter_events", return_value=_empty_events()),
+        ):
             async for _ in nova_client.stream_voice(_fake_audio_iterator(), voice_id="tiffany"):
                 pass
 
         prompt_start_events = [e for e in sent_events if "promptStart" in e.get("event", {})]
-        assert prompt_start_events[0]["event"]["promptStart"][
-            "audioOutputConfiguration"
-        ]["voiceId"] == "tiffany"
+        assert prompt_start_events[0]["event"]["promptStart"]["audioOutputConfiguration"]["voiceId"] == "tiffany"
 
 
 class TestTextInheritedNotDelegated:
@@ -337,9 +342,9 @@ class TestTextInheritedNotDelegated:
         response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "Hi!"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 5}
+            "usage": {"inputTokens": 5, "outputTokens": 5},
         }
-        with patch.object(nova_client, '_sdk_create', return_value=response):
+        with patch.object(nova_client, "_sdk_create", return_value=response):
             result = await nova_client.ask("Hello")
             assert result.output == "Hi!"
             # Inherited verbatim from BedrockConverseBase.ask() — the
@@ -354,9 +359,10 @@ class TestTextInheritedNotDelegated:
                 yield {"contentBlockDelta": {"delta": {"text": "Hi!"}}}
                 yield {"messageStop": {"stopReason": "end_turn"}}
                 yield {"metadata": {"usage": {"inputTokens": 5, "outputTokens": 3}}}
+
             return _events()
 
-        with patch.object(nova_client, '_sdk_stream', side_effect=fake_stream):
+        with patch.object(nova_client, "_sdk_stream", side_effect=fake_stream):
             chunks = [c async for c in nova_client.ask_stream("Hello")]
             assert chunks[0] == "Hi!"
 
@@ -365,9 +371,9 @@ class TestTextInheritedNotDelegated:
         response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "Hi!"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 5}
+            "usage": {"inputTokens": 5, "outputTokens": 5},
         }
-        with patch.object(nova_client, '_sdk_create', return_value=response):
+        with patch.object(nova_client, "_sdk_create", return_value=response):
             result = await nova_client.invoke("Hello")
             assert result.output == "Hi!"
 
@@ -383,9 +389,9 @@ class TestTextInheritedNotDelegated:
         response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "resumed"}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 5}
+            "usage": {"inputTokens": 5, "outputTokens": 5},
         }
-        with patch.object(nova_client, '_sdk_create', return_value=response):
+        with patch.object(nova_client, "_sdk_create", return_value=response):
             result = await nova_client.resume("session-1", "input", state)
             assert result.output == "resumed"
 
@@ -406,9 +412,7 @@ class TestPiiGuardrail:
         directly (inherited from BedrockConverseBase) — the _get_text_client
         delegate pattern no longer exists."""
         client = _make_client(guardrail_id="gr-1", guardrail_version="1")
-        with patch.object(
-            client, 'apply_guardrail_text', new=AsyncMock(return_value="[REDACTED]")
-        ) as mock_apply:
+        with patch.object(client, "apply_guardrail_text", new=AsyncMock(return_value="[REDACTED]")) as mock_apply:
             result = await client._apply_pii_guardrail("my SSN is 123-45-6789")
             assert result == "[REDACTED]"
             mock_apply.assert_called_once_with("my SSN is 123-45-6789", source="INPUT")
@@ -430,16 +434,11 @@ async def test_nova_ask_live():
     import os
 
     if not os.getenv("RUN_NOVA_LIVE_TEST"):
-        pytest.skip(
-            "RUN_NOVA_LIVE_TEST not set — opt-in required for real AWS "
-            "Bedrock calls (see docstring)."
-        )
+        pytest.skip("RUN_NOVA_LIVE_TEST not set — opt-in required for real AWS " "Bedrock calls (see docstring).")
 
     client = NovaClient()
     try:
         result = await client.ask("Say 'hello' and nothing else.")
     except Exception as exc:  # pragma: no cover — depends on AWS account state
-        pytest.skip(
-            f"Nova Bedrock model not accessible in this AWS account/region: {exc}"
-        )
+        pytest.skip(f"Nova Bedrock model not accessible in this AWS account/region: {exc}")
     assert result.output

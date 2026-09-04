@@ -1,4 +1,5 @@
 """HTTP handler for Lyria music generation."""
+
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
@@ -61,6 +62,7 @@ class LyriaMusicHandler(BaseView):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.google import GoogleGenAIClient
+
         client = GoogleGenAIClient(model=model)
         async with client:
             try:
@@ -110,9 +112,7 @@ class LyriaMusicHandler(BaseView):
             "timeout": req.timeout,
         }
 
-    async def _stream_music(
-        self, client: GoogleGenAIClient, req: MusicGenerationRequest
-    ) -> web.StreamResponse:
+    async def _stream_music(self, client: GoogleGenAIClient, req: MusicGenerationRequest) -> web.StreamResponse:
         """Stream WAV audio chunks via chunked transfer encoding."""
         stream = web.StreamResponse(
             status=200,
@@ -129,9 +129,7 @@ class LyriaMusicHandler(BaseView):
         await stream.write_eof()
         return stream
 
-    async def _download_music(
-        self, client: GoogleGenAIClient, req: MusicGenerationRequest
-    ) -> web.Response:
+    async def _download_music(self, client: GoogleGenAIClient, req: MusicGenerationRequest) -> web.Response:
         """Buffer full audio and return with Content-Length."""
         audio_chunks: list[bytes] = []
 

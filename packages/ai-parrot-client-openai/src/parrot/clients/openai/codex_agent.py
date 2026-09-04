@@ -203,10 +203,7 @@ class OpenAICodexClient(AbstractClient):
         )
         text = self._extract_text(response)
         if not text:
-            raise RuntimeError(
-                f"LLM returned no extractable text "
-                f"(response type: {type(response).__name__})"
-            )
+            raise RuntimeError(f"LLM returned no extractable text " f"(response type: {type(response).__name__})")
         return text
 
     async def resume(
@@ -336,13 +333,9 @@ class OpenAICodexClient(AbstractClient):
         session_id: Optional[str] = None,
     ) -> _CodexRunResult:
         if output_schema_path is not None:
-            raise NotImplementedError(
-                "Structured Codex invoke currently uses the codex exec backend."
-            )
+            raise NotImplementedError("Structured Codex invoke currently uses the codex exec backend.")
         if session_id is not None:
-            raise NotImplementedError(
-                "OpenAI Codex SDK resume support is not wired in ai-parrot yet."
-            )
+            raise NotImplementedError("OpenAI Codex SDK resume support is not wired in ai-parrot yet.")
         sdk = self._import_sdk()
         bridge = self._new_tool_bridge(options)
         async with self._maybe_started_bridge(bridge):
@@ -384,12 +377,8 @@ class OpenAICodexClient(AbstractClient):
                     prompt,
                 )
             if return_code != 0:
-                error_detail = stderr.strip() or "\n".join(
-                    stdout.strip().splitlines()[-5:]
-                )
-                raise RuntimeError(
-                    f"codex exec failed with exit code {return_code}: {error_detail}"
-                )
+                error_detail = stderr.strip() or "\n".join(stdout.strip().splitlines()[-5:])
+                raise RuntimeError(f"codex exec failed with exit code {return_code}: {error_detail}")
             output = Path(output_path).read_text(encoding="utf-8").strip()
             return self._parse_cli_result(
                 output=output,
@@ -474,19 +463,12 @@ class OpenAICodexClient(AbstractClient):
             event_type = event.get("type") or event.get("event")
             payload = event.get("item") or event
             if event_type in {"thread.started", "session.started"}:
-                session_id = str(
-                    event.get("thread_id")
-                    or event.get("session_id")
-                    or event.get("id")
-                    or ""
-                ) or session_id
+                session_id = (
+                    str(event.get("thread_id") or event.get("session_id") or event.get("id") or "") or session_id
+                )
             usage = self._usage_from_event(event) or usage
             if event_type in {"turn.completed", "response.completed"}:
-                finish_reason = str(
-                    event.get("finish_reason")
-                    or event.get("stop_reason")
-                    or "stop"
-                )
+                finish_reason = str(event.get("finish_reason") or event.get("stop_reason") or "stop")
             item_type = payload.get("type")
             if item_type == "agent_message":
                 text = payload.get("text") or payload.get("message") or payload.get("content")
@@ -625,23 +607,11 @@ class OpenAICodexClient(AbstractClient):
             usage = payload.get("usage") if isinstance(payload, dict) else None
         if not isinstance(usage, dict):
             return None
-        prompt_tokens = int(
-            usage.get("prompt_tokens")
-            or usage.get("input_tokens")
-            or usage.get("tokens_in")
-            or 0
-        )
+        prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("tokens_in") or 0)
         completion_tokens = int(
-            usage.get("completion_tokens")
-            or usage.get("output_tokens")
-            or usage.get("tokens_out")
-            or 0
+            usage.get("completion_tokens") or usage.get("output_tokens") or usage.get("tokens_out") or 0
         )
-        total_tokens = int(
-            usage.get("total_tokens")
-            or usage.get("tokens_total")
-            or prompt_tokens + completion_tokens
-        )
+        total_tokens = int(usage.get("total_tokens") or usage.get("tokens_total") or prompt_tokens + completion_tokens)
         return CompletionUsage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -656,9 +626,7 @@ class OpenAICodexClient(AbstractClient):
             return self._usage_from_event({"usage": usage}) or CompletionUsage()
         return CompletionUsage(
             prompt_tokens=int(self._get_attr(usage, "prompt_tokens", "input_tokens", default=0) or 0),
-            completion_tokens=int(
-                self._get_attr(usage, "completion_tokens", "output_tokens", default=0) or 0
-            ),
+            completion_tokens=int(self._get_attr(usage, "completion_tokens", "output_tokens", default=0) or 0),
             total_tokens=int(self._get_attr(usage, "total_tokens", default=0) or 0),
             extra_usage={"raw": self._json_safe(usage)},
         )

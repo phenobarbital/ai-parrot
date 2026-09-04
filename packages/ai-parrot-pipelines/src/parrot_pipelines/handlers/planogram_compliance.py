@@ -1,4 +1,5 @@
 """HTTP handler for planogram compliance analysis with async job support."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +12,7 @@ from typing import Any, Optional
 import logging
 from aiohttp import web
 from navigator.views import BaseView
-from navigator.types import WebApp    # pylint: disable=E0611
+from navigator.types import WebApp  # pylint: disable=E0611
 from parrot.conf import PLANOGRAM_FOLDER, DEFAULT_LLM_MODEL
 from parrot_pipelines.models import PlanogramConfig, EndcapGeometry
 from parrot_pipelines.planogram.plan import PlanogramCompliance
@@ -69,9 +70,7 @@ class PlanogramComplianceHandler(BaseView):
         app = self.request.app
         if "job_manager" in app:
             return app["job_manager"]
-        raise RuntimeError(
-            "JobManager not configured. Call configure_job_manager(app) during startup."
-        )
+        raise RuntimeError("JobManager not configured. Call configure_job_manager(app) during startup.")
 
     # ------------------------------------------------------------------
     # HTTP methods
@@ -143,6 +142,7 @@ class PlanogramComplianceHandler(BaseView):
                 # FEAT-523 (TASK-2846): lazy import — core/satellites must
                 # not import a provider module at module scope (AC-3).
                 from parrot.clients.google import GoogleGenAIClient
+
                 llm = GoogleGenAIClient(model=DEFAULT_LLM_MODEL)
                 pipeline = PlanogramCompliance(planogram_config=_config, llm=llm)
                 result = await pipeline.run(
@@ -261,9 +261,7 @@ class PlanogramComplianceHandler(BaseView):
             while True:
                 job = self.job_manager.get_job(job_id)
                 if not job:
-                    await response.write(
-                        f"event: error\ndata: Job '{job_id}' not found.\n\n".encode()
-                    )
+                    await response.write(f"event: error\ndata: Job '{job_id}' not found.\n\n".encode())
                     break
 
                 event_data = f'{{"job_id": "{job.job_id}", "status": "{job.status.value}"}}'
@@ -288,8 +286,7 @@ class PlanogramComplianceHandler(BaseView):
         db = self.request.app["database"]
         async with await db.acquire() as conn:
             result = await conn.fetch_one(
-                "SELECT * FROM troc.planograms_configurations "
-                "WHERE config_name = $1 AND is_active = TRUE LIMIT 1",
+                "SELECT * FROM troc.planograms_configurations " "WHERE config_name = $1 AND is_active = TRUE LIMIT 1",
                 config_name,
             )
         if result is None:
@@ -353,9 +350,7 @@ class PlanogramComplianceHandler(BaseView):
             if name == "image":
                 raw_bytes = await part.read(decode=True)
                 if len(raw_bytes) > MAX_UPLOAD_SIZE:
-                    raise ValueError(
-                        f"Image exceeds maximum upload size of {MAX_UPLOAD_SIZE // (1024 * 1024)} MB."
-                    )
+                    raise ValueError(f"Image exceeds maximum upload size of {MAX_UPLOAD_SIZE // (1024 * 1024)} MB.")
                 if len(raw_bytes) == 0:
                     continue
                 filename = part.filename or "image.jpg"

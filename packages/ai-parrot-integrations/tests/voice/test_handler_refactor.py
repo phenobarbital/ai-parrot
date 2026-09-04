@@ -8,6 +8,7 @@ integrations-side test suite does not hit the Cython
 ``parrot.utils.types`` blocker that the core ``ai-parrot`` `tests/bots/`
 suite works around.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -36,14 +37,21 @@ def _capable_mock_client() -> MagicMock:
     client = MagicMock()
     client.voice_capabilities = VoiceCapabilities(
         provider=VoiceProvider.GOOGLE_LIVE,
-        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
-        supports_per_call_inference=True, parallel_tool_execution=True,
-        emits_reconnect_signal=True, supports_session_resumption=True,
-        max_session_seconds=None, max_output_tokens=4096,
+        native_stt_only=True,
+        supports_top_p=True,
+        supports_per_call_voice=True,
+        supports_per_call_inference=True,
+        parallel_tool_execution=True,
+        emits_reconnect_signal=True,
+        supports_session_resumption=True,
+        max_session_seconds=None,
+        max_output_tokens=4096,
         input_formats=frozenset({AudioFormat.PCM_16K}),
         output_formats=frozenset({AudioFormat.PCM_24K}),
-        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
-        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+        input_sample_rates=frozenset({16000}),
+        output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}),
+        default_voice="Puck",
     )
     return client
 
@@ -75,17 +83,14 @@ def connection():
 
 
 def _sent_types(connection) -> list:
-    return [
-        c.args[0]["type"]
-        for c in connection.ws.send_json.await_args_list
-        if c.args
-    ]
+    return [c.args[0]["type"] for c in connection.ws.send_json.await_args_list if c.args]
 
 
 class TestHandlerRefactor:
     def test_imports_unified_voiceconfig(self):
         """Handler imports VoiceConfig from core, not integrations."""
         import parrot.voice.handler as h
+
         source = inspect.getsource(h)
         assert "from parrot.models.voice import" in source
 
@@ -94,6 +99,7 @@ class TestHandlerRefactor:
         (TASK-2146 unified it; previously imported from
         parrot.voice.models, the integrations shim)."""
         import parrot.voice.handler as h
+
         source = inspect.getsource(h)
         assert "from parrot.models.voice import VoiceProvider" in source
         assert "from parrot.voice.models import VoiceProvider" not in source
@@ -104,6 +110,7 @@ class TestHandlerRefactor:
         no deprecation warning, since it's a move not a rename)."""
         from parrot.models.voice import VoiceProvider as CoreVoiceProvider
         from parrot.voice.models import VoiceProvider as ReexportedVoiceProvider
+
         assert ReexportedVoiceProvider is CoreVoiceProvider
 
     def test_run_voice_session_uses_voice_session(self):
@@ -116,6 +123,7 @@ class TestHandlerRefactor:
 
     def test_handler_voice_session_is_a_voice_session(self):
         from parrot.voice.session import VoiceSession
+
         assert issubclass(_HandlerVoiceSession, VoiceSession)
 
     def test_handle_websocket_still_exists_unchanged_signature(self):
@@ -153,7 +161,8 @@ class TestFrameProtocolUnchanged:
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(text="hello", is_complete=False), turn_no=1,
+            LiveVoiceResponse(text="hello", is_complete=False),
+            turn_no=1,
         )
         types = _sent_types(connection)
         assert "response_chunk" in types
@@ -169,7 +178,8 @@ class TestFrameProtocolUnchanged:
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(text="done", is_complete=True), turn_no=1,
+            LiveVoiceResponse(text="done", is_complete=True),
+            turn_no=1,
         )
         types = _sent_types(connection)
         assert "response_complete" in types
@@ -210,7 +220,8 @@ class TestFrameProtocolUnchanged:
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(text="hello", is_complete=False), turn_no=1,
+            LiveVoiceResponse(text="hello", is_complete=False),
+            turn_no=1,
         )
         types = _sent_types(connection)
         assert "response_chunk" not in types
@@ -280,6 +291,7 @@ class TestDeduplication:
 
     def test_inherits_run_turn_from_voice_session(self):
         from parrot.voice.session import VoiceSession
+
         assert _HandlerVoiceSession._run_turn is VoiceSession._run_turn
 
 
@@ -327,7 +339,8 @@ class TestEnvelopeMigration:
             connection=connection,
         )
         frames = session.build_frames(
-            LiveVoiceResponse(text="hi", role="assistant"), turn_no=1,
+            LiveVoiceResponse(text="hi", role="assistant"),
+            turn_no=1,
         )
         assert not any(f.get("is_user") is False for f in frames)
         assert not any(f["type"] == "response_chunk" for f in frames)
@@ -339,11 +352,13 @@ class TestEnvelopeMigration:
         removed metadata['user_transcription'] key", using bracket
         notation, not ``.get(...)``) are expected and intentional."""
         import parrot.voice.handler as h
+
         source = inspect.getsource(h)
         assert 'get("user_transcription")' not in source
 
     def test_no_assistant_transcription_reference_in_handler(self):
         import parrot.voice.handler as h
+
         source = inspect.getsource(h)
         assert 'get("assistant_transcription")' not in source
 
@@ -373,8 +388,11 @@ class TestUsageInResponseComplete:
             role="assistant",
             is_complete=True,
             usage=LiveCompletionUsage(
-                prompt_tokens=12, completion_tokens=34, total_tokens=46,
-                response_time_ms=850.0, first_token_time_ms=210.0,
+                prompt_tokens=12,
+                completion_tokens=34,
+                total_tokens=46,
+                response_time_ms=850.0,
+                first_token_time_ms=210.0,
             ),
         )
         frames = session.build_frames(resp, turn_no=1)
@@ -419,6 +437,7 @@ class TestNamespacePackagingFix:
         must survive the pkgutil.extend_path namespace-merge fix."""
         from parrot.voice import VoiceSynthesizer
         from parrot.voice.tts import VoiceSynthesizer as VS2
+
         assert VoiceSynthesizer is VS2
 
     def test_core_voice_package_has_no_init_file(self):
@@ -427,5 +446,6 @@ class TestNamespacePackagingFix:
         import os
 
         import parrot.voice.session as core_session
+
         core_voice_dir = os.path.dirname(core_session.__file__)
         assert not os.path.exists(os.path.join(core_voice_dir, "__init__.py"))

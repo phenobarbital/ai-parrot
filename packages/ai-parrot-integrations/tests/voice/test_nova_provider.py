@@ -8,6 +8,7 @@ moved to the first ``stream_voice()`` call (TASK-1807/FEAT-315). No
 needed around a real ``stream_voice()`` call (see
 ``packages/ai-parrot/tests/clients/test_nova.py`` for that coverage).
 """
+
 from parrot.voice.models import VoiceProvider
 from parrot.voice.handler import VoiceChatHandler, resolve_voice_client_class
 
@@ -31,10 +32,12 @@ class TestNovaProvider:
 class TestProviderResolution:
     def test_resolve_google_live_returns_gemini_live_client(self):
         from parrot.clients.google.live import GeminiLiveClient
+
         assert resolve_voice_client_class(VoiceProvider.GOOGLE_LIVE) is GeminiLiveClient
 
     def test_resolve_nova_returns_nova_client(self):
         from parrot.clients.amazon.nova import NovaClient
+
         assert resolve_voice_client_class(VoiceProvider.NOVA) is NovaClient
 
     def test_resolve_nova_does_not_require_sdk_to_construct(self):
@@ -46,14 +49,12 @@ class TestProviderResolution:
     def test_voice_chat_handler_recognizes_nova(self):
         """VoiceChatHandler.resolve_provider_client() recognizes NOVA."""
         from parrot.clients.amazon.nova import NovaClient
-        assert VoiceChatHandler.resolve_provider_client(
-            VoiceProvider.NOVA
-        ) is NovaClient
+
+        assert VoiceChatHandler.resolve_provider_client(VoiceProvider.NOVA) is NovaClient
 
     def test_voice_chat_handler_default_provider_unchanged(self):
         """Non-Nova providers still resolve to GeminiLiveClient — no
         regression for the existing (only fully-wired) voice provider."""
         from parrot.clients.google.live import GeminiLiveClient
-        assert VoiceChatHandler.resolve_provider_client(
-            VoiceProvider.GOOGLE_LIVE
-        ) is GeminiLiveClient
+
+        assert VoiceChatHandler.resolve_provider_client(VoiceProvider.GOOGLE_LIVE) is GeminiLiveClient

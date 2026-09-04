@@ -36,6 +36,7 @@ Translation strategy (applied in order):
 6. **Unknown fallback**: IDs not in the map and not Bedrock-shaped are returned
    unchanged and a warning is logged — no exception is raised.
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,10 @@ _REGION_PREFIXES: tuple[str, ...] = ("us.", "eu.", "apac.", "au.", "global.")
 # never prefixed. IDs containing one of these are treated as already
 # Bedrock-shaped (pass-through branch), same as ``anthropic.``/``amazon.``.
 _VENDOR_NAMESPACES: tuple[str, ...] = (
-    "minimax.", "zai.", "moonshotai.", "qwen.",
+    "minimax.",
+    "zai.",
+    "moonshotai.",
+    "qwen.",
 )
 
 # Vendor namespaces that DO publish geo inference profiles, so a bare
@@ -68,11 +72,11 @@ _PREFIXABLE_NAMESPACES: tuple[str, ...] = ("anthropic.", "amazon.", "meta.")
 # only governs (a) the default-when-omitted case and (b) whether an explicit
 # prefix on an already-Bedrock-shaped/vendor id is honoured or warned away.
 REQUIRES_REGION_PREFIX: dict[str, str] = {
-    "claude-opus-5": "us",         # no in-region access in us-west-2/us-east-2
-    "claude-sonnet-5": "us",       # same tier as Opus 5
-    "claude-fable-5": "global",    # geo IDs not published; global only
+    "claude-opus-5": "us",  # no in-region access in us-west-2/us-east-2
+    "claude-sonnet-5": "us",  # same tier as Opus 5
+    "claude-fable-5": "global",  # geo IDs not published; global only
     "claude-fable-5-1": "global",  # same tier as Fable 5
-    "claude-haiku-4-5": "us",      # geo access only via "us."
+    "claude-haiku-4-5": "us",  # geo access only via "us."
     # Meta Llama 4 Maverick has NO in-region access in any US region — the
     # "us." geo inference profile is the only way to call it.
     "llama4-maverick-17b-instruct": "us",
@@ -92,38 +96,31 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
     # NOTE: date suffix 20260115 is speculative for future models; update
     # when AWS Bedrock publishes the actual model version identifiers.
     "claude-sonnet-4-6": "anthropic.claude-sonnet-4-6-20260115-v1:0",
-    "claude-opus-4-6":   "anthropic.claude-opus-4-6-20260115-v1:0",
-
+    "claude-opus-4-6": "anthropic.claude-opus-4-6-20260115-v1:0",
     # ── Claude 4.5 ─────────────────────────────────────────────────────────
     "claude-sonnet-4-5-20250929": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "claude-sonnet-4-5":          "anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "claude-haiku-4-5-20251001":  "anthropic.claude-haiku-4-5-20251001-v1:0",
-    "claude-haiku-4-5":           "anthropic.claude-haiku-4-5-20251001-v1:0",
-    "claude-opus-4-5-20251101":   "anthropic.claude-opus-4-5-20251101-v1:0",
-    "claude-opus-4-5":            "anthropic.claude-opus-4-5-20251101-v1:0",
-
+    "claude-sonnet-4-5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "claude-haiku-4-5-20251001": "anthropic.claude-haiku-4-5-20251001-v1:0",
+    "claude-haiku-4-5": "anthropic.claude-haiku-4-5-20251001-v1:0",
+    "claude-opus-4-5-20251101": "anthropic.claude-opus-4-5-20251101-v1:0",
+    "claude-opus-4-5": "anthropic.claude-opus-4-5-20251101-v1:0",
     # ── Claude 4.1 ─────────────────────────────────────────────────────────
-    "claude-opus-4-1-20250805":   "anthropic.claude-opus-4-1-20250805-v1:0",
-    "claude-opus-4-1":            "anthropic.claude-opus-4-1-20250805-v1:0",
-
+    "claude-opus-4-1-20250805": "anthropic.claude-opus-4-1-20250805-v1:0",
+    "claude-opus-4-1": "anthropic.claude-opus-4-1-20250805-v1:0",
     # ── Claude Sonnet 4 ────────────────────────────────────────────────────
-    "claude-sonnet-4-20250514":   "anthropic.claude-sonnet-4-20250514-v1:0",
-
+    "claude-sonnet-4-20250514": "anthropic.claude-sonnet-4-20250514-v1:0",
     # ── Claude 3.x ─────────────────────────────────────────────────────────
     "claude-3-7-sonnet-20250219": "anthropic.claude-3-7-sonnet-20250219-v1:0",
-    "claude-3-5-haiku-20241022":  "anthropic.claude-3-5-haiku-20241022-v1:0",
-
+    "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
     # ── Claude 5 (2026 generation, FEAT-405) ───────────────────────────────
     # NOTE: Claude 5 family models carry NO ``-vN:0`` suffix — breaks the
     # ``anthropic.<id>-vN:0`` convention used by every model above.
-    "claude-opus-5":    "anthropic.claude-opus-5",
-    "claude-sonnet-5":  "anthropic.claude-sonnet-5",
-    "claude-fable-5":   "anthropic.claude-fable-5",
+    "claude-opus-5": "anthropic.claude-opus-5",
+    "claude-sonnet-5": "anthropic.claude-sonnet-5",
+    "claude-fable-5": "anthropic.claude-fable-5",
     "claude-fable-5-1": "anthropic.claude-fable-5-1",
-
     # ── Not yet available on Bedrock (will warn+passthrough) ──────────────
     # claude-opus-4-8, claude-opus-4-7 — Bedrock IDs TBD.
-
     # ── Third-party models served on Bedrock ───────────────────────────────
     # Meta Llama 4 (Converse/Invoke only — NOT served on bedrock-mantle).
     "llama4-maverick-17b-instruct": "meta.llama4-maverick-17b-instruct-v1:0",
@@ -135,24 +132,22 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
     "glm-5": "zai.glm-5",
     # Moonshot AI Kimi K2.5 — same id on both endpoints, never prefixed.
     "kimi-k2.5": "moonshotai.kimi-k2.5",
-
     # ── Amazon Nova (multi-provider, FEAT-302) ─────────────────────────────
-    "nova-sonic":   "amazon.nova-sonic-v1:0",
-    "nova-pro":     "amazon.nova-pro-v1:0",
-    "nova-lite":    "amazon.nova-lite-v1:0",
-    "nova-micro":   "amazon.nova-micro-v1:0",
+    "nova-sonic": "amazon.nova-sonic-v1:0",
+    "nova-pro": "amazon.nova-pro-v1:0",
+    "nova-lite": "amazon.nova-lite-v1:0",
+    "nova-micro": "amazon.nova-micro-v1:0",
     # Nova Premier is geo-inference-only (needs a "us." region_prefix at call
     # time, e.g. via NovaClient); Legacy on Bedrock, EOL 2026-09-14 (FEAT-315).
     "nova-premier": "amazon.nova-premier-v1:0",
     # Nova Canvas/Reel are in-region only (no inference profiles) — the base
     # IDs below are the only valid ones; do NOT prefix them. Legacy on
     # Bedrock, EOL 2026-09-30 (FEAT-315, spec §6 Verified AWS Facts).
-    "nova-canvas":  "amazon.nova-canvas-v1:0",
-    "nova-reel":    "amazon.nova-reel-v1:0",
-
+    "nova-canvas": "amazon.nova-canvas-v1:0",
+    "nova-reel": "amazon.nova-reel-v1:0",
     # ── Amazon Nova 2 ─────────────────────────────────────────────────────
     "nova-2-sonic": "amazon.nova-2-sonic-v1:0",
-    "nova-2-lite":  "amazon.nova-2-lite-v1:0",
+    "nova-2-lite": "amazon.nova-2-lite-v1:0",
 }
 
 
@@ -230,7 +225,7 @@ def _repair_unprefixed_id(model_id: str, region_prefix: str | None) -> str | Non
     # (a) vendor namespace glued onto a public ID -> re-run the map path.
     for namespace in _PREFIXABLE_NAMESPACES:
         if model_id.startswith(namespace):
-            candidate = model_id[len(namespace):]
+            candidate = model_id[len(namespace) :]
             if candidate in PUBLIC_TO_BEDROCK:
                 logger.debug(
                     "bedrock_models: %r is a public ID under the %r namespace "

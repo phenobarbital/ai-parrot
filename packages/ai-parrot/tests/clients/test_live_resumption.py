@@ -5,6 +5,7 @@ metadata["reconnect_required"] (in addition to the existing metadata["go_away"]
 flag), session resumption enabled on connect with the handle retained across
 reconnects, and a rejected/expired handle falling back to a cold reconnect.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -96,7 +97,8 @@ def _resumption_update_response(handle="handle-123", resumable=True):
         usage_metadata=None,
         go_away=None,
         session_resumption_update=SimpleNamespace(
-            new_handle=handle, resumable=resumable,
+            new_handle=handle,
+            resumable=resumable,
             last_consumed_client_message_index=None,
         ),
     )
@@ -111,27 +113,21 @@ class TestReconnectSignal:
     @pytest.mark.asyncio
     async def test_goaway_sets_reconnect_required(self, monkeypatch, client):
         _mock_session(monkeypatch, client, _FakeLiveSession([_goaway_response()]))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.metadata.get("reconnect_required") for r in responses)
 
     @pytest.mark.asyncio
     async def test_goaway_flag_preserved(self, monkeypatch, client):
         """handler.py:298 still reacts to go_away — do not drop it."""
         _mock_session(monkeypatch, client, _FakeLiveSession([_goaway_response()]))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.metadata.get("go_away") for r in responses)
 
     @pytest.mark.asyncio
     async def test_server_close_1008_also_signals(self, monkeypatch, client):
         error = RuntimeError("Operation is not implemented (1008 policy violation)")
         _mock_session(monkeypatch, client, _FailingLiveSession(error))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.metadata.get("reconnect_required") for r in responses)
         assert any(r.metadata.get("go_away") for r in responses)
 
@@ -153,7 +149,8 @@ class TestResumption:
     @pytest.mark.asyncio
     async def test_handle_retained(self, monkeypatch, client):
         _mock_session(
-            monkeypatch, client,
+            monkeypatch,
+            client,
             _FakeLiveSession([_resumption_update_response(handle="handle-123")]),
         )
         [r async for r in client.stream_voice(_empty_audio_iterator())]
@@ -162,10 +159,13 @@ class TestResumption:
     @pytest.mark.asyncio
     async def test_non_resumable_update_not_retained(self, monkeypatch, client):
         _mock_session(
-            monkeypatch, client,
-            _FakeLiveSession([
-                _resumption_update_response(handle="", resumable=False),
-            ]),
+            monkeypatch,
+            client,
+            _FakeLiveSession(
+                [
+                    _resumption_update_response(handle="", resumable=False),
+                ]
+            ),
         )
         [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert client._resumption_handle is None
@@ -175,9 +175,7 @@ class TestResumption:
         client._resumption_handle = "stale-handle"
         error = RuntimeError("session resumption handle expired")
         _mock_session(monkeypatch, client, _FailingLiveSession(error))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.metadata.get("resumed") is False for r in responses)
         assert client._resumption_handle is None
 
@@ -186,22 +184,16 @@ class TestResumption:
         client._resumption_handle = "stale-handle"
         error = RuntimeError("session resumption handle expired")
         _mock_session(monkeypatch, client, _FailingLiveSession(error))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.metadata.get("reconnect_required") for r in responses)
 
     @pytest.mark.asyncio
-    async def test_generic_error_without_handle_not_treated_as_resumption(
-        self, monkeypatch, client
-    ):
+    async def test_generic_error_without_handle_not_treated_as_resumption(self, monkeypatch, client):
         """A generic error with no resumption handle set must not be
         misclassified as a resumption failure."""
         error = RuntimeError("network unreachable")
         _mock_session(monkeypatch, client, _FailingLiveSession(error))
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert not any(r.metadata.get("resumed") is False for r in responses)
         assert any("error" in r.metadata for r in responses)
 

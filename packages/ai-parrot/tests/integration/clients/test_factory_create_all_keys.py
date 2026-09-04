@@ -4,6 +4,7 @@ a real `AbstractClient` subclass that actually answers to that key.
 Requires all 15 satellites installed — see `test_import_all_client_paths.py`
 for the same caveat.
 """
+
 from parrot.clients.base import AbstractClient
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
 

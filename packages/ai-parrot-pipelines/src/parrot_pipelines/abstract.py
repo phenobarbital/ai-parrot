@@ -2,29 +2,18 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Tuple, Union
 from pathlib import Path
 import io
-from PIL import (
-    Image,
-    ImageDraw,
-    ImageFont,
-    ImageEnhance,
-    ImageOps
-)
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
 from navconfig.logging import logging
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
 from parrot.clients.factory import LLMFactory
 
+logging.getLogger("pytesseract").setLevel(logging.WARNING)
 
-logging.getLogger('pytesseract').setLevel(logging.WARNING)
 
 class AbstractPipeline(ABC):
     """Abstract base class for all pipelines."""
-    def __init__(
-        self,
-        llm: Any = None,
-        llm_provider: str = "google",
-        llm_model: Optional[str] = None,
-        **kwargs: Any
-    ):
+
+    def __init__(self, llm: Any = None, llm_provider: str = "google", llm_model: Optional[str] = None, **kwargs: Any):
         """
         Initialize the 3-step pipeline
 
@@ -36,34 +25,21 @@ class AbstractPipeline(ABC):
         """
         self.llm = llm
         self.llm_provider = None
-        self.logger = logging.getLogger(f'parrot.pipelines.{self.__class__.__name__}')
+        self.logger = logging.getLogger(f"parrot.pipelines.{self.__class__.__name__}")
         self._json = JSONContent()
         if not llm:
             self.llm_provider = llm_provider.lower()
-            self.llm = self._get_llm(
-                llm_provider,
-                llm_model,
-                **kwargs
-            )
+            self.llm = self._get_llm(llm_provider, llm_model, **kwargs)
         else:
             self.llm_provider = llm.client_name.lower()
         # Ensure a Google Client for multi-modal capabilities:
         # FEAT-523 (TASK-2846): lazy import — core/satellites must not
         # import a provider client at module scope (AC-3).
         from parrot.clients.google import GoogleGenAIClient
-        self.roi_client = GoogleGenAIClient(
-            model="gemini-3-flash-preview",
-            temperature=0.0,
-            max_retries=2,
-            timeout=20
-        )
 
-    def _get_llm(
-        self,
-        provider: str,
-        model: Optional[str] = None,
-        **kwargs: Any
-    ) -> Any:
+        self.roi_client = GoogleGenAIClient(model="gemini-3-flash-preview", temperature=0.0, max_retries=2, timeout=20)
+
+    def _get_llm(self, provider: str, model: Optional[str] = None, **kwargs: Any) -> Any:
         """
         Get the LLM client based on provider and model
 
@@ -80,9 +56,7 @@ class AbstractPipeline(ABC):
         # factory helper rather than importing the dict directly.
         supported_clients = LLMFactory.supported_clients()
         if provider not in supported_clients:
-            raise ValueError(
-                f"Unsupported LLM provider: {provider}"
-            )
+            raise ValueError(f"Unsupported LLM provider: {provider}")
 
         client_class = supported_clients[provider]
         # FEAT-523 (TASK-2852): a provider now registered via a real
@@ -106,9 +80,7 @@ class AbstractPipeline(ABC):
             if img.mode != "RGB":
                 img = img.convert("RGB")
             img = self._enhance_image(img)
-            self.logger.debug(
-                f"Opened image {image_path} with size {img.size} and mode {img.mode}"
-            )
+            self.logger.debug(f"Opened image {image_path} with size {img.size} and mode {img.mode}")
             return img
         except Exception as e:
             self.logger.error(f"Error opening image {image_path}: {e}")
@@ -125,7 +97,7 @@ class AbstractPipeline(ABC):
         poster_bounds: Tuple[int, int, int, int],
         detections: List[dict],
         save_path: str,
-        poster_label: str = 'poster_panel',
+        poster_label: str = "poster_panel",
     ) -> None:
         """Save debug image showing poster detection results"""
         try:
@@ -143,46 +115,23 @@ class AbstractPipeline(ABC):
                 x1, y1, x2, y2 = self._clamp(debug_img.width, debug_img.height, x1, y1, x2, y2)
 
                 color = (255, 165, 0) if label == poster_label else (0, 255, 255)
-                draw.rectangle(
-                    [(x1, y1), (x2, y2)],
-                    outline=color,
-                    width=3
-                )
-                draw.text(
-                    (x1, y1 - 20),
-                    f"{label} {conf:.2f}",
-                    fill=color
-                )
+                draw.rectangle([(x1, y1), (x2, y2)], outline=color, width=3)
+                draw.text((x1, y1 - 20), f"{label} {conf:.2f}", fill=color)
 
             # Draw final poster bounds in bright green
             x1, y1, x2, y2 = poster_bounds
-            draw.rectangle(
-                [(x1, y1), (x2, y2)],
-                outline=(0, 255, 0),
-                width=4
-            )
-            draw.text(
-                (x1, y1 - 45),
-                f"POSTER: {x2-x1}x{y2-y1}",
-                fill=(0, 255, 0)
-            )
+            draw.rectangle([(x1, y1), (x2, y2)], outline=(0, 255, 0), width=4)
+            draw.text((x1, y1 - 45), f"POSTER: {x2-x1}x{y2-y1}", fill=(0, 255, 0))
 
             # Save debug image
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             debug_img.save(save_path, quality=95)
-            self.logger.debug(
-                f"Saved poster debug image to {save_path}"
-            )
+            self.logger.debug(f"Saved poster debug image to {save_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to save debug image: {e}")
 
-    def _enhance_image(
-        self,
-        pil_img: "Image.Image",
-        brightness: float = 1.10,
-        contrast: float = 1.20
-    ) -> "Image.Image":
+    def _enhance_image(self, pil_img: "Image.Image", brightness: float = 1.10, contrast: float = 1.20) -> "Image.Image":
         """
         Enhances a PIL image by adjusting brightness and contrast.
         This generic utility can be used by any pipeline subclass.

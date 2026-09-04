@@ -23,6 +23,7 @@ Workflow:
         → Notify manager about non-responders
         → Optionally nudge the developer directly
 """
+
 import asyncio
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -45,6 +46,7 @@ from parrot.tools.reminder import ReminderToolkit
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
+
 # FEAT-317: HookEvent/TransitionAction(Type) moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
 from parrot.core.hooks import HookEvent, TransitionAction, TransitionActionType
@@ -53,8 +55,10 @@ from parrot.core.hooks import HookEvent, TransitionAction, TransitionActionType
 # Models
 # ──────────────────────────────────────────────────────────────
 
+
 class JiraTicket(BaseModel):
     """Model representing a Jira Ticket."""
+
     project: str = Field(..., description="The project key (e.g., NAV).")
     issue_number: str = Field(..., description="The issue key (e.g., NAV-5972).")
     title: str = Field(..., description="Summary or title of the ticket.")
@@ -63,27 +67,29 @@ class JiraTicket(BaseModel):
     reporter: Optional[str] = Field(None, description="The person who reported the ticket.")
     created_at: datetime = Field(..., description="Date of creation.")
     updated_at: datetime = Field(..., description="Date of last update.")
-    labels: List[str] = Field(
-        default_factory=list,
-        description="List of labels associated with the ticket."
-    )
+    labels: List[str] = Field(default_factory=list, description="List of labels associated with the ticket.")
     components: List[str] = Field(default_factory=list, description="List of components.")
 
 
 class HistoryItem(BaseModel):
     """Model representing a history item."""
+
     field: str
     fromString: Optional[str]
     toString: Optional[str]
 
+
 class HistoryEvent(BaseModel):
     """History of Events."""
+
     author: Optional[str]
     created: datetime
     items: List[HistoryItem]
 
+
 class JiraTicketDetail(BaseModel):
     """Detailed Jira Ticket model with history."""
+
     issue_number: str = Field(..., alias="key")
     title: str = Field(..., alias="summary")
     description: Optional[str]
@@ -95,51 +101,40 @@ class JiraTicketDetail(BaseModel):
     updated: datetime
     history: List[HistoryEvent] = Field(default_factory=list)
 
+
 class JiraTicketResponse(BaseModel):
     """Model representing a Jira Ticket Response."""
-    tickets: List[JiraTicket] = Field(
-        default_factory=list,
-        description="List of Jira tickets found."
-    )
+
+    tickets: List[JiraTicket] = Field(default_factory=list, description="List of Jira tickets found.")
+
 
 class Developer(BaseModel):
     """A developer in the team with Jira + Telegram mappings."""
+
     id: str = Field(..., description="Internal developer ID")
     name: str = Field(..., description="Display name")
     username: str = Field(..., description="Internal Username")
     jira_username: str = Field(..., description="Jira account username/email")
     telegram_chat_id: int = Field(..., description="Telegram private chat ID")
-    manager_chat_id: Optional[int] = Field(
-        None, description="Manager's Telegram chat ID for escalation"
-    )
+    manager_chat_id: Optional[int] = Field(None, description="Manager's Telegram chat ID for escalation")
 
 
 class DailyStandupConfig(BaseModel):
     """Configuration for the daily standup workflow."""
+
     jira_projects: List[str] = Field(
-        default=["NAV", "NVP", "NVS", "AC"],
-        description="Jira projects to search for tickets"
+        default=["NAV", "NVP", "NVS", "AC"], description="Jira projects to search for tickets"
     )
     ticket_statuses: List[str] = Field(
         default=["Open", "To Do", "Reopened", "Selected for Development"],
-        description="Jira statuses to include in daily message"
+        description="Jira statuses to include in daily message",
     )
     in_progress_transition: str = Field(
-        default="In Progress",
-        description="Target Jira status when dev selects a ticket"
+        default="In Progress", description="Target Jira status when dev selects a ticket"
     )
-    response_window_hours: int = Field(
-        default=2,
-        description="Hours to wait before escalating non-responders"
-    )
-    redis_ttl_seconds: int = Field(
-        default=43200,  # 12 hours
-        description="TTL for Redis response tracking keys"
-    )
-    max_tickets_shown: int = Field(
-        default=8,
-        description="Maximum tickets to show in the message"
-    )
+    response_window_hours: int = Field(default=2, description="Hours to wait before escalating non-responders")
+    redis_ttl_seconds: int = Field(default=43200, description="TTL for Redis response tracking keys")  # 12 hours
+    max_tickets_shown: int = Field(default=8, description="Maximum tickets to show in the message")
     # Callback prefixes (keep short for 64-byte limit)
     prefix_select: str = "tsel"
     prefix_skip: str = "tskp"
@@ -152,6 +147,7 @@ class DailyStandupConfig(BaseModel):
 # ──────────────────────────────────────────────────────────────
 # JiraSpecialist with Daily Standup
 # ──────────────────────────────────────────────────────────────
+
 
 class JiraSpecialist(Agent):
     """Base class for Jira specialist agents.
@@ -187,6 +183,7 @@ class JiraSpecialist(Agent):
         :meth:`_build_jira_prompt_builder` or pass ``prompt_builder=`` in
         ``__init__``.
     """
+
     model = "gemini-3.5-flash"
 
     #: Declarative Jira credentials for subclasses. When set (non-empty
@@ -205,6 +202,7 @@ class JiraSpecialist(Agent):
                 ``jira_grounding`` layers installed.
         """
         from parrot.bots.prompts import PromptBuilder, get_domain_layer
+
         builder = PromptBuilder.default()
         builder.add(get_domain_layer("jira_workflow"))
         builder.add(get_domain_layer("jira_grounding"))
@@ -306,8 +304,8 @@ class JiraSpecialist(Agent):
         # Example: load from environment or database
         # In production, this would query your HR system or a config table
         developers_config = config.getlist("STANDUP_DEVELOPERS")
-        print('DEVELOPERS CONFIG', developers_config)
-        print('JIRA USERS > ', JIRA_USERS)
+        print("DEVELOPERS CONFIG", developers_config)
+        print("JIRA USERS > ", JIRA_USERS)
         if not developers_config:
             developers_config = JIRA_USERS
         if isinstance(developers_config, list):
@@ -367,9 +365,7 @@ class JiraSpecialist(Agent):
         auth_type = (config.get("JIRA_AUTH_TYPE") or "").lower()
         oauth_manager = self.app.get("jira_oauth_manager") if self.app else None
 
-        use_oauth = auth_type == "oauth2_3lo" or (
-            not auth_type and oauth_manager is not None
-        )
+        use_oauth = auth_type == "oauth2_3lo" or (not auth_type and oauth_manager is not None)
 
         if use_oauth:
             if oauth_manager is None:
@@ -401,10 +397,7 @@ class JiraSpecialist(Agent):
                 toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
                 toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
             elif auth_type == "token_auth":
-                toolkit_kwargs["token"] = (
-                    config.get("JIRA_SECRET_TOKEN")
-                    or config.get("JIRA_API_TOKEN")
-                )
+                toolkit_kwargs["token"] = config.get("JIRA_SECRET_TOKEN") or config.get("JIRA_API_TOKEN")
         return JiraToolkit(**toolkit_kwargs)
 
     async def post_configure(self) -> None:
@@ -425,9 +418,7 @@ class JiraSpecialist(Agent):
         try:
             tools = self.tool_manager.register_toolkit(self.jira_toolkit)
         except Exception as exc:  # noqa: BLE001 - mirror Agent.__init__ tolerance
-            self.logger.error(
-                "Failed to register Jira tools: %s", exc, exc_info=True
-            )
+            self.logger.error("Failed to register Jira tools: %s", exc, exc_info=True)
             return
 
         if not tools:
@@ -443,7 +434,8 @@ class JiraSpecialist(Agent):
                 self.sync_tools(self._llm)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "Failed to sync Jira tools to LLM: %s", exc,
+                    "Failed to sync Jira tools to LLM: %s",
+                    exc,
                     exc_info=True,
                 )
 
@@ -467,9 +459,7 @@ class JiraSpecialist(Agent):
         try:
             reminder_tools = self.tool_manager.register_toolkit(reminder_toolkit)
         except Exception as exc:  # noqa: BLE001 - mirror JiraToolkit tolerance
-            self.logger.error(
-                "Failed to register Reminder tools: %s", exc, exc_info=True
-            )
+            self.logger.error("Failed to register Reminder tools: %s", exc, exc_info=True)
             return
 
         if reminder_tools:
@@ -540,9 +530,7 @@ class JiraSpecialist(Agent):
     # HITL Daily Standup (ask_human-driven)
     # ──────────────────────────────────────────────────────────
 
-    def _load_developers_sync(
-        self, developer_id: Optional[str] = None
-    ) -> List[Developer]:
+    def _load_developers_sync(self, developer_id: Optional[str] = None) -> List[Developer]:
         """Load the developer roster synchronously from config.
 
         Mirrors :meth:`load_developers` but (a) does not require async, and
@@ -550,9 +538,7 @@ class JiraSpecialist(Agent):
         flows can target a single developer.
         """
         raw = config.getlist("STANDUP_DEVELOPERS") or JIRA_USERS or []
-        developers = [
-            Developer(**d) for d in raw if isinstance(d, dict) and d.get('is_developer') is True
-        ]
+        developers = [Developer(**d) for d in raw if isinstance(d, dict) and d.get("is_developer") is True]
         if developer_id:
             developers = [d for d in developers if d.id == developer_id]
         return developers
@@ -633,25 +619,21 @@ class JiraSpecialist(Agent):
                 f"Run the morning standup for {dev.name} "
                 f"(jira_username={dev.jira_username}, date={today}).\n"
                 f"Follow the 'Morning check-in' section of your system prompt. "
-                f"Build the JQL using assignee = \"{dev.jira_account_id}\" "
+                f'Build the JQL using assignee = "{dev.jira_account_id}" '
                 f"instead of currentUser(). "
                 f"If blockers escalate to a manager, use "
-                f"target_humans=[\"{dev.manager_chat_id or dev.telegram_chat_id}\"]. "
+                f'target_humans=["{dev.manager_chat_id or dev.telegram_chat_id}"]. '
                 f"End by posting a short confirmation message to the developer "
                 f"summarizing what you did (ticket picked, plan captured, "
                 f"or that they skipped)."
             )
-            return await self._run_standup_for_dev(
-                dev, instruction, session_prefix="standup-morning"
-            )
+            return await self._run_standup_for_dev(dev, instruction, session_prefix="standup-morning")
 
         results = await asyncio.gather(
             *(_one(d) for d in developers),
             return_exceptions=False,
         )
-        self.logger.info(
-            "Morning standup completed for %d developer(s)", len(results)
-        )
+        self.logger.info("Morning standup completed for %d developer(s)", len(results))
         return list(results)
 
     async def run_eod_standup(
@@ -685,8 +667,8 @@ class JiraSpecialist(Agent):
                 f"Run the end-of-day standup wrap for {dev.name} "
                 f"(jira_username={dev.jira_username}, date={today}).\n"
                 f"Follow the 'End-of-day wrap' section of your system prompt. "
-                f"Use assignee = \"{dev.jira_username}\" in the JQL. "
-                f"Collect the status via ask_human with interaction_type=\"form\" "
+                f'Use assignee = "{dev.jira_username}" in the JQL. '
+                f'Collect the status via ask_human with interaction_type="form" '
                 f"and form_schema properties 'done_today', 'plan_tomorrow', "
                 f"'blockers' (required: done_today, plan_tomorrow). "
                 f"Post the answers as a single comment on the primary ticket "
@@ -694,19 +676,15 @@ class JiraSpecialist(Agent):
                 f"'**Daily Standup {today}**'. "
                 f"If blockers are non-empty, transition the ticket to "
                 f"'Blocked' when that status exists and notify the manager "
-                f"with target_humans=[\"{dev.manager_chat_id or dev.telegram_chat_id}\"]."
+                f'with target_humans=["{dev.manager_chat_id or dev.telegram_chat_id}"].'
             )
-            return await self._run_standup_for_dev(
-                dev, instruction, session_prefix="standup-eod"
-            )
+            return await self._run_standup_for_dev(dev, instruction, session_prefix="standup-eod")
 
         results = await asyncio.gather(
             *(_one(d) for d in developers),
             return_exceptions=False,
         )
-        self.logger.info(
-            "EOD standup completed for %d developer(s)", len(results)
-        )
+        self.logger.info("EOD standup completed for %d developer(s)", len(results))
         return list(results)
 
     # ──────────────────────────────────────────────────────────
@@ -723,10 +701,7 @@ class JiraSpecialist(Agent):
             Summary dict with dispatch results.
         """
         if not self._wrapper:
-            self.logger.error(
-                "Cannot dispatch tickets: no TelegramWrapper attached. "
-                "Call set_wrapper() first."
-            )
+            self.logger.error("Cannot dispatch tickets: no TelegramWrapper attached. " "Call set_wrapper() first.")
             return {"error": "No wrapper attached"}
 
         if not self._developers:
@@ -755,11 +730,13 @@ class JiraSpecialist(Agent):
                 if not tickets:
                     self.logger.info(f"No open tickets for {dev.name}, skipping.")
                     results["skipped"] += 1
-                    results["details"].append({
-                        "developer": dev.name,
-                        "status": "skipped",
-                        "reason": "no open tickets",
-                    })
+                    results["details"].append(
+                        {
+                            "developer": dev.name,
+                            "status": "skipped",
+                            "reason": "no open tickets",
+                        }
+                    )
                     continue
 
                 # Build the interactive message
@@ -781,18 +758,22 @@ class JiraSpecialist(Agent):
                         ex=self._standup_config.redis_ttl_seconds,
                     )
                     results["dispatched"] += 1
-                    results["details"].append({
-                        "developer": dev.name,
-                        "status": "sent",
-                        "ticket_count": len(tickets),
-                    })
+                    results["details"].append(
+                        {
+                            "developer": dev.name,
+                            "status": "sent",
+                            "ticket_count": len(tickets),
+                        }
+                    )
                 else:
                     results["errors"] += 1
-                    results["details"].append({
-                        "developer": dev.name,
-                        "status": "error",
-                        "reason": "send failed",
-                    })
+                    results["details"].append(
+                        {
+                            "developer": dev.name,
+                            "status": "error",
+                            "reason": "send failed",
+                        }
+                    )
 
             except Exception as e:
                 self.logger.error(
@@ -800,11 +781,13 @@ class JiraSpecialist(Agent):
                     exc_info=True,
                 )
                 results["errors"] += 1
-                results["details"].append({
-                    "developer": dev.name,
-                    "status": "error",
-                    "reason": str(e)[:100],
-                })
+                results["details"].append(
+                    {
+                        "developer": dev.name,
+                        "status": "error",
+                        "reason": str(e)[:100],
+                    }
+                )
 
         self.logger.info(
             f"Daily standup dispatched: {results['dispatched']} sent, "
@@ -812,9 +795,7 @@ class JiraSpecialist(Agent):
         )
         return results
 
-    async def _fetch_developer_tickets(
-        self, dev: Developer
-    ) -> List[Dict[str, Any]]:
+    async def _fetch_developer_tickets(self, dev: Developer) -> List[Dict[str, Any]]:
         """
         Fetch open tickets assigned to a developer via JQL.
 
@@ -823,10 +804,10 @@ class JiraSpecialist(Agent):
         projects = ", ".join(self._standup_config.jira_projects)
         statuses = '", "'.join(self._standup_config.ticket_statuses)
         jql = (
-            f'project IN ({projects}) '
+            f"project IN ({projects}) "
             f'AND assignee = "{dev.jira_username}" '
             f'AND status IN ("{statuses}") '
-            f'ORDER BY priority DESC, updated DESC'
+            f"ORDER BY priority DESC, updated DESC"
         )
 
         question = f"""
@@ -842,10 +823,10 @@ class JiraSpecialist(Agent):
         await self.ask(question=question)
 
         try:
-            df = self.tool_manager.get_shared_dataframe(f'dev_tickets_{dev.id}')
+            df = self.tool_manager.get_shared_dataframe(f"dev_tickets_{dev.id}")
             if df is None or df.empty:
                 return []
-            return df.to_dict('records')
+            return df.to_dict("records")
         except (KeyError, AttributeError):
             return []
 
@@ -871,7 +852,7 @@ class JiraSpecialist(Agent):
 
         # Build buttons — one per ticket
         buttons = []
-        for ticket in tickets[:cfg.max_tickets_shown]:
+        for ticket in tickets[: cfg.max_tickets_shown]:
             key = ticket.get("key", "???")
             summary = ticket.get("summary", "No summary")
             status = ticket.get("status", "")
@@ -890,21 +871,29 @@ class JiraSpecialist(Agent):
             if len(summary) > 35:
                 label += "…"
 
-            buttons.append([{
-                "text": label,
-                "prefix": cfg.prefix_select,
-                "payload": {
-                    "t": key,
-                    "d": dev.id,
-                },
-            }])
+            buttons.append(
+                [
+                    {
+                        "text": label,
+                        "prefix": cfg.prefix_select,
+                        "payload": {
+                            "t": key,
+                            "d": dev.id,
+                        },
+                    }
+                ]
+            )
 
         # Skip button
-        buttons.append([{
-            "text": "⏭️ Ya tengo plan para hoy",
-            "prefix": cfg.prefix_skip,
-            "payload": {"d": dev.id},
-        }])
+        buttons.append(
+            [
+                {
+                    "text": "⏭️ Ya tengo plan para hoy",
+                    "prefix": cfg.prefix_skip,
+                    "payload": {"d": dev.id},
+                }
+            ]
+        )
 
         keyboard = build_inline_keyboard(buttons)
         return text, keyboard
@@ -917,9 +906,7 @@ class JiraSpecialist(Agent):
         prefix="tsel",
         description="Developer selects a ticket to work on today",
     )
-    async def on_ticket_selected(
-        self, callback: CallbackContext
-    ) -> CallbackResult:
+    async def on_ticket_selected(self, callback: CallbackContext) -> CallbackResult:
         """
         Handle ticket selection.
 
@@ -931,22 +918,19 @@ class JiraSpecialist(Agent):
         developer_id = callback.payload.get("d", "")
 
         self.logger.info(
-            f"Ticket selected: {ticket_key} by developer {developer_id} "
-            f"(telegram user {callback.user_id})"
+            f"Ticket selected: {ticket_key} by developer {developer_id} " f"(telegram user {callback.user_id})"
         )
 
         # 1. Transition ticket to In Progress via Jira
         try:
             transition_target = self._standup_config.in_progress_transition
             question = (
-                f'Use the tool `jira_transition_issue` to transition '
+                f"Use the tool `jira_transition_issue` to transition "
                 f'issue "{ticket_key}" to status "{transition_target}".'
             )
             await self.ask(question=question)
         except Exception as e:
-            self.logger.error(
-                f"Failed to transition {ticket_key}: {e}", exc_info=True
-            )
+            self.logger.error(f"Failed to transition {ticket_key}: {e}", exc_info=True)
             return CallbackResult(
                 answer_text=f"⚠️ Error transicionando {ticket_key}",
                 show_alert=True,
@@ -971,9 +955,7 @@ class JiraSpecialist(Agent):
         prefix="tskp",
         description="Developer skips ticket selection (already has a plan)",
     )
-    async def on_ticket_skipped(
-        self, callback: CallbackContext
-    ) -> CallbackResult:
+    async def on_ticket_skipped(self, callback: CallbackContext) -> CallbackResult:
         """Handle skip — developer already has a plan for today."""
         developer_id = callback.payload.get("d", "")
 
@@ -982,10 +964,7 @@ class JiraSpecialist(Agent):
 
         return CallbackResult(
             answer_text="👍 Entendido",
-            edit_message=(
-                f"👍 *{callback.display_name}*, entendido. "
-                f"Ya tienes tu plan para hoy."
-            ),
+            edit_message=(f"👍 *{callback.display_name}*, entendido. " f"Ya tienes tu plan para hoy."),
             edit_parse_mode="Markdown",
             remove_keyboard=True,
         )
@@ -1008,17 +987,17 @@ class JiraSpecialist(Agent):
         key = f"standup:responded:{today}:{developer_id}"
 
         import json
-        value = json.dumps({
-            "telegram_user_id": telegram_user_id,
-            "ticket_key": ticket_key,
-            "responded_at": datetime.now().isoformat(),
-        })
+
+        value = json.dumps(
+            {
+                "telegram_user_id": telegram_user_id,
+                "ticket_key": ticket_key,
+                "responded_at": datetime.now().isoformat(),
+            }
+        )
 
         await r.set(key, value, ex=self._standup_config.redis_ttl_seconds)
-        self.logger.info(
-            f"Marked developer {developer_id} as responded "
-            f"(ticket: {ticket_key})"
-        )
+        self.logger.info(f"Marked developer {developer_id} as responded " f"(ticket: {ticket_key})")
 
     # ──────────────────────────────────────────────────────────
     # CRON Job: Escalation Check
@@ -1123,13 +1102,10 @@ class JiraSpecialist(Agent):
                 )
                 result["escalated_to"].append(mgr_chat_id)
             except Exception as e:
-                self.logger.error(
-                    f"Failed to notify manager {mgr_chat_id}: {e}"
-                )
+                self.logger.error(f"Failed to notify manager {mgr_chat_id}: {e}")
 
         self.logger.info(
-            f"Escalation complete: {len(non_responders)} non-responders, "
-            f"notified {len(by_manager)} managers."
+            f"Escalation complete: {len(non_responders)} non-responders, " f"notified {len(by_manager)} managers."
         )
         return result
 
@@ -1150,6 +1126,7 @@ class JiraSpecialist(Agent):
         today = date.today().isoformat()
 
         import json as _json
+
         status = {
             "date": today,
             "developers": [],
@@ -1257,18 +1234,10 @@ class JiraSpecialist(Agent):
                 continue
             if action.project_key and action.project_key.upper() != project_key:
                 continue
-            from_match = (
-                action.from_status == "*"
-                or action.from_status.lower() == from_status
-            )
-            to_match = (
-                action.to_status == "*"
-                or action.to_status.lower() == to_status
-            )
+            from_match = action.from_status == "*" or action.from_status.lower() == from_status
+            to_match = action.to_status == "*" or action.to_status.lower() == to_status
             if from_match and to_match:
-                result = await self._invoke_transition_action(
-                    action, payload
-                )
+                result = await self._invoke_transition_action(action, payload)
                 results.append(result)
 
         return {
@@ -1302,9 +1271,7 @@ class JiraSpecialist(Agent):
             return self._action_log_transition(payload, action.action_config)
         if action.action_type == TransitionActionType.CALL_HANDLER:
             return await self._action_call_handler(payload, action.action_config)
-        self.logger.warning(
-            "Unknown transition action type: %s", action.action_type
-        )
+        self.logger.warning("Unknown transition action type: %s", action.action_type)
         return {"status": "skipped", "reason": f"unknown action_type={action.action_type}"}
 
     async def _action_notify_channel(
@@ -1415,8 +1382,7 @@ class JiraSpecialist(Agent):
             )
         if self._agent_dispatcher is None:
             self.logger.warning(
-                "Transition trigger_agent: agent_id=%s task=%s "
-                "(no dispatcher wired — degrading to log-only)",
+                "Transition trigger_agent: agent_id=%s task=%s " "(no dispatcher wired — degrading to log-only)",
                 agent_id,
                 task,
             )
@@ -1630,7 +1596,7 @@ class JiraSpecialist(Agent):
             f"Reporter: {reporter_display}\n\n"
             "Run the assignment intake flow in Spanish:\n"
             "1. Greet the developer and show the ticket above.\n"
-            "2. Call `ask_human` with interaction_type=\"form\" and "
+            '2. Call `ask_human` with interaction_type="form" and '
             "form_schema properties `due_date` (string, ISO YYYY-MM-DD), "
             "`estimate` (string, e.g. '1d', '4h', '30m'), and `decision` "
             "(string enum: 'accept' or 'reject'). All three are required. "
@@ -1647,7 +1613,7 @@ class JiraSpecialist(Agent):
             "   - Reply to the developer confirming the due date, estimate, "
             "and the new status.\n"
             "4. If `decision == 'reject'`:\n"
-            "   - Call `ask_human` with interaction_type=\"free_text\" "
+            '   - Call `ask_human` with interaction_type="free_text" '
             "asking for the rejection reason (one sentence is enough).\n"
             "   - Call `jira_add_comment` posting: 'Task rejected by "
             "<developer>. Reason: <reason>.' Do NOT transition or reassign "
@@ -1719,8 +1685,7 @@ class JiraSpecialist(Agent):
 
         if self.jira_toolkit is None:
             self.logger.error(
-                "handle_jira_ticket_created: jira_toolkit not attached; "
-                "skipping %s.",
+                "handle_jira_ticket_created: jira_toolkit not attached; " "skipping %s.",
                 issue_key,
             )
             return {
@@ -1770,7 +1735,8 @@ class JiraSpecialist(Agent):
 
         try:
             await self.jira_toolkit.jira_set_reporter(
-                issue=issue_key, email=replacement,
+                issue=issue_key,
+                email=replacement,
             )
             comment_body = (
                 f"Reporter automatically updated from "
@@ -1778,7 +1744,8 @@ class JiraSpecialist(Agent):
                 f"because the original reporter is not in the authorized list."
             )
             await self.jira_toolkit.jira_add_comment(
-                issue=issue_key, body=comment_body,
+                issue=issue_key,
+                body=comment_body,
             )
             self.logger.info(
                 "jira_ticket_created: reassigned reporter on %s from %s to %s",
@@ -1833,8 +1800,7 @@ class JiraSpecialist(Agent):
         channel_id = config.get("JIRA_TEST_WEBHOOK_CHANNEL")
         if not channel_id:
             self.logger.warning(
-                "handle_ready_for_test: JIRA_TEST_WEBHOOK_CHANNEL is not "
-                "configured; skipping notification for %s.",
+                "handle_ready_for_test: JIRA_TEST_WEBHOOK_CHANNEL is not " "configured; skipping notification for %s.",
                 issue_key,
             )
             return {
@@ -1845,8 +1811,7 @@ class JiraSpecialist(Agent):
 
         if not self._wrapper or not getattr(self._wrapper, "bot", None):
             self.logger.error(
-                "handle_ready_for_test: no Telegram wrapper attached; "
-                "cannot notify channel for %s.",
+                "handle_ready_for_test: no Telegram wrapper attached; " "cannot notify channel for %s.",
                 issue_key,
             )
             return {
@@ -1922,7 +1887,9 @@ class JiraSpecialist(Agent):
             question=question,
         )
 
-    async def search_all_tickets(self, start_date: str = "2025-01-01", end_date: str = "2026-02-28", max_tickets: Optional[int] = None, **kwargs) -> List[JiraTicket]:
+    async def search_all_tickets(
+        self, start_date: str = "2025-01-01", end_date: str = "2026-02-28", max_tickets: Optional[int] = None, **kwargs
+    ) -> List[JiraTicket]:
         """
         Search for due Jira tickets using the JiraToolkit and return structured output.
         Uses dataframe storage optimization to avoid token limits.
@@ -1945,7 +1912,7 @@ class JiraSpecialist(Agent):
 
         # Retrieve the stored DataFrame directly from the ToolManager
         try:
-            df = self.tool_manager.get_shared_dataframe('all_jira_tickets')
+            df = self.tool_manager.get_shared_dataframe("all_jira_tickets")
         except (KeyError, AttributeError):
             # Fallback if dataframe wasn't stored or found
             return []
@@ -1977,10 +1944,10 @@ class JiraSpecialist(Agent):
         projects = ", ".join(self._standup_config.jira_projects)
         df_name = f"jira_mtd_count_{end_str}"
         jql = (
-            f'project IN ({projects}) '
+            f"project IN ({projects}) "
             f'AND created >= "{start_str}" '
             f'AND created <= "{end_str}" '
-            f'ORDER BY assignee ASC'
+            f"ORDER BY assignee ASC"
         )
 
         question = f"""
@@ -2025,16 +1992,12 @@ class JiraSpecialist(Agent):
             exploded["assignee"] = (
                 exploded["assignee"].astype(object).where(exploded["assignee"].notna(), "(unassigned)")
             )
-            exploded = exploded.explode("components").rename(
-                columns={"components": "component"}
-            )
+            exploded = exploded.explode("components").rename(columns={"components": "component"})
             exploded["component"] = exploded["component"].apply(
                 lambda c: c.get("name") if isinstance(c, dict) else (c or "(no component)")
             )
 
-            grouped = (
-                exploded.groupby(["component", "assignee"]).size().reset_index(name="count")
-            )
+            grouped = exploded.groupby(["component", "assignee"]).size().reset_index(name="count")
 
             by_component: Dict[str, Dict[str, int]] = {}
             rows: List[Dict[str, Any]] = []
@@ -2043,9 +2006,7 @@ class JiraSpecialist(Agent):
                 assignee = str(r["assignee"])
                 count = int(r["count"])
                 by_component.setdefault(component, {})[assignee] = count
-                rows.append(
-                    {"component": component, "assignee": assignee, "count": count}
-                )
+                rows.append({"component": component, "assignee": assignee, "count": count})
 
             result = {
                 "period": period,
@@ -2063,9 +2024,7 @@ class JiraSpecialist(Agent):
             ]
             for component in sorted(by_component):
                 lines.append(f"[{component}]")
-                for assignee, count in sorted(
-                    by_component[component].items(), key=lambda kv: (-kv[1], kv[0])
-                ):
+                for assignee, count in sorted(by_component[component].items(), key=lambda kv: (-kv[1], kv[0])):
                     lines.append(f"  {assignee}: {count}")
                 lines.append("")
             body = "\n".join(lines)
@@ -2093,10 +2052,7 @@ class JiraSpecialist(Agent):
         """
 
         # We ask the LLM to call the tool and return the result formatted as JiraTicketDetail
-        return await self.ask(
-            question=question,
-            structured_output=JiraTicketDetail
-        )
+        return await self.ask(question=question, structured_output=JiraTicketDetail)
 
     async def get_in_progress_by_assignee(
         self,
@@ -2149,9 +2105,9 @@ class JiraSpecialist(Agent):
         projects_clause = ", ".join(project_list)
         statuses_clause = '", "'.join(status_list)
         jql = (
-            f'project IN ({projects_clause}) '
+            f"project IN ({projects_clause}) "
             f'AND status IN ("{statuses_clause}") '
-            f'ORDER BY assignee ASC, updated DESC'
+            f"ORDER BY assignee ASC, updated DESC"
         )
 
         envelope = await self.jira_toolkit.jira_search_issues(
@@ -2166,24 +2122,16 @@ class JiraSpecialist(Agent):
         env_status = envelope.get("status")
         if env_status not in ("ok", "empty"):
             message = envelope.get("message") or "unknown error"
-            raise RuntimeError(
-                f"jira_search_issues failed for in-progress query: {message}"
-            )
+            raise RuntimeError(f"jira_search_issues failed for in-progress query: {message}")
 
-        issues: List[Dict[str, Any]] = (
-            (envelope.get("data") or {}).get("issues") or []
-        )
+        issues: List[Dict[str, Any]] = (envelope.get("data") or {}).get("issues") or []
         target_status = (status_list[0] if status_list else "In Progress").lower()
 
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for issue in issues:
             fields = issue.get("fields") or {}
             assignee_obj = fields.get("assignee") or {}
-            assignee_name = (
-                assignee_obj.get("displayName")
-                or assignee_obj.get("name")
-                or "Unassigned"
-            )
+            assignee_name = assignee_obj.get("displayName") or assignee_obj.get("name") or "Unassigned"
 
             in_progress_at: Optional[str] = None
             changelog = issue.get("changelog") or {}
@@ -2195,18 +2143,18 @@ class JiraSpecialist(Agent):
                     if to_string != target_status:
                         continue
                     created = entry.get("created")
-                    if created and (
-                        in_progress_at is None or created > in_progress_at
-                    ):
+                    if created and (in_progress_at is None or created > in_progress_at):
                         in_progress_at = created
 
-            grouped.setdefault(assignee_name, []).append({
-                "key": issue.get("key"),
-                "summary": fields.get("summary"),
-                "created": fields.get("created"),
-                "due_date": fields.get("duedate"),
-                "in_progress_at": in_progress_at,
-            })
+            grouped.setdefault(assignee_name, []).append(
+                {
+                    "key": issue.get("key"),
+                    "summary": fields.get("summary"),
+                    "created": fields.get("created"),
+                    "due_date": fields.get("duedate"),
+                    "in_progress_at": in_progress_at,
+                }
+            )
 
         def _sort_key(t: Dict[str, Any]) -> str:
             return t.get("in_progress_at") or t.get("created") or ""
@@ -2229,9 +2177,7 @@ class JiraSpecialist(Agent):
                 due = t["due_date"] or "—"
                 ip_at = t["in_progress_at"] or "—"
                 lines.append(
-                    f"  - `{key}` — {summary} "
-                    f"(created: {created}, due: {due}, "
-                    f"in-progress since: {ip_at})"
+                    f"  - `{key}` — {summary} " f"(created: {created}, due: {due}, " f"in-progress since: {ip_at})"
                 )
 
         return {

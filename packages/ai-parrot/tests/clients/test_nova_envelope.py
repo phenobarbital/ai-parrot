@@ -10,6 +10,7 @@ Pre-Alpha SDK guard is bypassed by stubbing
 sys.modules['aws_sdk_bedrock_runtime'], and the bidirectional-stream thin
 wrappers (_open_stream/_send_event/_iter_events) are mocked directly.
 """
+
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +27,7 @@ def _make_client(**kwargs) -> NovaClient:
 
 @pytest.fixture
 def nova_client():
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         yield _make_client()
 
 
@@ -47,6 +48,7 @@ def _fake_events(events):
     async def _gen():
         for event in events:
             yield event
+
     return _gen()
 
 
@@ -63,15 +65,13 @@ class _StreamHarness:
         self.sent.append(event)
 
     async def run(self, **kwargs):
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(self.client, '_open_stream', return_value=AsyncMock()), \
-             patch.object(self.client, '_send_event', new=self._send_event), \
-             patch.object(self.client, '_iter_events', return_value=_fake_events(self.events)):
-            return [
-                r async for r in self.client.stream_voice(
-                    _empty_audio_iterator(), **kwargs
-                )
-            ]
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(self.client, "_open_stream", return_value=AsyncMock()),
+            patch.object(self.client, "_send_event", new=self._send_event),
+            patch.object(self.client, "_iter_events", return_value=_fake_events(self.events)),
+        ):
+            return [r async for r in self.client.stream_voice(_empty_audio_iterator(), **kwargs)]
 
     def session_start_config(self):
         session_start = next(e for e in self.sent if "sessionStart" in e["event"])
@@ -85,30 +85,39 @@ class _StreamHarness:
 class TestCanonicalRole:
     @pytest.mark.asyncio
     async def test_roles_lowercased(self, nova_client):
-        harness = _StreamHarness(nova_client, [
-            _content_start("USER"),
-            _text_output("hi"),
-            _content_start("ASSISTANT"),
-            _text_output("hello"),
-        ])
+        harness = _StreamHarness(
+            nova_client,
+            [
+                _content_start("USER"),
+                _text_output("hi"),
+                _content_start("ASSISTANT"),
+                _text_output("hello"),
+            ],
+        )
         responses = await harness.run()
         assert {r.role for r in responses if r.role} <= {"user", "assistant"}
 
     @pytest.mark.asyncio
     async def test_assistant_role_present(self, nova_client):
-        harness = _StreamHarness(nova_client, [
-            _content_start("ASSISTANT"),
-            _text_output("hello there"),
-        ])
+        harness = _StreamHarness(
+            nova_client,
+            [
+                _content_start("ASSISTANT"),
+                _text_output("hello there"),
+            ],
+        )
         responses = await harness.run()
         assert any(r.role == "assistant" for r in responses)
 
     @pytest.mark.asyncio
     async def test_user_role_present(self, nova_client):
-        harness = _StreamHarness(nova_client, [
-            _content_start("USER"),
-            _text_output("what's the weather"),
-        ])
+        harness = _StreamHarness(
+            nova_client,
+            [
+                _content_start("USER"),
+                _text_output("what's the weather"),
+            ],
+        )
         responses = await harness.run()
         assert any(r.role == "user" for r in responses)
 
@@ -122,21 +131,27 @@ class TestSttOnly:
     @pytest.mark.asyncio
     async def test_model_response_still_delivered(self, nova_client):
         """Resolved decision: Nova cannot suppress generation; do not fake it."""
-        harness = _StreamHarness(nova_client, [
-            _content_start("ASSISTANT"),
-            _text_output("still talking"),
-        ])
+        harness = _StreamHarness(
+            nova_client,
+            [
+                _content_start("ASSISTANT"),
+                _text_output("still talking"),
+            ],
+        )
         responses = await harness.run(stt_only=True)
         assert any(r.role == "assistant" for r in responses)
 
     @pytest.mark.asyncio
     async def test_logs_once_not_per_frame(self, nova_client, caplog):
-        harness = _StreamHarness(nova_client, [
-            _content_start("ASSISTANT"),
-            _text_output("a"),
-            _text_output("b"),
-            _text_output("c"),
-        ])
+        harness = _StreamHarness(
+            nova_client,
+            [
+                _content_start("ASSISTANT"),
+                _text_output("a"),
+                _text_output("b"),
+                _text_output("c"),
+            ],
+        )
         with caplog.at_level("INFO"):
             await harness.run(stt_only=True)
         stt_only_logs = [r for r in caplog.records if "stt_only" in r.message]

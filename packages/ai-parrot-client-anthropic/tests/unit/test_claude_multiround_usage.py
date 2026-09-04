@@ -6,6 +6,7 @@ total (not just the last round's usage), that ClientRoundEvent fires once
 per tool round, and that AfterClientCallEvent carries the accumulated
 totals too.
 """
+
 from __future__ import annotations
 
 import asyncio

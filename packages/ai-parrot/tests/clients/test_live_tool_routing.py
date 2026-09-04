@@ -1,6 +1,7 @@
 """Unit tests for routing `LiveToolAdapter.execute_tool()` through
 `AbstractTool.execute()` instead of the private `_execute()` (TASK-1956).
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -37,7 +38,9 @@ class ForbiddenTool(AbstractTool):
 
     async def execute(self, *args, **kwargs) -> ToolResult:
         return ToolResult(
-            success=False, status="forbidden", result=None,
+            success=False,
+            status="forbidden",
+            result=None,
             error="Permission denied: 'forbidden_tool' requires {'x'}",
         )
 
@@ -115,6 +118,7 @@ class TestLiveRouting:
     async def test_no_private_execute_call_left(self):
         import inspect
         from parrot.clients.google import live as live_module
+
         src = inspect.getsource(live_module.LiveToolAdapter.execute_tool)
         # A prose comment may mention the OLD `_execute()` call for context;
         # what must not exist is the actual call expression.

@@ -5,6 +5,7 @@ product placed on a counter/podium with a promotional background and an
 information label.  No shelves, no grid — compliance is scored by element
 presence alone.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -123,9 +124,7 @@ class ProductCounter(AbstractPlanogramType):
                     )
                     await asyncio.sleep(10)
                 else:
-                    self.logger.error(
-                        "ROI detection failed after %d attempts: %s", max_attempts, exc
-                    )
+                    self.logger.error("ROI detection failed after %d attempts: %s", max_attempts, exc)
                     return None, None, None, None, []
 
         data = msg.structured_output or msg.output or {}
@@ -151,9 +150,7 @@ class ProductCounter(AbstractPlanogramType):
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
                         b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
                 data = Detections(**raw)
-                self.logger.info(
-                    "Recovered ROI detections after normalizing pixel coordinates."
-                )
+                self.logger.info("Recovered ROI detections after normalizing pixel coordinates.")
             except Exception as parse_err:
                 self.logger.warning("ROI coordinate recovery failed: %s", parse_err)
                 return None, None, None, None, []
@@ -167,12 +164,7 @@ class ProductCounter(AbstractPlanogramType):
             return (det.label or "").strip().lower()
 
         counter_det = next(
-            (
-                d
-                for d in dets
-                if _norm_label(d)
-                in ("counter", "podium", "counter_display", "display", "endcap")
-            ),
+            (d for d in dets if _norm_label(d) in ("counter", "podium", "counter_display", "display", "endcap")),
             max(dets, key=lambda d: float(d.confidence)) if dets else None,
         )
 
@@ -272,13 +264,9 @@ class ProductCounter(AbstractPlanogramType):
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
                         b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
                 data = Detections(**raw)
-                self.logger.info(
-                    "Recovered element detections after normalizing pixel coordinates."
-                )
+                self.logger.info("Recovered element detections after normalizing pixel coordinates.")
             except Exception as parse_err:
-                self.logger.warning(
-                    "Element coordinate recovery failed: %s", parse_err
-                )
+                self.logger.warning("Element coordinate recovery failed: %s", parse_err)
                 return []
 
         return data.detections or []
@@ -351,9 +339,7 @@ class ProductCounter(AbstractPlanogramType):
                 )
             )
 
-        self.logger.info(
-            "ProductCounter: detected %d elements on counter.", len(identified)
-        )
+        self.logger.info("ProductCounter: detected %d elements on counter.", len(identified))
         # Always return empty shelf regions — no shelving on a counter
         return identified, []
 
@@ -384,14 +370,11 @@ class ProductCounter(AbstractPlanogramType):
         pcfg = getattr(self.config, "planogram_config", {}) or {}
         scoring = pcfg.get("scoring_weights", {})
         weights: Dict[str, float] = {
-            elem: float(scoring.get(elem, _DEFAULT_WEIGHTS.get(elem, 0.0)))
-            for elem in _EXPECTED_ELEMENTS
+            elem: float(scoring.get(elem, _DEFAULT_WEIGHTS.get(elem, 0.0))) for elem in _EXPECTED_ELEMENTS
         }
 
         # Collect detected element names (normalised, from product_type field)
-        detected_labels = {
-            (p.product_type or "").strip().lower() for p in identified_products
-        }
+        detected_labels = {(p.product_type or "").strip().lower() for p in identified_products}
 
         total_weight = sum(weights.values())
         if total_weight == 0:
@@ -406,9 +389,7 @@ class ProductCounter(AbstractPlanogramType):
                 found.append(elem)
             else:
                 missing.append(elem)
-                self.logger.info(
-                    "ProductCounter: missing element '%s' (weight=%.2f).", elem, weight
-                )
+                self.logger.info("ProductCounter: missing element '%s' (weight=%.2f).", elem, weight)
 
         score = achieved_weight / total_weight
         status: ComplianceStatus

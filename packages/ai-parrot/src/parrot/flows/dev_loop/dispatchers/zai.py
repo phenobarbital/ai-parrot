@@ -55,6 +55,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.zai.models import THINKING_CAPABLE_ZAI_MODELS
+
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",

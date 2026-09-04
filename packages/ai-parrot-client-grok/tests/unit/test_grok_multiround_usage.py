@@ -7,6 +7,7 @@ raw_usage dict (built from the protobuf-like usage object via
 CompletionUsage.from_grok's extra_usage, never the raw protobuf), and
 that AfterClientCallEvent carries the accumulated totals too.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,10 +25,16 @@ from parrot.core.events.lifecycle.events import (
 
 def _mock_usage(prompt: int, completion: int, total: int):
     """Stub usage object exposing attributes like the xai_sdk protobuf does."""
-    usage = MagicMock(spec=[
-        "prompt_tokens", "completion_tokens", "total_tokens",
-        "reasoning_tokens", "cached_prompt_text_tokens", "prompt_image_tokens",
-    ])
+    usage = MagicMock(
+        spec=[
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "reasoning_tokens",
+            "cached_prompt_text_tokens",
+            "prompt_image_tokens",
+        ]
+    )
     usage.prompt_tokens = prompt
     usage.completion_tokens = completion
     usage.total_tokens = total

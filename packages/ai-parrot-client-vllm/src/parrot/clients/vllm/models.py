@@ -18,19 +18,9 @@ class VLLMConfig(BaseModel):
         timeout: Request timeout in seconds
     """
 
-    base_url: str = Field(
-        default="http://localhost:8000/v1",
-        description="vLLM server base URL"
-    )
-    api_key: Optional[str] = Field(
-        default=None,
-        description="Optional API key for authentication"
-    )
-    timeout: int = Field(
-        default=120,
-        ge=1,
-        description="Request timeout in seconds"
-    )
+    base_url: str = Field(default="http://localhost:8000/v1", description="vLLM server base URL")
+    api_key: Optional[str] = Field(default=None, description="Optional API key for authentication")
+    timeout: int = Field(default=120, ge=1, description="Request timeout in seconds")
 
 
 class VLLMSamplingParams(BaseModel):
@@ -48,37 +38,14 @@ class VLLMSamplingParams(BaseModel):
         frequency_penalty: Penalty for new tokens based on frequency
     """
 
-    top_k: int = Field(
-        default=-1,
-        description="Top-k sampling (-1 to disable)"
-    )
-    min_p: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="Minimum probability threshold"
-    )
+    top_k: int = Field(default=-1, description="Top-k sampling (-1 to disable)")
+    min_p: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum probability threshold")
     repetition_penalty: float = Field(
-        default=1.0,
-        ge=0.0,
-        description="Repetition penalty (>1.0 to discourage repetition)"
+        default=1.0, ge=0.0, description="Repetition penalty (>1.0 to discourage repetition)"
     )
-    length_penalty: float = Field(
-        default=1.0,
-        description="Length penalty for beam search"
-    )
-    presence_penalty: float = Field(
-        default=0.0,
-        ge=-2.0,
-        le=2.0,
-        description="Presence penalty for new tokens"
-    )
-    frequency_penalty: float = Field(
-        default=0.0,
-        ge=-2.0,
-        le=2.0,
-        description="Frequency penalty for new tokens"
-    )
+    length_penalty: float = Field(default=1.0, description="Length penalty for beam search")
+    presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0, description="Presence penalty for new tokens")
+    frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0, description="Frequency penalty for new tokens")
 
     def to_extra_body(self) -> Dict[str, Any]:
         """Convert to vLLM extra_body format.
@@ -112,18 +79,9 @@ class VLLMLoRARequest(BaseModel):
         lora_local_path: Optional local path to LoRA adapter weights
     """
 
-    lora_name: str = Field(
-        ...,
-        description="Name of the LoRA adapter to use"
-    )
-    lora_int_id: Optional[int] = Field(
-        default=None,
-        description="Optional integer ID for the LoRA adapter"
-    )
-    lora_local_path: Optional[str] = Field(
-        default=None,
-        description="Optional local path to LoRA adapter weights"
-    )
+    lora_name: str = Field(..., description="Name of the LoRA adapter to use")
+    lora_int_id: Optional[int] = Field(default=None, description="Optional integer ID for the LoRA adapter")
+    lora_local_path: Optional[str] = Field(default=None, description="Optional local path to LoRA adapter weights")
 
     def to_extra_body(self) -> Dict[str, Any]:
         """Convert to vLLM lora_request format.
@@ -153,25 +111,13 @@ class VLLMGuidedParams(BaseModel):
         guided_grammar: BNF grammar for constrained output
     """
 
-    guided_json: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="JSON schema for constrained output"
-    )
-    guided_regex: Optional[str] = Field(
-        default=None,
-        description="Regular expression pattern to match"
-    )
-    guided_choice: Optional[List[str]] = Field(
-        default=None,
-        description="List of valid output choices"
-    )
-    guided_grammar: Optional[str] = Field(
-        default=None,
-        description="BNF grammar for constrained output"
-    )
+    guided_json: Optional[Dict[str, Any]] = Field(default=None, description="JSON schema for constrained output")
+    guided_regex: Optional[str] = Field(default=None, description="Regular expression pattern to match")
+    guided_choice: Optional[List[str]] = Field(default=None, description="List of valid output choices")
+    guided_grammar: Optional[str] = Field(default=None, description="BNF grammar for constrained output")
 
-    @model_validator(mode='after')
-    def check_mutually_exclusive(self) -> 'VLLMGuidedParams':
+    @model_validator(mode="after")
+    def check_mutually_exclusive(self) -> "VLLMGuidedParams":
         """Ensure only one guided constraint is specified."""
         constraints = [
             self.guided_json is not None,
@@ -221,45 +167,15 @@ class VLLMBatchRequest(BaseModel):
         sampling_params: Optional extended sampling parameters
     """
 
-    prompt: str = Field(
-        ...,
-        description="The input prompt for generation"
-    )
-    model: Optional[str] = Field(
-        default=None,
-        description="Model identifier"
-    )
-    temperature: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=2.0,
-        description="Sampling temperature"
-    )
-    max_tokens: Optional[int] = Field(
-        default=None,
-        ge=1,
-        description="Maximum tokens to generate"
-    )
-    guided_json: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="JSON schema for constrained output"
-    )
-    guided_regex: Optional[str] = Field(
-        default=None,
-        description="Regex pattern for constrained output"
-    )
-    guided_choice: Optional[List[str]] = Field(
-        default=None,
-        description="List of valid choices"
-    )
-    lora_adapter: Optional[str] = Field(
-        default=None,
-        description="LoRA adapter name"
-    )
-    sampling_params: Optional[VLLMSamplingParams] = Field(
-        default=None,
-        description="Extended sampling parameters"
-    )
+    prompt: str = Field(..., description="The input prompt for generation")
+    model: Optional[str] = Field(default=None, description="Model identifier")
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    max_tokens: Optional[int] = Field(default=None, ge=1, description="Maximum tokens to generate")
+    guided_json: Optional[Dict[str, Any]] = Field(default=None, description="JSON schema for constrained output")
+    guided_regex: Optional[str] = Field(default=None, description="Regex pattern for constrained output")
+    guided_choice: Optional[List[str]] = Field(default=None, description="List of valid choices")
+    lora_adapter: Optional[str] = Field(default=None, description="LoRA adapter name")
+    sampling_params: Optional[VLLMSamplingParams] = Field(default=None, description="Extended sampling parameters")
 
 
 class VLLMBatchResponse(BaseModel):
@@ -278,29 +194,13 @@ class VLLMBatchResponse(BaseModel):
     """
 
     responses: List[Optional[str]] = Field(
-        default_factory=list,
-        description="List of generated responses (None for failed requests)"
+        default_factory=list, description="List of generated responses (None for failed requests)"
     )
-    errors: Dict[int, str] = Field(
-        default_factory=dict,
-        description="Map of request index to error message"
-    )
-    total_requests: int = Field(
-        default=0,
-        description="Total number of requests in batch"
-    )
-    successful: int = Field(
-        default=0,
-        description="Number of successful completions"
-    )
-    failed: int = Field(
-        default=0,
-        description="Number of failed requests"
-    )
-    total_tokens: int = Field(
-        default=0,
-        description="Total tokens used across all requests"
-    )
+    errors: Dict[int, str] = Field(default_factory=dict, description="Map of request index to error message")
+    total_requests: int = Field(default=0, description="Total number of requests in batch")
+    successful: int = Field(default=0, description="Number of successful completions")
+    failed: int = Field(default=0, description="Number of failed requests")
+    total_tokens: int = Field(default=0, description="Total tokens used across all requests")
 
 
 class VLLMServerInfo(BaseModel):
@@ -316,26 +216,11 @@ class VLLMServerInfo(BaseModel):
         tensor_parallel_size: Number of GPUs for tensor parallelism
     """
 
-    version: Optional[str] = Field(
-        default=None,
-        description="vLLM version string"
-    )
-    model_id: Optional[str] = Field(
-        default=None,
-        description="Currently loaded model identifier"
-    )
-    gpu_memory_utilization: Optional[float] = Field(
-        default=None,
-        description="GPU memory utilization"
-    )
-    max_model_len: Optional[int] = Field(
-        default=None,
-        description="Maximum model context length"
-    )
-    tensor_parallel_size: Optional[int] = Field(
-        default=None,
-        description="Number of GPUs for tensor parallelism"
-    )
+    version: Optional[str] = Field(default=None, description="vLLM version string")
+    model_id: Optional[str] = Field(default=None, description="Currently loaded model identifier")
+    gpu_memory_utilization: Optional[float] = Field(default=None, description="GPU memory utilization")
+    max_model_len: Optional[int] = Field(default=None, description="Maximum model context length")
+    tensor_parallel_size: Optional[int] = Field(default=None, description="Number of GPUs for tensor parallelism")
 
 
 def pydantic_to_guided_json(model: Type[BaseModel]) -> Dict[str, Any]:

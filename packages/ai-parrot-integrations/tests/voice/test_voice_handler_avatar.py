@@ -3,6 +3,7 @@
 All external calls (VoiceAvatarSession, is_avatar_enabled) are mocked — no real
 network, LiveKit, or LiveAvatar connections.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,6 @@ import pytest
 
 from parrot.models.voice import LiveVoiceResponse
 from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -78,9 +78,7 @@ def avatar_session(mocker):
 
 
 @pytest.mark.asyncio
-async def test_send_voice_response_tees_audio_and_keeps_browser(
-    handler, connection, avatar_session
-):
+async def test_send_voice_response_tees_audio_and_keeps_browser(handler, connection, avatar_session):
     """_send_voice_response tees audio_data to avatar AND still sends browser chunk."""
     connection.avatar_session = avatar_session
     pcm = b"\x00\x01" * 50
@@ -91,18 +89,12 @@ async def test_send_voice_response_tees_audio_and_keeps_browser(
     avatar_session.speak.assert_awaited_once_with(pcm)
     # Browser response_chunk must also have been sent
     assert connection.ws.send_json.await_count >= 1
-    sent_types = [
-        call.args[0]["type"]
-        for call in connection.ws.send_json.await_args_list
-        if call.args
-    ]
+    sent_types = [call.args[0]["type"] for call in connection.ws.send_json.await_args_list if call.args]
     assert "response_chunk" in sent_types
 
 
 @pytest.mark.asyncio
-async def test_send_voice_response_finish_turn_on_complete(
-    handler, connection, avatar_session
-):
+async def test_send_voice_response_finish_turn_on_complete(handler, connection, avatar_session):
     """is_complete triggers avatar.finish_turn()."""
     connection.avatar_session = avatar_session
     resp = LiveVoiceResponse(audio_data=b"\x00\x01" * 50, is_complete=True)
@@ -111,9 +103,7 @@ async def test_send_voice_response_finish_turn_on_complete(
 
 
 @pytest.mark.asyncio
-async def test_send_voice_response_interrupt_routes_to_avatar(
-    handler, connection, avatar_session
-):
+async def test_send_voice_response_interrupt_routes_to_avatar(handler, connection, avatar_session):
     """is_interrupted → avatar.interrupt(); speak must NOT be called."""
     connection.avatar_session = avatar_session
     resp = LiveVoiceResponse(is_interrupted=True)
@@ -314,6 +304,7 @@ async def test_reset_session_no_orphan(handler, connection, avatar_session, mock
 
 
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_start_session_avatar_failure_degrades(handler, connection, mocker):

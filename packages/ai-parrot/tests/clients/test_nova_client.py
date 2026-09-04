@@ -4,6 +4,7 @@ Verifies the MRO/defaults, that text methods are inherited (not
 delegated), and that voice/generation capabilities are present on
 instances — no real AWS credentials or network access required.
 """
+
 from parrot.clients.amazon.bedrock import BedrockConverseBase
 from parrot.clients.amazon.nova import NovaClient
 from parrot.clients.amazon.nova.audio import NovaAudio
@@ -66,15 +67,11 @@ class TestInRegionModelsNeverGetRegionPrefix:
 
     def test_generate_image_default_model_has_no_region_prefix(self):
         c = NovaClient()
-        assert c._translate_in_region_model(
-            c._default_image_model
-        ) == "amazon.nova-canvas-v1:0"
+        assert c._translate_in_region_model(c._default_image_model) == "amazon.nova-canvas-v1:0"
 
     def test_video_generation_default_model_has_no_region_prefix(self):
         c = NovaClient()
-        assert c._translate_in_region_model(
-            c._default_video_model
-        ) == "amazon.nova-reel-v1:0"
+        assert c._translate_in_region_model(c._default_video_model) == "amazon.nova-reel-v1:0"
 
     def test_text_model_still_gets_region_prefix(self):
         """Sanity check: the fix must not remove the prefix from the TEXT

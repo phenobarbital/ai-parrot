@@ -4,6 +4,7 @@ Covers spec §3 Module 4 (voice half): the NOVA_VOICE_CATALOG constant,
 NovaAudio._resolve_voice() validation with a warned fallback, and the
 descriptor sourcing voice_catalog/default_voice from that constant.
 """
+
 from parrot.clients.amazon.nova import NovaClient
 from parrot.clients.amazon.nova.audio import NOVA_VOICE_CATALOG
 

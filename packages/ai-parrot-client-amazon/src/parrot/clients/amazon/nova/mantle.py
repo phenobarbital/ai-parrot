@@ -101,9 +101,7 @@ class BedrockMantleClient(OpenAIBaseClient):
         resolved_key = api_key or BEDROCK_MANTLE_API_KEY or AWS_NOVA_API_KEY
         resolved_region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
         resolved_base_url = (
-            base_url
-            or BEDROCK_MANTLE_BASE_URL
-            or f"https://bedrock-mantle.{resolved_region}.api.aws/v1"
+            base_url or BEDROCK_MANTLE_BASE_URL or f"https://bedrock-mantle.{resolved_region}.api.aws/v1"
         )
         # FEAT-438 G5: AbstractClient.__init__ now only creates an instance
         # attribute when the caller explicitly passes fallback_model=, so

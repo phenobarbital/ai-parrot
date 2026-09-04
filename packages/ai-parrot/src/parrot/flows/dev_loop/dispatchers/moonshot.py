@@ -61,6 +61,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.moonshot.models import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
+
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",
@@ -92,6 +93,7 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         # FEAT-523 (TASK-2846): lazy import — core must not import a
         # provider module at module scope (AC-3).
         from parrot.clients.moonshot.client import _thinking_ctx as _moonshot_thinking_ctx
+
         args = dict(args)
         thinking_flags = {
             "thinking": args.pop("thinking", None),

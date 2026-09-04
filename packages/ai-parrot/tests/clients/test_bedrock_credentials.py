@@ -6,6 +6,7 @@ branch: reading the correct ``AWS_CREDENTIALS`` profile keys
 ``'default'`` profile when the named profile is missing, and always
 binding the resolved credential attributes.
 """
+
 import pytest
 
 from parrot.clients.amazon.bedrock import BedrockConverseBase, BedrockConverseClient
@@ -44,7 +45,9 @@ class TestAwsIdResolution:
     def test_explicit_kwargs_take_priority_over_profile(self, patched_profiles):
         """Spec §1 Goals: explicit kwargs win over the aws_id profile."""
         c = BedrockConverseClient(
-            aws_id="monitoring", aws_access_key="EXPLICIT-K", aws_secret_key="EXPLICIT-S",
+            aws_id="monitoring",
+            aws_access_key="EXPLICIT-K",
+            aws_secret_key="EXPLICIT-S",
         )
         assert c._aws_access_key == "EXPLICIT-K"
         assert c._aws_secret_key == "EXPLICIT-S"
@@ -136,9 +139,7 @@ class TestBearerTokenResolution:
     async def test_get_client_uses_sigv4_for_static_keys(self, monkeypatch):
         """A static keypair still signs with SigV4, not bearer."""
         monkeypatch.setattr("parrot.clients.amazon.bedrock.AWS_CREDENTIALS", {})
-        c = BedrockConverseClient(
-            aws_access_key="AKIA-EXPLICIT", aws_secret_key="explicit-secret"
-        )
+        c = BedrockConverseClient(aws_access_key="AKIA-EXPLICIT", aws_secret_key="explicit-secret")
         client = await c.get_client()
 
         assert client.meta.config.signature_version != "bearer"

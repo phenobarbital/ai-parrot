@@ -265,6 +265,7 @@ class BedrockResearchPartner(AbstractResearchPartner):
         # provider module at module scope (AC-3).
         from parrot.clients.amazon.nova.client import NovaClient
         from parrot.clients.amazon.nova.mantle import BedrockMantleClient
+
         model = self.model or resolve_backend_model(self.backend)
         validate_research_partner_model(model)
         if self.backend == "gpt":

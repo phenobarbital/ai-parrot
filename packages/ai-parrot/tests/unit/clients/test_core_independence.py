@@ -7,6 +7,7 @@ still import cleanly — proving core no longer imports a provider client or
 enum at module scope (AC-3). This is the structural backstop for every
 lazy-import fix TASK-2846 made across core call sites.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -16,8 +17,20 @@ import pytest
 
 #: All 15 providers per spec §2's provider → distribution map.
 PROVIDERS = [
-    "openai", "anthropic", "google", "amazon", "groq", "grok", "zai",
-    "nvidia", "moonshot", "openrouter", "local", "vllm", "gemma4", "hf",
+    "openai",
+    "anthropic",
+    "google",
+    "amazon",
+    "groq",
+    "grok",
+    "zai",
+    "nvidia",
+    "moonshot",
+    "openrouter",
+    "local",
+    "vllm",
+    "gemma4",
+    "hf",
     "meta",
 ]
 

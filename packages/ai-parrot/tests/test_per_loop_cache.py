@@ -3,6 +3,7 @@
 All tests are fully offline — no provider credentials are needed.
 Tests verify TASK-795 (base cache), TASK-796 (Google hook), TASK-797 (Grok).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,10 +14,10 @@ import pytest
 
 from parrot.clients.base import AbstractClient
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
 
 class _StubSDKClient:
     """Minimal fake SDK client returned by get_client() in tests."""
@@ -44,6 +45,7 @@ def counting_abstract_client(stub_sdk_client):
     - ``build_count`` — how many times get_client() was called.
     - ``force_invalid`` — when True, _client_invalid_for_current returns True.
     """
+
     class _Counter(AbstractClient):
         """Stub AbstractClient for testing the per-loop cache."""
 
@@ -118,6 +120,7 @@ def loop_in_thread():
 # Test 1: Same loop reuses the client
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_same_loop_reuses_client(counting_abstract_client):
     """Two _ensure_client() calls on the same loop return the same object."""
@@ -131,6 +134,7 @@ async def test_same_loop_reuses_client(counting_abstract_client):
 # ---------------------------------------------------------------------------
 # Test 2: Different loops build separate clients
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_different_loop_builds_new_client(counting_abstract_client, loop_in_thread):
@@ -149,6 +153,7 @@ async def test_different_loop_builds_new_client(counting_abstract_client, loop_i
 # Test 3: Invalidation hook forces rebuild on the same loop
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_invalidation_hook_forces_rebuild(counting_abstract_client):
     """When _client_invalid_for_current returns True, the entry is rebuilt."""
@@ -164,6 +169,7 @@ async def test_invalidation_hook_forces_rebuild(counting_abstract_client):
 # Test 4: close() on the current loop awaits the SDK client's close()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_close_on_current_loop_awaits_sdk_close(counting_abstract_client):
     """close() must call the SDK client's async close() and clear the entry."""
@@ -178,6 +184,7 @@ async def test_close_on_current_loop_awaits_sdk_close(counting_abstract_client):
 # ---------------------------------------------------------------------------
 # Test 5: close() on a dead loop drops the entry without awaiting
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_close_on_dead_loop_drops_silently(counting_abstract_client, loop_in_thread):
@@ -211,6 +218,7 @@ async def test_close_on_dead_loop_drops_silently(counting_abstract_client, loop_
 # Test 6: client property returns None before _ensure_client is called
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_client_property_returns_none_before_ensure(counting_abstract_client):
     """The client property must return None on a fresh loop."""
@@ -222,6 +230,7 @@ async def test_client_property_returns_none_before_ensure(counting_abstract_clie
 # Test 7: client setter rejects non-None values
 # ---------------------------------------------------------------------------
 
+
 def test_client_setter_rejects_non_none(counting_abstract_client):
     """Assigning a non-None value to .client must raise AttributeError."""
     wrapper = counting_abstract_client()
@@ -232,6 +241,7 @@ def test_client_setter_rejects_non_none(counting_abstract_client):
 # ---------------------------------------------------------------------------
 # Test 8: client setter accepts None and clears the current-loop entry
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_client_setter_accepts_none_clears_current_loop_entry(
@@ -253,6 +263,7 @@ async def test_client_setter_accepts_none_clears_current_loop_entry(
 # ---------------------------------------------------------------------------
 # Test 9: Google-style model-class invalidation hook
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_google_model_class_invalidates_entry():
@@ -327,10 +338,9 @@ async def test_google_model_class_invalidates_entry():
 # Test 10: Google loop-switch does not invalidate the other loop's entry
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_google_loop_switch_does_not_invalidate_other_loop(
-    counting_abstract_client, loop_in_thread
-):
+async def test_google_loop_switch_does_not_invalidate_other_loop(counting_abstract_client, loop_in_thread):
     """Triggering a model-class change on Loop A must not affect Loop B's entry.
 
     Expected build sequence: Loop A initial (1), Loop B initial (2),
@@ -351,14 +361,13 @@ async def test_google_loop_switch_does_not_invalidate_other_loop(
 
     # Loop B's entry must still be present and not rebuilt.
     loop_b_id = id(_other_loop)
-    assert loop_b_id in wrapper._clients_by_loop, (
-        "Loop B's entry must still exist after Loop A rebuild."
-    )
+    assert loop_b_id in wrapper._clients_by_loop, "Loop B's entry must still exist after Loop A rebuild."
 
 
 # ---------------------------------------------------------------------------
 # Test 11: GrokClient.get_client() returns a fresh client each call
 # ---------------------------------------------------------------------------
+
 
 def test_grok_get_client_no_longer_self_caches(monkeypatch):
     """GrokClient.get_client must not cache on self.client; each call gives

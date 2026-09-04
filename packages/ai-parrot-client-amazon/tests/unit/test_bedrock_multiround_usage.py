@@ -15,6 +15,7 @@ multi-round ``ask()``/``resume()`` tool-use loops and asserts that:
 - ``NovaClient`` and ``BedrockConverseClient`` both receive the fix by
   inheritance, with ``client_name`` correctly attributed on each.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,9 +34,12 @@ from parrot.core.events.lifecycle.events import (
 def _tool_round(tool_use_id: str, usage: dict, tool_name: str = "t") -> dict:
     return {
         "stopReason": "tool_use",
-        "output": {"message": {"role": "assistant", "content": [
-            {"toolUse": {"toolUseId": tool_use_id, "name": tool_name, "input": {}}}
-        ]}},
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": tool_use_id, "name": tool_name, "input": {}}}],
+            }
+        },
         "usage": usage,
     }
 
@@ -70,8 +74,10 @@ class TestBedrockAskMultiroundUsage:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("weather and news?", use_tools=True)
 
         assert msg.usage.prompt_tokens == 450
@@ -89,8 +95,10 @@ class TestBedrockAskMultiroundUsage:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         round_events = _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             await client.ask("weather and news?", use_tools=True)
         await asyncio.sleep(0)
 
@@ -111,15 +119,18 @@ class TestBedrockAskMultiroundUsage:
             _final_round({"inputTokens": 200, "outputTokens": 30}),
         ]
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("q", use_tools=True)
         assert msg.usage.extra_usage["rounds"] == 2
 
         # Single-round.
         client2 = BedrockConverseClient(model="claude-sonnet-4-5")
         with patch.object(
-            client2, "_sdk_create",
+            client2,
+            "_sdk_create",
             return_value=_final_round({"inputTokens": 10, "outputTokens": 5}),
         ):
             msg2 = await client2.ask("hi")
@@ -129,22 +140,38 @@ class TestBedrockAskMultiroundUsage:
     async def test_ask_sums_cache_tokens_across_rounds(self) -> None:
         """cacheRead/cacheWriteInputTokens are SUMS, not last-round (U1)."""
         responses = [
-            _tool_round("tu_1", {
-                "inputTokens": 100, "outputTokens": 10,
-                "cacheReadInputTokens": 10, "cacheWriteInputTokens": 5,
-            }),
-            _tool_round("tu_2", {
-                "inputTokens": 150, "outputTokens": 20,
-                "cacheReadInputTokens": 20, "cacheWriteInputTokens": 8,
-            }),
-            _final_round({
-                "inputTokens": 200, "outputTokens": 30,
-                "cacheReadInputTokens": 30, "cacheWriteInputTokens": 12,
-            }),
+            _tool_round(
+                "tu_1",
+                {
+                    "inputTokens": 100,
+                    "outputTokens": 10,
+                    "cacheReadInputTokens": 10,
+                    "cacheWriteInputTokens": 5,
+                },
+            ),
+            _tool_round(
+                "tu_2",
+                {
+                    "inputTokens": 150,
+                    "outputTokens": 20,
+                    "cacheReadInputTokens": 20,
+                    "cacheWriteInputTokens": 8,
+                },
+            ),
+            _final_round(
+                {
+                    "inputTokens": 200,
+                    "outputTokens": 30,
+                    "cacheReadInputTokens": 30,
+                    "cacheWriteInputTokens": 12,
+                }
+            ),
         ]
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("q", use_tools=True)
 
         # Sum, not last-round-wins (which would be 30/12).
@@ -158,7 +185,8 @@ class TestBedrockAskMultiroundUsage:
         round_events = _capture(client, ClientRoundEvent)
 
         with patch.object(
-            client, "_sdk_create",
+            client,
+            "_sdk_create",
             return_value=_final_round({"inputTokens": 10, "outputTokens": 5}),
         ):
             msg = await client.ask("hi")
@@ -179,8 +207,10 @@ class TestBedrockAskMultiroundUsage:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         round_events = _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("q", use_tools=True)
         await asyncio.sleep(0)
 
@@ -198,13 +228,12 @@ class TestBedrockAskMultiroundUsage:
             pass
 
         final_response = _final_round({"inputTokens": 10, "outputTokens": 5})
-        client = BedrockConverseClient(
-            model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5"
-        )
+        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5")
         round_events = _capture(client, ClientRoundEvent)
 
         with patch.object(
-            client, "_sdk_create",
+            client,
+            "_sdk_create",
             side_effect=[ThrottlingException("slow down"), final_response],
         ):
             msg = await client.ask("hi")
@@ -230,13 +259,13 @@ class TestBedrockAskMultiroundUsage:
             _tool_round("tu_1", {"inputTokens": 20, "outputTokens": 5}),
             _final_round({"inputTokens": 30, "outputTokens": 10}),
         ]
-        client = BedrockConverseClient(
-            model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5"
-        )
+        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5")
         round_events = _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             await client.ask("hi", use_tools=True)
         await asyncio.sleep(0)
 
@@ -252,8 +281,10 @@ class TestBedrockAskMultiroundUsage:
             _final_round({"inputTokens": 20, "outputTokens": 10}),
         ]
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("q", use_tools=True)
         assert msg.usage.extra_usage["rounds"] == 2
 
@@ -271,7 +302,8 @@ class TestBedrockResumeMultiroundUsage:
             "tool_call_id": "tu_1",
         }
         with patch.object(
-            client, "_sdk_create",
+            client,
+            "_sdk_create",
             return_value=_final_round({"inputTokens": 15, "outputTokens": 5}),
         ):
             await client.resume("session-1", "Sunny, 25C", state)
@@ -287,14 +319,24 @@ class TestBedrockResumeMultiroundUsage:
         """resume(): accumulated usage, per-round events, rounds stamp,
         summed cache counters — same four assertions as ask()."""
         responses = [
-            _tool_round("tu_2", {
-                "inputTokens": 40, "outputTokens": 10,
-                "cacheReadInputTokens": 4, "cacheWriteInputTokens": 2,
-            }, "search"),
-            _final_round({
-                "inputTokens": 60, "outputTokens": 20,
-                "cacheReadInputTokens": 6, "cacheWriteInputTokens": 3,
-            }),
+            _tool_round(
+                "tu_2",
+                {
+                    "inputTokens": 40,
+                    "outputTokens": 10,
+                    "cacheReadInputTokens": 4,
+                    "cacheWriteInputTokens": 2,
+                },
+                "search",
+            ),
+            _final_round(
+                {
+                    "inputTokens": 60,
+                    "outputTokens": 20,
+                    "cacheReadInputTokens": 6,
+                    "cacheWriteInputTokens": 3,
+                }
+            ),
         ]
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         round_events = _capture(client, ClientRoundEvent)
@@ -303,8 +345,10 @@ class TestBedrockResumeMultiroundUsage:
             "messages": [{"role": "user", "content": [{"text": "What's the weather?"}]}],
             "tool_call_id": "tu_1",
         }
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.resume("session-1", "Sunny, 25C", state)
         await asyncio.sleep(0)
 
@@ -325,18 +369,34 @@ class TestBedrockResumeMultiroundUsage:
         3rd+ accumulation step, mirroring ask()'s dedicated 3-round
         cache-sum test)."""
         responses = [
-            _tool_round("tu_1", {
-                "inputTokens": 10, "outputTokens": 5,
-                "cacheReadInputTokens": 1, "cacheWriteInputTokens": 1,
-            }, "step_one"),
-            _tool_round("tu_2", {
-                "inputTokens": 20, "outputTokens": 10,
-                "cacheReadInputTokens": 2, "cacheWriteInputTokens": 2,
-            }, "step_two"),
-            _final_round({
-                "inputTokens": 30, "outputTokens": 15,
-                "cacheReadInputTokens": 3, "cacheWriteInputTokens": 3,
-            }),
+            _tool_round(
+                "tu_1",
+                {
+                    "inputTokens": 10,
+                    "outputTokens": 5,
+                    "cacheReadInputTokens": 1,
+                    "cacheWriteInputTokens": 1,
+                },
+                "step_one",
+            ),
+            _tool_round(
+                "tu_2",
+                {
+                    "inputTokens": 20,
+                    "outputTokens": 10,
+                    "cacheReadInputTokens": 2,
+                    "cacheWriteInputTokens": 2,
+                },
+                "step_two",
+            ),
+            _final_round(
+                {
+                    "inputTokens": 30,
+                    "outputTokens": 15,
+                    "cacheReadInputTokens": 3,
+                    "cacheWriteInputTokens": 3,
+                }
+            ),
         ]
         client = BedrockConverseClient(model="claude-sonnet-4-5")
 
@@ -344,8 +404,10 @@ class TestBedrockResumeMultiroundUsage:
             "messages": [{"role": "user", "content": [{"text": "What's the weather?"}]}],
             "tool_call_id": "tu_0",
         }
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.resume("session-1", "go", state)
 
         assert msg.usage.extra_usage["rounds"] == 3
@@ -366,7 +428,8 @@ class TestBedrockResumeMultiroundUsage:
             "tool_call_id": "tu_1",
         }
         with patch.object(
-            client, "_sdk_create",
+            client,
+            "_sdk_create",
             return_value=_final_round({"inputTokens": 10, "outputTokens": 5}),
         ):
             msg = await client.resume("session-1", "ok", state)
@@ -389,8 +452,10 @@ class TestNovaInheritsInstrumentation:
         client = NovaClient()
         round_events = _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             msg = await client.ask("q", use_tools=True)
         await asyncio.sleep(0)
 
@@ -408,8 +473,10 @@ class TestNovaInheritsInstrumentation:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         round_events = _capture(client, ClientRoundEvent)
 
-        with patch.object(client, "_sdk_create", side_effect=responses), \
-            patch.object(client, "_execute_tool", return_value="ok"):
+        with (
+            patch.object(client, "_sdk_create", side_effect=responses),
+            patch.object(client, "_execute_tool", return_value="ok"),
+        ):
             await client.ask("q", use_tools=True)
         await asyncio.sleep(0)
 

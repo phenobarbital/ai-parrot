@@ -24,6 +24,7 @@ Usage::
     sdk_client = await backend.build_client()
     translated = backend.translate_model("claude-sonnet-4-6")
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,8 +79,7 @@ class DirectBackend:
             from anthropic import AsyncAnthropic
         except ImportError as exc:
             raise ImportError(
-                "DirectBackend requires the 'anthropic' SDK. "
-                "Install with: pip install ai-parrot[anthropic]"
+                "DirectBackend requires the 'anthropic' SDK. " "Install with: pip install ai-parrot[anthropic]"
             ) from exc
         return AsyncAnthropic(api_key=self.api_key, max_retries=2)
 
@@ -173,6 +173,7 @@ class BedrockBackend:
             Translated Bedrock model ID string.
         """
         from parrot.clients.amazon.models import translate
+
         return translate(model, region_prefix=self.region_prefix)
 
 

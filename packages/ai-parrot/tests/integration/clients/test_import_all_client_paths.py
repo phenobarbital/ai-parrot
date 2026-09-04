@@ -7,14 +7,27 @@ core-independence test (see `packages/ai-parrot/tests/unit/clients/
 test_core_independence.py` for the "core imports without any provider"
 guarantee).
 """
+
 import importlib
 
 import pytest
 
 # Codebase Contract (TASK-2855) — the 15 providers this feature extracted.
 PROVIDERS = [
-    "openai", "anthropic", "google", "amazon", "groq", "grok", "zai",
-    "nvidia", "moonshot", "openrouter", "local", "vllm", "gemma4", "hf",
+    "openai",
+    "anthropic",
+    "google",
+    "amazon",
+    "groq",
+    "grok",
+    "zai",
+    "nvidia",
+    "moonshot",
+    "openrouter",
+    "local",
+    "vllm",
+    "gemma4",
+    "hf",
     "meta",
 ]
 

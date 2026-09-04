@@ -5,6 +5,7 @@ model-originated response, user transcription emitted as role="user"
 instead of metadata["user_transcription"], and the per-call voice
 override with catalog validation.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -73,9 +74,7 @@ def _mock_client(monkeypatch, client, responses):
 def _text_response(text: str):
     return SimpleNamespace(
         server_content=SimpleNamespace(
-            model_turn=SimpleNamespace(
-                parts=[SimpleNamespace(text=text, inline_data=None)]
-            ),
+            model_turn=SimpleNamespace(parts=[SimpleNamespace(text=text, inline_data=None)]),
         ),
         tool_call=None,
         usage_metadata=None,
@@ -103,36 +102,32 @@ class TestCanonicalRole:
     @pytest.mark.asyncio
     async def test_model_text_is_assistant(self, monkeypatch, client):
         _mock_client(monkeypatch, client, [_text_response("Hello there")])
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.role == "assistant" for r in responses if r.text)
 
     @pytest.mark.asyncio
     async def test_user_transcription_is_role_user(self, monkeypatch, client):
         _mock_client(monkeypatch, client, [_user_transcription_response("hi")])
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert any(r.role == "user" and r.text == "hi" for r in responses)
 
     @pytest.mark.asyncio
     async def test_no_user_transcription_metadata(self, monkeypatch, client):
         _mock_client(monkeypatch, client, [_user_transcription_response("hi")])
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         assert all("user_transcription" not in r.metadata for r in responses)
 
     @pytest.mark.asyncio
     async def test_mixed_turn_both_roles_present(self, monkeypatch, client):
-        _mock_client(monkeypatch, client, [
-            _user_transcription_response("what's the weather"),
-            _text_response("It's sunny"),
-        ])
-        responses = [
-            r async for r in client.stream_voice(_empty_audio_iterator())
-        ]
+        _mock_client(
+            monkeypatch,
+            client,
+            [
+                _user_transcription_response("what's the weather"),
+                _text_response("It's sunny"),
+            ],
+        )
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
         roles = {r.role for r in responses if r.text}
         assert roles == {"user", "assistant"}
 

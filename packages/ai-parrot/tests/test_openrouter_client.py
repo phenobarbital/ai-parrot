@@ -1,4 +1,5 @@
 """Unit tests for OpenRouterClient."""
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from parrot.clients.openrouter import OpenRouterClient
@@ -11,24 +12,13 @@ from parrot.clients.openrouter.models import (
 
 @pytest.fixture
 def client():
-    return OpenRouterClient(
-        api_key="test-key-123",
-        app_name="ai-parrot-test",
-        site_url="https://example.com"
-    )
+    return OpenRouterClient(api_key="test-key-123", app_name="ai-parrot-test", site_url="https://example.com")
 
 
 @pytest.fixture
 def client_with_prefs():
-    prefs = ProviderPreferences(
-        allow_fallbacks=True,
-        order=["DeepInfra", "Together"],
-        ignore=["Azure"]
-    )
-    return OpenRouterClient(
-        api_key="test-key-123",
-        provider_preferences=prefs
-    )
+    prefs = ProviderPreferences(allow_fallbacks=True, order=["DeepInfra", "Together"], ignore=["Azure"])
+    return OpenRouterClient(api_key="test-key-123", provider_preferences=prefs)
 
 
 class TestOpenRouterClientInit:
@@ -53,9 +43,7 @@ class TestOpenRouterClientInit:
     def test_provider_preferences_stored(self, client_with_prefs):
         """Provider preferences are stored."""
         assert client_with_prefs.provider_preferences is not None
-        assert client_with_prefs.provider_preferences.order == [
-            "DeepInfra", "Together"
-        ]
+        assert client_with_prefs.provider_preferences.order == ["DeepInfra", "Together"]
 
     def test_no_provider_preferences_by_default(self, client):
         """No provider preferences by default."""
@@ -67,6 +55,7 @@ class TestOpenRouterClientInit:
         inherits OpenAI-the-provider defaults (gpt-* model ids)."""
         from parrot.clients.openai import OpenAIClient
         from parrot.clients.openai_base import OpenAIBaseClient
+
         assert isinstance(client, OpenAIBaseClient)
         assert not isinstance(client, OpenAIClient)
 
@@ -76,6 +65,7 @@ class TestOpenRouterGetClient:
     async def test_get_client_returns_async_openai(self, client):
         """get_client returns AsyncOpenAI instance."""
         from openai import AsyncOpenAI
+
         openai_client = await client.get_client()
         assert isinstance(openai_client, AsyncOpenAI)
 
@@ -102,10 +92,7 @@ class TestOpenRouterDefaultModel:
 
     def test_model_override_via_kwargs(self):
         """Model can be overridden via kwargs."""
-        client = OpenRouterClient(
-            api_key="test-key",
-            model="meta-llama/llama-3.3-70b-instruct"
-        )
+        client = OpenRouterClient(api_key="test-key", model="meta-llama/llama-3.3-70b-instruct")
         assert client.model == "meta-llama/llama-3.3-70b-instruct"
 
 
@@ -144,7 +131,7 @@ class TestOpenRouterUsageTracking:
                 "tokens_completion": 300,
                 "native_tokens_prompt": 145,
                 "native_tokens_completion": 295,
-                "provider_name": "DeepInfra"
+                "provider_name": "DeepInfra",
             }
         }
 
@@ -154,15 +141,15 @@ class TestOpenRouterUsageTracking:
         mock_resp.raise_for_status = MagicMock()
 
         mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False)
-        ))
+        mock_session.get = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp), __aexit__=AsyncMock(return_value=False)
+            )
+        )
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession",
-                    return_value=mock_session):
+        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession", return_value=mock_session):
             usage = await client.get_generation_stats("gen-abc123")
 
         assert isinstance(usage, OpenRouterUsage)
@@ -191,15 +178,15 @@ class TestOpenRouterUsageTracking:
         mock_resp.raise_for_status = MagicMock()
 
         mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False)
-        ))
+        mock_session.get = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp), __aexit__=AsyncMock(return_value=False)
+            )
+        )
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession",
-                    return_value=mock_session):
+        with patch("parrot.clients.openrouter.client.aiohttp.ClientSession", return_value=mock_session):
             models = await client.list_models()
 
         assert isinstance(models, list)
@@ -213,8 +200,7 @@ class TestChatCompletionOverride:
     async def test_chat_completion_injects_provider_prefs(self, client_with_prefs):
         """_chat_completion injects provider preferences in extra_body."""
         with patch(
-            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
-            new_callable=AsyncMock
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion", new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()
             await client_with_prefs._chat_completion(
@@ -224,16 +210,13 @@ class TestChatCompletionOverride:
             _, kwargs = mock_super.call_args
             assert "extra_body" in kwargs
             assert "provider" in kwargs["extra_body"]
-            assert kwargs["extra_body"]["provider"]["order"] == [
-                "DeepInfra", "Together"
-            ]
+            assert kwargs["extra_body"]["provider"]["order"] == ["DeepInfra", "Together"]
 
     @pytest.mark.asyncio
     async def test_chat_completion_no_extra_body_without_prefs(self, client):
         """_chat_completion does not inject extra_body without preferences."""
         with patch(
-            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
-            new_callable=AsyncMock
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion", new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()
             await client._chat_completion(
@@ -247,14 +230,13 @@ class TestChatCompletionOverride:
     async def test_chat_completion_merges_existing_extra_body(self, client_with_prefs):
         """_chat_completion merges with existing extra_body."""
         with patch(
-            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
-            new_callable=AsyncMock
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion", new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()
             await client_with_prefs._chat_completion(
                 model="deepseek/deepseek-r1",
                 messages=[{"role": "user", "content": "hi"}],
-                extra_body={"custom_key": "custom_value"}
+                extra_body={"custom_key": "custom_value"},
             )
             _, kwargs = mock_super.call_args
             assert kwargs["extra_body"]["custom_key"] == "custom_value"

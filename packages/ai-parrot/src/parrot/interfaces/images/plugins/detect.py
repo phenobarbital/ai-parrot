@@ -34,6 +34,7 @@ class DetectionPlugin(ClassifyBase):
     DetectionPlugin is a plugin for performing image detection.
     Uses Gemini 2.5 multimodal model for image detection tasks.
     """
+
     column_name: str = "detections"
     section_name: str = "detections"
 
@@ -53,8 +54,8 @@ class DetectionPlugin(ClassifyBase):
         """
 
         # Check if we have structured output
-        print(hasattr(result, 'structured_output'), hasattr(result, 'output'))
-        if hasattr(result, 'output') and result.output:
+        print(hasattr(result, "structured_output"), hasattr(result, "output"))
+        if hasattr(result, "output") and result.output:
             detection_result = result.output
 
             # Convert BoundingBox objects to dictionaries
@@ -67,7 +68,7 @@ class DetectionPlugin(ClassifyBase):
                     "product_type": bbox.product_type,
                     "description": bbox.description,
                     "confidence": bbox.confidence,
-                    "bbox": bbox.bbox  # Already a list [x1, y1, x2, y2]
+                    "bbox": bbox.bbox,  # Already a list [x1, y1, x2, y2]
                 }
                 detections.append(detection_dict)
 
@@ -79,18 +80,14 @@ class DetectionPlugin(ClassifyBase):
                 "analysis": detection_result.analysis,
                 "total_count": detection_result.total_count,  # Include this for completeness
                 "detected": detected,
-                "detections": detections
+                "detections": detections,
             }
 
             return r
 
         else:
             # Fallback if no structured output
-            return {
-                "analysis": "No structured output available",
-                "total_count": 0,
-                "detections": []
-            }
+            return {"analysis": "No structured output available", "total_count": 0, "detections": []}
 
     async def analyze(self, image: Union[Path, Image.Image], **kwargs) -> dict:
         """
@@ -109,7 +106,7 @@ class DetectionPlugin(ClassifyBase):
         if self.section_name in detections_column:
             del detections_column[self.section_name]
 
-        if getattr(self, 'filter_column', None) and getattr(self, 'filter_by', None):
+        if getattr(self, "filter_column", None) and getattr(self, "filter_by", None):
             filter_value = row[self.filter_column] if self.filter_column in row else None
             # Check if filter value is valid and not NA
             if not self._is_valid_filter_value(filter_value):
@@ -119,9 +116,7 @@ class DetectionPlugin(ClassifyBase):
                 return detections_column
             # Now safe to do the comparison
             if filter_value not in self.filter_by:
-                self.logger.info(
-                    f"Skipping detection for row {row.name} with category {filter_value}"
-                )
+                self.logger.info(f"Skipping detection for row {row.name} with category {filter_value}")
                 return detections_column
         # FEAT-523: lazy import — core must not import a provider module
         # at module scope (AC-3); "google" ships from the
@@ -135,20 +130,16 @@ class DetectionPlugin(ClassifyBase):
                 reference_images=[self.reference_image] if self.reference_image else None,
                 prompt=self.prompt,
                 structured_output=self._detection_model,
-                model=self._model_name
+                model=self._model_name,
             )
             if _result:
                 detections = self._extract_detection_results(_result)
                 self.logger.info(f"Successfully detected {detections['total_count']} products")
-                self.logger.debug(
-                    f"Analysis: {detections['analysis'][:100]}..."
-                )
+                self.logger.debug(f"Analysis: {detections['analysis'][:100]}...")
                 detections_column[self.section_name] = detections
                 row[self.column_name] = detections_column
                 # Return the updated detections column
                 return detections_column
             else:
-                self.logger.error(
-                    "The model did not return a valid Detection result."
-                )
+                self.logger.error("The model did not return a valid Detection result.")
                 return detections_column

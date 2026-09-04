@@ -25,9 +25,7 @@ class TestExtendedRunOptions:
         assert opts.setting_sources == ["project", "user"]
 
     def test_extra_args_accepts_none_values(self):
-        opts = ClaudeAgentRunOptions(
-            extra_args={"verbose": None, "output-format": "json"}
-        )
+        opts = ClaudeAgentRunOptions(extra_args={"verbose": None, "output-format": "json"})
         assert opts.extra_args["verbose"] is None
         assert opts.extra_args["output-format"] == "json"
 

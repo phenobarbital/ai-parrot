@@ -1,4 +1,5 @@
 """Tests for GoogleModel computer-use entries (TASK-1480)."""
+
 import pytest
 from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
@@ -10,17 +11,13 @@ class TestGoogleModelComputerUseEntries:
         assert "GEMINI_COMPUTER_USE" in GoogleModel.__members__
 
     def test_gemini_computer_use_value(self):
-        assert GoogleModel.__members__["GEMINI_COMPUTER_USE"].value == (
-            "gemini-2.5-computer-use-preview-10-2025"
-        )
+        assert GoogleModel.__members__["GEMINI_COMPUTER_USE"].value == ("gemini-2.5-computer-use-preview-10-2025")
 
     def test_gemini_3_flash_computer_use_exists(self):
         assert "GEMINI_3_FLASH_COMPUTER_USE" in GoogleModel.__members__
 
     def test_gemini_3_flash_computer_use_value(self):
-        assert GoogleModel.__members__["GEMINI_3_FLASH_COMPUTER_USE"].value == (
-            "gemini-3-flash-preview"
-        )
+        assert GoogleModel.__members__["GEMINI_3_FLASH_COMPUTER_USE"].value == ("gemini-3-flash-preview")
 
     def test_existing_entries_unchanged(self):
         """Ensure existing model entries are not broken."""

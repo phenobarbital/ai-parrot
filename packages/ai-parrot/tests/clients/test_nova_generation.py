@@ -4,6 +4,7 @@ Mocks the aioboto3-facing seams (``_ensure_client`` → fake
 ``invoke_model``/``start_async_invoke``/``get_async_invoke`` — no real AWS
 credentials or network access required.
 """
+
 import base64
 import json
 from pathlib import Path
@@ -37,6 +38,7 @@ class Host(NovaGeneration):
 
     def __init__(self, client):
         import logging
+
         self._client = client
         self.logger = logging.getLogger(__name__)
 
@@ -52,9 +54,7 @@ class TestGenerateImage:
     async def test_generate_image_payload_and_decode(self, tmp_path):
         png_b64 = base64.b64encode(b"\x89PNG...").decode()
         fake_client = AsyncMock()
-        fake_client.invoke_model.return_value = {
-            "body": _FakeStreamingBody({"images": [png_b64]})
-        }
+        fake_client.invoke_model.return_value = {"body": _FakeStreamingBody({"images": [png_b64]})}
         host = Host(fake_client)
 
         msg = await host.generate_image("a cat", output_directory=tmp_path)
@@ -69,9 +69,7 @@ class TestGenerateImage:
     async def test_generate_image_negative_prompt_and_seed(self, tmp_path):
         png_b64 = base64.b64encode(b"\x89PNG...").decode()
         fake_client = AsyncMock()
-        fake_client.invoke_model.return_value = {
-            "body": _FakeStreamingBody({"images": [png_b64]})
-        }
+        fake_client.invoke_model.return_value = {"body": _FakeStreamingBody({"images": [png_b64]})}
         host = Host(fake_client)
 
         await host.generate_image("a cat", negative_prompt="no dogs", seed=42)
@@ -83,9 +81,7 @@ class TestGenerateImage:
     async def test_generate_image_as_base64(self):
         png_b64 = base64.b64encode(b"\x89PNG...").decode()
         fake_client = AsyncMock()
-        fake_client.invoke_model.return_value = {
-            "body": _FakeStreamingBody({"images": [png_b64]})
-        }
+        fake_client.invoke_model.return_value = {"body": _FakeStreamingBody({"images": [png_b64]})}
         host = Host(fake_client)
 
         msg = await host.generate_image("a cat", as_base64=True)
@@ -96,9 +92,7 @@ class TestGenerateImage:
 class TestVideoGeneration:
     async def test_video_generation_requires_s3_config(self):
         host = Host(AsyncMock())
-        with patch(
-            "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS", {"default": {}}
-        ):
+        with patch("parrot.clients.amazon.nova.generation.AWS_CREDENTIALS", {"default": {}}):
             with pytest.raises(ValueError, match="s3_output_uri|bucket_name"):
                 await host.video_generation("a dancing robot")
 
@@ -137,9 +131,7 @@ class TestVideoGeneration:
         in_progress = {"status": "InProgress"}
         completed = {
             "status": "Completed",
-            "outputDataConfig": {
-                "s3OutputDataConfig": {"s3Uri": "s3://my-bucket/nova-reel-output/"}
-            },
+            "outputDataConfig": {"s3OutputDataConfig": {"s3Uri": "s3://my-bucket/nova-reel-output/"}},
         }
         fake_client.get_async_invoke.side_effect = [in_progress, completed]
 
@@ -157,14 +149,18 @@ class TestVideoGeneration:
 
         host = Host(fake_client)
 
-        with patch("aioboto3.Session", return_value=fake_session), \
-                patch("asyncio.sleep", new=AsyncMock()), \
-                patch(
-                    "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS",
-                    {"default": {"bucket_name": "my-bucket"}},
-                ):
+        with (
+            patch("aioboto3.Session", return_value=fake_session),
+            patch("asyncio.sleep", new=AsyncMock()),
+            patch(
+                "parrot.clients.amazon.nova.generation.AWS_CREDENTIALS",
+                {"default": {"bucket_name": "my-bucket"}},
+            ),
+        ):
             msg = await host.video_generation(
-                "a dancing robot", output_directory=tmp_path, poll_interval=0.01,
+                "a dancing robot",
+                output_directory=tmp_path,
+                poll_interval=0.01,
             )
 
         assert fake_client.get_async_invoke.call_count == 2
@@ -177,7 +173,8 @@ class TestVideoGeneration:
             "invocationArn": "arn:aws:bedrock:us-east-1:123:async-invoke/job-2"
         }
         fake_client.get_async_invoke.return_value = {
-            "status": "Failed", "failureMessage": "boom",
+            "status": "Failed",
+            "failureMessage": "boom",
         }
         host = Host(fake_client)
 
@@ -195,6 +192,8 @@ class TestVideoGeneration:
         with patch("asyncio.sleep", new=AsyncMock()):
             with pytest.raises(InvokeError, match="did not complete"):
                 await host.video_generation(
-                    "a dancing robot", s3_output_uri="s3://bucket/prefix/",
-                    poll_interval=1.0, timeout=1.0,
+                    "a dancing robot",
+                    s3_output_uri="s3://bucket/prefix/",
+                    poll_interval=1.0,
+                    timeout=1.0,
                 )

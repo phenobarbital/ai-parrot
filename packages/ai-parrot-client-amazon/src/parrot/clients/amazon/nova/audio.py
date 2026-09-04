@@ -43,6 +43,7 @@ is composed into :class:`~parrot.clients.google.client.GoogleGenAIClient`.
 See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 3) for the full
 design.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -157,6 +158,7 @@ class _TurnState:
     ``self``, since ``NovaAudio`` is a shared mixin that may serve concurrent
     sessions.
     """
+
     role: Optional[str] = None
     generation_stage: Optional[str] = None
     pending_tool: Optional[LiveToolCall] = None
@@ -238,12 +240,10 @@ def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
             other than a JSON object.
     """
     if isinstance(raw, dict):
-        return raw                       # tolerate an already-parsed payload
-    parsed = json.loads(raw or "{}")     # ValueError on malformed input
+        return raw  # tolerate an already-parsed payload
+    parsed = json.loads(raw or "{}")  # ValueError on malformed input
     if not isinstance(parsed, dict):
-        raise ValueError(
-            f"tool arguments must be a JSON object, got {type(parsed).__name__}"
-        )
+        raise ValueError(f"tool arguments must be a JSON object, got {type(parsed).__name__}")
     return parsed
 
 
@@ -330,7 +330,8 @@ class NovaAudio:
             return normalized
         self.logger.warning(
             "NovaAudio: voice %r is not in the known catalog; falling back to %r",
-            requested, self.voice_id,
+            requested,
+            self.voice_id,
         )
         return self.voice_id
 
@@ -402,9 +403,7 @@ class NovaAudio:
         # set above) -> Environment -> IMDS — which covers both the explicit
         # credentials case and ambient credentials.
         if config.aws_credentials_identity_resolver is None:
-            config.aws_credentials_identity_resolver = create_default_chain(
-                http_client=config.transport
-            )
+            config.aws_credentials_identity_resolver = create_default_chain(http_client=config.transport)
 
         client = client_cls(config=config)
         return await client.invoke_model_with_bidirectional_stream(
@@ -438,19 +437,18 @@ class NovaAudio:
         if event_type != "audioInput":
             self.logger.debug(
                 "→ _send_event [%s] (%d bytes): %s",
-                event_type, len(payload_bytes), payload_bytes.decode("utf-8"),
+                event_type,
+                len(payload_bytes),
+                payload_bytes.decode("utf-8"),
             )
         else:
             self.logger.debug(
-                "→ _send_event [audioInput] (%d bytes)", len(payload_bytes),
+                "→ _send_event [audioInput] (%d bytes)",
+                len(payload_bytes),
             )
         # --- /DIAG ---
         await stream.input_stream.send(
-            InvokeModelWithBidirectionalStreamInputChunk(
-                value=BidirectionalInputPayloadPart(
-                    bytes_=payload_bytes
-                )
-            )
+            InvokeModelWithBidirectionalStreamInputChunk(value=BidirectionalInputPayloadPart(bytes_=payload_bytes))
         )
 
     async def _iter_events(self, stream: Any) -> AsyncIterator[Dict[str, Any]]:
@@ -483,9 +481,7 @@ class NovaAudio:
                 to ``stream_voice()``'s handler rather than silently skipped.
         """
         try:
-            _, receiver = await asyncio.wait_for(
-                stream.await_output(), timeout=self._OUTPUT_READY_TIMEOUT_SECONDS
-            )
+            _, receiver = await asyncio.wait_for(stream.await_output(), timeout=self._OUTPUT_READY_TIMEOUT_SECONDS)
         except TimeoutError as exc:
             raise RuntimeError(
                 "Nova Sonic did not return an initial response within "
@@ -499,9 +495,7 @@ class NovaAudio:
         async for chunk in receiver:
             payload = getattr(getattr(chunk, "value", None), "bytes_", None)
             if payload is None:
-                raise RuntimeError(
-                    f"Nova Sonic stream returned a non-payload event: {chunk!r}"
-                )
+                raise RuntimeError(f"Nova Sonic stream returned a non-payload event: {chunk!r}")
             frame = json.loads(payload)
             # Tolerate an already-unwrapped frame so a caller (or test double)
             # may hand over either shape.
@@ -548,17 +542,21 @@ class NovaAudio:
         """
         try:
             if content_name is not None:
-                await self._send_event(stream, {"event": {"contentEnd": {
-                    "promptName": prompt_name, "contentName": content_name,
-                }}})
-            await self._send_event(
-                stream, {"event": {"promptEnd": {"promptName": prompt_name}}}
-            )
+                await self._send_event(
+                    stream,
+                    {
+                        "event": {
+                            "contentEnd": {
+                                "promptName": prompt_name,
+                                "contentName": content_name,
+                            }
+                        }
+                    },
+                )
+            await self._send_event(stream, {"event": {"promptEnd": {"promptName": prompt_name}}})
             await self._send_event(stream, {"event": {"sessionEnd": {}}})
-        except Exception as exc:      # noqa: BLE001 — must never escape finally
-            self.logger.debug(
-                "Nova Sonic session shutdown frames not delivered: %s", exc
-            )
+        except Exception as exc:  # noqa: BLE001 — must never escape finally
+            self.logger.debug("Nova Sonic session shutdown frames not delivered: %s", exc)
 
     # ------------------------------------------------------------------
     # Guardrails (calls the inherited BedrockConverseBase method directly —
@@ -603,20 +601,16 @@ class NovaAudio:
                 if hasattr(tool, "get_schema"):
                     schema = tool.get_schema()
                     name = schema.get("name", getattr(tool, "name", "unknown"))
-                    description = schema.get(
-                        "description", getattr(tool, "description", "")
-                    )
+                    description = schema.get("description", getattr(tool, "description", ""))
                     parameters = schema.get("parameters", {})
                 elif hasattr(tool, "input_schema"):
                     name = getattr(tool, "name", "unknown")
                     description = getattr(tool, "description", "")
                     parameters = tool.input_schema
                 else:
-                    self.logger.warning(
-                        "Skipping tool with unrecognized shape: %r", tool
-                    )
+                    self.logger.warning("Skipping tool with unrecognized shape: %r", tool)
                     continue
-            except Exception:            # a broken tool must not kill the turn
+            except Exception:  # a broken tool must not kill the turn
                 self.logger.warning("Skipping tool with unreadable schema: %r", tool)
                 continue
             # Nova Sonic's bidirectional streaming protocol expects
@@ -624,15 +618,16 @@ class NovaAudio:
             # NOT a nested dict — verified against the AWS reference sample
             # (nova_sonic_tool_use.py:345-366). Passing a dict causes
             # "Unable to parse input chunk" (ValidationException).
-            schema_value = (
-                json.dumps(parameters) if isinstance(parameters, dict)
-                else parameters
+            schema_value = json.dumps(parameters) if isinstance(parameters, dict) else parameters
+            specs.append(
+                {
+                    "toolSpec": {
+                        "name": name,
+                        "description": description,
+                        "inputSchema": {"json": schema_value},
+                    }
+                }
             )
-            specs.append({"toolSpec": {
-                "name": name,
-                "description": description,
-                "inputSchema": {"json": schema_value},
-            }})
         return {"tools": specs} if specs else None
 
     def _build_prompt_start(self, prompt_name: str, voice_id: str) -> Dict[str, Any]:
@@ -669,9 +664,7 @@ class NovaAudio:
             }
         return {"event": {"promptStart": prompt_start}}
 
-    async def _send_tool_result(
-        self, stream: Any, prompt_name: str, tool_use_id: str, result: Any
-    ) -> None:
+    async def _send_tool_result(self, stream: Any, prompt_name: str, tool_use_id: str, result: Any) -> None:
         """Send a tool result as the three-frame sequence Nova requires.
 
         ``contentStart(TOOL)`` -> ``toolResult`` -> ``contentEnd``.
@@ -687,18 +680,25 @@ class NovaAudio:
             result: The tool's return value (or error string).
         """
         content_name = str(uuid.uuid4())
-        await self._send_event(stream, {"event": {"contentStart": {
-            "promptName": prompt_name,
-            "contentName": content_name,
-            "interactive": False,
-            "type": "TOOL",
-            "role": "TOOL",
-            "toolResultInputConfiguration": {
-                "toolUseId": tool_use_id,
-                "type": "TEXT",
-                "textInputConfiguration": {"mediaType": "text/plain"},
+        await self._send_event(
+            stream,
+            {
+                "event": {
+                    "contentStart": {
+                        "promptName": prompt_name,
+                        "contentName": content_name,
+                        "interactive": False,
+                        "type": "TOOL",
+                        "role": "TOOL",
+                        "toolResultInputConfiguration": {
+                            "toolUseId": tool_use_id,
+                            "type": "TEXT",
+                            "textInputConfiguration": {"mediaType": "text/plain"},
+                        },
+                    }
+                }
             },
-        }}})
+        )
         if isinstance(result, str):
             content = result
         else:
@@ -709,15 +709,29 @@ class NovaAudio:
                 # object (e.g. a DataFrame); falling back to str() keeps this
                 # one tool call's result-reporting from aborting the turn.
                 content = str(result)
-        await self._send_event(stream, {"event": {"toolResult": {
-            "promptName": prompt_name,
-            "contentName": content_name,
-            "content": content,
-        }}})
-        await self._send_event(stream, {"event": {"contentEnd": {
-            "promptName": prompt_name,
-            "contentName": content_name,
-        }}})
+        await self._send_event(
+            stream,
+            {
+                "event": {
+                    "toolResult": {
+                        "promptName": prompt_name,
+                        "contentName": content_name,
+                        "content": content,
+                    }
+                }
+            },
+        )
+        await self._send_event(
+            stream,
+            {
+                "event": {
+                    "contentEnd": {
+                        "promptName": prompt_name,
+                        "contentName": content_name,
+                    }
+                }
+            },
+        )
 
     async def _flush_pending_tools(
         self,
@@ -785,16 +799,10 @@ class NovaAudio:
 
         if parallel_tool_execution and len(pending_tools) > 1:
             async with asyncio.TaskGroup() as tg:
-                tasks = [
-                    tg.create_task(_run_one(pending, raw_input))
-                    for pending, raw_input in pending_tools
-                ]
+                tasks = [tg.create_task(_run_one(pending, raw_input)) for pending, raw_input in pending_tools]
             results = [task.result() for task in tasks]
         else:
-            results = [
-                await _run_one(pending, raw_input)
-                for pending, raw_input in pending_tools
-            ]
+            results = [await _run_one(pending, raw_input) for pending, raw_input in pending_tools]
 
         responses: List[LiveVoiceResponse] = []
         for (pending, _raw_input), result in zip(pending_tools, results, strict=True):
@@ -802,14 +810,16 @@ class NovaAudio:
             usage.tool_calls_executed += 1
             usage.tool_execution_time_ms += pending.execution_time_ms
             await self._send_tool_result(stream, prompt_name, pending.id, result)
-            responses.append(LiveVoiceResponse(
-                text="",
-                tool_calls=[pending],
-                is_complete=False,
-                session_id=session_id,
-                turn_id=turn_id,
-                user_id=user_id,
-            ))
+            responses.append(
+                LiveVoiceResponse(
+                    text="",
+                    tool_calls=[pending],
+                    is_complete=False,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                )
+            )
         return responses
 
     async def stream_voice(
@@ -820,7 +830,7 @@ class NovaAudio:
         user_id: Optional[str] = None,
         stt_only: bool = False,
         options: Optional[VoiceStreamOptions] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """Stream bidirectional voice interaction via Nova Sonic.
 
@@ -889,17 +899,15 @@ class NovaAudio:
         # region_prefix="us" for the unrelated Nova 2 Lite/Premier text
         # models. region_prefix=None here bypasses self._region_prefix
         # entirely (mirrors NovaGeneration._translate_in_region_model).
-        resolved_model = translate_bedrock_model(
-            self.model or self.default_model, region_prefix=None
-        )
+        resolved_model = translate_bedrock_model(self.model or self.default_model, region_prefix=None)
         # FEAT-418 (TASK-2169/2170): explicit kwarg > options.voice >
         # constructor default (_resolve_voice(None) falls back to
         # self.voice_id). Validated against NOVA_VOICE_CATALOG with a
         # warned fallback — previously passed straight to Bedrock
         # unvalidated, so a Gemini voice like "Puck" (bots/voice.py:198)
         # produced an opaque provider error instead of a graceful fallback.
-        requested_voice = kwargs["voice_id"] if "voice_id" in kwargs else (
-            options.voice if options is not None else None
+        requested_voice = (
+            kwargs["voice_id"] if "voice_id" in kwargs else (options.voice if options is not None else None)
         )
         resolved_voice_id = self._resolve_voice(requested_voice)
         # FEAT-416 (TASK-2148): gate concurrent tool execution on the
@@ -921,7 +929,9 @@ class NovaAudio:
 
         self.logger.info(
             "Starting Nova Sonic voice session %s, turn %s (model=%s)",
-            session_id, turn_id, resolved_model,
+            session_id,
+            turn_id,
+            resolved_model,
         )
 
         connection_start = time.monotonic()
@@ -934,66 +944,97 @@ class NovaAudio:
         # default. max_tokens default changed 1024 -> 4096 (the shared
         # VoiceConfig default, spec §8 resolved decision); 8192 is
         # accepted as an explicit override.
-        temperature = kwargs.get(
-            "temperature", options.temperature if options is not None else 0.7
-        )
-        max_tokens = kwargs.get(
-            "max_tokens", options.max_tokens if options is not None else 4096
-        )
-        top_p = kwargs.get(
-            "top_p", options.top_p if options is not None else 0.9
-        )
+        temperature = kwargs.get("temperature", options.temperature if options is not None else 0.7)
+        max_tokens = kwargs.get("max_tokens", options.max_tokens if options is not None else 4096)
+        top_p = kwargs.get("top_p", options.top_p if options is not None else 0.9)
 
-        await self._send_event(stream, {"event": {"sessionStart": {
-            "inferenceConfiguration": {
-                "maxTokens": max_tokens,
-                "topP": top_p,
-                "temperature": temperature,
-            }
-        }}})
         await self._send_event(
-            stream, self._build_prompt_start(prompt_name, resolved_voice_id)
+            stream,
+            {
+                "event": {
+                    "sessionStart": {
+                        "inferenceConfiguration": {
+                            "maxTokens": max_tokens,
+                            "topP": top_p,
+                            "temperature": temperature,
+                        }
+                    }
+                }
+            },
         )
+        await self._send_event(stream, self._build_prompt_start(prompt_name, resolved_voice_id))
         if system_prompt:
             # FEAT-408 Module 2 (gap 10): the AWS sample marks SYSTEM
             # content as interactive=False — it's context for the model,
             # not user-interactive content that triggers generation.
-            await self._send_event(stream, {"event": {"contentStart": {
-                "promptName": prompt_name, "contentName": f"{content_name}-sys",
-                "type": "TEXT", "role": "SYSTEM",
-                "interactive": False,
-                "textInputConfiguration": {"mediaType": "text/plain"},
-            }}})
-            await self._send_event(stream, {"event": {"textInput": {
-                "promptName": prompt_name, "contentName": f"{content_name}-sys",
-                "content": system_prompt,
-            }}})
-            await self._send_event(stream, {"event": {"contentEnd": {
-                "promptName": prompt_name, "contentName": f"{content_name}-sys",
-            }}})
+            await self._send_event(
+                stream,
+                {
+                    "event": {
+                        "contentStart": {
+                            "promptName": prompt_name,
+                            "contentName": f"{content_name}-sys",
+                            "type": "TEXT",
+                            "role": "SYSTEM",
+                            "interactive": False,
+                            "textInputConfiguration": {"mediaType": "text/plain"},
+                        }
+                    }
+                },
+            )
+            await self._send_event(
+                stream,
+                {
+                    "event": {
+                        "textInput": {
+                            "promptName": prompt_name,
+                            "contentName": f"{content_name}-sys",
+                            "content": system_prompt,
+                        }
+                    }
+                },
+            )
+            await self._send_event(
+                stream,
+                {
+                    "event": {
+                        "contentEnd": {
+                            "promptName": prompt_name,
+                            "contentName": f"{content_name}-sys",
+                        }
+                    }
+                },
+            )
 
         # FEAT-408 Module 2 (gap 10): the AWS sample marks the user's
         # AUDIO contentStart as interactive=True (tells Nova this content
         # triggers model generation — required when tools are declared;
         # without it Nova waits indefinitely for "interactive content")
         # and includes audioType:"SPEECH" in the input configuration.
-        await self._send_event(stream, {"event": {"contentStart": {
-            "promptName": prompt_name, "contentName": content_name,
-            "type": "AUDIO", "role": "USER",
-            "interactive": True,
-            "audioInputConfiguration": {
-                "mediaType": "audio/lpcm",
-                "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
-                "sampleSizeBits": 16,
-                "channelCount": 1,
-                "encoding": "base64",
-                "audioType": "SPEECH",
+        await self._send_event(
+            stream,
+            {
+                "event": {
+                    "contentStart": {
+                        "promptName": prompt_name,
+                        "contentName": content_name,
+                        "type": "AUDIO",
+                        "role": "USER",
+                        "interactive": True,
+                        "audioInputConfiguration": {
+                            "mediaType": "audio/lpcm",
+                            "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
+                            "sampleSizeBits": 16,
+                            "channelCount": 1,
+                            "encoding": "base64",
+                            "audioType": "SPEECH",
+                        },
+                    }
+                }
             },
-        }}})
-
-        sender_task = asyncio.create_task(
-            self._audio_sender(stream, audio_iterator, prompt_name, content_name)
         )
+
+        sender_task = asyncio.create_task(self._audio_sender(stream, audio_iterator, prompt_name, content_name))
 
         try:
             async for event in self._iter_events(stream):
@@ -1007,16 +1048,22 @@ class NovaAudio:
                     # its result never sent to Nova.
                     if turn_state.pending_tools:
                         for tool_response in await self._flush_pending_tools(
-                            stream, prompt_name, turn_state.pending_tools,
-                            tool_calls_list, usage, session_id, turn_id, user_id,
+                            stream,
+                            prompt_name,
+                            turn_state.pending_tools,
+                            tool_calls_list,
+                            usage,
+                            session_id,
+                            turn_id,
+                            user_id,
                             parallel_tool_execution,
                         ):
                             yield tool_response
                         turn_state.pending_tools = []
 
                     self.logger.info(
-                        "Nova Sonic session %s approaching 8-minute connection "
-                        "limit — signalling reconnect.", session_id,
+                        "Nova Sonic session %s approaching 8-minute connection " "limit — signalling reconnect.",
+                        session_id,
                     )
                     yield LiveVoiceResponse(
                         text=accumulated_text,
@@ -1043,14 +1090,17 @@ class NovaAudio:
                 # requirement) — this is the "next non-tool event" boundary
                 # described in spec §3 Module 4. No-op when nothing is
                 # queued (the default, single-tool-at-a-time case).
-                is_tool_event = (
-                    "toolUse" in event
-                    or (event.get("contentEnd") or {}).get("type") == "TOOL"
-                )
+                is_tool_event = "toolUse" in event or (event.get("contentEnd") or {}).get("type") == "TOOL"
                 if not is_tool_event and turn_state.pending_tools:
                     for tool_response in await self._flush_pending_tools(
-                        stream, prompt_name, turn_state.pending_tools,
-                        tool_calls_list, usage, session_id, turn_id, user_id,
+                        stream,
+                        prompt_name,
+                        turn_state.pending_tools,
+                        tool_calls_list,
+                        usage,
+                        session_id,
+                        turn_id,
+                        user_id,
                         parallel_tool_execution,
                     ):
                         yield tool_response
@@ -1059,9 +1109,7 @@ class NovaAudio:
                 content_start = event.get("contentStart")
                 if content_start:
                     turn_state.role = content_start.get("role")
-                    turn_state.generation_stage = _parse_generation_stage(
-                        content_start.get("additionalModelFields")
-                    )
+                    turn_state.generation_stage = _parse_generation_stage(content_start.get("additionalModelFields"))
                     continue
 
                 text_output = event.get("textOutput")
@@ -1091,11 +1139,7 @@ class NovaAudio:
                     stage = turn_state.generation_stage
                     # Missing stage must EMIT, not suppress (spec §7) — only an
                     # explicitly non-SPECULATIVE stage suppresses assistant text.
-                    suppressed = (
-                        role == "ASSISTANT"
-                        and stage is not None
-                        and stage != "SPECULATIVE"
-                    )
+                    suppressed = role == "ASSISTANT" and stage is not None and stage != "SPECULATIVE"
                     if not suppressed:
                         if role == "ASSISTANT":
                             accumulated_text += chunk_text
@@ -1121,10 +1165,7 @@ class NovaAudio:
                     # string, not raw bytes — decode it before handing off
                     # as LiveVoiceResponse.audio_data (typed Optional[bytes]).
                     raw_content = audio_output.get("content")
-                    audio_bytes = (
-                        base64.b64decode(raw_content)
-                        if isinstance(raw_content, str) else raw_content
-                    )
+                    audio_bytes = base64.b64decode(raw_content) if isinstance(raw_content, str) else raw_content
                     yield LiveVoiceResponse(
                         text="",
                         audio_data=audio_bytes,
@@ -1149,10 +1190,7 @@ class NovaAudio:
                     if (value := _first_int(flat, _USAGE_OUTPUT_KEYS)) is not None:
                         usage.completion_tokens = value
                     total = _first_int(flat, _USAGE_TOTAL_KEYS)
-                    usage.total_tokens = (
-                        total if total is not None
-                        else usage.prompt_tokens + usage.completion_tokens
-                    )
+                    usage.total_tokens = total if total is not None else usage.prompt_tokens + usage.completion_tokens
                     # Keep the raw frame so the shape can be inspected from a
                     # real session (spec §8 Q1).
                     usage.extra["usage_event"] = usage_event
@@ -1191,9 +1229,7 @@ class NovaAudio:
                     # single-tool case that's immediate (this loop's very
                     # next iteration sees a non-tool event), so behavior is
                     # unchanged from the previous synchronous-execute path.
-                    turn_state.pending_tools.append(
-                        (pending, turn_state.pending_tool_raw_input)
-                    )
+                    turn_state.pending_tools.append((pending, turn_state.pending_tool_raw_input))
                     turn_state.pending_tool = None
                     turn_state.pending_tool_raw_input = None
                     continue
@@ -1223,8 +1259,14 @@ class NovaAudio:
                 # when the stream ended without a completionEnd boundary.
                 if turn_state.pending_tools:
                     for tool_response in await self._flush_pending_tools(
-                        stream, prompt_name, turn_state.pending_tools,
-                        tool_calls_list, usage, session_id, turn_id, user_id,
+                        stream,
+                        prompt_name,
+                        turn_state.pending_tools,
+                        tool_calls_list,
+                        usage,
+                        session_id,
+                        turn_id,
+                        user_id,
                         parallel_tool_execution,
                     ):
                         yield tool_response
@@ -1254,19 +1296,14 @@ class NovaAudio:
             # Nova Sonic sends a ValidationException after 55 s of no audio
             # or interactive content — this is normal idle-session expiry,
             # not a bug. Log at INFO (no traceback) instead of ERROR.
-            is_idle_timeout = (
-                "Timed out waiting for audio" in str(exc)
-                or "gaps between audio bytes" in str(exc)
-            )
+            is_idle_timeout = "Timed out waiting for audio" in str(exc) or "gaps between audio bytes" in str(exc)
             if is_idle_timeout:
                 self.logger.info(
                     "Nova Sonic session %s idle timeout (55 s no audio)",
                     session_id,
                 )
             else:
-                self.logger.exception(
-                    "Nova Sonic session %s error: %s", session_id, error_message
-                )
+                self.logger.exception("Nova Sonic session %s error: %s", session_id, error_message)
             yield LiveVoiceResponse(
                 text="",
                 is_complete=True,
@@ -1319,8 +1356,7 @@ class NovaAudio:
             async for chunk in audio_iterator:
                 if chunk is None:
                     self.logger.info(
-                        "Audio sender: end-of-turn after %d chunks "
-                        "(no contentEnd — VAD handles end-of-speech)",
+                        "Audio sender: end-of-turn after %d chunks " "(no contentEnd — VAD handles end-of-speech)",
                         chunks_sent,
                     )
                     break
@@ -1330,23 +1366,27 @@ class NovaAudio:
                 # before being embedded in the JSON event frame — sending
                 # raw bytes verbatim would both violate the declared wire
                 # format and fail JSON serialization outright.
-                await self._send_event(stream, {"event": {"audioInput": {
-                    "promptName": prompt_name,
-                    "contentName": content_name,
-                    "content": base64.b64encode(chunk).decode("ascii"),
-                }}})
+                await self._send_event(
+                    stream,
+                    {
+                        "event": {
+                            "audioInput": {
+                                "promptName": prompt_name,
+                                "contentName": content_name,
+                                "content": base64.b64encode(chunk).decode("ascii"),
+                            }
+                        }
+                    },
+                )
                 chunks_sent += 1
                 if chunks_sent % 50 == 0:
-                    self.logger.debug(
-                        "Audio sender: %d chunks sent so far", chunks_sent
-                    )
+                    self.logger.debug("Audio sender: %d chunks sent so far", chunks_sent)
         except asyncio.CancelledError:
-            self.logger.debug(
-                "Audio sender: cancelled (chunks_sent=%d)", chunks_sent
-            )
+            self.logger.debug("Audio sender: cancelled (chunks_sent=%d)", chunks_sent)
             raise
         except Exception as exc:
             self.logger.error(
                 "Nova Sonic audio sender error after %d chunks: %s",
-                chunks_sent, exc,
+                chunks_sent,
+                exc,
             )

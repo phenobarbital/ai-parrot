@@ -1,6 +1,7 @@
 """TASK-2854: core's ``pyproject.toml`` no longer pins any SDK a satellite
 now owns exclusively, and ``llms`` resolves to all 15 satellites.
 """
+
 import pathlib
 import tomllib
 

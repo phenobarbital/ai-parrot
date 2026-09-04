@@ -1,5 +1,3 @@
-
-
 from .abstract import AbstractBot
 from .agent import Agent, BasicAgent
 from .base import BaseBot

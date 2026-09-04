@@ -20,6 +20,7 @@ AWS facts (verified 2026-07-17, spec §6 "Verified AWS Facts"):
 See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 4) for the full
 design.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -278,7 +279,9 @@ class NovaGeneration:
         )
         invocation_arn = start_response["invocationArn"]
         self.logger.info(
-            "Nova Reel job started: %s (model=%s)", invocation_arn, resolved_model,
+            "Nova Reel job started: %s (model=%s)",
+            invocation_arn,
+            resolved_model,
         )
 
         elapsed = 0.0
@@ -295,8 +298,7 @@ class NovaGeneration:
                 )
             if elapsed >= timeout:
                 raise InvokeError(
-                    f"Nova Reel job {invocation_arn} did not complete within "
-                    f"{timeout}s (last status: {status!r})."
+                    f"Nova Reel job {invocation_arn} did not complete within " f"{timeout}s (last status: {status!r})."
                 )
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
@@ -307,7 +309,9 @@ class NovaGeneration:
             .get("s3Uri", resolved_s3_output_uri)
         )
         local_path = await self._download_reel_video(
-            output_s3_uri, output_directory, invocation_arn,
+            output_s3_uri,
+            output_directory,
+            invocation_arn,
         )
 
         return AIMessageFactory.from_video(
@@ -353,8 +357,7 @@ class NovaGeneration:
         local_path = out_dir / f"nova-reel-{job_id}.mp4"
 
         session = (
-            aioboto3.Session(profile_name=self._profile)
-            if getattr(self, "_profile", None) else aioboto3.Session()
+            aioboto3.Session(profile_name=self._profile) if getattr(self, "_profile", None) else aioboto3.Session()
         )
         client_kwargs: Dict[str, Any] = {"region_name": self._region}
         if self._aws_access_key and self._aws_secret_key:

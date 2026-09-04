@@ -4,6 +4,7 @@ Handles planogram compliance for backlit multi-tier endcap displays: a
 retro-illuminated header panel (lightbox) combined with one or more product
 shelves.  Shelves may be sub-divided into named sections detected in parallel.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -104,6 +105,7 @@ def _is_fact_tag_misdetection(
 # These models accept ANY float, letting the manual normalisation code that
 # already exists in every call site handle the conversion to 0-1 range.
 # ---------------------------------------------------------------------------
+
 
 class _RawBBox(BaseModel):
     """Bounding box without ``le=1`` constraints."""
@@ -219,9 +221,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     )
                     await asyncio.sleep(10)
                 else:
-                    self.logger.error(
-                        "ROI detection failed after %d attempts: %s", max_attempts, exc
-                    )
+                    self.logger.error("ROI detection failed after %d attempts: %s", max_attempts, exc)
                     return None, None, None, None, []
 
         data = msg.structured_output or msg.output or {}
@@ -251,9 +251,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         if b["y1"] > b["y2"]:
                             b["y1"], b["y2"] = b["y2"], b["y1"]
                 data = _RawDetections(**raw)
-                self.logger.info(
-                    "Recovered ROI detections after normalizing pixel coordinates."
-                )
+                self.logger.info("Recovered ROI detections after normalizing pixel coordinates.")
             except Exception as parse_err:
                 self.logger.warning("ROI coordinate recovery failed: %s", parse_err)
                 return None, None, None, None, []
@@ -298,10 +296,16 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         if bbox_width < _MIN_ROI_FRACTION or bbox_height < _MIN_ROI_FRACTION:
             anchor = next(
                 (
-                    d for d in dets
-                    if _norm_label(d) in (
-                        "poster_panel", "promotional_graphic",
-                        "backlit_panel", "poster", "ad", "advertisement",
+                    d
+                    for d in dets
+                    if _norm_label(d)
+                    in (
+                        "poster_panel",
+                        "promotional_graphic",
+                        "backlit_panel",
+                        "poster",
+                        "ad",
+                        "advertisement",
                     )
                     and (d.bbox.x2 - d.bbox.x1) >= _MIN_ROI_FRACTION
                 ),
@@ -316,18 +320,21 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     y2=min(1.0, anchor.bbox.y2 + max(a_h * 3.0, 0.6)),
                 )
                 self.logger.warning(
-                    "endcap_roi degenerate (w=%.3f h=%.3f); anchored on '%s' "
-                    "→ bbox=(%.2f,%.2f,%.2f,%.2f)",
-                    bbox_width, bbox_height, anchor.label,
-                    rescued_bbox.x1, rescued_bbox.y1,
-                    rescued_bbox.x2, rescued_bbox.y2,
+                    "endcap_roi degenerate (w=%.3f h=%.3f); anchored on '%s' " "→ bbox=(%.2f,%.2f,%.2f,%.2f)",
+                    bbox_width,
+                    bbox_height,
+                    anchor.label,
+                    rescued_bbox.x1,
+                    rescued_bbox.y1,
+                    rescued_bbox.x2,
+                    rescued_bbox.y2,
                 )
             else:
                 rescued_bbox = BoundingBox(x1=0.0, y1=0.0, x2=1.0, y2=1.0)
                 self.logger.warning(
-                    "endcap_roi degenerate (w=%.3f h=%.3f) and no anchor "
-                    "available; falling back to full-image ROI.",
-                    bbox_width, bbox_height,
+                    "endcap_roi degenerate (w=%.3f h=%.3f) and no anchor " "available; falling back to full-image ROI.",
+                    bbox_width,
+                    bbox_height,
                 )
             endcap_det = Detection(
                 label=endcap_det.label,
@@ -349,16 +356,10 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 confidence=endcap_det.confidence,
                 bbox=expanded_bbox,
             )
-            self.logger.info(
-                "Expanded endcap ROI downward (height was %.2f).", bbox_height
-            )
+            self.logger.info("Expanded endcap ROI downward (height was %.2f).", bbox_height)
 
         ad_det = next(
-            (
-                d
-                for d in dets
-                if _norm_label(d) in ("advertisement", "promotional_graphic", "ad")
-            ),
+            (d for d in dets if _norm_label(d) in ("advertisement", "promotional_graphic", "ad")),
             endcap_det,
         )
         brand_det = next(
@@ -517,7 +518,9 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 roi_x2 = min(iw, int(roi_bbox.x2 * iw))
                 self.logger.debug(
                     "Shelf x-range constrained by ROI: x1=%d x2=%d (image width=%d)",
-                    roi_x1, roi_x2, iw,
+                    roi_x1,
+                    roi_x2,
+                    iw,
                 )
 
         # ----------------------------------------------------------
@@ -537,18 +540,13 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         _pg_cfg = getattr(self.config, "planogram_config", {}) or {}
         if _pg_cfg.get("use_fact_tag_boundaries") and len(shelves) > 1:
             # Identify the product area (all non-header shelves combined)
-            non_header_idxs = [
-                i for i, s in enumerate(shelves)
-                if getattr(s, "level", "") != "header"
-            ]
+            non_header_idxs = [i for i, s in enumerate(shelves) if getattr(s, "level", "") != "header"]
             if non_header_idxs:
                 area_y1 = shelf_pixel_bboxes[non_header_idxs[0]][1]
                 area_y2 = shelf_pixel_bboxes[non_header_idxs[-1]][3]
                 product_area = (roi_x1, area_y1, roi_x2, area_y2)
 
-                fact_tag_products = await self._detect_fact_tags_prescan(
-                    img, product_area
-                )
+                fact_tag_products = await self._detect_fact_tags_prescan(img, product_area)
 
                 if fact_tag_products:
                     # Build temporary ShelfRegions from static bboxes
@@ -556,20 +554,23 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     for si, sh in enumerate(shelves):
                         bx1, by1, bx2, by2 = shelf_pixel_bboxes[si]
                         sh_level = getattr(sh, "level", f"shelf_{si}")
-                        static_regions.append(ShelfRegion(
-                            shelf_id=f"{sh_level}_{si}",
-                            level=sh_level,
-                            bbox=DetectionBox(
-                                x1=bx1, y1=by1, x2=bx2, y2=by2,
-                                confidence=0.0,
-                            ),
-                            is_background=getattr(sh, "is_background", False),
-                            objects=[],
-                        ))
+                        static_regions.append(
+                            ShelfRegion(
+                                shelf_id=f"{sh_level}_{si}",
+                                level=sh_level,
+                                bbox=DetectionBox(
+                                    x1=bx1,
+                                    y1=by1,
+                                    x2=bx2,
+                                    y2=by2,
+                                    confidence=0.0,
+                                ),
+                                is_background=getattr(sh, "is_background", False),
+                                objects=[],
+                            )
+                        )
 
-                    refined = self._refine_shelves_from_fact_tags(
-                        static_regions, fact_tag_products
-                    )
+                    refined = self._refine_shelves_from_fact_tags(static_regions, fact_tag_products)
 
                     # Update shelf_pixel_bboxes from refined regions
                     region_by_id = {r.shelf_id: r for r in refined}
@@ -579,7 +580,10 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         if sid in region_by_id:
                             rb = region_by_id[sid].bbox
                             shelf_pixel_bboxes[si] = (
-                                rb.x1, rb.y1, rb.x2, rb.y2,
+                                rb.x1,
+                                rb.y1,
+                                rb.x2,
+                                rb.y2,
                             )
 
                     # Include prescan fact tags in results
@@ -594,23 +598,15 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         # Pre-compute combined flat-shelf detection
         # ----------------------------------------------------------
         # Collect adjacent non-header flat shelves for combined detection.
-        flat_shelf_group: List[
-            Tuple[int, str, Tuple[int, int, int, int], List[str]]
-        ] = []
+        flat_shelf_group: List[Tuple[int, str, Tuple[int, int, int, int], List[str]]] = []
         for si, sh in enumerate(shelves):
             sh_level = getattr(sh, "level", f"shelf_{si}")
             sh_sections = getattr(sh, "sections", None)
             if sh_level == "header" or sh_sections:
                 continue
             sh_products = getattr(sh, "products", []) or []
-            pnames = [
-                getattr(p, "name", "")
-                for p in sh_products
-                if getattr(p, "product_type", "") != "fact_tag"
-            ]
-            flat_shelf_group.append(
-                (si, sh_level, shelf_pixel_bboxes[si], pnames)
-            )
+            pnames = [getattr(p, "name", "") for p in sh_products if getattr(p, "product_type", "") != "fact_tag"]
+            flat_shelf_group.append((si, sh_level, shelf_pixel_bboxes[si], pnames))
 
         # Extract pixel bboxes from prescan fact-tag products so
         # product detection can filter out overlapping false positives.
@@ -618,14 +614,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         ft_products = [
             p
             for p in identified_products
-            if getattr(p, "product_type", "") == "fact_tag"
-            and getattr(p, "detection_box", None) is not None
+            if getattr(p, "product_type", "") == "fact_tag" and getattr(p, "detection_box", None) is not None
         ]
         if ft_products:
             ft_bboxes = [
-                (p.detection_box.x1, p.detection_box.y1,
-                 p.detection_box.x2, p.detection_box.y2)
-                for p in ft_products
+                (p.detection_box.x1, p.detection_box.y1, p.detection_box.x2, p.detection_box.y2) for p in ft_products
             ]
 
         # Run combined detection if 2+ adjacent flat shelves; otherwise
@@ -645,9 +638,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         # ----------------------------------------------------------
         for shelf_idx, shelf in enumerate(shelves):
             shelf_level = getattr(shelf, "level", f"shelf_{shelf_idx}")
-            padding = float(
-                getattr(shelf, "section_padding", None) or _DEFAULT_SECTION_PADDING
-            )
+            padding = float(getattr(shelf, "section_padding", None) or _DEFAULT_SECTION_PADDING)
 
             # Use pre-computed (possibly refined) shelf bbox
             shelf_bbox: Tuple[int, int, int, int] = shelf_pixel_bboxes[shelf_idx]
@@ -667,7 +658,9 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     confidence=0.0,
                 )
                 roi_illumination = await self._check_illumination(
-                    img, zone_bbox=header_illum_box, roi=roi,
+                    img,
+                    zone_bbox=header_illum_box,
+                    roi=roi,
                     planogram_description=planogram_description,
                 )
 
@@ -687,9 +680,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     )
                     for sec in sections
                 ]
-                section_results: List[List[Detection]] = await asyncio.gather(
-                    *section_tasks
-                )
+                section_results: List[List[Detection]] = await asyncio.gather(*section_tasks)
                 merged = [d for sublist in section_results for d in sublist]
                 shelf_detections = self._deduplicate_cross_section(merged)
             elif shelf_idx in combined_dets:
@@ -697,9 +688,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 shelf_detections = combined_dets[shelf_idx]
             else:
                 product_names = [
-                    getattr(p, "name", "")
-                    for p in shelf_products_cfg
-                    if getattr(p, "product_type", "") != "fact_tag"
+                    getattr(p, "name", "") for p in shelf_products_cfg if getattr(p, "product_type", "") != "fact_tag"
                 ]
                 shelf_detections = await self._detect_flat_shelf(
                     img=img,
@@ -852,16 +841,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
                 # ── 50%: correct campaign (text requirements) ──
                 ad_endcap = getattr(planogram_description, "advertisement_endcap", None)
-                text_reqs = (
-                    getattr(ad_endcap, "text_requirements", []) if ad_endcap else []
-                ) or []
+                text_reqs = (getattr(ad_endcap, "text_requirements", []) if ad_endcap else []) or []
 
                 campaign_ok = False
                 if text_reqs:
-                    ocr_texts = " ".join(
-                        getattr(p, "ocr_text", "") or ""
-                        for p in shelf_identified
-                    ).lower()
+                    ocr_texts = " ".join(getattr(p, "ocr_text", "") or "" for p in shelf_identified).lower()
 
                     mandatory_total = 0
                     mandatory_found = 0
@@ -897,11 +881,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 # ── 50%: illumination ON ──
                 # Absent header products (confidence=0) still carry the
                 # illumination visual_feature injected by identify_products.
-                illum_feats = [
-                    f
-                    for p in shelf_identified
-                    for f in (p.visual_features or [])
-                ]
+                illum_feats = [f for p in shelf_identified for f in (p.visual_features or [])]
                 illum_state = self._extract_illumination_state(illum_feats)
                 light_on = illum_state == "on"
                 if light_on:
@@ -909,8 +889,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
                 score = header_score
                 self.logger.info(
-                    "Header compliance: campaign=%s (text %d/%d), "
-                    "light=%s → score=%.1f%%",
+                    "Header compliance: campaign=%s (text %d/%d), " "light=%s → score=%.1f%%",
                     "OK" if campaign_ok else "WRONG",
                     mandatory_found if text_reqs else 0,
                     mandatory_total if text_reqs else 0,
@@ -918,11 +897,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     score * 100,
                 )
 
-            status = (
-                ComplianceStatus.COMPLIANT
-                if score >= threshold
-                else ComplianceStatus.NON_COMPLIANT
-            )
+            status = ComplianceStatus.COMPLIANT if score >= threshold else ComplianceStatus.NON_COMPLIANT
 
             results.append(
                 ComplianceResult(
@@ -938,9 +913,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
             )
 
-        self.logger.info(
-            "EndcapBacklitMultitier compliance: %d shelves evaluated", len(results)
-        )
+        self.logger.info("EndcapBacklitMultitier compliance: %d shelves evaluated", len(results))
         return results
 
     # ------------------------------------------------------------------
@@ -1065,11 +1038,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         """
         category_hint = f" {category}" if category else ""
         brand_hint = f" {brand}" if brand else ""
-        names_str = (
-            ", ".join(f'"{n}"' for n in product_names)
-            if product_names
-            else "any products"
-        )
+        names_str = ", ".join(f'"{n}"' for n in product_names) if product_names else "any products"
         n = len(product_names) if product_names else 0
         count_hint = (
             f"\n\nThis section should contain up to {n} distinct products. "
@@ -1094,8 +1063,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "For each product found, return a detection with its label (use the exact "
             "product name from the list), confidence score, and a bounding box "
             "around the DEVICE. "
-            "Return an empty detections list if none are visible."
-            + count_hint
+            "Return an empty detections list if none are visible." + count_hint
         )
 
     async def _detect_fact_tags_prescan(
@@ -1132,7 +1100,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "Identify ALL price tags (fact tags) visible along the shelf edges. "
             "These are small rectangular labels or cards hanging from or placed "
             "on shelf edges, typically showing product names and prices. "
-            "For each price tag found, return a detection with label \"fact_tag\", "
+            'For each price tag found, return a detection with label "fact_tag", '
             "a confidence score, and a tight bounding box. "
             "Return an empty detections list if no price tags are visible."
         )
@@ -1149,8 +1117,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
         except Exception as exc:
             self.logger.warning(
-                "Fact-tag prescan LLM call failed: %s — falling back to "
-                "static boundaries.",
+                "Fact-tag prescan LLM call failed: %s — falling back to " "static boundaries.",
                 exc,
             )
             return []
@@ -1196,8 +1163,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 data = _RawDetections(**raw)
             except Exception:
                 self.logger.warning(
-                    "Fact-tag prescan: failed to parse LLM response — "
-                    "falling back to static boundaries."
+                    "Fact-tag prescan: failed to parse LLM response — " "falling back to static boundaries."
                 )
                 return []
 
@@ -1237,9 +1203,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
             )
 
-        self.logger.info(
-            "Fact-tag prescan: detected %d tags in product area.", len(results)
-        )
+        self.logger.info("Fact-tag prescan: detected %d tags in product area.", len(results))
         return results
 
     async def _detect_section(
@@ -1272,21 +1236,16 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             List of Detection objects with full-image normalized bbox coordinates.
             Returns ``[]`` on LLM failure or zero-area crop.
         """
-        crop_bbox = self._compute_section_bbox(
-            shelf_bbox, section.region, padding, img.size
-        )
+        crop_bbox = self._compute_section_bbox(shelf_bbox, section.region, padding, img.size)
         cx1, cy1, cx2, cy2 = crop_bbox
         if cx2 <= cx1 or cy2 <= cy1:
-            self.logger.warning(
-                "Section '%s' has zero-area bbox — skipping.", section.id
-            )
+            self.logger.warning("Section '%s' has zero-area bbox — skipping.", section.id)
             return []
 
         crop = img.crop(crop_bbox)
         crop_small = self.pipeline._downscale_image(crop, max_side=1024, quality=82)
         self.logger.debug(
-            "Section '%s': crop_bbox=%s  crop=%dx%d  downscaled=%dx%d  "
-            "expected=%s",
+            "Section '%s': crop_bbox=%s  crop=%dx%d  downscaled=%dx%d  " "expected=%s",
             section.id,
             crop_bbox,
             crop.size[0],
@@ -1363,8 +1322,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             bbox_h = full_bbox.y2 - full_bbox.y1
             if bbox_w < 0.005 or bbox_h < 0.005:
                 self.logger.debug(
-                    "Section '%s': discarding degenerate bbox for '%s' "
-                    "(w=%.4f, h=%.4f).",
+                    "Section '%s': discarding degenerate bbox for '%s' " "(w=%.4f, h=%.4f).",
                     section.id,
                     det.label,
                     bbox_w,
@@ -1388,9 +1346,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     ix2 = min(det_px[2], ft[2])
                     iy2 = min(det_px[3], ft[3])
                     inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
-                    det_area = max(
-                        1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1])
-                    )
+                    det_area = max(1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1]))
                     overlap_ratio = inter / det_area
                     if overlap_ratio <= _FACT_TAG_OVERLAP_THRESHOLD:
                         continue
@@ -1429,9 +1385,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
             )
 
-        self.logger.debug(
-            "Section '%s': %d detections.", section.id, len(remapped)
-        )
+        self.logger.debug("Section '%s': %d detections.", section.id, len(remapped))
         return remapped
 
     # ------------------------------------------------------------------
@@ -1441,9 +1395,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
     async def _detect_combined_flat_shelves(
         self,
         img: Image.Image,
-        flat_shelves: List[
-            Tuple[int, str, Tuple[int, int, int, int], List[str]]
-        ],
+        flat_shelves: List[Tuple[int, str, Tuple[int, int, int, int], List[str]]],
         category: str,
         brand: str,
         fact_tag_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
@@ -1466,9 +1418,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             Dict mapping ``shelf_idx`` → ``List[Detection]`` with bbox
             coordinates in full-image normalized space.
         """
-        result: Dict[int, List[Detection]] = {
-            fs[0]: [] for fs in flat_shelves
-        }
+        result: Dict[int, List[Detection]] = {fs[0]: [] for fs in flat_shelves}
         if not flat_shelves:
             return result
 
@@ -1492,9 +1442,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         # Shelf boundary y-values in local crop coordinates for assignment
         shelf_y_ranges: List[Tuple[int, int, int]] = []  # (shelf_idx, local_y1, local_y2)
 
-        for i, (shelf_idx, shelf_level, shelf_bbox, product_names) in enumerate(
-            flat_shelves
-        ):
+        for i, (shelf_idx, shelf_level, shelf_bbox, product_names) in enumerate(flat_shelves):
             local_y1 = shelf_bbox[1] - combined_y1
             local_y2 = shelf_bbox[3] - combined_y1
             shelf_y_ranges.append((shelf_idx, local_y1, local_y2))
@@ -1509,11 +1457,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
 
             names_str = ", ".join(f'"{n}"' for n in product_names)
-            count_note = (
-                f" (up to {len(product_names)} products)"
-                if len(product_names) >= 2
-                else ""
-            )
+            count_note = f" (up to {len(product_names)} products)" if len(product_names) >= 2 else ""
             if len(flat_shelves) == 2:
                 position = "UPPER" if i == 0 else "LOWER"
                 prompt_lines.append(
@@ -1522,9 +1466,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     f"{names_str}{count_note}"
                 )
             else:
-                prompt_lines.append(
-                    f"SHELF '{shelf_level}': {names_str}{count_note}"
-                )
+                prompt_lines.append(f"SHELF '{shelf_level}': {names_str}{count_note}")
 
         total_products = sum(len(fs[3]) for fs in flat_shelves)
         category_hint = f" {category}" if category else ""
@@ -1550,12 +1492,9 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "Return an empty detections list for a shelf if none are visible."
         )
 
-        crop_small = self.pipeline._downscale_image(
-            crop, max_side=1024, quality=82
-        )
+        crop_small = self.pipeline._downscale_image(crop, max_side=1024, quality=82)
         self.logger.debug(
-            "Combined flat shelves: crop_bbox=%s  crop=%dx%d  "
-            "downscaled=%dx%d  shelves=%s",
+            "Combined flat shelves: crop_bbox=%s  crop=%dx%d  " "downscaled=%dx%d  shelves=%s",
             combined_bbox,
             crop.width,
             crop.height,
@@ -1607,16 +1546,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 ]
                 needs_norm = any(v > 1.0 for v in all_x + all_y)
                 if needs_norm:
-                    nw = (
-                        1000.0
-                        if max(all_x, default=0) > iw_s
-                        else float(iw_s)
-                    )
-                    nh = (
-                        1000.0
-                        if max(all_y, default=0) > ih_s
-                        else float(ih_s)
-                    )
+                    nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+                    nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
                     for d in dets:
                         b = d.get("bbox", {})
                         b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
@@ -1629,24 +1560,19 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                             b["y1"], b["y2"] = b["y2"], b["y1"]
                 data = _RawDetections(**raw)
             except Exception:
-                self.logger.warning(
-                    "Combined flat-shelf coordinate recovery failed."
-                )
+                self.logger.warning("Combined flat-shelf coordinate recovery failed.")
                 return result
 
         raw_dets = getattr(data, "detections", None) or []
 
         # Assign each detection to a shelf and remap to full-image coords
         for det in raw_dets:
-            full_bbox = self._remap_bbox_to_full_image(
-                det.bbox, combined_bbox, img.size
-            )
+            full_bbox = self._remap_bbox_to_full_image(det.bbox, combined_bbox, img.size)
             bbox_w = full_bbox.x2 - full_bbox.x1
             bbox_h = full_bbox.y2 - full_bbox.y1
             if bbox_w < 0.005 or bbox_h < 0.005:
                 self.logger.debug(
-                    "Combined: discarding degenerate bbox for '%s' "
-                    "(w=%.4f, h=%.4f).",
+                    "Combined: discarding degenerate bbox for '%s' " "(w=%.4f, h=%.4f).",
                     det.label,
                     bbox_w,
                     bbox_h,
@@ -1764,9 +1690,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     max_tokens=4096,
                 )
         except Exception as exc:
-            self.logger.warning(
-                "Flat shelf LLM call failed: %s — treating as empty.", exc
-            )
+            self.logger.warning("Flat shelf LLM call failed: %s — treating as empty.", exc)
             return []
 
         data = msg.structured_output or msg.output or {}
@@ -1805,8 +1729,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             bbox_h = full_bbox.y2 - full_bbox.y1
             if bbox_w < 0.005 or bbox_h < 0.005:
                 self.logger.debug(
-                    "Flat shelf: discarding degenerate bbox for '%s' "
-                    "(w=%.4f, h=%.4f).",
+                    "Flat shelf: discarding degenerate bbox for '%s' " "(w=%.4f, h=%.4f).",
                     det.label,
                     bbox_w,
                     bbox_h,
