@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-526
 **Date**: 2026-09-04
 **Author**: Jesus (jlara@trocglobal.com)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 
 **Proposal**: [`sdd/proposals/meta-llm-client.proposal.md`](../proposals/meta-llm-client.proposal.md) (status: accepted)
@@ -474,9 +474,9 @@ tools:[{"type":"tool_search"}]   -> 400  'requires at least one deferred tool'
 
 ### Unresolved
 
-- [ ] **Should `MetaClient` be exported from `parrot/clients/__init__.py`?**
+- [x] **Should `MetaClient` be exported from `parrot/clients/__init__.py`?**
   Siblings are not (only `ZaiClient` is, inconsistently). *Owner*: tbd —
-  safe to decide during implementation; defaulting to "no, match the majority".
+  safe to decide during implementation; defaulting to "no, match the majority": No
 
 ---
 
