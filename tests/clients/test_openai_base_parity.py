@@ -22,6 +22,7 @@ import pytest
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.clients.nvidia import NvidiaClient
@@ -337,7 +338,7 @@ async def test_invoke_routes_via_funnel():
 # ---------------------------------------------------------------------------
 
 # Phase 1 wire roster + Phase 2's GroqClient (TASK-2303; ZaiClient joins
-# in TASK-2304).
+# in TASK-2304). FEAT-526: MetaClient added.
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -347,6 +348,7 @@ WIRE_SUBCLASSES = [
     BedrockMantleClient,
     GroqClient,
     ZaiClient,
+    MetaClient,
 ]
 
 # vLLMClient.ask()/ask_stream() unconditionally forward

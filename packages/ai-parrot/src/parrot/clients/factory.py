@@ -11,6 +11,7 @@ from .vllm import vLLMClient
 from .nvidia import NvidiaClient
 from .zai import ZaiClient
 from .moonshot import MoonshotClient
+from .meta import MetaClient
 
 
 def _lazy_gemma4():
@@ -135,6 +136,10 @@ SUPPORTED_CLIENTS = {
     "nvidia": NvidiaClient,
     "moonshot": MoonshotClient,
     "kimi": MoonshotClient,
+    # FEAT-526: Meta Model API (Muse Spark family).
+    "meta": MetaClient,
+    "muse": MetaClient,
+    "meta-muse": MetaClient,
     "local": LocalLLMClient,
     "localllm": LocalLLMClient,
     "ollama": LocalLLMClient,

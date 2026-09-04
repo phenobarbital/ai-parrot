@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from parrot.clients.meta import CONTRIBUTOR_MODELS, MetaClient, MetaModel
+from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.openai_base import OpenAIBaseClient
 
@@ -121,3 +122,32 @@ class TestMetaClient:
         assert result == [{"id": "muse-spark-1.3"}]
         assert captured["url"] == "https://api.meta.ai/v1/models"
         assert captured["headers"]["Authorization"] == "Bearer k"
+
+
+class TestMetaFactoryRegistration:
+    @pytest.mark.parametrize("alias", ["meta", "muse", "meta-muse"])
+    def test_aliases_resolve(self, alias):
+        assert SUPPORTED_CLIENTS[alias] is MetaClient
+
+    def test_create_with_explicit_model(self):
+        client = LLMFactory.create("meta:muse-spark-1.3")
+        assert isinstance(client, MetaClient)
+        assert client.model == "muse-spark-1.3"
+
+    def test_create_with_default_model(self):
+        client = LLMFactory.create("meta")
+        assert isinstance(client, MetaClient)
+        # No explicit model was passed; the client falls back to its class
+        # default at resolution time (see AbstractClient.default_model /
+        # OpenAIBaseClient._resolve_model) rather than stamping `.model` at
+        # construction — same convention as MoonshotClient's factory tests.
+        assert client.default_model == "muse-spark-1.3"
+
+    def test_registered_keys_match_provider_keys(self):
+        keys = {k for k, v in SUPPORTED_CLIENTS.items() if v is MetaClient}
+        assert keys == set(MetaClient.provider_keys)
+
+    def test_in_both_wire_rosters(self):
+        from tests.clients.test_openai_compatible_defaults import WIRE_SUBCLASSES as A
+        from tests.clients.test_openai_base_parity import WIRE_SUBCLASSES as B
+        assert MetaClient in A and MetaClient in B

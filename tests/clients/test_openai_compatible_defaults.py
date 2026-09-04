@@ -25,6 +25,7 @@ from parrot.clients.claude import AnthropicClient
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.clients.nvidia import NvidiaClient
@@ -46,6 +47,7 @@ OPENAI_COMPATIBLE = [
 
 # FEAT-438 TASK-2301/2303/2304: every OpenAIBaseClient subclass — Phase 1
 # (six wire clients) + Phase 2 (GroqClient, ZaiClient).
+# FEAT-526: MetaClient added.
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -55,6 +57,7 @@ WIRE_SUBCLASSES = [
     BedrockMantleClient,
     GroqClient,
     ZaiClient,
+    MetaClient,
 ]
 
 # Matches an OpenAI-the-provider model id (e.g. "gpt-5-mini", "gpt-4.1").
