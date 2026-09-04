@@ -32,9 +32,11 @@ returns HTTP 200 with 7 models using the repo's own `META_API_KEY` (F013).
 
 ### Goals
 
-- **G1** — `MetaClient` in `parrot.clients`, subclassing `OpenAIBaseClient`,
+- **G1** — `MetaClient` in `parrot.clients.meta` (folder subpackage
+  `parrot/clients/meta/{__init__,client,models}.py`, the FEAT-523 convention),
+  subclassing `OpenAIBaseClient`,
   usable as `LLMFactory.create("meta:muse-spark-1.3")`.
-- **G2** — `parrot.models.meta` with a `MetaModel(str, Enum)` of the 7
+- **G2** — `parrot.clients.meta.models` with a `MetaModel(str, Enum)` of the 7
   live-verified model ids plus capability frozensets, following `MoonshotModel`.
 - **G3** — Chat Completions support: chat, tool calling, structured output,
   streaming, `invoke()`.
@@ -99,7 +101,7 @@ AbstractClient (clients/base.py:227)
    └── OpenAIBaseClient (clients/openai_base.py:65)   [wire protocol, no defaults]
           ├── OpenAIClient (gpt.py:86)                [untouched by this feature]
           ├── OpenRouterClient / MoonshotClient / …   [untouched]
-          └── MetaClient (clients/meta.py)            ← NEW
+          └── MetaClient (clients/meta/client.py)     ← NEW
                  ├── __init__            credential chain + base_url
                  ├── get_client()        AsyncOpenAI(base_url=…) — raised timeout
                  ├── _chat_completion()  inherited (no override needed)
@@ -108,8 +110,9 @@ AbstractClient (clients/base.py:227)
                  ├── count_input_tokens()      POST /v1/responses/input_tokens
                  └── list_models()             GET /v1/models
 
-parrot/models/meta.py                                 ← NEW
+parrot/clients/meta/models.py                         ← NEW
    MetaModel(str, Enum) + CONTRIBUTOR_MODELS / SPARK_MODELS / …
+parrot/clients/meta/__init__.py                       ← NEW (re-exports MetaClient, MetaModel)
 ```
 
 ### Integration Points
@@ -118,6 +121,7 @@ parrot/models/meta.py                                 ← NEW
 |---|---|---|
 | `clients/factory.py:107` `SUPPORTED_CLIENTS` | add `"meta"`, `"muse"`, `"meta-muse"` → `MetaClient` | F008 |
 | `clients/factory.py:2-13` imports | add `from .meta import MetaClient` (direct; only needs `openai`) | F008 |
+| `MetaClient` class body | `provider_keys = ("meta", "muse", "meta-muse")` and `models = MetaModel` class attributes (FEAT-523 discovery contract) | FEAT-523 §2 |
 | `tests/clients/test_openai_compatible_defaults.py:49` | add `MetaClient` to `WIRE_SUBCLASSES` | F012 |
 | `tests/clients/test_openai_base_parity.py:341` | add `MetaClient` to `WIRE_SUBCLASSES` | F012 |
 | `examples/clients/smoke/` | add `smoke_meta.py` via `main_for(...)` | F012 |
@@ -126,7 +130,8 @@ parrot/models/meta.py                                 ← NEW
 ### Data Models
 
 ```python
-# parrot/models/meta.py — pattern: parrot/models/moonshot.py
+# parrot/clients/meta/models.py — first client written to the FEAT-523 folder
+# convention (NOT parrot/models/meta.py; parrot.models no longer hosts provider enums)
 class MetaModel(str, Enum):
     """Meta Model API identifiers — verified live via GET /v1/models (F013)."""
     MUSE_SPARK_1_3 = "muse-spark-1.3"
@@ -164,7 +169,7 @@ class MetaClient(OpenAIBaseClient):
 
 ## 3. Module Breakdown
 
-### Module 1: `parrot/models/meta.py` — model catalog
+### Module 1: `parrot/clients/meta/models.py` — model catalog
 The `MetaModel` enum plus capability frozensets. No Pydantic wrappers needed —
 Meta's Chat Completions response shape matches OpenAI's and is already covered by
 existing `AIMessage` / `CompletionUsage` models (same rationale as
@@ -269,6 +274,11 @@ async def test_live_tool_choice_required_raises()                    # asserts 4
 - [ ] **AC15** — `pytest tests/clients/ -v` passes; `ruff` clean on changed files.
 - [ ] **AC16** *(Module 6, droppable)* — `search_tools` can dispatch to native
       `tool_search`; parrot's client-side path remains the default.
+- [ ] **AC17** — Layout conforms to the FEAT-523 convention: `parrot/clients/meta/`
+  contains exactly `__init__.py`, `client.py`, `models.py`; `from parrot.clients.meta
+  import MetaClient, MetaModel` works; `MetaClient.models is MetaModel`;
+  `MetaClient.provider_keys == ("meta", "muse", "meta-muse")`; nothing named `meta`
+  exists under `parrot/models/`.
 
 ---
 
@@ -382,8 +392,9 @@ tools:[{"type":"tool_search"}]   -> 400  'requires at least one deferred tool'
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ❌ `parrot/clients/meta.py` — created by this feature.
-- ❌ `parrot/models/meta.py` — created by this feature.
+- ❌ `parrot/clients/meta/` (`__init__.py`, `client.py`, `models.py`) — created by
+  this feature. There is NO flat `parrot/clients/meta.py` and NO
+  `parrot/models/meta.py`.
 - ❌ `MetaClient`, `MetaModel` — do not exist anywhere yet.
 - ❌ **`OpenAIBaseClient` has NO Responses-API support.** There is no
   `_responses_completion`, `_prepare_responses_args`, or `_call_responses_create`
@@ -483,9 +494,9 @@ tools:[{"type":"tool_search"}]   -> 400  'requires at least one deferred tool'
 ## Worktree Strategy
 
 - **Isolation unit**: `per-spec` — all tasks run sequentially in one worktree.
-- **Rationale**: Modules 2-3 both edit `clients/meta.py`, and Module 4 edits two
+- **Rationale**: Modules 2-3 both edit `clients/meta/client.py`, and Module 4 edits two
   shared test rosters. Parallel agents would contend on the same files for little
-  gain. Module 1 (`models/meta.py`) is independent but too small to justify a
+  gain. Module 1 (`clients/meta/models.py`) is independent but too small to justify a
   second worktree.
 - **Cross-feature dependencies**: none blocking. Watch
   `openai-max-completion-tokens` (§7 gotcha 8) for overlap.
@@ -502,3 +513,4 @@ tools:[{"type":"tool_search"}]   -> 400  'requires at least one deferred tool'
 | Date | Author | Change |
 |---|---|---|
 | 2026-09-04 | Jesus | Initial spec from accepted proposal FEAT-526 (17 findings, 10 live API calls) |
+| 0.3 | 2026-09-04 | Jesus Lara | Adopt FEAT-523 folder convention: `parrot/clients/meta/{__init__,client,models}.py`, `MetaModel` leaves `parrot.models`, `provider_keys`/`models` class attrs, AC17 |
