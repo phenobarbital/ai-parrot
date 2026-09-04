@@ -15,7 +15,7 @@
       "feature_id": "FEAT-525",
       "feature": "per-turn-conversation-compaction",
       "spec": "sdd/specs/per-turn-conversation-compaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Foundation: every other task imports parrot.memory.compaction.models; edits memory/abstract.py (ConversationTurn) that TASK-2826 edits again. External prerequisite: FEAT-524 merged to dev.",
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2819-compaction-models-turn-schema-v2.md"
+      "completed_at": "2026-09-04T10:55:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2819-compaction-models-turn-schema-v2.md"
     },
     {
       "id": "TASK-2820",

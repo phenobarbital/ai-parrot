@@ -270,10 +270,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/{__init__,models}.py` with
+every model from spec §2 (`ToolStatus`, `TurnState`, `ToolInvocation`,
+`TokenCount`, `Limit`, `ContextBudget` + `__post_init__` validation,
+`CompactionState` with `to_dict`/`from_dict`, `Omission`, `TurnView`,
+`CompactionResult`, `CompactionCommit` with the two planner-amendment
+telemetry fields, `EWMA_ALPHA`/`CALIBRATION_MIN`/`CALIBRATION_MAX`,
+`FALLBACK_WINDOW`). Extended `ConversationTurn` in `memory/abstract.py`
+with the six new fields, extended `to_dict`/`from_dict` (tolerant of
+legacy dicts), and extended `from_ai_message` with the `error` kwarg and
+`tool_invocations` population (including `wm_key` from a `_tee` block via
+a new `_tee_key()` helper, and `_stringify()` for canonical JSON tool
+output). Verified no import cycle: `memory/abstract.py` imports
+`.compaction.models`; `compaction/__init__.py` imports only `.models`.
+All 4 task-specified unit tests pass, plus the full `tests/unit/memory/`
+regression suite (66 tests) still passes. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
