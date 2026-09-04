@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2812, TASK-2813, TASK-2814
@@ -139,8 +139,72 @@ def test_google_format_history():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- **`google/client.py`** — `ask`, `ask_stream`, `ask_to_image` migrated; new
+  `_format_history` override returning `UserContent`/`ModelContent`, plus a companion
+  `_dict_messages()` helper (see deviation 2). 3 memory writes removed. The stale
+  comment block at `:3358` naming `_prepare_conversation_context` and the `stateless`
+  docstring line were rewritten rather than left dangling.
+- **`google/analysis.py`** — both hand-built `UserContent`/`ModelContent` loops
+  (`video_understanding`, `document_understanding`) replaced by the shared
+  `_format_history`; 2 memory writes removed.
+- **`google/generation.py`** — same for `generate_image`; 1 memory write removed.
+  **Not listed in the task's scope** but it carried a 6th copy of the same hand-built
+  loop plus a `_prepare_conversation_context`/`_update_conversation_memory` pair, so it
+  had to move with the rest.
+- **`live.py`** — `conversation_memory` ctor kwarg + forward + `ConversationMemory`
+  import removed; `ask` takes `history` and neither id; all three docstrings that
+  advertised "Reuses ... conversation_memory" corrected.
+- **6 hand-inlined copies of the Content mapping collapsed into one.** That duplication
+  is exactly why spec §7 flagged Google as "easy to miss".
+- Tests:
+  * `test_google_format_history.py` — 7 passed: role mapping, multi-turn ordering,
+    empty/`None`, blank-content skipping, that the override really differs from the base
+    dict shape, that `_dict_messages` stays dict-shaped (asserting `.get("role")` works —
+    the exact call `resume()` makes), and the memoryless signature.
+  * `test_all_client_ask_signatures.py` — **172 passed** across **19 concrete clients**
+    discovered by import (not a hard-coded list, so a client added or relocated later —
+    e.g. by FEAT-523 — is still covered). Asserts per client × method: no `user_id`, no
+    `session_id`, no `stateless`, `history` accepted; plus per client: no
+    `conversation_memory` in `__init__`, none of the seven removed memory methods
+    present, and `_format_history`/`_build_messages` reachable. A
+    `test_discovery_found_every_client` guard fails if a broken import silently empties
+    the matrix.
+- **Client suites are now fully clean**: `packages/ai-parrot/tests/clients` +
+  `tests/unit/clients` = 14 failed / 637 passed, and the failure set is **identical to
+  the `dev` baseline** (14 failed / 416 passed) — i.e. **zero newly-red tests**, down
+  from the 71 that TASK-2812 introduced. No existing client test needed editing in
+  TASK-2813/2814/2815.
+- Lint: `ruff` diff for `clients/google/` + `live.py` against `dev` shows only 2 new
+  E402s (see deviation 4). Both new test files are clean.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`stateless` removed from Google's `ask`/`ask_stream`.** The task did not mention it,
+   but spec §5 requires "`ask()` accepts no `stateless` parameter on any client", and with
+   memory-less clients the flag became a no-op — a stateless call is simply one with no
+   `history`. The `if stateless:` branches, the `if not stateless and conversation_history:`
+   write guard and the `if final_text and not stateless:` guard all went with it.
+   `stateless` is **kept** on the non-`ask` multimodal helpers
+   (`video_understanding`, `document_understanding`, `generate_image`), where it still
+   meaningfully gates whether the supplied history is replayed.
+2. **Added `_dict_messages()` alongside `_format_history()` on the Google client.** The
+   spec assumed one shape per provider, but Google needs two: `chats.create(history=...)
+   takes typed SDK Content objects, while `resume()` rebuilds its chat from
+   `state["messages"]` by calling `msg.get("role")` on each entry. Feeding typed objects
+   into that accumulator would raise `AttributeError` on the first resumed tool call, so
+   the dict-shaped list is built separately via the base-class formatter. A test pins this.
+3. **`history` parameter added to three non-`ask` multimodal methods**
+   (`analysis.video_understanding`, `analysis.document_understanding`,
+   `generation.generate_image`) because they previously loaded history through the removed
+   helper. `analysis.image_understanding` deliberately gained nothing — it never used
+   conversation history. These three keep their existing `user_id`/`session_id`/`stateless`
+   parameters; they are not `ask`/`ask_stream`, so the M5 signature test does not cover them.
+4. **2 new `ruff` E402 warnings in `google/client.py`.** That module defines a
+   `_require_google_sdk()` helper *before* its relative-import block, so all 13 of its
+   imports already trip E402 on `dev`; the two FEAT-524 imports simply join the same
+   pre-existing block. Reordering them would mean restructuring an import section
+   unrelated to this feature.
+5. Ids preserved via the FEAT-228 ContextVars (16 references in `google/client.py`, plus
+   `live.py`'s `ask`), same rationale as TASK-2813/2814.

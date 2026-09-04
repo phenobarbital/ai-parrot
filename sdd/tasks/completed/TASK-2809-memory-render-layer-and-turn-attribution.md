@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -187,8 +187,50 @@ def test_turn_chatbot_id_roundtrip_and_legacy():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- CREATED `parrot/memory/render.py`: frozen `HistoryMessage` dataclass + pure
+  `render_history()`. Leaf module — imports only `.abstract`, verified by a test that
+  greps its own source for backend imports.
+- MODIFIED `parrot/memory/abstract.py`: `ConversationTurn.chatbot_id` added as the
+  LAST field (positional construction unchanged); `to_dict`/`from_dict` carry it with
+  `data.get('chatbot_id')` so legacy records deserialize to `None`; `from_ai_message()`
+  classmethod with the canonical metadata shape and an `assistant_text` override for the
+  streaming partial-save path; `AIMessage` imported under `TYPE_CHECKING` only.
+  `ConversationHistory.get_messages_for_api()` REMOVED, replaced by an explanatory comment.
+- MODIFIED `parrot/memory/__init__.py`: exports `HistoryMessage`, `render_history`
+  (both added to `__all__`).
+- `python -c "import parrot.memory; import parrot.clients.base"` clean — no import cycle.
+- Tests: 34 passed (`test_render_history.py` 20, `test_conversation_turn_attribution.py` 14),
+  covering every §2 guarantee: alternation, merge-consecutive, skip-empty (incl. mid-history
+  alternation preservation), foreign-agent label/filter/custom-label, legacy-`None`-is-own,
+  `max_turns` (incl. `None` and non-positive), purity (deep-equality + input untouched),
+  frozen-ness, leaf-module import check, `chatbot_id` round-trip + legacy dict,
+  `from_ai_message` metadata shape / tools_used / turn_id precedence / `assistant_text`
+  override (incl. explicit empty string).
+- `ruff check` clean on both new test files and `render.py`/`abstract.py`/`__init__.py`.
+  (`ruff check packages/ai-parrot/src/parrot/memory` reports 4 PRE-EXISTING issues in
+  `memory/episodic/{store,backends/faiss,backends/redis_vector}.py` — untouched by this task.)
 
-**Deviations from spec**: none
+**`get_messages_for_api` survivors** (as the task instructed me to list):
+| Location | Disposition |
+|---|---|
+| `clients/base.py:2322` (+ docstring refs `:2286`, `:2327`) | expected — deleted by TASK-2812 |
+| `clients/claude.py:1414` (`ask_to_image`) | expected — deleted by TASK-2813 |
+| **`storage/chat.py:638`** (`ChatStorage.get_context_for_agent`) | **NOT anticipated by the spec — see below** |
+
+**Deviations from spec**:
+- **Spec gap discovered — `parrot/storage/chat.py:638`.** Spec §1 Non-Goals declares
+  `parrot.storage.ChatStorage` out of scope and §6 lists it as "untouched", but
+  `ChatStorage.get_context_for_agent` calls `history.get_messages_for_api(model=model)`
+  on the Redis fast path. Removing the method does not raise: the call sits inside
+  `try: ... except Exception: pass`, so the `AttributeError` is swallowed and the method
+  silently falls through to the DynamoDB path forever. No test currently catches this —
+  `packages/ai-parrot/tests/test_chat_storage.py` (which does cover
+  `get_context_for_agent`) is ALREADY broken on `dev` for an unrelated reason
+  (`ImportError: cannot import name 'CONVERSATIONS_COLLECTION' from 'parrot.storage.chat'`,
+  verified against the main-repo checkout — pre-existing, not caused by FEAT-524).
+  Left unchanged in this task to respect its declared file list; carried forward and
+  fixed in TASK-2816, where the one-line replacement with `render_history()` is recorded
+  as an explicit deviation.

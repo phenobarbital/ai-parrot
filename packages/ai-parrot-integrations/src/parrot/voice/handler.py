@@ -11,6 +11,7 @@ This handler ONLY handles WebSocket transport.
 It does NOT know about Google/Gemini - all voice logic
 is encapsulated in VoiceBot/GeminiLiveClient.
 """
+
 from __future__ import annotations
 import asyncio
 import base64
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
 try:
     from parrot.bots.voice import VoiceBot, create_voice_bot
     from parrot.models.voice import VoiceConfig
+
     # FEAT-416 (TASK-2152): VoiceSession (TASK-2149) replaces the inlined
     # turn lifecycle previously in _run_voice_session().
     from parrot.voice.session import VoiceSession
@@ -59,9 +61,7 @@ except ImportError:
 # output (e.g. "**Clarifying...**", "**Show Product Image**"). Shared by
 # _send_voice_response() and _HandlerVoiceSession.build_frames() so both
 # frame-construction paths filter identically (FEAT-418, TASK-2174).
-_THOUGHT_FILTER_PATTERN = re.compile(
-    r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])'
-)
+_THOUGHT_FILTER_PATTERN = re.compile(r"^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])")
 
 
 # =============================================================================
@@ -73,7 +73,6 @@ _THOUGHT_FILTER_PATTERN = re.compile(
 # Re-exported here for backward compatibility.
 from parrot.core.ws_auth import AuthenticatedUser, TokenValidator  # noqa: E402,F401
 
-
 # =============================================================================
 # Provider Resolution (FEAT-302, TASK-1749)
 # =============================================================================
@@ -84,6 +83,7 @@ from parrot.core.ws_auth import AuthenticatedUser, TokenValidator  # noqa: E402,
 # for a given VoiceProvider without requiring changes to VoiceBot's
 # existing (GeminiLiveClient-only) resolution path. Full end-to-end
 # provider-aware VoiceBot wiring is out of scope here — see spec Module 8.
+
 
 def resolve_voice_client_class(provider: "VoiceProvider"):
     """Resolve the ``AbstractClient`` subclass for a given ``VoiceProvider``.
@@ -114,9 +114,11 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
 
     if provider == _VoiceProvider.NOVA:
         from parrot.clients.nova import NovaClient
+
         return NovaClient
 
     from parrot.clients.live import GeminiLiveClient
+
     return GeminiLiveClient
 
 
@@ -124,9 +126,11 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
 # Configuration
 # =============================================================================
 
+
 @dataclass
 class BotConfig:
     """Configuration for VoiceBot creation."""
+
     name: str = "Voice Assistant"
     voice_name: str = "Puck"
     language: str = "en-US"
@@ -158,14 +162,14 @@ class BotConfig:
                 result[key] = value
         return result
 
-    def merge_with(self, overrides: Dict[str, Any]) -> 'BotConfig':
+    def merge_with(self, overrides: Dict[str, Any]) -> "BotConfig":
         """Create new BotConfig with overrides applied."""
         current = asdict(self)
         current.update(overrides)
         return BotConfig(**{k: v for k, v in current.items() if k in BotConfig.__dataclass_fields__})
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'BotConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "BotConfig":
         """Create BotConfig from dictionary."""
         valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
         return cls(**valid_fields)
@@ -175,9 +179,11 @@ class BotConfig:
 # Connection State
 # =============================================================================
 
+
 @dataclass
 class WebSocketConnection:
     """Represents an active WebSocket connection with auth state."""
+
     ws: web.WebSocketResponse
     session_id: str
     created_at: datetime = field(default_factory=datetime.now)
@@ -388,22 +394,26 @@ class _HandlerVoiceSession(VoiceSession):
             is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
             text_to_send = "" if is_thought else resp.text
             if (resp.audio_data or text_to_send) and not resp.is_complete:
-                frames.append({
-                    "type": "response_chunk",
-                    "text": text_to_send or "",
-                    "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
-                    "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
-                    "is_interrupted": resp.is_interrupted,
-                })
+                frames.append(
+                    {
+                        "type": "response_chunk",
+                        "text": text_to_send or "",
+                        "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
+                        "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                        "is_interrupted": resp.is_interrupted,
+                    }
+                )
 
         # User transcription is always forwarded (both modes) — canonical
         # role replaces the removed metadata["user_transcription"] key.
         if resp.role == "user" and resp.text:
-            frames.append({
-                "type": "transcription",
-                "text": resp.text,
-                "is_user": True,
-            })
+            frames.append(
+                {
+                    "type": "transcription",
+                    "text": resp.text,
+                    "is_user": True,
+                }
+            )
 
         # Everything below this point is model-response output — skip in
         # STT-only mode (matches _send_voice_response()'s early return).
@@ -417,26 +427,32 @@ class _HandlerVoiceSession(VoiceSession):
             if not assistant_text and resp.turn_metadata:
                 assistant_text = resp.turn_metadata.output_transcription
             if assistant_text:
-                frames.append({
-                    "type": "transcription",
-                    "text": assistant_text,
-                    "is_user": False,
-                })
+                frames.append(
+                    {
+                        "type": "transcription",
+                        "text": assistant_text,
+                        "is_user": False,
+                    }
+                )
 
             if resp.metadata.get("display_data"):
-                frames.append({
-                    "type": "display_data",
-                    "data": resp.metadata["display_data"],
-                })
+                frames.append(
+                    {
+                        "type": "display_data",
+                        "data": resp.metadata["display_data"],
+                    }
+                )
 
             for tc in resp.tool_calls:
-                frames.append({
-                    "type": "tool_call",
-                    "name": tc.name,
-                    "arguments": tc.arguments,
-                    "result": tc.result,
-                    "execution_time_ms": tc.execution_time_ms,
-                })
+                frames.append(
+                    {
+                        "type": "tool_call",
+                        "name": tc.name,
+                        "arguments": tc.arguments,
+                        "result": tc.result,
+                        "execution_time_ms": tc.execution_time_ms,
+                    }
+                )
 
             if resp.is_complete:
                 final_text = resp.text
@@ -464,10 +480,12 @@ class _HandlerVoiceSession(VoiceSession):
                         "first_token_time_ms": resp.usage.first_token_time_ms,
                     }
                 frames.append(response_complete_frame)
-                frames.append({
-                    "type": "ready_to_speak",
-                    "message": "Ready for new question",
-                })
+                frames.append(
+                    {
+                        "type": "ready_to_speak",
+                        "message": "Ready for new question",
+                    }
+                )
 
         # Gemini's GoAway signal is distinct from reconnect_required and,
         # by itself, is not understood by VoiceSession's (inherited,
@@ -479,10 +497,12 @@ class _HandlerVoiceSession(VoiceSession):
         # mutation is now a defensive no-op for Gemini and a safety net for
         # any future provider that emits go_away without it.
         if resp.metadata.get("go_away"):
-            frames.append({
-                "type": "session_warning",
-                "message": "Session reconnecting...",
-            })
+            frames.append(
+                {
+                    "type": "session_warning",
+                    "message": "Session reconnecting...",
+                }
+            )
             resp.metadata["reconnect_required"] = True
 
         return frames
@@ -514,14 +534,13 @@ class _HandlerVoiceSession(VoiceSession):
                 if resp.is_complete:
                     await connection.avatar_session.finish_turn()
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc
-            )
+            self.logger.warning("VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc)
 
 
 # =============================================================================
 # Main Handler
 # =============================================================================
+
 
 class VoiceChatHandler:
     """
@@ -675,6 +694,7 @@ class VoiceChatHandler:
         # Static files
         if include_static and static_dir:
             from pathlib import Path
+
             static_path = Path(static_dir)
             if static_path.exists():
                 app.router.add_static(f"{prefix}/static", static_path)
@@ -687,20 +707,19 @@ class VoiceChatHandler:
         app.on_cleanup.append(self._cleanup_all_connections)
 
         self.logger.info(
-            f"VoiceChatHandler mounted at {prefix or '/'} "
-            f"(auth={'required' if self.require_auth else 'optional'})"
+            f"VoiceChatHandler mounted at {prefix or '/'} " f"(auth={'required' if self.require_auth else 'optional'})"
         )
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
-        return web.json_response({
-            "status": "ok",
-            "active_connections": len(self.connections),
-            "authenticated_connections": sum(
-                1 for c in self.connections.values() if c.authenticated
-            ),
-            "timestamp": datetime.now().isoformat(),
-        })
+        return web.json_response(
+            {
+                "status": "ok",
+                "active_connections": len(self.connections),
+                "authenticated_connections": sum(1 for c in self.connections.values() if c.authenticated),
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
     async def _cleanup_all_connections(self, app: web.Application) -> None:
         """Cleanup all connections on app shutdown."""
@@ -712,8 +731,7 @@ class VoiceChatHandler:
     # =========================================================================
 
     async def _authenticate_from_protocol(
-        self,
-        request: web.Request
+        self, request: web.Request
     ) -> tuple[Optional[str], Optional[AuthenticatedUser]]:
         """
         Extract and validate JWT from Sec-WebSocket-Protocol header.
@@ -748,10 +766,7 @@ class VoiceChatHandler:
             return "jwt", user
         return None, None
 
-    async def _authenticate_from_query(
-        self,
-        request: web.Request
-    ) -> Optional[AuthenticatedUser]:
+    async def _authenticate_from_query(self, request: web.Request) -> Optional[AuthenticatedUser]:
         """Extract and validate JWT from query parameter."""
         token = request.query.get("token")
         if token:
@@ -813,29 +828,32 @@ class VoiceChatHandler:
         )
         self.connections[session_id] = connection
 
-        self.logger.info(
-            f"New WebSocket connection: {session_id} "
-            f"(authenticated={connection.authenticated})"
-        )
+        self.logger.info(f"New WebSocket connection: {session_id} " f"(authenticated={connection.authenticated})")
 
         try:
             # Send connection confirmation
-            await self._send_message(ws, {
-                "type": "connected",
-                "session_id": session_id,
-                "authenticated": connection.authenticated,
-                "require_auth": self.require_auth and not connection.authenticated,
-            })
+            await self._send_message(
+                ws,
+                {
+                    "type": "connected",
+                    "session_id": session_id,
+                    "authenticated": connection.authenticated,
+                    "require_auth": self.require_auth and not connection.authenticated,
+                },
+            )
 
             # If pre-authenticated, send success
             if connection.authenticated and connection.user:
-                await self._send_message(ws, {
-                    "type": "auth_success",
-                    "user": {
-                        "user_id": connection.user.user_id,
-                        "username": connection.user.username,
-                    }
-                })
+                await self._send_message(
+                    ws,
+                    {
+                        "type": "auth_success",
+                        "user": {
+                            "user_id": connection.user.user_id,
+                            "username": connection.user.username,
+                        },
+                    },
+                )
 
             # Process messages
             async for msg in ws:
@@ -898,11 +916,7 @@ class VoiceChatHandler:
     # Message Handlers
     # =========================================================================
 
-    async def _handle_message(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_message(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """Route message to appropriate handler."""
         msg_type = message.get("type", "")
 
@@ -918,10 +932,10 @@ class VoiceChatHandler:
 
         # Check authentication for other message types
         if self.require_auth and not connection.authenticated:
-            await self._send_message(connection.ws, {
-                "type": "auth_required",
-                "message": "Authentication required. Send {type: 'auth', token: '...'}"
-            })
+            await self._send_message(
+                connection.ws,
+                {"type": "auth_required", "message": "Authentication required. Send {type: 'auth', token: '...'}"},
+            )
             return
 
         handlers = {
@@ -935,7 +949,7 @@ class VoiceChatHandler:
             "send_text": self._handle_send_text,
             "text_message": self._handle_send_text,
             "voice_complete": self._handle_voice_complete,  # Non-streaming voice
-            "voice_buffer": self._handle_voice_complete,    # Alias
+            "voice_buffer": self._handle_voice_complete,  # Alias
         }
 
         if handler := handlers.get(msg_type):
@@ -943,11 +957,7 @@ class VoiceChatHandler:
         else:
             self.logger.warning("Unknown message type: %s", msg_type)
 
-    async def _handle_auth(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_auth(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Handle authentication message.
 
@@ -973,10 +983,13 @@ class VoiceChatHandler:
                 token = auth_header[7:]
 
         if not token:
-            await self._send_message(connection.ws, {
-                "type": "auth_error",
-                "message": "Token not provided",
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "auth_error",
+                    "message": "Token not provided",
+                },
+            )
             return
 
         # Validate token
@@ -986,33 +999,31 @@ class VoiceChatHandler:
             connection.authenticated = True
             connection.user = user
 
-            await self._send_message(connection.ws, {
-                "type": "auth_success",
-                "message": "Authentication successful",
-                "user": {
-                    "user_id": user.user_id,
-                    "username": user.username,
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "auth_success",
+                    "message": "Authentication successful",
+                    "user": {
+                        "user_id": user.user_id,
+                        "username": user.username,
+                    },
                 },
-            })
-
-            self.logger.info(
-                f"Session {connection.session_id} authenticated as {user.username}"
             )
+
+            self.logger.info(f"Session {connection.session_id} authenticated as {user.username}")
         else:
-            await self._send_message(connection.ws, {
-                "type": "auth_error",
-                "message": "Invalid or expired token",
-            })
-
-            self.logger.warning(
-                f"Session {connection.session_id} authentication failed"
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "auth_error",
+                    "message": "Invalid or expired token",
+                },
             )
 
-    async def _handle_ping(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+            self.logger.warning(f"Session {connection.session_id} authentication failed")
+
+    async def _handle_ping(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Handle ping message for connection keepalive.
 
@@ -1051,11 +1062,7 @@ class VoiceChatHandler:
 
         await self._send_message(connection.ws, response)
 
-    async def _handle_start_session(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_start_session(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Start voice session.
 
@@ -1119,15 +1126,15 @@ class VoiceChatHandler:
         # survive a GoAway reconnect.
         try:
             if getattr(connection.bot, "conversation_memory", None) is None:
-                if not getattr(connection.bot, "memory_type", None) or \
-                        connection.bot.memory_type == "memory":
+                if not getattr(connection.bot, "memory_type", None) or connection.bot.memory_type == "memory":
                     connection.bot.memory_type = "redis"
                 connection.bot.configure_conversation_memory()
         except Exception:  # noqa: BLE001 - memory is best-effort, never block voice
             self.logger.warning(
                 "VoiceChatHandler: could not configure conversation memory "
                 "for session %s; continuing without cross-turn memory.",
-                connection.session_id, exc_info=True,
+                connection.session_id,
+                exc_info=True,
             )
 
         # Start voice task only for streaming mode
@@ -1136,9 +1143,7 @@ class VoiceChatHandler:
         connection.stop_audio_sending = False
 
         if streaming_mode == "streaming":
-            connection.voice_task = asyncio.create_task(
-                self._run_voice_session(connection)
-            )
+            connection.voice_task = asyncio.create_task(self._run_voice_session(connection))
 
         # ── Avatar wiring (FEAT-245) ──────────────────────────────────────
         # Lazy-import the liveavatar stack so /ws/voice works without the
@@ -1154,15 +1159,9 @@ class VoiceChatHandler:
 
                 tenant_id: Optional[str] = message.get("tenant_id") or None
                 avatar_id_override: Optional[str] = message.get("avatar_id") or None
-                agent_id: str = (
-                    config.name
-                    if config and config.name
-                    else "voice-assistant"
-                )
+                agent_id: str = config.name if config and config.name else "voice-assistant"
 
-                if not is_avatar_enabled(
-                    tenant_id=tenant_id, agent_name=agent_id
-                ):
+                if not is_avatar_enabled(tenant_id=tenant_id, agent_name=agent_id):
                     avatar_block = {
                         "active": False,
                         "reason": "avatar mode is not enabled for this tenant",
@@ -1191,14 +1190,10 @@ class VoiceChatHandler:
                     )
             except ImportError as exc:
                 avatar_block = {"active": False, "reason": "liveavatar stack not installed"}
-                self.logger.warning(
-                    "VoiceChatHandler: liveavatar import failed — voice-only: %s", exc
-                )
+                self.logger.warning("VoiceChatHandler: liveavatar import failed — voice-only: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 avatar_block = {"active": False, "reason": str(exc)[:120]}
-                self.logger.warning(
-                    "VoiceChatHandler: avatar start failed — voice-only: %s", exc
-                )
+                self.logger.warning("VoiceChatHandler: avatar start failed — voice-only: %s", exc)
 
         session_started_msg: dict = {
             "type": "session_started",
@@ -1218,10 +1213,7 @@ class VoiceChatHandler:
 
         await self._send_message(connection.ws, session_started_msg)
 
-        await self._send_message(connection.ws, {
-            "type": "ready_to_speak",
-            "message": "Ready for your question"
-        })
+        await self._send_message(connection.ws, {"type": "ready_to_speak", "message": "Ready for your question"})
 
         self.logger.info(
             "Voice session started: %s (mode=%s)",
@@ -1229,11 +1221,7 @@ class VoiceChatHandler:
             streaming_mode,
         )
 
-    async def _handle_end_session(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_end_session(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """End voice session."""
         connection.shutdown_event.set()
         connection.session_active = False
@@ -1255,18 +1243,17 @@ class VoiceChatHandler:
                 await connection.avatar_session.aclose()
             connection.avatar_session = None
 
-        await self._send_message(connection.ws, {
-            "type": "session_ended",
-            "session_id": connection.session_id,
-        })
+        await self._send_message(
+            connection.ws,
+            {
+                "type": "session_ended",
+                "session_id": connection.session_id,
+            },
+        )
 
         self.logger.info("Voice session ended: %s", connection.session_id)
 
-    async def _handle_reset_session(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_reset_session(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """Reset session - end current and start new."""
         await self._handle_end_session(connection, message)
 
@@ -1278,17 +1265,13 @@ class VoiceChatHandler:
                 break
 
         # Start new session with same config
-        await self._handle_start_session(connection, {
-            "config": connection.config.as_dict() if connection.config else {}
-        })
+        await self._handle_start_session(
+            connection, {"config": connection.config.as_dict() if connection.config else {}}
+        )
 
         self.logger.info("Voice session reset: %s", connection.session_id)
 
-    async def _handle_start_recording(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_start_recording(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """Start audio recording."""
         connection.stop_audio_sending = False
         connection.gemini_responding = False
@@ -1305,15 +1288,14 @@ class VoiceChatHandler:
         if connection.streaming_mode == "streaming" and connection.voice_session is not None:
             await connection.voice_session.start_turn()
 
-        await self._send_message(connection.ws, {
-            "type": "recording_started",
-        })
+        await self._send_message(
+            connection.ws,
+            {
+                "type": "recording_started",
+            },
+        )
 
-    async def _handle_stop_recording(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_stop_recording(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Stop audio recording.
 
@@ -1327,15 +1309,11 @@ class VoiceChatHandler:
         duration_ms = 0
 
         if connection.recording_start_time:
-            duration_ms = (
-                datetime.now() - connection.recording_start_time
-            ).total_seconds() * 1000
+            duration_ms = (datetime.now() - connection.recording_start_time).total_seconds() * 1000
             connection.recording_start_time = None
 
             if duration_ms < MIN_DURATION_MS:
-                self.logger.info(
-                    f"Recording too short ({duration_ms:.0f}ms), ignoring"
-                )
+                self.logger.info(f"Recording too short ({duration_ms:.0f}ms), ignoring")
                 # FEAT-416 (TASK-2152): previously drained
                 # connection.audio_queue directly; audio now lives in
                 # VoiceSession's own per-turn queue (created by
@@ -1348,17 +1326,19 @@ class VoiceChatHandler:
                     await connection.voice_session._cancel_turn()
                 connection.audio_buffer = b""
 
-                await self._send_message(connection.ws, {
-                    "type": "recording_stopped",
-                    "message": "Recording too short. Please hold longer."
-                })
+                await self._send_message(
+                    connection.ws, {"type": "recording_stopped", "message": "Recording too short. Please hold longer."}
+                )
                 return
 
-        await self._send_message(connection.ws, {
-            "type": "recording_stopped",
-            "message": "Processing...",
-            "duration_ms": duration_ms,
-        })
+        await self._send_message(
+            connection.ws,
+            {
+                "type": "recording_stopped",
+                "message": "Processing...",
+                "duration_ms": duration_ms,
+            },
+        )
 
         # FEAT-416 (TASK-2152): signal end-of-turn through VoiceSession —
         # this injects the 20ms-paced silence VAD needs before the
@@ -1369,17 +1349,10 @@ class VoiceChatHandler:
 
         # In buffered mode, process the accumulated audio now
         if connection.streaming_mode == "buffered" and connection.audio_buffer:
-            await self._handle_voice_binary_complete(
-                connection,
-                connection.audio_buffer
-            )
+            await self._handle_voice_binary_complete(connection, connection.audio_buffer)
             connection.audio_buffer = b""
 
-    async def _handle_audio_data(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_audio_data(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Receive audio chunk (base64).
 
@@ -1415,11 +1388,7 @@ class VoiceChatHandler:
                 # Buffered mode
                 connection.audio_buffer += audio_bytes
 
-    async def _handle_send_text(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_send_text(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Send text to bot and receive voice response (text-to-speech).
 
@@ -1477,11 +1446,7 @@ class VoiceChatHandler:
             self.logger.error("Error processing text: %s", e)
             await self._send_error(connection.ws, str(e))
 
-    async def _handle_voice_complete(
-        self,
-        connection: WebSocketConnection,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _handle_voice_complete(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Handle complete audio buffer for non-streaming voice processing.
 
@@ -1524,16 +1489,18 @@ class VoiceChatHandler:
             audio_bytes = base64.b64decode(audio_b64)
 
             self.logger.info(
-                f"Processing complete audio: {len(audio_bytes)} bytes "
-                f"for session {connection.session_id}"
+                f"Processing complete audio: {len(audio_bytes)} bytes " f"for session {connection.session_id}"
             )
 
             # Notify client we're processing
-            await self._send_message(connection.ws, {
-                "type": "processing",
-                "message": "Processing audio...",
-                "audio_size": len(audio_bytes),
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "processing",
+                    "message": "Processing audio...",
+                    "audio_size": len(audio_bytes),
+                },
+            )
 
             # Use non-streaming ask_voice
             response = await connection.bot.ask_voice(
@@ -1556,11 +1523,7 @@ class VoiceChatHandler:
             self.logger.error("Error processing voice: %s", e)
             await self._send_error(connection.ws, str(e))
 
-    async def _handle_voice_binary_complete(
-        self,
-        connection: WebSocketConnection,
-        audio_bytes: bytes
-    ) -> None:
+    async def _handle_voice_binary_complete(self, connection: WebSocketConnection, audio_bytes: bytes) -> None:
         """
         Handle complete binary audio for non-streaming processing.
 
@@ -1571,14 +1534,15 @@ class VoiceChatHandler:
             return
 
         try:
-            self.logger.info(
-                f"Processing binary audio: {len(audio_bytes)} bytes"
-            )
+            self.logger.info(f"Processing binary audio: {len(audio_bytes)} bytes")
 
-            await self._send_message(connection.ws, {
-                "type": "processing",
-                "message": "Processing audio...",
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "processing",
+                    "message": "Processing audio...",
+                },
+            )
 
             response = await connection.bot.ask_voice(
                 audio_input=audio_bytes,
@@ -1626,14 +1590,17 @@ class VoiceChatHandler:
         never firing.
         """
         # Send tool calls
-        for tc in (tool_calls or []):
-            await self._send_message(connection.ws, {
-                "type": "tool_call",
-                "name": tc.name,
-                "arguments": tc.arguments,
-                "result": tc.result,
-                "execution_time_ms": getattr(tc, "execution_time_ms", None),
-            })
+        for tc in tool_calls or []:
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": getattr(tc, "execution_time_ms", None),
+                },
+            )
 
         # Send complete response
         response_msg = {
@@ -1655,10 +1622,7 @@ class VoiceChatHandler:
         await self._send_message(connection.ws, response_msg)
 
         # Signal ready for next input
-        await self._send_message(connection.ws, {
-            "type": "ready_to_speak",
-            "message": "Ready for new question"
-        })
+        await self._send_message(connection.ws, {"type": "ready_to_speak", "message": "Ready for new question"})
 
     # =========================================================================
     # Voice Session
@@ -1689,7 +1653,7 @@ class VoiceChatHandler:
         # connection.bot.conversation_memory above).
         if bot._llm is None:
             config = bot._resolve_llm_config()
-            bot._llm = bot._create_llm_client(config, bot.conversation_memory)
+            bot._llm = bot._create_llm_client(config)
 
         # FEAT-418 (TASK-2174): wrap the raw client so the now-INHERITED
         # VoiceSession._run_turn() (no more duplicated reconnection loop)
@@ -1721,11 +1685,7 @@ class VoiceChatHandler:
             if connection.voice_session is not None:
                 await connection.voice_session.close()
 
-    async def _send_voice_response(
-        self,
-        connection: WebSocketConnection,
-        response: Any
-    ) -> None:
+    async def _send_voice_response(self, connection: WebSocketConnection, response: Any) -> None:
         """Send voice response to client.
 
         In STT-only mode (connection.stt_only=True) only ``transcription``
@@ -1745,23 +1705,29 @@ class VoiceChatHandler:
                 text_to_send = ""
 
             if (response.audio_data or text_to_send) and not response.is_complete:
-                await self._send_message(connection.ws, {
-                    "type": "response_chunk",
-                    "text": text_to_send or "",
-                    "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
-                    "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
-                    "is_interrupted": response.is_interrupted,
-                })
+                await self._send_message(
+                    connection.ws,
+                    {
+                        "type": "response_chunk",
+                        "text": text_to_send or "",
+                        "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
+                        "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
+                        "is_interrupted": response.is_interrupted,
+                    },
+                )
 
         # User transcription is always forwarded (both modes). FEAT-418:
         # canonical role="user" replaces the removed
         # metadata["user_transcription"] key.
         if response.role == "user" and response.text:
-            await self._send_message(connection.ws, {
-                "type": "transcription",
-                "text": response.text,
-                "is_user": True,
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "transcription",
+                    "text": response.text,
+                    "is_user": True,
+                },
+            )
 
         # Everything below this point is model-response output — skip in STT-only.
         if connection.stt_only:
@@ -1781,26 +1747,29 @@ class VoiceChatHandler:
         if not assistant_text and response.turn_metadata:
             assistant_text = response.turn_metadata.output_transcription
         if assistant_text:
-            await self._send_message(connection.ws, {
-                "type": "transcription",
-                "text": assistant_text,
-                "is_user": False,
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "transcription",
+                    "text": assistant_text,
+                    "is_user": False,
+                },
+            )
 
         if response.metadata.get("display_data"):
-            await self._send_message(connection.ws, {
-                "type": "display_data",
-                "data": response.metadata["display_data"]
-            })
+            await self._send_message(connection.ws, {"type": "display_data", "data": response.metadata["display_data"]})
 
         for tc in response.tool_calls:
-            await self._send_message(connection.ws, {
-                "type": "tool_call",
-                "name": tc.name,
-                "arguments": tc.arguments,
-                "result": tc.result,
-                "execution_time_ms": tc.execution_time_ms,
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": tc.execution_time_ms,
+                },
+            )
 
         if response.is_complete:
             # Re-check filter for the final text payload
@@ -1808,16 +1777,16 @@ class VoiceChatHandler:
             if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
                 final_text = ""
 
-            await self._send_message(connection.ws, {
-                "type": "response_complete",
-                "text": final_text or "",
-                "is_interrupted": response.is_interrupted,
-            })
+            await self._send_message(
+                connection.ws,
+                {
+                    "type": "response_complete",
+                    "text": final_text or "",
+                    "is_interrupted": response.is_interrupted,
+                },
+            )
 
-            await self._send_message(connection.ws, {
-                "type": "ready_to_speak",
-                "message": "Ready for new question"
-            })
+            await self._send_message(connection.ws, {"type": "ready_to_speak", "message": "Ready for new question"})
 
         # ── Avatar audio tee (FEAT-245) ───────────────────────────────────
         # Best-effort: exceptions are caught and logged; the browser audio
@@ -1832,36 +1801,29 @@ class VoiceChatHandler:
                     if response.is_complete:
                         await connection.avatar_session.finish_turn()
             except Exception as exc:  # noqa: BLE001
-                self.logger.warning(
-                    "VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc
-                )
+                self.logger.warning("VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc)
 
     # =========================================================================
     # Utilities
     # =========================================================================
 
-    async def _send_message(
-        self,
-        ws: web.WebSocketResponse,
-        message: Dict[str, Any]
-    ) -> None:
+    async def _send_message(self, ws: web.WebSocketResponse, message: Dict[str, Any]) -> None:
         """Send JSON message to client."""
         try:
             await ws.send_json(message)
         except Exception as e:
             self.logger.error("Error sending message: %s", e)
 
-    async def _send_error(
-        self,
-        ws: web.WebSocketResponse,
-        error_message: str
-    ) -> None:
+    async def _send_error(self, ws: web.WebSocketResponse, error_message: str) -> None:
         """Send error message to client."""
-        await self._send_message(ws, {
-            "type": "error",
-            "message": error_message,
-            "timestamp": datetime.now().isoformat(),
-        })
+        await self._send_message(
+            ws,
+            {
+                "type": "error",
+                "message": error_message,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
 
     async def _cleanup_connection(self, connection: WebSocketConnection) -> None:
         """Clean up connection resources."""
@@ -1890,9 +1852,7 @@ class VoiceChatHandler:
             try:
                 await connection.avatar_session.aclose()
             except Exception as exc:  # noqa: BLE001
-                self.logger.warning(
-                    "VoiceChatHandler: avatar session cleanup error: %s", exc
-                )
+                self.logger.warning("VoiceChatHandler: avatar session cleanup error: %s", exc)
             finally:
                 connection.avatar_session = None
 
@@ -1911,6 +1871,7 @@ class VoiceChatHandler:
 # Factory Function
 # =============================================================================
 
+
 def create_voice_server(
     bot_factory: Optional[Callable[[], VoiceBot]] = None,
     bot_config: Optional[Union[BotConfig, Dict[str, Any]]] = None,
@@ -1918,7 +1879,7 @@ def create_voice_server(
     require_auth: bool = False,
     secret_key: Optional[str] = None,
     static_dir: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> web.Application:
     """
     Create complete voice server application.
@@ -1935,11 +1896,7 @@ def create_voice_server(
         Configured aiohttp Application
     """
     handler = VoiceChatHandler(
-        bot_factory=bot_factory,
-        default_config=bot_config,
-        require_auth=require_auth,
-        secret_key=secret_key,
-        **kwargs
+        bot_factory=bot_factory, default_config=bot_config, require_auth=require_auth, secret_key=secret_key, **kwargs
     )
 
     app = web.Application()
@@ -1954,10 +1911,13 @@ def create_voice_server(
     # Serve index if static dir exists
     if static_dir:
         from pathlib import Path
+
         frontend_dir = Path(static_dir)
         if (frontend_dir / "chat.html").exists():
+
             async def index(request):
                 return web.FileResponse(frontend_dir / "chat.html")
+
             app.router.add_get("/", index)
 
     # CORS middleware

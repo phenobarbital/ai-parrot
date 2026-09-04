@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple, Sequence
 
 from ...exceptions import InvokeError
 import os
@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover - exercised when extra is missing
     Part = None  # type: ignore[assignment]
     ModelContent = None  # type: ignore[assignment]
     UserContent = None  # type: ignore[assignment]
+from ...memory.render import HistoryMessage
 from ...models import (
     AIMessage,
     AIMessageFactory,
@@ -48,7 +49,6 @@ from ...models.detections import (
     IdentificationResponse,
 )
 from ...models.outputs import SentimentAnalysis, ProductReview
-
 
 _DOCUMENT_POLL_TIMEOUT_S: int = 300  # 5 minutes max wait for Files API processing
 
@@ -99,9 +99,7 @@ class GoogleAnalysis:
             if not self.client:
                 raise RuntimeError("Client not initialized")
 
-            response = self.client.models.generate_content(
-                model=model, contents=prompt, config=generation_config
-            )
+            response = self.client.models.generate_content(model=model, contents=prompt, config=generation_config)
 
             execution_time = time.time() - start_time
 
@@ -111,9 +109,7 @@ class GoogleAnalysis:
                     structured_output = response.parsed
                 else:
                     try:
-                        structured_output = SentimentAnalysis.model_validate_json(
-                            response.text
-                        )
+                        structured_output = SentimentAnalysis.model_validate_json(response.text)
                     except Exception:
                         pass
 
@@ -176,9 +172,7 @@ class GoogleAnalysis:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=model, contents=prompt, config=generation_config
-            )
+            response = self.client.models.generate_content(model=model, contents=prompt, config=generation_config)
 
             execution_time = time.time() - start_time
 
@@ -188,9 +182,7 @@ class GoogleAnalysis:
                     structured_output = response.parsed
                 else:
                     try:
-                        structured_output = ProductReview.model_validate_json(
-                            response.text
-                        )
+                        structured_output = ProductReview.model_validate_json(response.text)
                     except Exception:
                         pass
 
@@ -224,6 +216,7 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
+        history: Optional[Sequence[HistoryMessage]] = None,
         offsets: Optional[tuple[str, str]] = None,
         reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
         timeout: Optional[int] = 600,
@@ -246,50 +239,13 @@ class GoogleAnalysis:
 
         await self._ensure_client()
 
-        if stateless:
-            # For stateless mode, skip conversation memory
-            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-            conversation_history = None
-        else:
-            # Use the unified conversation context preparation from AbstractClient
-            (
-                messages,
-                conversation_history,
-                prompt_instruction,
-            ) = await self._prepare_conversation_context(
-                prompt,
-                None,
-                user_id,
-                session_id,
-                prompt_instruction,
-                stateless=stateless,
-            )
-
-        # Prepare conversation history for Google GenAI format
-        history = []
-        if messages:
-            for msg in messages[:-1]:  # Exclude the current user message (last in list)
-                role = msg["role"].lower()
-                if role == "user":
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if (
-                            isinstance(part_content, dict)
-                            and part_content.get("type") == "text"
-                        ):
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ["assistant", "model"]:
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if (
-                            isinstance(part_content, dict)
-                            and part_content.get("type") == "text"
-                        ):
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = () if stateless else (history or ())
+        history = self._format_history(_rendered)
 
         config_kwargs = {
             "response_modalities": ["Text"],
@@ -316,9 +272,7 @@ class GoogleAnalysis:
             data = types.FileData(file_uri=video)
             video_metadata = None
             if offsets:
-                video_metadata = types.VideoMetadata(
-                    start_offset=offsets[0], end_offset=offsets[1]
-                )
+                video_metadata = types.VideoMetadata(start_offset=offsets[0], end_offset=offsets[1])
             video_info = types.Part(file_data=data, video_metadata=video_metadata)
         else:
             # Handle local video (inline or upload)
@@ -389,22 +343,12 @@ class GoogleAnalysis:
                         if mime_type == "image/jpg":
                             mime_type = "image/jpeg"
 
-                        content.append(
-                            types.Part(
-                                inline_data=types.Blob(
-                                    data=img_bytes, mime_type=mime_type
-                                )
-                            )
-                        )
+                        content.append(types.Part(inline_data=types.Blob(data=img_bytes, mime_type=mime_type)))
                     else:
-                        self.logger.warning(
-                            f"Could not process reference image: {ref_img}"
-                        )
+                        self.logger.warning(f"Could not process reference image: {ref_img}")
 
             if as_image:
-                content.append(
-                    types.Part(text="\n\nAnalyzing frames from video source:")
-                )
+                content.append(types.Part(text="\n\nAnalyzing frames from video source:"))
                 content.extend(video_info)  # video_info is a list of Part objects
             else:
                 content.append(video_info)
@@ -423,15 +367,11 @@ class GoogleAnalysis:
             self.logger.debug(f"Calling Gemini API (stateless={stateless})...")
             if stateless:
                 self.logger.debug(f"Generating content with model {model}...")
-                self.logger.debug(
-                    f"Generating content with model {model} (timeout={timeout}s)..."
-                )
+                self.logger.debug(f"Generating content with model {model} (timeout={timeout}s)...")
                 # Wrap content in UserContent to ensure correct structure
                 user_msg = types.UserContent(parts=content)
                 response = await self._await_with_progress(
-                    self.client.aio.models.generate_content(
-                        model=model, contents=[user_msg], config=config
-                    ),
+                    self.client.aio.models.generate_content(model=model, contents=[user_msg], config=config),
                     label=f"generate_content({model})",
                     timeout=timeout,
                     log_interval=progress_log_interval,
@@ -440,13 +380,9 @@ class GoogleAnalysis:
             else:
                 self.logger.debug("Creating chat session...")
                 # Create the stateful chat session
-                chat = self.client.aio.chats.create(
-                    model=model, history=history, config=config
-                )
+                chat = self.client.aio.chats.create(model=model, history=history, config=config)
                 self.logger.debug("Sending message to chat session...")
-                self.logger.debug(
-                    f"Sending message to chat session (timeout={timeout}s)..."
-                )
+                self.logger.debug(f"Sending message to chat session (timeout={timeout}s)...")
                 response = await self._await_with_progress(
                     chat.send_message(
                         message=content,
@@ -459,9 +395,7 @@ class GoogleAnalysis:
             execution_time = time.time() - start_time
 
             final_response = response.text
-            self.logger.debug(
-                f"Final response extracted (length: {len(final_response)})"
-            )
+            self.logger.debug(f"Final response extracted (length: {len(final_response)})")
 
             usage = CompletionUsage(total_time=execution_time)
             final_output = final_response
@@ -472,26 +406,8 @@ class GoogleAnalysis:
                     finish_reason=self._extract_finish_reason(response),
                 )
 
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_history,
-                    messages
-                    + [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"[Image Analysis]: {prompt}"}
-                            ],
-                        },
-                    ],
-                    None,
-                    turn_id,
-                    prompt,
-                    final_response,
-                    [],
-                )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # single writer; the `if not stateless` guard around it went with it.
             # Create AIMessage using factory
             ai_message = AIMessageFactory.from_gemini(
                 response=response,
@@ -502,7 +418,6 @@ class GoogleAnalysis:
                 turn_id=turn_id,
                 structured_output=final_output,
                 tool_calls=None,
-                conversation_history=conversation_history,
                 text_response=final_response,
             )
 
@@ -525,9 +440,7 @@ class GoogleAnalysis:
     async def image_understanding(
         self,
         prompt: str,
-        images: Union[
-            str, Path, bytes, Image.Image, List[Union[str, Path, bytes, Image.Image]]
-        ],
+        images: Union[str, Path, bytes, Image.Image, List[Union[str, Path, bytes, Image.Image]]],
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
         prompt_instruction: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -574,9 +487,7 @@ class GoogleAnalysis:
                 if file_size > 5 * 1024 * 1024:
                     self.logger.info(f"Uploading image to File API (>5MB): {img_path}")
                     if hasattr(self.client.aio, "files"):
-                        uploaded_file = await self.client.aio.files.upload(
-                            file=str(img_path)
-                        )
+                        uploaded_file = await self.client.aio.files.upload(file=str(img_path))
                     else:
                         loop = asyncio.get_running_loop()
                         uploaded_file = await loop.run_in_executor(
@@ -618,9 +529,7 @@ class GoogleAnalysis:
             start_time = time.time()
             if stateless:
                 response = await self._await_with_progress(
-                    self.client.aio.models.generate_content(
-                        model=model_name, contents=contents, config=config
-                    ),
+                    self.client.aio.models.generate_content(model=model_name, contents=contents, config=config),
                     label=f"generate_content({model_name})",
                     timeout=timeout,
                 )
@@ -655,9 +564,7 @@ class GoogleAnalysis:
                     items = (
                         parsed_json
                         if isinstance(parsed_json, list)
-                        else parsed_json.get(
-                            "detections", parsed_json.get("items", [parsed_json])
-                        )
+                        else parsed_json.get("detections", parsed_json.get("items", [parsed_json]))
                     )
 
                     if isinstance(items, list):
@@ -692,9 +599,7 @@ class GoogleAnalysis:
                                         pass
                     structured_output = parsed_json
                 except Exception as e:
-                    self.logger.warning(
-                        f"Could not parse bounding boxes from JSON: {e}"
-                    )
+                    self.logger.warning(f"Could not parse bounding boxes from JSON: {e}")
 
             usage = CompletionUsage(total_time=execution_time)
 
@@ -730,6 +635,7 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
+        history: Optional[Sequence[HistoryMessage]] = None,
         timeout: Optional[int] = 600,
         temperature: float = 0.0,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
@@ -792,41 +698,21 @@ class GoogleAnalysis:
             stat = await asyncio.to_thread(path.stat)
             size_mb = stat.st_size / (1024 * 1024)
             if size_mb > 50:
-                raise ValueError(
-                    f"File {path} is {size_mb:.1f} MB, exceeding the 50 MB limit"
-                )
+                raise ValueError(f"File {path} is {size_mb:.1f} MB, exceeding the 50 MB limit")
             doc_paths.append(path)
 
         # 3. Ensure client is ready
         await self._ensure_client(model=model_name)
 
-        # 4. Prepare conversation context for stateful mode (BEFORE building config)
-        conversation_history = None
-        history: List[Any] = []
-        messages: List[Any] = []
-        if not stateless:
-            messages, conversation_history, prompt_instruction = await self._prepare_conversation_context(
-                prompt, None, user_id, session_id, prompt_instruction, stateless=stateless
-            )
-            # Convert to Google GenAI history format
-            for msg in messages[:-1]:  # exclude the current user message (last)
-                role = msg["role"].lower()
-                msg_parts = []
-                for part_content in msg.get("content", []):
-                    if isinstance(part_content, dict) and part_content.get("type") == "text":
-                        msg_parts.append(Part(text=part_content.get("text", "")))
-                if not msg_parts:
-                    continue
-                if role == "user":
-                    history.append(UserContent(parts=msg_parts))
-                elif role in ("assistant", "model"):
-                    history.append(ModelContent(parts=msg_parts))
+        # 4. FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed: `history` as google.genai Content objects for the SDK, and
+        # `messages` dict-shaped for the HITL resume accumulator.
+        _rendered = (history or ()) if not stateless else ()
+        history = self._format_history(_rendered)
 
         # 5. Upload all documents in parallel via Files API
         self.logger.info("Uploading %d document(s) in parallel...", len(doc_paths))
-        doc_parts: List[Part] = list(
-            await asyncio.gather(*[self._upload_document(p) for p in doc_paths])
-        )
+        doc_parts: List[Part] = list(await asyncio.gather(*[self._upload_document(p) for p in doc_paths]))
 
         # 6. Build content: text prompt followed by all document parts
         content: List[Part] = [Part(text=prompt)] + doc_parts
@@ -891,23 +777,10 @@ class GoogleAnalysis:
                 except InvokeError:
                     raise
                 except Exception as parse_exc:
-                    self.logger.warning(
-                        "Failed to parse structured output from document model: %s", parse_exc
-                    )
+                    self.logger.warning("Failed to parse structured output from document model: %s", parse_exc)
 
-            # 12. Update memory (stateful) — use messages as-is (no duplicate user turn)
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_history,
-                    messages,
-                    None,
-                    turn_id,
-                    prompt,
-                    final_response,
-                    [],
-                )
+            # 12. FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # single writer; the `if not stateless` guard around it went with it.
 
             # 13. Parse response and return AIMessage
             ai_message = AIMessageFactory.from_gemini(
@@ -919,7 +792,6 @@ class GoogleAnalysis:
                 turn_id=turn_id,
                 structured_output=final_output,
                 text_response=final_response,
-                conversation_history=conversation_history,
             )
 
             if ai_message.usage:
@@ -965,9 +837,7 @@ class GoogleAnalysis:
         Returns:
             A list of `IdentifiedProduct` objects with detailed identification info.
         """
-        self.logger.info(
-            f"Starting Gemini identification for {len(detections)} detections."
-        )
+        self.logger.info(f"Starting Gemini identification for {len(detections)} detections.")
         model_name = model.value if isinstance(model, GoogleModel) else model
 
         # --- 1. Prepare Images and Metadata ---
@@ -1113,11 +983,7 @@ class GoogleAnalysis:
             final_products = []
             for item in identified_items:
                 # Case 1: Item was pre-detected (has a positive ID)
-                if (
-                    item.detection_id is not None
-                    and item.detection_id > 0
-                    and item.detection_id in id_to_details
-                ):
+                if item.detection_id is not None and item.detection_id > 0 and item.detection_id in id_to_details:
                     details = id_to_details[item.detection_id]
                     item.detection_box = details["detection"]
 
@@ -1136,23 +1002,15 @@ class GoogleAnalysis:
                     if item.detection_box:
                         # TRUST the LLM's assignment, only use geometric fallback if missing
                         if not item.shelf_location:
-                            self.logger.info(
-                                "LLM didn't provide shelf_location, calculating geometrically"
-                            )
-                            shelf, pos = self._shelf_and_position(
-                                item.detection_box, shelf_regions
-                            )
+                            self.logger.info("LLM didn't provide shelf_location, calculating geometrically")
+                            shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
                             item.shelf_location = shelf
                             item.position_on_shelf = pos
                         else:
                             # LLM provided shelf_location, trust it but calculate position if missing
-                            self.logger.info(
-                                f"Using LLM-assigned shelf_location: {item.shelf_location}"
-                            )
+                            self.logger.info(f"Using LLM-assigned shelf_location: {item.shelf_location}")
                             if not item.position_on_shelf:
-                                _, pos = self._shelf_and_position(
-                                    item.detection_box, shelf_regions
-                                )
+                                _, pos = self._shelf_and_position(item.detection_box, shelf_regions)
                                 item.position_on_shelf = pos
 
                         self.logger.info(
@@ -1165,23 +1023,15 @@ class GoogleAnalysis:
                     if item.detection_box:
                         # TRUST the LLM's assignment, only use geometric fallback if missing
                         if not item.shelf_location:
-                            self.logger.info(
-                                "LLM didn't provide shelf_location, calculating geometrically"
-                            )
-                            shelf, pos = self._shelf_and_position(
-                                item.detection_box, shelf_regions
-                            )
+                            self.logger.info("LLM didn't provide shelf_location, calculating geometrically")
+                            shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
                             item.shelf_location = shelf
                             item.position_on_shelf = pos
                         else:
                             # LLM provided shelf_location, trust it but calculate position if missing
-                            self.logger.info(
-                                f"Using LLM-assigned shelf_location: {item.shelf_location}"
-                            )
+                            self.logger.info(f"Using LLM-assigned shelf_location: {item.shelf_location}")
                             if not item.position_on_shelf:
-                                _, pos = self._shelf_and_position(
-                                    item.detection_box, shelf_regions
-                                )
+                                _, pos = self._shelf_and_position(item.detection_box, shelf_regions)
                                 item.position_on_shelf = pos
 
                         self.logger.info(
@@ -1209,8 +1059,7 @@ class GoogleAnalysis:
                         detection_id=item["id"],
                         product_type=det.class_name,
                         product_model=None,
-                        confidence=det.confidence
-                        * 0.5,  # Lower confidence for fallback
+                        confidence=det.confidence * 0.5,  # Lower confidence for fallback
                         visual_features=["fallback_identification"],
                         reference_match="none",
                         shelf_location=shelf,
@@ -1250,9 +1099,7 @@ class GoogleAnalysis:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=model, contents=prompt, config=generation_config
-            )
+            response = self.client.models.generate_content(model=model, contents=prompt, config=generation_config)
 
             execution_time = time.time() - start_time
 
@@ -1308,9 +1155,7 @@ class GoogleAnalysis:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=model, contents=prompt, config=generation_config
-            )
+            response = self.client.models.generate_content(model=model, contents=prompt, config=generation_config)
 
             execution_time = time.time() - start_time
 
@@ -1364,9 +1209,7 @@ class GoogleAnalysis:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=model, contents=prompt, config=generation_config
-            )
+            response = self.client.models.generate_content(model=model, contents=prompt, config=generation_config)
 
             execution_time = time.time() - start_time
 
@@ -1420,9 +1263,7 @@ class GoogleAnalysis:
             )
 
             # 3. Call Model
-            client = self.client or await self.get_client(
-                model=GoogleModel.GEMINI_3_FLASH_PREVIEW
-            )
+            client = self.client or await self.get_client(model=GoogleModel.GEMINI_3_FLASH_PREVIEW)
 
             # Prepare contents
             contents = [prompt, im]
@@ -1492,9 +1333,7 @@ class GoogleAnalysis:
                     result_item = {
                         "label": item.get("label", "unknown"),
                         "box_2d": [x0, y0, x1, y1],  # [x1, y1, x2, y2]
-                        "confidence": item.get(
-                            "confidence", 1.0
-                        ),  # Assuming 1.0 if not provided
+                        "confidence": item.get("confidence", 1.0),  # Assuming 1.0 if not provided
                         "mask_image": None,
                         "overlay_image": None,
                     }
@@ -1510,22 +1349,16 @@ class GoogleAnalysis:
                         mask = Image.open(io.BytesIO(mask_data))
 
                         # Resize mask to match bounding box via original_size
-                        mask = mask.resize(
-                            (x1 - x0, y1 - y0), Image.Resampling.BILINEAR
-                        )
+                        mask = mask.resize((x1 - x0, y1 - y0), Image.Resampling.BILINEAR)
 
                         full_mask = Image.new("L", original_size, 0)
                         full_mask.paste(mask, (x0, y0))
 
                         # Create colored overlay
-                        colored_overlay = Image.new(
-                            "RGBA", original_size, (255, 0, 0, 128)
-                        )
+                        colored_overlay = Image.new("RGBA", original_size, (255, 0, 0, 128))
 
                         result_item["mask_image"] = full_mask
-                        result_item[
-                            "overlay_image"
-                        ] = full_mask  # simplified for now, or return the overlay logic
+                        result_item["overlay_image"] = full_mask  # simplified for now, or return the overlay logic
 
                         # Helper to save if requested
                         if output_dir:
@@ -1546,9 +1379,7 @@ class GoogleAnalysis:
             self.logger.error(f"Error in detect_objects: {e}")
             raise
 
-    async def _process_video_input(
-        self, video_path: Union[str, Path]
-    ) -> Union[types.Part, types.File]:
+    async def _process_video_input(self, video_path: Union[str, Path]) -> Union[types.Part, types.File]:
         """
         Processes a video file. If < 15MB, returns inline data. Otherwise, uploads to Google GenAI.
         """
@@ -1563,9 +1394,7 @@ class GoogleAnalysis:
         limit_bytes = 1 * 1024 * 1024
 
         if file_size < limit_bytes:
-            self.logger.debug(
-                f"Video size ({file_size / 1024 / 1024:.2f} MB) is under 1MB. Using inline data."
-            )
+            self.logger.debug(f"Video size ({file_size / 1024 / 1024:.2f} MB) is under 1MB. Using inline data.")
             with open(video_path, "rb") as f:
                 video_bytes = f.read()
 
@@ -1579,13 +1408,9 @@ class GoogleAnalysis:
             elif suffix == ".webm":
                 mime_type = "video/webm"
 
-            return types.Part(
-                inline_data=types.Blob(data=video_bytes, mime_type=mime_type)
-            )
+            return types.Part(inline_data=types.Blob(data=video_bytes, mime_type=mime_type))
         else:
-            self.logger.info(
-                f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API."
-            )
+            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API.")
             return await self._upload_video(video_path)
 
     async def _await_with_progress(
@@ -1610,9 +1435,7 @@ class GoogleAnalysis:
                     remaining = timeout - elapsed
                     if remaining <= 0:
                         raise asyncio.TimeoutError()
-                    done, _ = await asyncio.wait(
-                        {task}, timeout=min(log_interval, remaining)
-                    )
+                    done, _ = await asyncio.wait({task}, timeout=min(log_interval, remaining))
                 if task in done:
                     return await task
                 elapsed = time.monotonic() - start
@@ -1638,13 +1461,9 @@ class GoogleAnalysis:
                 video_file = await self.client.aio.files.upload(file=video_path)
             else:
                 # Fallback to sync upload in thread if aio.files missing (unlikely in new SDK)
-                self.logger.warning(
-                    "client.aio.files not found, using sync upload in executor"
-                )
+                self.logger.warning("client.aio.files not found, using sync upload in executor")
                 loop = asyncio.get_running_loop()
-                video_file = await loop.run_in_executor(
-                    None, lambda: self.client.files.upload(file=video_path)
-                )
+                video_file = await loop.run_in_executor(None, lambda: self.client.files.upload(file=video_path))
         except Exception as e:
             self.logger.error(f"Upload failed: {e}")
             raise
@@ -1653,9 +1472,7 @@ class GoogleAnalysis:
         self.logger.debug(
             f"Upload finished in {upload_elapsed:.2f}s. File: {video_file.name}, State: {video_file.state}"
         )
-        self.logger.debug(
-            f"Upload initiated: {video_file.name}, State: {video_file.state}"
-        )
+        self.logger.debug(f"Upload initiated: {video_file.name}, State: {video_file.state}")
 
         processing_start = time.monotonic()
         poll_count = 0
@@ -1671,14 +1488,10 @@ class GoogleAnalysis:
                 video_file = await self.client.aio.files.get(name=video_file.name)
             else:
                 loop = asyncio.get_running_loop()
-                video_file = await loop.run_in_executor(
-                    None, lambda: self.client.files.get(name=video_file.name)
-                )
+                video_file = await loop.run_in_executor(None, lambda: self.client.files.get(name=video_file.name))
 
         processing_elapsed = time.monotonic() - processing_start
-        self.logger.debug(
-            f"Video processing completed in {processing_elapsed:.1f}s with state={video_file.state}"
-        )
+        self.logger.debug(f"Video processing completed in {processing_elapsed:.1f}s with state={video_file.state}")
         if video_file.state == "FAILED":
             self.logger.error(f"Video processing failed: {video_file.state}")
             raise ValueError(f"Video processing failed with state: {video_file.state}")
@@ -1686,11 +1499,7 @@ class GoogleAnalysis:
         self.logger.debug(f"Uploaded video file ready: {video_file.uri}")
 
         # Return as a Part referencing the uploaded file uri
-        return types.Part(
-            file_data=types.FileData(
-                file_uri=video_file.uri, mime_type=video_file.mime_type
-            )
-        )
+        return types.Part(file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type))
 
     async def _upload_document(self, doc_path: Union[str, Path]) -> types.Part:
         """Upload a document to the Google GenAI Files API.
@@ -1719,9 +1528,7 @@ class GoogleAnalysis:
         if not mime_type:
             mime_type = "application/octet-stream"
 
-        self.logger.debug(
-            "Starting upload of document %s (mime_type=%s)...", doc_path.name, mime_type
-        )
+        self.logger.debug("Starting upload of document %s (mime_type=%s)...", doc_path.name, mime_type)
 
         try:
             upload_start = time.monotonic()
@@ -1729,13 +1536,9 @@ class GoogleAnalysis:
                 doc_file = await self.client.aio.files.upload(file=doc_path)
             else:
                 # Fallback: sync upload in thread if aio.files is missing
-                self.logger.warning(
-                    "client.aio.files not found, using sync upload in executor"
-                )
+                self.logger.warning("client.aio.files not found, using sync upload in executor")
                 loop = asyncio.get_running_loop()
-                doc_file = await loop.run_in_executor(
-                    None, lambda: self.client.files.upload(file=doc_path)
-                )
+                doc_file = await loop.run_in_executor(None, lambda: self.client.files.upload(file=doc_path))
         except Exception as e:
             self.logger.error("Document upload failed: %s", e)
             raise
@@ -1743,7 +1546,9 @@ class GoogleAnalysis:
         upload_elapsed = time.monotonic() - upload_start
         self.logger.debug(
             "Document upload finished in %.2fs. File: %s, State: %s",
-            upload_elapsed, doc_file.name, doc_file.state,
+            upload_elapsed,
+            doc_file.name,
+            doc_file.state,
         )
 
         processing_start = time.monotonic()
@@ -1752,43 +1557,36 @@ class GoogleAnalysis:
             elapsed = time.monotonic() - processing_start
             if elapsed > _DOCUMENT_POLL_TIMEOUT_S:
                 raise ValueError(
-                    "Document processing timed out after %ds for file: %s"
-                    % (_DOCUMENT_POLL_TIMEOUT_S, doc_file.name)
+                    "Document processing timed out after %ds for file: %s" % (_DOCUMENT_POLL_TIMEOUT_S, doc_file.name)
                 )
             poll_count += 1
             self.logger.debug(
                 "Document processing in progress (poll=%d, elapsed=%.1fs, state=%s)",
-                poll_count, elapsed, doc_file.state,
+                poll_count,
+                elapsed,
+                doc_file.state,
             )
             await asyncio.sleep(2)
             if hasattr(self.client.aio, "files"):
                 doc_file = await self.client.aio.files.get(name=doc_file.name)
             else:
                 loop = asyncio.get_running_loop()
-                doc_file = await loop.run_in_executor(
-                    None, lambda f=doc_file: self.client.files.get(name=f.name)
-                )
+                doc_file = await loop.run_in_executor(None, lambda f=doc_file: self.client.files.get(name=f.name))
 
         processing_elapsed = time.monotonic() - processing_start
         self.logger.debug(
             "Document processing completed in %.1fs with state=%s",
-            processing_elapsed, doc_file.state,
+            processing_elapsed,
+            doc_file.state,
         )
 
         if doc_file.state == "FAILED":
             self.logger.error("Document processing failed: %s", doc_file.name)
-            raise ValueError(
-                "Document processing failed with state: %s for file: %s"
-                % (doc_file.state, doc_file.name)
-            )
+            raise ValueError("Document processing failed with state: %s for file: %s" % (doc_file.state, doc_file.name))
 
         self.logger.debug("Uploaded document file ready: %s", doc_file.uri)
 
-        return types.Part(
-            file_data=types.FileData(
-                file_uri=doc_file.uri, mime_type=doc_file.mime_type
-            )
-        )
+        return types.Part(file_data=types.FileData(file_uri=doc_file.uri, mime_type=doc_file.mime_type))
 
     def _extract_frames_from_video(
         self, video_path: Union[str, Path], interval_sec: Optional[int] = None
@@ -1855,11 +1653,7 @@ class GoogleAnalysis:
                 # Timestamp info
                 timestamp = current_frame / fps
 
-                frames.append(
-                    types.Part(
-                        inline_data=types.Blob(data=img_bytes, mime_type="image/jpeg")
-                    )
-                )
+                frames.append(types.Part(inline_data=types.Blob(data=img_bytes, mime_type="image/jpeg")))
                 self.logger.debug(f"Extracted frame at {timestamp:.1f}s")
 
             current_frame += 1
@@ -1868,9 +1662,7 @@ class GoogleAnalysis:
         self.logger.info(f"Extracted {len(frames)} frames from video.")
         return frames
 
-    def _get_image_from_input(
-        self, image: Union[str, Path, Image.Image]
-    ) -> Image.Image:
+    def _get_image_from_input(self, image: Union[str, Path, Image.Image]) -> Image.Image:
         """Helper to consistently load an image into a PIL object."""
         if isinstance(image, (str, Path)):
             return Image.open(image).convert("RGB")
@@ -1889,9 +1681,7 @@ class GoogleAnalysis:
         y2 = min(pil_img.height, box.y2 + pad)
         return pil_img.crop((x1, y1, x2, y2))
 
-    def _shelf_and_position(
-        self, box: DetectionBox, regions: List[ShelfRegion]
-    ) -> Tuple[str, str]:
+    def _shelf_and_position(self, box: DetectionBox, regions: List[ShelfRegion]) -> Tuple[str, str]:
         """
         Determines the shelf and position for a given detection box using a robust
         centroid-based assignment logic.

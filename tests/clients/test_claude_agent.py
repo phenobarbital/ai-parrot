@@ -24,6 +24,7 @@ Covers (per spec §4 / TASK-861 acceptance criteria):
 
 All non-live tests fully mock the SDK; no subprocess is spawned.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -33,6 +34,8 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+from parrot.observability.context import current_session_id
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 
@@ -297,18 +300,14 @@ class TestFactoryRegistration:
     def test_parse_llm_string_claude_agent(self):
         from parrot.clients.factory import LLMFactory
 
-        provider, model = LLMFactory.parse_llm_string(
-            "claude-agent:claude-sonnet-4-6"
-        )
+        provider, model = LLMFactory.parse_llm_string("claude-agent:claude-sonnet-4-6")
         assert provider == "claude-agent"
         assert model == "claude-sonnet-4-6"
 
     def test_parse_llm_string_claude_code_alias(self):
         from parrot.clients.factory import LLMFactory
 
-        provider, model = LLMFactory.parse_llm_string(
-            "claude-code:claude-sonnet-4-6"
-        )
+        provider, model = LLMFactory.parse_llm_string("claude-code:claude-sonnet-4-6")
         assert provider == "claude-code"
         assert model == "claude-sonnet-4-6"
 
@@ -338,16 +337,11 @@ class TestFactoryMissingExtraMessage:
                 raise ImportError("No module named 'claude_agent_sdk'")
             except ImportError as exc:
                 raise ImportError(
-                    "ClaudeAgentClient requires claude-agent-sdk. "
-                    "Install with: pip install ai-parrot[claude-agent]"
+                    "ClaudeAgentClient requires claude-agent-sdk. " "Install with: pip install ai-parrot[claude-agent]"
                 ) from exc
 
-        monkeypatch.setitem(
-            factory_module.SUPPORTED_CLIENTS, "claude-agent", _broken_loader
-        )
-        monkeypatch.setitem(
-            factory_module.SUPPORTED_CLIENTS, "claude-code", _broken_loader
-        )
+        monkeypatch.setitem(factory_module.SUPPORTED_CLIENTS, "claude-agent", _broken_loader)
+        monkeypatch.setitem(factory_module.SUPPORTED_CLIENTS, "claude-code", _broken_loader)
 
         with pytest.raises(ImportError) as exc_info:
             factory_module.LLMFactory.create("claude-agent")
@@ -370,9 +364,7 @@ class TestClaudeAgentResume:
             return_value=(fake_query, object, lambda **_: SimpleNamespace()),
         ):
             client = ClaudeAgentClient()
-            result = await client.resume(
-                session_id="sess-x", user_input="continue", state=None
-            )
+            result = await client.resume(session_id="sess-x", user_input="continue", state=None)
         assert result.output == "hello world"
         assert result.session_id == "sess-x"
 
@@ -467,9 +459,7 @@ class TestBridgeInjection:
         tm = ToolManager()
         tm.register_tool(_StubTool())
         client = ca_module.ClaudeAgentClient(tool_manager=tm)
-        run_opts = ca_module.ClaudeAgentRunOptions(
-            mcp_servers={"other": {"type": "stdio", "command": "x"}}
-        )
+        run_opts = ca_module.ClaudeAgentRunOptions(mcp_servers={"other": {"type": "stdio", "command": "x"}})
         client._build_options(run_options=run_opts)
 
         assert "other" in captured["mcp_servers"]
@@ -484,9 +474,7 @@ class TestBridgeInjection:
         tm = ToolManager()
         tm.register_tool(_StubTool())
         client = ca_module.ClaudeAgentClient(tool_manager=tm)
-        run_opts = ca_module.ClaudeAgentRunOptions(
-            extra_options={"mcp_servers": {"only": "this"}}
-        )
+        run_opts = ca_module.ClaudeAgentRunOptions(extra_options={"mcp_servers": {"only": "this"}})
         client._build_options(run_options=run_opts)
 
         assert captured["mcp_servers"] == {"only": "this"}
@@ -516,9 +504,7 @@ class TestBridgeInjection:
         tm = ToolManager()
         tm.register_tool(_StubTool())
 
-        with patch.object(
-            ca_module, "_import_sdk", return_value=(fake_query, object, fake_options)
-        ):
+        with patch.object(ca_module, "_import_sdk", return_value=(fake_query, object, fake_options)):
             client = ClaudeAgentClient(tool_manager=tm)
             await client.ask("hi", use_tools=False)
 
@@ -731,9 +717,7 @@ class TestSessionResume:
         return _query
 
     @pytest.mark.asyncio
-    async def test_first_turn_creates_and_second_resumes(
-        self, fake_claude_agent_messages
-    ):
+    async def test_first_turn_creates_and_second_resumes(self, fake_claude_agent_messages):
         from parrot.clients import claude_agent as ca_module
 
         captured: list[Any] = []
@@ -747,8 +731,15 @@ class TestSessionResume:
                 lambda **kw: SimpleNamespace(**kw),
             ),
         ):
-            await client.ask("first", session_id="conv-1")
-            await client.ask("second", session_id="conv-1")
+            # FEAT-524: ask() no longer takes session_id. The CLI-resume id
+            # comes from the ContextVar BaseBot binds per call, so the test
+            # binds it directly — this is the contract a direct caller must use.
+            token = current_session_id.set("conv-1")
+            try:
+                await client.ask("first")
+                await client.ask("second")
+            finally:
+                current_session_id.reset(token)
 
         first, second = captured
         # Turn 1 creates the CLI session...
@@ -760,9 +751,7 @@ class TestSessionResume:
         assert getattr(second, "session_id", None) is None
 
     @pytest.mark.asyncio
-    async def test_distinct_conversations_do_not_share_a_session(
-        self, fake_claude_agent_messages
-    ):
+    async def test_distinct_conversations_do_not_share_a_session(self, fake_claude_agent_messages):
         from parrot.clients import claude_agent as ca_module
 
         captured: list[Any] = []
@@ -776,8 +765,12 @@ class TestSessionResume:
                 lambda **kw: SimpleNamespace(**kw),
             ),
         ):
-            await client.ask("a", session_id="conv-a")
-            await client.ask("b", session_id="conv-b")
+            for conversation in ("conv-a", "conv-b"):
+                token = current_session_id.set(conversation)
+                try:
+                    await client.ask(conversation[-1])
+                finally:
+                    current_session_id.reset(token)
 
         # Each conversation creates its own CLI session.
         assert [getattr(o, "session_id", None) for o in captured] == [
@@ -787,9 +780,7 @@ class TestSessionResume:
         assert all(getattr(o, "resume", None) is None for o in captured)
 
     @pytest.mark.asyncio
-    async def test_without_a_session_id_nothing_is_tracked(
-        self, fake_claude_agent_messages
-    ):
+    async def test_without_a_session_id_nothing_is_tracked(self, fake_claude_agent_messages):
         """A stateless caller must not accumulate session state."""
         from parrot.clients import claude_agent as ca_module
 

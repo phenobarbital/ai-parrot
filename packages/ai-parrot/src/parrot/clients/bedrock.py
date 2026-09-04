@@ -36,8 +36,10 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 
+from ..memory.render import HistoryMessage
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
 from ..conf import (
     AWS_CREDENTIALS,
@@ -406,6 +408,24 @@ class BedrockConverseBase(AbstractClient):
     # Message / tool schema adaptation
     # ------------------------------------------------------------------
 
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Dict[str, Any]]:
+        """Render conversation history in Bedrock Converse message shape.
+
+        Overrides :meth:`AbstractClient._format_history` (which emits
+        Anthropic-shaped ``{"type": "text", "text": ...}`` blocks) to emit
+        Converse's ``{"text": ...}`` blocks, matching this client's
+        :meth:`_prepare_messages` override so the whole message list is
+        already Converse-shaped before :meth:`_to_bedrock_messages` runs.
+
+        Args:
+            history: Provider-neutral messages from
+                :func:`parrot.memory.render_history`.
+
+        Returns:
+            Converse-shaped ``{"role", "content": [{"text": ...}]}`` dicts.
+        """
+        return [{"role": message.role, "content": [{"text": message.content}]} for message in history]
+
     def _prepare_messages(self, prompt: str, files: Optional[List[Union[str, Path]]] = None) -> List[Dict[str, Any]]:
         """Build the initial Bedrock Converse user message.
 
@@ -413,8 +433,8 @@ class BedrockConverseBase(AbstractClient):
         Anthropic-shaped ``{"type": "text", "text": ...}`` blocks) to emit
         Bedrock Converse's ``{"text": ...}`` block shape directly. Keeps the
         same ``(prompt, files)`` signature so it remains a drop-in override
-        for :meth:`AbstractClient._prepare_conversation_context`, which calls
-        it internally.
+        for :meth:`AbstractClient._build_messages`, which calls it internally
+        to encode the current turn.
 
         Note:
             File/image attachments are not yet supported for Bedrock
@@ -474,9 +494,10 @@ class BedrockConverseBase(AbstractClient):
 
         Args:
             messages: Messages as produced by
-                :meth:`AbstractClient._prepare_conversation_context`
-                (Anthropic-shaped content blocks, mixed with any already
-                Bedrock-shaped blocks re-appended by the tool-use loop).
+                :meth:`AbstractClient._build_messages` (already
+                Bedrock-shaped here, since this client overrides both
+                ``_format_history`` and ``_prepare_messages``, mixed with any
+                blocks re-appended by the tool-use loop).
 
         Returns:
             Messages with content blocks in Bedrock Converse shape.
@@ -706,9 +727,8 @@ class BedrockConverseBase(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
@@ -785,9 +805,8 @@ class BedrockConverseBase(AbstractClient):
                 "supported; falling back to eager tool preparation."
             )
 
-        messages, conversation_history, resolved_system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
+        resolved_system_prompt = system_prompt
+        messages = self._build_messages(prompt, files, history)
         bedrock_messages = self._to_bedrock_messages(messages)
 
         _lc_tc = self._emit_before_call(
@@ -960,7 +979,7 @@ class BedrockConverseBase(AbstractClient):
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = bedrock_messages + [{"role": "assistant", "content": content_blocks}]
                             e.tool_call_id = tool_id
                             e.agent_name = resolved_model
@@ -1025,25 +1044,15 @@ class BedrockConverseBase(AbstractClient):
         elif output_schema:
             final_output = self._parse_json_schema_output(assistant_response_text)
 
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            bedrock_messages,
-            resolved_system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
+        # the single writer.
 
         ai_message = AIMessageFactory.from_bedrock(
             response=result,
             input_text=original_prompt,
             model=payload["modelId"] if used_fallback else resolved_model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
             tool_calls=all_tool_calls,
@@ -1083,8 +1092,7 @@ class BedrockConverseBase(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: bool = True,
         deep_research: bool = False,
@@ -1136,9 +1144,8 @@ class BedrockConverseBase(AbstractClient):
                 "yet supported; falling back to eager tool preparation."
             )
 
-        messages, conversation_history, resolved_system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
+        resolved_system_prompt = system_prompt
+        messages = self._build_messages(prompt, files, history)
         bedrock_messages = self._to_bedrock_messages(messages)
 
         payload: Dict[str, Any] = {
@@ -1234,13 +1241,15 @@ class BedrockConverseBase(AbstractClient):
                     tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
                 except (json.JSONDecodeError, TypeError):
                     tool_input = {}
-                round_content_blocks.append({
-                    "toolUse": {
-                        "toolUseId": tb["toolUseId"],
-                        "name": tb["name"],
-                        "input": tool_input,
+                round_content_blocks.append(
+                    {
+                        "toolUse": {
+                            "toolUseId": tb["toolUseId"],
+                            "name": tb["name"],
+                            "input": tool_input,
+                        }
                     }
-                })
+                )
 
             bedrock_messages.append({"role": "assistant", "content": round_content_blocks})
 
@@ -1262,29 +1271,33 @@ class BedrockConverseBase(AbstractClient):
                         tool_result = await self._execute_tool(tb["name"], tool_input)
                         tc.result = tool_result
                         tc.execution_time = time.time() - start_time
-                        tool_result_blocks.append({
-                            "toolResult": {
-                                "toolUseId": tb["toolUseId"],
-                                "content": [{"text": str(tool_result)}],
+                        tool_result_blocks.append(
+                            {
+                                "toolResult": {
+                                    "toolUseId": tb["toolUseId"],
+                                    "content": [{"text": str(tool_result)}],
+                                }
                             }
-                        })
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = bedrock_messages
                             e.tool_call_id = tb["toolUseId"]
                             e.agent_name = resolved_model
                             raise
                         tc.error = str(e)
-                        tool_result_blocks.append({
-                            "toolResult": {
-                                "toolUseId": tb["toolUseId"],
-                                "content": [{"text": str(e)}],
-                                "status": "error",
+                        tool_result_blocks.append(
+                            {
+                                "toolResult": {
+                                    "toolUseId": tb["toolUseId"],
+                                    "content": [{"text": str(e)}],
+                                    "status": "error",
+                                }
                             }
-                        })
+                        )
                     all_tool_calls.append(tc)
 
                 bedrock_messages.append({"role": "user", "content": tool_result_blocks})
@@ -1295,18 +1308,7 @@ class BedrockConverseBase(AbstractClient):
                 # No tool call (or tools disabled) — done.
                 break
 
-        tools_used = [tc.name for tc in all_tool_calls]
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_history,
-            bedrock_messages,
-            resolved_system_prompt,
-            turn_id,
-            original_prompt,
-            accumulated_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — the bot persists the round.
 
         synthetic_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": accumulated_text}]}},
@@ -1317,8 +1319,8 @@ class BedrockConverseBase(AbstractClient):
             response=synthetic_response,
             input_text=original_prompt,
             model=resolved_model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
