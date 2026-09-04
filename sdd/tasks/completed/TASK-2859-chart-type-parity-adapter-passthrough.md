@@ -200,10 +200,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: Extended `ChartType` Literal with `gauge`/`funnel`/`waterfall`/
+`heatmap`/`treemap` and added `StructuredChartConfig.layout: Optional[Literal["full","half"]]`
+(no alias — matches the derived schema's flat `layout` key). Updated
+`CHART_INSTRUCTIONS`. `CHART_TYPE_MAP` is now the identity map for all 12
+legacy `ChartBlock.chart_type` members (removed the `donut→pie`/`radar→line`/
+5-new-types→bar collapses); kept as an explicit dict (not passthrough) so
+an unrecognised future type still degrades to `_CHART_FALLBACK` instead of
+failing catalog validation. `_chart()` now forwards `description`,
+`colorBySign`, `positiveColor`, `negativeColor`, `trendline`, `xAxisLabel`,
+`yAxisLabel`, `layout` when the block value is not `None`, plus a `palette`
+list of per-series colours when any series has one. Verified key casing
+live against the derived `CHART_SCHEMA` before writing adapter keys
+(resolves spec §8's open question): flat `enum` for `type`, `anyOf` wrapper
+for `Optional[Literal]` fields like `layout`. `chart_lowered.json` golden
+UNCHANGED (verified: `ChartComponent.lower()` ignores the new/forwarded
+props; `test_chart_lowering_golden` passes byte-for-byte) — no regeneration
+needed. `donut`/`radar`/gauge etc. Chart.js/SSR renderer support is
+TASK-2861 (out of scope here); this task only stops the catalog/adapter
+from collapsing them. 744/746 targeted tests pass
+(`tests/outputs/a2ui` + `tests/unit/models`); the 2 failures in
+`test_chart_config_convergence.py` are a pre-existing, unrelated
+module-identity collision (verified via `git stash`: they fail on the base
+commit too, only when `tests/unit/models/test_output_mode_infographic.py`'s
+`sys.modules.pop("parrot.models.outputs")` trick runs earlier in the same
+pytest session as `test_chart_config_convergence.py` — an `isinstance`
+check then compares against a stale module object). `ruff check` on all 6
+touched files: all checks passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
