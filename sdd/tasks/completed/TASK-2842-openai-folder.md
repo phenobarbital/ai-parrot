@@ -114,10 +114,10 @@ green (import-clean, `pytest packages/ai-parrot/tests/unit/clients -q`) when the
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.clients.openai import OpenAIClient, OpenAICodexClient, OpenAIModel, DEPRECATIONS` works; `parrot/models/openai.py` is gone
-- [ ] `OpenAIClient.provider_keys == ("openai",)`, `OpenAIClient.deprecated_models is DEPRECATIONS`
-- [ ] `grep -rn "parrot.clients.gpt\|parrot.models.openai\|clients.codex_agent" packages/*/src packages/*/tests examples` → no hits
-- [ ] `pytest packages/ai-parrot/tests/unit/clients -q` green (incl. moved deprecations test); `ruff` clean
+- [x] `from parrot.clients.openai import OpenAIClient, OpenAICodexClient, OpenAIModel, DEPRECATIONS` works; `parrot/models/openai.py` is gone
+- [x] `OpenAIClient.provider_keys == ("openai",)`, `OpenAIClient.deprecated_models is DEPRECATIONS`
+- [x] `grep -rn "parrot.clients.gpt\|parrot.models.openai\|clients.codex_agent" packages/*/src packages/*/tests examples` → no hits
+- [x] `pytest packages/ai-parrot/tests/unit/clients -q` green (incl. moved deprecations test); `ruff` clean
 
 ---
 
@@ -156,10 +156,59 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented per scope. Commit `6845bb8cb` on
+`feat-FEAT-523-pep-420-llm-clients`.
+
+- `git mv` for all four files; `models.py` (formerly `models/openai.py`)
+  needed zero import edits (pure stdlib + pydantic, no parrot-internal
+  imports). `client.py` and `codex_agent.py` had their relative-import
+  depth adjusted for the extra folder level, plus the internal
+  `codex_tool_bridge` cross-import fixed.
+- `OpenAIClient` / `OpenAICodexClient` gained the folder-convention class
+  attributes exactly as specified.
+- `factory.py`'s single active import line + the `_lazy_openai_codex`
+  closure both updated; `SUPPORTED_CLIENTS["openai"]` verified resolving
+  to `parrot.clients.openai.client.OpenAIClient`.
+- Moved `tests/unit/models/test_openai_deprecations.py` →
+  `tests/unit/clients/openai/test_deprecations.py` per the task's Files
+  table, **and its conftest.py** (not listed in the table, but the moved
+  test's `upstream_current_models` fixture lives there and is used by no
+  other test in the old directory — leaving it behind would have broken
+  the moved test at collection).
+- Blast radius: ~35 files across `ai-parrot`, `ai-parrot-server`, `tests/`,
+  `examples/` — real imports, `mock.patch()` target strings,
+  `importlib.import_module()` path tuples/lists, one file-grep exclusion
+  path in `test_openai_deprecation_warning.py` (its "allow deprecated
+  literals only in <path>" check had to move from `models/openai.py` to
+  `clients/openai/models.py`), and docstring `:mod:`/`:class:` references.
+  Full list in the commit diff.
+
+**Deviations from spec**: none. The `handlers/llm.py` try/except import
+was pointed at the new module path per the contract's explicit note
+(TASK-2848 replaces it with `LLMFactory.list_models()`).
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/unit/clients -q` → 397 passed, 8
+  pre-existing failures (same as TASK-2841, confirmed identical on `dev`).
+- `pytest packages/ai-parrot/tests/unit/clients/openai/ -q` → 40/40 passed
+  (deprecations test + its restored fixture).
+- AC grep (`parrot.clients.gpt|parrot.models.openai|clients.codex_agent`
+  over `packages/*/src packages/*/tests examples`) → zero hits.
+- `ruff check` clean on every substantially-modified/new file; the one
+  pre-existing `F401` (`InvokeResult` unused in `client.py`, inherited
+  verbatim from `gpt.py`) confirmed identical on `dev`.
+- `packages/ai-parrot/tests/{agents/test_obsidian.py,
+  unit/clients/test_codex_agent.py,
+  integration/test_openai_deprecation_warning.py}` → 84 passed.
+- `packages/ai-parrot-server/tests/studio/test_catalogs.py` → 7 passed
+  (run separately — cross-package conftest collisions are a pre-existing
+  pytest limitation of invoking `ai-parrot` and `ai-parrot-server` tests
+  in one process, unrelated to this change).
+- Top-level `tests/clients` + `tests/integration` + `tests/unit`
+  openai-touching files → 425 passed, 10 pre-existing failures (confirmed
+  identical on `dev`: 3 unrelated `test_client_fallback.py` cases + 7
+  google/anthropic/groq/grok `test_invoke.py` cases, none OpenAI-specific).
