@@ -40,6 +40,15 @@ legacy dicts keep deserializing (spec G5 / C5).
   invariants listed in the spec; `ContextBudget.available` never returns a
   negative number. Also define `FALLBACK_WINDOW = 32_000` here (re-exported
   by `budget.py` in TASK-2823).
+  **Two planner amendments to the spec's `models.py` block** (decided at
+  `/sdd-task` time, 2026-09-04): (a) `CompactionCommit` gains two optional
+  telemetry fields with defaults — `history_estimate: int = 0` and
+  `dropped_turns: int = 0` — so `AbstractBot.save_conversation_turn`
+  (TASK-2830) can populate `Stage2CompactionNeededEvent` without a second
+  channel; `apply_commit` (TASK-2823) ignores them. (b) `CompactionState`
+  gets `to_dict()` / `from_dict()` (same tolerant convention as
+  `TokenCount`) because it is persisted as `history.metadata["compaction"]`
+  by TASK-2826 and read back by TASK-2830.
 - Extend `ConversationTurn` (`parrot/memory/abstract.py`) with the six new
   fields (`tool_invocations`, `error`, `token_count`, `state`,
   `schema_version`, `norm_version`) with the defaults in the spec. Extend
