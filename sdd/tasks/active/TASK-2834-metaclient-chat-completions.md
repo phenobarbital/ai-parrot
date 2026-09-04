@@ -29,7 +29,10 @@ Provider".
 
 ## Scope
 
-- Create `parrot/clients/meta.py` with `class MetaClient(OpenAIBaseClient)`.
+- Create `parrot/clients/meta/client.py` with `class MetaClient(OpenAIBaseClient)`.
+- Extend `parrot/clients/meta/__init__.py` (created by TASK-2833) to re-export
+  `MetaClient` alongside `MetaModel`.
+- Declare the FEAT-523 discovery class attributes `provider_keys` and `models`.
 - Credential chain: `api_key` kwarg → `META_API_KEY` → `MODEL_API_KEY`.
 - `base_url = "https://api.meta.ai/v1"`, `_default_model = muse-spark-1.3`,
   raised `_default_timeout`.
@@ -49,7 +52,8 @@ to `openai_base.py`, `base.py`, or `gpt.py`.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/clients/meta.py` | CREATE | `MetaClient` |
+| `packages/ai-parrot/src/parrot/clients/meta/client.py` | CREATE | `MetaClient` |
+| `packages/ai-parrot/src/parrot/clients/meta/__init__.py` | MODIFY | add `MetaClient` re-export |
 | `packages/ai-parrot/tests/clients/test_meta_client.py` | CREATE | Unit tests |
 
 ---
@@ -65,8 +69,8 @@ from logging import getLogger
 import aiohttp                                    # NEVER httpx / requests
 from navconfig import config                      # credential resolution
 
-from .openai_base import OpenAIBaseClient         # openai_base.py:65
-from ..models.meta import MetaModel               # created by TASK-2833
+from ..openai_base import OpenAIBaseClient       # openai_base.py:65 (note: ..)
+from .models import MetaModel                    # created by TASK-2833
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
@@ -139,8 +143,25 @@ POST /v1/chat/completions  -> 200 OpenAI-shaped `choices[]`
 Unauthorized               -> 401 {"error":{"code","message","param","type"}}
 ```
 
+### FEAT-523 discovery contract (MANDATORY — spec AC17)
+```python
+# Verified shape, sdd/specs/pep-420-llm-clients.spec.md:143-148
+class MetaClient(OpenAIBaseClient):
+    provider_keys: tuple[str, ...] = ("meta", "muse", "meta-muse")  # primary FIRST
+    models: type[Enum] = MetaModel                                  # the catalogue
+    # deprecated_models: Mapping[str, str] | None = None            # optional; omit
+```
+`provider_keys` must list **every** factory key the class answers to, primary
+first — it is what FEAT-523's satellite entry points and the transitional
+in-core registry are generated from. It must stay in sync with the keys
+TASK-2835 registers in `SUPPORTED_CLIENTS`.
+
 ### Does NOT Exist
-- ~~`parrot/clients/meta.py`~~ / ~~`MetaClient`~~ — you are creating them.
+- ~~`parrot/clients/meta/client.py`~~ / ~~`MetaClient`~~ — you are creating them.
+- ~~`from .openai_base import ...`~~ from inside `clients/meta/` — the client is
+  now one level deeper, so it is `from ..openai_base import OpenAIBaseClient`.
+  A single-dot import will fail.
+- ~~`parrot/models/meta.py`~~ — provider enums left `parrot.models` (FEAT-523 v0.3).
 - ~~`OpenAIBaseClient._responses_completion`~~, ~~`._prepare_responses_args`~~,
   ~~`._call_responses_create`~~ — **these are NOT on the base.** They live only
   on `OpenAIClient` (`gpt.py:353-680`). Do not call or import them.
@@ -195,8 +216,13 @@ Unauthorized               -> 401 {"error":{"code","message","param","type"}}
 - [ ] Key chain **never** reads `OPENAI_API_KEY` (explicit regression test).
 - [ ] `base_url == "https://api.meta.ai/v1"`.
 - [ ] `MetaClient` is NOT added to `parrot/clients/__init__.py`.
+- [ ] **AC17 (layout)**: `parrot/clients/meta/` contains exactly `__init__.py`,
+      `client.py`, `models.py`; `from parrot.clients.meta import MetaClient, MetaModel`
+      works; `MetaClient.models is MetaModel`;
+      `MetaClient.provider_keys == ("meta", "muse", "meta-muse")`; nothing named
+      `meta` exists under `parrot/models/`.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_client.py -v`
-- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta.py` clean.
+- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/client.py` clean.
 
 ---
 
@@ -207,7 +233,7 @@ import pytest
 from parrot.clients.meta import MetaClient
 from parrot.clients.openai_base import OpenAIBaseClient
 from parrot.clients.gpt import OpenAIClient
-from parrot.models.meta import CONTRIBUTOR_MODELS
+from parrot.clients.meta import CONTRIBUTOR_MODELS, MetaClient, MetaModel
 
 
 class TestMetaClient:
@@ -223,6 +249,16 @@ class TestMetaClient:
         for attr in ("_default_model", "_fallback_model", "_lightweight_model"):
             val = getattr(MetaClient, attr, None)
             assert val is None or not str(val).startswith("gpt-")
+
+    def test_feat523_discovery_attrs(self):
+        assert MetaClient.provider_keys == ("meta", "muse", "meta-muse")
+        assert MetaClient.models is MetaModel
+
+    def test_package_layout_is_exactly_three_files(self):
+        import parrot.clients.meta as pkg
+        from pathlib import Path
+        names = {p.name for p in Path(pkg.__file__).parent.glob("*.py")}
+        assert names == {"__init__.py", "client.py", "models.py"}
 
     def test_base_url(self):
         assert MetaClient(api_key="k").base_url == "https://api.meta.ai/v1"

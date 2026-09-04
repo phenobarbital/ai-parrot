@@ -40,7 +40,7 @@ see constraint 3 below), `tool_search` (TASK-2840), live e2e (TASK-2838).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/clients/meta.py` | MODIFY | grounding + token counting |
+| `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | grounding + token counting |
 | `packages/ai-parrot/tests/clients/test_meta_grounding.py` | CREATE | Unit tests |
 
 ---
@@ -70,6 +70,9 @@ Responses        : usage.input_tokens_details.cached_tokens
 ```
 
 ### Does NOT Exist
+- ~~`from .openai_base import ...`~~ inside `clients/meta/client.py` — the module
+  is one level deeper under the FEAT-523 folder convention; use
+  `from ..openai_base import OpenAIBaseClient`. A single-dot import will fail.
 - ~~Search grounding on Chat Completions~~ — **Responses API only**. Sending
   `web_search` to `/v1/chat/completions` will not ground the answer.
 - ~~Populated `annotations`~~ — advertised by the docs but observed **empty** on
@@ -114,7 +117,7 @@ Responses        : usage.input_tokens_details.cached_tokens
 - [ ] `cached_tokens` is surfaced from both usage shapes.
 - [ ] No citation/annotation extraction is implemented.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_grounding.py -v`
-- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta.py` clean.
+- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/client.py` clean.
 
 ---
 

@@ -29,7 +29,7 @@ Some duplication is the accepted, reversible trade.
 
 ## Scope
 
-- Add Responses-API support to `parrot/clients/meta.py`:
+- Add Responses-API support to `parrot/clients/meta/client.py`:
   - `_prepare_responses_args()` — map parrot's message list to Responses `input`.
   - `_responses_completion()` — call `responses.create()` and fold `output[]`.
   - Override `ask()` and `ask_stream()` to route via `use_responses`.
@@ -47,7 +47,7 @@ Some duplication is the accepted, reversible trade.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/clients/meta.py` | MODIFY | Responses path |
+| `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | Responses path |
 | `packages/ai-parrot/tests/clients/test_meta_responses.py` | CREATE | Unit tests |
 
 ---
@@ -115,6 +115,9 @@ Output-token param is **`max_output_tokens`** on Responses (vs `max_tokens` on
 Chat Completions).
 
 ### Does NOT Exist
+- ~~`from .openai_base import ...`~~ inside `clients/meta/client.py` — the module
+  is one level deeper under the FEAT-523 folder convention; use
+  `from ..openai_base import OpenAIBaseClient`. A single-dot import will fail.
 - ~~`OpenAIBaseClient._responses_completion`~~, ~~`._prepare_responses_args`~~,
   ~~`._call_responses_create`~~, ~~`._call_responses_stream`~~ — **NOT on the
   base.** Only on `OpenAIClient`. Importing them from the base will `AttributeError`.
@@ -165,7 +168,7 @@ Chat Completions).
 - [ ] `gpt.py`, `openai_base.py`, `base.py` are **unmodified** (`git diff` clean).
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_responses.py -v`
 - [ ] `pytest tests/clients/test_openai_base_parity.py -v` still fully passes.
-- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta.py` clean.
+- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/client.py` clean.
 
 ---
 

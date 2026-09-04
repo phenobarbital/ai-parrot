@@ -50,7 +50,7 @@ behaviour; modifying `base.py`; the `execution: "client"` tool-search mode
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/clients/meta.py` | MODIFY | native tool_search opt-in |
+| `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | native tool_search opt-in |
 | `packages/ai-parrot/tests/clients/test_meta_tool_search.py` | CREATE | Unit tests |
 
 ---
@@ -95,6 +95,9 @@ Behaviour (docs):
 ```
 
 ### Does NOT Exist
+- ~~`from .openai_base import ...`~~ inside `clients/meta/client.py` — the module
+  is one level deeper under the FEAT-523 folder convention; use
+  `from ..openai_base import OpenAIBaseClient`. A single-dot import will fail.
 - ~~`tool_search` on Chat Completions~~ — **Responses API only**. This task
   depends on TASK-2836 for that reason.
 - ~~A bare `{"type":"tool_search"}` that works alone~~ — HTTP 400 without at
@@ -138,7 +141,7 @@ Behaviour (docs):
 - [ ] `base.py` is **unmodified** (`git diff` clean).
 - [ ] No new `ToolFormat` member added.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_tool_search.py -v`
-- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta.py` clean.
+- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/client.py` clean.
 
 ---
 

@@ -59,7 +59,7 @@ import pytest
 from navconfig import config                      # credential resolution
 from parrot.clients.factory import LLMFactory     # factory.py:161
 from parrot.clients.meta import MetaClient
-from parrot.models.meta import MetaModel
+from parrot.clients.meta import MetaModel
 ```
 
 ### Credential + model facts (verified 2026-09-04)

@@ -1,4 +1,4 @@
-# TASK-2833: Meta model catalog (`parrot/models/meta.py`)
+# TASK-2833: Meta model catalog (`parrot/clients/meta/models.py`)
 
 **Feature**: FEAT-526 — Meta Model API (Muse Spark) LLM Client
 **Spec**: `sdd/specs/meta-llm-client.spec.md`
@@ -15,6 +15,14 @@
 Implements **Module 1** of the spec. Every other task imports `MetaModel`, so this
 is the root of the dependency graph. Pure data — no I/O, no async.
 
+**This task creates the `parrot/clients/meta/` package itself** — FEAT-526 is the
+first client written to the FEAT-523 folder convention
+(`clients/<provider>/{__init__,client,models}.py`). FEAT-523 depends on this
+feature landing `meta/` already in that shape, then relocates the whole folder to
+an `ai-parrot-client-meta` satellite with a pure `git mv`. Getting the layout
+right here is therefore load-bearing for another feature — do not flatten it back
+to a single module.
+
 The seven model ids below were **verified live** against `GET /v1/models` on
 2026-09-04 (finding F013), not transcribed from documentation. Do not add,
 rename, or "correct" any id.
@@ -23,7 +31,8 @@ rename, or "correct" any id.
 
 ## Scope
 
-- Create `parrot/models/meta.py` with a `MetaModel(str, Enum)`.
+- Create the package `parrot/clients/meta/` with `__init__.py` and `models.py`.
+- Define `MetaModel(str, Enum)` in `models.py`.
 - Add capability frozensets: `CONTRIBUTOR_MODELS`, `SPARK_MODELS`,
   `IMAGE_MODELS`, `TRANSCRIBE_MODELS`, and a `CONTEXT_WINDOW` constant.
 - Document the contributor-tier data-training caveat in the module docstring
@@ -40,8 +49,13 @@ spec Non-Goal — the enum members are reserved placeholders only).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/models/meta.py` | CREATE | Enum + frozensets |
-| `packages/ai-parrot/tests/models/test_meta_models.py` | CREATE | Unit tests |
+| `packages/ai-parrot/src/parrot/clients/meta/__init__.py` | CREATE | Package init; re-exports `MetaModel` |
+| `packages/ai-parrot/src/parrot/clients/meta/models.py` | CREATE | Enum + frozensets |
+| `packages/ai-parrot/tests/clients/test_meta_models.py` | CREATE | Unit tests |
+
+> `client.py` is created by TASK-2834, which also extends `__init__.py` to
+> re-export `MetaClient`. Leave a placeholder comment in `__init__.py` marking
+> where that export goes — do not import a module that does not exist yet.
 
 ---
 
@@ -76,7 +90,11 @@ muse-image-1.0                 muse-voice-transcribe-1.0
 ```
 
 ### Does NOT Exist
-- ~~`parrot/models/meta.py`~~ — you are creating it.
+- ~~`parrot/clients/meta/`~~ (the whole package) — you are creating it.
+- ~~`parrot/models/meta.py`~~ — **the wrong location.** Provider enums no longer
+  live under `parrot.models` (FEAT-523 v0.3). Nothing named `meta` may exist
+  under `parrot/models/`.
+- ~~A flat `parrot/clients/meta.py` module~~ — the convention is a **folder**.
 - ~~`MetaModel`~~ — does not exist anywhere yet.
 - ~~`muse-spark-1.1-contributor`~~ — **not a real model id**. Only 1.2 and 1.3
   have contributor variants. Adding it will fail the live catalog test.
@@ -123,15 +141,18 @@ class MetaModel(str, Enum):
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.models.meta import MetaModel` works.
+- [ ] `parrot/clients/meta/` exists as a package with `__init__.py` and `models.py`.
+- [ ] `from parrot.clients.meta import MetaModel` works (via the package init).
+- [ ] `from parrot.clients.meta.models import MetaModel` also works.
+- [ ] Nothing named `meta` exists under `parrot/models/`.
 - [ ] `MetaModel` contains exactly the 7 live-verified ids — no more, no fewer.
 - [ ] `MetaModel.MUSE_SPARK_1_3.value == "muse-spark-1.3"` and members compare
       equal to their raw strings.
 - [ ] `CONTRIBUTOR_MODELS` contains exactly the two `-contributor` ids.
 - [ ] No `muse-spark-1.1-contributor` member exists.
 - [ ] Contributor training caveat is documented in the module.
-- [ ] Tests pass: `pytest packages/ai-parrot/tests/models/test_meta_models.py -v`
-- [ ] `ruff check packages/ai-parrot/src/parrot/models/meta.py` clean.
+- [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_models.py -v`
+- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/models.py` clean.
 
 ---
 
@@ -139,9 +160,10 @@ class MetaModel(str, Enum):
 
 ```python
 import pytest
-from parrot.models.meta import (
+from parrot.clients.meta import (
     MetaModel, CONTRIBUTOR_MODELS, SPARK_MODELS, CONTEXT_WINDOW,
 )
+from parrot.clients.meta.models import MetaModel as MetaModelDirect
 
 LIVE_CATALOG = {
     "muse-spark-1.3", "muse-spark-1.3-contributor",
@@ -167,6 +189,13 @@ class TestMetaModel:
 
     def test_context_window(self):
         assert CONTEXT_WINDOW == 1_048_576
+
+    def test_package_init_reexports(self):
+        assert MetaModelDirect is MetaModel
+
+    def test_no_enum_left_under_parrot_models(self):
+        with pytest.raises(ImportError):
+            __import__("parrot.models.meta")
 ```
 
 ---

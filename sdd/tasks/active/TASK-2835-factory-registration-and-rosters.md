@@ -23,7 +23,8 @@ Step 2 of the seven-step recipe in `docs/clients/openai-compatible.md`.
 
 ## Scope
 
-- Add `from .meta import MetaClient` to `factory.py` imports.
+- Add `from .meta import MetaClient` to `factory.py` imports (resolves to the
+  `clients/meta/` **package** init — unchanged syntax, new layout).
 - Register `"meta"` plus aliases `"muse"` and `"meta-muse"` in `SUPPORTED_CLIENTS`.
 - Add `MetaClient` to `WIRE_SUBCLASSES` in **both** roster files.
 - Add a factory-resolution test.
@@ -77,6 +78,8 @@ WIRE_SUBCLASSES = [OpenRouterClient, MoonshotClient, NvidiaClient,
 ```
 
 ### Does NOT Exist
+- ~~`from .meta.client import MetaClient` in factory.py~~ — import from the
+  package (`from .meta import MetaClient`); the init is the public surface.
 - ~~A lazy loader for `MetaClient`~~ — **not needed**. `MetaClient` only requires
   the `openai` SDK, already imported directly by six sibling clients. Use a
   direct import, matching `OpenRouterClient`, not the `_lazy_*` pattern.
@@ -112,6 +115,9 @@ WIRE_SUBCLASSES = [OpenRouterClient, MoonshotClient, NvidiaClient,
 - [ ] `MetaClient` appears in `WIRE_SUBCLASSES` in both roster files.
 - [ ] `pytest tests/clients/test_openai_compatible_defaults.py -v` fully passes.
 - [ ] `pytest tests/clients/test_openai_base_parity.py -v` fully passes.
+- [ ] The three registered keys exactly match `MetaClient.provider_keys`
+      (`("meta", "muse", "meta-muse")`) — FEAT-523 generates satellite entry
+      points from that tuple, so a drift here breaks the follow-on feature.
 - [ ] `ruff check` clean on all modified files.
 
 ---
@@ -136,6 +142,10 @@ class TestMetaFactoryRegistration:
 
     def test_create_with_default_model(self):
         assert LLMFactory.create("meta").model == "muse-spark-1.3"
+
+    def test_registered_keys_match_provider_keys(self):
+        keys = {k for k, v in SUPPORTED_CLIENTS.items() if v is MetaClient}
+        assert keys == set(MetaClient.provider_keys)
 
     def test_in_both_wire_rosters(self):
         from tests.clients.test_openai_compatible_defaults import WIRE_SUBCLASSES as A
