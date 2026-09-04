@@ -22,6 +22,7 @@ import pytest
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.clients.nvidia import NvidiaClient
@@ -337,7 +338,7 @@ async def test_invoke_routes_via_funnel():
 # ---------------------------------------------------------------------------
 
 # Phase 1 wire roster + Phase 2's GroqClient (TASK-2303; ZaiClient joins
-# in TASK-2304).
+# in TASK-2304). FEAT-526: MetaClient added.
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -347,6 +348,7 @@ WIRE_SUBCLASSES = [
     BedrockMantleClient,
     GroqClient,
     ZaiClient,
+    MetaClient,
 ]
 
 # vLLMClient.ask()/ask_stream() unconditionally forward
@@ -372,6 +374,14 @@ def _parity_client_kwargs(cls) -> dict:
         return {"api_key": "test-key", "region": "us-east-1"}
     if cls in (LocalLLMClient, vLLMClient):
         return {"api_key": "test-key", "base_url": "http://localhost:8000/v1"}
+    if cls is MetaClient:
+        # FEAT-526: MetaClient defaults to use_responses=True, routing
+        # ask()/ask_stream() to a MetaClient-local Responses override that
+        # bypasses `_chat_completion` entirely (D1). These funnel-parity
+        # sweeps exercise the inherited Chat-Completions funnel, which is
+        # exactly what use_responses=False selects — see
+        # tests/clients/test_meta_responses.py for Responses-path coverage.
+        return {"api_key": "test-key", "use_responses": False}
     return {"api_key": "test-key"}
 
 

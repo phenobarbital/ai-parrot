@@ -41,7 +41,10 @@ see constraint 3 below), `tool_search` (TASK-2840), live e2e (TASK-2838).
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | grounding + token counting |
-| `packages/ai-parrot/tests/clients/test_meta_grounding.py` | CREATE | Unit tests |
+| `tests/clients/test_meta_grounding.py` | CREATE | Unit tests |
+
+> **Codebase Contract correction (same as TASK-2833/2834/2835/2836)**: test
+> path corrected to the root `tests/clients/test_meta_grounding.py`.
 
 ---
 
@@ -173,7 +176,40 @@ class TestCountInputTokens:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Added `search_grounding: bool = False` kwarg to `ask()`,
+injecting `{"type": "web_search"}` into the Responses `tools` list (merged
+with any function-calling tools already prepared); raises `ValueError`
+when `search_grounding=True` and `use_responses=False`. Surfaces
+`web_search_call` output-item ids on `ai_message.metadata["web_search_calls"]`
++ `metadata["search_grounded"]` (only inspects the FINAL round's raw
+output — noted as a scoped limitation for multi-round tool-calling +
+grounding combos). Added `count_input_tokens()` calling
+`self.client.responses.input_tokens(model=..., input=..., **kwargs)` —
+standalone, works with `use_responses=False` too (never checks that flag).
+Added `_extract_cached_tokens()` static helper reading either
+`prompt_tokens_details.cached_tokens` (Chat Completions) or
+`input_tokens_details.cached_tokens` (Responses), applied to
+`ai_message.usage.extra_usage["cached_tokens"]` on the Responses path. No
+citation/annotation extraction implemented (explicit Non-Goal). 12/12 new
+unit tests pass; full `tests/clients/` suite: 555 passed (was 543
+pre-task — the 12 new tests), same 12 pre-existing unrelated failures.
+`gpt.py`/`openai_base.py`/`base.py` untouched. `ruff` clean.
+**Deviations from spec**: (1) test-path correction, same as prior tasks.
+(2) **`cached_tokens` surfacing is Responses-path only.** The AC says
+"surfaced from both usage shapes" — `_extract_cached_tokens()` itself
+correctly reads either shape (unit-tested against both), but wiring it
+into the Chat-Completions `ask()` path (`use_responses=False`) is not
+possible without either (a) modifying `CompletionUsage.from_openai()` in
+`parrot/models/basic.py` (not listed in this task's file scope — only
+`client.py` is) or (b) re-implementing the entire inherited
+Chat-Completions `ask()` body just to intercept its usage construction
+(directly contradicts TASK-2834's "do NOT override `_chat_completion()`"
+guidance and this task's own "NOT in scope" list). Flagging this as a
+genuine spec/file-scope tension rather than silently doing a partial job:
+when `use_responses=False`, `ask()` fully delegates to
+`super().ask(...)`, so no cached-token surfacing occurs on that path
+today. A follow-up task should decide whether to extend
+`CompletionUsage.from_openai()` (benefits every OpenAI-wire client, not
+just Meta) or accept a `MetaClient`-local `_chat_completion` override.

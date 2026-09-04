@@ -41,7 +41,11 @@ or `PROVIDER_BACKEND` (that is an Anthropic-backend mechanism, irrelevant here).
 | `packages/ai-parrot/src/parrot/clients/factory.py` | MODIFY | import + 3 registry keys |
 | `tests/clients/test_openai_compatible_defaults.py` | MODIFY | add to `WIRE_SUBCLASSES` |
 | `tests/clients/test_openai_base_parity.py` | MODIFY | add to `WIRE_SUBCLASSES` |
-| `packages/ai-parrot/tests/clients/test_meta_client.py` | MODIFY | factory tests |
+| `tests/clients/test_meta_client.py` | MODIFY | factory tests |
+
+> **Codebase Contract correction (same as TASK-2833/2834)**: test path
+> corrected to the root `tests/clients/test_meta_client.py` (created by
+> TASK-2834), not `packages/ai-parrot/tests/clients/test_meta_client.py`.
 
 ---
 
@@ -166,7 +170,23 @@ class TestMetaFactoryRegistration:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Registered `MetaClient` in `SUPPORTED_CLIENTS` under `"meta"`,
+`"muse"`, `"meta-muse"` (direct import, matching `OpenRouterClient` — no
+lazy loader needed). Added `MetaClient` to `WIRE_SUBCLASSES` in both
+`test_openai_compatible_defaults.py` and `test_openai_base_parity.py`;
+all 96 tests across both files pass with zero further changes, confirming
+TASK-2834's implementation is funnel-clean. `PROVIDER_BACKEND` untouched.
+One test in the task's own scaffold needed adjusting:
+`test_create_with_default_model` originally asserted
+`LLMFactory.create("meta").model == "muse-spark-1.3"`, but `.model` is only
+populated when a model kwarg is explicitly passed (per
+`AbstractClient`/`OpenAIBaseClient` — the default is resolved lazily via
+`default_model`/`_resolve_model` at call time, never stamped onto `.model`
+at construction). Rewrote the assertion to check `client.default_model`
+instead, matching `MoonshotClient`'s own factory tests
+(`test_factory_create_moonshot`), which never assert `.model` for a
+no-argument `LLMFactory.create()`.
+**Deviations from spec**: test-path correction (see TASK-2833/2834); the
+`test_create_with_default_model` assertion described above.

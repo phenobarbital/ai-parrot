@@ -51,7 +51,18 @@ spec Non-Goal — the enum members are reserved placeholders only).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/clients/meta/__init__.py` | CREATE | Package init; re-exports `MetaModel` |
 | `packages/ai-parrot/src/parrot/clients/meta/models.py` | CREATE | Enum + frozensets |
-| `packages/ai-parrot/tests/clients/test_meta_models.py` | CREATE | Unit tests |
+| `tests/clients/test_meta_models.py` | CREATE | Unit tests |
+
+> **Codebase Contract correction (verified during implementation,
+> 2026-09-04)**: the task file originally listed
+> `packages/ai-parrot/tests/clients/test_meta_models.py`, but the root
+> `pyproject.toml` sets `testpaths = ["tests"]` and every sibling wire
+> client's tests (e.g. `test_moonshot_client.py`, and the roster files
+> `test_openai_compatible_defaults.py:49` / `test_openai_base_parity.py:341`
+> referenced elsewhere in this spec) live under the **root** `tests/clients/`,
+> not `packages/ai-parrot/tests/clients/` (a separate, unrelated test tree
+> for bedrock/nova). Corrected to `tests/clients/test_meta_models.py` to
+> match the actual collected/runnable location and sibling convention.
 
 > `client.py` is created by TASK-2834, which also extends `__init__.py` to
 > re-export `MetaClient`. Leave a placeholder comment in `__init__.py` marking
@@ -213,7 +224,17 @@ class TestMetaModel:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Created `parrot/clients/meta/{__init__,models}.py` per the FEAT-523
+folder convention. `MetaModel` enum has exactly the 7 live-verified ids;
+`CONTRIBUTOR_MODELS`/`SPARK_MODELS`/`IMAGE_MODELS`/`TRANSCRIBE_MODELS`/
+`CONTEXT_WINDOW` all present. `client.py` intentionally not created here
+(TASK-2834). 8/8 unit tests pass, `ruff` clean.
+**Deviations from spec**: Corrected a stale Codebase Contract entry in this
+task file: the test file lives at `tests/clients/test_meta_models.py`
+(root-level, matching `pyproject.toml`'s `testpaths = ["tests"]` and the
+sibling `test_moonshot_client.py`), not
+`packages/ai-parrot/tests/clients/test_meta_models.py` as originally
+written — that path is an unrelated bedrock/nova test tree not on the
+default `pytest` collection path.

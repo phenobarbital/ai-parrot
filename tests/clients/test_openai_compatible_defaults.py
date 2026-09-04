@@ -16,6 +16,7 @@ suite: a parametric "no gpt-* leak" check over every Phase-1
 covering class-level defaults, the ``invoke()`` model-resolution chain, and
 a mocked ``ask()`` request payload.
 """
+
 import re
 from types import SimpleNamespace
 from typing import Any
@@ -25,6 +26,7 @@ from parrot.clients.claude import AnthropicClient
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.clients.nvidia import NvidiaClient
@@ -46,6 +48,7 @@ OPENAI_COMPATIBLE = [
 
 # FEAT-438 TASK-2301/2303/2304: every OpenAIBaseClient subclass — Phase 1
 # (six wire clients) + Phase 2 (GroqClient, ZaiClient).
+# FEAT-526: MetaClient added.
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -55,6 +58,7 @@ WIRE_SUBCLASSES = [
     BedrockMantleClient,
     GroqClient,
     ZaiClient,
+    MetaClient,
 ]
 
 # Matches an OpenAI-the-provider model id (e.g. "gpt-5-mini", "gpt-4.1").
@@ -69,6 +73,13 @@ def _client_kwargs(cls) -> dict:
         return {"api_key": "test-key", "region": "us-east-1"}
     if cls in (LocalLLMClient, vLLMClient):
         return {"api_key": "test-key", "base_url": "http://localhost:8000/v1"}
+    if cls is MetaClient:
+        # FEAT-526: MetaClient defaults to use_responses=True, routing
+        # ask() to a MetaClient-local Responses override that bypasses
+        # `_chat_completion` entirely (D1). These tests mock
+        # `_chat_completion` and exercise the Chat-Completions funnel,
+        # which is exactly what use_responses=False selects.
+        return {"api_key": "test-key", "use_responses": False}
     return {"api_key": "test-key"}
 
 
@@ -181,9 +192,7 @@ def test_no_gpt_default_leak(cls):
     """No Phase-1 wire subclass's class-level model attrs are OpenAI ids."""
     for attr in ("_default_model", "_fallback_model", "_lightweight_model", "model"):
         val = getattr(cls, attr, None)
-        assert val is None or not GPT_LEAK.match(str(val)), (
-            f"{cls.__name__}.{attr} leaks an OpenAI model id: {val!r}"
-        )
+        assert val is None or not GPT_LEAK.match(str(val)), f"{cls.__name__}.{attr} leaks an OpenAI model id: {val!r}"
 
 
 @pytest.mark.parametrize("cls", WIRE_SUBCLASSES, ids=lambda c: c.__name__)
@@ -192,9 +201,7 @@ def test_invoke_chain_never_yields_gpt(cls):
     explicitly configured with a provider model id."""
     client = cls(model="provider-model-x", **_client_kwargs(cls))
     resolved = client._resolve_invoke_model(None)
-    assert not GPT_LEAK.match(resolved), (
-        f"{cls.__name__}._resolve_invoke_model() leaked {resolved!r}"
-    )
+    assert not GPT_LEAK.match(resolved), f"{cls.__name__}._resolve_invoke_model() leaked {resolved!r}"
 
 
 class _FakeChoice:
@@ -252,6 +259,6 @@ async def test_ask_payload_model_never_leaks_gpt(cls, monkeypatch):
     await client.ask("hello")
 
     assert "model" in captured
-    assert not GPT_LEAK.match(captured["model"]), (
-        f"{cls.__name__}.ask() sent a gpt-* model on the wire: {captured['model']!r}"
-    )
+    assert not GPT_LEAK.match(
+        captured["model"]
+    ), f"{cls.__name__}.ask() sent a gpt-* model on the wire: {captured['model']!r}"

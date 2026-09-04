@@ -121,6 +121,11 @@ ensure the compiled `.so` files exist before trusting results.
 
 ## Acceptance Criteria
 
+> **Correction discovered during implementation**: the "ask" leg CANNOT
+> report PASS for Muse Spark — see the Completion Note. Verified live on
+> both wire protocols; not a `MetaClient` defect, and out of scope to fix
+> (would require editing the shared `_runner.py`).
+
 - [ ] `python examples/clients/smoke/smoke_meta.py` exits 0 with `SKIPPED`
       when `META_API_KEY` is unset.
 - [ ] With credentials, all three legs report `PASS`.
@@ -154,7 +159,50 @@ env -u META_API_KEY python examples/clients/smoke/smoke_meta.py   # -> SKIPPED, 
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Created `examples/clients/smoke/smoke_meta.py` using the exact
+`main_for(...)` one-liner pattern (no bespoke runner logic), and
+`docs/clients/meta.md` covering all 7 required points plus the worktree
+gotcha. `ruff` clean.
+
+Ran the smoke script live with credentials:
+```
+[meta:muse-spark-1.3-contributor] ask        FAIL — AssertionError: ask() returned an empty response
+[meta:muse-spark-1.3-contributor] ask+tool   PASS
+[meta:muse-spark-1.3-contributor] invoke     PASS
+```
+
+**Deviations from spec**: **The "ask" leg cannot pass for Muse Spark, on
+either wire protocol.** `_runner.py`'s shared `_ask_plain()` leg hardcodes
+`max_tokens=64` (by design, shared across every provider's smoke script;
+this task's scope explicitly forbids editing `_runner.py`). Verified live
+during implementation that Muse Spark exhausts a 64-token budget on hidden
+reasoning before emitting any visible text on **both** paths:
+- Responses: `ask()` returns empty `.output` (no exception).
+- Chat Completions: raises `openai.LengthFinishReasonError` — reasoning
+  tokens: 61/64.
+
+This is the live, first-hand reproduction of the exact F015 finding this
+whole feature was built around (`docs/clients/meta.md`'s reasoning-budget
+gotcha section exists specifically because of it) — not a `MetaClient`
+defect, and not fixable without either editing the shared harness (out of
+scope) or the model simply not being viable for a 64-token smoke check.
+Documented prominently in `docs/clients/meta.md` (§ Smoke Script and Live
+Tests) so nobody mistakes the "ask" FAIL for a regression. `ask+tool` and
+`invoke` legs pass because they either allow a tool round trip (which
+apparently better anchors the model into non-reasoning-dominant output for
+this task's prompt) or use a below-the-radar simple reply. `AC17`
+("all three legs PASS") is therefore not achievable as written for this
+provider; a follow-up could add a `min_max_tokens` override parameter to
+`run_smoke()`/`main_for()` in `_runner.py` for reasoning-heavy providers,
+but that is a shared-file change outside this task's scope.
+
+Also verified: could not empirically confirm the `SKIPPED` exit-0 path
+locally, because `META_API_KEY` is defined in the main repo's `env/.env`
+and loaded by `navconfig` independent of shell-level `env -u` removal —
+the same limitation would apply to every existing sibling smoke script
+using a key also present in `env/.env` (e.g. `OPENROUTER_API_KEY`). The
+`check_env_vars()`/`main_for()` code path itself is unchanged from the
+already-proven pattern used by 8 other smoke scripts, so this is a
+test-environment limitation, not a code-correctness concern.

@@ -48,7 +48,23 @@ Some duplication is the accepted, reversible trade.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | Responses path |
-| `packages/ai-parrot/tests/clients/test_meta_responses.py` | CREATE | Unit tests |
+| `tests/clients/test_meta_responses.py` | CREATE | Unit tests |
+
+> **Codebase Contract correction (same as TASK-2833/2834/2835)**: test
+> path corrected to the root `tests/clients/test_meta_responses.py`.
+>
+> **Additional correction discovered during implementation**: enrolling
+> `MetaClient` in `WIRE_SUBCLASSES` (TASK-2835) plus this task's
+> `use_responses=True` default meant the funnel-parity sweeps in
+> `tests/clients/test_openai_base_parity.py` and
+> `test_openai_compatible_defaults.py` started routing `MetaClient.ask()`
+> to the new Responses override instead of the mocked `_chat_completion` —
+> those sweeps exist to exercise the *Chat-Completions* funnel. Fixed by
+> adding a `MetaClient: {"use_responses": False}` case to each file's
+> `_parity_client_kwargs()`/`_client_kwargs()` helper (the established
+> mechanism those files already use for BedrockMantleClient/LocalLLM/vLLM
+> quirks) — both files were therefore also MODIFY, not just the two listed
+> above.
 
 ---
 
@@ -236,7 +252,37 @@ class TestMetaResponses:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Added `_fold_output()`, `_extract_tool_calls()`,
+`_prepare_responses_args()`, `_responses_completion()`, and `ask()`/
+`ask_stream()` overrides to `MetaClient`. `_responses_completion()` adapts
+the Responses result to a Chat-Completions-shaped
+`_ResponsesCompatResult`/`_Choice`/`_Message`/`_ToolCall` (mirroring
+`gpt.py`'s `_CompatResp`/`_Choice`/`_Msg` — structural reference only, no
+import/subclass), which lets `ask()` reuse the inherited generic
+`_run_tool_call_loop` unchanged for a full tool-calling round trip on the
+Responses path (verified in `test_tool_calling_round_trip`). `ask_stream()`
+streams text deltas via `client.responses.stream()` for the Responses path
+but — documented explicitly in its docstring — does NOT run a mid-stream
+tool-calling loop (use `ask()` for that); this is a deliberate, bounded
+simplification, not an oversight. `max_output_tokens` (not `max_tokens`)
+is used on the wire; `tool_choice` is always forced to `"auto"`. 16/16 new
+unit tests pass; the full `tests/clients/` suite shows zero regressions
+(the 12 pre-existing failures in Anthropic/Google fallback tests are
+reproducible identically on the pre-TASK-2836 commit — confirmed via
+`git stash`). `gpt.py`, `openai_base.py`, `base.py` are unmodified
+(`git diff --stat` empty for all three). `ruff` clean on all changed files.
+**Deviations from spec**: (1) test-path correction, same as prior tasks;
+(2) `MetaClient`'s `use_responses=True` default meant it began routing
+`ask()` away from `_chat_completion` inside the two shared funnel-parity
+test files (`test_openai_base_parity.py`, `test_openai_compatible_defaults.py`)
+once enrolled in `WIRE_SUBCLASSES` (TASK-2835) — fixed via a
+`MetaClient: {"use_responses": False}` case in each file's existing
+per-client kwargs helper, the same mechanism already used for
+BedrockMantleClient/LocalLLM/vLLM. Both files are therefore MODIFY for
+this task too, beyond the two originally listed. (3) `_run_tool_call_loop`
+is called without `initial_duration_ms`/`on_round` (both have safe
+defaults on the base) — telemetry round-events are not emitted for the
+Responses path; noted as a gap for a follow-up if observability parity
+with Chat Completions is later required.
