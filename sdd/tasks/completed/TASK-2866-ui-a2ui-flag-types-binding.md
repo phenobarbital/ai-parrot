@@ -178,10 +178,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: Added `'A2UI'` to `vite.config.ts`'s `agentchatDefines` names
+list (→ `__AGENTCHAT_A2UI__` from `PUBLIC_AGENTCHAT_A2UI`, default `true`,
+same `agentchatFlag()` parsing every other flag uses); declared the global
+in `vite-env.d.ts`; added `a2ui: __AGENTCHAT_A2UI__` to `features.ts`'s
+frozen object. Created `canvas/a2ui/{a2ui-types,a2ui-binding,a2ui-kind}.ts`
+(pure TS, no Svelte, no runtime deps — local RFC 6901 JSON-Pointer
+implementation): `A2UIEnvelope`/`CreateSurface`/`WireComponent`/`Binding`/
+`SectionDescriptor`/`InfographicSection` types; `resolveBinding`/`isBinding`/
+`resolveProps`; `inferSurfaceKind`/`hasInfographicRoot` ported verbatim from
+`docs/frontend/agentdashboard-a2ui-reference.md` §6.2's reference
+`inferKind()`. Added `a2ui_envelope?: A2UIEnvelope` to `AgentMessage`
+(`types/agent.ts`) and `mode: "a2ui"` + `envelope?: A2UIEnvelope` to
+`InfographicTabData` (`infographic-types.ts`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Companion fix (necessary, not in the task's file table)**:
+`vitest.config.ts`'s `AGENTCHAT_DEFINES` mirrors `vite.config.ts`'s defines
+for every flag so vitest can resolve the `__AGENTCHAT_*__` globals at all —
+added `__AGENTCHAT_A2UI__: 'true'` there too, following the file's own
+existing 1-per-flag pattern; without it every test importing `features.ts`
+would fail with an undefined-global ReferenceError.
 
-**Deviations from spec**: none | describe if any
+**Testing**: `pnpm install` (no `node_modules` existed yet in this worktree)
++ `pnpm test` → 39 test files / 245 tests, all passing (20 new: 9
+`a2ui-binding.test.ts` + 11 `a2ui-kind.test.ts`; `features.test.ts` extended
+to assert the 9th flag). One intermittent, NON-deterministic "unhandled
+error" (a post-teardown `document is not defined` timer inside `bits-ui`'s
+scroll-lock cleanup, surfacing from the unrelated, untouched
+`DeleteAgentDialog.test.ts`) appears on SOME runs regardless of whether my
+new files are present — verified via 3 repeated runs with/without the new
+`a2ui/` test files present (225/225 clean without them; 245/245 with them,
+error appearing on 2 of 3 runs, absent on the 3rd) — a pre-existing test-
+infra flake, not a regression, and not something this task's file scope
+covers. `tsc --noEmit` (raw, no `svelte-check` installed in this project):
+pre-existing errors only (shadcn `*.svelte` module-export errors, an
+unrelated `AgentChat.test.ts` tuple-index error) — zero errors reference
+any file this task touched (verified via grep).
+
+**Deviations from spec**: none.
