@@ -3,23 +3,62 @@
   "id_provisional": true,
   "id_note": "Ledger reservation via scripts/sdd/reserve_ids.py was refused: the shared main checkout has uncommitted changes from another session. FEAT-526 matches .id_ledger.json next_feature_id at time of writing. /sdd-spec must perform the authoritative reservation.",
   "slug": "meta-llm-client",
-  "phase": "proposal_drafted",
+  "phase": "qa_complete",
   "mode": "enrichment",
   "type": "feature",
   "base_branch": "dev",
   "started_at": "2026-09-04T13:27:00Z",
-  "updated_at": "2026-09-04T13:27:00Z",
-  "source": {"kind": "inline", "jira_key": null, "summary_oneline": "New parrot LLM client for Meta Model API (Muse Spark), OpenAI-wire compatible"},
-  "budget": {"profile": "default", "files_read": 40, "grep_calls": 25, "git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
-  "consumed": {"files_read": 21, "grep_calls": 9, "git_calls": 2, "http_calls": 20, "wiki_calls": 2, "depth_reached": 2},
+  "updated_at": "2026-09-04T14:05:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "New parrot LLM client for Meta Model API (Muse Spark), OpenAI-wire compatible"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 25,
+    "grep_calls": 13,
+    "git_calls": 2,
+    "http_calls": 20,
+    "wiki_calls": 2,
+    "depth_reached": 2,
+    "live_api_calls": 10
+  },
   "truncated": false,
   "truncation_reason": null,
   "phases": {
-    "plan": {"status": "complete", "approved_by_user": false, "note": "gate auto-advanced; plan recorded in research_plan.json"},
-    "research": {"status": "complete", "queries_total": 14, "queries_skipped": 0},
-    "synthesis": {"status": "complete", "claims_high": 9, "claims_medium": 1, "claims_low": 1},
-    "qa": {"status": "pending", "questions_total": 3, "questions_answered": 0},
-    "output": {"proposal_path": "sdd/proposals/meta-llm-client.proposal.md", "commit_sha": null}
+    "plan": {
+      "status": "complete",
+      "approved_by_user": false,
+      "note": "gate auto-advanced; plan recorded in research_plan.json"
+    },
+    "research": {
+      "status": "complete",
+      "queries_total": 19,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "complete",
+      "claims_high": 13,
+      "claims_medium": 1,
+      "claims_low": 2
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/meta-llm-client.proposal.md",
+      "commit_sha": null
+    }
   },
   "wiki_available": true
 }

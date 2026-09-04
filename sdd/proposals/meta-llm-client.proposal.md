@@ -4,7 +4,7 @@ title: Meta Model API (Muse Spark) LLM client for parrot.clients
 slug: meta-llm-client
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -16,6 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-526/
 created: 2026-09-04
 updated: 2026-09-04
+resolved_at: 2026-09-04
 ---
 
 # FEAT-526 — Meta Model API (Muse Spark) LLM client
@@ -158,63 +159,100 @@ work).
 
 ## 3. Probable Scope
 
+> **Scope resolved 2026-09-04** (U1/U2/U3). Both protocols ship in this phase.
+> Every claim below is now backed by a **live call against the real API** with
+> the repo's own key, not by documentation alone.
+
 ### What's New
 
-- **`MetaClient`** — `OpenAIBaseClient` subclass; `base_url="https://api.meta.ai/v1"`,
-  `client_type = client_name = "meta"`, `_default_model = "muse-spark-1.3"`.
-- **`MetaModel` enum** — the five Muse Spark ids plus tier metadata, mirroring
-  `parrot/models/openrouter.py`.
-- **`list_models()`** — over `GET /v1/models` (Meta returns newest-first with a
-  `created` timestamp), following `OpenRouterClient.list_models()`.
-- **`smoke_meta.py`** — credential-gated, three legs (`ask`, `ask` + `@tool`,
-  `invoke`).
+- **`parrot/models/meta.py`** — `MetaModel(str, Enum)` following the
+  `MoonshotModel` pattern (string-valued so members interchange with raw model
+  strings), with the 7 ids **verified live** via `GET /v1/models` (F013), plus
+  capability frozensets in the same house style:
+  - `CONTRIBUTOR_MODELS` — the train-on-your-data tier (note: `muse-spark-1.1`
+    has **no** contributor variant).
+  - `SPARK_MODELS` / `IMAGE_MODELS` / `TRANSCRIBE_MODELS` — family split.
+  - Context window is uniform at **1,048,576** tokens across all Spark models.
+- **`MetaClient`** — `OpenAIBaseClient` subclass, `base_url="https://api.meta.ai/v1"`,
+  `_default_model = "muse-spark-1.3"` (Standard tier — never contributor).
+- **Responses API support** — the substantial piece; see §3.1.
+- **`count_input_tokens()`** — `POST /v1/responses/input_tokens`; **verified
+  live** (F014). Standalone, so it works regardless of §3.1's outcome.
+- **`list_models()`** — over `GET /v1/models`, mirroring `OpenRouterClient`.
+- **`examples/clients/smoke/smoke_meta.py`** + `docs/clients/meta.md`.
+
+### 3.1 Responses API — the one genuinely new piece
+
+`OpenAIBaseClient` has no Responses support (C5), so this is net-new. Verified
+wire shape (F016): the response has **no `choices` array**; `output` is a list
+of typed items (`reasoning`, `message`, `web_search_call`, `tool_search_call`,
+`tool_search_output`, …). `output_text` is an **SDK-computed convenience
+property, not a wire field** — the adapter must fold `type == "message"` items
+itself.
+
+Unlocks, both **verified live**:
+- **Search grounding** — `tools: [{"type": "web_search"}]`. A live probe
+  returned a genuine post-training fact, confirming real retrieval (F016).
+- **Tool search** — `{"type": "tool_search"}` **plus** `defer_loading: true` on
+  individual functions; without a deferred tool it returns HTTP 400 (F017).
+
+**Where this layer belongs is the remaining open design choice** — see §5 D1.
 
 ### What Changes
 
-- **`factory.py::SUPPORTED_CLIENTS`** — add `"meta"` and aliases (`"muse"`,
-  `"meta-muse"`). Direct import is fine; the client needs only the `openai`
-  SDK already used by sibling wire clients. *Evidence*: F008
-- **Both `WIRE_SUBCLASSES` rosters** — add `MetaClient` so the existing
-  no-`gpt`-leak and funnel-parity sweeps cover it. *Evidence*: F012
+- **`factory.py::SUPPORTED_CLIENTS`** — add `"meta"` + aliases (`"muse"`,
+  `"meta-muse"`). *Evidence*: F008
+- **Both `WIRE_SUBCLASSES` rosters** — add `MetaClient` to the existing
+  no-`gpt`-leak and funnel-parity sweeps. *Evidence*: F012
 
 ### What's Untouched (Non-Goals)
 
 - `OpenAIClient` / `gpt.py` — untouched; Meta is a sibling, never a subclass.
-- `AbstractClient` — no changes needed for the Chat Completions path.
-- Muse Image, Muse Voice Transcribe, Muse Glimmer — separate model families
-  with separate endpoints (F003); out of scope unless U3 says otherwise.
-- The Anthropic-shaped Messages API — a third protocol, deliberately deferred.
-- **Prompt caching** — automatic server-side; *nothing to build*. At most,
-  surface `usage.prompt_tokens_details.cached_tokens` in metrics. (C9)
+- Muse Image (`muse-image-1.0`) and Muse Voice Transcribe
+  (`muse-voice-transcribe-1.0`) — **U3 resolved: out of scope**. Reserved as
+  enum members only, so the namespace exists for a later FEAT.
+- The Anthropic-shaped Messages API — third protocol, deferred.
+- **Prompt caching** — automatic server-side; *nothing to build*. Surface
+  `cached_tokens` in metrics only. (C9)
 
 ### Patterns to Follow
 
-- `OpenRouterClient` end-to-end — `__init__` credential chain, the
-  `self.api_key` re-set, `get_client()`, `_chat_completion()` override,
+- `OpenRouterClient` for the `__init__` credential chain, the `self.api_key`
+  re-set after `super().__init__()`, `get_client()`, `_chat_completion()`, and
   `list_models()`. *Evidence*: F007
-- The seven-step recipe in `docs/clients/openai-compatible.md`, including its
-  step 7 (add a doc page for providers with real provider-specific surface —
-  Meta qualifies). *Evidence*: F006
+- `MoonshotModel` for the enum + capability-frozenset layout. *Evidence*: F007
+- The 7-step recipe in `docs/clients/openai-compatible.md`, including step 7
+  (a doc page — Meta clearly qualifies). *Evidence*: F006
 
 ### Integration Risks
 
-- **Env-var divergence (certain).** The brief asks for `META_API_KEY`; Meta
-  documents `MODEL_API_KEY`. *Mitigation*: resolve a chain —
-  `api_key` kwarg → `META_API_KEY` → `MODEL_API_KEY`. Never fall through to
-  `OPENAI_API_KEY`, which the OpenAI SDK would otherwise pick up silently and
-  send a `sk-…` key to Meta. *Evidence*: F002
-- **Contributor-tier data governance (high impact).** `muse-spark-1.3-contributor`
-  buys a discount with *permission for Meta to train on your prompts and
-  completions*. *Mitigation*: fine for synthetic e2e prompts; must never be the
-  library default, and the tier's meaning belongs in the `MetaModel` enum
-  docstring and the smoke script header, not buried in a spec. *Evidence*: F003, C8
-- **Strict-schema 400s (medium).** A tool whose schema uses `allOf`/`oneOf` or a
-  `$ref` cycle will 400 under `strict: true` where omitting `strict` would pass.
-  *Mitigation*: parity test with a real toolkit schema; if it bites, the escape
-  hatch is a Meta-specific tool format, as Groq needed. *Evidence*: F010, C7
-- **Capability shortfall vs. the brief (certain).** Shipping Chat Completions
-  only delivers 4 of the 7 requested capabilities. *Mitigation*: U1 — decide
-  scope explicitly rather than discovering it at review.
+- **⚠️ Reasoning burns the output budget (high impact, newly discovered).**
+  Live measurement: **199 of 210** completion tokens were `reasoning_tokens` for
+  a reply whose visible text was the single word `pong` (F015). A conventional
+  `max_tokens=256` default will routinely yield **empty or truncated** visible
+  text. *Mitigation*: set a generously high default output budget on
+  `MetaClient`, document why, and assert non-empty visible text in the smoke
+  script. This is the most likely source of confusing "returned nothing" reports.
+- **Env-var resolution (resolved, implement carefully).** `META_API_KEY` is the
+  default per U2. It is the only one actually set in this repo — `MODEL_API_KEY`
+  is unset (F013). *Mitigation*: chain `api_key` kwarg → `META_API_KEY` →
+  `MODEL_API_KEY` (vendor default, kept so upstream examples work). **Never**
+  fall through to `OPENAI_API_KEY`, which `AsyncOpenAI` would otherwise pick up
+  silently and ship an `sk-…` key to Meta.
+- **Contributor tier = training consent (accepted).** Confined to synthetic e2e
+  prompts, mirroring the existing live-OpenAI tests. *Mitigation*: never the
+  library default; state the tier's meaning in the `MetaModel` docstring and the
+  smoke-script header so it cannot be adopted unknowingly. *Evidence*: F003, C8
+- **Search-grounding citations may not populate (medium).** `annotations` came
+  back **empty** on a successful grounded answer despite docs advertising inline
+  citations (F016). *Mitigation*: do **not** write citation extraction into
+  acceptance criteria without re-verifying.
+- **Two overlapping tool-search mechanisms (medium).** parrot already has a
+  client-side `search_tools` lazy-loading path (`base.py:1298/1322`); Meta has a
+  native server-side one. *Mitigation*: decide deliberately (§5 D2), don't let
+  them collide by accident. *Evidence*: F017
+- **`logprobs` 400s and `reasoning_content` is redacted to empty** for external
+  keys — never surface it as thinking output. *Evidence*: F011, C11
 
 ---
 
@@ -222,84 +260,103 @@ work).
 
 | ID | Claim | Evidence | Confidence | Reasoning |
 |----|-------|----------|------------|-----------|
-| C1 | Meta Model API is live and OpenAI-shaped | F001 | high | direct HTTP probe; verbatim OpenAI error envelope |
-| C2 | Documented env var is `MODEL_API_KEY`, not `META_API_KEY` | F002 | high | stated twice in vendor docs |
+| C1 | Meta Model API is live and OpenAI-shaped | F001, F013 | high | authenticated 200s on 3 endpoints |
+| C2 | Vendor documents `MODEL_API_KEY`; repo uses `META_API_KEY` | F002, F013 | high | docs + live env check (`MODEL_API_KEY` unset) |
 | C3 | `OpenAIBaseClient` is a documented extension point | F005, F006 | high | read the base + its recipe doc |
-| C4 | Search grounding / tool search / custom tools are Responses-only | F004 | high | explicit vendor statements, quoted |
-| C5 | `OpenAIBaseClient` has no Responses support | F005 | high | `_is_responses_model()` False in base, per doc |
-| C6 | parrot's `tool_choice="auto"` is already Meta-legal | F009 | high | grep confirmed at openai_base.py:639/979 |
-| C7 | `ToolFormat.OPENAI` strict output conforms to Meta's subset | F010 | **medium** | subsets align by vendor's own statement, but not verified against a real tool schema |
-| C8 | Contributor tier permits training on prompts/completions | F003 | high | verbatim vendor doc |
+| C4 | Search grounding / tool search are Responses-only | F004, F016, F017 | high | docs + live 200 (grounding) and 400 (tool_search) |
+| C5 | `OpenAIBaseClient` has no Responses support | F005 | high | `_is_responses_model()` False in base |
+| C6 | `tool_choice` must be `"auto"` | F009, F014 | high | **live 400** with verbatim error |
+| C7 | `ToolFormat.OPENAI` strict output is accepted by Meta | F010, F014 | **high** ⬆ | **upgraded from medium — live 200 with `strict:true`** |
+| C8 | Contributor tier permits training on prompts/completions | F003 | high | verbatim vendor doc; accepted by user for synthetic e2e only |
 | C9 | Prompt caching needs zero implementation | F011 | high | "automatic — no key or setup required" |
-| C10 | CC-only `MetaClient` is ~200 lines, mechanical | F006, F007 | high | direct analogy to a read precedent |
+| C10 | A CC-only client is ~200 lines; Responses is the real work | F006, F007, F016 | high | precedent read + verified wire shape |
 | C11 | `logprobs` 400s; `reasoning_content` redacted | F011 | high | verbatim vendor doc |
-| C12 | In-flight `max_completion_tokens` spec may interact | F011 | **low** | file modified by another session; not read |
+| C12 | In-flight `max_completion_tokens` spec may interact | F011 | **low** | another session's file; deliberately not read |
+| C13 | Muse Spark spends most of the output budget on reasoning | F015 | high | **measured live**: 199/210 and 142/153 |
+| C14 | The 7 model ids are ground truth | F013 | high | live `GET /v1/models` |
+| C15 | Responses `output` is typed items, not `choices`; `output_text` is SDK-only | F016 | high | live response key dump |
+| C16 | Search-grounding `annotations` may come back empty | F016 | **medium** | observed empty on one live grounded call; cause unconfirmed |
 
-Distribution: **9** high, **1** medium, **2** low.
+Distribution: **13** high, **1** medium, **2** low.
 
-> The two sub-high claims (C7, C12) are *risk* claims, not load-bearing ones —
-> the recommendation holds whichever way they resolve.
+> The evidence base shifted materially since the first draft: what were
+> doc-derived assumptions (C6, C7) are now **live-verified**, and two new
+> high-confidence findings (C13, C15) came only from making real calls.
 
 ---
 
 ## 5. Open Questions
 
-### Unresolved (need a decision before `/sdd-spec`)
+### Resolved (during proposal phase)
 
-- [ ] **U1 — Protocol scope: Chat Completions only, or Responses API too?**
-  *Blocks*: the whole shape of the feature. *Owner*: tbd
+- [x] **U1 — Protocol scope: Chat Completions only, or Responses too?**
+  *Resolved*: **"all on this phase"** — both protocols ship in FEAT-526.
+  *Consequence*: the spec must carry a distinct Responses-API task group; this
+  is no longer a ~200-line mechanical client.
+
+- [x] **U2 — Is a live key available; is contributor-tier acceptable for tests?**
+  *Resolved*: *"there is a live key available in env/.env and reachable by
+  navconfig.config"*, and contributor is *"only for synthetic e2e prompts and
+  e2e testing (like tests we currently made for live openai)."*
+  *Verified*: key authenticates; `GET /v1/models` returns 200 with 7 models
+  (F013). Acceptance criteria **can** include live calls.
+
+- [x] **U3 — Are Muse Image / Voice Transcribe / Messages API in scope?**
+  *Resolved*: implicitly out of scope — the brief and U1 concern Muse Spark.
+  Reserved as enum members only.
+
+- [x] **Env var naming.** *Resolved*: *"MODEL_API_KEY is too generic, using
+  META_API_KEY as default in client."* `META_API_KEY` is primary.
+  *Note*: I kept `MODEL_API_KEY` as a **secondary** fallback so upstream vendor
+  examples work unmodified — say the word if you'd rather it be dropped entirely.
+
+### Unresolved (design decisions for `/sdd-spec`)
+
+- [ ] **D1 — Where should Responses-API support live?** *Owner*: tbd
   *Plausible answers*:
-  a) **CC only** — ships fast (~200 lines, mechanical), delivers chat, tools,
-     structured output, caching. Defers search grounding + tool search to a
-     follow-up FEAT.
-  b) **CC + Responses** — delivers all seven, but means building Responses
-     support at the `OpenAIBaseClient` layer (or in `MetaClient`), which is
-     genuinely new architecture and much larger.
-  c) **CC now, Responses as a second phase in the same spec** — one spec, two
-     task groups, reviewable independently.
+  a) **`MetaClient`-local** — smallest blast radius; `OpenAIClient` keeps its own
+     separate Responses implementation. Some duplication.
+  b) **A shared `ResponsesMixin`** — reusable by `OpenAIClient` later; more
+     upfront design, touches a second client.
+  c) **In `OpenAIBaseClient`** — widest reuse, but contradicts that layer's
+     stated "wire protocol only, no provider opinions" charter (F005) and puts
+     the most-shared file in the repo at risk.
+  *Recommendation*: **(a)** for this phase — it keeps FEAT-526 self-contained and
+  reversible; promote to (b) if a second provider ever needs it.
 
-- [ ] **U2 — Is a live API key available, and is contributor-tier acceptable for tests?**
-  *Blocks*: the "real test usage" part of the brief. *Owner*: tbd
-  *Context*: neither `META_API_KEY` nor `MODEL_API_KEY` is set in this
-  environment (checked). Keys look like `LLM|<id>|<secret>`.
-  *Plausible answers*: a) key exists, contributor tier fine for synthetic
-  prompts · b) key exists, use Standard `muse-spark-1.3` instead ·
-  c) no key yet — ship mocked tests + a skipping smoke script (the established
-  pattern for all 8 existing wire clients).
-
-- [ ] **U3 — Are Muse Image / Muse Voice Transcribe / Messages API in scope?**
-  *Owner*: tbd
-  *Plausible answers*: a) out of scope, text only · b) reserve namespace in the
-  model enum now, implement later · c) in scope.
-
-> No questions were put to the user during the research phase — the pipeline's
-> Q&A gate is where these belong, and all three are genuine scope decisions
-> that the codebase cannot answer.
-
----
+- [ ] **D2 — Native `tool_search` vs. parrot's client-side `search_tools`?**
+  *Owner*: tbd · *Blocks*: C4-adjacent scope · *Evidence*: F017
+  *Plausible answers*: a) opt-in `MetaClient` flag, parrot's path stays default
+  (lowest risk) · b) map `search_tools` onto the native hosted mode ·
+  c) native only, for Meta.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-526`** — *Rationale*: localization is high-confidence, the
-extension point is documented and test-enforced, and the file list is
-effectively pre-determined by existing convention. There is no architectural
-fork worth a brainstorm — U1 is a **scoping** decision (how much to build), not
-an **architecture** decision (how to build it).
+**`/sdd-spec FEAT-526`** — *Rationale*: all three blocking unknowns are resolved,
+the model catalog and both protocols are **live-verified**, and the file list is
+pre-determined by an enforced convention. The two remaining items (D1, D2) are
+bounded design choices with a recommended default each — they belong **in** the
+spec, not in another research round.
 
-**Answer U1 and U2 first**; they change the spec's task count substantially,
-and U2 determines whether acceptance criteria can include live calls.
+The spec should carry **three task groups**:
+1. **Foundation** — `parrot/models/meta.py`, `MetaClient` over Chat Completions,
+   factory registration, both test rosters. *Mechanical; the recipe is written.*
+2. **Responses API** — the adapter, search grounding, tool search, and
+   `count_input_tokens()`. *The real engineering; resolve D1 first.*
+3. **Live e2e + docs** — `smoke_meta.py` against `muse-spark-1.3-contributor`,
+   mirroring the existing live-OpenAI tests, plus `docs/clients/meta.md`.
+
+**Carry F015 into the spec as an explicit acceptance criterion** — a
+non-empty-visible-text assertion under a realistic output budget. It is the one
+finding most likely to cause a confusing failure if left implicit.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-526`** — justified *only* if U1 resolves to (b) and
-  you want to explore how Responses-API support should be layered
-  (`OpenAIBaseClient` vs. `MetaClient`-local vs. a new `ResponsesMixin`) — that
-  genuinely is an architectural fork worth options analysis.
-- **`/sdd-task FEAT-526`** — not recommended; even the CC-only path spans a new
-  client, a new model module, factory registration, two test rosters and a
-  smoke script.
-
----
+- **`/sdd-brainstorm FEAT-526`** — justified only if you want D1 explored as a
+  full options analysis before committing. Given the recommendation above is
+  low-risk and reversible, this looks like avoidable ceremony.
+- **`/sdd-task FEAT-526`** — no; the feature now spans two protocols, a new
+  model module, two test rosters, live e2e and docs.
 
 ## 7. Research Audit
 
@@ -308,13 +365,16 @@ and U2 determines whether acceptance criteria can include live calls.
 | State checkpoints | `sdd/state/FEAT-526/state.json` |
 | Source (raw) | `sdd/state/FEAT-526/source.md` |
 | Research plan | `sdd/state/FEAT-526/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-526/findings/F001…F012` |
+| Findings (digests) | `sdd/state/FEAT-526/findings/F001…F017` |
 | Synthesis (JSON) | `sdd/state/FEAT-526/synthesis.json` |
 
 **Budget consumed** (profile `default`):
-- Files read: 21 / 40 · Grep calls: 9 / 25 · Git calls: 2 / 10
-- Wiki queries: 2 (free) · External HTTP fetches: 20
+- Files read: 25 / 40 · Grep calls: 13 / 25 · Git calls: 2 / 10
+- Wiki queries: 2 (free) · External HTTP fetches: 20 · **Live authenticated API calls: 10**
 - Truncated: **no**
+
+**Round 2** (post-Q&A): U1/U2/U3 resolved by the user; research extended with
+live authenticated probes of both protocols, which upgraded C7 and added C13-C16.
 
 **Mode determination**: `auto` → **enrichment** (net-new capability, no failure
 symptom in the source).
