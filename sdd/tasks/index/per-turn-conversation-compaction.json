@@ -113,7 +113,7 @@
       "feature_id": "FEAT-525",
       "feature": "per-turn-conversation-compaction",
       "spec": "sdd/specs/per-turn-conversation-compaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Edits only memory/render.py (FEAT-524 file) + a new test; no overlap with the compaction/* tasks or TASK-2825.",
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2824-render-history-turn-views.md"
+      "completed_at": "2026-09-04T11:06:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2824-render-history-turn-views.md"
     },
     {
       "id": "TASK-2825",
