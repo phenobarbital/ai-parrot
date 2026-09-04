@@ -11,7 +11,7 @@ from PIL import (
 )
 from navconfig.logging import logging
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
-from parrot.clients.factory import SUPPORTED_CLIENTS
+from parrot.clients.factory import LLMFactory
 
 
 logging.getLogger('pytesseract').setLevel(logging.WARNING)
@@ -75,12 +75,16 @@ class AbstractPipeline(ABC):
         Returns:
             Initialized LLM client
         """
-        if provider not in SUPPORTED_CLIENTS:
+        # FEAT-523 (TASK-2847): discover-then-return — SUPPORTED_CLIENTS is
+        # lazily populated by LLMFactory._discover(); go through the
+        # factory helper rather than importing the dict directly.
+        supported_clients = LLMFactory.supported_clients()
+        if provider not in supported_clients:
             raise ValueError(
                 f"Unsupported LLM provider: {provider}"
             )
 
-        client_class = SUPPORTED_CLIENTS[provider]
+        client_class = supported_clients[provider]
         client = client_class(model=model, **kwargs)
         self.llm_provider = client.client_name.lower()
         return client

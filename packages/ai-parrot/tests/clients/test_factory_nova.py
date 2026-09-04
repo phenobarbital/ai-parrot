@@ -9,9 +9,16 @@ from parrot.clients.amazon.nova import NovaClient
 
 
 def test_nova_key_registered_lazy():
+    """FEAT-523 (TASK-2847): "nova" is now discovered from
+    ``NovaClient.provider_keys`` via the transitional in-core registry,
+    not a hand-written ``_lazy_nova`` closure. The outer laziness moved to
+    ``LLMFactory._discover()`` itself (deferred until first read of
+    ``SUPPORTED_CLIENTS``) — once discovery runs, the real class is
+    registered directly.
+    """
     assert "nova" in SUPPORTED_CLIENTS
-    assert callable(SUPPORTED_CLIENTS["nova"])
-    assert not isinstance(SUPPORTED_CLIENTS["nova"], type)
+    assert SUPPORTED_CLIENTS["nova"] is NovaClient
+    assert isinstance(SUPPORTED_CLIENTS["nova"], type)
 
 
 def test_create_default():

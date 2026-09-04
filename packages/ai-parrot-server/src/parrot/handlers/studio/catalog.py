@@ -22,7 +22,7 @@ from typing import Any
 
 import parrot.bots as bots_module
 from navigator_auth.decorators import is_authenticated, user_session
-from parrot.clients.factory import SUPPORTED_CLIENTS
+from parrot.clients.factory import LLMFactory
 from parrot.stores import supported_stores
 
 import parrot.handlers.tools_catalog as tools_catalog_module
@@ -145,7 +145,11 @@ def _build_llm_clients_catalog() -> list[dict]:
         Sorted (by provider key) list of LLM client descriptor dicts.
     """
     rows: list[dict] = []
-    for provider, value in sorted(SUPPORTED_CLIENTS.items()):
+    # FEAT-523 (TASK-2847): discover-then-return — SUPPORTED_CLIENTS is
+    # lazily populated by LLMFactory._discover(); go through the factory
+    # helper (called on first request, per this module's own cache
+    # discipline) rather than importing the dict directly.
+    for provider, value in sorted(LLMFactory.supported_clients().items()):
         is_lazy = callable(value) and not isinstance(value, type)
         try:
             cls = value() if is_lazy else value

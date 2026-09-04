@@ -69,8 +69,11 @@ def test_existing_claude_unchanged():
 
 
 def test_unsupported_provider_raises():
-    """Unsupported provider key raises ValueError."""
-    with pytest.raises(ValueError, match="Unsupported LLM provider"):
+    """FEAT-523 (TASK-2847): unsupported provider key raises ImportError,
+    naming the satellite distribution that would provide it — no longer
+    ValueError, now that a missing provider can genuinely mean "not
+    installed" rather than "never existed"."""
+    with pytest.raises(ImportError, match="ai-parrot-client-not-a-provider"):
         LLMFactory.create("not-a-provider:some-model")
 
 
