@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T02:12:04+00:00",
-  "completed_at": "2026-09-04T12:42:08+00:00",
+  "completed_at": "2026-09-04T13:56:06+00:00",
   "notes": "C14 satisfied 2026-09-04: FEAT-524 merged to dev via PR #1310 (merge 729ef7367, all 11 tasks done). Tasks were first generated before the merge (dev f3a5fe7ea) with anchors read from the FEAT-524 worktree; every FEAT-524-dependent contract entry was then re-verified against dev @ 198e6fecd (post-merge black reformat 4831528a4 shifted line numbers) and the task files patched. One structural change found: BaseBot.conversation() is now a wrapper that binds ContextVars and delegates to _conversation_body(), which defaults the ids — TASK-2825 rewritten accordingly. Worktree feat-FEAT-525-per-turn-conversation-compaction created from dev after the re-verification.",
   "tasks": [
     {
@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T10:55:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2819-compaction-models-turn-schema-v2.md"
+      "file": "sdd/tasks/completed/TASK-2819-compaction-models-turn-schema-v2.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2820",
@@ -44,7 +45,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T10:58:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2820-stage0-normalization.md"
+      "file": "sdd/tasks/completed/TASK-2820-stage0-normalization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2821",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:00:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2821-stage05-token-counting.md"
+      "file": "sdd/tasks/completed/TASK-2821-stage05-token-counting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2822",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:02:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2822-omission-store.md"
+      "file": "sdd/tasks/completed/TASK-2822-omission-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2823",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:04:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2823-budget-resolution-calibration.md"
+      "file": "sdd/tasks/completed/TASK-2823-budget-resolution-calibration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2824",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:06:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2824-render-history-turn-views.md"
+      "file": "sdd/tasks/completed/TASK-2824-render-history-turn-views.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2825",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:21:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2825-memory-key-contextvar-binding-order.md"
+      "file": "sdd/tasks/completed/TASK-2825-memory-key-contextvar-binding-order.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2826",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:27:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2826-memory-template-method-store-turn.md"
+      "file": "sdd/tasks/completed/TASK-2826-memory-template-method-store-turn.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2827",
@@ -186,7 +194,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:31:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2827-prune-policies.md"
+      "file": "sdd/tasks/completed/TASK-2827-prune-policies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2828",
@@ -208,7 +217,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:41:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2828-compact-history-three-tier-walk.md"
+      "file": "sdd/tasks/completed/TASK-2828-compact-history-three-tier-walk.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2829",
@@ -230,7 +240,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:46:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2829-read-omitted-content-tool.md"
+      "file": "sdd/tasks/completed/TASK-2829-read-omitted-content-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2830",
@@ -254,7 +265,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T11:59:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2830-abstractbot-budget-integration.md"
+      "file": "sdd/tasks/completed/TASK-2830-abstractbot-budget-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2831",
@@ -275,7 +287,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T12:11:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2831-bot-entry-points-budget-switch.md"
+      "file": "sdd/tasks/completed/TASK-2831-bot-entry-points-budget-switch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2832",
@@ -295,7 +308,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T10:48:55+00:00",
       "completed_at": "2026-09-04T12:42:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2832-exports-docs-integration.md"
+      "file": "sdd/tasks/completed/TASK-2832-exports-docs-integration.md",
+      "verification": "verified"
     }
   ]
 }
