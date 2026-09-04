@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2809
@@ -149,8 +149,48 @@ async def test_legacy_key_rekey_file(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- `RedisConversation.get_history`: read body extracted into `_load_history(user_id,
+  session_id, chatbot_id)` (no fallback, exactly one key) so the fallback branch reuses
+  deserialization instead of duplicating it. `get_history` now tries the segmented key,
+  and only when `chatbot_id` is truthy and that returns `None` reads the legacy key,
+  sets `history.chatbot_id`, calls `update_history` (which derives the segmented key
+  from `history.chatbot_id` — verified before relying on it) and logs at INFO. Legacy
+  key never deleted or rewritten. No locking — the copy is idempotent, so the race is
+  benign per spec §7.
+- `FileConversationMemory.get_history`: same contract. **Deadlock avoided**: `_lock` is a
+  plain non-reentrant `asyncio.Lock` and `get_history` already holds it, so calling the
+  public `update_history` (which also acquires it) from inside would hang forever. Split
+  into lock-free `_read_history()` / `_write_history()` helpers; `get_history` does
+  read-and-maybe-copy under a single acquisition and `update_history` is now a thin
+  locked wrapper around `_write_history`. `test_file_get_history_does_not_deadlock_on_rekey`
+  guards this with `asyncio.wait_for(..., timeout=5)`.
+- `InMemoryConversation` unchanged, as specified.
+- Copied turns keep `turn.chatbot_id = None`; asserted on both backends.
+- Redis re-key additionally `sadd`s the session to the segmented user-sessions set, so
+  `list_sessions(user_id, chatbot_id)` finds the migrated conversation — `update_history`
+  alone only writes the history key.
+- Tests: 24 passed in `test_legacy_rekey.py`; the whole existing `packages/ai-parrot/tests/memory`
+  suite still green (158 passed). `ruff check` clean on all three files.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`fakeredis` is not installed** in this environment (`pyproject.toml` does not declare
+   it; `import fakeredis` → `ModuleNotFoundError`). Rather than skip the Redis half behind
+   the `live` marker, the tests drive the real `RedisConversation` against a small
+   in-process `_FakeRedis` double (hashes/strings/sets + a read log). This exercises the
+   actual backend logic AND lets the tests *prove* the legacy key is not consulted on the
+   second read — something a live server could not show. Both storage modes are covered
+   via a parametrized fixture (`hash_storage` / `string_storage`).
+2. **`super().__init__()` added** to `RedisConversation.__init__` and
+   `FileConversationMemory.__init__`. Neither chained to `ConversationMemory.__init__`, so
+   `self.logger` did not exist and the spec-mandated INFO log had nowhere to go. Both
+   `__init__`s are inside this task's declared MODIFY list; the change is purely additive
+   (`self.logger`, `self._json`, `self.debug`).
+
+**Pre-existing bug found (NOT fixed — out of scope)**: in hash-storage mode
+`RedisConversation.create_history` builds its `mapping` dict and then never calls
+`hset` — the record is only materialized later by `add_turn`. Verified present on `dev`
+(`memory/redis.py:97-111`), unrelated to FEAT-524. The tests here call `add_turn` to
+materialize records rather than depending on `create_history`, and say so inline.

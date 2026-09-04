@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-04T10:20:22+00:00",
   "tasks": [
     {
       "id": "TASK-2808",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Test-only, new file; shares nothing with TASK-2809. Committed red; goes green at TASK-2816.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2808-regression-test-single-turn-per-round.md"
+      "completed_at": "2026-09-04T00:29:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2808-regression-test-single-turn-per-round.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2809",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Touches only parrot/memory/{render.py,abstract.py,__init__.py}; disjoint from TASK-2808.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2809-memory-render-layer-and-turn-attribution.md"
+      "completed_at": "2026-09-04T00:33:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2809-memory-render-layer-and-turn-attribution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2810",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Memory backends only (redis.py, file.py); disjoint from TASK-2811/2812 which touch bots/ and clients/.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2810-lazy-legacy-rekey-backends.md"
+      "completed_at": "2026-09-04T00:38:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2810-lazy-legacy-rekey-backends.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2811",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Edits bots/abstract.py, bots/chatbot.py and a 4-line stop-gap in bots/base.py that TASK-2816 replaces; must precede TASK-2816.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2811-abstractbot-single-writer-memory-key-id.md"
+      "completed_at": "2026-09-04T00:59:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2811-abstractbot-single-writer-memory-key-id.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2812",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "clients/base.py only, but leaves concrete clients call-time broken until TASK-2813/2814/2815 — run sequentially inside the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2812-abstractclient-hard-cut.md"
+      "completed_at": "2026-09-04T01:04:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2812-abstractclient-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2813",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,8 +125,9 @@
       "parallelism_notes": "Disjoint client files from TASK-2814 and TASK-2815; can run concurrently with TASK-2814 after TASK-2812.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2813-client-migration-anthropic-bedrock.md"
+      "completed_at": "2026-09-04T01:12:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2813-client-migration-anthropic-bedrock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2814",
@@ -130,7 +136,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -140,8 +146,9 @@
       "parallelism_notes": "Disjoint client files from TASK-2813 and TASK-2815; can run concurrently with TASK-2813 after TASK-2812.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2814-client-migration-openai-family.md"
+      "completed_at": "2026-09-04T01:24:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2814-client-migration-openai-family.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2815",
@@ -150,7 +157,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -162,8 +169,9 @@
       "parallelism_notes": "Owns the cross-client signature test, which must run after every other client group is migrated.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2815-client-migration-google-live-signature-test.md"
+      "completed_at": "2026-09-04T01:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2815-client-migration-google-live-signature-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2816",
@@ -172,7 +180,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +192,9 @@
       "parallelism_notes": "Integration point of the feature; needs every client to accept history= and AbstractBot's memory_key_id. Turns TASK-2808 green.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2816-bot-callers-history-and-single-writer.md"
+      "completed_at": "2026-09-04T02:08:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2816-bot-callers-history-and-single-writer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2817",
@@ -194,7 +203,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +213,9 @@
       "parallelism_notes": "Sweeps ~30 test files after all production changes land.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2817-test-suite-migration.md"
+      "completed_at": "2026-09-04T03:17:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2817-test-suite-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2818",
@@ -214,7 +224,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -224,8 +234,9 @@
       "parallelism_notes": "Docs only; can run alongside TASK-2817.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2818-docs-and-context-update.md"
+      "completed_at": "2026-09-04T03:21:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2818-docs-and-context-update.md",
+      "verification": "verified"
     }
   ]
 }

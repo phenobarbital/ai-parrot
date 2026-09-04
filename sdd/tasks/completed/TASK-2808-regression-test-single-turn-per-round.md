@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -192,8 +192,30 @@ async def test_system_prompt_has_no_history_digest(bot):
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- Created `packages/ai-parrot/tests/unit/memory/test_history_ownership.py` with the
+  three spec'd tests plus a `RecordingClient(AbstractClient)` stub and an async
+  `bot` fixture (`BaseBot` + `InMemoryConversation`, `injection_detection=False`
+  to skip the HF detector load).
+- **Committed plain-red** (not xfail). Repo CI policy: `.github/workflows` does not
+  gate on this path with a strict-xfail requirement, and the spec's AC explicitly
+  asks for a red run recorded in `artifacts/logs/`. Red evidence:
+  `artifacts/logs/feat-524-task-2808-red.log` — 3 failed, with the expected reasons:
+    * `assert 4 == 2` — four turns persisted for two rounds (client + bot both write)
+    * `assert 5 == 1` — round-1 text reaches the provider five times on round 2
+      (replayed provider messages + the `## Conversation Context:` system-prompt digest)
+    * `'## Conversation Context' not in <system prompt>` — digest present today
+- The stub is written to survive the cut: it probes for the pre-FEAT-524 helpers
+  (`_prepare_conversation_context` / `_update_conversation_memory`) with `getattr`
+  and falls back to the post-FEAT-524 `_build_messages` / `history=` path. The same
+  file therefore measures the same three properties before and after TASK-2816
+  instead of being rewritten mid-feature.
+- `ruff check` clean on the new file.
+- No production code touched.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `artifacts/logs/feat-524-task-2808-red.log` was written but **not committed**:
+  `.gitignore:283` ignores `artifacts/`. The log exists on disk in the worktree as
+  evidence; force-adding it would fight a deliberate repo-wide rule.

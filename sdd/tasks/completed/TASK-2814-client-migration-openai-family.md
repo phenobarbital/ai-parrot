@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2812
@@ -130,8 +130,91 @@ def test_grok_has_no_private_memory_path():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+All 7 files migrated: 14 `ask`/`ask_stream` signatures now take
+`history: Optional[Sequence[HistoryMessage]]` and neither id; 13
+`_prepare_conversation_context(...)` calls became `self._build_messages(prompt, files,
+history)`; 14 `_update_conversation_memory(...)` calls deleted. Verified: the grep for
+`conversation_memory|_prepare_conversation_context|_update_conversation_memory|get_messages_for_api`
+returns **zero** lines across all seven files, and an `inspect.signature` sweep confirms
+all 14 entry points.
 
-**Deviations from spec**: none
+- **`_format_history` shape decision (the task asks for it once, here):** the OpenAI
+  family **inherits the base implementation unchanged**. The OpenAI chat-completions
+  wire protocol accepts `content` as a list of typed parts, which is exactly what the
+  base emits (`[{"type": "text", "text": ...}]`), and it is also what these clients'
+  own `_prepare_messages` already produces for the current turn — so history and current
+  turn stay uniformly shaped with no override. Only Bedrock Converse (TASK-2813) and
+  Google (TASK-2815) need one.
+- **`grok.py`** — private memory path fully removed: both
+  `if self.conversation_memory and user_id and session_id:` history-replay blocks and
+  both hand-rolled `ConversationTurn(...)` + `add_turn(...)` writes, plus the now-dead
+  `from ..memory import ConversationTurn`. Grok does not use `_build_messages` (the xAI
+  SDK wants `chat.append()` calls, not a message list), so it iterates the rendered
+  `history` and dispatches on `message.role`.
+  **Bug found and fixed in passing:** grok's replay read `turn.input` / `turn.output` —
+  attributes `ConversationTurn` does not have (they are `user_message` /
+  `assistant_response`). That replay would have raised `AttributeError` on any second
+  turn. `HistoryMessage` removes the guesswork.
+  Grok's `ask` `turn_id` is now passed to `AIMessageFactory.create_message(turn_id=...)`
+  instead of being dropped — spec §3 M5 says a client-generated `turn_id` is kept "only
+  for `AIMessage.turn_id`", and this makes `ConversationTurn.from_ai_message()` able to
+  reuse it.
+- **`hf.py`** — had its own `_get_conversation_history(user_id, session_id)`, which was a
+  **stub that always returned `[]`** ("This would be implemented based on your memory
+  system"). Replaced with `_history_as_turns(history)`, adapting `HistoryMessage` to the
+  flat `{"role", "content"}` dicts `_prepare_prompt` wants. This client never actually
+  replayed history before; now it does. Its `_build_messages` result was unused (it
+  builds a flat prompt string), so that call was dropped rather than left dead.
+- **`zai.py`** — **name collision resolved.** It already owned a private
+  `async def _build_messages(prompt, files, user_id, session_id, system_prompt)` that
+  would now shadow `AbstractClient._build_messages` (added in TASK-2812). Renamed to
+  `_build_zai_messages`, made synchronous (it never awaited anything), and rewritten to
+  **delegate** to the base helper before adding its two Z.AI-specific extras (leading
+  `system` message + content normalization). Both call sites updated.
+- **`gpt.py::ask_to_image`** — same decision as `claude.py`'s: keeps history support via
+  `history=` + `_format_history`, honouring its existing `no_memory=True` flag. Not
+  listed in the task's scope but it called the removed helper, so it had to move.
+- **`groq.py`'s three stateless analysis helpers** (`summarize_text`,
+  `analyze_sentiment`, `analyze_product_review`) — the task flagged these as "non-`ask`
+  helpers that must also take `history` or drop it". **Decision: drop.** They are
+  one-shot analyses of a supplied text; replaying an unrelated chat history into a
+  summarization prompt was never intentional. They now pass `None` explicitly with a
+  comment. Their `user_id`/`session_id` parameters remain (they only reach
+  `AIMessageFactory` as response metadata) and they are not `ask`/`ask_stream`, so the
+  M5 signature test does not cover them.
+- Tests: `test_grok_no_private_memory.py` (8 passed) — AST + token guard over
+  `conversation_memory` / `ConversationTurn` / `add_turn` / `get_conversation` /
+  `get_messages_for_api`, an import check that only `HistoryMessage` comes from
+  `parrot.memory`, the signature check, and an AST assertion that both entry points
+  actually read `history` and append assistant turns.
+- Suite movement: client suites went **10 newly-red → 4** (18 failed / 454 passed vs the
+  14 failed / 416 passed `dev` baseline). The remaining 4 are all
+  `test_gemini_multiround_usage.py` → TASK-2815. `test_grok_multiround_usage`,
+  `test_openai_multiround_usage` and `test_bedrock_mantle` are now green. As in
+  TASK-2813, **no existing test needed editing** — the "minimal test edits" part of the
+  scope proved unnecessary.
+- Lint: a full `ruff` diff against the same files on `dev` shows **zero new findings**,
+  and two pre-existing ones incidentally fixed (`grok.py` E402, `openai_base.py` unused
+  `typing.Optional`). The 10 findings that remain are all identical to `dev`.
+
+**Deviations from spec**:
+1. **Ids preserved via the FEAT-228 ContextVars, not deleted** — same approach as
+   TASK-2813 and for the same reason. 29 references across the 7 files
+   (`AIMessageFactory(user_id=, session_id=)`, `HumanInteractionInterrupt.session_id`)
+   are metadata/telemetry, not conversation storage, so they now read
+   `current_user_id.get()` / `current_session_id.get()`. `BaseBot` binds both at the top
+   of every call, so the values are unchanged. Uses inside `resume(session_id, ...)`
+   were left alone — different API, explicit parameter.
+2. **Dead locals removed.** 20 lines (`tools_used`, `assistant_response_text`,
+   `assistant_content`, `conversation_session`, `system_prompt`, `all_tool_calls`) whose
+   only consumer was a deleted memory write. Two of them were multi-line assignments
+   whose closing paren had to be cleaned up by hand, and `openai_base.ask_stream`'s
+   `if assistant_content:` guard was removed entirely — it guarded nothing but the write,
+   and a comment is not a valid Python block body. All 10 client modules were re-checked
+   with `ast.parse` afterwards.
+3. **`gpt.py::ask_to_image` and `groq.py`'s three analysis helpers** were touched beyond
+   the task's literal `ask`/`ask_stream` scope, because they called the removed base
+   helpers and would otherwise be `AttributeError` at runtime.

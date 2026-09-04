@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2810, TASK-2811, TASK-2815
@@ -169,8 +169,107 @@ async def test_two_agents_same_session_are_isolated(memory):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+**The loop is closed — TASK-2808's regression tests are green (4 passed).**
 
-**Deviations from spec**: none
+- **`bots/base.py`** — all four entry points (`conversation`, `invoke`, `ask`,
+  `ask_stream`):
+  * every `get_history`/`create_history` now passes `chatbot_id=self.memory_key_id`;
+  * the TASK-2811 stop-gap became
+    `rendered_history = render_history(conversation_history,
+    max_turns=self.max_context_turns, current_chatbot_id=self.memory_key_id)`;
+  * `llm_kwargs` lost `"user_id"`/`"session_id"` and gained `"history"`;
+  * the three `set_conversation_context_info(...)` calls are fed from
+    `bool(rendered_history)` / `len(rendered_history)`, i.e. the message count —
+    which is what the `used_conversation_history` / `conversation_context_length`
+    metadata now means;
+  * all four hand-rolled `ConversationTurn(...)` + `memory.add_turn(...)` pairs became
+    `ConversationTurn.from_ai_message(...)` + `await self.save_conversation_turn(...)`.
+- **`ask_stream`'s partial save is preserved.** It still builds the turn directly from
+  the accumulated `full_response` rather than from an `AIMessage` — that path runs
+  precisely when the stream died before an `AIMessage` sentinel arrived, so
+  `ai_message` may be `None`. It now carries `chatbot_id=self.memory_key_id` and goes
+  through `save_conversation_turn`. Covered by
+  `test_ask_stream_partial_save_on_error`, which kills a stream mid-flight and asserts
+  the yielded text is still persisted.
+- **`bots/data.py`** — history load rendered, `llm_kwargs` swapped, context-info
+  metadata fed from the render, hand-rolled turn → `from_ai_message(...,
+  assistant_text=answer_text)` + `save_conversation_turn` (PandasAgent post-processes
+  its answer text, so that stays authoritative). Its stale comment naming
+  `build_conversation_context()` was corrected.
+- **`bots/voice.py`** — `ask` passes `history=rendered_history` to the Live client; both
+  transcript turn writes go through `save_conversation_turn` with
+  `chatbot_id=self.memory_key_id` (replacing `add_turn(..., chatbot_id=str(self.chatbot_id))`,
+  which used the random uuid). `ask_stream` deliberately renders **nothing** — it drives
+  `client.stream_voice()`, which owns its own realtime Gemini Live session (spec §1
+  Non-Goals); transcripts are still persisted afterwards.
+- **`bots/database/agent.py`** — ids dropped from `llm_kwargs`; it loads no history, so
+  nothing replaces them.
+- **`bots/flows/core/storage/synthesis.py`** — ids dropped from both direct
+  `client.ask(...)` calls.
+- **`parrot_tools/security/summarizer.py`** — `stateless=True` deleted at both call
+  sites, as spec §2 decided.
+- Tests: `test_bot_history_wiring.py`, **19 passed** — history-not-ids on all four entry
+  points, second-round history content and attribution, every memory call keyed by
+  `memory_key_id`, two agents on the same `(user, session)` staying isolated, one turn
+  per round on `ask`/`conversation`/`invoke`/`ask_stream`, the streaming partial save,
+  the canonical turn metadata shape, context-info metadata (0 on round 1, 2 on round 2),
+  `ModelSwitchingMixin` contrastive persisting one turn, and that no bot path calls
+  `add_turn` directly. I separately verified the contrastive test is not a false pass:
+  both the primary and secondary clients receive exactly one call and the merged
+  `AIMessage` carries `metadata['model_switching']`.
+- **Regression check vs `dev`, same command in both trees:**
+  * `tests/unit/bots` + `tests/unit/clients`: worktree 627 passed / 13 failed, dev 305
+    passed / 13 failed — **identical failure set**.
+  * `tests/memory` + `tests/unit/memory`: 220 passed, 0 failed.
+  * `tests/clients`: 6 failed / 354 passed — same set as dev.
+  * `tests/bots`: 74 failed / 1425 passed vs dev's 71 / 1428; the set diff is exactly
+    the 3 `test_porygon_identity_migration` tests, which read `agents/porygon.py` —
+    `/agents/` is gitignored (`.gitignore:294`) so those files do not exist in any
+    worktree. Remaining delta is `test_chrome_runner`, flaky in both directions.
+  * **Zero real regressions.**
+
+**Spec acceptance criteria verified:**
+- `grep "build_conversation_context\|conversation_context="` in
+  `packages/ai-parrot/src` → **zero**.
+- `grep "stateless"` in `summarizer.py` → **zero**.
+- `grep "get_messages_for_api"` across `packages/` → **zero callers** (only the guard
+  test's own string literal and one explanatory comment).
+- No `client.ask(...)`/`ask_stream(...)` call anywhere in `packages/*/src` still passes
+  `user_id=`/`session_id=` (verified by a grep over 10 lines of call context).
+
+**Deviations from spec**:
+1. **`bots/flows/crew/crew.py` — 5 unlisted `client.ask()` calls.** The task's final-sweep
+   instruction is what surfaced them (`run_loop` condition evaluation, crew synthesis,
+   `ask`, chunked summarization, and the executive summary). All five passed
+   `user_id=`/`session_id=` straight into a client and would now raise
+   `TypeError: unexpected keyword argument`. They are one-shot calls that never used
+   conversation history, so the ids were simply removed with nothing replacing them.
+2. **`storage/chat.py:638` fixed** — the spec gap I recorded in TASK-2809's completion
+   note. `ChatStorage.get_context_for_agent` called the removed
+   `history.get_messages_for_api(model=model)` inside a `try/except Exception: pass`, so
+   after TASK-2809 the Redis fast path would have silently degraded to DynamoDB forever
+   rather than failing loudly. Replaced with a `render_history(...)` comprehension
+   producing the same `{"role", "content"}` shape the method's return annotation and its
+   DynamoDB fallback already promise. Spec §1 lists `ChatStorage` as a non-goal, but
+   leaving a knowingly-dead code path is worse than the one-line fix; the surrounding
+   tier (its own writer, its DocumentDB models) is untouched. The `model` parameter is
+   retained on the public signature but is now unused — narrowing it is genuinely out of
+   scope.
+3. **TASK-2808's `test_history_reaches_provider_once` needed two corrections to become a
+   *meaningful* pass**, not just a pass:
+   * its round prompts were `"first"`/`"second"`, and the literal word "first" also
+     occurs in the static tool-usage boilerplate ("Call the first operation"), so the
+     occurrence count could never reach 1. Replaced with distinctive tokens.
+   * it counted over the stub's whole call record, which includes the raw `history`
+     argument the stub was handed — the *input* to formatting, not a second copy on the
+     wire. Now counted over `prompt` + `system_prompt` + `messages` only.
+   A fourth test (`test_history_reaches_provider_as_messages`) was added asserting the
+   positive form: round 1 is replayed as alternating `user`/`assistant` messages and its
+   text is absent from the system prompt.
+4. **The AC grep for `conversation_memory|_prepare_conversation_context|...` under
+   `clients/` returns 2 lines**, both **docstring prose** in `clients/base.py` explaining
+   what `_existing_files` and `_build_messages` replaced. Zero code references. I judged
+   the documentation more valuable than a mechanically-empty grep.

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, AsyncIterator, List, Optional, Union
+from typing import Any, AsyncIterator, List, Optional, Union, Sequence
 import logging
 import warnings
 import asyncio
@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover - exercised when extra is missing
     Part = None  # type: ignore[assignment]
     ModelContent = None  # type: ignore[assignment]
     UserContent = None  # type: ignore[assignment]
+from ...memory.render import HistoryMessage
 from ...models import (
     AIMessage,
     AIMessageFactory,
@@ -1543,6 +1544,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
+        history: Optional[Sequence[HistoryMessage]] = None,
         **kwargs: Any,
     ) -> AIMessage:
         """
@@ -1643,28 +1645,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 except Exception as e:
                     self.logger.warning(f"Failed to load reference image {img}: {e}")
 
-        # --- Conversation history (stateful mode) ------------------------------
-        history = []
-        conversation_session = None
-        turn_id = str(uuid.uuid4())
-        messages = []
-        if not stateless:
-            messages, conversation_session, _ = await self._prepare_conversation_context(
-                full_prompt, None, user_id, session_id, None
-            )
-            for msg in messages[:-1]:
-                role = msg["role"].lower()
-                parts = [
-                    Part(text=pc.get("text", ""))
-                    for pc in msg.get("content", [])
-                    if isinstance(pc, dict) and pc.get("type") == "text"
-                ]
-                if not parts:
-                    continue
-                if role == "user":
-                    history.append(UserContent(parts=parts))
-                elif role in ("assistant", "model"):
-                    history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = (history or ()) if not stateless else ()
+        history = self._format_history(_rendered)
 
         # --- Build config ------------------------------------------------------
         tools = [{"google_search": {}}] if google_search else []
@@ -1773,24 +1760,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             raw_output = generated_images[0] if generated_images else None
 
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_session,
-                    messages
-                    + [
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": f"[Image Generation]: {full_prompt}"}],
-                        }
-                    ],
-                    None,
-                    turn_id,
-                    prompt_text,
-                    text_output,
-                    [],
-                )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+            # single writer; the `if not stateless` guard around it went with it.
 
             return AIMessage(
                 input=prompt_text,

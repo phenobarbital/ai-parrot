@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-524 — Conversation History Ownership
 **Spec**: `sdd/specs/conversation-history-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2809
@@ -154,8 +154,70 @@ def test_build_messages_history_then_prompt(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
 **Notes**:
+- REMOVED from `clients/base.py`: the whole `..memory` storage import block
+  (`ConversationTurn`, `ConversationHistory`, `ConversationMemory`,
+  `InMemoryConversation`, `FileConversationMemory`, `RedisConversation`); the
+  `conversation_memory` ctor param and its `InMemoryConversation()` default;
+  `_get_chatbot_key`, `start_conversation`, `get_conversation`, `clear_conversation`,
+  `delete_conversation`, `list_user_conversations`; `_prepare_conversation_context`
+  (106 lines) and `_update_conversation_memory` (34 lines). Explanatory NOTE comments
+  left at both removal sites.
+- ADDED `_format_history()` (default text-content-block shape, the single override
+  point for providers), `_build_messages(prompt, files, history)` (composes
+  `[*history, current]`), and `_existing_files()` — the missing-attachment filter
+  lifted verbatim out of the removed `_prepare_conversation_context` so a nonexistent
+  file is still logged and skipped instead of raising from `_encode_file()`.
+- `ask()` / `ask_stream()`: `user_id`/`session_id` dropped, `history:
+  Optional[Sequence[HistoryMessage]] = None` added right after `system_prompt`,
+  docstrings updated. `Sequence` was already imported (`typing`, line 2).
+- Type import is `from ..memory.render import HistoryMessage` — the leaf module,
+  verified by `test_base_module_imports_no_storage_backend` which greps the module
+  source for any non-comment storage-class reference.
+- FEAT-302 guarantee preserved and tested: the current turn is encoded exactly once,
+  after the history (`test_build_messages_encodes_current_turn_once`).
+- `python -c "import parrot.clients, parrot.memory"` OK; `ruff check` clean on both files.
+- Tests: `test_abstract_client_memoryless.py`, 29 passed.
 
-**Deviations from spec**: none
+**`user_id`/`session_id` survivors in `clients/base.py`** (all legitimate, none in an
+`ask`/`ask_stream` signature):
+  - `:61-62, :561-562, :640-641, :688-689, :730-731` — the `current_user_id` /
+    `current_session_id` **ContextVars** used for OTEL usage attribution (FEAT-228).
+    Telemetry, not conversation state.
+  - `:1424, :1441` — docstring/comment about `tool_context`.
+  - `:1737, :1741` — `resume(session_id, ...)`, the provider-side suspended-execution
+    API. Unrelated to conversation history; the spec does not list it for change.
+
+**Expected-red concrete-client tests until TASK-2815** (as the task requires me to
+list). Measured by running `packages/ai-parrot/tests/unit/clients` +
+`packages/ai-parrot/tests/clients` in both trees: `dev` 14 failed / 416 passed,
+worktree 85 failed / 374 passed → **71 newly red**, all in these files:
+  - `packages/ai-parrot/tests/clients/test_bedrock_advanced.py`
+  - `packages/ai-parrot/tests/clients/test_bedrock_converse.py`
+  - `packages/ai-parrot/tests/clients/test_bedrock_errors.py`
+  - `packages/ai-parrot/tests/clients/test_bedrock_integration.py`
+  - `packages/ai-parrot/tests/clients/test_bedrock_mantle.py`
+  - `packages/ai-parrot/tests/clients/test_bedrock_thinking.py`
+  - `packages/ai-parrot/tests/clients/test_nova.py`
+  - `packages/ai-parrot/tests/unit/clients/test_bedrock_multiround_usage.py`
+  - `packages/ai-parrot/tests/unit/clients/test_claude_multiround_usage.py`
+  - `packages/ai-parrot/tests/unit/clients/test_gemini_multiround_usage.py`
+  - `packages/ai-parrot/tests/unit/clients/test_grok_multiround_usage.py`
+  - `packages/ai-parrot/tests/unit/clients/test_openai_multiround_usage.py`
+The concrete clients still override `ask()` with the old signature and still call the
+removed `_prepare_conversation_context` / `_update_conversation_memory`. This is
+breakage at CALL time, not import time — `import parrot.clients` still succeeds — and
+is resolved by TASK-2813 (anthropic/bedrock), TASK-2814 (openai family) and TASK-2815
+(google/live). Tasks run sequentially in this worktree, so nothing ships in this state.
+
+**Deviations from spec**:
+- **Also removed the `create_conversation_memory()` static factory** (`base.py:2597`),
+  which the task's removal list does not mention. It had **zero callers** anywhere in
+  `packages/` and was the last thing importing `InMemoryConversation` /
+  `RedisConversation` / `FileConversationMemory` into the module — leaving it would have
+  violated this task's own acceptance criterion ("zero references to `parrot.memory`
+  storage classes remain in `clients/base.py`") and kept the Redis/aiofiles dependency
+  on the client import path, which spec §5 explicitly forbids.
+  `AbstractBot.get_conversation_memory()` is the bot-side equivalent and is untouched.

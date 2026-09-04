@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 from collections import defaultdict
 import copy
 import difflib
@@ -54,6 +54,11 @@ def _require_google_sdk() -> None:
 
 import pandas as pd
 from ..base import AbstractClient, ToolDefinition, StreamingRetryConfig
+from ...memory.render import HistoryMessage
+
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from ...models import (
     AIMessage,
     AIMessageFactory,
@@ -295,9 +300,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return GoogleGenAIClient._requires_thinking(model) or model.lower().startswith(
-            "gemini-3.5-flash-lite"
-        )
+        return GoogleGenAIClient._requires_thinking(model) or model.lower().startswith("gemini-3.5-flash-lite")
 
     @classmethod
     def _thinking_off(cls, model: str, **kwargs) -> "Optional[ThinkingConfig]":
@@ -2972,6 +2975,61 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return result
 
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Any]:
+        """Render conversation history as google.genai ``Content`` objects.
+
+        Overrides :meth:`AbstractClient._format_history` (which emits
+        Anthropic-shaped text-block dicts) because the Google SDK's
+        ``chats.create(history=...)`` takes typed ``UserContent`` /
+        ``ModelContent``. Before FEAT-524 this mapping was hand-inlined at six
+        call sites across ``client.py``, ``analysis.py`` and ``generation.py``;
+        this is the single copy they all now share.
+
+        Args:
+            history: Provider-neutral messages from
+                :func:`parrot.memory.render_history`.
+
+        Returns:
+            ``UserContent`` / ``ModelContent`` objects, in order. Messages whose
+            text is blank are skipped — the SDK rejects contentless parts.
+        """
+        rendered: List[Any] = []
+        for message in history or ():
+            if not (message.content or "").strip():
+                continue
+            parts = [Part(text=message.content)]
+            if message.role == "assistant":
+                rendered.append(ModelContent(parts=parts))
+            else:
+                rendered.append(UserContent(parts=parts))
+        return rendered
+
+    def _dict_messages(
+        self,
+        prompt: str,
+        files: Optional[List[Union[str, Path]]] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Dict-shaped ``[*history, current]`` for the HITL resume accumulator.
+
+        :meth:`_format_history` returns typed SDK objects, but :meth:`resume`
+        rebuilds its chat from ``state["messages"]`` by calling
+        ``msg.get("role")`` on each entry — so the accumulator handed to the
+        tool loop must stay plain dicts. Keeping the two shapes in separate
+        methods is what makes that constraint explicit.
+
+        Args:
+            prompt: The current user prompt.
+            files: Optional attachments for the current turn.
+            history: Already-rendered conversation history.
+
+        Returns:
+            Plain dicts, as :meth:`AbstractClient._format_history` produces.
+        """
+        return AbstractClient._format_history(self, history or ()) + [
+            self._prepare_messages(prompt, self._existing_files(files))[0]
+        ]
+
     async def ask(
         self,
         prompt: str,
@@ -2981,12 +3039,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         use_thinking: Optional[bool] = None,
-        stateless: bool = False,
         deep_research: bool = False,
         file_search_store_names: Optional[List[str]] = None,
         lazy_loading: bool = False,
@@ -3010,7 +3066,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id: Optional session identifier for tracking.
             force_tool_usage (Optional[str]): Force usage of specific tools, if needed.
                 ("custom_functions", "builtin_tools", or None)
-            stateless (bool): If True, don't use conversation memory (stateless mode).
+            history: Already-rendered conversation history supplied by the
+                owning bot (FEAT-524). Omit it for a stateless call — the
+                `stateless` flag this replaced no longer exists.
             deep_research (bool): If True, use Google's deep research agent.
             file_search_store_names (Optional[List[str]]): Names of file search stores for deep research.
             max_iterations (int): Maximum number of tool-calling rounds (default 15).
@@ -3030,8 +3088,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return await self._deep_research_ask(
                 prompt=prompt,
                 file_search_store_names=file_search_store_names,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 files=files,
             )
 
@@ -3068,8 +3126,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self._tool_context = {
             k: v
             for k, v in {
-                "user_id": user_id,
-                "session_id": session_id,
+                "user_id": current_user_id.get(),
+                "session_id": current_session_id.get(),
             }.items()
             if v is not None
         }
@@ -3081,47 +3139,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Indexed by tool name; request-scoped tools win on collisions.
         self._request_tools = {getattr(t, "name", None): t for t in (tools or []) if getattr(t, "name", None)}
 
-        # Prepare conversation context using unified memory system
-        conversation_history = None
-        messages = []
-
-        # Use the abstract method to prepare conversation context
-        if stateless:
-            # For stateless mode, skip conversation memory
-            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-            conversation_history = None
-        else:
-            # Use the unified conversation context preparation from AbstractClient
-            messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-                prompt, files, user_id, session_id, system_prompt, stateless=stateless
-            )
-
-        # Prepare conversation history for Google GenAI format
-        history = []
-        # Construct history directly from the 'messages' array, which should be in the correct format
-        if messages:
-            for msg in messages[:-1]:  # Exclude the current user message (last in list)
-                role = msg["role"].lower()
-                # Assuming content is already in the format [{"type": "text", "text": "..."}]
-                # or other GenAI Part types if files were involved.
-                # Here, we only expect text content for history, as images/files are for the current turn.
-                if role == "user":
-                    # Content can be a list of dicts (for text/parts) or a single string.
-                    # Standardize to list of Parts.
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                        # Add other part types if necessary for history (e.g., function responses)
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ["assistant", "model"]:
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = history or ()
+        messages = self._dict_messages(prompt, files, _rendered)
+        history = self._format_history(_rendered)
 
         default_tokens = self._resolve_max_tokens(max_tokens)
         generation_config = {"temperature": temperature or self.temperature}
@@ -3353,12 +3378,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "GenerateContentConfig does not support cached_content assignment; " "continuing without cache."
                     )
 
-        # Single execution path for both stateless and stateful modes.
-        # ``stateless`` only controls whether conversation history is loaded
-        # earlier (see _prepare_conversation_context above) — it does NOT
-        # change how tool-calling iterates or how the request is dispatched.
-        # In stateless mode ``history`` is empty; in stateful mode it carries
-        # the prior turns. Everything else is identical.
+        # Single execution path whether or not history was supplied. FEAT-524
+        # removed the `stateless` flag: a caller that wants a stateless call
+        # simply passes no ``history``, and ``_format_history`` renders it to an
+        # empty list. Tool-calling and dispatch are identical either way.
         current_model = model
         chat = self.client.aio.chats.create(model=current_model, history=history)
         retry_count = 0
@@ -3479,7 +3502,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             max_retries=max_retries,
             lazy_loading=lazy_loading,
             active_tool_names=active_tool_names,
-            session_id=session_id,
+            session_id=current_session_id.get(),
             messages=messages,
             stop_tools=stop_tools,
             round_tc=_lc_tc_google,
@@ -3697,31 +3720,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         else:
             final_output = assistant_response_text
 
-        # Update conversation memory with the final response
-        final_assistant_message = {
-            "role": "model",
-            "content": [
-                {
-                    "type": "text",
-                    "text": str(final_output) if final_output != assistant_response_text else assistant_response_text,
-                }
-            ],
-        }
-
-        # Update conversation memory with unified system
-        if not stateless and conversation_history:
-            tools_used = [tc.name for tc in all_tool_calls]
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_history,
-                messages + [final_assistant_message],
-                system_prompt,
-                turn_id,
-                original_prompt,
-                assistant_response_text,
-                tools_used,
-            )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+        # single writer. The assistant-message dict built here, and the
+        # `if not stateless and conversation_history:` guard, existed only for it.
         # Prepare code execution content for AIMessage
         extracted_images = code_execution_content.get("images", []) if code_execution_content else []
         extracted_code = (
@@ -3745,12 +3746,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             response=response,
             input_text=original_prompt,
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output,
             tool_calls=all_tool_calls,
-            conversation_history=conversation_history,
             text_response=assistant_response_text,
             files=extracted_images,
             images=extracted_images,
@@ -3907,14 +3907,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         use_thinking: Optional[bool] = None,
-        stateless: bool = False,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
@@ -3961,8 +3959,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self._tool_context = {
             k: v
             for k, v in {
-                "user_id": user_id,
-                "session_id": session_id,
+                "user_id": current_user_id.get(),
+                "session_id": current_session_id.get(),
             }.items()
             if v is not None
         }
@@ -3972,7 +3970,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             yield "_Gathering information and exploring sources..._\n\n"
             try:
                 ai_message = await self._deep_research_ask(
-                    prompt=prompt, model=model, agent_config=agent_config, user_id=user_id, session_id=session_id
+                    prompt=prompt,
+                    model=model,
+                    agent_config=agent_config,
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
                 yield ai_message.text_response
                 yield ai_message
@@ -3988,29 +3990,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if retry_config is None:
             retry_config = StreamingRetryConfig()
 
-        # Use the unified conversation context preparation
-        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
-        history = []
-        if messages:
-            for msg in messages[:-1]:  # Exclude current user message
-                role = msg["role"].lower()
-                if role == "user":
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ["assistant", "model"]:
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = history or ()
+        messages = self._dict_messages(prompt, files, _rendered)
+        history = self._format_history(_rendered)
 
         _use_tools = use_tools if use_tools is not None else getattr(self, "enable_tools", False)
 
@@ -4197,9 +4184,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             # the client's invoke-tier budget in that case
                             # rather than multiplying None.
                             _base_cap = (
-                                current_max_tokens
-                                if current_max_tokens is not None
-                                else self._invoke_max_tokens
+                                current_max_tokens if current_max_tokens is not None else self._invoke_max_tokens
                             )
                             new_max_tokens = int(_base_cap * retry_config.token_increase_factor)
                             yield f"\n\n🔄 **Retrying with increased limit ({new_max_tokens})...**\n\n"
@@ -4251,7 +4236,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         for tc, fc, result in zip(tool_call_objects, collected_function_calls, tool_results):
                             tc.execution_time = execution_time / len(tool_call_objects) if tool_call_objects else 0
                             if isinstance(result, HumanInteractionInterrupt):
-                                result.session_id = session_id
+                                result.session_id = current_session_id.get()
                                 result.messages = messages.copy() if messages else []
                                 result.tool_call_id = getattr(fc, "id", "")
                                 result.agent_name = getattr(self, "name", "Google_Agent")
@@ -4425,23 +4410,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     except Exception:
                         pass
 
-            if final_text and not stateless:
-                final_assistant_message = {
-                    "role": "model",
-                    "content": [{"type": "text", "text": str(final_output) if final_output else final_text}],
-                }
-                tools_used = [tc.name for tc in all_tool_calls_history]
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_history,
-                    messages + [final_assistant_message],
-                    system_prompt,
-                    turn_id,
-                    prompt,
-                    final_text,
-                    tools_used,
-                )
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
+            # the single writer; the `if final_text and not stateless:` guard and
+            # the assistant-message dict it built existed only for that write.
 
             # FEAT-252 (TASK-1613): chokepoint — stream assembles text per-chunk;
             # run _resolve_final_response on the final assembled text only (Risk R3)
@@ -4451,12 +4422,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 response=None,
                 input_text=prompt,
                 model=model,
-                user_id=user_id,
-                session_id=session_id,
+                user_id=current_user_id.get(),
+                session_id=current_session_id.get(),
                 turn_id=turn_id,
                 structured_output=final_output if final_output is not None else final_text,
                 tool_calls=all_tool_calls_history,
-                conversation_history=conversation_history,
                 text_response=final_text,
                 files=[],
                 images=[],
@@ -5010,8 +4980,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
         count_objects: bool = False,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         no_memory: bool = False,
     ) -> AIMessage:
         """
@@ -5023,34 +4992,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        if no_memory:
-            # For no_memory mode, skip conversation memory
-            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-            conversation_session = None
-        else:
-            messages, conversation_session, _ = await self._prepare_conversation_context(
-                prompt, None, user_id, session_id, None
-            )
-
-        # Prepare conversation history for Google GenAI format
-        history = []
-        if messages:
-            for msg in messages[:-1]:  # Exclude the current user message (last in list)
-                role = msg["role"].lower()
-                if role == "user":
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ["assistant", "model"]:
-                    parts = []
-                    for part_content in msg.get("content", []):
-                        if isinstance(part_content, dict) and part_content.get("type") == "text":
-                            parts.append(Part(text=part_content.get("text", "")))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
+        # FEAT-524: the bot supplies the rendered history. Two shapes are
+        # needed here: `history` as google.genai Content objects for
+        # chats.create(history=...), and `messages` dict-shaped for the HITL
+        # resume accumulator (resume() re-parses state["messages"] with
+        # msg.get("role"), so typed Content objects would break it).
+        _rendered = () if no_memory else (history or ())
+        history = self._format_history(_rendered)
 
         # --- Multi-Modal Content Preparation ---
         if isinstance(image, Path):
@@ -5105,9 +5053,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Disable thinking for image tasks (reduces latency).
         # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
         _thinking = (
-            ThinkingConfig(thinking_budget=8192)
-            if self._requires_thinking(model)
-            else self._thinking_off(model)
+            ThinkingConfig(thinking_budget=8192) if self._requires_thinking(model) else self._thinking_off(model)
         )
         final_config = GenerateContentConfig(
             **generation_config,
@@ -5159,23 +5105,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         else:
             final_output = response.text
 
-        final_assistant_message = {"role": "model", "content": [{"type": "text", "text": final_output}]}
-        if no_memory is False:
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages
-                + [
-                    {"role": "user", "content": [{"type": "text", "text": f"[Image Analysis]: {prompt}"}]},
-                    final_assistant_message,
-                ],
-                None,
-                turn_id,
-                original_prompt,
-                response.text,
-                [],
-            )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the
+        # single writer; the `if no_memory is False` guard around it went with it.
         # FEAT-252 (TASK-1613): chokepoint for vision ask
         _vision_text = self._resolve_final_response(getattr(response, "text", "") or "", [], None)
 
@@ -5183,8 +5114,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             response=response,
             input_text=original_prompt,
             model=model,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
             tool_calls=[],
@@ -5681,9 +5612,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if needs_two_call:
                 # --- First call: tools, no structured output ---
                 tool_defs = self._prepare_tools()
-                first_thinking = self._invoke_thinking_config(
-                    resolved_model, structured=False
-                )
+                first_thinking = self._invoke_thinking_config(resolved_model, structured=False)
                 first_config = GenerateContentConfig(
                     system_instruction=resolved_prompt,
                     max_output_tokens=max_tokens,
@@ -5704,9 +5633,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     f"Based on this information:\n{first_text}\n\n"
                     f"Original request: {prompt}\n\nProvide structured output."
                 )
-                second_thinking = self._invoke_thinking_config(
-                    resolved_model, structured=True
-                )
+                second_thinking = self._invoke_thinking_config(resolved_model, structured=True)
                 second_config = GenerateContentConfig(
                     system_instruction=resolved_prompt,
                     max_output_tokens=max_tokens,
@@ -5740,9 +5667,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if sdk_tools:
                         gen_config_kwargs["tools"] = sdk_tools
 
-                thinking = self._invoke_thinking_config(
-                    resolved_model, structured=config is not None
-                )
+                thinking = self._invoke_thinking_config(resolved_model, structured=config is not None)
                 if thinking is not None:
                     gen_config_kwargs["thinking_config"] = thinking
 
@@ -5790,8 +5715,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # call to work from — recovering there would just burn a
                         # second request. Same idiom as the combined-mode path.
                         self.logger.warning(
-                            "invoke(): structured parse returned raw text for %s — "
-                            "falling back to a reformat call.",
+                            "invoke(): structured parse returned raw text for %s — " "falling back to a reformat call.",
                             resolved_model,
                         )
                         output = await self._reformat_to_structured(

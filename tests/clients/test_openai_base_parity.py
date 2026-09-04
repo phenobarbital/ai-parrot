@@ -13,6 +13,7 @@ route through the single ``_chat_completion()`` funnel, that
 (TASK-1175 contract), and that ``invoke()`` still returns an
 ``InvokeResult``.
 """
+
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import AsyncMock
@@ -45,8 +46,14 @@ def test_openai_client_extends_base():
 @pytest.mark.parametrize(
     "cls",
     [
-        OpenRouterClient, MoonshotClient, NvidiaClient, LocalLLMClient,
-        vLLMClient, BedrockMantleClient, GroqClient, ZaiClient,
+        OpenRouterClient,
+        MoonshotClient,
+        NvidiaClient,
+        LocalLLMClient,
+        vLLMClient,
+        BedrockMantleClient,
+        GroqClient,
+        ZaiClient,
     ],
     ids=lambda c: c.__name__,
 )
@@ -107,14 +114,24 @@ async def test_tool_loop_executes_and_accumulates():
 
     round1_tool_call = _make_tool_call("call_1", "calculator", '{"expression": "40+2"}')
     round1_message = _make_message(content=None, tool_calls=[round1_tool_call])
-    round1_response = _make_response(round1_message, usage=SimpleNamespace(
-        prompt_tokens=10, completion_tokens=5, total_tokens=15,
-    ))
+    round1_response = _make_response(
+        round1_message,
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+    )
 
     final_message = _make_message(content="the answer is 42", tool_calls=None)
-    final_response = _make_response(final_message, usage=SimpleNamespace(
-        prompt_tokens=8, completion_tokens=4, total_tokens=12,
-    ))
+    final_response = _make_response(
+        final_message,
+        usage=SimpleNamespace(
+            prompt_tokens=8,
+            completion_tokens=4,
+            total_tokens=12,
+        ),
+    )
 
     call_completion = AsyncMock(return_value=final_response)
 
@@ -268,18 +285,14 @@ class _FunnelSpy(OpenAIBaseClient):
         return _make_response(message, usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5))
 
 
-async def _noop_conversation_context(*_a, **_kw):
-    return [], None, None
-
-
-async def _noop_update_conversation_memory(*_a, **_kw):
-    return None
+def _noop_build_messages(*_a, **_kw):
+    """FEAT-524: replaces the removed _prepare_conversation_context stub."""
+    return []
 
 
 def _make_funnel_spy(**kwargs):
     client = _FunnelSpy(api_key="k", base_url="http://x/v1", model="m", **kwargs)
-    client._prepare_conversation_context = _noop_conversation_context
-    client._update_conversation_memory = _noop_update_conversation_memory
+    client._build_messages = _noop_build_messages
     return client
 
 
@@ -350,9 +363,7 @@ _ASK_STREAM_FUNNEL_ROSTER = [c for c in WIRE_SUBCLASSES if c is not vLLMClient]
 # _chat_completion (TASK-2300 kept it verbatim for its real
 # schema-in-prompt structured-output fallback value, calling the SDK
 # directly) — not a funnel-coverage gap, a deliberate exception.
-_INVOKE_FUNNEL_ROSTER = [
-    c for c in WIRE_SUBCLASSES if c not in (LocalLLMClient, vLLMClient)
-]
+_INVOKE_FUNNEL_ROSTER = [c for c in WIRE_SUBCLASSES if c not in (LocalLLMClient, vLLMClient)]
 
 
 def _parity_client_kwargs(cls) -> dict:
@@ -476,6 +487,7 @@ def _make_funnel_coverage_spy():
     async def _chat_completion(self, model, messages, use_tools=False, stream=False, **kwargs):
         calls.append({"model": model, "use_tools": use_tools, "stream": stream})
         if stream:
+
             async def _gen():
                 yield SimpleNamespace(
                     choices=[SimpleNamespace(delta=SimpleNamespace(content="hi"))],
@@ -485,6 +497,7 @@ def _make_funnel_coverage_spy():
                     choices=[],
                     usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
                 )
+
             return _gen()
         message = SimpleNamespace(content="ok", tool_calls=None)
         choice = SimpleNamespace(message=message, finish_reason="stop", stop_reason="stop")
@@ -545,9 +558,7 @@ def _zai_completion_response(content="ok", tool_calls=None):
     """Build a SimpleNamespace shaped like the official zai SDK's
     (synchronous) chat-completion response — mirrors
     packages/ai-parrot/tests/test_zai_client.py's ``completion_response``."""
-    message = SimpleNamespace(
-        content=content, role="assistant", reasoning_content=None, tool_calls=tool_calls
-    )
+    message = SimpleNamespace(content=content, role="assistant", reasoning_content=None, tool_calls=tool_calls)
     choice = SimpleNamespace(message=message, finish_reason="stop")
     usage = SimpleNamespace(
         prompt_tokens=10,
@@ -601,9 +612,7 @@ async def test_zai_thinking_payload_preserved():
     payload as a "thinking" key — real provider behavior, unaffected by
     the rebase."""
     fake_sdk = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=lambda **kw: _zai_completion_response())
-        )
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: _zai_completion_response()))
     )
     client = ZaiClient(api_key="test-key")
     client._ensure_client = AsyncMock(return_value=fake_sdk)
@@ -659,14 +668,14 @@ async def test_zai_stream_final_yield_is_aimessage():
         pass  # pragma: no cover - never awaited; zai SDK is synchronous
 
     def _sync_stream_create(**kwargs):
-        return iter([
-            _zai_stream_chunk(content="chunk-a"),
-            _zai_stream_chunk(content="chunk-b", finish_reason="stop"),
-        ])
+        return iter(
+            [
+                _zai_stream_chunk(content="chunk-a"),
+                _zai_stream_chunk(content="chunk-b", finish_reason="stop"),
+            ]
+        )
 
-    fake_sdk = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=_sync_stream_create))
-    )
+    fake_sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_sync_stream_create)))
     client = ZaiClient(api_key="test-key")
     client._ensure_client = AsyncMock(return_value=fake_sdk)
 
