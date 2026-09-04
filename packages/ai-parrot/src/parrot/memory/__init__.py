@@ -10,6 +10,7 @@ from .episodic import (
 from .file import FileConversationMemory
 from .mem import InMemoryConversation
 from .redis import RedisConversation
+from .render import HistoryMessage, render_history
 from .unified import (
     ContextAssembler,
     LongTermMemoryMixin,
@@ -91,12 +92,14 @@ __all__ = [
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
     "FileConversationMemory",
+    "HistoryMessage",
     "InMemoryConversation",
     "LongTermMemoryMixin",
     "MemoryConfig",
     "MemoryContext",
     "RedisConversation",
     "UnifiedMemoryManager",
+    "render_history",
     "load_state",
     "save_state",
 ]

@@ -1,10 +1,16 @@
 
-from typing import List, Dict, Any, Optional
+import uuid
+from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from abc import ABC, abstractmethod
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # Imported lazily: ``parrot.models`` must not become a runtime dependency
+    # of ``parrot.memory`` (FEAT-524 keeps this package import-cycle free).
+    from parrot.models import AIMessage
 
 
 @dataclass
@@ -18,6 +24,10 @@ class ConversationTurn:
     tools_used: List[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    #: The agent that produced this turn (FEAT-524). Always set by
+    #: ``AbstractBot.save_conversation_turn``; ``None`` on records written
+    #: before attribution existed.
+    chatbot_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize turn to dictionary."""
@@ -29,7 +39,8 @@ class ConversationTurn:
             'context_used': self.context_used,
             'tools_used': self.tools_used,
             'timestamp': self.timestamp.isoformat(),
-            'metadata': self.metadata
+            'metadata': self.metadata,
+            'chatbot_id': self.chatbot_id
         }
 
     @classmethod
@@ -43,7 +54,75 @@ class ConversationTurn:
             context_used=data.get('context_used'),
             tools_used=data.get('tools_used', []),
             timestamp=datetime.fromisoformat(data['timestamp']),
-            metadata=data.get('metadata', {})
+            metadata=data.get('metadata', {}),
+            # Legacy records predate attribution — absent key means "unknown".
+            chatbot_id=data.get('chatbot_id')
+        )
+
+    @classmethod
+    def from_ai_message(
+        cls,
+        *,
+        user_message: str,
+        response: "AIMessage",
+        user_id: str,
+        chatbot_id: str,
+        context_used: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        assistant_text: Optional[str] = None,
+    ) -> 'ConversationTurn':
+        """Build a turn from the ``AIMessage`` a bot round produced.
+
+        This is the canonical constructor used by
+        ``AbstractBot.save_conversation_turn`` call sites (FEAT-524). Before
+        this existed every bot entry point hand-rolled its own turn with
+        slightly different metadata keys; routing through here gives every
+        persisted turn one shape.
+
+        Args:
+            user_message: The user's text for this round.
+            response: The final :class:`~parrot.models.responses.AIMessage`
+                returned by the bot — i.e. *after* guardrails, redaction and
+                formatting, not the raw client output.
+            user_id: Owner of the conversation.
+            chatbot_id: The agent producing the turn. Must be the bot's
+                ``memory_key_id`` — attribution and storage key must agree.
+            context_used: Optional retrieval context string used this round.
+            turn_id: Explicit turn id. Defaults to ``response.turn_id``, then
+                to a fresh uuid4.
+            assistant_text: Overrides the assistant text taken from
+                ``response``. Used by the streaming partial-save path, where
+                the accumulated text is authoritative and the ``AIMessage`` is
+                synthesized after the fact.
+
+        Returns:
+            A fully populated :class:`ConversationTurn`.
+        """
+        if assistant_text is not None:
+            answer = assistant_text
+        else:
+            answer = getattr(response, "to_text", None)
+            if answer is None:
+                answer = str(getattr(response, "content", "") or "")
+
+        tool_calls = getattr(response, "tool_calls", None) or []
+        usage = getattr(response, "usage", None)
+
+        return cls(
+            turn_id=turn_id or getattr(response, "turn_id", None) or str(uuid.uuid4()),
+            user_id=user_id,
+            user_message=user_message,
+            assistant_response=answer,
+            context_used=context_used,
+            tools_used=[tc.name for tc in tool_calls],
+            metadata={
+                "model": getattr(response, "model", None),
+                "provider": getattr(response, "provider", None),
+                "usage": usage.model_dump() if hasattr(usage, "model_dump") else usage,
+                "finish_reason": getattr(response, "finish_reason", None),
+                "response_time": getattr(response, "response_time", None),
+            },
+            chatbot_id=chatbot_id,
         )
 
 
@@ -67,35 +146,10 @@ class ConversationHistory:
         """Get the most recent turns for context."""
         return self.turns[-count:] if count > 0 else self.turns
 
-    def get_messages_for_api(self, model: str = 'claude') -> List[Dict[str, Any]]:
-        """Convert turns to API message format for LLM Model."""
-        messages = []
-        if model == 'claude':
-            # Claude expects messages in a specific format
-            for turn in self.turns:
-                messages.append({
-                    "role": "user",
-                    "content": turn.user_message
-                })
-                messages.append({
-                    "role": "assistant",
-                    "content": turn.assistant_response
-                })
-        else:
-            # Default format for other models
-            # This can be adjusted based on the specific model requirements
-            for turn in self.turns:
-                # Add user message
-                messages.append({
-                    "role": "user",
-                    "content": [{"type": "text", "text": turn.user_message}]
-                })
-                # Add assistant response
-                messages.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": turn.assistant_response}]
-                })
-        return messages
+    # NOTE (FEAT-524): ``get_messages_for_api()`` was removed here. Rendering a
+    # history into messages is provider-agnostic work that belongs in
+    # ``parrot.memory.render.render_history()``, and mapping the result onto a
+    # provider's shape belongs in ``AbstractClient._format_history()``.
 
     def clear_turns(self) -> None:
         """Clear all turns from the conversation history."""
