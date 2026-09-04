@@ -304,7 +304,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -314,8 +314,8 @@
       "parallelism_notes": "Sequential: final gate over all satellites.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2855-tests-migration-verification.md"
+      "completed_at": "2026-09-04T21:53:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2855-tests-migration-verification.md"
     }
   ],
   "superseded_tasks": {
