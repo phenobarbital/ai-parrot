@@ -143,10 +143,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Same shape as TASK-2849/2850. `git mv` all three provider folders
+(google's `analysis.py`/`generation.py` — not individually named in the
+Codebase Contract but part of the same folder — moved with it); no stray
+`__init__.py` verified for any of the three.
+
+**Contract corrections** (verified against actual code, same pattern as
+TASK-2850's amazon/anthropic direction fix):
+
+1. **google**: the Codebase Contract listed "SDK: google-genai>=2.18.1
+   (+ google-api-python-client, google-cloud-texttospeech per spec map)".
+   `grep -rn "from google\|import google" parrot/clients/google/*.py`
+   shows only `google.genai`/`google.oauth2`/`google.auth` — never
+   `googleapiclient`/`texttospeech`/`aiplatform`. Those three extra SDKs
+   back OTHER core Google integrations (Calendar/Sheets/TTS tools),
+   unrelated to this LLM client. Declared `google-genai>=2.18.1` only.
+2. **gemma4/hf**: the Codebase Contract listed "transformers>=4.48.0,<5.0,
+   torch" (gemma4) and "transformers>=4.48.0,<5.0, sentence-transformers"
+   (hf). Spec §7's own External Dependencies table lists only
+   `transformers` for both — the more authoritative, formal source.
+   Verified via grep: both import `torch` lazily inside methods only (a
+   pre-existing "avoid heavy deps until used" comment/pattern, unchanged
+   by this pure `git mv`); neither imports `sentence-transformers`
+   anywhere (that package backs the unrelated `ai-parrot-embeddings
+   [huggingface]` extra). Declared `transformers>=4.48.0,<5.0` only for
+   both, per the Key Constraint's explicit "must NOT include SDKs the
+   provider does not import".
+
+Moved `test_gemini_multiround_usage.py` + `test_google_format_history.py`
+(both confirmed via import-line grep to target `parrot.clients.google`)
+into the google satellite. No `tests/unit/clients/gemma4/` or `/hf/`
+files existed to move for those two.
+
+`factory.py`: removed `"google"`, `"gemma4"`, `"hf"` from
+`_IN_CORE_PROVIDERS`. Updated `test_factory_discovery.py`'s two
+example-in-core-provider assertions (previously `"google"`, extracted now)
+to `"groq"`/`"zai"`.
+
+**Verification**: `uv sync --all-packages` (worktree-local `.venv`,
+reused across TASK-2849/2850/2851) built and installed all three new
+satellites. Real entry points now cover all 7 satellites extracted so
+far (14 provider keys total): `openai, codex-agent, openai-codex,
+codex-code, meta, muse, meta-muse, anthropic, claude, bedrock,
+anthropic-aws, claude-agent, claude-code, bedrock-converse, nova,
+bedrock-mantle, mantle, google, gemini-live, gemma4, hf, transformers`.
+`LLMFactory.create("google:gemini-2.5-flash")` resolves correctly.
+Satellite suites: google 12/12, gemma4 1/1, hf 1/1, all green.
+`transformers` genuinely installed via the satellite dependency (not
+`torch`) and `test_folder_convention.py`'s `[hf]`/`[gemma4]` rows pass
+without `torch` present — confirms the "leave torch undeclared" call is
+sound for what these tests actually check. `ruff check` on every new/
+touched file → only pre-existing findings in `hf/client.py` (F821 `torch`
+quoted-annotation, F841 `turn_id`), confirmed via `diff` against the
+pre-move committed content to be byte-for-byte unchanged. Core clients
+unit suite (worktree venv, `transformers` genuinely present, `google-genai`
+not needed anymore since google left core) → only the pre-existing
+grok/groq multiround failures. Broader server/studio + pipelines
+regression sweep (shared venv, PYTHONPATH updated with the 3 new
+satellite `src/` dirs) → same pre-existing failures only
+(`test_meta_agent.py` × 3, `test_endcap_no_shelves_promotional.py` × 1,
+`test_planogram_types.py::test_unknown_type_raises_valueerror` × 1 — all
+confirmed via `git stash` to predate this task).
+
+**Deviations from spec**: none beyond the two Codebase Contract
+corrections above (factual corrections verified against code and the
+spec's own more-authoritative §7 table, not design changes).
