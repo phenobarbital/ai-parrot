@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-04T22:34:28+00:00",
   "tasks": [
     {
       "id": "TASK-2841",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T17:22:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2841-core-convention-google-and-live-voice.md"
+      "file": "sdd/tasks/completed/TASK-2841-core-convention-google-and-live-voice.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2842",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T17:35:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2842-openai-folder.md"
+      "file": "sdd/tasks/completed/TASK-2842-openai-folder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2843",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T17:51:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2843-openai-wire-wrapper-folders.md"
+      "file": "sdd/tasks/completed/TASK-2843-openai-wire-wrapper-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2844",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T18:11:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2844-anthropic-groq-grok-zai-folders.md"
+      "file": "sdd/tasks/completed/TASK-2844-anthropic-groq-grok-zai-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2845",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T18:29:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2845-amazon-gemma4-hf-folders.md"
+      "file": "sdd/tasks/completed/TASK-2845-amazon-gemma4-hf-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2846",
@@ -126,7 +131,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T19:22:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2846-core-callsite-hard-cut.md"
+      "file": "sdd/tasks/completed/TASK-2846-core-callsite-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2847",
@@ -146,7 +152,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T19:49:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2847-factory-discovery-and-catalogue.md"
+      "file": "sdd/tasks/completed/TASK-2847-factory-discovery-and-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2848",
@@ -166,7 +173,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T19:59:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2848-server-llm-handler-catalogue.md"
+      "file": "sdd/tasks/completed/TASK-2848-server-llm-handler-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2849",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T20:21:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2849-satellites-openai-meta.md"
+      "file": "sdd/tasks/completed/TASK-2849-satellites-openai-meta.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2850",
@@ -208,7 +217,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T20:30:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2850-satellites-anthropic-amazon.md"
+      "file": "sdd/tasks/completed/TASK-2850-satellites-anthropic-amazon.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2851",
@@ -229,7 +239,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T20:38:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2851-satellites-google-gemma4-hf.md"
+      "file": "sdd/tasks/completed/TASK-2851-satellites-google-gemma4-hf.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2852",
@@ -250,7 +261,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T20:58:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2852-satellites-groq-grok-zai.md"
+      "file": "sdd/tasks/completed/TASK-2852-satellites-groq-grok-zai.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2853",
@@ -271,7 +283,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T21:16:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2853-satellites-nvidia-moonshot-openrouter-local-vllm.md"
+      "file": "sdd/tasks/completed/TASK-2853-satellites-nvidia-moonshot-openrouter-local-vllm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2854",
@@ -295,7 +308,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T21:34:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2854-core-extras-workspace-cleanup.md"
+      "file": "sdd/tasks/completed/TASK-2854-core-extras-workspace-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2855",
@@ -315,7 +329,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
       "completed_at": "2026-09-04T21:53:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2855-tests-migration-verification.md"
+      "file": "sdd/tasks/completed/TASK-2855-tests-migration-verification.md",
+      "verification": "verified"
     }
   ],
   "superseded_tasks": {
