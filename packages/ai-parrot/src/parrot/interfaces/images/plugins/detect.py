@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Union
 from pydantic import BaseModel
 from PIL import Image
-from ....clients.google import GoogleGenAIClient
 from .classifybase import ClassifyBase
 
 
@@ -124,6 +123,11 @@ class DetectionPlugin(ClassifyBase):
                     f"Skipping detection for row {row.name} with category {filter_value}"
                 )
                 return detections_column
+        # FEAT-523: lazy import — core must not import a provider module
+        # at module scope (AC-3); "google" ships from the
+        # ai-parrot-client-google satellite.
+        from ....clients.google import GoogleGenAIClient
+
         # Open the image
         async with GoogleGenAIClient() as client:
             _result = await client.ask_to_image(

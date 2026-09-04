@@ -25,7 +25,6 @@ from typing import (
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
-from ..clients.google.live import GeminiLiveClient
 from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
@@ -254,6 +253,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
 
         # Default (existing behavior, unchanged): GeminiLiveClient.
+        # FEAT-523: lazy import — core must not import a provider module
+        # at module scope (AC-3); "google" ships from the
+        # ai-parrot-client-google satellite.
+        from ..clients.google.live import GeminiLiveClient
+
         config = LLMConfig(
             provider="gemini_live",
             client_class=GeminiLiveClient,
@@ -303,6 +307,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
         else:
             # Default (existing behavior, unchanged): GeminiLiveClient.
+            # FEAT-523: lazy import — core must not import a provider
+            # module at module scope (AC-3).
+            from ..clients.google.live import GeminiLiveClient
+
             client = GeminiLiveClient(
                 model=config.model,
                 voice_name=config.extra.get("voice_name", self.voice_config.voice_name),
