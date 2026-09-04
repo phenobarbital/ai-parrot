@@ -79,10 +79,11 @@ def test_list_models_active_deprecated(monkeypatch):
 def test_list_providers_lists_in_core_keys(monkeypatch):
     _reset(monkeypatch)
     providers = factory.LLMFactory.list_providers()
-    # FEAT-523 (TASK-2849): "openai" was extracted to ai-parrot-client-openai
-    # — assert against "google"/"anthropic", which stay in _IN_CORE_PROVIDERS.
+    # FEAT-523 (TASK-2849/2850): "openai"/"meta"/"anthropic"/"amazon" were
+    # extracted to their own satellites — assert against "google"/"groq",
+    # which stay in _IN_CORE_PROVIDERS.
     assert providers.get("google") == "ai-parrot"
-    assert providers.get("anthropic") == "ai-parrot"
+    assert providers.get("groq") == "ai-parrot"
 
 
 def test_provider_backend_discovered():
