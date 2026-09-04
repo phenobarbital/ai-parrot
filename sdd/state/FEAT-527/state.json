@@ -3,12 +3,12 @@
   "id_provisional": true,
   "id_note": "FEAT-527 matches .id_ledger.json next_feature_id at time of writing; shared main checkout carries another session's untracked files, so reserve_ids.py was not run. /sdd-spec must perform the authoritative reservation.",
   "slug": "infographic-a2ui-migration",
-  "phase": "committed",
+  "phase": "review",
   "mode": "investigation",
   "type": "feature",
   "base_branch": "dev",
   "started_at": "2026-09-04T19:30:00Z",
-  "updated_at": "2026-09-04T20:05:00Z",
+  "updated_at": "2026-09-04T20:20:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -52,13 +52,13 @@
       "lint": "pass"
     },
     "qa": {
-      "status": "pending",
+      "status": "complete",
       "questions_total": 4,
-      "questions_answered": 0
+      "questions_answered": 4
     },
     "output": {
       "proposal_path": "sdd/proposals/infographic-a2ui-migration.proposal.md",
-      "commit_sha": "bab9f4477"
+      "commit_sha": "41633f6e5 (initial); see git log for the Q&A follow-up"
     }
   },
   "wiki_available": true

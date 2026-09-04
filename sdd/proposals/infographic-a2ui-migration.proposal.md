@@ -4,7 +4,7 @@ title: Infographic → A2UI migration — is AgentTalk infographic output A2UI o
 slug: infographic-a2ui-migration
 type: feature
 mode: investigation
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -16,6 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-527/
 created: 2026-09-04
 updated: 2026-09-04
+resolved_at: 2026-09-04
 ---
 
 # FEAT-527 — Infographic → A2UI migration
@@ -200,41 +201,74 @@ Distribution: **8** high, **3** medium, **1** low.
 
 ## 5. Open Questions
 
-### Resolved (during proposal phase)
+### Resolved (during proposal phase, 2026-09-04)
 
-_None yet — the four questions below are pending user answers._
+- [x] **U1 — Target end state** — *Resolved*: **Dual-emit permanently.** Flip `emit_a2ui`
+  default to `True`; keep the INFOGRAPHIC HTML envelope (`html_url` / `html_inline`)
+  alongside `a2ui_envelope` for legacy consumers. Reversible, lowest risk.
+  *Resolves claims*: C4, C9 — **FEAT-273 G7 must be amended**: the HTML lane is no
+  longer "superseded" but a *sibling emission*; the unconditional DeprecationWarning
+  in `get_infographic_html_renderer` (and its trip on every toolkit construction) must go.
+- [x] **U2 — Frontend of record** — *Resolved*: **Both.** navigator-frontend-next stays
+  the primary A2UI consumer, **and** the bundled ai-parrot-server UI must gain a minimal
+  A2UI `Infographic` renderer as part of this feature (today it iframes HTML only and
+  covers 12/19 block types). *Resolves claims*: C6, C10
+- [x] **U3 — Fate of templates/blocks** — *Resolved*: **Extend A2UI presentation props
+  first.** Before choosing between "keep upstream" and "migrate to recipes", grow the
+  `Infographic` component / A2UI renderers with the chart types and presentation fields
+  the adapter currently drops (radar/heatmap/treemap/gauge/funnel/waterfall/donut;
+  `layout`, `color_by_sign`, per-series colours, table `style`, bullet `columns`).
+  `InfographicResponse` remains the LLM contract meanwhile. *Resolves claims*: C1, C2, C8
+- [x] **U4 — Jinja `render_template` lane** — *Resolved*: **Wrap as opaque HTML surface.**
+  `render_template` / `InfographicTalk /render` output is emitted as an A2UI surface
+  carrying raw HTML so one envelope contract covers every infographic path.
+  *Resolves claims*: C3 — needs a catalog decision (existing opaque/HTML primitive vs a
+  new `RawHtml`-style Parrot component) and a sanitisation stance.
 
-### Unresolved (defer to brainstorm / spec)
+### Unresolved (defer to spec / implementation)
 
-- [ ] **U1 — Target end state**: retire `OutputMode.INFOGRAPHIC` in favour of `OutputMode.A2UI` + `Infographic` component (single lane, honours G7), or keep dual-emit (A2UI envelope + HTML artifact URL) permanently? — *Owner*: tbd · *Blocks claims*: C4, C9
-  *Plausible answers*: a) single A2UI lane, HTML becomes a renderer output of the same envelope · b) dual-emit forever (flip `emit_a2ui` default, keep INFOGRAPHIC envelope for legacy consumers) · c) keep HTML lane as-is; only recipe agents (FlexDashboard-style) use A2UI
-- [ ] **U2 — Frontend of record**: bundled ai-parrot-server UI (no A2UI renderer today) or navigator-frontend-next (renderer planned)? — *Owner*: tbd · *Blocks claims*: C6, C10
-  *Plausible answers*: a) navigator-frontend-next only; bundled UI keeps iframe via `html_url` · b) both — bundled UI gains a minimal A2UI Infographic renderer in this feature · c) bundled UI is a demo; may break
-- [ ] **U3 — Fate of templates/blocks**: keep `InfographicResponse` as the LLM contract with the adapter as bridge (accept lossy degradation), or re-express templates as deterministic recipes/LayoutSpecs and deprecate the block models? — *Owner*: tbd · *Blocks claims*: C1, C2, C8
-  *Plausible answers*: a) keep upstream, adapter bridges · b) migrate templates → recipes, deprecate blocks · c) first extend `Infographic` component/renderers with missing presentation props, then decide
-- [ ] **U4 — Jinja `render_template` lane** (FEAT-327 `/render`): in scope, or explicit non-goal that stays HTML? — *Owner*: tbd · *Blocks claims*: C3
-  *Plausible answers*: a) non-goal, stays HTML · b) wrap as opaque HTML A2UI surface · c) deprecate
+- [ ] **Does FEAT-493's spec already scope the HTML lane as long-lived?** — *Owner*: spec
+  author · *Blocks claims*: C9 · Read `sdd/specs/html-renderer-design-system.spec.md`
+  before amending G7 wording.
+- [ ] **What is on `origin/claude/a2ui-infografias-audit-wtp9eu` and
+  `origin/claude/agenttalk-infographic-toolkit-0q473i`?** — *Owner*: tbd · *Blocks
+  claims*: C11, C12 · Possible prior audit/WIP overlapping this feature.
+- [ ] **Streaming**: does dual-emit keep the INFOGRAPHIC no-stream gate, or adopt A2UI's
+  behaviour? — *Owner*: spec · *Blocks*: F007 constraint.
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-brainstorm FEAT-527`** — *Rationale*: localization is high-confidence, but U1–U3
-are architectural forks (single vs dual lane; templates-as-prompts vs templates-as-recipes;
-frontend of record) with materially different task graphs. A brainstorm should weigh
-the options against G7 before a spec fixes one.
+**`/sdd-spec FEAT-527`** — *Rationale*: all four architectural unknowns are resolved and
+localization is high-confidence; the remaining questions are spec-level details. The
+answers imply **four modules**, which the spec may split into two features if the task
+graph exceeds ~15 tasks:
+
+1. **Backend dual-emit (U1)** — `emit_a2ui=True` by default in `InfographicToolkit`;
+   `InfographicAuthoringMixin` / `InfographicTalk._get_render_toolkit` / `ResultAgent`
+   inherit it; `AgentTalk` INFOGRAPHIC envelope gains `a2ui_envelope` (and the A2UI
+   response gains `metadata.html_url`) so both consumers are served by one turn; amend
+   FEAT-273 G7 wording and remove the unconditional DeprecationWarning; decide the
+   streaming gate.
+2. **A2UI presentation parity (U3)** — extend `Infographic`/`Chart`/`DataTable` catalog
+   props and the ssr-html / interactive-html renderers with the fields
+   `adapters/infographic.py` documents as dropped; shrink `CHART_TYPE_MAP` collapses;
+   update the adapter to pass them through. Prerequisite for the renderer module.
+3. **Bundled-UI A2UI Infographic renderer (U2)** — minimal Svelte 5 renderer for
+   `a2ui_envelope` in `packages/ai-parrot-server/ui` (open canvas on
+   `output_mode ∈ {infographic, a2ui}`), reusing the 12 existing block components where
+   the lowering maps 1:1 and adding the 7 missing ones; keep iframe fallback via `html_url`.
+4. **Opaque HTML surface for `render_template` (U4)** — catalog component (or reuse of
+   an existing opaque primitive) carrying sanitised raw HTML; `render_template` and
+   `InfographicTalk /render` emit it; CSP/`JSBundle` headers preserved.
 
 ### Alternatives
 
-- **`/sdd-spec FEAT-527`** — if the user answers U1–U3 decisively here; the spec can then
-  encode: (1) resolve G7 in `InfographicToolkit` (stop constructing the deprecated renderer
-  unconditionally / flip `emit_a2ui`), (2) `AgentTalk` envelope contract for infographics,
-  (3) frontend renderer scope, (4) adapter presentation-props gap list.
-- **Minimal first task** — flip `emit_a2ui=True` in `InfographicAuthoringMixin` and
-  `InfographicTalk._get_render_toolkit` and add `html_url` to the A2UI JSON response so
-  the bundled UI keeps working via iframe (dual-emit, reversible). Only if U1 = b.
-- **Manual review** — read `sdd/specs/html-renderer-design-system.spec.md` §scope and the
-  `origin/claude/a2ui-infografias-audit-wtp9eu` branch before deciding (C9, C11).
+- **`/sdd-brainstorm FEAT-527`** — only if module 2's scope (which presentation props,
+  which chart types) needs option analysis before committing.
+- **Split now** — `/sdd-spec` twice: *infographic-dual-emit-a2ui* (modules 1, 2, 4) and
+  *agentchat-a2ui-infographic-renderer* (module 3, depends on the first).
 
 ---
 

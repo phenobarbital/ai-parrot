@@ -4,65 +4,497 @@
   "summary_oneline": "AgentTalk infographics are HTML-lane by default; the A2UI lane exists end-to-end on the backend but is dormant (emit_a2ui=False) and unrenderable in the bundled UI",
   "overall_confidence": "high",
   "localization": [
-    {"path": "packages/ai-parrot/src/parrot/models/infographic_templates.py", "symbol": "InfographicTemplate / BlockSpec / infographic_registry", "lines": "21-110, 512-587", "role": "templates = Pydantic block-order specs rendered as LLM prompt text (NOT Jinja/HTML)", "evidence": ["F002"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/models/infographic.py", "symbol": "BlockType, 19 block models, InfographicResponse, ThemeConfig, theme_registry", "lines": "79-101, 316-1061, 1290-1655", "role": "custom block vocabulary + CSS-token theme system (5 themes)", "evidence": ["F003"], "confidence": "high"},
-    {"path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py", "symbol": "InfographicHTMLRenderer.render_to_html", "lines": "223-394", "role": "legacy HTML lane renderer (deprecated by FEAT-273 G7, re-invested by FEAT-493)", "evidence": ["F004", "F011"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py", "symbol": "get_infographic_html_renderer", "lines": "119-156", "role": "emits FEAT-273 DeprecationWarning for the HTML lane; JSON lane kept", "evidence": ["F004"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py", "symbol": "InfographicToolkit.__init__ / render / _build_a2ui_envelope / render_template", "lines": "159-172, 213-264, 402-560, 846-899", "role": "HTML-first render; A2UI envelope only when emit_a2ui=True; Jinja only in render_template", "evidence": ["F006"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/adapters/infographic.py", "symbol": "infographic_response_to_envelope, CHART_TYPE_MAP", "lines": "1-70, 599-640", "role": "pure block→catalog adapter with documented lossy degradations", "evidence": ["F005"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/infographic.py", "symbol": "InfographicComponent", "lines": "33-71, 144-181", "role": "A2UI Infographic composite (sections → Tabs/Column; theme is a string hint)", "evidence": ["F005"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/bots/data.py", "symbol": "PandasAgent post-loop InfographicRenderResult branch", "lines": "1876-1910", "role": "routes to finalize_a2ui_response iff a2ui_envelope present, else OutputMode.INFOGRAPHIC", "evidence": ["F007"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/bots/base.py", "symbol": "_finalize_infographic_response", "lines": "895-915, 1425-1445", "role": "same dual branch in BaseBot", "evidence": ["F007"], "confidence": "high"},
-    {"path": "packages/ai-parrot-server/src/parrot/handlers/agent.py", "symbol": "AgentTalk._format_infographic_response", "lines": "1625-1628, 2729-2756, 3052-3135", "role": "A2UI checked first, INFOGRAPHIC second; INFOGRAPHIC returns HTML url/inline envelope, streaming disabled", "evidence": ["F007"], "confidence": "high"},
-    {"path": "packages/ai-parrot/src/parrot/bots/abstract.py", "symbol": "AbstractBot.get_infographic", "lines": "3952-4060", "role": "InfographicTalk path; deprecated HTML renderer; rewrites output_mode to HTML", "evidence": ["F007"], "confidence": "high"},
-    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte", "symbol": "maybeOpenInfographicCanvas", "lines": "1839-1878", "role": "bundled UI opens iframe on output_mode==infographic only; no a2ui handling", "evidence": ["F008"], "confidence": "high"},
-    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/infographic/infographic-registry.ts", "symbol": "registry (12 block types)", "lines": "1-35", "role": "legacy Svelte block renderer, 7 block types behind backend", "evidence": ["F008"], "confidence": "high"},
-    {"path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/assets/design_system/__init__.py", "symbol": "DesignSystem.stylesheet / resolve", "lines": "1-20, 79-145", "role": "shared theme composer for legacy HTML AND A2UI ssr/interactive/pdf renderers", "evidence": ["F009"], "confidence": "high"},
-    {"path": "agents/flex_dashboard.py", "symbol": "FlexDashboard", "lines": "1-16, 127, 432-439", "role": "A2UI-native infographic/dashboard reference agent (recipes → Infographic LayoutSpec)", "evidence": ["F010"], "confidence": "high"},
-    {"path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py", "symbol": "UISurfaceKind", "lines": "39-45", "role": "persisted A2UI surface kinds incl. infographic (FEAT-492)", "evidence": ["F010"], "confidence": "high"}
+    {
+      "path": "packages/ai-parrot/src/parrot/models/infographic_templates.py",
+      "symbol": "InfographicTemplate / BlockSpec / infographic_registry",
+      "lines": "21-110, 512-587",
+      "role": "templates = Pydantic block-order specs rendered as LLM prompt text (NOT Jinja/HTML)",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/infographic.py",
+      "symbol": "BlockType, 19 block models, InfographicResponse, ThemeConfig, theme_registry",
+      "lines": "79-101, 316-1061, 1290-1655",
+      "role": "custom block vocabulary + CSS-token theme system (5 themes)",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py",
+      "symbol": "InfographicHTMLRenderer.render_to_html",
+      "lines": "223-394",
+      "role": "legacy HTML lane renderer (deprecated by FEAT-273 G7, re-invested by FEAT-493)",
+      "evidence": [
+        "F004",
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py",
+      "symbol": "get_infographic_html_renderer",
+      "lines": "119-156",
+      "role": "emits FEAT-273 DeprecationWarning for the HTML lane; JSON lane kept",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py",
+      "symbol": "InfographicToolkit.__init__ / render / _build_a2ui_envelope / render_template",
+      "lines": "159-172, 213-264, 402-560, 846-899",
+      "role": "HTML-first render; A2UI envelope only when emit_a2ui=True; Jinja only in render_template",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/adapters/infographic.py",
+      "symbol": "infographic_response_to_envelope, CHART_TYPE_MAP",
+      "lines": "1-70, 599-640",
+      "role": "pure block\u2192catalog adapter with documented lossy degradations",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/infographic.py",
+      "symbol": "InfographicComponent",
+      "lines": "33-71, 144-181",
+      "role": "A2UI Infographic composite (sections \u2192 Tabs/Column; theme is a string hint)",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/data.py",
+      "symbol": "PandasAgent post-loop InfographicRenderResult branch",
+      "lines": "1876-1910",
+      "role": "routes to finalize_a2ui_response iff a2ui_envelope present, else OutputMode.INFOGRAPHIC",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/base.py",
+      "symbol": "_finalize_infographic_response",
+      "lines": "895-915, 1425-1445",
+      "role": "same dual branch in BaseBot",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/agent.py",
+      "symbol": "AgentTalk._format_infographic_response",
+      "lines": "1625-1628, 2729-2756, 3052-3135",
+      "role": "A2UI checked first, INFOGRAPHIC second; INFOGRAPHIC returns HTML url/inline envelope, streaming disabled",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "AbstractBot.get_infographic",
+      "lines": "3952-4060",
+      "role": "InfographicTalk path; deprecated HTML renderer; rewrites output_mode to HTML",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte",
+      "symbol": "maybeOpenInfographicCanvas",
+      "lines": "1839-1878",
+      "role": "bundled UI opens iframe on output_mode==infographic only; no a2ui handling",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/infographic/infographic-registry.ts",
+      "symbol": "registry (12 block types)",
+      "lines": "1-35",
+      "role": "legacy Svelte block renderer, 7 block types behind backend",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/assets/design_system/__init__.py",
+      "symbol": "DesignSystem.stylesheet / resolve",
+      "lines": "1-20, 79-145",
+      "role": "shared theme composer for legacy HTML AND A2UI ssr/interactive/pdf renderers",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "agents/flex_dashboard.py",
+      "symbol": "FlexDashboard",
+      "lines": "1-16, 127, 432-439",
+      "role": "A2UI-native infographic/dashboard reference agent (recipes \u2192 Infographic LayoutSpec)",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+      "symbol": "UISurfaceKind",
+      "lines": "39-45",
+      "role": "persisted A2UI surface kinds incl. infographic (FEAT-492)",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    }
   ],
   "constraints": [
-    {"statement": "FEAT-273 G7 policy: the infographic-HTML path is deprecated in favour of OutputMode.A2UI + Infographic component + SSR-HTML renderer; the infographic-JSON path is explicitly kept. Yet InfographicToolkit.__init__ constructs the deprecated renderer unconditionally, so every toolkit instance trips the warning.", "implication": "A migration must decide whether to honour G7 (retire the HTML lane) or amend it (HTML artifact stays as a dual-emit sibling).", "evidence": ["F004", "F006"]},
-    {"statement": "The adapter is deliberately lossy: 7 chart types collapse, and presentation-only fields (layout, color_by_sign, per-series colors, table style, bullet columns) are dropped.", "implication": "financial_variance and other presentation-tuned templates will not look identical after migration unless the Infographic component / renderers grow presentation props.", "evidence": ["F005"]},
-    {"statement": "The bundled ai-parrot-server UI has no A2UI renderer; only output_mode==infographic opens the canvas. The A2UI Svelte renderer is specified for the external navigator-frontend-next project.", "implication": "Flipping emit_a2ui (or retiring INFOGRAPHIC) makes infographics disappear from the bundled UI until it can render a2ui_envelope or is given the HTML artifact URL alongside.", "evidence": ["F008", "F010"]},
-    {"statement": "Themes are already lane-neutral: DesignSystem resolves ThemeConfig for both the legacy renderer and the A2UI HTML renderers (FEAT-493).", "implication": "Themes need no migration; the A2UI Infographic component only needs to carry the theme name hint it already has.", "evidence": ["F009"]},
-    {"statement": "Templates are prompt-generation artefacts (block order + constraints for the LLM), not rendering artefacts.", "implication": "They can survive as-is upstream of the adapter, or be re-expressed as deterministic A2UI recipes/LayoutSpecs — an architectural fork, not a mechanical port.", "evidence": ["F002", "F005", "F010"]},
-    {"statement": "Streaming is force-disabled for OutputMode.INFOGRAPHIC because the signed URL must arrive atomically; OutputMode.A2UI has no such gate in AgentTalk.", "implication": "Moving infographics to A2UI changes the streaming behaviour of those turns.", "evidence": ["F007"]},
-    {"statement": "A second, genuinely Jinja/HTML lane exists: InfographicToolkit.render_template + InfographicTalk /render (FEAT-327) fills trusted developer-supplied HTML+Jinja templates.", "implication": "The user's 'jinja templates' intuition maps to THIS lane, which has no A2UI counterpart and probably should stay HTML.", "evidence": ["F006", "F007"]},
-    {"statement": "No production caller sets emit_a2ui=True (only the example walkthrough); InfographicAuthoringMixin, InfographicTalk, ResultAgent use the default; AgentStudio forwards **params.", "implication": "Today's AgentTalk/InfoAgent/FlexDashboard infographic_render turns are HTML-lane turns.", "evidence": ["F006"]}
+    {
+      "statement": "FEAT-273 G7 policy: the infographic-HTML path is deprecated in favour of OutputMode.A2UI + Infographic component + SSR-HTML renderer; the infographic-JSON path is explicitly kept. Yet InfographicToolkit.__init__ constructs the deprecated renderer unconditionally, so every toolkit instance trips the warning.",
+      "implication": "A migration must decide whether to honour G7 (retire the HTML lane) or amend it (HTML artifact stays as a dual-emit sibling).",
+      "evidence": [
+        "F004",
+        "F006"
+      ]
+    },
+    {
+      "statement": "The adapter is deliberately lossy: 7 chart types collapse, and presentation-only fields (layout, color_by_sign, per-series colors, table style, bullet columns) are dropped.",
+      "implication": "financial_variance and other presentation-tuned templates will not look identical after migration unless the Infographic component / renderers grow presentation props.",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "statement": "The bundled ai-parrot-server UI has no A2UI renderer; only output_mode==infographic opens the canvas. The A2UI Svelte renderer is specified for the external navigator-frontend-next project.",
+      "implication": "Flipping emit_a2ui (or retiring INFOGRAPHIC) makes infographics disappear from the bundled UI until it can render a2ui_envelope or is given the HTML artifact URL alongside.",
+      "evidence": [
+        "F008",
+        "F010"
+      ]
+    },
+    {
+      "statement": "Themes are already lane-neutral: DesignSystem resolves ThemeConfig for both the legacy renderer and the A2UI HTML renderers (FEAT-493).",
+      "implication": "Themes need no migration; the A2UI Infographic component only needs to carry the theme name hint it already has.",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "statement": "Templates are prompt-generation artefacts (block order + constraints for the LLM), not rendering artefacts.",
+      "implication": "They can survive as-is upstream of the adapter, or be re-expressed as deterministic A2UI recipes/LayoutSpecs \u2014 an architectural fork, not a mechanical port.",
+      "evidence": [
+        "F002",
+        "F005",
+        "F010"
+      ]
+    },
+    {
+      "statement": "Streaming is force-disabled for OutputMode.INFOGRAPHIC because the signed URL must arrive atomically; OutputMode.A2UI has no such gate in AgentTalk.",
+      "implication": "Moving infographics to A2UI changes the streaming behaviour of those turns.",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "statement": "A second, genuinely Jinja/HTML lane exists: InfographicToolkit.render_template + InfographicTalk /render (FEAT-327) fills trusted developer-supplied HTML+Jinja templates.",
+      "implication": "The user's 'jinja templates' intuition maps to THIS lane, which has no A2UI counterpart and probably should stay HTML.",
+      "evidence": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "statement": "No production caller sets emit_a2ui=True (only the example walkthrough); InfographicAuthoringMixin, InfographicTalk, ResultAgent use the default; AgentStudio forwards **params.",
+      "implication": "Today's AgentTalk/InfoAgent/FlexDashboard infographic_render turns are HTML-lane turns.",
+      "evidence": [
+        "F006"
+      ]
+    }
   ],
   "recent_history": [
-    {"commit": "e4628fcea", "when": "2026-09-02", "message": "FEAT-493 TASK-2712 — migrate the infographic HTML lane onto the composer", "evidence": ["F011"]},
-    {"commit": "d81ac63df", "when": "2026-08-30", "message": "FEAT-476 TASK-2595 — flagged surfaces: canvas, charts, maps, infographic", "evidence": ["F011"]},
-    {"commit": "69422348d", "when": "2026-08-29", "message": "wip: info agent (toolkit, emission, data.py wiring)", "evidence": ["F011"]},
-    {"commit": "8d62f8c89", "when": "2026-08-28", "message": "FEAT-470 TASK-2541 — Infographic adapter remap to v1.0 primitives", "evidence": ["F011"]},
-    {"commit": "bd0fbbe41", "when": "2026-08-19", "message": "FEAT-301 TASK-2257 — A2UI adapter converters for the 4 new block types", "evidence": ["F011"]},
-    {"commit": "076814287", "when": "2026-08-14", "message": "feat(a2ui): add InfographicResponse → CreateSurface adapter", "evidence": ["F011"]}
+    {
+      "commit": "e4628fcea",
+      "when": "2026-09-02",
+      "message": "FEAT-493 TASK-2712 \u2014 migrate the infographic HTML lane onto the composer",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "commit": "d81ac63df",
+      "when": "2026-08-30",
+      "message": "FEAT-476 TASK-2595 \u2014 flagged surfaces: canvas, charts, maps, infographic",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "commit": "69422348d",
+      "when": "2026-08-29",
+      "message": "wip: info agent (toolkit, emission, data.py wiring)",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "commit": "8d62f8c89",
+      "when": "2026-08-28",
+      "message": "FEAT-470 TASK-2541 \u2014 Infographic adapter remap to v1.0 primitives",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "commit": "bd0fbbe41",
+      "when": "2026-08-19",
+      "message": "FEAT-301 TASK-2257 \u2014 A2UI adapter converters for the 4 new block types",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "commit": "076814287",
+      "when": "2026-08-14",
+      "message": "feat(a2ui): add InfographicResponse \u2192 CreateSurface adapter",
+      "evidence": [
+        "F011"
+      ]
+    }
   ],
   "hypotheses": [
-    {"rank": 1, "statement": "Current AgentTalk infographic output is the legacy HTML lane (OutputMode.INFOGRAPHIC + HTML artifact rendered by InfographicHTMLRenderer, shown in an iframe), not A2UI — because InfographicToolkit.emit_a2ui defaults to False and no production constructor enables it. The A2UI lane is fully wired on the backend (adapter, component, bot/handler branches, persistence) but dormant, and the bundled UI could not render it anyway.", "confidence": "high", "supporting": ["F006", "F007", "F008", "F010"], "contradicting": [], "reasoning": "Direct reads of the toolkit constructor, both bot post-loop branches, AgentTalk's mode dispatch, and a repo-wide grep for emit_a2ui=True."},
-    {"rank": 2, "statement": "'Templates' and 'blocks' are Parrot-specific Pydantic vocabulary (block-order prompt specs; 19 block models) with no A2UI equivalent, while 'themes' are already lane-neutral via DesignSystem. The only Jinja/HTML templates are the trusted render_template lane.", "confidence": "high", "supporting": ["F002", "F003", "F006", "F009"], "contradicting": [], "reasoning": "Direct reads of the models and the design-system composer."},
-    {"rank": 3, "statement": "The codebase carries a policy contradiction: FEAT-273 G7 deprecates the HTML lane, but FEAT-493 (Sept 2026) re-invested in it and every toolkit construction emits the deprecation warning. A migration spec must resolve this explicitly.", "confidence": "medium", "supporting": ["F004", "F006", "F011"], "contradicting": [], "reasoning": "Inferred from the warning site plus commit dates; the FEAT-493 spec body was not read to see whether it consciously scoped the HTML lane as long-lived."}
+    {
+      "rank": 1,
+      "statement": "Current AgentTalk infographic output is the legacy HTML lane (OutputMode.INFOGRAPHIC + HTML artifact rendered by InfographicHTMLRenderer, shown in an iframe), not A2UI \u2014 because InfographicToolkit.emit_a2ui defaults to False and no production constructor enables it. The A2UI lane is fully wired on the backend (adapter, component, bot/handler branches, persistence) but dormant, and the bundled UI could not render it anyway.",
+      "confidence": "high",
+      "supporting": [
+        "F006",
+        "F007",
+        "F008",
+        "F010"
+      ],
+      "contradicting": [],
+      "reasoning": "Direct reads of the toolkit constructor, both bot post-loop branches, AgentTalk's mode dispatch, and a repo-wide grep for emit_a2ui=True."
+    },
+    {
+      "rank": 2,
+      "statement": "'Templates' and 'blocks' are Parrot-specific Pydantic vocabulary (block-order prompt specs; 19 block models) with no A2UI equivalent, while 'themes' are already lane-neutral via DesignSystem. The only Jinja/HTML templates are the trusted render_template lane.",
+      "confidence": "high",
+      "supporting": [
+        "F002",
+        "F003",
+        "F006",
+        "F009"
+      ],
+      "contradicting": [],
+      "reasoning": "Direct reads of the models and the design-system composer."
+    },
+    {
+      "rank": 3,
+      "statement": "The codebase carries a policy contradiction: FEAT-273 G7 deprecates the HTML lane, but FEAT-493 (Sept 2026) re-invested in it and every toolkit construction emits the deprecation warning. A migration spec must resolve this explicitly.",
+      "confidence": "medium",
+      "supporting": [
+        "F004",
+        "F006",
+        "F011"
+      ],
+      "contradicting": [],
+      "reasoning": "Inferred from the warning site plus commit dates; the FEAT-493 spec body was not read to see whether it consciously scoped the HTML lane as long-lived."
+    }
   ],
   "confidence_map": [
-    {"id": "C1", "claim": "Infographic templates are Pydantic block-order specs, not Jinja/HTML", "evidence": ["F002"], "confidence": "high", "reasoning": "direct read; no Jinja import in models"},
-    {"id": "C2", "claim": "Blocks are 19 Parrot-specific Pydantic models; themes are CSS-token ThemeConfigs", "evidence": ["F003"], "confidence": "high", "reasoning": "direct read"},
-    {"id": "C3", "claim": "The only Jinja templates are InfographicToolkit.render_template / InfographicTalk /render (trusted HTML+Jinja)", "evidence": ["F006", "F007"], "confidence": "high", "reasoning": "direct read of TemplateEngine wiring"},
-    {"id": "C4", "claim": "AgentTalk infographic turns are OutputMode.INFOGRAPHIC + HTML today because emit_a2ui defaults False and no production caller enables it", "evidence": ["F006", "F007"], "confidence": "high", "reasoning": "constructor default + repo grep + both bot branches read"},
-    {"id": "C5", "claim": "The backend A2UI lane for infographics is complete: component, adapter, builder, bot/handler routing, persistence, HTML renderers", "evidence": ["F005", "F007", "F009", "F010"], "confidence": "high", "reasoning": "direct reads across all four layers"},
-    {"id": "C6", "claim": "The bundled Svelte UI cannot render an A2UI envelope; it renders HTML in an iframe or 12 legacy block components (7 behind backend)", "evidence": ["F008"], "confidence": "high", "reasoning": "single 'a2ui' hit in ui/src is a generated type"},
-    {"id": "C7", "claim": "Themes are already shared by legacy and A2UI HTML renderers via DesignSystem", "evidence": ["F009"], "confidence": "high", "reasoning": "docstring + call sites read"},
-    {"id": "C8", "claim": "Block→A2UI adaptation is lossy for 7 chart types and all presentation-only fields", "evidence": ["F005"], "confidence": "high", "reasoning": "adapter module docstring enumerates them"},
-    {"id": "C9", "claim": "FEAT-273 G7 deprecates the HTML lane while FEAT-493 just re-invested in it", "evidence": ["F004", "F011"], "confidence": "medium", "reasoning": "FEAT-493 spec body not read; may consciously keep the lane"},
-    {"id": "C10", "claim": "The A2UI frontend renderer is planned for navigator-frontend-next, outside this repo", "evidence": ["F010"], "confidence": "medium", "reasoning": "from a doc dated 2026-09-02; the external repo was not inspected"},
-    {"id": "C11", "claim": "No SDD task currently covers an infographic→A2UI migration", "evidence": ["F011"], "confidence": "medium", "reasoning": "task-index scan by feature-slug keyword; origin branches claude/a2ui-infografias-audit-* not inspected"},
-    {"id": "C12", "claim": "The 'wip: info agent' commit (2026-08-29) indicates in-flight work on the same wiring", "evidence": ["F011"], "confidence": "low", "reasoning": "stat only; diff not read"}
+    {
+      "id": "C1",
+      "claim": "Infographic templates are Pydantic block-order specs, not Jinja/HTML",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read; no Jinja import in models"
+    },
+    {
+      "id": "C2",
+      "claim": "Blocks are 19 Parrot-specific Pydantic models; themes are CSS-token ThemeConfigs",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read"
+    },
+    {
+      "id": "C3",
+      "claim": "The only Jinja templates are InfographicToolkit.render_template / InfographicTalk /render (trusted HTML+Jinja)",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of TemplateEngine wiring"
+    },
+    {
+      "id": "C4",
+      "claim": "AgentTalk infographic turns are OutputMode.INFOGRAPHIC + HTML today because emit_a2ui defaults False and no production caller enables it",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "constructor default + repo grep + both bot branches read"
+    },
+    {
+      "id": "C5",
+      "claim": "The backend A2UI lane for infographics is complete: component, adapter, builder, bot/handler routing, persistence, HTML renderers",
+      "evidence": [
+        "F005",
+        "F007",
+        "F009",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "direct reads across all four layers"
+    },
+    {
+      "id": "C6",
+      "claim": "The bundled Svelte UI cannot render an A2UI envelope; it renders HTML in an iframe or 12 legacy block components (7 behind backend)",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "single 'a2ui' hit in ui/src is a generated type"
+    },
+    {
+      "id": "C7",
+      "claim": "Themes are already shared by legacy and A2UI HTML renderers via DesignSystem",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "docstring + call sites read"
+    },
+    {
+      "id": "C8",
+      "claim": "Block\u2192A2UI adaptation is lossy for 7 chart types and all presentation-only fields",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "adapter module docstring enumerates them"
+    },
+    {
+      "id": "C9",
+      "claim": "FEAT-273 G7 deprecates the HTML lane while FEAT-493 just re-invested in it",
+      "evidence": [
+        "F004",
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "FEAT-493 spec body not read; may consciously keep the lane"
+    },
+    {
+      "id": "C10",
+      "claim": "The A2UI frontend renderer is planned for navigator-frontend-next, outside this repo",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "from a doc dated 2026-09-02; the external repo was not inspected"
+    },
+    {
+      "id": "C11",
+      "claim": "No SDD task currently covers an infographic\u2192A2UI migration",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "task-index scan by feature-slug keyword; origin branches claude/a2ui-infografias-audit-* not inspected"
+    },
+    {
+      "id": "C12",
+      "claim": "The 'wip: info agent' commit (2026-08-29) indicates in-flight work on the same wiring",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "low",
+      "reasoning": "stat only; diff not read"
+    }
   ],
   "unknowns": [
-    {"id": "U1", "question": "Target end state: retire OutputMode.INFOGRAPHIC in favour of OutputMode.A2UI + Infographic component (single lane, honours FEAT-273 G7), or keep dual-emit (A2UI envelope + HTML artifact URL) permanently?", "resolves_claims": ["C4", "C9"], "plausible_answers": ["a) single A2UI lane; HTML becomes a renderer output (ssr-html/interactive-html) of the same envelope", "b) dual-emit forever: flip emit_a2ui default to True, keep INFOGRAPHIC envelope for legacy consumers", "c) keep HTML lane as-is; only FlexDashboard-style recipe agents use A2UI"], "user_answer": null},
-    {"id": "U2", "question": "Which frontend is the consumer of record for AgentTalk infographics: the bundled ai-parrot-server UI (no A2UI renderer today) or navigator-frontend-next (A2UI renderer planned)?", "resolves_claims": ["C6", "C10"], "plausible_answers": ["a) navigator-frontend-next only — bundled UI keeps iframe HTML via html_url until it gets a renderer", "b) both — the bundled UI must gain a minimal A2UI Infographic renderer as part of this feature", "c) bundled UI is a demo; break it if needed"], "user_answer": null},
-    {"id": "U3", "question": "Fate of InfographicTemplate block-order templates and the 19 block models: keep them upstream (LLM → InfographicResponse → adapter) or re-express templates as deterministic A2UI recipes/LayoutSpecs and let the LLM author Infographic sections directly?", "resolves_claims": ["C1", "C2", "C8"], "plausible_answers": ["a) keep InfographicResponse as the LLM contract; adapter is the bridge (accept lossy chart/presentation degradation)", "b) migrate templates to recipes/LayoutSpecs; deprecate InfographicResponse blocks", "c) extend the Infographic component/renderers with the missing presentation props first, then decide"], "user_answer": null},
-    {"id": "U4", "question": "Is the trusted HTML+Jinja render_template lane (FEAT-327 /render endpoint) in scope, or explicitly a non-goal that stays HTML?", "resolves_claims": ["C3"], "plausible_answers": ["a) non-goal — stays HTML", "b) in scope — wrap its output as an A2UI Html/opaque surface", "c) deprecate it"], "user_answer": null}
+    {
+      "id": "U1",
+      "question": "Target end state: retire OutputMode.INFOGRAPHIC in favour of OutputMode.A2UI + Infographic component (single lane, honours FEAT-273 G7), or keep dual-emit (A2UI envelope + HTML artifact URL) permanently?",
+      "resolves_claims": [
+        "C4",
+        "C9"
+      ],
+      "plausible_answers": [
+        "a) single A2UI lane; HTML becomes a renderer output (ssr-html/interactive-html) of the same envelope",
+        "b) dual-emit forever: flip emit_a2ui default to True, keep INFOGRAPHIC envelope for legacy consumers",
+        "c) keep HTML lane as-is; only FlexDashboard-style recipe agents use A2UI"
+      ],
+      "user_answer": "Dual-emit permanently \u2014 flip emit_a2ui default to True; keep INFOGRAPHIC HTML envelope alongside a2ui_envelope"
+    },
+    {
+      "id": "U2",
+      "question": "Which frontend is the consumer of record for AgentTalk infographics: the bundled ai-parrot-server UI (no A2UI renderer today) or navigator-frontend-next (A2UI renderer planned)?",
+      "resolves_claims": [
+        "C6",
+        "C10"
+      ],
+      "plausible_answers": [
+        "a) navigator-frontend-next only \u2014 bundled UI keeps iframe HTML via html_url until it gets a renderer",
+        "b) both \u2014 the bundled UI must gain a minimal A2UI Infographic renderer as part of this feature",
+        "c) bundled UI is a demo; break it if needed"
+      ],
+      "user_answer": "Both \u2014 navigator-frontend-next primary; bundled ai-parrot-server UI gains a minimal A2UI Infographic renderer in this feature"
+    },
+    {
+      "id": "U3",
+      "question": "Fate of InfographicTemplate block-order templates and the 19 block models: keep them upstream (LLM \u2192 InfographicResponse \u2192 adapter) or re-express templates as deterministic A2UI recipes/LayoutSpecs and let the LLM author Infographic sections directly?",
+      "resolves_claims": [
+        "C1",
+        "C2",
+        "C8"
+      ],
+      "plausible_answers": [
+        "a) keep InfographicResponse as the LLM contract; adapter is the bridge (accept lossy chart/presentation degradation)",
+        "b) migrate templates to recipes/LayoutSpecs; deprecate InfographicResponse blocks",
+        "c) extend the Infographic component/renderers with the missing presentation props first, then decide"
+      ],
+      "user_answer": "Extend A2UI presentation props first \u2014 grow Infographic component/renderers with dropped chart types and presentation fields before choosing templates fate; InfographicResponse stays the LLM contract"
+    },
+    {
+      "id": "U4",
+      "question": "Is the trusted HTML+Jinja render_template lane (FEAT-327 /render endpoint) in scope, or explicitly a non-goal that stays HTML?",
+      "resolves_claims": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "a) non-goal \u2014 stays HTML",
+        "b) in scope \u2014 wrap its output as an A2UI Html/opaque surface",
+        "c) deprecate it"
+      ],
+      "user_answer": "Wrap as opaque HTML surface \u2014 render_template / /render output emitted as an A2UI surface carrying raw HTML"
+    }
   ],
-  "recommended_next_command": {"command": "sdd-brainstorm", "rationale": "Localization is high-confidence, but U1–U3 are architectural forks (single vs dual lane; template→recipe re-expression; frontend of record) with materially different task graphs. A brainstorm should weigh the options before a spec fixes one."}
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All four architectural unknowns resolved by the user on 2026-09-04; four modules identified (dual-emit, presentation parity, bundled-UI renderer, opaque HTML surface); spec may split into two features."
+  }
 }
