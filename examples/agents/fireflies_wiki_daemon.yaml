@@ -23,8 +23,11 @@
 #   WIKI_KB_LLM_STRONG          — strong tier "provider:model" (default: google:gemini-2.5-pro)
 #   WIKI_KB_LLM_CHEAP           — cheap tier "provider:model" (default: google:gemini-2.5-flash)
 #   WIKI_KB_INGEST_CRON         — 5-field cron for scheduled ingest (default: "0 * * * *" = hourly)
-#   WIKI_KB_INGEST_LIMIT        — per-run cap on meetings processed (default: unset = no cap)
-#   WIKI_KB_MAX_CATCHUP_DAYS    — bound for a manual wide-window ingest(lookback_days=…) (default: 90)
+#   WIKI_KB_INGEST_LIMIT        — per-run cap on the LISTING examined (steady-state throughput; default: unset)
+#   WIKI_KB_MAX_NEW_PER_RUN     — per-run cap on NEW meetings fetched+compiled (backfill chunk size;
+#                                 bounds Fireflies calls ~2×N and LLM cost). Default: unset = no cap.
+#                                 Fireflies MCP shares the account's API rate limits — see the backfill note below.
+#   WIKI_KB_MAX_CATCHUP_DAYS    — bound for a manual wide-window ingest(since=…/lookback_days=…) (default: 90)
 #                                 raise this (e.g. 280) for a one-time 2026 backfill (Jan 1 → today)
 #   WIKI_KB_MAX_REPROCESS_ATTEMPTS — Module-17 quarantine auto-retry cap (default: 3)
 #   WIKI_KB_ACTIVE_WINDOW_DAYS  — rolling active window for archive/indexes (default: 14)
@@ -41,13 +44,26 @@
 #   parrot ask fireflies-wiki-kb "what did we decide about X?"   # one-shot query intent
 #
 #   Inside `parrot attach`, trigger intents directly with /invoke (JSON args):
-#     /invoke ingest {"limit": 25}                      # bounded manual ingest
-#     /invoke ingest {"since": "2025-01-01", "limit": 25}   # wide-window backfill
+#     /invoke ingest {}                                 # steady-state: process new meetings
+#     /invoke ingest {"since": "2026-01-01", "max_new": 100}   # backfill CHUNK: 100 new, oldest-first
+#     /invoke ingest {"since": "2026-01-01"}            # one-shot full backfill (Business/Ent. plan)
 #     /invoke health {}                                 # fast operational check
 #     /invoke lint {"fix": false}                       # integrity lint (fix:true auto-repairs)
 #     /invoke archive {}                                # roll the active window
 #     /invoke build_graph_report {"target": "<scope>"}
 #     /schedules list                                   # confirm the hourly ingest job registered
+#
+# ── Backfill & Fireflies rate limits ──────────────────────────────────────
+#   Fireflies MCP shares the account's API limits (Free 50/day · Pro 500/day ·
+#   Business/Ent. 60/min). Each NEW meeting costs ~2 calls (transcript+summary);
+#   a full 2026 backfill (~1000 meetings) is ~2000 calls.
+#   • Run the backfill OFF this schedule (the hourly job is for steady-state new
+#     meetings only). Set WIKI_KB_MAX_CATCHUP_DAYS=280 first for the 2026 window.
+#   • Business/Enterprise: one-shot `/invoke ingest {"since":"2026-01-01"}` is fine
+#     (~30-60 min of Fireflies + hours of LLM); it's resumable — re-run if it stops.
+#   • Pro/Free (or to bound LLM cost): chunk with max_new — repeat
+#     `/invoke ingest {"since":"2026-01-01","max_new":100}` until it reports 0 processed.
+#     Each chunk walks further back (oldest-first) and bounds calls to ~2×max_new.
 #
 # ── Expose to Claude Code over MCP ────────────────────────────────────────
 #   claude mcp add fireflies-wiki-kb -- parrot mcp-serve fireflies-wiki-kb
