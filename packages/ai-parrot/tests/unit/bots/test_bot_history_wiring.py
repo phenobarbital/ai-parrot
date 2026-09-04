@@ -322,6 +322,48 @@ async def test_first_round_reports_no_history(bot: BaseBot):
 # ---------------------------------------------------------------------------
 
 
+async def test_model_switching_fallback_single_turn():
+    """``fallback`` retries on the secondary but still persists one turn.
+
+    Spec §5 requires this for BOTH switch modes. It is also one of the reasons
+    the client could not stay the writer: client-side persistence recorded the
+    *failed* primary attempt.
+    """
+    from parrot.bots.mixins.model_switching import ModelSwitchingMixin
+
+    class ExplodingClient(RecordingClient):
+        async def ask(self, prompt: str, model: Optional[str] = None, **kwargs: Any):
+            self.calls.append({"method": "ask", "prompt": prompt, **kwargs})
+            raise RuntimeError("primary is down")
+
+    class SwitchingBot(ModelSwitchingMixin, BaseBot):
+        pass
+
+    primary, secondary = ExplodingClient(), RecordingClient(reply="secondary")
+    bot = SwitchingBot(
+        name="fallback-probe",
+        llm=primary,
+        secondary_llm=secondary,
+        model_switch_mode="fallback",
+        memory_type="memory",
+        injection_detection=False,
+    )
+    await bot.configure()
+    bot.conversation_memory = InMemoryConversation()
+
+    response = await bot.ask("q", user_id="u", session_id="s", use_vector_context=False)
+
+    assert len(primary.calls) == 1 and len(secondary.calls) == 1
+    assert response.output == "secondary"
+
+    history = await bot.conversation_memory.get_history(
+        "u", "s", chatbot_id=bot.memory_key_id
+    )
+    assert len(history.turns) == 1
+    # The failed primary attempt is NOT recorded — only the answer that won.
+    assert history.turns[0].assistant_response == "secondary"
+
+
 async def test_model_switching_contrastive_single_turn():
     """``contrastive`` runs two clients but the bot still persists one turn."""
     from parrot.bots.mixins.model_switching import ModelSwitchingMixin
