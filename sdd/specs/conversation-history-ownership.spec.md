@@ -103,9 +103,9 @@ Beyond the duplication, ownership is wrong in principle:
 
 - Token budgeting, pruning, normalization or the omission store — that is
   the compaction proposal, to be re-brainstormed **after** this feature.
-- Changing the Redis/in-memory **storage key layout** (whether the key
-  includes `chatbot_id`). v1 preserves today's per-call-site key behaviour
-  so no existing Redis history is orphaned (§8, open).
+- A bulk **Redis key migration job**. The key layout *does* change (every
+  history is keyed per agent, §2 "Storage key"), but existing histories are
+  re-keyed lazily on first read (M2b), not by an offline script.
 - Replaying **file attachments** or provider-native `tool_use`/`tool_result`
   blocks from earlier turns. `ConversationTurn` stores text only; that stays.
 - Touching `parrot.storage.ChatStorage` / `storage/models.py::ChatMessage`
@@ -147,6 +147,33 @@ answers):
   formatting in the client.** System-prompt digest removed. — *Proposed by
   assistant, accepted by author.*
 - **Removal is a hard cut.** No deprecation period. — *Resolved: author.*
+- **Storage key is unified to `(chatbot, user, session)` now.** Every
+  history — `BaseBot`, `DataAgent`, `VoiceBot` alike — is keyed per agent
+  (Redis `conversation:{key_id}:{user}:{session}`, file
+  `{user}/{key_id}/{session}.json`, in-memory `[user][key_id][session]`).
+  Attribution (`turn.chatbot_id`) and key segment carry the same value. —
+  *Resolved: author, 2026-09-04 (spec review).* Two safeguards follow from
+  it, both in scope:
+  - **Stable key identity.** `chatbot_id` defaults to a random uuid per
+    process when not configured (`bots/abstract.py:353-359`), which would
+    lose history on every restart for ad-hoc bots. New property
+    `AbstractBot.memory_key_id -> str`: the explicit `chatbot_id` when one
+    was passed or loaded from DB, otherwise `self.name`. Both the key and
+    `turn.chatbot_id` use it.
+  - **Lazy legacy re-key (M2b).** Redis history keys have no TTL
+    (`memory/redis.py:490` is commented out), so histories written under
+    the old un-segmented key would be orphaned forever. `get_history()` on
+    Redis/File falls back to the legacy key when the segmented key is
+    missing, copies the record under the new key, and leaves the old one
+    in place. One read, no offline job.
+- **`render_history(include_other_agents=True)`** with the
+  `[agent:{chatbot_id}]` label. With per-agent keys foreign turns only
+  appear when a crew/flow writes into another agent's history on purpose;
+  the label keeps that case readable. — *Resolved: author.*
+- **FEAT-524 lands before FEAT-523** starts moving client files. —
+  *Resolved: author.*
+- **`stateless=True`** at the two `summarizer.py` call sites is deleted;
+  no no-op kwarg survives on `ask()`. — *Resolved: author.*
 
 ### Component Diagram
 
@@ -185,7 +212,9 @@ answers):
 | `parrot.memory.ConversationTurn` | extends | new field `chatbot_id: Optional[str]`; new classmethod `from_ai_message()`; `to_dict`/`from_dict` carry the field (missing key → `None`, so old records deserialize). |
 | `parrot.memory.ConversationHistory` | modifies | `get_messages_for_api()` **removed** (hard cut); replaced by module-level `render_history()`. |
 | `parrot.memory` (`__init__.py`) | extends | exports `HistoryMessage`, `render_history`. |
-| `AbstractBot.save_conversation_turn` | modifies | becomes the single writer; gains `chatbot_id` **key** semantics (§3 M3); all hand-rolled `ConversationTurn` sites route through it. |
+| `AbstractBot.save_conversation_turn` | modifies | becomes the single writer; always keys by `self.memory_key_id` (the `chatbot_id` parameter is removed); all hand-rolled `ConversationTurn` sites route through it. |
+| `AbstractBot.memory_key_id` | adds | property: explicit `chatbot_id` if configured, else `self.name`; used for the storage key **and** `turn.chatbot_id`. |
+| `RedisConversation.get_history` / `FileConversationMemory.get_history` | modifies | lazy legacy re-key: when the segmented key is missing and a `chatbot_id` was given, read the un-segmented legacy key, copy under the new key, return it (M2b). `InMemoryConversation` needs nothing (no persistence). |
 | `AbstractBot.build_conversation_context` | removes | and the `conversation_context` kwarg of `create_system_prompt` (`abstract.py:3076`) and `_build_prompt` (`:1382`, kwarg at `:1386`, `"chat_history"` slot at `:1440`), plus the `## Conversation Context:` section at `:3162`. |
 | `AbstractBot._create_llm_client` | modifies | no longer injects `conversation_memory` into the client (`abstract.py:1031-1036`, `:1055`). |
 | `AbstractClient.__init__` | modifies | `conversation_memory` kwarg and `InMemoryConversation()` default removed (`clients/base.py:362`, `:406`). |
@@ -287,10 +316,15 @@ class AbstractClient(EventEmitterMixin, ABC):
         """_format_history(history or ()) + _prepare_messages(prompt, files)[0]."""
 
 # parrot/bots/abstract.py — AbstractBot
+@property
+def memory_key_id(self) -> str:
+    """Stable per-agent key segment: explicit chatbot_id, else self.name."""
+
 async def save_conversation_turn(
-    self, user_id: str, session_id: str, turn: ConversationTurn, *,
-    chatbot_id: Optional[str] = None,       # STORAGE-KEY segment only (see M3)
+    self, user_id: str, session_id: str, turn: ConversationTurn,
 ) -> None: ...
+    # keys by self.memory_key_id; asserts turn.chatbot_id == self.memory_key_id
+    # (chatbot_id parameter REMOVED — no caller may choose a different key)
 ```
 
 ---
@@ -318,22 +352,46 @@ async def save_conversation_turn(
 - **Responsibility**: `HistoryMessage`, `render_history()` with the
   guarantees in §2; `ConversationTurn.chatbot_id` + `from_ai_message()`;
   `to_dict`/`from_dict` round-trip the new field; **remove**
-  `ConversationHistory.get_messages_for_api()` (`abstract.py:70-98`). No
-  backend (`mem.py`, `file.py`, `redis.py`) changes: they serialize
-  `turn.to_dict()` and are agnostic to the extra key.
+  `ConversationHistory.get_messages_for_api()` (`abstract.py:70-98`).
+  Backends serialize `turn.to_dict()` and are agnostic to the new field;
+  their only change is M2b.
 - **Depends on**: nothing (parallel with M1).
+
+### Module 2b: Lazy legacy re-key in persistent backends
+- **Path**: `packages/ai-parrot/src/parrot/memory/redis.py` (`get_history`
+  `:126`, `_get_key` `:31`), `packages/ai-parrot/src/parrot/memory/file.py`
+  (`get_history` `:52`, `_get_file_path` `:17`)
+- **Responsibility**: when `get_history(user_id, session_id, chatbot_id)` is
+  called with a truthy `chatbot_id` and the segmented key/path does not
+  exist, look up the legacy un-segmented key/path
+  (`conversation:{user}:{session}` / `{user}/{session}.json`). If found:
+  deserialize, set `history.chatbot_id = chatbot_id`, persist it under the
+  segmented key (`update_history`/`create_history` path), **leave the legacy
+  record untouched**, log at INFO once per key, return the history. Turns
+  copied this way keep `turn.chatbot_id = None` (they predate attribution).
+  No offline migration script; no TTL added. `InMemoryConversation` is
+  process-local and needs nothing.
+- **Depends on**: Module 2 (for the `chatbot_id` field on turns).
 
 ### Module 3: `AbstractBot` single writer + system-prompt digest removal
 - **Path**: `packages/ai-parrot/src/parrot/bots/abstract.py`
 - **Responsibility**:
+  - New property `memory_key_id`: returns `str(self.chatbot_id)` when a
+    `chatbot_id` was passed explicitly (kwarg at `abstract.py:353`, or set by
+    `Chatbot` from the DB record, `bots/chatbot.py:150-161`) and `self.name`
+    otherwise. Requires remembering whether the id was explicit (a private
+    flag set at `:353-359`; the random `uuid4().hex` default is never used
+    as a key). Read-side helpers (`get_conversation_history` `:1798`,
+    `create_conversation_history` `:1816`, `clear_conversation_history`
+    `:1873`, `delete_conversation_history` `:1897`) pass
+    `chatbot_id=self.memory_key_id`.
   - `save_conversation_turn` becomes the only persistence path. Its
-    `chatbot_id` parameter is redefined as the **storage-key segment**
-    (default `None` — today's `bots/base.py` key behaviour; `VoiceBot` passes
-    `str(self.chatbot_id)` — today's `voice.py:645` behaviour). The current
-    fallback `chatbot_id or self.chatbot_id` (`abstract.py:1847`) is dropped:
-    it has no callers, and keeping it would silently move every `BaseBot`
-    history to a new Redis key. `turn.chatbot_id` (attribution) is always
-    `str(self.chatbot_id)` regardless of the key.
+    `chatbot_id` parameter is **removed**; it always keys by
+    `self.memory_key_id` and raises `ValueError` if
+    `turn.chatbot_id != self.memory_key_id` (attribution and key must agree).
+    The old fallback `chatbot_id or self.chatbot_id` (`abstract.py:1847`)
+    disappears with the parameter. `VoiceBot` (`voice.py:645`) already keyed
+    by `str(self.chatbot_id)`; it now goes through the same property.
   - Remove `build_conversation_context` (`:2912`) and its `print` debug
     lines; remove the `conversation_context` kwarg from
     `create_system_prompt` (`:3076`) and `_build_prompt` (`:1382`, kwarg `:1386`),
@@ -399,17 +457,24 @@ async def save_conversation_turn(
   `:636-645`, `:683`), `bots/flows/core/storage/synthesis.py`
   (`_synthesize_results` `:49` → `:112`; `synthesize_results` `:139` →
   `:205`).
-- **Responsibility**: replace `conversation_context = self.build_conversation_context(...)`
-  with `rendered = render_history(history, max_turns=self.max_context_turns,
-  current_chatbot_id=str(self.chatbot_id))`; pass `history=rendered` in
+- **Responsibility**: every history load
+  (`memory.get_history(user_id, session_id)` at `base.py:326/684/1099/1690`
+  and the matching `create_history` fallbacks) passes
+  `chatbot_id=self.memory_key_id`; replace
+  `conversation_context = self.build_conversation_context(...)` with
+  `rendered = render_history(history, max_turns=self.max_context_turns,
+  current_chatbot_id=self.memory_key_id)`; pass `history=rendered` in
   `llm_kwargs`; drop `"user_id"`/`"session_id"` from `llm_kwargs`; replace
   every hand-rolled `ConversationTurn(...)` + `memory.add_turn(...)` with
-  `ConversationTurn.from_ai_message(...)` + `await self.save_conversation_turn(...)`.
+  `ConversationTurn.from_ai_message(..., chatbot_id=self.memory_key_id)` +
+  `await self.save_conversation_turn(user_id, session_id, turn)`.
   The `ask_stream` partial-on-error save (`base.py:1841`) keeps its
   semantics (persist accumulated text) via the same helper with a
   synthesized `AIMessage` or explicit fields. Voice transcripts (`voice.py:636`)
   build the turn directly (no `AIMessage`) but still go through
-  `save_conversation_turn(..., chatbot_id=str(self.chatbot_id))`.
+  `save_conversation_turn` with `chatbot_id=self.memory_key_id` on the turn.
+  Delete `stateless=True` at `parrot_tools/security/summarizer.py:272` and
+  `:416`.
 - **Depends on**: Modules 3, 4.
 
 ### Module 7: Test suite migration
@@ -466,7 +531,11 @@ async def save_conversation_turn(
 | `test_turn_chatbot_id_roundtrip` | M2 | `to_dict()`/`from_dict()` keep `chatbot_id`; legacy dict without key ⇒ `None` |
 | `test_from_ai_message_metadata_shape` | M2 | Canonical metadata keys present; `tools_used` from `tool_calls` |
 | `test_get_messages_for_api_removed` | M2 | `not hasattr(ConversationHistory, "get_messages_for_api")` |
-| `test_save_conversation_turn_key_semantics` | M3 | `chatbot_id=None` ⇒ memory key without segment; `chatbot_id="x"` ⇒ with segment; `turn.chatbot_id` always set |
+| `test_memory_key_id_explicit_vs_name` | M3 | explicit `chatbot_id` ⇒ that id; none ⇒ `self.name`; two instances of the same unnamed-id bot share the key across "restarts" |
+| `test_save_conversation_turn_keys_by_memory_key_id` | M3 | turn lands under `[user][memory_key_id][session]`; `turn.chatbot_id` mismatch ⇒ `ValueError` |
+| `test_legacy_key_rekey_redis` | M2b | fakeredis: history under `conversation:u:s` only ⇒ `get_history(u, s, "bot")` returns it, writes `conversation:bot:u:s`, leaves legacy key; second call reads segmented key only |
+| `test_legacy_key_rekey_file` | M2b | same contract on `FileConversationMemory` paths |
+| `test_legacy_rekey_noop_when_segmented_exists` | M2b | segmented record present ⇒ legacy record never read |
 | `test_save_conversation_turn_emits_event` | M3 | `MessageAddedEvent` emitted once per save |
 | `test_create_llm_client_does_not_inject_memory` | M3 | Client instance has no `conversation_memory` attribute |
 | `test_client_has_no_memory_surface` | M4 | `AbstractClient` lacks `conversation_memory`, `_prepare_conversation_context`, `_update_conversation_memory`, `start_conversation`, … |
@@ -478,14 +547,17 @@ async def save_conversation_turn(
 | `test_grok_has_no_private_memory_path` | M5 | No `conversation_memory` reference in `grok.py` (AST/grep test) |
 | `test_basebot_llm_kwargs_carry_history_not_ids` | M6 | Stub client asserts `history` present and `user_id` absent for all four entry points |
 | `test_ask_stream_partial_save_on_error` | M6 | Mid-stream exception ⇒ one turn saved with accumulated text (existing behaviour preserved) |
-| `test_voicebot_turn_key_uses_chatbot_id` | M6 | Voice turn stored under chatbot-segmented key (today's behaviour) |
+| `test_voicebot_turn_key_uses_memory_key_id` | M6 | Voice turn stored under `memory_key_id`-segmented key, same as `BaseBot` |
+| `test_basebot_reads_history_with_key_id` | M6 | Stub memory asserts every `get_history`/`create_history` call carries `chatbot_id=bot.memory_key_id` |
 | `test_model_switching_contrastive_single_turn` | M6 | `contrastive` mode ⇒ exactly one turn persisted per round |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_redis_roundtrip_with_chatbot_id` | `RedisConversation` (fakeredis or marked `redis`) stores/loads a turn with `chatbot_id`; legacy record without it loads as `None` |
-| `test_multi_agent_shared_session_render` | Two bots, same `(user, session)` key (chatbot_id=None): second bot's render labels the first bot's turns |
+| `test_redis_roundtrip_with_chatbot_id` | `RedisConversation` (fakeredis or marked `redis`) stores/loads a turn with `chatbot_id` under `conversation:{key_id}:{user}:{session}`; legacy record without the field loads as `None` |
+| `test_two_agents_same_session_are_isolated` | Two bots, same `(user, session)`, different `memory_key_id` ⇒ two histories; neither sees the other's turns |
+| `test_crew_shared_history_render_labels_foreign_turns` | A history that explicitly holds turns from two `chatbot_id`s (crew/flow case) renders foreign assistant turns with the `[agent:<id>]` label |
+| `test_restart_keeps_history_for_unnamed_id_bot` | Bot without explicit `chatbot_id` re-instantiated with the same `name` ⇒ same key ⇒ history continues |
 | `test_full_suite_green` | `timeout -s KILL 600 pytest tests/unit -q` and `pytest packages/ai-parrot/tests -q` pass (see memory note: unit suite hangs after summary — always wrap in `timeout`) |
 
 ### Test Data / Fixtures
@@ -538,7 +610,10 @@ def two_agent_history() -> ConversationHistory:
 - [ ] `AbstractBot.build_conversation_context` and the `conversation_context` kwarg no longer exist; no system prompt produced by the bot contains `## Conversation Context`.
 - [ ] `ConversationTurn.chatbot_id` is set (non-`None`) on every turn written by a bot; legacy records without the key still deserialize.
 - [ ] `render_history` guarantees (alternation, merge, skip-empty, label/filter, `max_turns`, purity) each have a passing unit test.
-- [ ] Storage keys are unchanged for existing histories: `BaseBot`-written turns remain under the key without chatbot segment; `VoiceBot` turns remain under the chatbot-segmented key (test M3 + M6).
+- [ ] Every history read and write from any bot goes through the `(memory_key_id, user_id, session_id)` key on all three backends; no bot code path calls `get_history`/`create_history`/`add_turn` without `chatbot_id` (grep + stub-memory test M6).
+- [ ] `memory_key_id` is stable across process restarts for bots without an explicit `chatbot_id` (equals `self.name`); the random `uuid4().hex` default never appears in a storage key.
+- [ ] Legacy un-segmented Redis/File histories are transparently re-keyed on first read and the legacy record is left untouched (M2b tests); a segmented record present ⇒ legacy never consulted.
+- [ ] `stateless=True` no longer appears in `packages/ai-parrot-tools/src/parrot_tools/security/summarizer.py` and `ask()` accepts no `stateless` parameter on any client.
 - [ ] `MessageAddedEvent` is emitted once per persisted turn.
 - [ ] `ModelSwitchingMixin` `fallback` and `contrastive` modes persist exactly one turn per round.
 - [ ] Every direct `client.ask(...)` caller listed in §6 still compiles and its tests pass (none of them passed ids except those migrated in M6).
@@ -689,11 +764,12 @@ class ModelSwitchingMixin:                                # line 57
 |---|---|---|---|
 | `render_history()` | `ConversationHistory.turns` | reads dataclass fields | `memory/abstract.py:51-59` |
 | `ConversationTurn.from_ai_message()` | `AIMessage.to_text`, `.tool_calls`, `.usage`, `.model`, `.provider`, `.finish_reason`, `.response_time`, `.turn_id` | attribute reads | `models/responses.py:111-163, 267` |
-| `BaseBot.*` | `AbstractBot.save_conversation_turn()` | `await self.save_conversation_turn(user_id, session_id, turn, chatbot_id=None)` | `bots/abstract.py:1836` |
+| `BaseBot.*` | `AbstractBot.save_conversation_turn()` | `await self.save_conversation_turn(user_id, session_id, turn)` (keys by `self.memory_key_id`) | `bots/abstract.py:1836` |
+| `BaseBot.*` | `ConversationMemory.get_history()/create_history()` | `chatbot_id=self.memory_key_id` on every call | `bots/base.py:326, 684, 1099, 1690` |
 | `BaseBot.*` | `AbstractClient.ask(history=...)` | `llm_kwargs["history"] = rendered` → `execute_llm_call` | `bots/base.py:445, 705, 1285, 1776`; `bots/abstract.py:1239` |
 | `AbstractClient._build_messages()` | `AbstractClient._prepare_messages()` | appends current turn after formatted history | `clients/base.py:1582` |
 | `GoogleClient._format_history()` | `google.genai.types.UserContent/ModelContent` | already used by hand at | `clients/google/analysis.py:282-292, 821-823` |
-| `VoiceBot.ask_stream` | `save_conversation_turn(..., chatbot_id=str(self.chatbot_id))` | keeps today's key | `bots/voice.py:642-645` |
+| `VoiceBot.ask_stream` | `save_conversation_turn(user_id, session_id, turn)` | replaces the direct `conversation_memory.add_turn(..., chatbot_id=str(self.chatbot_id))`; key now via `memory_key_id` | `bots/voice.py:642-645` |
 | `DataAgent.ask` | `save_conversation_turn` | replaces hand-rolled turn | `bots/data.py:2088-2102` |
 | `DatabaseAgent.ask` | `self._llm.ask(**call_kwargs)` — drop ids from `call_kwargs` | | `bots/database/agent.py:501, 534` |
 | `synthesis.py` | `client.ask(...)` — drop ids | | `bots/flows/core/storage/synthesis.py:112, 205` |
@@ -720,6 +796,9 @@ call sites; verify `ask` accepts it via `**kwargs` today**),
 - `ChatMessage` **exists twice but is NOT the neutral render type**: `parrot/storage/models.py:73` (per-message persistence unit with `message_id/session_id/agent_id/...`) and `ai-parrot-server/.../handlers/openai_compat.py:79` (HTTP schema). Do not reuse either; the new type is `HistoryMessage` precisely to avoid this collision.
 - ~~`parrot.memory.ConversationSession`~~ — legacy name mentioned in a docstring (`abstract.py:52`); no such class.
 - ~~`AbstractBot._record_turn`~~, ~~`AbstractBot._save_turn`~~ — do not exist; the single writer is `save_conversation_turn`.
+- ~~`AbstractBot.memory_key_id`~~ — to be created in M3. Today there is no notion of "was `chatbot_id` explicit": `abstract.py:353-359` assigns `kwargs.get('chatbot_id', str(uuid.uuid4().hex))` and re-randomizes on `None`.
+- ~~legacy-key fallback in `RedisConversation.get_history` / `FileConversationMemory.get_history`~~ — does not exist; `get_history` returns `None` when the exact key/path is missing (`redis.py:126`, `file.py:52`). To be created in M2b.
+- ~~TTL on Redis history keys~~ — none; the only `expire` call is commented out (`redis.py:490`).
 - ~~`ConversationMemory.get_messages_for_api`~~ — it was on `ConversationHistory`, not the memory backend, and is removed by M2.
 - No client defines `_format_history` or accepts `history` today; `google/analysis.py` builds `UserContent`/`ModelContent` inline instead.
 
@@ -747,11 +826,24 @@ call sites; verify `ask` accepts it via `**kwargs` today**),
   pulling storage backends.
 
 ### Known Risks / Gotchas
-- **Storage-key drift.** Routing `BaseBot` through `save_conversation_turn`
-  with its *current* default (`chatbot_id or self.chatbot_id`,
-  `abstract.py:1847`) would move every existing Redis history to a new key
-  and "lose" live conversations. M3 redefines the default to `None` and
-  the tests in §4 pin both behaviours. Unifying the key is deferred (§8).
+- **Key unification moves every `BaseBot` history to a new Redis key.**
+  Today `BaseBot` writes `conversation:{user}:{session}`; after this feature
+  it writes `conversation:{key_id}:{user}:{session}`. Redis history keys
+  carry **no TTL** (`memory/redis.py:490` is commented out), so without M2b
+  every live conversation would silently restart. M2b's lazy re-key is
+  therefore mandatory, not optional; the legacy record is left in place so
+  a rollback still finds it.
+- **Random `chatbot_id` default.** `AbstractBot.__init__` assigns
+  `uuid4().hex` when no `chatbot_id` is given (`abstract.py:353-359`). Keying
+  by it would give ad-hoc bots (scripts, tools, tests, most `BaseBot`
+  instances outside the DB-backed `Chatbot`) a fresh history per process.
+  `memory_key_id` falls back to `self.name` for that reason. Consequence to
+  accept: two *different* unnamed-id bots that share a `name` share a
+  history. Bots loaded from the DB (`bots/chatbot.py:150-161`) always have
+  an explicit id and are unaffected.
+- **Re-key race.** Two concurrent first reads of the same legacy history
+  may both copy it; the copy is idempotent (same content, `update_history`
+  overwrites) so the race is benign. Do not add locking.
 - **FEAT-523 (`pep-420-llm-clients`) moves the same 13 client files** into
   satellite packages and states "no in-flight specs touch `parrot/clients/`"
   — that is no longer true once this spec is approved. Sequence explicitly
@@ -802,10 +894,11 @@ call sites; verify `ask` accepts it via `**kwargs` today**),
 - [x] Deprecation period for `user_id`/`session_id` on `ask()`? — *Resolved (author)*: **Hard cut.** No external consumers, no user overrides of `ask()`.
 - [x] Must every message carry the invoking agent? — *Resolved (author)*: **Yes**, `ConversationTurn.chatbot_id`, always set by the bot.
 - [x] History injection mechanism? — *Resolved (proposed by assistant, accepted)*: alternating messages via a neutral `HistoryMessage` list rendered in `parrot.memory`; provider formatting in the client; system-prompt digest removed.
-- [ ] **Storage key unification.** Should the key become `(user_id, session_id)` with attribution only in `turn.chatbot_id`, so several agents share one conversation? Requires a Redis key migration. v1 preserves today's keys; decide in the compaction brainstorm re-run. — *Owner: Jesus Lara*
-- [ ] **Default for `include_other_agents`** in `render_history` (`True` with label vs `False`). Spec proposes `True`; can be decided at M2 implementation. — *Owner: implementer*
-- [ ] **Sequencing vs FEAT-523.** Land FEAT-524 before FEAT-523 starts moving client files (recommended: in-place signature edits are the smaller diff), or after with updated paths? — *Owner: Jesus Lara*
-- [ ] **`stateless=True` at `summarizer.py`** — keep as a no-op kwarg on some clients or delete at the two call sites? — *Owner: implementer (M5)*
+- [x] **Storage key unification.** — *Resolved (author, 2026-09-04 spec review)*: **unify now to `(chatbot, user, session)`** on all backends. Consequences folded into §2 (Storage key), M2b (lazy legacy re-key, no TTL on Redis keys) and M3 (`memory_key_id` = explicit `chatbot_id` else `self.name`, because the default id is a random uuid per process).
+- [x] **Default for `include_other_agents`** in `render_history`. — *Resolved (author)*: **`True`**, foreign assistant turns prefixed with `[agent:{chatbot_id}]`.
+- [x] **Sequencing vs FEAT-523.** — *Resolved (author)*: **FEAT-524 first.** FEAT-523 (`pep-420-llm-clients`) does not create its worktree until this feature is merged to `dev`; its spec's "no in-flight specs touch `parrot/clients/`" claim should be amended to reference FEAT-524.
+- [x] **`stateless=True` at `summarizer.py`.** — *Resolved (author)*: **delete at the two call sites** (`parrot_tools/security/summarizer.py:272`, `:416`); no no-op kwarg on `ask()`.
+- [ ] **Shared `name` collision for unnamed-id bots.** Two distinct bots instantiated without `chatbot_id` but with the same `name` will share a history under the new key rule. Acceptable for v1 (today they share the *un-segmented* key anyway, which is strictly worse)? Revisit if a real collision is reported. — *Owner: Jesus Lara (non-blocking)*
 
 ---
 
@@ -818,13 +911,13 @@ call sites; verify `ask` accepts it via `**kwargs` today**),
   M5 the 13 client files are disjoint and may be split across agents, but
   all after M4 and all before M6 (M6 needs every client to accept `history`
   or `BaseBot` breaks for that provider).
-- **Order**: M1 (red) → M2 → M3 → M4 → M5 → M6 → M7 → M8 → M1 (green).
+- **Order**: M1 (red) → M2 → M2b → M3 → M4 → M5 → M6 → M7 → M8 → M1 (green).
+  M2b ∥ M3 is possible (memory backends vs bot), both after M2.
 - **Cross-feature dependencies**:
-  - **FEAT-523 `pep-420-llm-clients`** (draft, FEAT-523): touches the same
-    `parrot/clients/*.py` files by *moving* them. Not a merge-order
-    dependency in the strict sense, but a conflict surface: coordinate so
-    one is fully merged to `dev` before the other creates its worktree.
-    Recommendation: FEAT-524 first.
+  - **FEAT-523 `pep-420-llm-clients`** (draft): touches the same
+    `parrot/clients/*.py` files by *moving* them. **Decided: FEAT-524 merges
+    to `dev` first; FEAT-523 creates its worktree only after that merge**
+    and re-runs `test_all_client_ask_signatures` on the relocated files.
   - **FEAT-112 `per-loop-llm-client-cache`** (approved): its
     `conversation_memory` constructor reference (`spec:455`) becomes stale;
     no code dependency — cached clients simply become stateless.
@@ -840,3 +933,4 @@ call sites; verify `ask` accepts it via `**kwargs` today**),
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-04 | Jesus Lara | Initial draft from the 2026-09-04 design discussion (no brainstorm doc; decisions recorded in §2 and §8) |
+| 0.2 | 2026-09-04 | Jesus Lara | Spec review: resolved the four §8 questions. Storage key unified to `(chatbot, user, session)` now → added `memory_key_id` (M3), lazy legacy re-key (M2b), new tests/criteria/risks; FEAT-524 sequenced before FEAT-523; `stateless=True` deleted at call sites; `include_other_agents=True`. |
