@@ -429,8 +429,31 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     def _render_Text(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
         role = None
+        extensions: dict[str, Any] = {}
         if node.metadata is not None and node.metadata.extensions is not None:
-            role = node.metadata.extensions.root.get("parrot_role")
+            extensions = node.metadata.extensions.root
+            role = extensions.get("parrot_role")
+
+        if role == "html_document":
+            # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
+            # HTML — this static renderer cannot embed it either way, so it
+            # ALWAYS degrades: a titled link to the signed artifact URL when
+            # one exists, else the placeholder text. Always recorded.
+            degradations.append(degradation_record(node, "ssr-html cannot embed HtmlDocument"))
+            placeholder = str(props.get("text") or "")
+            title = (
+                placeholder[len("[HTML document: ") : -1]
+                if placeholder.startswith("[HTML document: ") and placeholder.endswith("]")
+                else placeholder
+            )
+            src_url = extensions.get("parrot_src_url")
+            if src_url:
+                return (
+                    '<p class="a2ui-html-document-link">'
+                    f'<a href="{html.escape(str(src_url), quote=True)}">{html.escape(title)}</a></p>'
+                )
+            return f'<p class="a2ui-html-document-link">{html.escape(placeholder)}</p>'
+
         if "text" not in props and role != "cell":
             # FEAT-499: baking drops the "text" key entirely (never an
             # empty string) when an OPTIONAL binding failed to resolve —

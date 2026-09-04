@@ -117,7 +117,7 @@ _SURFACE_NAME = "interactive-html"
 
 #: Components intercepted BEFORE lowering — their real (graphics/nested)
 #: rendering is this renderer's own job, not their catalog `lower()`.
-_INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map"}
+_INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map", "HtmlDocument"}
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -714,6 +714,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             return self._render_infographic(comp, degradations)
         if name == "Map":
             return self._render_map(comp)
+        if name == "HtmlDocument":
+            return self._render_htmldocument(comp)
         node = self._reconstruct(comp["id"], by_id)
         return self._render_basic(node, degradations)
 
@@ -727,6 +729,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             return self._render_datatable(properties)
         if name == "Map":
             return self._render_map(properties)
+        if name == "HtmlDocument":
+            return self._render_htmldocument(properties)
         try:
             entry = get_component(name)
         except KeyError:
@@ -1197,3 +1201,39 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             parts.append(f'<div class="a2ui-col a2ui-section">{"".join(section_parts)}</div>')
 
         return f'<div class="a2ui-card" data-variant="infographic">{"".join(parts)}</div>'
+
+    def _render_htmldocument(self, props: dict[str, Any]) -> str:
+        """Render an ``HtmlDocument`` as a sandboxed ``<iframe>`` (FEAT-527).
+
+        Bypasses catalog lowering entirely (``HtmlDocumentComponent.lower()``
+        intentionally degrades to a text placeholder and never carries the
+        raw HTML — real embedding is a renderer concern, same precedent as
+        ``EChartsRenderer``/``_render_chart``). ``props`` is the baked
+        component's own top-level dict (v1.0 — never nested under a
+        "properties" key), so ``html``/``srcUrl`` are read directly here,
+        pre-lowering.
+
+        Security: ``sandbox="allow-scripts"`` WITHOUT ``allow-same-origin``
+        — the embedded document cannot reach the host DOM/storage. The raw
+        ``html`` is escaped into the ``srcdoc`` attribute (never evaluated by
+        the host page itself); inline style only (FEAT-493 self-contained
+        invariant — no external CSS/JS).
+        """
+        title = props.get("title") or ""
+        title_html = f'<h3 class="a2ui-heading">{html.escape(str(title))}</h3>' if title else ""
+        iframe_style = "width:100%;min-height:480px;border:1px solid #ccc"
+
+        raw_html = props.get("html")
+        if raw_html is not None:
+            iframe = (
+                f'<iframe sandbox="allow-scripts" style="{iframe_style}" '
+                f'srcdoc="{html.escape(str(raw_html), quote=True)}"></iframe>'
+            )
+        else:
+            src_url = props.get("srcUrl") or ""
+            iframe = (
+                f'<iframe sandbox="allow-scripts" style="{iframe_style}" '
+                f'src="{html.escape(str(src_url), quote=True)}"></iframe>'
+            )
+
+        return f'<section class="a2ui-html-document">{title_html}{iframe}</section>'

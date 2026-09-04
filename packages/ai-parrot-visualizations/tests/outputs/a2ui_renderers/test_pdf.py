@@ -97,3 +97,21 @@ class TestTASK2543:
         assert "<video" not in doc
         assert len(degraded) == 1
         assert degraded[0]["component"] == "Video"
+
+
+class TestHtmlDocumentUnderPdf:
+    """FEAT-527: PDFRenderer inherits SSRHTMLRenderer's HtmlDocument
+    degradation with zero code changes — the titled link survives the print
+    layout (weasyprint renders plain `<a href>` fine)."""
+
+    async def test_htmldocument_link_survives_print_layout(self):
+        env = CreateSurface(
+            surfaceId="s", catalogId="c",
+            components=[
+                Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
+            ],
+            dataModel={},
+        )
+        doc, degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(env)
+        assert '<a href="https://x/infographic-a.html">Doc</a>' in doc
+        assert any("HtmlDocument" in d.get("reason", "") for d in degraded)

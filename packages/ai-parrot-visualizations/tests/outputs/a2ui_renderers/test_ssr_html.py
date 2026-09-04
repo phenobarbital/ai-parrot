@@ -255,3 +255,38 @@ class TestNewChartTypesDegradation:
 
         assert f"Chart ({chart_type})" in doc
         assert art.metadata.get("degraded", []) == []
+
+
+class TestHtmlDocumentDegradesToLink:
+    """FEAT-527: ssr-html can never embed HtmlDocument (static renderer) —
+    always a titled link (srcUrl) or placeholder text (inline html only),
+    always recorded."""
+
+    async def test_htmldocument_degrades_to_link(self):
+        env = CreateSurface(
+            surfaceId="s", catalogId="c",
+            components=[
+                Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert '<a href="https://x/infographic-a.html">Doc</a>' in doc
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+
+    async def test_htmldocument_inline_only_degrades_to_placeholder_text(self):
+        env = CreateSurface(
+            surfaceId="s", catalogId="c",
+            components=[Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>")],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert "[HTML document: Doc]" in doc
+        assert "<a href=" not in doc
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+        # Never echoes the raw HTML.
+        assert "<p>hi</p>" not in doc

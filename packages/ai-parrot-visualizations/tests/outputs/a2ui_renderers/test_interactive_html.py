@@ -467,3 +467,68 @@ class TestMapDispatch:
             sys.modules.pop("parrot.outputs.a2ui_renderers.interactive_html", None)
             sys.modules.pop("parrot.outputs.a2ui_renderers.folium_map", None)
             importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")
+
+
+class TestHtmlDocumentSandboxedIframe:
+    """FEAT-527: HtmlDocument embeds in a sandboxed iframe — never lowered,
+    never evaluated by the host page."""
+
+    async def test_htmldocument_embedded_in_sandboxed_iframe(self):
+        env = _envelope(
+            Component(
+                id="root", component="HtmlDocument", title="Doc",
+                html="<html><body><script>alert(1)</script></body></html>",
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        out = art.content.decode()
+
+        assert 'sandbox="allow-scripts"' in out
+        assert "srcdoc=" in out
+        assert "allow-same-origin" not in out
+        assert "<script>alert(1)</script>" not in out  # only the escaped form inside srcdoc
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
+        assert "<script src=" not in out
+        assert "Doc" in out
+
+    async def test_htmldocument_src_url_variant(self):
+        env = _envelope(
+            Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        out = art.content.decode()
+
+        assert 'sandbox="allow-scripts"' in out
+        assert 'src="https://x/infographic-a.html"' in out
+        assert "srcdoc=" not in out
+
+    async def test_htmldocument_no_degradation_recorded(self):
+        env = _envelope(
+            Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>")
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert art.metadata.get("degraded", []) == []
+
+    async def test_htmldocument_nested_in_infographic(self):
+        env = _envelope(
+            Component(
+                id="root",
+                component="Infographic",
+                title="T",
+                sections=[
+                    {
+                        "heading": "S",
+                        "components": [
+                            {
+                                "component": "HtmlDocument",
+                                "properties": {"title": "Nested Doc", "html": "<p>hi</p>"},
+                            }
+                        ],
+                    }
+                ],
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        out = art.content.decode()
+        assert 'sandbox="allow-scripts"' in out
+        assert "Nested Doc" in out
