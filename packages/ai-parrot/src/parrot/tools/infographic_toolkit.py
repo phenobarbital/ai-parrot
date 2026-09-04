@@ -10,6 +10,11 @@ This toolkit exposes four tools to the LLM:
 With ``return_direct=True`` the toolkit bypasses LLM re-summarisation: the
 result of ``infographic_render`` is the final agent output, consumed by
 ``PandasAgent.ask()``'s post-loop branch (TASK-1326).
+
+Dual-emit by default (FEAT-527): every render additionally builds a validated
+A2UI ``CreateSurface`` envelope alongside the HTML artifact — the HTML lane is
+a permanent sibling emission, not a deprecated path. Set ``emit_a2ui=False``
+to opt back into HTML-only rendering.
 """
 
 from __future__ import annotations
@@ -216,7 +221,7 @@ class InfographicToolkit(AbstractToolkit):
         artifact_store: ArtifactStore,
         template_dirs: Optional[Any] = None,
         templates: Optional[Dict[str, str]] = None,
-        emit_a2ui: bool = False,
+        emit_a2ui: bool = True,
         recipe_store: Optional[AbstractRecipeStore] = None,
         recipe_runner: Optional[RecipeRunner] = None,
         dataset_manager: Optional[Any] = None,
@@ -232,8 +237,11 @@ class InfographicToolkit(AbstractToolkit):
             templates: Optional mapping of ``{name: source}`` in-memory HTML+Jinja
                 templates for ``render_template`` (registered via the engine's
                 ``DictLoader``). Combine with ``template_dirs`` or use alone.
-            emit_a2ui: When True, the render tools additionally produce a validated
-                A2UI ``CreateSurface`` envelope (FEAT-273 Module 11, D1a lane).
+            emit_a2ui: When True (the default — FEAT-527), the render tools
+                additionally produce a validated A2UI ``CreateSurface`` envelope
+                (FEAT-273 Module 11, D1a lane) alongside the HTML artifact. The
+                HTML lane is a permanent sibling emission; set to False to opt
+                back into HTML-only rendering.
             recipe_store: Optional ``AbstractRecipeStore`` (FEAT-324, Module 4/6).
                 When provided, the four recipe tools (``infographic_save_recipe``,
                 ``infographic_list_recipes``, ``infographic_run_recipe``,

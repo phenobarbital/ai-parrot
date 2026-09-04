@@ -129,6 +129,20 @@ class TestReturnDirect:
 
 
 # ---------------------------------------------------------------------------
+# emit_a2ui default (FEAT-527: dual-emit by default)
+# ---------------------------------------------------------------------------
+
+class TestEmitA2UIDefault:
+    def test_toolkit_default_emits_a2ui(self, fake_artifact_store):
+        tk = InfographicToolkit(artifact_store=fake_artifact_store)
+        assert tk._emit_a2ui is True
+
+    def test_toolkit_emit_a2ui_opt_out(self, fake_artifact_store):
+        tk = InfographicToolkit(artifact_store=fake_artifact_store, emit_a2ui=False)
+        assert tk._emit_a2ui is False
+
+
+# ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
 

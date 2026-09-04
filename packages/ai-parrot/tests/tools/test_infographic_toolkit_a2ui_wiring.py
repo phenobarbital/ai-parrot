@@ -320,3 +320,60 @@ class TestTemplateLane:
         props = _infographic(envelope)
         assert props["title"] == "Report"
         assert props["sections"][0]["text"] == "Data: alpha, beta"
+
+
+class TestProductionConstructorsEmitByDefault:
+    """FEAT-527: the three production call sites build ``InfographicToolkit``
+    without an explicit ``emit_a2ui=`` kwarg, so flipping the default to
+    ``True`` must flip THEIR behaviour too, with zero code changes at the
+    call sites themselves (``bots/mixins/infographic_authoring.py:85-89``,
+    ``handlers/infographic.py:535-538``, ``bots/flows/result_agent.py:142,171``).
+    """
+
+    def test_infographic_authoring_mixin_builds_an_emitting_toolkit(self):
+        from unittest.mock import MagicMock
+
+        from parrot.bots.mixins.infographic_authoring import InfographicAuthoringMixin
+
+        class _StubBase:
+            def __init__(self, *args, **kwargs):
+                # Cooperative-mixin chain end: absorb tools=/other kwargs.
+                pass
+
+        class _StubAgent(InfographicAuthoringMixin, _StubBase):
+            pass
+
+        agent = _StubAgent(artifact_store=MagicMock())
+        assert agent._infographic_toolkit is not None
+        assert agent._infographic_toolkit._emit_a2ui is True
+
+    def test_infographic_talk_get_render_toolkit_emits_by_default(self):
+        import logging
+        from unittest.mock import MagicMock
+
+        from aiohttp import web
+
+        from parrot.handlers.infographic import InfographicTalk
+
+        app = web.Application()
+        app["artifact_store"] = MagicMock()
+
+        handler = InfographicTalk.__new__(InfographicTalk)
+        handler.logger = logging.getLogger("test.infographic_talk_render_toolkit")
+        handler._request = MagicMock(app=app)
+
+        toolkit = handler._get_render_toolkit()
+        assert toolkit._emit_a2ui is True
+
+    def test_result_agent_toolkit_emits_by_default(self):
+        from unittest.mock import MagicMock
+
+        from parrot.bots.flows.result_agent import ResultAgent
+
+        agent = ResultAgent.__new__(ResultAgent)
+        agent._artifact_store = MagicMock()
+        agent._toolkit = None
+
+        tools = ResultAgent.agent_tools(agent)
+        assert agent._toolkit._emit_a2ui is True
+        assert tools == agent._toolkit.get_tools()

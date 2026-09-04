@@ -6,7 +6,7 @@ top-to-bottom like a notebook, not just executed.
 
 The eight steps::
 
-    1. The agent          — PandasAgent + InfographicToolkit(emit_a2ui=True)
+    1. The agent          — PandasAgent + InfographicToolkit (dual-emit by default, FEAT-527)
     2. The contract       — a template's positional block contract
     3. The blocks         — typed InfographicBlocks built from a DataFrame
     4. The render         — InfographicRenderResult (HTML artifact + envelope)
@@ -152,12 +152,12 @@ class A2UIDashboardAgent(InfographicAuthoringMixin, PandasAgent):
 
     Two things make this agent emit A2UI rather than plain HTML:
 
-    1. Its ``InfographicToolkit`` is constructed with ``emit_a2ui=True``, so
-       every render additionally produces a catalog-validated envelope
-       alongside the HTML artifact. Note that the toolkit is passed in
-       explicitly — ``InfographicAuthoringMixin`` will happily build one for
-       you from ``artifact_store=``, but that auto-built toolkit uses the
-       default ``emit_a2ui=False`` and would give you the HTML lane only.
+    1. Its ``InfographicToolkit`` emits by default (FEAT-527: ``emit_a2ui=True``
+       is the default), so every render additionally produces a
+       catalog-validated envelope alongside the HTML artifact. The toolkit is
+       still passed in explicitly here for clarity — ``InfographicAuthoringMixin``
+       will happily build one for you from ``artifact_store=`` and it emits
+       just the same, since it inherits the default.
     2. Callers ask with ``output_mode=OutputMode.A2UI``. ``BaseBot`` then routes
        the result through ``finalize_a2ui_response`` (``parrot/outputs/a2ui/
        emission.py``), which bypasses the legacy ``OutputFormatter`` entirely
@@ -192,7 +192,7 @@ async def step1_agent(
     Returns:
         The (already opened) agent and the toolkit bound to it.
     """
-    rule("Step 1 — the agent: PandasAgent + InfographicToolkit(emit_a2ui=True)")
+    rule("Step 1 — the agent: PandasAgent + InfographicToolkit (dual-emit by default)")
 
     toolkit = InfographicToolkit(artifact_store=artifact_store, emit_a2ui=True)
     agent = A2UIDashboardAgent(
@@ -367,8 +367,8 @@ async def step4_render(
     """Render the blocks into an HTML artifact plus an A2UI envelope.
 
     ``render()`` validates the blocks against the contract, renders the HTML
-    skeleton, persists it, and — because ``emit_a2ui=True`` — additionally maps
-    the same ``InfographicResponse`` through
+    skeleton, persists it, and — because ``emit_a2ui`` defaults to ``True``
+    (FEAT-527) — additionally maps the same ``InfographicResponse`` through
     ``parrot.outputs.a2ui.adapters.infographic_response_to_envelope``. Both
     outputs therefore describe identical content by construction; the envelope
     is never a second, drifting source of truth.
