@@ -21,6 +21,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     # Imported lazily: ``parrot.models`` must not become a runtime dependency
     # of ``parrot.memory`` (FEAT-524 keeps this package import-cycle free).
     from parrot.models import AIMessage
+
     # ``.compaction.tokens`` and ``.compaction.normalize`` import
     # ``ConversationTurn`` from THIS module, so importing them at module
     # level here would be a circular import. Type-only here; imported
@@ -165,9 +166,7 @@ class ConversationTurn:
             metadata=data.get("metadata", {}),
             # Legacy records predate attribution — absent key means "unknown".
             chatbot_id=data.get("chatbot_id"),
-            tool_invocations=[
-                ToolInvocation.from_dict(d) for d in data.get("tool_invocations", []) or []
-            ],
+            tool_invocations=[ToolInvocation.from_dict(d) for d in data.get("tool_invocations", []) or []],
             error=data.get("error"),
             token_count=TokenCount.from_dict(token_count_data) if token_count_data else None,
             state=TurnState(data.get("state", TurnState.RAW.value)),
@@ -234,9 +233,7 @@ class ConversationTurn:
                 output=_stringify(tc.result),
                 status=ToolStatus.ERROR if tc.error else ToolStatus.COMPLETED,
                 error=tc.error,
-                elapsed_ms=(
-                    int(tc.execution_time * 1000) if tc.execution_time is not None else None
-                ),
+                elapsed_ms=(int(tc.execution_time * 1000) if tc.execution_time is not None else None),
                 wm_key=_tee_key(tc.result),
             )
             for tc in tool_calls
@@ -481,11 +478,7 @@ class ConversationMemory(ABC):
         key = self.omission_key(user_id, session_id, chatbot_id)
         offloaded = False
         for inv in turn.tool_invocations:
-            if (
-                inv.output
-                and "output" not in inv.omitted
-                and counter.count(inv.output) > self._oversize_tool_tokens
-            ):
+            if inv.output and "output" not in inv.omitted and counter.count(inv.output) > self._oversize_tool_tokens:
                 cid = await self.omission_store.put(key, inv.output, turn_id=turn.turn_id)
                 inv.output_chars = len(inv.output)
                 inv.output = _preview(inv.output)
@@ -583,11 +576,7 @@ class ConversationMemory(ABC):
         if history is None:
             return
         prev = history.metadata.get("compaction")
-        state = (
-            CompactionState.from_dict(prev)
-            if prev
-            else CompactionState(tokenizer=self.token_counter.name)
-        )
+        state = CompactionState.from_dict(prev) if prev else CompactionState(tokenizer=self.token_counter.name)
         state = apply_usage(state, estimated_prompt_tokens, provider_prompt_tokens)
         history.metadata["compaction"] = state.to_dict()
         await self.update_history(history)

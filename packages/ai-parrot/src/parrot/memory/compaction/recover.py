@@ -29,7 +29,7 @@ READ_OMITTED_CONTENT_NAME: str = "read_omitted_content"
 READ_OMITTED_CONTENT_DESCRIPTION: str = (
     "Recover the exact original bytes of a tool output that was omitted from "
     "conversation history. Call this when you see a `<tool-output-omitted "
-    "tool=\"...\" chars=\"...\" id=\"om_...\"/>` notice and need the full content: "
+    'tool="..." chars="..." id="om_..."/>` notice and need the full content: '
     "pass its `content_id` to recover just that output, or a turn's `turn_id` "
     "to recover every output omitted from that turn."
 )

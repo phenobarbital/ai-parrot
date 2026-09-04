@@ -45,9 +45,7 @@ def test_count_turn_excludes_context_used():
         tool_invocations=[inv],
     )
     tc = tk.count_turn(t, c)
-    assert tc == TokenCount(
-        user=10, assistant=10, tools=c.count('{"a":1}') + 10, total=tc.total, tokenizer="heuristic"
-    )
+    assert tc == TokenCount(user=10, assistant=10, tools=c.count('{"a":1}') + 10, total=tc.total, tokenizer="heuristic")
     assert tc.total == tc.user + tc.assistant + tc.tools
 
 

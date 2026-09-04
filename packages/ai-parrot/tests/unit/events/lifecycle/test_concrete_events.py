@@ -1,4 +1,5 @@
 """Unit tests for all concrete lifecycle event classes (TASK-1184, FEAT-176)."""
+
 import json
 import pytest
 from dataclasses import FrozenInstanceError
@@ -23,7 +24,6 @@ from parrot.core.events.lifecycle.events import (
     Stage2CompactionNeededEvent,
 )
 from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
-
 
 ALL_CLASSES = [
     AgentInitializedEvent,
@@ -64,7 +64,7 @@ def test_frozen(cls, trace_root):
     """Every event class is frozen — mutating source_name raises."""
     evt = cls(trace_context=trace_root)
     with pytest.raises((FrozenInstanceError, TypeError)):
-        evt.source_name = "x"   # type: ignore[misc]
+        evt.source_name = "x"  # type: ignore[misc]
 
 
 @pytest.mark.parametrize("cls", ALL_CLASSES)
@@ -72,7 +72,7 @@ def test_to_dict_json_serializable(cls, trace_root):
     """Every event class produces a JSON-serializable dict from to_dict()."""
     evt = cls(trace_context=trace_root)
     d = evt.to_dict()
-    assert json.dumps(d)   # must not raise
+    assert json.dumps(d)  # must not raise
 
 
 @pytest.mark.parametrize("cls", ALL_CLASSES)

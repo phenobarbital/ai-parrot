@@ -110,7 +110,7 @@ async def test_bind_after_defaulting(bot_with_recording_memory, entry):
         await call("hello", use_vector_context=False)
 
     assert len(mem.seen) == 1
-    (user_id, session_id, cv_user, cv_session, cv_key), = mem.seen
+    ((user_id, session_id, cv_user, cv_session, cv_key),) = mem.seen
     assert cv_user == user_id == "anonymous"
     assert cv_session == session_id
     assert cv_key == bot.memory_key_id

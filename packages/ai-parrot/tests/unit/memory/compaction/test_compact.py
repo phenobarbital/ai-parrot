@@ -114,9 +114,7 @@ def test_render_tool_activity_empty_and_limits():
     turn_no_tools = ConversationTurn(turn_id="t", user_id="u", user_message="q", assistant_response="a")
     assert render_tool_activity(turn_no_tools, Limit()) == ""
 
-    invocations = [
-        ToolInvocation(tool_name=f"tool{i}", input={}, output="y" * 1000) for i in range(20)
-    ]
+    invocations = [ToolInvocation(tool_name=f"tool{i}", input={}, output="y" * 1000) for i in range(20)]
     turn = ConversationTurn(
         turn_id="t2", user_id="u", user_message="q", assistant_response="a", tool_invocations=invocations
     )

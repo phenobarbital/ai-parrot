@@ -1787,9 +1787,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 memory.omission_key(history.user_id, history.session_id, self.memory_key_id), result.omissions
             )
         except Exception as exc:  # noqa: BLE001 — degrade, never fail the round
-            self.logger.warning(
-                "[%s] omission flush failed (%s); rendering plain history this round", self.name, exc
-            )
+            self.logger.warning("[%s] omission flush failed (%s); rendering plain history this round", self.name, exc)
             return _plain(), None
 
         return render_history(result.views, current_chatbot_id=self.memory_key_id), result

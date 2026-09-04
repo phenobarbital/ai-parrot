@@ -108,9 +108,7 @@ def compaction_disabled_by_env() -> bool:
     return os.getenv("PARROT_COMPACTION_DISABLED") == "1"
 
 
-def apply_usage(
-    state: CompactionState, prompt_estimate: int, provider_prompt_tokens: Optional[int]
-) -> CompactionState:
+def apply_usage(state: CompactionState, prompt_estimate: int, provider_prompt_tokens: Optional[int]) -> CompactionState:
     """Fold one observed (estimate, provider) pair into the EWMA calibration.
 
     Pure. Returns ``state`` unchanged (same object) when the sample is
@@ -179,9 +177,7 @@ def apply_commit(
     base = state or CompactionState(tokenizer=tokenizer)
     updated = apply_usage(base, commit.prompt_estimate, provider_prompt_tokens)
 
-    boundary_turn_id = (
-        commit.boundary_turn_id if commit.boundary_turn_id is not None else updated.boundary_turn_id
-    )
+    boundary_turn_id = commit.boundary_turn_id if commit.boundary_turn_id is not None else updated.boundary_turn_id
     stage2_needed = updated.stage2_needed or commit.stage2_needed
 
     return replace(

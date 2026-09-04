@@ -139,9 +139,7 @@ def normalize_invocation(inv: ToolInvocation) -> ToolInvocation:
         :func:`normalize_text` then :func:`condense_traceback`. All other
         fields are copied unchanged.
     """
-    canonical_input = orjson.loads(
-        orjson.dumps(inv.input, option=orjson.OPT_SORT_KEYS)
-    )
+    canonical_input = orjson.loads(orjson.dumps(inv.input, option=orjson.OPT_SORT_KEYS))
 
     output: Optional[str] = inv.output
     if output is not None:
@@ -181,14 +179,8 @@ def normalize_turn(turn: ConversationTurn) -> ConversationTurn:
         :func:`normalize_invocation`; ``norm_version`` stamped to
         :data:`NORM_VERSION`.
     """
-    context_used = (
-        normalize_text(turn.context_used) if turn.context_used is not None else None
-    )
-    error = (
-        condense_traceback(normalize_text(turn.error))
-        if turn.error is not None
-        else None
-    )
+    context_used = normalize_text(turn.context_used) if turn.context_used is not None else None
+    error = condense_traceback(normalize_text(turn.error)) if turn.error is not None else None
 
     return replace(
         turn,

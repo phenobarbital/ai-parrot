@@ -9,6 +9,7 @@ Import any event class from this package for convenience:
 SubscriberErrorEvent lives in meta.py (not here) because it is a
 meta-level event emitted by the registry, not by domain code.
 """
+
 from parrot.core.events.lifecycle.events.agent import (
     AgentInitializedEvent,
     AgentConfiguredEvent,

@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 #: Fixed message returned for an unknown or foreign content id. Callers
 #: format it with the id they looked up.
 EXPIRED_MESSAGE: str = (
-    "Omitted content {content_id} is unknown or may have expired — "
-    "re-run the tool to regenerate it."
+    "Omitted content {content_id} is unknown or may have expired — " "re-run the tool to regenerate it."
 )
 
 

@@ -5,6 +5,7 @@ FEAT-525 — Per-Turn Conversation Compaction.
 Covers: the deterministic (Stage 0/0.5/1) retention pipeline signaling
 that it can no longer fit a session's history within its budget.
 """
+
 from dataclasses import dataclass
 from navigator_eventbus.lifecycle.base import LifecycleEvent
 

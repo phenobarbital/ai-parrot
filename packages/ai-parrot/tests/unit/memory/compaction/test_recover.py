@@ -29,9 +29,7 @@ async def test_read_omitted_content_by_id_and_turn(memory):
     fn = bind_read_omitted_content(memory)
     with invocation_context("bot", user_id="u", session_id="s", memory_key_id="bot"):
         assert await fn(content_id=a) == "AAA"
-        assert await fn(content_id="om_ffffffffffffffff") == EXPIRED_MESSAGE.format(
-            content_id="om_ffffffffffffffff"
-        )
+        assert await fn(content_id="om_ffffffffffffffff") == EXPIRED_MESSAGE.format(content_id="om_ffffffffffffffff")
         assert await fn(turn_id="t1") == f'<omitted id="{a}">\nAAA\n</omitted>\n<omitted id="{b}">\nBBB\n</omitted>'
         assert "may have expired" in await fn(turn_id="nope") and await fn() == NO_ARGS_MESSAGE
     with invocation_context("bot", user_id="u", session_id="other", memory_key_id="bot"):

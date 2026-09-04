@@ -36,11 +36,7 @@ class InMemoryConversation(ConversationMemory):
         return str(chatbot_id) if chatbot_id else "_default"
 
     async def create_history(
-        self,
-        user_id: str,
-        session_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, metadata: Optional[Dict[str, Any]] = None, chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
         chatbot_key = self._get_chatbot_key(chatbot_id)
@@ -48,20 +44,14 @@ class InMemoryConversation(ConversationMemory):
         self._histories[user_id].setdefault(chatbot_key, {})
 
         history = ConversationHistory(
-            session_id=session_id,
-            user_id=user_id,
-            chatbot_id=chatbot_id,
-            metadata=metadata or {}
+            session_id=session_id, user_id=user_id, chatbot_id=chatbot_id, metadata=metadata or {}
         )
 
         self._histories[user_id][chatbot_key][session_id] = history
         return history
 
     async def get_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get a conversation history."""
         user_histories = self._histories.get(user_id, {})
@@ -101,23 +91,14 @@ class InMemoryConversation(ConversationMemory):
             if compaction_state is not None:
                 history.metadata["compaction"] = compaction_state
 
-    async def clear_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> None:
+    async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
         """Clear a conversation history."""
         history = await self.get_history(user_id, session_id, chatbot_id)
         if history:
             history.clear_turns()
         await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
 
-    async def list_sessions(
-        self,
-        user_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> List[str]:
+    async def list_sessions(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all session IDs for a user."""
         user_histories = self._histories.get(user_id, {})
         if chatbot_id is not None:
@@ -132,12 +113,7 @@ class InMemoryConversation(ConversationMemory):
                     sessions.append(session)
         return sessions
 
-    async def delete_history(
-        self,
-        user_id: str,
-        session_id: str,
-        chatbot_id: Optional[str] = None
-    ) -> bool:
+    async def delete_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Delete a conversation history entirely."""
         await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
 

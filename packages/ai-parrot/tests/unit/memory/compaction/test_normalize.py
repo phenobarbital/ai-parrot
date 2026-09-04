@@ -27,9 +27,11 @@ def test_rule_canonical_json():
 
 
 def test_rule_traceback_condensed_keeps_exception_line():
-    tb = "Traceback (most recent call last):\n" + "".join(
-        f'  File "f{i}.py", line {i}, in fn\n    call()\n' for i in range(10)
-    ) + "ValueError: bad\n"
+    tb = (
+        "Traceback (most recent call last):\n"
+        + "".join(f'  File "f{i}.py", line {i}, in fn\n    call()\n' for i in range(10))
+        + "ValueError: bad\n"
+    )
     out = condense_traceback(tb, keep_frames=3)
     assert out.count('File "') == 3 and out.rstrip().endswith("ValueError: bad")
 

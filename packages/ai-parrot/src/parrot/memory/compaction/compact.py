@@ -30,11 +30,7 @@ from parrot.memory.compaction.tokens import TokenCounter, count_turn, get_defaul
 
 def _is_foreign(turn: ConversationTurn, current_chatbot_id: Optional[str]) -> bool:
     """Whether ``turn`` belongs to an agent other than ``current_chatbot_id``."""
-    return (
-        current_chatbot_id is not None
-        and turn.chatbot_id is not None
-        and turn.chatbot_id != current_chatbot_id
-    )
+    return current_chatbot_id is not None and turn.chatbot_id is not None and turn.chatbot_id != current_chatbot_id
 
 
 def render_raw_view(

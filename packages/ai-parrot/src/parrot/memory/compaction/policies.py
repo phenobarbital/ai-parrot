@@ -229,9 +229,7 @@ class SubAgentPolicy:
     name = "sub_agent"
 
     def prune(self, inv: ToolInvocation, *, turn_id: str, limit: Limit) -> PrunedInvocation:
-        narrowed = {
-            k: _first_line(inv.input[k]) for k in ("task", "prompt") if k in inv.input
-        }
+        narrowed = {k: _first_line(inv.input[k]) for k in ("task", "prompt") if k in inv.input}
         return _prune_shared(inv, turn_id=turn_id, limit=limit, narrowed_input=narrowed)
 
 

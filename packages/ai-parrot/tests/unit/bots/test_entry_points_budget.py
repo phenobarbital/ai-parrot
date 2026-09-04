@@ -37,7 +37,13 @@ class _RecordingClient(AbstractClient):
         return self
 
     async def ask(self, prompt: str, model: Optional[str] = None, **kwargs: Any) -> AIMessage:
-        self.calls.append({"prompt": prompt, "history": list(kwargs.get("history") or ()), "system_prompt": kwargs.get("system_prompt")})
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "history": list(kwargs.get("history") or ()),
+                "system_prompt": kwargs.get("system_prompt"),
+            }
+        )
         return AIMessage(
             input=prompt,
             output=self.reply,
@@ -48,7 +54,13 @@ class _RecordingClient(AbstractClient):
         )
 
     async def ask_stream(self, prompt: str, **kwargs: Any):
-        self.calls.append({"prompt": prompt, "history": list(kwargs.get("history") or ()), "system_prompt": kwargs.get("system_prompt")})
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "history": list(kwargs.get("history") or ()),
+                "system_prompt": kwargs.get("system_prompt"),
+            }
+        )
         yield self.reply
 
     async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]):
@@ -62,7 +74,13 @@ class _FailingStreamClient(_RecordingClient):
     """Yields partial text then raises mid-stream."""
 
     async def ask_stream(self, prompt: str, **kwargs: Any):
-        self.calls.append({"prompt": prompt, "history": list(kwargs.get("history") or ()), "system_prompt": kwargs.get("system_prompt")})
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "history": list(kwargs.get("history") or ()),
+                "system_prompt": kwargs.get("system_prompt"),
+            }
+        )
         yield "par"
         yield "tial"
         raise RuntimeError("stream died")
@@ -77,7 +95,13 @@ class _SpyMemory(InMemoryConversation):
 
     async def add_turn(self, user_id, session_id, turn, chatbot_id=None, *, compaction=None):
         self.add_turn_calls.append(
-            {"user_id": user_id, "session_id": session_id, "turn": turn, "chatbot_id": chatbot_id, "compaction": compaction}
+            {
+                "user_id": user_id,
+                "session_id": session_id,
+                "turn": turn,
+                "chatbot_id": chatbot_id,
+                "compaction": compaction,
+            }
         )
         await super().add_turn(user_id, session_id, turn, chatbot_id=chatbot_id, compaction=compaction)
 
@@ -106,7 +130,11 @@ async def _seeded_history(mem, chatbot_id, user_id, session_id, *, turns=5):
     await mem.create_history(user_id, session_id, chatbot_id=chatbot_id)
     for i in range(turns):
         turn = ConversationTurn(
-            turn_id=f"seed-{i}", user_id=user_id, user_message=f"q{i}", assistant_response=f"a{i}", chatbot_id=chatbot_id
+            turn_id=f"seed-{i}",
+            user_id=user_id,
+            user_message=f"q{i}",
+            assistant_response=f"a{i}",
+            chatbot_id=chatbot_id,
         )
         await mem.add_turn(user_id, session_id, turn, chatbot_id=chatbot_id)
 

@@ -195,9 +195,7 @@ def render_history(
             # with silence. Skip the whole row so alternation stays intact.
             continue
 
-        is_foreign = (
-            current_chatbot_id is not None and chatbot_id is not None and chatbot_id != current_chatbot_id
-        )
+        is_foreign = current_chatbot_id is not None and chatbot_id is not None and chatbot_id != current_chatbot_id
         if is_foreign and not include_other_agents:
             continue
         if is_foreign:

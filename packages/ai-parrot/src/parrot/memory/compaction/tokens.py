@@ -109,8 +109,7 @@ def get_default_counter() -> TokenCounter:
     except Exception:  # noqa: BLE001 — tokenizer optional, any failure falls back
         if not _WARNED:
             logger.warning(
-                "tiktoken unavailable or 'o200k_base' failed to load; "
-                "falling back to heuristic token counting"
+                "tiktoken unavailable or 'o200k_base' failed to load; " "falling back to heuristic token counting"
             )
             _WARNED = True
         _DEFAULT = HeuristicCounter()
