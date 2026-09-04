@@ -290,12 +290,26 @@ class TestFactoryRegistration:
     """``LLMFactory`` resolves ``claude-agent`` / ``claude-code``."""
 
     def test_supported_clients_includes_keys(self):
-        from parrot.clients.factory import SUPPORTED_CLIENTS, _lazy_claude_agent
+        # FEAT-523 (TASK-2850): `_lazy_claude_agent` no longer exists —
+        # factory.py's hand-written `_lazy_*` closures were all removed
+        # by TASK-2847's rewrite; "claude-agent"/"claude-code" now
+        # register via a real `parrot.clients` entry point
+        # (ai-parrot-client-anthropic), whose value is the entry point's
+        # own zero-arg loader, resolved the same way LLMFactory.create()
+        # does.
+        from parrot.clients.anthropic import ClaudeAgentClient
+        from parrot.clients.factory import SUPPORTED_CLIENTS
 
         assert "claude-agent" in SUPPORTED_CLIENTS
         assert "claude-code" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["claude-agent"] is _lazy_claude_agent
-        assert SUPPORTED_CLIENTS["claude-code"] is _lazy_claude_agent
+
+        def _resolve(entry):
+            if callable(entry) and not isinstance(entry, type):
+                return entry()
+            return entry
+
+        assert _resolve(SUPPORTED_CLIENTS["claude-agent"]) is ClaudeAgentClient
+        assert _resolve(SUPPORTED_CLIENTS["claude-code"]) is ClaudeAgentClient
 
     def test_parse_llm_string_claude_agent(self):
         from parrot.clients.factory import LLMFactory

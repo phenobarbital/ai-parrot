@@ -68,25 +68,35 @@ def test_create_missing_satellite(monkeypatch):
 
 def test_list_models_active_deprecated(monkeypatch):
     _reset(monkeypatch)
-    # FEAT-523 (TASK-2849/2850/2851/2852): "openai"/"meta"/"anthropic"/
-    # "amazon"/"google"/"gemma4"/"hf"/"groq"/"grok"/"zai" were all
-    # extracted to their own satellites — use "nvidia", which stays in
-    # _IN_CORE_PROVIDERS, so this core test doesn't depend on any
-    # satellite being installed.
-    out = factory.LLMFactory.list_models("nvidia")
-    assert set(out) == {"active", "deprecated"}
-    assert out["active"]
+    # FEAT-523 (TASK-2853): every real provider is now extracted to its
+    # own satellite — _IN_CORE_PROVIDERS is empty, so this core test can
+    # no longer assert against a real in-core provider without depending
+    # on a satellite being installed. Mock an entry point instead (same
+    # pattern as test_discover_entry_points).
+    ep = md.EntryPoint(
+        name="test-provider",
+        value="tests.unit.clients.fakes:FakeClient",
+        group="parrot.clients",
+    )
+    monkeypatch.setattr(md, "entry_points", lambda group=None: [ep])
+    out = factory.LLMFactory.list_models("test-provider")
+    assert out == {"active": ["fake-active-model"], "deprecated": ["fake-deprecated-model"]}
 
 
 def test_list_providers_lists_in_core_keys(monkeypatch):
     _reset(monkeypatch)
+    # FEAT-523 (TASK-2853): _IN_CORE_PROVIDERS is now empty — assert the
+    # entry-point-sourced distribution name instead ("ai-parrot" would
+    # never appear for any key anymore; this test's title predates the
+    # last provider leaving core, kept for the list_providers() shape).
+    ep = md.EntryPoint(
+        name="test-provider",
+        value="tests.unit.clients.fakes:FakeClient",
+        group="parrot.clients",
+    )
+    monkeypatch.setattr(md, "entry_points", lambda group=None: [ep])
     providers = factory.LLMFactory.list_providers()
-    # FEAT-523 (TASK-2849/2850/2851/2852): "openai"/"meta"/"anthropic"/
-    # "amazon"/"google"/"gemma4"/"hf"/"groq"/"grok"/"zai" were all
-    # extracted to their own satellites — assert against "nvidia"/
-    # "moonshot", which stay in _IN_CORE_PROVIDERS.
-    assert providers.get("nvidia") == "ai-parrot"
-    assert providers.get("moonshot") == "ai-parrot"
+    assert providers.get("test-provider") == "test-provider"
 
 
 def test_provider_backend_discovered():

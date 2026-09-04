@@ -129,10 +129,20 @@ class TestMetaClient:
         assert captured["headers"]["Authorization"] == "Bearer k"
 
 
+def _resolve(entry):
+    """FEAT-523 (TASK-2849): every provider now registers via a real
+    `parrot.clients` entry point — the registered value is the entry
+    point's zero-arg loader, resolved to the real class the same way
+    `LLMFactory.create()` does."""
+    if callable(entry) and not isinstance(entry, type):
+        return entry()
+    return entry
+
+
 class TestMetaFactoryRegistration:
     @pytest.mark.parametrize("alias", ["meta", "muse", "meta-muse"])
     def test_aliases_resolve(self, alias):
-        assert SUPPORTED_CLIENTS[alias] is MetaClient
+        assert _resolve(SUPPORTED_CLIENTS[alias]) is MetaClient
 
     def test_create_with_explicit_model(self):
         client = LLMFactory.create("meta:muse-spark-1.3")
@@ -149,7 +159,7 @@ class TestMetaFactoryRegistration:
         assert client.default_model == "muse-spark-1.3"
 
     def test_registered_keys_match_provider_keys(self):
-        keys = {k for k, v in SUPPORTED_CLIENTS.items() if v is MetaClient}
+        keys = {k for k, v in SUPPORTED_CLIENTS.items() if _resolve(v) is MetaClient}
         assert keys == set(MetaClient.provider_keys)
 
     def test_in_both_wire_rosters(self):

@@ -6,9 +6,18 @@ from parrot.clients.openrouter import OpenRouterClient
 
 class TestOpenRouterFactoryRegistration:
     def test_openrouter_in_supported_clients(self):
-        """OpenRouter is registered in SUPPORTED_CLIENTS."""
+        """OpenRouter is registered in SUPPORTED_CLIENTS.
+
+        FEAT-523 (TASK-2853): "openrouter" is now discovered via a real
+        `parrot.clients` entry point (ai-parrot-client-openrouter) — the
+        registered value is the entry point's zero-arg loader, resolved
+        to the real class the same way LLMFactory.create() does.
+        """
         assert "openrouter" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["openrouter"] is OpenRouterClient
+        registered = SUPPORTED_CLIENTS["openrouter"]
+        if callable(registered) and not isinstance(registered, type):
+            registered = registered()
+        assert registered is OpenRouterClient
 
     def test_parse_openrouter_string(self):
         """Parser handles openrouter:model/name format."""

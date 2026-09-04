@@ -125,9 +125,21 @@ class TestLocalLLMFactory:
         "local", "localllm", "ollama", "vllm", "llamacpp"
     ])
     def test_factory_alias_registered(self, alias):
-        """Each alias maps to LocalLLMClient in SUPPORTED_CLIENTS."""
+        """Each alias maps to LocalLLMClient in SUPPORTED_CLIENTS.
+
+        FEAT-523 (TASK-2853): "local"/"localllm"/"ollama"/"llamacpp" are
+        now discovered via a real `parrot.clients` entry point
+        (ai-parrot-client-local) — the registered value is the entry
+        point's zero-arg loader, resolved to the real class the same way
+        LLMFactory.create() does. ("vllm" is a pre-existing mis-included
+        parametrize case — it resolves to vLLMClient, a distinct
+        subclass, not LocalLLMClient itself; unaffected by this change.)
+        """
         assert alias in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS[alias] is LocalLLMClient
+        registered = SUPPORTED_CLIENTS[alias]
+        if callable(registered) and not isinstance(registered, type):
+            registered = registered()
+        assert registered is LocalLLMClient
 
     def test_factory_create_local(self):
         """LLMFactory.create('local') returns LocalLLMClient."""

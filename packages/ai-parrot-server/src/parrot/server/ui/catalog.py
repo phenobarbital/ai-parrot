@@ -43,18 +43,25 @@ class AdminCatalog(BaseModel):
 def _dedup_llm_providers() -> list[str]:
     """Return ``SUPPORTED_CLIENTS`` keys deduplicated by resolved client.
 
-    ``SUPPORTED_CLIENTS`` maps several alias keys to the same client class
-    (or, for some providers, the same lazy-loader function) — e.g.
-    ``claude``/``anthropic`` both resolve to ``AnthropicClient``,
-    ``claude-agent``/``claude-code`` both resolve to the same lazy loader.
-    Keeps the first key encountered per resolved value, sorted.
+    ``SUPPORTED_CLIENTS`` maps several alias keys to the same client
+    class — e.g. ``claude``/``anthropic`` both resolve to
+    ``AnthropicClient``, ``claude-agent``/``claude-code`` both resolve to
+    the same lazy loader. FEAT-523 (TASK-2853): every provider now
+    registers via a real `parrot.clients` entry point, so each alias key
+    carries its *own* ``EntryPoint`` (and thus its own ``.load`` bound
+    method) even when they target the same class — comparing the raw
+    registry values no longer detects the alias relationship, so each
+    value is resolved (zero-arg lazy loaders are called) before
+    deduplicating. Keeps the first key encountered per resolved value,
+    sorted.
     """
     seen: list[object] = []
     providers: list[str] = []
     for key, value in SUPPORTED_CLIENTS.items():
-        if value in seen:
+        resolved = value() if callable(value) and not isinstance(value, type) else value
+        if resolved in seen:
             continue
-        seen.append(value)
+        seen.append(resolved)
         providers.append(key)
     return sorted(providers)
 

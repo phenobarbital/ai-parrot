@@ -429,16 +429,26 @@ class TestMoonshotAskThinkingPropagation:
 # ---------------------------------------------------------------------------
 
 
+def _resolve(entry):
+    """FEAT-523 (TASK-2853): "moonshot"/"kimi" now register via a real
+    `parrot.clients` entry point (ai-parrot-client-moonshot) — the
+    registered value is the entry point's zero-arg loader, resolved to
+    the real class the same way `LLMFactory.create()` does."""
+    if callable(entry) and not isinstance(entry, type):
+        return entry()
+    return entry
+
+
 class TestMoonshotFactoryRegistration:
     """Tests for LLMFactory registration of MoonshotClient."""
 
     def test_factory_registration_moonshot(self):
         assert "moonshot" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["moonshot"] is MoonshotClient
+        assert _resolve(SUPPORTED_CLIENTS["moonshot"]) is MoonshotClient
 
     def test_factory_registration_kimi(self):
         assert "kimi" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["kimi"] is MoonshotClient
+        assert _resolve(SUPPORTED_CLIENTS["kimi"]) is MoonshotClient
 
     def test_factory_create_moonshot(self):
         c = LLMFactory.create("moonshot:kimi-k3", api_key="test-key")

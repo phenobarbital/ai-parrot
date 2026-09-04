@@ -888,9 +888,18 @@ class TestNvidiaFactory:
     """Tests for LLMFactory registration of NvidiaClient."""
 
     def test_factory_registration(self):
-        """'nvidia' key is present in SUPPORTED_CLIENTS and maps to NvidiaClient."""
+        """'nvidia' key is present in SUPPORTED_CLIENTS and maps to NvidiaClient.
+
+        FEAT-523 (TASK-2853): "nvidia" is now discovered via a real
+        `parrot.clients` entry point (ai-parrot-client-nvidia) — the
+        registered value is the entry point's zero-arg loader, resolved
+        to the real class the same way LLMFactory.create() does.
+        """
         assert "nvidia" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["nvidia"] is NvidiaClient
+        registered = SUPPORTED_CLIENTS["nvidia"]
+        if callable(registered) and not isinstance(registered, type):
+            registered = registered()
+        assert registered is NvidiaClient
 
         # Factory creates the right client type with the right model
         c = LLMFactory.create(

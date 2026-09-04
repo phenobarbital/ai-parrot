@@ -100,11 +100,24 @@ def test_build_catalog_shape():
 
 def test_build_catalog_dedups_provider_aliases():
     """SUPPORTED_CLIENTS has many alias keys mapping to the same client —
-    only the first key per resolved client survives."""
+    only the first key per resolved client survives.
+
+    FEAT-523 (TASK-2853): every provider now registers via a real
+    `parrot.clients` entry point — "claude" and "anthropic" each carry
+    their own `EntryPoint` (and thus their own `.load` bound method) even
+    though both target `AnthropicClient`, so the raw registry values are
+    no longer `is`-identical; resolve both before comparing.
+    """
     catalog = build_catalog()
     # "claude" and "anthropic" both resolve to the same AnthropicClient —
     # only one may appear.
-    assert SUPPORTED_CLIENTS["claude"] is SUPPORTED_CLIENTS["anthropic"]
+    claude_cls = SUPPORTED_CLIENTS["claude"]
+    if callable(claude_cls) and not isinstance(claude_cls, type):
+        claude_cls = claude_cls()
+    anthropic_cls = SUPPORTED_CLIENTS["anthropic"]
+    if callable(anthropic_cls) and not isinstance(anthropic_cls, type):
+        anthropic_cls = anthropic_cls()
+    assert claude_cls is anthropic_cls
     aliased_present = {
         p for p in catalog.llm_providers if p in ("claude", "anthropic")
     }
