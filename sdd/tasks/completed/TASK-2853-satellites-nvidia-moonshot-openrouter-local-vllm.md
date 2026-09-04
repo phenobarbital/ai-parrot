@@ -145,10 +145,113 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous, FEAT-523 session)
+**Date**: 2026-09-04
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Final satellite-extraction task — all 15 providers this feature covers
+are now out of core. Same shape as TASK-2849/2850/2851/2852: `git mv` all
+five folders (`.gitkeep` verified, no stray `__init__.py`), verified via
+grep that all four single-provider satellites (nvidia/moonshot/
+openrouter/local) genuinely need no extra SDK beyond `ai-parrot` itself
+(each extends `OpenAIBaseClient` and uses only `tenacity`/`aiohttp`,
+already core base dependencies) — no Codebase Contract correction needed,
+its "SDK: none" claims verified correct. `vllm`'s `vLLMClient(LocalLLMClient)`
+is a real unconditional subclass import, so `ai-parrot-client-vllm`
+depends on `ai-parrot-client-local` as a genuine package dependency (with
+its own `[tool.uv.sources]` entry) — this is the one satellite-to-
+satellite dependency among these five.
+
+No tests existed under `tests/unit/clients/` for any of the five (the
+scattered top-level `test_nvidia_client.py`/`test_openrouter_factory.py`/
+`test_localllm_client.py` stay where they are, per this feature's
+established narrow-scope convention for what gets physically moved).
+
+`factory.py`: `_IN_CORE_PROVIDERS` is now an **empty tuple** — every
+provider registers via a real `parrot.clients` entry point. Left the
+tuple and the transitional-walk machinery in place (not deleted), per
+this task's own explicit "NOT in scope: Removing the transitional
+registry (TASK-2854)".
+
+**Cross-cutting fix wave** (the largest of this feature's four "last
+provider left, so latent bugs surface" sweeps): with `_IN_CORE_PROVIDERS`
+now empty, `test_factory_discovery.py`'s two tests that used to fall back
+to "pick any in-core provider" (`test_list_models_active_deprecated`,
+`test_list_providers_lists_in_core_keys`) had nowhere left to fall back
+to — rewrote both against a mocked entry point, extending `fakes.
+FakeClient` with `.models`/`.deprecated_models` for this purpose. This
+also prompted a full repo-wide grep sweep for
+`SUPPORTED_CLIENTS[...] is <Class>` (the pattern every one of the earlier
+per-task fixes had been chasing piecemeal), which found **8 more**
+instances of the same root cause: a provider's `SUPPORTED_CLIENTS` value
+used to be a direct class reference (or, for a shared hand-written
+`_lazy_*` closure, the same function object for every alias); now every
+alias key carries its **own** `EntryPoint` (hence its own `.load` bound
+method) even when multiple aliases target the same class, so raw
+identity/equality comparisons against the registry value no longer work.
+Fixed all 8, each with the same resolve-then-compare pattern
+(`LLMFactory.create()`'s own approach):
+
+1. `test_nvidia_client.py::test_factory_registration`
+2. `test_openrouter_factory.py::test_openrouter_in_supported_clients`
+3. `test_localllm_client.py::test_factory_alias_registered[local/
+   localllm/ollama/llamacpp]` (the pre-existing `[vllm]` parametrize case
+   — asserting the wrong class entirely, `LocalLLMClient` instead of
+   `vLLMClient` — is a separate, pre-existing bug left untouched)
+4. `test_factory_nova.py::test_nova_key_registered_lazy` — a **real
+   regression** that slipped through TASK-2850's own verification (nova
+   left core there, via the amazon satellite, but this specific test
+   wasn't re-checked at the time — found now via this task's repo-wide
+   sweep)
+5. `test_admin_catalog.py::test_build_catalog_dedups_provider_aliases` —
+   this one exposed a **real production bug**, not just a test bug:
+   `server/ui/catalog.py::_dedup_llm_providers()` deduplicated
+   `SUPPORTED_CLIENTS` aliases by raw value identity, which happened to
+   work when aliases shared one hand-written class/closure reference but
+   silently stopped deduplicating once every alias got its own
+   `EntryPoint`. Fixed the helper itself (not just its test) to resolve
+   each value before deduplicating.
+6. `tests/clients/test_meta_client.py` — 3 parametrized alias-resolution
+   assertions + 1 set-comprehension-based assertion.
+7. `tests/clients/test_claude_agent.py::test_supported_clients_includes_keys`
+   — imported `_lazy_claude_agent` from `factory.py`, a name that has not
+   existed since TASK-2847's rewrite removed every hand-written `_lazy_*`
+   closure; rewritten against `ClaudeAgentClient` directly (imported from
+   `parrot.clients.anthropic`).
+8. `tests/clients/test_moonshot_client.py` — 2 registration assertions.
+
+**Evidence**:
+- `uv sync --all-packages` (worktree-local `.venv`) installed all five
+  satellites for real; `ai-parrot-client-vllm`'s dependency on
+  `ai-parrot-client-local` resolved correctly.
+- `importlib.metadata.entry_points(group="parrot.clients")` → **36 total
+  keys across all 15 satellites** (the complete final set).
+- `LLMFactory.create()` verified end-to-end for all five new providers,
+  including `"vllm"` → `vLLMClient` (confirming the cross-satellite
+  dependency resolves at runtime, not just at install time).
+- Satellite suites: nvidia/moonshot/openrouter/local/vllm all 1/1 passed.
+- Core `pytest packages/ai-parrot/tests/unit/clients -q` → **337/337
+  passed, zero failures**. `test_core_independence.py` (3/3) confirms
+  core still imports cleanly with all 15 providers blocked in
+  `sys.modules` — this is the acceptance bar the whole feature was built
+  toward.
+- `ruff check` on every touched/created file (5 new satellites + 12
+  fixed test/production files) → clean.
+- Full satellite matrix re-run (all 15) → clean except the two
+  already-documented pre-existing multiround failures (openai×4, groq×4),
+  which moved with their test files in TASK-2849/2852 respectively.
+- Server studio+handlers+admin_catalog sweep (213 tests, shared venv) →
+  only the 3 pre-existing `test_meta_agent.py` failures. Pipelines sweep
+  → only the 1 pre-existing `test_endcap_no_shelves_promotional.py`
+  assertion failure. Crew regression smoke
+  (`test_crew_ask_prompt_regression.py`) → 23/23 passed.
+
+**Deviations from spec**: the cross-cutting fix wave (8 test files + 1
+production file, `server/ui/catalog.py`) is not literally within this
+task's Scope text, but — as with TASK-2852's smaller version of the same
+situation — was necessary to keep "the tree... green" once the LAST
+provider left `_IN_CORE_PROVIDERS`, which is precisely the condition that
+made every remaining raw-identity assertion's assumption (a provider is
+either a direct class or a shared closure object) finally, unavoidably
+false everywhere at once. Documented here in full rather than silently
+expanding scope.
