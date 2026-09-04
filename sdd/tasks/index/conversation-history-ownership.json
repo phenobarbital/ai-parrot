@@ -172,7 +172,7 @@
       "feature_id": "FEAT-524",
       "feature": "conversation-history-ownership",
       "spec": "sdd/specs/conversation-history-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Integration point of the feature; needs every client to accept history= and AbstractBot's memory_key_id. Turns TASK-2808 green.",
       "assigned_to": null,
       "started_at": "2026-09-04T00:23:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2816-bot-callers-history-and-single-writer.md"
+      "completed_at": "2026-09-04T02:08:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2816-bot-callers-history-and-single-writer.md"
     },
     {
       "id": "TASK-2817",
