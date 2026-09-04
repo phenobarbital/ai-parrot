@@ -20,6 +20,7 @@ from parrot.outputs.a2ui.catalog.base import (
     DANGLING_CHILD,
     DUPLICATE_ID,
     MISSING_ROOT,
+    TOOL_ONLY_NOT_ALLOWED_FOR_LLM,
     UNALLOWED_CHILD,
     UNALLOWED_PARENT,
     CatalogValidationError,
@@ -181,6 +182,54 @@ class TestAllErrorsReportedAtOnce:
         assert MISSING_ROOT in codes
         assert DANGLING_CHILD in codes
         assert DUPLICATE_ID in codes
+
+
+class TestLlmOriginRejectsToolOnly:
+    """FEAT-527: `tool_only` registration gate (mirrors `requires_actions`)."""
+
+    def test_tool_only_rejected_for_llm_origin(self, cleanup_catalog):
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(Component(id="root", component="ToolOnlyProbe", title="t"))
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(surface, origin=ProducerOrigin.LLM)
+        codes = {i["code"] for i in exc.value.issues}
+        assert TOOL_ONLY_NOT_ALLOWED_FOR_LLM in codes
+
+    def test_tool_only_accepted_for_tool_origin(self, cleanup_catalog):
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(Component(id="root", component="ToolOnlyProbe", title="t"))
+        validate_envelope(surface, origin=ProducerOrigin.TOOL)  # must not raise
+
+    def test_tool_only_reported_together_with_other_problems(self, cleanup_catalog):
+        """The tool-only problem is collected, not raised first-failure."""
+
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(
+            Component(id="root", component="ToolOnlyProbe", title="t", children=["ghost"]),
+        )
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(surface, origin=ProducerOrigin.LLM)
+        codes = {i["code"] for i in exc.value.issues}
+        assert TOOL_ONLY_NOT_ALLOWED_FOR_LLM in codes
+        assert DANGLING_CHILD in codes
 
 
 class TestCatalogInstructionsNoRstripBug:
