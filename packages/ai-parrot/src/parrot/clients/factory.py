@@ -289,7 +289,12 @@ class LLMFactory:
             client_class = client_class()
         return {
             "active": [m.value for m in client_class.models],
-            "deprecated": list(client_class.deprecated_models or {}),
+            # Not every client defines `deprecated_models` — only classes
+            # with actual deprecations (e.g. OpenAIClient) declare it;
+            # AbstractClient carries no base default (base.py is out of
+            # scope for this feature), so this must getattr rather than
+            # rely on the attribute always existing.
+            "deprecated": list(getattr(client_class, "deprecated_models", None) or {}),
         }
 
     @staticmethod

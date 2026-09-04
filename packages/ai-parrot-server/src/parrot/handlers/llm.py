@@ -16,31 +16,7 @@ from parrot.tools.manager import ToolManager
 from parrot.models.responses import AIMessage
 from parrot.outputs import OutputMode
 
-# Try to import Model Enums for listing supported models
-try:
-    # FEAT-523 (TASK-2842): relocated; TASK-2848 replaces this with LLMFactory.list_models()
-    from parrot.clients.openai.models import OpenAIModel, DEPRECATIONS
-except ImportError:
-    OpenAIModel = None
-    DEPRECATIONS = None
-
-try:
-    # FEAT-523 (TASK-2844): relocated; TASK-2848 replaces this with LLMFactory.list_models()
-    from parrot.clients.groq.models import GroqModel
-except ImportError:
-    GroqModel = None
-
-try:
-    # FEAT-523 (TASK-2844): relocated; TASK-2848 replaces this with LLMFactory.list_models()
-    from parrot.clients.anthropic import ClaudeModel
-except ImportError:
-    ClaudeModel = None
-
-try:
-    # FEAT-523 (TASK-2841): relocated; TASK-2846 hard-cuts this to a string literal
-    from parrot.clients.google.models import GoogleModel
-except ImportError:
-    GoogleModel = None
+logger = logging.getLogger("Parrot.LLMClient")
 
 
 @is_authenticated()
@@ -63,28 +39,43 @@ class LLMClient(BaseView):
     def _get_supported_models(
         self, provider: str,
     ) -> Union[List[str], Dict[str, List[str]]]:
-        """Return supported model IDs for a given provider.
+        """Return the model catalogue for a given provider.
 
-        For ``openai`` / ``azure``: returns a dict
-        ``{"active": [...], "deprecated": [...]}`` so the public endpoint
-        can surface deprecated IDs separately.
+        FEAT-523 (TASK-2848): delegates to ``LLMFactory.list_models()`` —
+        the handler no longer imports any provider's model enum, so it
+        never depends on a client package being importable.
 
-        For all other providers: returns a flat ``List[str]`` (unchanged).
+        The public JSON shape is kept backwards compatible
+        (``test_deprecations.py::TestPartitionedListing`` pins it): for
+        ``openai``/``azure`` this returns the partitioned dict
+        ``{"active": [...], "deprecated": [...]}``; every other known
+        provider returns a flat ``List[str]`` of active model IDs (the
+        ``"deprecated"`` partition was previously only ever surfaced for
+        OpenAI). An unknown provider — or one whose satellite is not
+        installed — returns ``[]``.
+
+        ``azure`` is accepted as an alias for ``openai`` (pre-existing
+        handler behavior, preserved here).
         """
         provider = provider.lower()
+        if provider == 'azure':
+            provider = 'openai'
 
-        if provider in ['openai', 'azure'] and OpenAIModel:
-            active = [m.value for m in OpenAIModel]
-            deprecated = list(DEPRECATIONS.keys()) if DEPRECATIONS else []
-            return {"active": active, "deprecated": deprecated}
-        elif provider == 'groq' and GroqModel:
-            return [m.value for m in GroqModel]
-        elif provider in ['anthropic', 'claude'] and ClaudeModel:
-            return [m.value for m in ClaudeModel]
-        elif provider == 'google' and GoogleModel:
-            return [m.value for m in GoogleModel]
+        try:
+            catalogue = LLMFactory.list_models(provider)
+        except ImportError as exc:
+            # Module-level logger (not `self.logger`): this method must
+            # tolerate instances built via `LLMClient.__new__(LLMClient)`
+            # (bypassing `post_init`), the pre-existing test pattern in
+            # `test_deprecations.py::TestPartitionedListing`.
+            logger.warning(
+                "No model catalogue for provider '%s': %s", provider, exc
+            )
+            return []
 
-        return []
+        if provider == 'openai':
+            return catalogue
+        return catalogue["active"]
 
     async def get(self):
         """
