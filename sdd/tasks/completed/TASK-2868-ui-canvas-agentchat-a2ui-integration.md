@@ -173,10 +173,62 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
 **Notes**:
+- Extracted `buildInfographicTabData(message, features)` into a new pure
+  module `canvas/infographic-tab-builder.ts` (per the task's own
+  recommendation — `AgentChat.svelte` is 2,727 lines, not practically
+  unit-testable end-to-end). Decision table: `output_mode` must be
+  `"infographic"` or `"a2ui"` (else `null`); an `a2ui`-mode turn with NO
+  Infographic/Report root is always out of scope (`null`, regardless of
+  the flag — widgets); when `features.a2ui` is on AND an Infographic/
+  Report-rooted envelope is present → `mode:"a2ui"` tab; otherwise falls
+  through to the PRE-EXISTING HTML-tab logic verbatim (byte-identical
+  behaviour when the flag is off or no envelope/root exists — including
+  an `a2ui`-mode turn with an Infographic root but the flag off, which
+  gracefully degrades to the HTML tab via `metadata.html_url`).
+- `AgentChat.svelte`: found 3 message-construction sites reading
+  `agentResult`/`result` (not 2, as the task's line-shifted contract
+  guessed) — added `a2ui_envelope: <result>.a2ui_envelope` to all three
+  (streaming-envelope path, non-streaming fallback path, voice-note path).
+  `maybeOpenInfographicCanvas` now delegates entirely to
+  `buildInfographicTabData`.
+- `InfographicCanvas.svelte`: added `hasA2ui`/`a2uiHasHtmlFallback`
+  derived flags (extends `isEmpty`); a new `{:else if hasA2ui}` branch
+  with a Rendered/HTML toggle bar (mirrors the Edit/Preview toggle
+  styling) — `A2UISurface` is imported STATICALLY (not the dynamic
+  `await import()` the task suggested): it reuses the SAME Chart/
+  DataTable/Timeline block renderers `InfographicBlockCanvas` already
+  pulls in statically elsewhere in this same file, so it is not a new
+  heavy dependency; a dynamic-import + `$state`/`$effect` version was
+  prototyped first and proved non-deterministically flaky under
+  `@testing-library/svelte` + jsdom (a "Loading…" placeholder that
+  sometimes never resolved within the test timeout, root cause not fully
+  isolated) — the static-import + `{#if features.a2ui}` markup gate
+  (the SAME pattern most of this file's other 8 flags already use) is
+  simpler, deterministic, and still guarantees the chunk-inclusion-only
+  (not "never fetched") gating this codebase's OWN documented Rollup
+  limitation already accepts for every other flag (see
+  `features-gating.test.ts`'s header comment). "Save as HTML" in a2ui
+  mode: added a guarded button (hidden when neither inline `html` nor
+  `url` exist) — `handleSave()` opens the signed `url` directly when
+  there's no inline HTML (no local export path exists for that case).
+  `canvas-block-exporter.ts` was verified UNRELATED (operates on
+  `CanvasBlock[]` markdown-canvas data) and left untouched.
+- Tests: `AgentChat.a2ui-canvas.test.ts` (9 cases covering the full
+  decision table above) + `InfographicCanvas.a2ui.test.ts` (4 cases: default
+  Rendered view, toggle to inline-html iframe, toggle to url iframe,
+  HTML button disabled with neither) — the latter renders through the
+  REAL `canvas-tab-manager.svelte.ts` module (not mocked) since it is a
+  simple reactive store, not a heavy dependency.
+- 44/44 test files, 284/284 tests pass (`pnpm test`). `tsc --noEmit`:
+  identical pre-existing 8 errors to before this task (verified byte-for-
+  byte against TASK-2867's completion note) — zero new errors.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the task suggested a dynamic
+`await import('./a2ui/A2UISurface.svelte')` for `InfographicCanvas.svelte`;
+implemented as a static import + markup gate instead (see note above) —
+functionally equivalent gating (chunk never *evaluated*/mounted when the
+flag is off), more reliable under test, and consistent with this file's
+own existing convention for its other flags.
