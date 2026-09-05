@@ -309,7 +309,7 @@ If no selectors are provided and full_page is False, the tool will still return 
     def __init__(
         self,
         browser: Literal["chrome", "firefox", "edge", "safari", "undetected"] = "chrome",
-        driver_type: Literal["selenium", "playwright"] = "selenium",
+        driver_type: Literal["selenium", "playwright", "obscura"] = "selenium",
         full_page: bool = False,
         headless: bool = True,
         mobile: bool = False,
@@ -557,8 +557,10 @@ If no selectors are provided and full_page is False, the tool will still return 
                 self.driver.execute_cdp_cmd("Network.enable", {})
             except Exception:  # pragma: no cover
                 pass
-        elif self.driver_type == "playwright":
-            # Extract Playwright handles for backward compat
+        elif self.driver_type in ("playwright", "obscura"):
+            # Extract Playwright handles for backward compat. Obscura
+            # (FEAT-530) reuses PlaywrightDriver in CDP mode — same
+            # handles, same extraction.
             self.page = self._abstract_driver._page
             self.browser = self._abstract_driver._browser
         else:

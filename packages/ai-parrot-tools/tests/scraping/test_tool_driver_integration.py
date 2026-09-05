@@ -45,6 +45,22 @@ class TestWebScrapingToolPlaywrightDriver:
         assert call_args["driver_type"] == "playwright"
 
 
+# ── Obscura Driver (FEAT-530 review fix) ────────────────────────
+
+
+class TestWebScrapingToolObscuraDriver:
+    @patch("parrot.tools.scraping.tool.DriverFactory")
+    def test_obscura_driver_type(self, mock_factory):
+        from parrot.tools.scraping.tool import WebScrapingTool
+
+        mock_driver = MagicMock(spec=AbstractDriver)
+        mock_factory.create.return_value = mock_driver
+
+        tool = WebScrapingTool(driver_type="obscura")
+        call_args = mock_factory.create.call_args[0][0]
+        assert call_args["driver_type"] == "obscura"
+
+
 # ── Driver Config Passthrough ────────────────────────────────────
 
 
@@ -154,6 +170,43 @@ class TestInitializeDriver:
         mock_abs_driver.start.assert_called_once()
         assert tool.page is mock_abs_driver._page
         assert tool.browser is mock_abs_driver._browser
+
+    @pytest.mark.asyncio
+    @patch("parrot.tools.scraping.tool.DriverFactory")
+    async def test_initialize_obscura_extracts_handles(self, mock_factory):
+        """FEAT-530 review fix: initialize_driver() previously raised
+        ValueError("Driver type 'obscura' not supported") right after
+        successfully starting the Obscura-backed driver — this is the
+        same extraction path as 'playwright' (Obscura reuses
+        PlaywrightDriver in CDP mode)."""
+        from parrot.tools.scraping.tool import WebScrapingTool
+
+        mock_abs_driver = AsyncMock(spec=AbstractDriver)
+        mock_abs_driver._page = MagicMock()
+        mock_abs_driver._browser = MagicMock()
+        mock_factory.create.return_value = mock_abs_driver
+
+        tool = WebScrapingTool(driver_type="obscura")
+        await tool.initialize_driver()
+
+        mock_abs_driver.start.assert_called_once()
+        assert tool.page is mock_abs_driver._page
+        assert tool.browser is mock_abs_driver._browser
+
+    @pytest.mark.asyncio
+    @patch("parrot.tools.scraping.tool.DriverFactory")
+    async def test_initialize_unsupported_driver_type_still_raises(self, mock_factory):
+        """Regression guard: the fix must not turn the else-branch into
+        a silent no-op for a genuinely unsupported driver_type."""
+        from parrot.tools.scraping.tool import WebScrapingTool
+
+        mock_abs_driver = AsyncMock(spec=AbstractDriver)
+        mock_factory.create.return_value = mock_abs_driver
+
+        tool = WebScrapingTool()
+        tool.driver_type = "puppeteer"  # bypass the constructor's Literal
+        with pytest.raises(ValueError, match="not supported"):
+            await tool.initialize_driver()
 
 
 # ── Cleanup ──────────────────────────────────────────────────────

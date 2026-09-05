@@ -35,6 +35,13 @@ class PlaywrightDriver(AbstractDriver):
         self._context: Any = None
         self._page: Any = None
         self._responses: List[Dict[str, Any]] = []
+        # Whether `self._context` was created by this driver (`new_context()`
+        # / `launch_persistent_context()`) as opposed to reused from an
+        # existing CDP-connected browser's default context. `quit()` only
+        # closes contexts it owns — closing a *reused* Obscura context
+        # would tear down state a supervised process's other clients may
+        # still depend on.
+        self._owns_context: bool = False
 
     # ── Lifecycle ────────────────────────────────────────────────
 
@@ -91,6 +98,7 @@ class PlaywrightDriver(AbstractDriver):
                 **launch_kwargs,
                 **context_kwargs,
             )
+            self._owns_context = True
             self._context.set_default_timeout(self.config.timeout * 1000)
             # Persistent contexts open with an initial page.
             pages = self._context.pages
@@ -100,6 +108,7 @@ class PlaywrightDriver(AbstractDriver):
 
             context_kwargs = self._build_context_kwargs()
             self._context = await self._browser.new_context(**context_kwargs)
+            self._owns_context = True
             self._context.set_default_timeout(self.config.timeout * 1000)
 
             self._page = await self._context.new_page()
@@ -113,17 +122,22 @@ class PlaywrightDriver(AbstractDriver):
     async def quit(self) -> None:
         """Close browser and release resources.
 
-        Only Playwright-owned resources are closed here. In
-        ``config.engine == "obscura"`` (CDP) mode, ``Browser.close()``
-        disconnects Playwright's client and clears contexts it created —
-        per Playwright's own CDP semantics it does **not** terminate the
-        remote browser process, so the externally supervised Obscura
-        process is left running for
+        Only Playwright-owned resources are closed here. ``self._context``
+        is closed only when this driver created it
+        (``self._owns_context``) — a *reused* Obscura default context
+        (``config.engine == "obscura"`` connecting to an endpoint that
+        already had one) is left open, since closing it would tear down
+        state a supervised process's other clients may still depend on.
+        In ``config.engine == "obscura"`` (CDP) mode, ``Browser.close()``
+        disconnects Playwright's client — per Playwright's own CDP
+        semantics it does **not** terminate the remote browser process,
+        so the externally supervised Obscura process is left running for
         ``parrot.mcp.obscura.ObscuraProcessManager`` to manage.
         """
-        if self._context:
+        if self._context and self._owns_context:
             await self._context.close()
-            self._context = None
+        self._context = None
+        self._owns_context = False
         if self._browser:
             await self._browser.close()
             self._browser = None
@@ -421,7 +435,11 @@ class PlaywrightDriver(AbstractDriver):
         Reuses the endpoint's default context/page when one already
         exists (the common case for a supervised Obscura process),
         falling back to creating a new context/page so every
-        ``AbstractDriver`` method sees a valid ``self._page``.
+        ``AbstractDriver`` method sees a valid ``self._page``. Only a
+        newly-created context is recorded as owned
+        (``self._owns_context``) — ``quit()`` must never close a reused
+        context, which may belong to other clients of the supervised
+        process.
 
         Args:
             browser_launcher: The Chromium ``BrowserType`` from the
@@ -432,10 +450,12 @@ class PlaywrightDriver(AbstractDriver):
 
         if self._browser.contexts:
             self._context = self._browser.contexts[0]
+            self._owns_context = False
         else:
             context_kwargs = self._build_context_kwargs()
             context_kwargs.pop("storage_state", None)
             self._context = await self._browser.new_context(**context_kwargs)
+            self._owns_context = True
         self._context.set_default_timeout(self.config.timeout * 1000)
 
         if self._context.pages:

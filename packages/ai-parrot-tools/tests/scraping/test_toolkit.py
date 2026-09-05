@@ -134,6 +134,27 @@ class TestConstructor:
         assert tk._session_based is True
         assert tk._session_driver is None
 
+    def test_obscura_driver_type_accepted(self, tmp_path, mock_llm_client):
+        """FEAT-530 review fix: DriverConfig.driver_type must accept
+        'obscura' — it previously raised a pydantic ValidationError,
+        blocking WebScrapingToolkit(driver_type='obscura') entirely."""
+        tk = WebScrapingToolkit(
+            driver_type="obscura",
+            obscura_binary="/usr/local/bin/obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            obscura_port=9333,
+            obscura_stealth=True,
+            obscura_allow_private_network=True,
+            plans_dir=tmp_path / "plans",
+            llm_client=mock_llm_client,
+        )
+        assert tk._config.driver_type == "obscura"
+        assert tk._config.obscura_binary == "/usr/local/bin/obscura"
+        assert tk._config.cdp_endpoint_url == "http://127.0.0.1:9333"
+        assert tk._config.obscura_port == 9333
+        assert tk._config.obscura_stealth is True
+        assert tk._config.obscura_allow_private_network is True
+
 
 # ── TestLifecycle ─────────────────────────────────────────────────────
 
@@ -158,6 +179,35 @@ class TestLifecycle:
         finally:
             if original:
                 DriverRegistry.register("selenium", original)
+            await tk.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_creates_obscura_session_driver(
+        self, tmp_path, mock_llm_client, mock_driver
+    ):
+        """FEAT-530 review fix: WebScrapingToolkit's session-based path
+        (start() -> DriverRegistry.get('obscura')) must resolve to a
+        registered factory — previously 'obscura' had no DriverRegistry
+        entry at all (only 'selenium'/'playwright' were registered)."""
+        tk = WebScrapingToolkit(
+            driver_type="obscura",
+            session_based=True,
+            plans_dir=tmp_path / "plans",
+            llm_client=mock_llm_client,
+        )
+        mock_setup = MagicMock()
+        mock_setup.get_driver = AsyncMock(return_value=mock_driver)
+
+        from parrot.tools.scraping.driver_context import DriverRegistry
+
+        original = DriverRegistry._factories.get("obscura")
+        DriverRegistry.register("obscura", lambda cfg: mock_setup)
+        try:
+            await tk.start()
+            assert tk._session_driver is mock_driver
+        finally:
+            if original:
+                DriverRegistry.register("obscura", original)
             await tk.stop()
 
     @pytest.mark.asyncio

@@ -57,6 +57,7 @@ def started_driver(driver, mock_page, mock_context):
     """PlaywrightDriver with mocked internals (simulates started state)."""
     driver._page = mock_page
     driver._context = mock_context
+    driver._owns_context = True  # normal launch mode always creates its own context
     driver._browser = AsyncMock()
     driver._playwright = AsyncMock()
     return driver
@@ -572,16 +573,26 @@ class TestObscuraCDPMode:
         mock_browser.new_context.assert_called_once()
         mock_context.new_page.assert_called_once()
         assert driver._page is mock_page
+        assert driver._owns_context is True  # created, not reused
+
+        # A driver-created context IS closed on quit() (only a *reused*
+        # one is skipped — see test_playwright_driver_quit_does_not_close_
+        # external_browser_unless_owned below).
+        await driver.quit()
+        mock_context.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_playwright_driver_quit_does_not_close_external_browser_unless_owned(
         self,
     ):
-        """quit() only invokes Playwright's own close()/stop() — which,
-        per Playwright's CDP semantics, disconnect rather than terminate
-        the remote browser process. The driver never holds (and so never
-        kills) a separate process handle for a supervised Obscura
-        instance; that ownership stays with
+        """quit() never closes a *reused* CDP context/page (this driver
+        did not create it — closing it would tear down state a
+        supervised process's other clients may still depend on), and
+        only ever invokes Playwright's own close()/stop() on resources
+        it owns — which, per Playwright's CDP semantics, disconnect
+        rather than terminate the remote browser process. The driver
+        never holds (and so never kills) a separate process handle for
+        a supervised Obscura instance; that ownership stays with
         `parrot.mcp.obscura.ObscuraProcessManager`."""
         mock_pw = AsyncMock()
         mock_browser = AsyncMock()
@@ -600,13 +611,15 @@ class TestObscuraCDPMode:
             mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
             await driver.start()
 
+        assert driver._owns_context is False  # reused, not created
+
         context = driver._context
         browser = driver._browser
         playwright = driver._playwright
 
         await driver.quit()
 
-        context.close.assert_called_once()
+        context.close.assert_not_called()
         browser.close.assert_called_once()
         playwright.stop.assert_called_once()
         assert driver._page is None

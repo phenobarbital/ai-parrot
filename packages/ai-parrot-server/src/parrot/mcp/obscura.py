@@ -144,31 +144,50 @@ class ObscuraProcessManager:
         """Start (or adopt) Obscura and wait for CDP readiness.
 
         In the normal (non `attach_only`) mode, this manager starts and
-        owns the process — `stop()` will later terminate it. In
-        `attach_only` mode, an already-responding endpoint is adopted
-        without spawning anything, and `stop()` will never terminate it;
-        if nothing is responding, `attach_only` mode raises instead of
-        spawning a process it would not be allowed to stop.
+        owns the process — `stop()` will later terminate it. If a CDP
+        endpoint is already responding but this manager did not start it
+        and `attach_only` is not set, `start()` refuses to silently
+        adopt an unknown process (e.g. Chrome DevTools or another tool
+        happening to listen on the same port) — ownership must be
+        explicit. In `attach_only` mode, an already-responding endpoint
+        is adopted without spawning anything, and `stop()` will never
+        terminate it; if nothing is responding, `attach_only` mode
+        raises instead of spawning a process it would not be allowed to
+        stop.
 
         Returns:
             str: The CDP endpoint URL once ready.
 
         Raises:
             RuntimeError: If the binary cannot be found (non `attach_only`
-                mode), if `attach_only` mode finds nothing listening, or if
-                the CDP endpoint does not become ready within
-                `config.startup_timeout` seconds.
+                mode), if a CDP endpoint is already responding but is
+                neither owned by this manager nor explicitly adopted via
+                `attach_only`, if `attach_only` mode finds nothing
+                listening, if the spawned process exits before its CDP
+                endpoint becomes ready (captured stderr included when
+                available), or if the CDP endpoint does not become ready
+                within `config.startup_timeout` seconds.
         """
         if await self.is_running():
             if self.config.attach_only:
                 self.logger.info(
                     "Adopting externally running Obscura on %s", self.endpoint
                 )
-            else:
+                return self.endpoint
+            if self._owns_process:
+                # Idempotent re-start() on a manager that already owns
+                # this process — not a foreign endpoint.
                 self.logger.info(
                     "Obscura is already running on %s", self.endpoint
                 )
-            return self.endpoint
+                return self.endpoint
+            raise RuntimeError(
+                f"A CDP endpoint is already responding at {self.endpoint} "
+                "but this manager did not start it and attach_only is not "
+                "set. Refusing to silently adopt an unknown process — "
+                "stop whatever is using this port, or pass attach_only=True "
+                "to adopt it explicitly."
+            )
 
         if self.config.attach_only:
             raise RuntimeError(
@@ -189,7 +208,9 @@ class ObscuraProcessManager:
             self.process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                # Captured (not DEVNULL) so a fast-crashing binary yields
+                # an actionable diagnosis instead of a generic timeout.
+                stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,  # Detach from parent
             )
         except OSError as exc:
@@ -201,6 +222,20 @@ class ObscuraProcessManager:
         poll_interval = 0.2
         while asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(poll_interval)
+            if self.process.returncode is not None:
+                returncode = self.process.returncode
+                stderr = await self._read_stderr_snippet()
+                self.logger.error(
+                    "Obscura exited early (code %s) before becoming ready: %s",
+                    returncode,
+                    stderr,
+                )
+                self.process = None
+                self._owns_process = False
+                message = f"Obscura exited early (code {returncode}) before its CDP endpoint became ready"
+                if stderr:
+                    message += f": {stderr}"
+                raise RuntimeError(message)
             if await self.is_running():
                 self.logger.info("Obscura ready on %s", self.endpoint)
                 return self.endpoint
@@ -214,6 +249,25 @@ class ObscuraProcessManager:
             f"Timed out after {self.config.startup_timeout}s waiting for "
             f"Obscura CDP endpoint at {self.endpoint}"
         )
+
+    async def _read_stderr_snippet(self, max_bytes: int = 2048) -> str:
+        """Best-effort read of the spawned process's captured stderr.
+
+        Args:
+            max_bytes: Maximum number of bytes to read.
+
+        Returns:
+            str: Decoded stderr snippet, or `""` if none is available.
+        """
+        if self.process is None or self.process.stderr is None:
+            return ""
+        try:
+            data = await asyncio.wait_for(
+                self.process.stderr.read(max_bytes), timeout=1.0
+            )
+        except (asyncio.TimeoutError, OSError):
+            return ""
+        return data.decode("utf-8", errors="replace").strip()
 
     async def stop(self) -> None:
         """Stop the managed Obscura process — only if this manager owns it.
@@ -236,6 +290,10 @@ class ObscuraProcessManager:
             await asyncio.wait_for(self.process.wait(), 5)
         except asyncio.TimeoutError:
             self.process.kill()
+            # Reap the killed child — SIGKILL is not instantaneous, and
+            # asyncio's own child watcher should not be relied on alone
+            # to guarantee the process is gone before we drop the handle.
+            await self.process.wait()
         self.process = None
         self._owns_process = False
 

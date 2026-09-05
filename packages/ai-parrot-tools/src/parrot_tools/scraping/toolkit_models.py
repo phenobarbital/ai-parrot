@@ -39,9 +39,19 @@ class DriverConfig(BaseModel):
         browser_channel: Playwright browser channel (e.g. ``"chrome"``,
             ``"msedge"``) to launch a real installed browser instead of
             the bundled engine. Ignored by the Selenium backend.
+        cdp_endpoint_url: Explicit Obscura CDP endpoint (FEAT-530).
+            Only used when ``driver_type="obscura"``.
+        obscura_binary: Path to (or ``PATH``-resolvable name of) the
+            Obscura binary. Not used by the driver itself — carried
+            through for CLI/process-manager use.
+        obscura_port: CDP port of the supervised Obscura process, used
+            to derive ``cdp_endpoint_url`` when it is not set explicitly.
+        obscura_stealth: Obscura stealth-mode flag.
+        obscura_allow_private_network: Obscura
+            ``--allow-private-network`` flag.
     """
 
-    driver_type: Literal["selenium", "playwright"] = "selenium"
+    driver_type: Literal["selenium", "playwright", "obscura"] = "selenium"
     browser: Literal[
         "chrome", "firefox", "edge", "safari", "undetected", "webkit"
     ] = "chrome"
@@ -58,6 +68,11 @@ class DriverConfig(BaseModel):
     user_data_dir: Optional[str] = None
     profile_directory: Optional[str] = None
     browser_channel: Optional[str] = None
+    cdp_endpoint_url: Optional[str] = None
+    obscura_binary: Optional[str] = None
+    obscura_port: int = 9222
+    obscura_stealth: bool = False
+    obscura_allow_private_network: bool = False
 
     def merge(self, overrides: Optional[Dict[str, Any]] = None) -> DriverConfig:
         """Return a new DriverConfig with overrides applied.

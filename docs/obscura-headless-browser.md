@@ -51,10 +51,15 @@ await driver.quit()    # disconnects only — does not kill the Obscura process
 
 `driver_type="obscura"` always connects over Chromium CDP (`browser`/
 `browser_type` is ignored — Obscura speaks CDP as a Chromium-compatible
-engine) and never falls back to Chrome/Chromium/Selenium. Every
-`AbstractDriver` method (`navigate`, `click`, `fill`, `screenshot`,
-`evaluate`, …) works identically regardless of engine — no
-Obscura-specific branching exists anywhere above `PlaywrightDriver`.
+engine, enforced both by `DriverFactory`/`DriverRegistry` and by
+`PlaywrightConfig` itself) and never falls back to Chrome/Chromium/
+Selenium. Every `AbstractDriver` method (`navigate`, `click`, `fill`,
+`screenshot`, `evaluate`, …) works identically regardless of engine —
+no Obscura-specific branching exists anywhere above `PlaywrightDriver`.
+`quit()` only closes a context it created itself — a *reused* CDP
+default context/page (the common case when connecting to an existing
+supervised process) is left open, since closing it could tear down
+state other clients of that process still depend on.
 
 `PlaywrightConfig` carries the underlying settings directly:
 
@@ -82,13 +87,23 @@ parrot mcp obscura stop --port 9222
 
 `start` delegates to `parrot.mcp.obscura.ObscuraProcessManager` — it
 waits for a responsive CDP endpoint and reports an actionable error
-(binary not found, readiness timeout) rather than hanging or silently
-falling back. Because each CLI invocation is a separate OS process,
+(binary not found, readiness timeout, or the spawned process exiting
+early — with its captured stderr) rather than hanging or silently
+falling back. It also refuses to silently adopt a *foreign* CDP endpoint
+already listening on the configured port (e.g. Chrome DevTools sharing
+the same conventional `9222`) — ownership must be explicit via
+`--attach-only`. Because each CLI invocation is a separate OS process,
 `start` records the spawned PID to a small file
 (`{tempdir}/obscura-{port}.pid`) that `stop` reads back — this PID-file
 adapter is CLI-only bookkeeping; `ObscuraProcessManager` itself only
 tracks ownership in-process (for embedded/long-lived callers such as an
-agent process holding one manager for its own lifetime).
+agent process holding one manager for its own lifetime). Before
+signaling, `stop` sanity-checks the PID's `/proc/{pid}/cmdline` actually
+looks like an Obscura process (defends a stale or PID-reused file
+against terminating an unrelated process), then sends `SIGTERM`,
+escalating to `SIGKILL` if the process is still alive after 5 seconds —
+mirroring `ObscuraProcessManager.stop()`'s own terminate-then-kill
+policy.
 
 `--attach-only` adopts an already-running endpoint without spawning
 anything, and `stop` will never terminate a process it did not start.
@@ -226,28 +241,40 @@ adds three opt-in tests requiring a real Linux Obscura `v0.2.2` binary
   runs against real Chromium, run through the Obscura-backed driver.
 - `TestObscuraBrowsingToolkitCatalogFlow::test_obscura_browsing_toolkit_catalog_flow`
   — a catalogued `WebBrowsingToolkit` login flow against the
-  Obscura-backed driver (injected directly via `_session_driver` — see
-  the known gap below).
+  Obscura-backed driver (injected directly via `_session_driver`, the
+  same pattern `test_toolkit.py::test_start_creates_session_driver`
+  already uses for Selenium).
 
 **Run these before enabling Obscura for any real workload** — every ✅
 above is measured against launched Chromium and a mocked CDP transport;
 these are what actually exercises a real Obscura process end to end.
 
-### Known gap: `WebBrowsingToolkit` driver selection
+### Resolved: driver selection now covers every entry point
 
-`DriverRegistry` (`parrot_tools.scraping.driver_context`) has no
-`"obscura"` entry — only `"selenium"` and `"playwright"` are registered.
-`WebBrowsingToolkit`/`WebScrapingToolkit`'s session-based path
-(`start()` → `DriverRegistry.get(driver_type)`) therefore **cannot**
-currently self-construct an Obscura-backed driver end to end, even
-though `DriverFactory.create({"driver_type": "obscura"})` (used by
-`WebScrapingTool`'s plan-execution path) works correctly. The opt-in
-catalog-flow test above validates catalogued execution against a real
-Obscura-backed driver by injecting it directly; it does not exercise
-`DriverRegistry` dispatch. **Recommended follow-up**: register an
-`"obscura"` factory in `DriverRegistry` (mirroring the existing
-Selenium/Playwright entries) so `WebBrowsingToolkit(driver_type="obscura")`
-works without the injection workaround.
+An earlier draft of this feature left `WebScrapingTool`/
+`WebScrapingToolkit`/`WebBrowsingToolkit` unable to select Obscura end to
+end — code review caught this before merge (`DriverConfig.driver_type`
+rejected `"obscura"` outright via its pydantic `Literal`, `DriverRegistry`
+had no `"obscura"` entry, and `WebScrapingTool.initialize_driver()`
+raised `ValueError` right after successfully starting the connection).
+All three are now fixed:
+
+- `DriverConfig.driver_type: Literal["selenium", "playwright", "obscura"]`,
+  with `cdp_endpoint_url`/`obscura_binary`/`obscura_port`/
+  `obscura_stealth`/`obscura_allow_private_network` fields forwarded from
+  `WebScrapingToolkit.__init__`.
+- `DriverRegistry.register("obscura", _create_obscura_setup)` — the
+  session-based path (`WebScrapingToolkit`/`WebBrowsingToolkit`'s
+  `start()`) now resolves an Obscura-backed `PlaywrightDriver` exactly
+  like the existing Selenium/Playwright entries.
+- `WebScrapingTool.initialize_driver()` extracts Playwright handles for
+  `"obscura"` the same way it does for `"playwright"` (same underlying
+  driver class).
+
+See `packages/ai-parrot-tools/tests/scraping/test_driver_context.py`,
+`test_toolkit.py::test_start_creates_obscura_session_driver`, and
+`test_tool_driver_integration.py::TestWebScrapingToolObscuraDriver` /
+`test_initialize_obscura_extracts_handles`.
 
 ---
 

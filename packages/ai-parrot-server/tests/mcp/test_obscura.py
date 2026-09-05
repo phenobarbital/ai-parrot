@@ -4,6 +4,7 @@ All tests mock process spawning (`asyncio.create_subprocess_exec`) and CDP
 readiness (`ObscuraProcessManager.is_running`) — no real Obscura binary or
 network access is required.
 """
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,9 +15,11 @@ from parrot.mcp.obscura import ObscuraProcessConfig, ObscuraProcessManager
 def _make_process(pid: int = 4242) -> MagicMock:
     process = MagicMock()
     process.pid = pid
+    process.returncode = None  # still running, like a real asyncio.subprocess.Process
     process.terminate = MagicMock()
     process.wait = AsyncMock(return_value=0)
     process.kill = MagicMock()
+    process.stderr = None  # no captured-stderr snippet unless a test sets one
     return process
 
 
@@ -97,6 +100,29 @@ async def test_obscura_manager_stop_only_terminates_owned_process():
     await attach_manager.stop()  # Must not raise or attempt to kill anything.
 
 
+async def test_obscura_manager_stop_reaps_after_kill():
+    """Code-review fix: after escalating to kill() (terminate() timed
+    out), stop() must await the process's exit — not just fire kill()
+    and drop the handle without confirming it actually reaped."""
+    config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura")
+    manager = ObscuraProcessManager(config)
+
+    process = _make_process()
+    # First wait() (after terminate()) times out; second wait() (after
+    # kill()) succeeds — proves stop() calls wait() a second time.
+    process.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), 0])
+    manager.process = process
+    manager._owns_process = True
+
+    await manager.stop()
+
+    process.terminate.assert_called_once()
+    process.kill.assert_called_once()
+    assert process.wait.await_count == 2
+    assert manager.process is None
+    assert manager._owns_process is False
+
+
 async def test_obscura_manager_start_failure():
     """Missing binary and readiness timeout both raise diagnosable errors."""
     # Missing binary.
@@ -126,6 +152,34 @@ async def test_obscura_manager_start_failure():
     process.terminate.assert_called_once()
 
 
+async def test_obscura_manager_start_reports_early_crash_with_stderr():
+    """Code-review fix: a fast-crashing binary must be diagnosed
+    immediately (with captured stderr) rather than silently waiting out
+    the full startup_timeout for a generic 'Timed out' error."""
+    config = ObscuraProcessConfig(
+        binary_path="/usr/local/bin/obscura", startup_timeout=10.0
+    )
+    manager = ObscuraProcessManager(config)
+
+    process = _make_process()
+    process.returncode = 1  # already exited by the time we first poll
+    process.stderr = AsyncMock()
+    process.stderr.read = AsyncMock(return_value=b"obscura: fatal: missing license\n")
+
+    with patch("parrot.mcp.obscura.Path.is_file", return_value=True), patch(
+        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=process),
+    ), patch.object(
+        ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)
+    ):
+        with pytest.raises(RuntimeError, match="exited early") as exc_info:
+            await manager.start()
+
+    assert "fatal: missing license" in str(exc_info.value)
+    assert manager.process is None
+    assert manager._owns_process is False
+
+
 async def test_obscura_manager_attach_only_without_running_endpoint_raises():
     """attach_only mode must never spawn a process it cannot stop later."""
     config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura", attach_only=True)
@@ -139,6 +193,42 @@ async def test_obscura_manager_attach_only_without_running_endpoint_raises():
             await manager.start()
 
     create_mock.assert_not_awaited()
+
+
+async def test_obscura_manager_refuses_to_adopt_unowned_foreign_endpoint():
+    """Code-review fix: a CDP endpoint already responding on the
+    configured port (e.g. Chrome DevTools on the shared default 9222)
+    must NOT be silently treated as "Obscura is ready" in managed
+    (non attach_only) mode when this manager never started it —
+    ownership must be explicit, matching the spec's "adopted only via
+    explicit attach-only mode" requirement."""
+    config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura")
+    manager = ObscuraProcessManager(config)
+
+    with patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=True)), patch(
+        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+        new=AsyncMock(),
+    ) as create_mock:
+        with pytest.raises(RuntimeError, match="did not start it"):
+            await manager.start()
+
+    create_mock.assert_not_awaited()
+    assert manager._owns_process is False
+
+
+async def test_obscura_manager_idempotent_restart_on_owned_process():
+    """A manager that already started (and so owns) the process may
+    call start() again and get the same endpoint back — this is NOT
+    the foreign-endpoint case above."""
+    config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura")
+    manager = ObscuraProcessManager(config)
+    manager.process = _make_process()
+    manager._owns_process = True
+
+    with patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=True)):
+        endpoint = await manager.start()
+
+    assert endpoint == manager.endpoint
 
 
 async def test_obscura_manager_status_reports_ownership_and_endpoint():

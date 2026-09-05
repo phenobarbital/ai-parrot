@@ -137,9 +137,11 @@ class TestFactoryLifecycleObscura:
 
         await driver.quit()
         assert driver._page is None
-        # Playwright's own CDP-connection close semantics (disconnect,
-        # not terminate) — see PlaywrightDriver.quit()'s docstring.
-        context.close.assert_called_once()
+        # Reused (not driver-created) context is never closed — only
+        # Playwright's own CDP-connection close semantics apply
+        # (disconnect, not terminate) — see PlaywrightDriver.quit()'s
+        # docstring.
+        context.close.assert_not_called()
         browser.close.assert_called_once()
         playwright.stop.assert_called_once()
 

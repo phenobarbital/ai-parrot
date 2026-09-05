@@ -116,3 +116,12 @@ class PlaywrightConfig:
             raise ValueError(
                 f"obscura_port out of range: {self.obscura_port}"
             )
+        if self.engine == "obscura" and self.browser_type != "chromium":
+            # Obscura only speaks CDP as a Chromium-compatible engine.
+            # DriverFactory/DriverRegistry already force this — this is
+            # a defense-in-depth check for direct PlaywrightConfig
+            # construction that bypasses both.
+            raise ValueError(
+                "engine='obscura' requires browser_type='chromium' "
+                f"(got {self.browser_type!r})"
+            )

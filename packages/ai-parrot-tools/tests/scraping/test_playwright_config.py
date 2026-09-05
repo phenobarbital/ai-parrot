@@ -220,9 +220,18 @@ class TestPlaywrightConfigObscuraCompatibility:
         assert config.user_data_dir == "/tmp/profile"
 
     def test_obscura_mode_is_orthogonal_to_browser_type_validation(self):
-        """`engine` and `browser_type` validate independently — Obscura
-        selection is enforced by DriverFactory (chromium-only), not by
-        PlaywrightConfig itself, which stays browser-type agnostic."""
+        """`engine="obscura"` is compatible with the only browser_type
+        it is ever used with — `"chromium"`."""
         config = PlaywrightConfig(engine="obscura", browser_type="chromium")
         assert config.engine == "obscura"
         assert config.browser_type == "chromium"
+
+    def test_obscura_mode_rejects_non_chromium_browser_type(self):
+        """Code-review fix: Obscura only speaks CDP as a
+        Chromium-compatible engine — DriverFactory/DriverRegistry
+        already force `browser_type='chromium'`, but a caller
+        constructing PlaywrightConfig directly (bypassing both) must
+        not be able to silently combine `engine='obscura'` with e.g.
+        `browser_type='firefox'`."""
+        with pytest.raises(ValueError, match="requires browser_type='chromium'"):
+            PlaywrightConfig(engine="obscura", browser_type="firefox")

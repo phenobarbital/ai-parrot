@@ -5,6 +5,7 @@ adapter functions (both `parrot.mcp.obscura`) — no real Obscura binary or
 subprocess is spawned.
 """
 import json
+import signal
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,7 +47,9 @@ def test_obscura_cli_lifecycle():
 
     # stop() — a separate CLI invocation reads the PID file back.
     with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
+         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
          patch("parrot.mcp.cli.os.kill") as kill_mock, \
+         patch("parrot.mcp.cli._wait_for_pid_exit", new=AsyncMock(return_value=True)), \
          patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
         result = _invoke("stop", "--port", "9222")
 
@@ -54,6 +57,27 @@ def test_obscura_cli_lifecycle():
     assert "Stopped Obscura process 4242" in result.output
     kill_mock.assert_called_once()
     assert kill_mock.call_args.args[0] == 4242
+    assert kill_mock.call_args.args[1] == signal.SIGTERM
+    remove_mock.assert_called_once()
+
+
+def test_obscura_stop_escalates_to_sigkill_when_sigterm_ignored():
+    """If the process is still alive after SIGTERM, stop() escalates to
+    SIGKILL — mirroring ObscuraProcessManager.stop()'s own policy."""
+    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
+         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
+         patch("parrot.mcp.cli.os.kill") as kill_mock, \
+         patch(
+             "parrot.mcp.cli._wait_for_pid_exit",
+             new=AsyncMock(side_effect=[False, True]),
+         ), \
+         patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
+        result = _invoke("stop", "--port", "9222")
+
+    assert result.exit_code == 0, result.output
+    assert kill_mock.call_count == 2
+    assert kill_mock.call_args_list[0].args == (4242, signal.SIGTERM)
+    assert kill_mock.call_args_list[1].args == (4242, signal.SIGKILL)
     remove_mock.assert_called_once()
 
 
@@ -126,6 +150,7 @@ def test_obscura_stop_no_pid_file_reports_error():
 
 def test_obscura_stop_process_already_gone_is_not_fatal():
     with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
+         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
          patch("parrot.mcp.cli.os.kill", side_effect=ProcessLookupError()), \
          patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
         result = _invoke("stop", "--port", "9222")
@@ -133,6 +158,61 @@ def test_obscura_stop_process_already_gone_is_not_fatal():
     assert result.exit_code == 0, result.output
     assert "already gone" in result.output
     remove_mock.assert_called_once()
+
+
+def test_obscura_stop_refuses_pid_that_does_not_look_like_obscura():
+    """A stale or reused PID file must never result in signaling an
+    unrelated process — `os.kill` must not even be called."""
+    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
+         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=False), \
+         patch("parrot.mcp.cli.os.kill") as kill_mock:
+        result = _invoke("stop", "--port", "9222")
+
+    assert result.exit_code != 0
+    assert "Refusing to stop" in result.output
+    kill_mock.assert_not_called()
+
+
+def test_pid_looks_like_obscura_true_for_matching_cmdline(tmp_path, monkeypatch):
+    from parrot.mcp.cli import _pid_looks_like_obscura
+
+    fake_proc = tmp_path / "proc"
+    fake_proc.mkdir()
+    (fake_proc / "cmdline").write_bytes(
+        b"/usr/local/bin/obscura\x00serve\x00--port\x009222\x00"
+    )
+    monkeypatch.setattr(
+        "parrot.mcp.cli.Path",
+        lambda p: fake_proc / "cmdline" if p == "/proc/4242/cmdline" else Path(p),
+    )
+    assert _pid_looks_like_obscura(4242) is True
+
+
+def test_pid_looks_like_obscura_false_when_unreadable():
+    from parrot.mcp.cli import _pid_looks_like_obscura
+
+    # A PID that (almost certainly) does not exist on this system.
+    assert _pid_looks_like_obscura(2**30) is False
+
+
+async def test_wait_for_pid_exit_true_once_process_lookup_error():
+    from parrot.mcp.cli import _wait_for_pid_exit
+
+    with patch(
+        "parrot.mcp.cli.os.kill", side_effect=[None, ProcessLookupError()]
+    ):
+        result = await _wait_for_pid_exit(4242, timeout=1.0)
+
+    assert result is True
+
+
+async def test_wait_for_pid_exit_false_on_timeout():
+    from parrot.mcp.cli import _wait_for_pid_exit
+
+    with patch("parrot.mcp.cli.os.kill"):  # never raises — "still alive"
+        result = await _wait_for_pid_exit(4242, timeout=0.05)
+
+    assert result is False
 
 
 # ── status ────────────────────────────────────────────────────────

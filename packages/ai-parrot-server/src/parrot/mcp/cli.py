@@ -293,6 +293,30 @@ def obscura_stop(port):
     asyncio.run(_obscura_stop(port))
 
 
+def _pid_looks_like_obscura(pid: int) -> bool:
+    """Sanity-check `pid`'s command line before signaling it.
+
+    Defends a stale or PID-reused pidfile against terminating an
+    unrelated process: since `_build_command()` always names the
+    Obscura binary/subcommand explicitly, a genuine Obscura process's
+    `/proc/{pid}/cmdline` must mention "obscura".
+
+    Args:
+        pid: Process id to check.
+
+    Returns:
+        bool: `True` if `/proc/{pid}/cmdline` contains "obscura"
+        (case-insensitive). `False` — never raises — if it cannot be
+        read (process already gone, `/proc` unavailable, empty cmdline).
+    """
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+    cmdline = raw.replace(b"\x00", b" ").decode("utf-8", errors="replace")
+    return "obscura" in cmdline.lower()
+
+
 async def _obscura_stop(port):
     from .obscura import default_pid_file, read_pid_file, remove_pid_file
 
@@ -302,6 +326,17 @@ async def _obscura_stop(port):
         click.echo(
             f"No supervised Obscura process found for port {port} "
             f"(no PID file at {pid_file}).",
+            err=True,
+        )
+        sys.exit(1)
+        return
+
+    if not _pid_looks_like_obscura(pid):
+        click.echo(
+            f"Refusing to stop PID {pid}: its command line does not look "
+            f"like an Obscura process (stale or reused PID file at "
+            f"{pid_file}?). Remove the PID file manually once you have "
+            "confirmed it is safe.",
             err=True,
         )
         sys.exit(1)
@@ -318,8 +353,42 @@ async def _obscura_stop(port):
         sys.exit(1)
         return
 
+    if not await _wait_for_pid_exit(pid, timeout=5.0):
+        # SIGTERM did not stop it in time — escalate, mirroring
+        # ObscuraProcessManager.stop()'s own terminate-then-kill policy.
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await _wait_for_pid_exit(pid, timeout=5.0)
+
     remove_pid_file(pid_file)
     click.echo(f"Stopped Obscura process {pid} on port {port}.")
+
+
+async def _wait_for_pid_exit(pid: int, timeout: float) -> bool:
+    """Poll for `pid`'s exit without blocking the event loop.
+
+    Uses `os.kill(pid, 0)` as a pure existence probe — no signal is
+    delivered, it only raises `ProcessLookupError` once the process is
+    gone.
+
+    Args:
+        pid: Process id to poll.
+        timeout: Maximum seconds to wait.
+
+    Returns:
+        bool: `True` if the process exited within `timeout`, `False`
+        if it is still alive when the timeout elapses.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        await asyncio.sleep(0.2)
+    return False
 
 
 @obscura_group.command("status")

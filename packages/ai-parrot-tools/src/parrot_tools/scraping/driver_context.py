@@ -217,9 +217,64 @@ def _create_playwright_setup(config: DriverConfig) -> Any:
     return _PlaywrightSetup(config)
 
 
+class _ObscuraSetup:
+    """Setup-style wrapper that adapts an Obscura-backed ``PlaywrightDriver``
+    to the registry (FEAT-530).
+
+    Mirrors ``_PlaywrightSetup`` exactly, but builds
+    ``PlaywrightConfig(engine="obscura", browser_type="chromium", ...)``
+    forwarding the Obscura-specific ``DriverConfig`` fields. Obscura is a
+    CDP-speaking, Chromium-compatible engine — it never launches a
+    browser itself and never selects browser type via
+    ``DriverConfig.browser`` (unlike the Playwright setup above).
+    """
+
+    def __init__(self, config: DriverConfig) -> None:
+        self._config = config
+
+    async def get_driver(self) -> AbstractDriver:
+        """Instantiate and start a ``PlaywrightDriver`` in Obscura CDP mode.
+
+        Returns:
+            A started ``PlaywrightDriver`` instance (an ``AbstractDriver``)
+            connected over CDP to a supervised Obscura endpoint.
+        """
+        from .drivers.playwright_config import PlaywrightConfig
+        from .drivers.playwright_driver import PlaywrightDriver
+
+        pw_config = PlaywrightConfig(
+            engine="obscura",
+            browser_type="chromium",
+            headless=self._config.headless,
+            timeout=self._config.default_timeout,
+            cdp_endpoint_url=self._config.cdp_endpoint_url,
+            obscura_binary=self._config.obscura_binary,
+            obscura_port=self._config.obscura_port,
+            obscura_stealth=self._config.obscura_stealth,
+            obscura_allow_private_network=self._config.obscura_allow_private_network,
+        )
+        driver = PlaywrightDriver(pw_config)
+        await driver.start()
+        return driver
+
+
+def _create_obscura_setup(config: DriverConfig) -> Any:
+    """Create an Obscura setup wrapper from a DriverConfig (FEAT-530).
+
+    Args:
+        config: Browser configuration.
+
+    Returns:
+        A ``_ObscuraSetup`` instance whose ``get_driver()`` returns a
+        started, Obscura-backed ``PlaywrightDriver``.
+    """
+    return _ObscuraSetup(config)
+
+
 # Register the built-in driver factories.
 DriverRegistry.register("selenium", _create_selenium_setup)
 DriverRegistry.register("playwright", _create_playwright_setup)
+DriverRegistry.register("obscura", _create_obscura_setup)
 
 
 async def _quit_driver(driver: Any) -> None:
