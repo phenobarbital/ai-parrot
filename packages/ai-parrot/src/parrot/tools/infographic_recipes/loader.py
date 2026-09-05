@@ -65,9 +65,7 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
     if pkg_init.is_file():
         pkg = name or f"parrot_transformers_{_digest(file.parent)}"
         if pkg not in sys.modules:
-            spec = importlib.util.spec_from_file_location(
-                pkg, pkg_init, submodule_search_locations=[str(file.parent)]
-            )
+            spec = importlib.util.spec_from_file_location(pkg, pkg_init, submodule_search_locations=[str(file.parent)])
             if spec is None or spec.loader is None:
                 raise ImportError(f"Could not build an import spec for package {pkg_init!r}")
             module = importlib.util.module_from_spec(spec)

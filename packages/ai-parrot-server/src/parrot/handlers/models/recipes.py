@@ -60,8 +60,7 @@ def _ddl_statements(schema: str) -> list[str]:
             PRIMARY KEY (name, owner)
         )
         """,
-        f"CREATE INDEX IF NOT EXISTS ix_infographic_recipes_owner "
-        f"ON {schema}.infographic_recipes (owner)",
+        f"CREATE INDEX IF NOT EXISTS ix_infographic_recipes_owner " f"ON {schema}.infographic_recipes (owner)",
     ]
 
 
@@ -235,9 +234,11 @@ class PgRecipeStore(AbstractRecipeStore):
                     "title": data["title"],
                     "description": data["description"],
                     "owner": data["owner"],
-                    "updated_at": data["updated_at"].isoformat()
-                    if hasattr(data["updated_at"], "isoformat")
-                    else data["updated_at"],
+                    "updated_at": (
+                        data["updated_at"].isoformat()
+                        if hasattr(data["updated_at"], "isoformat")
+                        else data["updated_at"]
+                    ),
                 }
             )
         return summaries

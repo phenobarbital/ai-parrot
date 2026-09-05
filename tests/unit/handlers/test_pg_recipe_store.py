@@ -4,6 +4,7 @@ Runs against the scratch Postgres fixture (``NAVIGATOR_PG_DSN``); skipped
 when the env var is not set. Must not require Redis and must not touch
 ``navigator.ui_surfaces``.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

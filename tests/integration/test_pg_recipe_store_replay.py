@@ -21,6 +21,7 @@ core defect (recorded in the task's Completion Note per its own "no
 production change" instruction) — using a working profile sidesteps it
 without touching production code.
 """
+
 from __future__ import annotations
 
 import json
@@ -137,9 +138,7 @@ class TestRegisterRecipeRoutesWithPgStore:
         views resolve on a REAL ``aiohttp.web.Application`` (mirrors
         ``test_ui_surfaces_e2e.py::test_integration_routes_registered``)."""
         app = web.Application()
-        recipe_runner = register_recipe_routes(
-            app, recipe_store=pg_store, dataset_manager=_dataset_manager()
-        )
+        recipe_runner = register_recipe_routes(app, recipe_store=pg_store, dataset_manager=_dataset_manager())
         assert app["recipe_store"] is pg_store
         assert app["recipe_runner"] is recipe_runner
 

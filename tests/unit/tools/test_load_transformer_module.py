@@ -1,4 +1,5 @@
 """Unit tests for ``load_transformer_module`` (FEAT-528 TASK-2871)."""
+
 from __future__ import annotations
 
 import textwrap
@@ -16,9 +17,7 @@ def _write_pkg(tmp_path):
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
     (pkg / "helpers.py").write_text("def double(x):\n    return 2 * x\n")
-    (pkg / "transformers.py").write_text(
-        textwrap.dedent(
-            '''
+    (pkg / "transformers.py").write_text(textwrap.dedent("""
             from parrot.outputs.a2ui.recipes.transformers import infographic_transformer
             from .helpers import double
 
@@ -26,9 +25,7 @@ def _write_pkg(tmp_path):
             @infographic_transformer(name="t_2871_probe")
             def probe(inputs, params):
                 return {"v": double(1)}
-            '''
-        )
-    )
+            """))
     return pkg / "transformers.py"
 
 
@@ -49,17 +46,13 @@ def test_missing_path_raises(tmp_path):
 def test_load_transformer_module_bare_file(tmp_path):
     """A module with no sibling ``__init__.py`` loads directly (no package)."""
     mod_path = tmp_path / "bare_transformers.py"
-    mod_path.write_text(
-        textwrap.dedent(
-            '''
+    mod_path.write_text(textwrap.dedent("""
             from parrot.outputs.a2ui.recipes.transformers import infographic_transformer
 
 
             @infographic_transformer(name="t_2871_bare_probe")
             def bare_probe(inputs, params):
                 return {"v": 1}
-            '''
-        )
-    )
+            """))
     load_transformer_module(mod_path)
     assert transformer_registry.get("t_2871_bare_probe") is not None

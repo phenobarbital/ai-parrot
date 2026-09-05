@@ -17,6 +17,7 @@ docstring — ``"ssr_html"`` sidesteps a pre-existing, unrelated
 in this task's Completion Note, not fixed here per the task's own "no
 production change" instruction).
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -30,8 +31,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.integration
 
-_SCRIPT = textwrap.dedent(
-    '''
+_SCRIPT = textwrap.dedent("""
     import asyncio
     import gc
     import os
@@ -158,8 +158,7 @@ _SCRIPT = textwrap.dedent(
 
 
     asyncio.run(main())
-    '''
-)
+    """)
 
 
 def test_replay_flex_recipe_from_foreign_host(tmp_path, pg_dsn):
@@ -167,7 +166,5 @@ def test_replay_flex_recipe_from_foreign_host(tmp_path, pg_dsn):
         pytest.skip("NAVIGATOR_PG_DSN not set")
     code = _SCRIPT.format(repo=str(REPO))
     env = {**__import__("os").environ, "NAVIGATOR_PG_DSN": pg_dsn}
-    r = subprocess.run(
-        [sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, env=env
-    )
+    r = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, env=env)
     assert r.returncode == 0 and "TABS 5" in r.stdout and "OK" in r.stdout, r.stderr
