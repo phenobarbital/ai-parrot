@@ -164,8 +164,23 @@ def test_missing_path_raises(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: `load_transformer_module` added to
+`packages/ai-parrot/src/parrot/tools/infographic_recipes/loader.py`,
+re-exported (and added to `__all__`) from the package's `__init__.py`.
+3 tests pass: package-aware load with a relative import + idempotent
+re-load, missing-path `FileNotFoundError`, and a bare-file (no
+`__init__.py`) load. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
+
+**Post-review fix (adversarial code-review, 2026-09-05)**: `load_transformer_
+module` did not clean up `sys.modules` when `spec.loader.exec_module(module)`
+raised — unlike CPython's own import machinery, a failed first load left a
+poisoned entry behind, permanently short-circuiting every retry via the
+`pkg not in sys.modules` / `mod_name in sys.modules` checks. Fixed by
+wrapping both `exec_module` calls in `try/except BaseException: sys.modules
+.pop(<name>, None); raise`, matching stdlib's own defensive pattern.
+`test_load_transformer_module.py` and the TASK-2872 regression suite both
+still pass unchanged.
