@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-05T04:50:44.635842+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-05T05:35:28+00:00",
   "notes": "Decomposed 2026-09-05 after the FEAT-559 audit. Ids TASK-2870..2874 reserved by scripts/sdd/reserve_ids.py (commit 0027b07a6). Two independent lanes: Module 1 (2870) and Module 2 (2871→2872); 2873 joins them; 2874 documents. Consumer: FieldSync FEAT-559 imports PgRecipeStore from parrot.handlers.models.recipes and load_transformer_module from parrot.tools.infographic_recipes — contract dependency, not a schedule gate (Juan 2026-09-04).",
   "tasks": [
     {
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Documentation only; docs/outputs/infographic-recipes.md.",
       "assigned_to": null,
       "started_at": "2026-09-05T05:01:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2874-recipe-store-and-loader-docs.md"
+      "completed_at": "2026-09-05T05:35:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2874-recipe-store-and-loader-docs.md"
     }
   ]
 }
