@@ -241,9 +241,7 @@ class TestPublishRecipeViaInfographicAuthoringMixin:
         descriptor = SectionDescriptor(
             template="unused-with-layout",
             mode="data-splice",
-            sections=[
-                SectionSpec(name="day_totals", target="/totals", datasets=["snapshots"], shape="mapping")
-            ],
+            sections=[SectionSpec(name="day_totals", target="/totals", datasets=["snapshots"], shape="mapping")],
             layout=LayoutSpec(
                 component="Infographic",
                 title="Test",
