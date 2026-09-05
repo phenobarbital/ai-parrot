@@ -16,6 +16,7 @@ back to deterministic carding and searches run BM25-only.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -149,6 +150,23 @@ class Bookstore:
 
     def _stores(self) -> list[tuple[str, CatalogStore]]:
         return [(loc.scope, self._catalog(loc.scope)) for loc in self.locations]
+
+    def _all_taken_slugs(self) -> set[str]:
+        """Slugs in use across EVERY scope (catalog rows + trees on disk).
+
+        Book ids must be unique across scopes: ``resolve_book`` and the
+        merged listings dedupe by ``book_id`` with project precedence,
+        so a cross-scope collision would silently mask the other book.
+        Reads are side-effect-free — uninitialized locations are
+        inspected via the filesystem, never created.
+        """
+        taken: set[str] = set()
+        for loc in self.locations:
+            if loc.db_path.is_file():
+                taken |= self._catalog(loc.scope).taken_slugs()
+            if loc.trees_dir.is_dir():
+                taken |= {p.stem for p in loc.trees_dir.glob("*.json")}
+        return taken
 
     # ------------------------------------------------------------------
     # Read surface
@@ -351,7 +369,8 @@ class Bookstore:
             )
 
         catalog = self._catalog(scope)
-        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        payload = await asyncio.to_thread(path.read_bytes)
+        sha256 = hashlib.sha256(payload).hexdigest()
         existing = catalog.find_by_sha(sha256)
         status = "added"
         if existing is not None:
@@ -364,8 +383,7 @@ class Bookstore:
             slug = existing.book_id
             await toolkit.delete_tree(slug)
         else:
-            taken = catalog.taken_slugs() | set(await toolkit.list_trees())
-            slug = unique_slug(slugify(title or path.stem), taken)
+            slug = unique_slug(slugify(title or path.stem), self._all_taken_slugs())
 
         await toolkit.create_tree(slug, doc_name=title or path.stem)
         doc_description = ""
@@ -381,7 +399,9 @@ class Bookstore:
             elif fmt == "md":
                 await toolkit.insert_markdown(
                     tree_name=slug,
-                    markdown=path.read_text(encoding="utf-8"),
+                    markdown=await asyncio.to_thread(
+                        path.read_text, encoding="utf-8"
+                    ),
                     doc_name=title or path.stem,
                 )
             elif fmt == "txt":
@@ -392,7 +412,9 @@ class Bookstore:
                     )
                 await toolkit.insert_content(
                     tree_name=slug,
-                    content=path.read_text(encoding="utf-8"),
+                    content=await asyncio.to_thread(
+                        path.read_text, encoding="utf-8"
+                    ),
                 )
             else:  # epub
                 markdown = await self._epub_to_markdown(path)

@@ -94,8 +94,11 @@ catalog shortlist is empty (thin fallback cards).
 
 ## 7. Acceptance criteria (all verified)
 
-- [x] 45 tests in `packages/ai-parrot/tests/knowledge/bookstore/`
-      (models/config/catalog/library/toolkit/mcp) pass.
+- [x] 51 tests in `packages/ai-parrot/tests/knowledge/bookstore/`
+      (models/config/catalog/library/toolkit/cli/mcp) pass, including
+      regression tests for the adversarial-review findings (CLI
+      invocation-CWD anchoring, cross-scope slug collisions, toolkit
+      parameter clamps).
 - [x] Existing pageindex toolkit suite still green (47 passed).
 - [x] CLI smoke: `add --no-llm` / `toc` / `search --book` on a temp
       library via `PARROT_LIBRARY_DIR`.

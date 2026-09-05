@@ -12,6 +12,9 @@ Design notes (mirroring the repo's canonical SQLite planes):
   sub-millisecond, so blocking inside async tool methods is negligible
   and the Click CLI stays wrapper-free. Switching to ``aiosqlite``
   (the ``graphindex/persist_sqlite.py`` pattern) later is mechanical.
+- The read-only guarantee of the MCP surface is enforced at the
+  toolkit layer (``BookstoreToolkit`` simply exposes no write methods),
+  not by the database connection.
 - Additive column migrations via ``PRAGMA table_info`` (same shape as
   ``persist_sqlite.py``).
 - FTS5 upserts are DELETE + INSERT — ``INSERT OR REPLACE`` on a
@@ -22,12 +25,13 @@ Design notes (mirroring the repo's canonical SQLite planes):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from .models import BookCard
 
@@ -83,30 +87,34 @@ class CatalogStore:
 
     Args:
         db_path: Location of the SQLite database. Parent directories
-            are created on first write (not in readonly mode).
-        readonly: Open the database in read-only mode; writes raise.
+            and the schema are created on construction.
     """
 
-    def __init__(self, db_path: Path | str, readonly: bool = False) -> None:
+    def __init__(self, db_path: Path | str) -> None:
         self.db_path = Path(db_path)
-        self.readonly = readonly
+        self.logger = logger
         self._fts_available: Optional[bool] = None
-        if not readonly:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._connect() as conn:
-                self._ensure_schema(conn)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connection() as conn:
+            self._ensure_schema(conn)
 
     # ------------------------------------------------------------------
     # Connection / schema
     # ------------------------------------------------------------------
-    def _connect(self) -> sqlite3.Connection:
-        if self.readonly:
-            uri = f"file:{self.db_path}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True)
-        else:
-            conn = sqlite3.connect(self.db_path)
+    @contextlib.contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Short-lived connection that is always closed.
+
+        ``sqlite3.Connection``'s own context manager only manages the
+        transaction — it never calls ``close()`` — so a long-running
+        MCP process would leak WAL file handles without this wrapper.
+        """
+        conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA journal_mode = WAL")
@@ -135,7 +143,7 @@ class CatalogStore:
         """Whether this database has a usable ``books_fts`` table."""
         if self._fts_available is None:
             try:
-                with self._connect() as conn:
+                with self._connection() as conn:
                     row = conn.execute(
                         "SELECT name FROM sqlite_master "
                         "WHERE type='table' AND name='books_fts'"
@@ -176,7 +184,7 @@ class CatalogStore:
             payload[column] = json.dumps(payload.get(column) or [])
         columns = ", ".join(payload)
         placeholders = ", ".join(f":{key}" for key in payload)
-        with self._connect() as conn:
+        with self._connection() as conn:
             self._ensure_schema(conn)
             conn.execute(
                 f"INSERT OR REPLACE INTO books ({columns}) VALUES ({placeholders})",
@@ -207,7 +215,7 @@ class CatalogStore:
         Returns:
             ``True`` when a row was actually deleted.
         """
-        with self._connect() as conn:
+        with self._connection() as conn:
             self._ensure_schema(conn)
             cursor = conn.execute(
                 "DELETE FROM books WHERE book_id = ?", (book_id,)
@@ -224,7 +232,7 @@ class CatalogStore:
     # ------------------------------------------------------------------
     def get(self, book_id: str) -> Optional[BookCard]:
         """Load one card by id, or ``None``."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM books WHERE book_id = ?", (book_id,)
             ).fetchone()
@@ -232,7 +240,7 @@ class CatalogStore:
 
     def find_by_sha(self, sha256: str) -> Optional[BookCard]:
         """Find the card for an already-ingested source file, if any."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM books WHERE source_sha256 = ?", (sha256,)
             ).fetchone()
@@ -240,7 +248,7 @@ class CatalogStore:
 
     def list_cards(self) -> list[BookCard]:
         """All cards, ordered by title."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM books ORDER BY title COLLATE NOCASE"
             ).fetchall()
@@ -248,7 +256,7 @@ class CatalogStore:
 
     def taken_slugs(self) -> set[str]:
         """Book ids already used in this catalog."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute("SELECT book_id FROM books").fetchall()
         return {row["book_id"] for row in rows}
 
@@ -278,7 +286,7 @@ class CatalogStore:
                 "JOIN books b ON b.book_id = books_fts.book_id "
                 "WHERE books_fts MATCH ? ORDER BY rank LIMIT ?"
             )
-            with self._connect() as conn:
+            with self._connection() as conn:
                 rows = conn.execute(sql, (match, top_k)).fetchall()
             return [(self._row_to_card(row), -float(row["rank"])) for row in rows]
         return self._like_search(query, top_k)
@@ -332,6 +340,12 @@ def merged_cards(stores: list[tuple[str, CatalogStore]]) -> list[BookCard]:
     for scope, store in stores:
         for card in store.list_cards():
             if card.book_id in seen:
+                logger.warning(
+                    "Book id %r also exists in the %s catalog — shadowed "
+                    "by an earlier scope",
+                    card.book_id,
+                    scope,
+                )
                 continue
             seen.add(card.book_id)
             merged.append(card.model_copy(update={"scope": scope}))

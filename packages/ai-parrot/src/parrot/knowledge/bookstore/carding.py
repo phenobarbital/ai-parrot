@@ -46,7 +46,10 @@ def slugify(text: str) -> str:
 
     NFKD-normalizes, strips diacritics, lowercases, and collapses any
     non-alphanumeric run into a single ``-``. Result is capped at 64
-    chars and never empty (falls back to ``"book"``).
+    chars and never empty (falls back to ``"book"``). Non-Latin titles
+    (CJK, Cyrillic…) have no ASCII decomposition and collapse to that
+    fallback — the tree store's name regex is ASCII-only — so pass an
+    explicit title/slug for those or accept ``book-N`` ids.
 
     Args:
         text: Free-form title or filename stem.

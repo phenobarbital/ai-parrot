@@ -120,6 +120,23 @@ async def test_epub_without_loaders_package(store, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_slug_collision_across_scopes_is_suffixed(store, tmp_path):
+    """A global book must never receive a book_id already used in the
+    project scope (or vice versa) — merged listings dedupe by book_id
+    with project precedence, so a collision would shadow the book."""
+    a = tmp_path / "same-book.md"
+    a.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    b = tmp_path / "same_book.md"
+    b.write_text(SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8")
+    card_a, _ = await store.add_book(a, title="Same Book")
+    card_b, _ = await store.add_book(b, scope="global", title="Same Book")
+    assert card_a.book_id == "same-book"
+    assert card_b.book_id == "same-book-2"
+    listed = {c.book_id for c in store.list_books()}
+    assert {"same-book", "same-book-2"} <= listed
+
+
+@pytest.mark.asyncio
 async def test_slug_collision_suffixing(store, tmp_path):
     a = tmp_path / "same-title.md"
     a.write_text(SAMPLE_MARKDOWN, encoding="utf-8")

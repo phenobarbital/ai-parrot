@@ -49,12 +49,14 @@ class BookstoreToolkit(AbstractToolkit):
 
         Args:
             query: Topic or keywords to research (e.g. "index tuning").
-            top_k: Maximum books returned.
+            top_k: Maximum books returned (clamped to 1-50).
 
         Returns:
             Compact card dicts, best match first.
         """
-        cards = self._bookstore.catalog_search(query, top_k=top_k)
+        cards = self._bookstore.catalog_search(
+            query, top_k=max(1, min(top_k, 50))
+        )
         return [card.brief() for card in cards]
 
     async def list_books(self) -> list[dict[str, Any]]:
@@ -103,12 +105,14 @@ class BookstoreToolkit(AbstractToolkit):
         Args:
             book_id: The book to search.
             query: Natural-language question or keywords.
-            top_k: Maximum sections returned.
+            top_k: Maximum sections returned (clamped to 1-50).
 
         Returns:
             ``{node_id, title, summary, score, source}`` candidates.
         """
-        return await self._bookstore.search_book(book_id, query, top_k=top_k)
+        return await self._bookstore.search_book(
+            book_id, query, top_k=max(1, min(top_k, 50))
+        )
 
     async def read_section(self, book_id: str, node_id: str) -> dict[str, Any]:
         """Read one section's full markdown content.
@@ -138,8 +142,8 @@ class BookstoreToolkit(AbstractToolkit):
             query: Natural-language research question.
             book_ids: Restrict to these books; omit for an automatic
                 catalog shortlist.
-            max_books: Cap on books searched (max 10).
+            max_books: Cap on books searched (clamped to 1-10).
         """
         return await self._bookstore.search(
-            query, book_ids=book_ids, max_books=max_books
+            query, book_ids=book_ids, max_books=max(1, min(max_books, 10))
         )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +18,14 @@ from typing import Any, Optional
 import click
 
 from .config import resolve_locations
+
+# Captured at import time, BEFORE any command body lazily imports
+# `.library` → parrot.knowledge.pageindex → navconfig, whose settings
+# module chdir()s to the installed package root as an import side
+# effect. Resolving the project scope from Path.cwd() after that would
+# silently point at ai-parrot's own tree instead of the user's repo
+# (same guard as mcp_server.py's _INVOCATION_CWD).
+_INVOCATION_CWD = os.getcwd()
 
 
 def _open_bookstore(
@@ -29,11 +38,21 @@ def _open_bookstore(
     from ._llm import resolve_adapter
     from .library import Bookstore, BookstoreError
 
-    locations = resolve_locations(require_exists=require_exists)
-    if scope_needed == "global" and not any(
-        loc.scope == "global" for loc in locations
+    locations = resolve_locations(
+        cwd=Path(_INVOCATION_CWD), require_exists=require_exists
+    )
+    if scope_needed and not any(
+        loc.scope == scope_needed for loc in locations
     ):
-        raise click.ClickException("No global library location available")
+        hint = (
+            " — not inside a git repository; cd into your project, set "
+            "PARROT_LIBRARY_DIR, or use --global"
+            if scope_needed == "project"
+            else ""
+        )
+        raise click.ClickException(
+            f"No {scope_needed} library location available{hint}"
+        )
     if not locations:
         raise click.ClickException(
             "No library found — add a book first with `bookstore add <file>`"
@@ -100,6 +119,10 @@ def add(
     llm: Optional[str],
 ) -> None:
     """Index FILE (pdf/md/txt/epub) and catalog its ficha."""
+    # Anchor a relative FILE to the invocation directory NOW — the heavy
+    # imports below chdir() the process (see _INVOCATION_CWD).
+    file = str((Path(_INVOCATION_CWD) / file).resolve())
+
     from .library import BookstoreError
 
     scope = "global" if global_scope else "project"
@@ -129,7 +152,7 @@ def add(
 @click.option("--json", "as_json", is_flag=True, help="JSON output.")
 def list_cmd(as_json: bool) -> None:
     """List every book in the library."""
-    store = _open_bookstore(require_exists=True)
+    store = _open_bookstore(require_exists=True, use_llm=False)
     cards = store.list_books()
     if as_json:
         click.echo(json.dumps([c.model_dump(mode="json") for c in cards], indent=2))
@@ -148,7 +171,7 @@ def show(book_id: str, as_json: bool) -> None:
     """Show the full catalog card (ficha) of one book."""
     from .library import BookstoreError
 
-    store = _open_bookstore(require_exists=True)
+    store = _open_bookstore(require_exists=True, use_llm=False)
     try:
         card = store.get_card(book_id)
     except BookstoreError as exc:
@@ -169,7 +192,7 @@ def toc(book_id: str) -> None:
     """Print a book's table of contents with node ids."""
     from .library import BookstoreError
 
-    store = _open_bookstore(require_exists=True)
+    store = _open_bookstore(require_exists=True, use_llm=False)
     try:
         data = store.get_toc(book_id)
     except BookstoreError as exc:
@@ -203,7 +226,9 @@ def search(
     """Search the library — catalog cards, one book, or cross-book."""
     from .library import BookstoreError
 
-    store = _open_bookstore(llm_spec=llm, require_exists=True)
+    store = _open_bookstore(
+        llm_spec=llm, require_exists=True, use_llm=not catalog_only
+    )
     try:
         if catalog_only:
             result: Any = [c.brief() for c in store.catalog_search(query)]
@@ -245,7 +270,7 @@ def remove(book_id: str, yes: bool) -> None:
     """Remove a book (catalog card + indexed tree)."""
     from .library import BookstoreError
 
-    store = _open_bookstore(require_exists=True)
+    store = _open_bookstore(require_exists=True, use_llm=False)
     try:
         card = store.get_card(book_id)
     except BookstoreError as exc:
@@ -274,7 +299,7 @@ def mcp() -> None:
 @bookstore.command("locations")
 def locations_cmd() -> None:
     """Show the resolved library locations and their state."""
-    for loc in resolve_locations():
+    for loc in resolve_locations(cwd=Path(_INVOCATION_CWD)):
         state = "initialized" if loc.exists() else "empty"
         click.echo(f"{loc.scope:8} {loc.root}  [{state}]")
 

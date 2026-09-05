@@ -121,31 +121,12 @@ def test_additive_migration(tmp_path, monkeypatch):
 
 
 def test_fts_unavailable_falls_back_to_like(tmp_path, monkeypatch):
-    real_connect = CatalogStore._connect
-
-    class _NoFtsConn:
-        def __init__(self, conn):
-            self._conn = conn
-
-        def __getattr__(self, name):
-            return getattr(self._conn, name)
-
-        def __enter__(self):
-            self._conn.__enter__()
-            return self
-
-        def __exit__(self, *args):
-            return self._conn.__exit__(*args)
-
-        def execute(self, sql, *args):
-            if "VIRTUAL TABLE" in sql:
-                raise sqlite3.OperationalError("no such module: fts5")
-            return self._conn.execute(sql, *args)
-
+    # Simulate a SQLite build without FTS5: the virtual-table DDL raises
+    # OperationalError, exactly like `no such module: fts5`.
     monkeypatch.setattr(
-        CatalogStore,
-        "_connect",
-        lambda self: _NoFtsConn(real_connect(self)),
+        "parrot.knowledge.bookstore.catalog._FTS_DDL",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS books_fts "
+        "USING no_such_module_fts5(a)",
     )
     store = CatalogStore(tmp_path / "library.db")
     assert store.supports_fts is False

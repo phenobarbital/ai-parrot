@@ -81,6 +81,22 @@ async def test_funnel_toc_search_read(toolkit, bookstore, book_md):
 
 
 @pytest.mark.asyncio
+async def test_search_clamps_max_books(toolkit, bookstore, book_md, monkeypatch):
+    await bookstore.add_book(book_md)
+    captured: dict = {}
+
+    async def _spy(query, book_ids=None, max_books=3, **kwargs):
+        captured["max_books"] = max_books
+        return {"query": query, "books": []}
+
+    monkeypatch.setattr(bookstore, "search", _spy)
+    await toolkit.search("anything", max_books=500)
+    assert captured["max_books"] == 10
+    await toolkit.search("anything", max_books=-4)
+    assert captured["max_books"] == 1
+
+
+@pytest.mark.asyncio
 async def test_list_books_merges_scopes(toolkit, bookstore, book_md, tmp_path):
     await bookstore.add_book(book_md)
     other = tmp_path / "other-book.md"
