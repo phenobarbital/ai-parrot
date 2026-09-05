@@ -51,7 +51,7 @@ Delivery to Claude Code:
 `year`, `language`, `topics[]`, `summary` (librarian paragraph),
 `toc_digest` (rendered "1.2 Title (pp. 34-58)" lines, FTS-indexed),
 `toc[]` (structured, JSON column), `scope`, `source_path`,
-`source_sha256` (dedupe), `source_format` (`pdf|md|txt|epub`),
+`source_sha256` (dedupe), `source_format` (`pdf|md|txt|epub|docx`),
 `page_count`, `chapter_count`, `added_at`,
 `card_origin` (`llm|fallback|manual`).
 
