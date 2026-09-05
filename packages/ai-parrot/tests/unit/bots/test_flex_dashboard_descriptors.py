@@ -16,20 +16,7 @@ from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 # package and the agent FILE is loaded under its own distinct name).
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _AGENTS_DIR = _REPO_ROOT / "agents"
-_FLEX_DIR = _AGENTS_DIR / "flex_dashboard"
 _AGENT_FILE = _AGENTS_DIR / "flex_dashboard.py"
-
-
-def _load_package(name: str, init_path: Path, search_dir: Path):
-    if name in sys.modules:
-        return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load package {name!r} from {init_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module
 
 
 def _load_module(name: str, path: Path):
@@ -45,10 +32,12 @@ def _load_module(name: str, path: Path):
 
 
 def _load_flex_dashboard_module():
-    _load_package("agents", _AGENTS_DIR / "__init__.py", _AGENTS_DIR)
-    _load_package("agents.flex_dashboard", _FLEX_DIR / "__init__.py", _FLEX_DIR)
-    _load_module("agents.flex_dashboard.normalize", _FLEX_DIR / "normalize.py")
-    _load_module("agents.flex_dashboard.transformers", _FLEX_DIR / "transformers.py")
+    # FEAT-528 Module 2: no pre-registration needed any more — the agent
+    # file loads its own transformers via `load_transformer_module` under
+    # its own synthetic name (see test_flex_dashboard_agent.py's longer
+    # comment). Pre-loading "agents.flex_dashboard.transformers" under the
+    # real dotted name here would make that call re-execute the module
+    # under a DIFFERENT name, double-registering every transformer.
     return _load_module("flex_dashboard_agent_under_test", _AGENT_FILE)
 
 

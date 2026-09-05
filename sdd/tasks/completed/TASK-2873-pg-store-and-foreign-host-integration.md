@@ -138,8 +138,67 @@ def test_replay_flex_recipe_from_foreign_host(tmp_path, pg_dsn):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: All 4 tests pass against the scratch Postgres fixture
+(`NAVIGATOR_PG_DSN`): `test_recipe_publish_and_replay_through_pg_store`
+(store A publishes, a SEPARATE store B instance replays via
+`RecipeRunner`), `test_integration_routes_registered` (real
+`aiohttp.web.Application` + the three literal `manager.py:2217-2219`
+views resolve), `test_register_recipe_routes_with_pg_store` (GET list +
+POST `.../run` against the REAL handler logic, driven by
+`register_recipe_routes(recipe_store=PgRecipeStore(...))`), and
+`test_replay_flex_recipe_from_foreign_host` (subprocess, no `agents`
+package, `load_transformer_module` registers the six flex transformers,
+`FlexDashboard` classmethods build the recipe with NO instance ever
+created, six in-memory `DatasetManager` frames, envelope with 5 tabs).
+`ruff check` clean. `git diff --stat -- packages agents` is empty — no
+production file was touched by this task's own files.
 
-**Deviations from spec**: none | describe if any
+**Post-review addition (adversarial code-review, 2026-09-05)**: the
+review correctly flagged that spec §5's AC names FOUR call sites needing
+integration-test demonstration (`register_recipe_routes`, `RecipeRunner`,
+`publish_recipe`, `UISurfacesHandler`'s refresh path) but this task's own
+Scope only ever declared three test scenarios, leaving `publish_recipe`
+and the `UISurfacesHandler` refresh path uncovered — a task-decomposition
+gap, not an infidelity to the file as written. Closed by adding two more
+tests to `tests/integration/test_pg_recipe_store_replay.py` (already this
+task's own file, no new file created):
+`test_publish_recipe_via_mixin_with_pg_store` (the REAL, unmocked
+`InfographicAuthoringMixin.publish_recipe` bound method, via a
+lightweight stand-in instance exactly like `test_ui_surfaces_e2e.py`'s
+own `_MiniBot` pattern for `publish_surface`, against a real
+`PgRecipeStore`) and
+`test_ui_surfaces_handler_recipe_runner_is_pg_backed` (`UISurfacesHandler
+._recipe_runner()` resolves the SAME process-wide singleton
+`register_recipe_routes` configures, so resolving it there and replaying
+through it demonstrates the refresh call site is `PgRecipeStore`-backed
+without touching `navigator.ui_surfaces`, per this task's own explicit
+"never touch ui_surfaces" scope). All 5 tests in the file now pass.
+
+**Deviations from spec**: none in the two test files themselves, but one
+real, unrelated pre-existing defect was discovered and deliberately
+routed AROUND rather than fixed (per this task's own "no production
+change; if a test cannot pass without one, stop and report" instruction):
+
+`RecipeRunner.run()`'s render step calls `get_a2ui_renderer(recipe.render
+.profile)`, which resolves a satellite module via
+`f"parrot.outputs.a2ui_renderers.{name}"` (`outputs/a2ui/renderers/
+__init__.py:156`). Every registered renderer's public name equals its
+own module filename EXCEPT `"interactive-html"` (hyphen) — the file is
+`interactive_html.py` (underscore), and a hyphen cannot appear in a
+Python module path segment, so `importlib.import_module(...)` raises
+`ModuleNotFoundError` unconditionally for that one name (verified live:
+`ImportError: ... No module named 'parrot.outputs.a2ui_renderers
+.interactive-html'`). `interactive-html` is `RenderSpec.profile`'s own
+model DEFAULT, so ANY recipe that does not explicitly override
+`render.profile` hits this on every replay in this environment. Verified
+this is not new/introduced by this feature: `echarts`, `ssr_html`, `pdf`,
+`adaptive_cards`, `folium_map` all match their filenames exactly and
+render correctly; only `interactive-html` is broken. Both this task's
+test recipes explicitly set `render=RenderSpec(profile="ssr_html")` —
+sidesteps the bug without touching `outputs/a2ui/renderers/__init__.py`
+or `recipes/models.py` (neither is in this task's, or any FEAT-528
+task's, file list). Flagging for whoever owns `outputs/a2ui/renderers` —
+this affects EVERY recipe that relies on the render profile default, not
+just this feature's tests.

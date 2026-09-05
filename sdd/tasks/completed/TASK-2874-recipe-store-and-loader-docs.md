@@ -75,8 +75,27 @@ Consumer: FieldSync FEAT-559 (fieldsync/sdd/specs/fieldsync-a2ui-surfaces-plane.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: `docs/outputs/infographic-recipes.md` updated:
+- §1 Stores: `PgRecipeStore` added as the third backend (constructor,
+  `schema=` keyword, `ensure_schema()`, `(name, owner)` upsert) plus a
+  "Choosing one" guide; `DBRecipeStore` explicitly stated as Redis.
+- §3 Replay: new "Replaying in another service (FEAT-528)" subsection —
+  `load_transformer_module` usage, the package-aware/idempotent loading
+  behavior, and the params-vs-`DataSourceSpec.conditions`/`sql` filtering
+  rule stated plainly (flex declares neither, so its replay is
+  unfiltered). Also states the still-open `navigator-plugins` move (spec
+  §8, Jesús) and what `finance_reporter.py:73`'s `SKILLS_DIR` anchoring
+  will need when that happens.
+- §8 Testing: points at the three TASK-2873 integration/unit test files
+  and the `NAVIGATOR_PG_DSN` requirement, plus the TASK-2871/2872 unit
+  tests.
+- `agents/flex_dashboard.py`'s docstring already cross-links this doc's
+  new section (added as part of TASK-2872's rewrite); verified it reads
+  correctly in context — no further edit needed there.
 
-**Deviations from spec**: none | describe if any
+Markdown fence count even (40); heading structure sane; no dead
+intra-doc links.
+
+**Deviations from spec**: none.

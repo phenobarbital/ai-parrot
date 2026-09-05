@@ -119,16 +119,6 @@ class TestSkillsDiscovered:
         import sys
 
         agents_dir = _REPO_ROOT / "agents"
-        flex_dir = agents_dir / "flex_dashboard"
-
-        def _load_package(name, init_path, search_dir):
-            if name in sys.modules:
-                return sys.modules[name]
-            spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
-            return module
 
         def _load_module(name, path):
             if name in sys.modules:
@@ -139,10 +129,13 @@ class TestSkillsDiscovered:
             spec.loader.exec_module(module)
             return module
 
-        _load_package("agents", agents_dir / "__init__.py", agents_dir)
-        _load_package("agents.flex_dashboard", flex_dir / "__init__.py", flex_dir)
-        _load_module("agents.flex_dashboard.normalize", flex_dir / "normalize.py")
-        _load_module("agents.flex_dashboard.transformers", flex_dir / "transformers.py")
+        # FEAT-528 Module 2: no pre-registration needed any more — the agent
+        # file loads its own transformers via `load_transformer_module`
+        # under its own synthetic name (see test_flex_dashboard_agent.py's
+        # longer comment). Pre-loading "agents.flex_dashboard.transformers"
+        # under the real dotted name here would make that call re-execute
+        # the module under a DIFFERENT name, double-registering every
+        # transformer.
         module = _load_module("flex_dashboard_agent_under_test", agents_dir / "flex_dashboard.py")
 
         loader = SkillsDirectoryLoader(paths=list(module.FlexDashboard.skill_paths))

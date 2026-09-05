@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, Literal
@@ -134,6 +135,11 @@ INSERT INTO navigator.ui_surfaces
 VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
 """
 
+_INSERT_OR_SKIP_SQL = _INSERT_SQL + """
+ON CONFLICT (surface_id) DO NOTHING
+RETURNING surface_id
+"""
+
 _UPSERT_SQL = _INSERT_SQL + """
 ON CONFLICT (surface_id) DO UPDATE SET
     kind = EXCLUDED.kind,
@@ -147,6 +153,7 @@ ON CONFLICT (surface_id) DO UPDATE SET
     recipe_owner = EXCLUDED.recipe_owner,
     recipe_params = EXCLUDED.recipe_params,
     updated_at = EXCLUDED.updated_at
+RETURNING surface_id
 """
 
 _GET_SQL = """
@@ -178,6 +185,7 @@ _UPDATE_ENVELOPE_SQL = """
 UPDATE navigator.ui_surfaces
 SET envelope = $2::jsonb, recipe_params = $3::jsonb, updated_at = NOW()
 WHERE surface_id = $1
+RETURNING surface_id
 """
 
 _DELETE_SQL = """
@@ -190,6 +198,7 @@ _MINT_SHARE_SQL = """
 INSERT INTO navigator.ui_surface_shares
     (token, surface_id, permissions, expires_at, revoked, created_at)
 VALUES ($1, $2, 'read+refresh', $3, FALSE, $4)
+RETURNING token
 """
 
 _RESOLVE_SHARE_SQL = """
@@ -202,6 +211,7 @@ _CLAIM_SHARE_SQL = """
 UPDATE navigator.ui_surface_shares
 SET claimed_by = $2, claimed_at = NOW()
 WHERE token = $1 AND claimed_by IS NULL
+RETURNING token
 """
 
 _REVOKE_SHARE_SQL = """
@@ -217,31 +227,6 @@ FROM navigator.ui_surface_shares
 WHERE surface_id = $1
 ORDER BY created_at DESC
 """
-
-
-def _looks_like_unique_violation(exc: Exception) -> bool:
-    """Detect a Postgres unique-constraint violation from an insert error.
-
-    Mirrors ``handlers/comm_center.py::_looks_like_unique_violation`` —
-    prefers a precise ``asyncpg.exceptions.UniqueViolationError`` check and
-    falls back to a message-content heuristic in case ``asyncdb`` re-wraps
-    the original exception into one of its own types.
-
-    Args:
-        exc: The exception raised by the ``INSERT``.
-
-    Returns:
-        ``True`` if ``exc`` looks like a duplicate ``surface_id`` violation.
-    """
-    try:
-        import asyncpg.exceptions as pg_exceptions
-
-        if isinstance(exc, pg_exceptions.UniqueViolationError):
-            return True
-    except ImportError:
-        pass
-    message = str(exc).lower()
-    return "unique" in message or "duplicate key" in message
 
 
 def _decode_jsonb(raw: Any) -> dict[str, Any]:
@@ -302,6 +287,60 @@ def _row_to_share(row: Any) -> UISurfaceShare:
 
 
 # ---------------------------------------------------------------------------
+# asyncdb ``pg`` driver adapters (compatibility fix, 2026-09-05)
+# ---------------------------------------------------------------------------
+#
+# Found by FieldSync FEAT-559's code review — the first consumer to run this
+# store against a real database with ``asyncdb 2.15.x``:
+#
+# * ``execute()`` does NOT raise on a Postgres error; it returns
+#   ``[result, error]`` — and a unique violation is only LOGGED, the error
+#   slot stays ``None``. Every write here silently "succeeded" while the row
+#   never landed. Writes therefore go through ``fetchval`` on a
+#   ``RETURNING`` clause, which raises ``ProviderError`` on any failure and
+#   yields ``None`` when ``ON CONFLICT DO NOTHING`` skipped the row.
+# * The driver registers a BINARY uuid codec whose encoder accepts only
+#   ``uuid.UUID`` instances; a ``str`` surface_id fails with
+#   "invalid input for query argument … (bytes is not a 16-char string)".
+# * ``conn.fetchrow`` is the CURSOR method (no arguments); the one-row query
+#   is ``conn.fetch_one``. ``fetch_all`` returns ``None`` for an empty set.
+
+
+def _as_uuid(value: Any) -> uuid.UUID | None:
+    """Coerce a surface id to ``uuid.UUID`` for the driver's binary codec.
+
+    Returns ``None`` for a malformed id so callers can answer "not found"
+    instead of leaking a driver error (no existence oracle).
+    """
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _require_uuid(value: Any) -> uuid.UUID:
+    """Like :func:`_as_uuid` but raises ``ValueError`` on a malformed id."""
+    parsed = _as_uuid(value)
+    if parsed is None:
+        raise ValueError(f"UI surface id {value!r} is not a valid UUID")
+    return parsed
+
+
+async def _exec(conn: Any, sql: str, *args: Any) -> None:
+    """``conn.execute`` that raises on error instead of returning it."""
+    result = await conn.execute(sql, *args)
+    if isinstance(result, (list, tuple)) and len(result) == 2 and result[1]:
+        error = result[1]
+        raise error if isinstance(error, Exception) else RuntimeError(str(error))
+
+
+async def _fetch_rows(conn: Any, sql: str, *args: Any) -> list[Any]:
+    """``conn.fetch_all`` with ``None`` (empty result) normalised to ``[]``."""
+    rows = await conn.fetch_all(sql, *args)
+    return list(rows) if rows else []
+
+
+# ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
 
@@ -343,7 +382,7 @@ class PgUISurfaceStore:
         async with await db.connection() as conn:
             for stmt in _DDL_STATEMENTS:
                 try:
-                    await conn.execute(stmt)
+                    await _exec(conn, stmt)
                 except Exception as exc:
                     if "already exists" in str(exc).lower():
                         self.logger.debug("ui_surfaces DDL race tolerated: %s", exc)
@@ -366,39 +405,40 @@ class PgUISurfaceStore:
         """
         await self._ensure_ready()
         db = self._get_db()
-        sql = _UPSERT_SQL if overwrite else _INSERT_SQL
+        sql = _UPSERT_SQL if overwrite else _INSERT_OR_SKIP_SQL
+        surface_uuid = _require_uuid(record.surface_id)
         async with await db.connection() as conn:
-            try:
-                await conn.execute(
-                    sql,
-                    record.surface_id,
-                    record.kind.value,
-                    record.title,
-                    json.dumps(record.envelope),
-                    record.catalog_id,
-                    record.agent_id,
-                    record.user_id,
-                    record.session_id,
-                    record.recipe_name,
-                    record.recipe_owner,
-                    json.dumps(record.recipe_params),
-                    record.created_at,
-                    record.updated_at,
-                )
-            except Exception as exc:
-                if not overwrite and _looks_like_unique_violation(exc):
-                    raise ValueError(
-                        f"UI surface {record.surface_id!r} already exists " "(use overwrite=True to replace it)"
-                    ) from exc
-                raise
+            inserted = await conn.fetchval(
+                sql,
+                surface_uuid,
+                record.kind.value,
+                record.title,
+                json.dumps(record.envelope),
+                record.catalog_id,
+                record.agent_id,
+                record.user_id,
+                record.session_id,
+                record.recipe_name,
+                record.recipe_owner,
+                json.dumps(record.recipe_params),
+                record.created_at,
+                record.updated_at,
+            )
+        if inserted is None:
+            # ON CONFLICT DO NOTHING skipped the row: asyncdb swallows the
+            # unique violation, so this is the only reliable duplicate signal.
+            raise ValueError(f"UI surface {record.surface_id!r} already exists " "(use overwrite=True to replace it)")
         return record.surface_id
 
     async def get(self, surface_id: str) -> UISurfaceRecord | None:
         """Fetch a surface by id, or ``None`` if it does not exist."""
+        surface_uuid = _as_uuid(surface_id)
+        if surface_uuid is None:
+            return None
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            row = await conn.fetchrow(_GET_SQL, surface_id)
+            row = await conn.fetch_one(_GET_SQL, surface_uuid)
         return _row_to_record(row) if row is not None else None
 
     async def list(self, user_id: str, *, kind: UISurfaceKind | None = None) -> list[UISurfaceRecord]:
@@ -407,9 +447,9 @@ class PgUISurfaceStore:
         db = self._get_db()
         async with await db.connection() as conn:
             if kind is not None:
-                rows = await conn.fetchall(_LIST_BY_KIND_SQL, user_id, kind.value)
+                rows = await _fetch_rows(conn, _LIST_BY_KIND_SQL, user_id, kind.value)
             else:
-                rows = await conn.fetchall(_LIST_SQL, user_id)
+                rows = await _fetch_rows(conn, _LIST_SQL, user_id)
         return [_row_to_record(r) for r in rows]
 
     async def list_shared_with(self, user_id: str) -> list[UISurfaceRecord]:
@@ -417,22 +457,28 @@ class PgUISurfaceStore:
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            rows = await conn.fetchall(_LIST_SHARED_WITH_SQL, user_id)
+            rows = await _fetch_rows(conn, _LIST_SHARED_WITH_SQL, user_id)
         return [_row_to_record(r) for r in rows]
 
     async def update_envelope(self, surface_id: str, envelope: dict[str, Any], recipe_params: dict[str, Any]) -> None:
         """Replace ``envelope``/``recipe_params`` in place, bumping ``updated_at``."""
+        surface_uuid = _as_uuid(surface_id)
+        if surface_uuid is None:
+            return
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.execute(_UPDATE_ENVELOPE_SQL, surface_id, json.dumps(envelope), json.dumps(recipe_params))
+            await conn.fetchval(_UPDATE_ENVELOPE_SQL, surface_uuid, json.dumps(envelope), json.dumps(recipe_params))
 
     async def delete(self, surface_id: str, user_id: str) -> bool:
         """Delete a surface owned by ``user_id``. Returns ``True`` if a row was removed."""
+        surface_uuid = _as_uuid(surface_id)
+        if surface_uuid is None:
+            return False
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            result = await conn.fetchval(_DELETE_SQL, surface_id, user_id)
+            result = await conn.fetchval(_DELETE_SQL, surface_uuid, user_id)
         return result is not None
 
     async def mint_share(
@@ -459,7 +505,7 @@ class PgUISurfaceStore:
         created_at = datetime.now(UTC)
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.execute(_MINT_SHARE_SQL, token, surface_id, expires_at, created_at)
+            await conn.fetchval(_MINT_SHARE_SQL, token, _require_uuid(surface_id), expires_at, created_at)
         return UISurfaceShare(
             token=token,
             surface_id=surface_id,
@@ -480,7 +526,7 @@ class PgUISurfaceStore:
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            row = await conn.fetchrow(_RESOLVE_SHARE_SQL, token)
+            row = await conn.fetch_one(_RESOLVE_SHARE_SQL, token)
         return _row_to_share(row) if row is not None else None
 
     async def claim_share(self, token: str, user_id: str) -> None:
@@ -493,20 +539,26 @@ class PgUISurfaceStore:
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.execute(_CLAIM_SHARE_SQL, token, user_id)
+            await conn.fetchval(_CLAIM_SHARE_SQL, token, user_id)
 
     async def revoke_share(self, token: str, surface_id: str) -> bool:
         """Revoke a share token. Returns ``True`` if a matching token was found."""
+        surface_uuid = _as_uuid(surface_id)
+        if surface_uuid is None:
+            return False
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            result = await conn.fetchval(_REVOKE_SHARE_SQL, token, surface_id)
+            result = await conn.fetchval(_REVOKE_SHARE_SQL, token, surface_uuid)
         return result is not None
 
     async def list_shares(self, surface_id: str) -> list[UISurfaceShare]:
         """List every share token (live or not) minted for ``surface_id``."""
+        surface_uuid = _as_uuid(surface_id)
+        if surface_uuid is None:
+            return []
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            rows = await conn.fetchall(_LIST_SHARES_SQL, surface_id)
+            rows = await _fetch_rows(conn, _LIST_SHARES_SQL, surface_uuid)
         return [_row_to_share(r) for r in rows]
