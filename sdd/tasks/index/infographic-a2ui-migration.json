@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T21:27:36+00:00",
-  "completed_at": "2026-09-05T00:03:40+00:00",
+  "completed_at": "2026-09-05T00:33:39+00:00",
   "tasks": [
     {
       "id": "TASK-2856",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T21:48:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2856-toolkit-emit-a2ui-default.md"
+      "file": "sdd/tasks/completed/TASK-2856-toolkit-emit-a2ui-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2857",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T21:54:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2857-bots-dual-emit-routing.md"
+      "file": "sdd/tasks/completed/TASK-2857-bots-dual-emit-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2858",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:00:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2858-agenttalk-dual-emit-envelope.md"
+      "file": "sdd/tasks/completed/TASK-2858-agenttalk-dual-emit-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2859",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:07:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2859-chart-type-parity-adapter-passthrough.md"
+      "file": "sdd/tasks/completed/TASK-2859-chart-type-parity-adapter-passthrough.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2860",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:16:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2860-kpicard-datatable-props-infographic-layout.md"
+      "file": "sdd/tasks/completed/TASK-2860-kpicard-datatable-props-infographic-layout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2861",
@@ -121,7 +126,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:27:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2861-renderers-new-chart-types-degradation.md"
+      "file": "sdd/tasks/completed/TASK-2861-renderers-new-chart-types-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2862",
@@ -139,7 +145,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:31:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2862-catalog-tool-only-gate.md"
+      "file": "sdd/tasks/completed/TASK-2862-catalog-tool-only-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2863",
@@ -159,7 +166,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:35:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2863-htmldocument-component-builder.md"
+      "file": "sdd/tasks/completed/TASK-2863-htmldocument-component-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2864",
@@ -180,7 +188,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:41:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2864-toolkit-jinja-lane-htmldocument.md"
+      "file": "sdd/tasks/completed/TASK-2864-toolkit-jinja-lane-htmldocument.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2865",
@@ -200,7 +209,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:50:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2865-renderers-htmldocument.md"
+      "file": "sdd/tasks/completed/TASK-2865-renderers-htmldocument.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2866",
@@ -218,7 +228,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T22:58:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2866-ui-a2ui-flag-types-binding.md"
+      "file": "sdd/tasks/completed/TASK-2866-ui-a2ui-flag-types-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2867",
@@ -240,7 +251,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T23:06:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2867-ui-a2ui-infographic-components.md"
+      "file": "sdd/tasks/completed/TASK-2867-ui-a2ui-infographic-components.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2868",
@@ -261,7 +273,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-04T23:17:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2868-ui-canvas-agentchat-a2ui-integration.md"
+      "file": "sdd/tasks/completed/TASK-2868-ui-canvas-agentchat-a2ui-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2869",
@@ -284,7 +297,8 @@
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
       "completed_at": "2026-09-05T00:03:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2869-docs-g7-amendment-smoke.md"
+      "file": "sdd/tasks/completed/TASK-2869-docs-g7-amendment-smoke.md",
+      "verification": "verified"
     }
   ]
 }
