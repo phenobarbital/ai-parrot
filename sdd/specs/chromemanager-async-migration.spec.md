@@ -8,11 +8,11 @@ base_branch: main
 
 # Feature Specification: ChromeManager async migration (requests → aiohttp)
 
-**Jira**: TBD — *no `FEAT-<NNN>` reserved; a bugfix is not a feature (FEAT-466).
-Fill in the issue key before creating the worktree.*
+**Jira**: none — *user decision 2026-09-05: no ticket for this hotfix; no `FEAT-<NNN>` reserved either (FEAT-466).*
+*Worktree and task ids use the slug instead of a Jira key.*
 **Date**: 2026-09-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next patch of `ai-parrot` (0.29.x) and `ai-parrot-server` (0.28.x)
 **Related**: FEAT-528 (`sdd/proposals/obscura-new-browser-headless.proposal.md`) — depends on this fix landing on `dev` via sync-down, but is a separate spec.
 
@@ -289,7 +289,7 @@ these become side-effect-free as a consequence of Module 2).
 - [ ] All new tests in §4 pass: `pytest tests/mcp/test_chrome_manager.py packages/ai-parrot/tests/bots/test_chrome.py -v`.
 - [ ] Full suite unaffected: `pytest tests/mcp tests/unit packages/ai-parrot/tests/bots -q`.
 - [ ] No new dependency added to any `pyproject.toml`.
-- [ ] The Jira key replaces `TBD` in this document before the hotfix worktree is created.
+- [x] No Jira key (user decision); header, ids and branch name use the slug.
 
 ---
 
@@ -424,7 +424,7 @@ class WebAgent(BasicAgent):                                           # line 290
 - [x] **aiohttp or httpx?** — *Resolved (project rule, `.agent/CONTEXT.md`)*: aiohttp. httpx is async-capable but banned alongside `requests`; no exception is requested here.
 - [x] **Where does the launch side effect go?** — *Resolved (design)*: into the async mixin hook via `ensure_chrome_running()`, gated by a new `ensure_running=True` kwarg so `WebAgent` defaults are unchanged.
 - [x] **Keep `is_chrome_running` name?** — *Resolved*: keep as a deprecated coroutine alias for one release; primary name is `is_running`.
-- [ ] Jira key for this hotfix — *Owner: Jesus Lara*. Replace `TBD` in the header and in the worktree/branch names.
+- [x] Jira key for this hotfix — *Resolved (user, 2026-09-05)*: there is no Jira key; ids are `HOTFIX-chromemanager-async-migration-N` and the branch is `hotfix-chromemanager-async-migration`.
 - [ ] Should `ensure_chrome_running()` raise instead of warn when Chrome cannot be started? Today `start()` returns `False` and the MCP connection then fails later with a less clear error. Decide during implementation; default is to keep the warn-and-continue contract.
 
 ---
@@ -435,8 +435,8 @@ class WebAgent(BasicAgent):                                           # line 290
 - **Cross-feature dependencies**: none upstream. Downstream, FEAT-528 (Obscura) waits for this to reach `dev` via sync-down.
 - **Worktree creation** (hotfix — from `origin/main`, never `HEAD`/`dev`):
   ```bash
-  git worktree add -b hotfix-<KEY>-chromemanager-async-migration \
-    .claude/worktrees/hotfix-<KEY>-chromemanager-async-migration origin/main
+  git worktree add -b hotfix-chromemanager-async-migration \
+    .claude/worktrees/hotfix-chromemanager-async-migration origin/main
   ```
 
 ---
