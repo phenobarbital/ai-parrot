@@ -192,3 +192,37 @@ class TestPlaywrightConfigObscuraMode:
     def test_invalid_obscura_port_raises(self):
         with pytest.raises(ValueError, match="obscura_port"):
             PlaywrightConfig(obscura_port=0)
+
+
+class TestPlaywrightConfigObscuraCompatibility:
+    """FEAT-530 (TASK-2880): final compatibility configuration checks —
+    Obscura settings must coexist with every other Playwright field
+    with no cross-field validation surprises (spec AC: "AbstractDriver
+    callers and existing scraping plans require no Obscura-specific
+    branching")."""
+
+    def test_obscura_mode_coexists_with_context_and_persistence_fields(self):
+        config = PlaywrightConfig(
+            engine="obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            viewport={"width": 1280, "height": 720},
+            locale="en-US",
+            timezone="America/New_York",
+            proxy={"server": "http://proxy:8080"},
+            ignore_https_errors=True,
+            storage_state="/tmp/auth.json",
+            user_data_dir="/tmp/profile",
+        )
+
+        assert config.engine == "obscura"
+        assert config.viewport == {"width": 1280, "height": 720}
+        assert config.storage_state == "/tmp/auth.json"
+        assert config.user_data_dir == "/tmp/profile"
+
+    def test_obscura_mode_is_orthogonal_to_browser_type_validation(self):
+        """`engine` and `browser_type` validate independently — Obscura
+        selection is enforced by DriverFactory (chromium-only), not by
+        PlaywrightConfig itself, which stays browser-type agnostic."""
+        config = PlaywrightConfig(engine="obscura", browser_type="chromium")
+        assert config.engine == "obscura"
+        assert config.browser_type == "chromium"

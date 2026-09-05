@@ -34,8 +34,15 @@ class in this module.
 
 from __future__ import annotations
 
+import os
+import shutil
+
+import pytest
+from parrot_tools.browsing.toolkit import WebBrowsingToolkit
 from parrot_tools.business_automation.toolkit import _credential_resolver_from_broker
 from parrot_tools.scraping import session_actions
+from parrot_tools.scraping.drivers.playwright_config import PlaywrightConfig
+from parrot_tools.scraping.drivers.playwright_driver import PlaywrightDriver
 from parrot_tools.scraping.executor import execute_plan_steps
 from parrot_tools.scraping.models import (
     AwaitBrowserEvent,
@@ -56,10 +63,73 @@ from parrot_tools.scraping.session_actions import (
 )
 
 from tests.business_automation.fixtures.broker import fake_broker
-from tests.scraping.fixtures.local_site import TEST_USERNAME, local_fixture_site
+from tests.scraping.fixtures.local_site import (
+    SESSION_COOKIE_NAME,
+    TEST_PASSWORD,
+    TEST_USERNAME,
+    local_fixture_site,
+)
 from tests.scraping.fixtures.real_driver import real_playwright_driver
 
 __all__ = ["fake_broker", "local_fixture_site", "real_playwright_driver"]  # re-exported fixtures
+
+
+# ── Obscura opt-in fixture (FEAT-530, TASK-2880) ────────────────────
+
+
+@pytest.fixture
+async def real_obscura_driver(unused_tcp_port):
+    """Yield a real, started :class:`PlaywrightDriver` connected over CDP
+    to a real, supervised Obscura v0.2.2 process.
+
+    Skips (never fails) the requesting test when no Obscura binary is
+    configured — via the ``OBSCURA_BINARY`` environment variable or a
+    ``obscura`` executable resolvable on ``PATH`` — or when the real
+    process fails to start/connect. This mirrors ``real_playwright_driver``
+    exactly, but for the Obscura-backed CDP connection mode instead of a
+    launched Chromium (spec's Test Data/Fixtures: "operator-provided
+    binary pinned to v0.2.2 ... ordinary unit tests must mock process and
+    Playwright APIs").
+    """
+    binary = os.environ.get("OBSCURA_BINARY") or shutil.which("obscura")
+    if not binary:
+        pytest.skip(
+            "No Obscura binary configured (set OBSCURA_BINARY or install "
+            "'obscura' on PATH) — opt-in real-Obscura fixture skipped."
+        )
+
+    from parrot.mcp.obscura import ObscuraProcessConfig, ObscuraProcessManager
+
+    manager = ObscuraProcessManager(
+        ObscuraProcessConfig(
+            binary_path=binary,
+            port=unused_tcp_port,
+            # Required for the local fixture site (loopback, non-standard
+            # port) — never enabled by default in general deployments.
+            allow_private_network=True,
+        )
+    )
+    try:
+        endpoint = await manager.start()
+    except RuntimeError as exc:
+        pytest.skip(f"Real Obscura process failed to start: {exc}")
+        return
+
+    driver = PlaywrightDriver(
+        PlaywrightConfig(engine="obscura", cdp_endpoint_url=endpoint)
+    )
+    try:
+        await driver.start()
+    except Exception as exc:  # noqa: BLE001 — any connection failure means "skip", not "fail"
+        await manager.stop()
+        pytest.skip(f"Real Obscura CDP connection failed: {exc}")
+        return
+
+    try:
+        yield driver
+    finally:
+        await driver.quit()
+        await manager.stop()
 
 
 class TestFakeBroker:
@@ -304,3 +374,123 @@ class TestNoThirdPartyContact:
     def test_local_fixture_site_is_local(self, local_fixture_site):
         host = local_fixture_site.make_url("/").host
         assert host in ("127.0.0.1", "localhost", "::1")
+
+
+# ── Obscura compatibility validation (FEAT-530, TASK-2880) ──────────
+#
+# Opt-in: every test below requires a real Linux Obscura v0.2.2 binary
+# (`real_obscura_driver` fixture) and is skipped cleanly without one —
+# these prove nothing is assumed from CDP protocol naming alone (spec
+# Known Risks/Gotchas). See docs/obscura-headless-browser.md for the
+# full compatibility matrix these exercise a representative slice of.
+
+
+class TestObscuraPlaywrightFixtureSite:
+    """`test_obscura_playwright_fixture_site`: the same navigation, DOM,
+    waits, script, screenshot, and extraction calls the Playwright driver
+    integration tests already exercise, run through the Obscura-backed
+    `PlaywrightDriver` (CDP mode) instead of a launched Chromium."""
+
+    async def test_obscura_playwright_fixture_site(self, local_fixture_site, real_obscura_driver, tmp_path):
+        await real_obscura_driver.navigate(str(local_fixture_site.make_url("/login")))
+        assert "acme-books" in await real_obscura_driver.get_page_source()
+
+        await real_obscura_driver.fill("#username", TEST_USERNAME)
+        await real_obscura_driver.fill("#password", TEST_PASSWORD)
+        await real_obscura_driver.click("button[type=submit]")
+        await real_obscura_driver.wait_for_load_state("load")
+
+        assert TEST_USERNAME in await real_obscura_driver.get_text("body")
+
+        screenshot_path = tmp_path / "obscura-dashboard.png"
+        shot = await real_obscura_driver.screenshot(str(screenshot_path))
+        assert shot, "screenshot() must return non-empty bytes"
+        assert screenshot_path.exists()
+
+        assert await real_obscura_driver.evaluate("1 + 1") == 2
+
+        # Cookie check: the real session cookie our own login just set is
+        # observable via document.cookie through the Obscura-backed page.
+        cookies = await real_obscura_driver.evaluate("document.cookie")
+        assert SESSION_COOKIE_NAME in cookies
+
+
+class TestObscuraScrapingPlanDriverParity:
+    """`test_obscura_scraping_plan_driver_parity`: runs the SAME
+    authenticated scraping plan as `TestAuthenticatedFlowEndToEnd`
+    (real Chromium) through the shared `execute_plan_steps` executor,
+    but against the Obscura-backed driver — a driver-level parity
+    comparison for the representative scraping-plan action set."""
+
+    async def test_obscura_scraping_plan_driver_parity(
+        self, local_fixture_site, fake_broker, real_obscura_driver
+    ):
+        resolver = _credential_resolver_from_broker(fake_broker, "test-user-id")
+        plan = ScrapingPlan(
+            url=str(local_fixture_site.make_url("/")),
+            objective="Log into acme-books and reach the dashboard",
+            steps=[
+                {"action": "navigate", "url": "/login"},
+                {"action": "authenticate", "method": "form", "credential_provider": "acme"},
+            ],
+            selectors=[{"name": "welcome", "selector": "body", "extract_type": "text"}],
+        )
+
+        result = await execute_plan_steps(
+            real_obscura_driver, plan=plan, credential_resolver=resolver
+        )
+
+        assert result.success, result.error_message
+        assert f"Welcome, {TEST_USERNAME}" in result.extracted_data.get("welcome", "")
+
+
+class TestObscuraBrowsingToolkitCatalogFlow:
+    """`test_obscura_browsing_toolkit_catalog_flow`: a representative
+    catalogued `WebBrowsingToolkit` login flow against the Obscura-backed
+    driver, injected directly via the toolkit's `_session_driver` seam —
+    the same test-only injection pattern already used by
+    `test_toolkit.py::test_start_creates_session_driver`.
+
+    KNOWN GAP (documented, not fixed — out of this task's scope):
+    `DriverRegistry` (`parrot_tools.scraping.driver_context`) has no
+    ``"obscura"`` entry, so `WebBrowsingToolkit(driver_type="obscura")`
+    cannot currently self-construct its own session driver via
+    `start()`/`DriverRegistry.get()` end-to-end. This test validates
+    catalogued execution against a real Obscura-backed driver directly;
+    it does NOT exercise `DriverRegistry` dispatch. See this task's
+    Completion Note for the full gap description and recommended
+    follow-up task.
+    """
+
+    async def test_obscura_browsing_toolkit_catalog_flow(
+        self, local_fixture_site, real_obscura_driver, tmp_path
+    ):
+        toolkit = WebBrowsingToolkit(catalog_dir=str(tmp_path / "catalog"))
+        toolkit._session_driver = real_obscura_driver
+        toolkit._session_based = True
+
+        await toolkit.register_site(
+            base_url=str(local_fixture_site.make_url("/")), name="acme-books"
+        )
+        await toolkit.save_site_action(
+            site="acme-books",
+            name="login",
+            description="Log into acme-books",
+            steps=[
+                {"action": "navigate", "url": "/login"},
+                {"action": "fill", "selector": "#username", "value": TEST_USERNAME},
+                {"action": "fill", "selector": "#password", "value": TEST_PASSWORD},
+                {"action": "click", "selector": "button[type=submit]"},
+                {
+                    "action": "extract",
+                    "selector": "body",
+                    "extract_type": "text",
+                    "extract_name": "welcome",
+                },
+            ],
+        )
+
+        result = await toolkit.run_site_action(site="acme-books", action="login")
+
+        assert result["success"], result
+        assert TEST_USERNAME in result["extracted_data"].get("welcome", "")

@@ -1,11 +1,14 @@
-"""Tests for the native Obscura MCP integration (FEAT-530, TASK-2878).
+"""Tests for the native Obscura MCP integration (FEAT-530, TASK-2878;
+extended by TASK-2880's compatibility validation).
 
 Covers:
     - `create_obscura_mcp_server()` — the pure stdio-config factory.
     - Stdio interop — a mocked `obscura mcp` subprocess drives
       `StdioMCPSession` through initialize/list/call, verifying the
       JSON-RPC channel stays clean (non-JSON stdout noise is ignored,
-      not fatal).
+      not fatal). `test_obscura_native_mcp_stdio_call_tool_interop`
+      (TASK-2880) extends this to the full initialize/list/call
+      round trip.
     - `WebAgent` configuration — Obscura MCP tools are registered
       alongside Chrome DevTools MCP (opt-in via `ObscuraMCPConfig`),
       never instead of it.
@@ -150,6 +153,52 @@ async def test_obscura_native_mcp_stdio_interop():
 
 def stdin_write_calls(process):
     return [c.args[0].decode() for c in process.stdin.write.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_obscura_native_mcp_stdio_call_tool_interop():
+    """FEAT-530 (TASK-2880): extends the initialize/list interop above
+    to a full initialize -> tools/list -> tools/call round trip — the
+    complete "initialize/list/call" sequence the spec's Integration
+    Tests table (`test_obscura_native_mcp_stdio_interop`) requires."""
+    from parrot.mcp.transports.stdio import StdioMCPSession
+
+    init_response = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}
+    ).encode() + b"\n"
+    tools_response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [
+                    {"name": "navigate", "description": "Navigate to a URL"}
+                ]
+            },
+        }
+    ).encode() + b"\n"
+    call_response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "result": {"content": [{"type": "text", "text": "navigated"}]},
+        }
+    ).encode() + b"\n"
+
+    process = _fake_process([init_response, tools_response, call_response])
+
+    config = create_obscura_mcp_server(binary_path="/usr/local/bin/obscura")
+    session = StdioMCPSession(config, logger=MagicMock())
+
+    with patch(
+        "parrot.mcp.transports.stdio.asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=process),
+    ):
+        await session.connect()
+        await session.list_tools()
+        result = await session.call_tool("navigate", {"url": "http://127.0.0.1/"})
+
+    assert result.content[0].text == "navigated"
 
 
 # ── WebAgent Configuration ───────────────────────────────────────

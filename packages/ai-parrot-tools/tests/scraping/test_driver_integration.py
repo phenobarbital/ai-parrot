@@ -89,18 +89,73 @@ class TestFactoryLifecyclePlaywright:
         playwright.stop.assert_called_once()
 
 
+# ── Factory Lifecycle: Obscura (FEAT-530, TASK-2880) ─────────────
+
+
+class TestFactoryLifecycleObscura:
+    """Full lifecycle through the whole seam: DriverFactory.create()
+    -> PlaywrightDriver.start() connect-over-CDP -> use -> quit(),
+    end to end with only Playwright's own API mocked (no real Obscura
+    process — that seam is TASK-2875's ObscuraProcessManager, already
+    covered by its own unit tests)."""
+
+    def test_factory_returns_abstract_driver(self):
+        driver = DriverFactory.create({"driver_type": "obscura"})
+        assert isinstance(driver, AbstractDriver)
+        assert driver.config.engine == "obscura"
+        assert driver.config.browser_type == "chromium"
+
+    @pytest.mark.asyncio
+    async def test_start_and_quit(self):
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_page.url = "http://127.0.0.1:9222/"
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        driver = DriverFactory.create(
+            {"driver_type": "obscura", "cdp_endpoint_url": "http://127.0.0.1:9222"}
+        )
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9222"
+        )
+        assert driver._page is not None
+        assert driver.current_url == "http://127.0.0.1:9222/"
+
+        context = driver._context
+        browser = driver._browser
+        playwright = driver._playwright
+
+        await driver.quit()
+        assert driver._page is None
+        # Playwright's own CDP-connection close semantics (disconnect,
+        # not terminate) — see PlaywrightDriver.quit()'s docstring.
+        context.close.assert_called_once()
+        browser.close.assert_called_once()
+        playwright.stop.assert_called_once()
+
+
 # ── Driver Swap Transparency ────────────────────────────────────
 
 
 class TestDriverSwapTransparency:
     """Both drivers expose the same AbstractDriver interface."""
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_are_abstract_driver(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         assert isinstance(driver, AbstractDriver)
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_all_abstract_methods(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         for method_name in [
@@ -113,14 +168,14 @@ class TestDriverSwapTransparency:
             assert hasattr(driver, method_name), f"Missing method: {method_name}"
             assert callable(getattr(driver, method_name))
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_current_url_property(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         # current_url is a property on the class (may raise before start())
         assert isinstance(type(driver).__dict__.get("current_url"), property) or \
             hasattr(driver, "current_url")
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_extended_capabilities(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         for method_name in [

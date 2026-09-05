@@ -615,6 +615,48 @@ class TestObscuraCDPMode:
         assert driver._playwright is None
 
 
+class TestObscuraModeSharesAbstractDriverSurface:
+    """FEAT-530 (TASK-2880): final driver behavior checks — every
+    `AbstractDriver` method operates purely against `self._page`/
+    `self._context`, so once `start()` has connected over CDP, no
+    Obscura-specific branching exists anywhere else in the class (spec
+    AC: "AbstractDriver callers and existing scraping plans require no
+    Obscura-specific branching")."""
+
+    @pytest.fixture
+    def obscura_driver(self, mock_page, mock_context):
+        driver = PlaywrightDriver(PlaywrightConfig(engine="obscura"))
+        driver._page = mock_page
+        driver._context = mock_context
+        driver._browser = AsyncMock()
+        driver._playwright = AsyncMock()
+        return driver
+
+    @pytest.mark.asyncio
+    async def test_navigate_click_fill_delegate_to_page(self, obscura_driver, mock_page, mock_locator):
+        await obscura_driver.navigate("http://127.0.0.1/login")
+        mock_page.goto.assert_called_once()
+
+        await obscura_driver.click("#submit")
+        mock_locator.click.assert_called_once()
+
+        await obscura_driver.fill("#username", "obscura-user")
+        mock_locator.fill.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_text_and_screenshot_delegate_to_page(self, obscura_driver, mock_page):
+        await obscura_driver.get_text("body")
+        mock_page.locator.assert_called()
+
+        await obscura_driver.screenshot("/tmp/obscura.png")
+        mock_page.screenshot.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_delegates_to_page(self, obscura_driver, mock_page):
+        await obscura_driver.evaluate("1 + 1")
+        mock_page.evaluate.assert_called_once_with("1 + 1")
+
+
 # ── Lazy Import ──────────────────────────────────────────────────
 
 
