@@ -2,10 +2,17 @@
 (FEAT-528 TASK-2873).
 
 Proves ``PgRecipeStore`` is a drop-in ``AbstractRecipeStore`` at every real
-call site named by the spec: ``RecipeRunner`` (direct replay, a SEPARATE
-store instance from the one that published) and ``register_recipe_routes``
-+ the REST lane (a real ``aiohttp.web.Application`` with the same three
-views ``manager.py`` registers).
+call site named by the spec (§5): ``RecipeRunner`` (direct replay, a
+SEPARATE store instance from the one that published), ``register_recipe_
+routes`` + the REST lane (a real ``aiohttp.web.Application`` with the same
+three views ``manager.py`` registers), ``InfographicAuthoringMixin
+.publish_recipe`` (the REAL bound mixin method, via a lightweight stand-in
+instance — never a mock of `publish_recipe` itself), and
+``UISurfacesHandler``'s refresh path (its own ``_recipe_runner()`` reuses
+the SAME process-wide singleton ``register_recipe_routes`` configures, so
+resolving it there and replaying through it demonstrates that call site
+without recreating the whole ``ui_surfaces`` plane — this suite must never
+touch ``navigator.ui_surfaces``, per the task's own scope).
 
 Render profile note: ``recipe.render.profile`` is deliberately ``"ssr_html"``,
 NOT the model's own default ``"interactive-html"`` — ``get_a2ui_renderer``
@@ -36,7 +43,12 @@ from aiohttp.test_utils import make_mocked_request
 from aiohttp.web_urldispatcher import MatchInfoError
 
 from parrot.auth.permission import build_principal_context
-from parrot.handlers.infographic_recipes import RecipeHandler, register_recipe_routes
+from parrot.bots.mixins import InfographicAuthoringMixin
+from parrot.handlers.infographic_recipes import (
+    RecipeHandler,
+    configure_recipe_runner,
+    register_recipe_routes,
+)
 from parrot.handlers.models.recipes import PgRecipeStore
 from parrot.outputs.a2ui.recipes.models import (
     DataSourceSpec,
@@ -47,6 +59,7 @@ from parrot.outputs.a2ui.recipes.models import (
 )
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.infographic_recipes import RecipeRunner
+from parrot.tools.infographic_sections import SectionDescriptor, SectionSpec
 
 pytestmark = pytest.mark.integration
 
@@ -201,3 +214,87 @@ class TestRegisterRecipeRoutesWithPgStore:
         body_run = json.loads(resp_run.body)
         assert body_run["status"] == "success"
         assert body_run["artifact"]["mime_type"] == "text/html"
+
+
+class _MiniAuthoringBot(InfographicAuthoringMixin):
+    """Lightweight REAL instance of the mixin (same technique
+    ``test_ui_surfaces_e2e.py::_MiniBot`` uses for ``publish_surface``) —
+    ``publish_recipe`` only needs ``self.logger`` and a
+    ``self._infographic_toolkit`` carrying a ``._recipe_store``, so this
+    skips constructing a full (heavier, ``ai-parrot-visualizations``-
+    needing) ``InfographicToolkit`` while still exercising the REAL,
+    unmocked ``publish_recipe`` bound method."""
+
+    def __init__(self, name: str, recipe_store: PgRecipeStore) -> None:
+        import logging
+
+        self.name = name
+        self.logger = logging.getLogger(f"test.pg_recipe_store.{name}")
+        self._infographic_toolkit = SimpleNamespace(_recipe_store=recipe_store)
+
+
+class TestPublishRecipeViaInfographicAuthoringMixin:
+    async def test_publish_recipe_via_mixin_with_pg_store(self, pg_store):
+        """The REAL ``InfographicAuthoringMixin.publish_recipe`` (not a
+        mock, not a reimplementation) against a real ``PgRecipeStore``."""
+        bot = _MiniAuthoringBot("mini-authoring-bot", pg_store)
+        descriptor = SectionDescriptor(
+            template="unused-with-layout",
+            mode="data-splice",
+            sections=[
+                SectionSpec(name="day_totals", target="/totals", datasets=["snapshots"], shape="mapping")
+            ],
+            layout=LayoutSpec(
+                component="Infographic",
+                title="Test",
+                sections=[
+                    {
+                        "heading": "Totals",
+                        "components": [
+                            {
+                                "component": "KPICard",
+                                "properties": {"label": "Revenue", "value": {"path": "/totals/rev_actual"}},
+                            }
+                        ],
+                    }
+                ],
+            ),
+        )
+
+        result = await bot.publish_recipe("test-2873-publish-recipe", descriptor, overwrite=True)
+
+        assert isinstance(result, InfographicRecipe)
+        saved = await pg_store.get("test-2873-publish-recipe")
+        assert saved.transforms[0].transformer == "day_totals"
+        assert saved.data_sources[0].dataset == "snapshots"
+
+
+class TestUISurfacesHandlerRefreshResolvesPgBackedRunner:
+    async def test_ui_surfaces_handler_recipe_runner_is_pg_backed(self, pg_store):
+        """``UISurfacesHandler._recipe_runner()`` reuses the SAME process-wide
+        singleton ``register_recipe_routes`` configures (``infographic_
+        recipes.py``'s ``configure_recipe_runner``/``get_recipe_runner``) —
+        resolving it here and replaying through it demonstrates the refresh
+        call site is PgRecipeStore-backed without recreating the whole
+        ``ui_surfaces`` plane (never touched by this suite)."""
+        from parrot.handlers.ui_surfaces import UISurfacesHandler
+
+        recipe = _recipe("test-2873-ui-surfaces-refresh")
+        await pg_store.save(recipe)
+
+        app = web.Application()
+        register_recipe_routes(app, recipe_store=pg_store, dataset_manager=_dataset_manager())
+        try:
+            h = UISurfacesHandler.__new__(UISurfacesHandler)
+            h._request = SimpleNamespace(app=app)
+            runner = h._recipe_runner()
+            assert runner is not None
+            assert runner.store is pg_store
+
+            pctx = build_principal_context("test-user", channel="ui_surfaces")
+            artifact = await runner.run(
+                "test-2873-ui-surfaces-refresh", pctx=pctx, recipe_owner=None, include_envelope=True
+            )
+            assert artifact.metadata["source_envelope"]["dataModel"]["totals"]["rev_actual"] == 300.0
+        finally:
+            configure_recipe_runner(None)

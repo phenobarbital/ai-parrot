@@ -216,3 +216,20 @@ installed `2.15.10` driver, not something this task changed; flagging
 here since `PgUISurfaceStore.save()`/`.get()` appear to share the same
 two patterns and were not verified against a live database as part of
 this task (out of scope: NOT in scope to touch `ui_surfaces.py`).
+
+**Post-review fix (adversarial code-review, 2026-09-05)**: `save()`
+originally never bumped `updated_at` INSIDE the persisted JSONB payload —
+only the denormalised column got `NOW()`; `get()` reconstructs the model
+from the JSONB payload alone, so it kept returning whatever (possibly
+stale) `updated_at` the caller supplied, silently violating
+`AbstractRecipeStore.save`'s documented contract ("bumping `updated_at`
+to now (UTC)"), unlike `FileRecipeStore`/`DBRecipeStore`'s own
+`model_copy(update={"updated_at": ...})` before serializing. Fixed by
+doing the same `model_copy` in `PgRecipeStore.save()` before building the
+JSONB payload. `test_pg_recipe_store_upsert_bumps_updated_at` was
+strengthened to save the SAME stale `updated_at` on both saves (a bare
+`model_copy` of an unrelated field never advances it) and assert the
+returned value is strictly newer than that stale value — mutation-checked
+by reverting the fix and confirming the test goes RED (`AssertionError:
+... datetime(2020, 1, 1, ...) > datetime(2020, 1, 1, ...)`), then restored
+and re-confirmed green.

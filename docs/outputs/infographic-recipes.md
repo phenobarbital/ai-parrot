@@ -30,7 +30,18 @@ Pydantic model, never stored/executed code (spec G1):
   `KPICard`, `DataTable`, `Report`, ...) whose data-carrying properties are
   `{"$bind": "/pointer"}` bindings into the assembled `dataModel`.
 - **`render`** — the renderer profile (`interactive-html`, `ssr_html`,
-  `pdf`, ...) plus optional delivery config.
+  `pdf`, ...) plus optional delivery config. **Known pre-existing defect**
+  (unrelated to FEAT-528, discovered while writing that feature's tests):
+  `get_a2ui_renderer` resolves a profile's satellite module via
+  `f"parrot.outputs.a2ui_renderers.{name}"`, and every renderer's
+  registered name matches its own filename exactly EXCEPT
+  `"interactive-html"` (hyphen) — the file is `interactive_html.py`
+  (underscore), and a hyphen cannot appear in a Python module path
+  segment, so resolving THIS profile — the model's own default — raises
+  `ModuleNotFoundError` unconditionally, in every environment, for every
+  recipe that does not explicitly override `render.profile`. Not fixed
+  here; pick `ssr_html`, `echarts`, `pdf`, `adaptive_cards`, or
+  `folium_map` explicitly until it is.
 - **`schedule`** — optional; `principal` is REQUIRED before a recipe can be
   scheduled (spec G8 — see §4).
 - **`narrative`** (FEAT-420, optional, additive — see §6) — a *reference* to

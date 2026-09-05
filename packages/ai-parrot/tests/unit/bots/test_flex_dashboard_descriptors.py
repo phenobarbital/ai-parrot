@@ -16,20 +16,7 @@ from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 # package and the agent FILE is loaded under its own distinct name).
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _AGENTS_DIR = _REPO_ROOT / "agents"
-_FLEX_DIR = _AGENTS_DIR / "flex_dashboard"
 _AGENT_FILE = _AGENTS_DIR / "flex_dashboard.py"
-
-
-def _load_package(name: str, init_path: Path, search_dir: Path):
-    if name in sys.modules:
-        return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load package {name!r} from {init_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module
 
 
 def _load_module(name: str, path: Path):

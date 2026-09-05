@@ -174,3 +174,13 @@ re-load, missing-path `FileNotFoundError`, and a bare-file (no
 `__init__.py`) load. `ruff check` clean.
 
 **Deviations from spec**: none.
+
+**Post-review fix (adversarial code-review, 2026-09-05)**: `load_transformer_
+module` did not clean up `sys.modules` when `spec.loader.exec_module(module)`
+raised — unlike CPython's own import machinery, a failed first load left a
+poisoned entry behind, permanently short-circuiting every retry via the
+`pkg not in sys.modules` / `mod_name in sys.modules` checks. Fixed by
+wrapping both `exec_module` calls in `try/except BaseException: sys.modules
+.pop(<name>, None); raise`, matching stdlib's own defensive pattern.
+`test_load_transformer_module.py` and the TASK-2872 regression suite both
+still pass unchanged.

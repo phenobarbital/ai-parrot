@@ -155,6 +155,27 @@ created, six in-memory `DatasetManager` frames, envelope with 5 tabs).
 `ruff check` clean. `git diff --stat -- packages agents` is empty — no
 production file was touched by this task's own files.
 
+**Post-review addition (adversarial code-review, 2026-09-05)**: the
+review correctly flagged that spec §5's AC names FOUR call sites needing
+integration-test demonstration (`register_recipe_routes`, `RecipeRunner`,
+`publish_recipe`, `UISurfacesHandler`'s refresh path) but this task's own
+Scope only ever declared three test scenarios, leaving `publish_recipe`
+and the `UISurfacesHandler` refresh path uncovered — a task-decomposition
+gap, not an infidelity to the file as written. Closed by adding two more
+tests to `tests/integration/test_pg_recipe_store_replay.py` (already this
+task's own file, no new file created):
+`test_publish_recipe_via_mixin_with_pg_store` (the REAL, unmocked
+`InfographicAuthoringMixin.publish_recipe` bound method, via a
+lightweight stand-in instance exactly like `test_ui_surfaces_e2e.py`'s
+own `_MiniBot` pattern for `publish_surface`, against a real
+`PgRecipeStore`) and
+`test_ui_surfaces_handler_recipe_runner_is_pg_backed` (`UISurfacesHandler
+._recipe_runner()` resolves the SAME process-wide singleton
+`register_recipe_routes` configures, so resolving it there and replaying
+through it demonstrates the refresh call site is `PgRecipeStore`-backed
+without touching `navigator.ui_surfaces`, per this task's own explicit
+"never touch ui_surfaces" scope). All 5 tests in the file now pass.
+
 **Deviations from spec**: none in the two test files themselves, but one
 real, unrelated pre-existing defect was discovered and deliberately
 routed AROUND rather than fixed (per this task's own "no production

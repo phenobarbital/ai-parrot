@@ -62,14 +62,24 @@ async def test_pg_recipe_store_roundtrip(pg_store, recipe):
 
 
 async def test_pg_recipe_store_upsert_bumps_updated_at(pg_store, recipe):
-    await pg_store.save(recipe)
+    # Both saves carry the SAME stale, caller-supplied `updated_at` (a
+    # `model_copy` alone would never advance it) — `save()` itself must
+    # bump it to "now" regardless, both in the denormalised column AND
+    # inside the persisted JSONB payload `get()` reconstructs the model
+    # from (a store that only bumped the column would still return this
+    # stale value forever).
+    stale = datetime(2020, 1, 1, tzinfo=UTC)
+    stale_recipe = recipe.model_copy(update={"updated_at": stale})
+    await pg_store.save(stale_recipe)
     first = await pg_store.get(recipe.name)
+    assert first.updated_at > stale
 
-    updated_recipe = recipe.model_copy(update={"title": "Updated Title"})
+    updated_recipe = stale_recipe.model_copy(update={"title": "Updated Title"})
     await pg_store.save(updated_recipe)
     second = await pg_store.get(recipe.name)
 
     assert second.title == "Updated Title"
+    assert second.updated_at > stale
     assert second.updated_at >= first.updated_at
 
     rows = await pg_store.list()

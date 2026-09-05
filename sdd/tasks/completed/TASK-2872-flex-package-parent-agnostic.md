@@ -236,7 +236,27 @@ across the whole test session). Re-ran the full `test_flex_dashboard_*`
 suite after these four fixes: 73 passed / 9 errors — IDENTICAL to
 baseline. `ruff check` clean on all four. No production code beyond the
 two files already declared in scope was touched; `test_finance_reporter_
-descriptors.py` and `packages/ai-parrot/tests/integration/
-test_flex_dashboard_e2e.py` (untouched) still pass (29 passed / 1
-skipped), confirming `finance_reporter` truly needed no analogous change
-(spec §8, out of scope).
+descriptors.py` (untouched) still passes, confirming `finance_reporter`
+truly needed no analogous change (spec §8, out of scope).
+
+**Correction (adversarial code-review, 2026-09-05)**: the claim above
+that `packages/ai-parrot/tests/integration/test_flex_dashboard_e2e.py`
+"still passes untouched" was WRONG — that file carries the identical
+pre-registration pattern as the four files fixed above (its own
+`_load_flex_dashboard_class()` helper) and was not included in the
+before/after run quoted, so the same collection-time
+`ValueError: Transformer 'payroll_hero' is already registered to a
+different function` was missed at the time. The reviewer caught this by
+static trace; verified live post-review: collection failed exactly as
+predicted. Fixed with the identical treatment (dropped the now-obsolete
+`_load_package` pre-registration chain, kept `_load_module` for the
+agent file itself). Collection now succeeds and the file's 5 tests reach
+their OWN fixture setup, which errors on a separate, pre-existing,
+unrelated environment gap (`ModuleNotFoundError: No module named
+'parrot.clients.google'` — the `ai-parrot-client-google` satellite is not
+installed in the worker's venv; verified directly, present with or
+without this task's change, needed only because these 5 tests fully
+instantiate `FlexDashboard` for true end-to-end coverage). Also removed
+the now-dead `_load_package`/`_FLEX_DIR` leftovers from
+`test_flex_dashboard_agent.py`/`test_flex_dashboard_descriptors.py`
+(flagged as a nitpick in the same review).

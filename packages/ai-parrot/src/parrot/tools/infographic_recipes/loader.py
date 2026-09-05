@@ -70,7 +70,15 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
                 raise ImportError(f"Could not build an import spec for package {pkg_init!r}")
             module = importlib.util.module_from_spec(spec)
             sys.modules[pkg] = module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            except BaseException:
+                # Mirror CPython's own import machinery: never leave a
+                # poisoned entry behind — a failed first load would
+                # otherwise permanently short-circuit every retry via the
+                # `pkg not in sys.modules` check above.
+                sys.modules.pop(pkg, None)
+                raise
         return importlib.import_module(f"{pkg}.{file.stem}")
 
     mod_name = name or f"parrot_transformers_{_digest(file)}"
@@ -81,5 +89,9 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
         raise ImportError(f"Could not build an import spec for module {file!r}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[mod_name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(mod_name, None)
+        raise
     return module

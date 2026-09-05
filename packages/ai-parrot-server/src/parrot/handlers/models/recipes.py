@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from asyncdb import AsyncDB
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 #: Only a valid, unquoted SQL identifier is accepted for ``schema=`` — this
 #: value is interpolated directly into DDL/DML (asyncpg has no identifier
 #: bind-parameter support), so anything else is rejected before any SQL runs.
-_VALID_SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_VALID_SCHEMA_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _ddl_statements(schema: str) -> list[str]:
@@ -73,7 +74,7 @@ def _validate_schema(schema: str) -> None:
     Raises:
         ValueError: If ``schema`` does not match ``^[A-Za-z_][A-Za-z0-9_]*$``.
     """
-    if not _VALID_SCHEMA_RE.match(schema):
+    if not _VALID_SCHEMA_RE.fullmatch(schema):
         raise ValueError(f"Invalid schema name {schema!r}: must match {_VALID_SCHEMA_RE.pattern!r}.")
 
 
@@ -175,6 +176,13 @@ class PgRecipeStore(AbstractRecipeStore):
     async def save(self, recipe: InfographicRecipe) -> None:
         """Upsert ``recipe`` on ``(name, owner)``, bumping ``updated_at``."""
         await self._ensure_ready()
+        # Bump `updated_at` on every save (overwrite semantics, matching
+        # FileRecipeStore/DBRecipeStore's own `model_copy(update={...})`
+        # before serializing) — otherwise `get()` (which reconstructs the
+        # model from the JSONB payload alone) would keep returning whatever
+        # `updated_at` the CALLER happened to supply, even though the
+        # denormalised column is correctly bumped to NOW().
+        recipe = recipe.model_copy(update={"updated_at": datetime.now(UTC)})
         owner = recipe.owner or ""
         db = self._get_db()
         async with await db.connection() as conn:
