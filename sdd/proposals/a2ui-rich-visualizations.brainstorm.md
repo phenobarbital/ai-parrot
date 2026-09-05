@@ -13,7 +13,7 @@ base_branch: dev
 **Status**: accepted
 **Recommended Option**: D (viz-core grammar catalog) for charts, plus Option B's `Graph` and `Timeline` v2 with `Graph` moved under viz-core, plus a tool-only vendor hint
 **Builds on**: FEAT-527 `infographic-a2ui-migration` (chart-type parity), FEAT-470 `a2ui-v1-dialect` (wire + catalog), FEAT-469 `a2ui-agent-functions` (runtime RPC + SSE stream), FEAT-473 `a2ui-v1-structured-outputs` (schema parity by construction)
-**Source artifacts (revision 2)**: `artifacts/a2ui/viz-core.catalog.json` (draft 0.1 of the viz-core catalog, official `catalog.json` shape) and `artifacts/a2ui/viz-core.example.jsonl` (a mixed-catalog `createSurface` + `updateDataModel` pair). Their eventual home is `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/viz_core/spec/`.
+**Source artifacts (revision 2)**: `artifacts/a2ui/viz-core.catalog.json` (draft 0.1 of the viz-core catalog, official `catalog.json` shape) and `artifacts/a2ui/viz-core.example.jsonl` (a mixed-catalog `createSurface` + `updateDataModel` pair) — the user's working copies; `artifacts/` is gitignored, so the **tracked copies** live at `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json` and `sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl`. Their eventual home is `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/viz_core/spec/`.
 
 > **Revision 2 (2026-09-05).** Revision 1 recommended Option B: a typed `spec`
 > discriminated union on the Parrot `Chart`, keyed on `type`. The two viz-core
@@ -618,8 +618,8 @@ No breaking changes on the wire. New hard dependencies: none. Optional: none.
 ### User-Provided Code
 
 The two artifacts are the user-provided design input for revision 2 and are kept
-verbatim at `artifacts/a2ui/viz-core.catalog.json` and
-`artifacts/a2ui/viz-core.example.jsonl`. Key excerpts (draft 0.1):
+verbatim at `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json` and
+`sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl` (tracked copies of the user's `artifacts/a2ui/` working files). Key excerpts (draft 0.1):
 
 ```jsonc
 // artifacts/a2ui/viz-core.catalog.json (top level + component names)
@@ -797,7 +797,7 @@ from parrot.flows.dev_loop.session_state import DevLoopSessionState, NodeState, 
 - All six satellite renderers currently declare `supports_updates=False`
 - Mermaid is a vetted library entry in `parrot/models/interactive.py:52` (legacy interactive lane only)
 - `DesignSystem` tokens available for the semantic roles: `--accent-green`, `--accent-amber`, `--accent-red`, `--accent-teal`, `--neutral-muted`, `--primary` (`formats/assets/design_system/base.css`, `components.css`)
-- `artifacts/` is **not** gitignored (`git check-ignore` exit 1), so the two source artifacts can be committed alongside the spec that vendors them.
+- `artifacts/` **is** gitignored (`.gitignore:283`), so the two source artifacts are tracked as copies under `sdd/proposals/assets/a2ui-viz-core/`; the spec vendors them into `catalog/viz_core/spec/`.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.outputs.a2ui.catalog.viz_core` / `VIZ_CORE_CATALOG_ID` / `VIZ_CORE_INSTRUCTIONS`~~ — do not exist

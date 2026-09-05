@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json",
+  "protocolVersion": "1.0",
+  "title": "A2UI Viz Core Catalog (draft 0.1)",
+  "description": "Library-agnostic chart components for A2UI v1.0. The agent describes WHAT to plot (data, fields, scale types, marks, semantic color roles); the renderer decides HOW to paint it with its own chart library and theme. No colors, fonts, sizes or library options travel on the wire.",
+  "catalogId": "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json",
+  "instructions": "## Viz Core Guidelines\n\n1. Pick the form by the data's job, not by taste: change over time -> `line` (or `area` only for a single series or a stacked total); magnitude across categories -> `bar` (horizontal when labels are long); part-to-whole -> `bar` with `stack: \"percent\"`, or `arc` ONLY with <= 5 categories; correlation -> `point`; one headline number -> `Stat`, not a chart.\n2. ONE y axis per Chart. Never ask for two y scales. Two measures of different magnitude -> two Charts side by side (Row) or index both to a common base.\n3. Bind data with a path to an array of row objects in the data model (`\"data\": {\"path\": \"/sales/rows\"}`). Prepare the rows before binding (tidy, sorted, aggregated); the renderer does not transform data.\n4. Wide data: one `Series` per value column (`field`). Long data (one category column, one value column): set `seriesBy` on the Chart to the category field and ONE Series with the value `field`.\n5. Always give `x.type`: `temporal` for dates/times, `quantitative` for numbers, `ordinal` for ordered buckets, `nominal` for names. The renderer cannot infer this reliably.\n6. Color is semantic. Never send hex. Series get `color.role: \"categorical\"` (default, assigned in fixed slot order by the renderer's theme) or `\"status\"` with a `value` (good/warning/serious/critical). Use `sequential`/`diverging` only for `rect` (heatmap-like) marks.\n7. Formats are semantic (`unit`, `format: \"currency\"|\"percent\"|\"compact\"|\"integer\"`), never printf strings; the renderer applies locale.\n8. More than 8 series is a design error: fold to \"Other\" before binding, or facet into several Charts.\n9. Do not set `metadata.extensions` render hints unless a human asked for a library-specific override; they are non-portable.",
+  "components": {
+    "Chart": {
+      "type": "object",
+      "description": "A single-frame chart: one x axis, one y axis, one or more Series drawn in the same frame (layered). Series are child components so they can be added or replaced incrementally with updateComponents, or generated from the data model via a ChildList template.",
+      "properties": {
+        "component": {
+          "const": "Chart"
+        },
+        "title": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString",
+          "description": "Chart title. State the takeaway when there is one ('Ventas crecen 12% en Q2'), not the axis names."
+        },
+        "subtitle": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+        },
+        "data": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicValue",
+          "description": "Path to an array of row objects in the data model, e.g. {\"path\": \"/sales/rows\"}. Each row is a flat object; Series `field` and axis `field` name its keys."
+        },
+        "x": {
+          "type": "object",
+          "description": "The x (independent) axis.",
+          "properties": {
+            "field": {
+              "type": "string",
+              "description": "Row key for x."
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "temporal",
+                "quantitative",
+                "ordinal",
+                "nominal"
+              ],
+              "description": "Scale type. Drives the renderer's choice of time/linear/category scale."
+            },
+            "title": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "date",
+                "month",
+                "year",
+                "integer",
+                "compact",
+                "percent",
+                "currency"
+              ],
+              "default": "auto"
+            },
+            "unit": {
+              "type": "string",
+              "description": "Semantic unit hint (ISO 4217 code for currency, 'ms', 'km', ...)."
+            },
+            "sort": {
+              "type": "string",
+              "enum": [
+                "natural",
+                "ascending",
+                "descending",
+                "byValue"
+              ],
+              "default": "natural"
+            }
+          },
+          "required": [
+            "field",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "y": {
+          "type": "object",
+          "description": "The single y (dependent) axis shared by every Series.",
+          "properties": {
+            "title": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "integer",
+                "compact",
+                "percent",
+                "currency"
+              ],
+              "default": "auto"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "zeroBased": {
+              "type": "boolean",
+              "description": "Force the axis to include zero. Renderers default to true for bar/area and false for line/point.",
+              "default": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "series": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ChildList",
+          "description": "IDs of Series components drawn in this frame (static list), or a template object {componentId, path} to generate one Series per item of a list in the data model."
+        },
+        "seriesBy": {
+          "type": "string",
+          "description": "For long-format rows: the row key whose distinct values become series. The Chart then has exactly ONE Series whose `field` is the value column."
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "default": "vertical",
+          "description": "horizontal swaps the axes (bars grow to the right). Use for long category labels."
+        },
+        "stack": {
+          "type": "string",
+          "enum": [
+            "none",
+            "normal",
+            "percent"
+          ],
+          "default": "none",
+          "description": "Stack all stackable Series (bar, area)."
+        },
+        "legend": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "hidden"
+          ],
+          "default": "auto",
+          "description": "auto: the renderer shows a legend when there are >= 2 series."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "tile",
+            "hero"
+          ],
+          "default": "tile",
+          "description": "Layout intent, not pixels: inline (sparkline-like, in a row of text), tile (dashboard cell), hero (full-width figure)."
+        },
+        "selectAction": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/Action",
+          "description": "Fired when the user selects a mark. The renderer adds {seriesId, x, y} to the event context."
+        },
+        "accessibleDescription": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString",
+          "description": "Plain-language summary of what the chart shows, for screen readers and for the table fallback."
+        },
+        "weight": {
+          "type": "number",
+          "description": "Relative weight within a Row or Column (flex-grow)."
+        }
+      },
+      "required": [
+        "component",
+        "data",
+        "x",
+        "series"
+      ]
+    },
+    "Series": {
+      "type": "object",
+      "description": "One layer of marks in a Chart: which value column to draw, with which mark, in which semantic color role. Must be referenced from a Chart's `series`.",
+      "properties": {
+        "component": {
+          "const": "Series"
+        },
+        "field": {
+          "type": "string",
+          "description": "Row key holding the y value."
+        },
+        "label": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString",
+          "description": "Legend / tooltip name. Defaults to `field`."
+        },
+        "mark": {
+          "type": "string",
+          "enum": [
+            "line",
+            "bar",
+            "area",
+            "point",
+            "arc",
+            "rect"
+          ],
+          "description": "arc = pie/donut slice (x is the category, field the value). rect = matrix cell (x, field and colorField)."
+        },
+        "color": {
+          "type": "object",
+          "description": "Semantic color assignment resolved by the renderer's theme.",
+          "properties": {
+            "role": {
+              "type": "string",
+              "enum": [
+                "categorical",
+                "status",
+                "sequential",
+                "diverging",
+                "neutral"
+              ],
+              "default": "categorical"
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8,
+              "description": "Fixed categorical slot; when omitted the renderer assigns slots in Series order and keeps them stable across updates."
+            },
+            "value": {
+              "type": "string",
+              "enum": [
+                "good",
+                "warning",
+                "serious",
+                "critical"
+              ],
+              "description": "Only with role=status."
+            },
+            "field": {
+              "type": "string",
+              "description": "Only with role=sequential|diverging: the row key whose value drives the ramp (rect marks)."
+            }
+          },
+          "additionalProperties": false
+        },
+        "emphasis": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "primary",
+            "muted"
+          ],
+          "default": "normal",
+          "description": "primary: the one series the story is about; muted: context (e.g. previous period)."
+        },
+        "labels": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ends",
+            "all",
+            "none"
+          ],
+          "default": "auto",
+          "description": "Direct value labels. auto lets the renderer's policy decide (typically ends for lines, none past 4 series)."
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "component",
+        "field",
+        "mark"
+      ]
+    },
+    "Stat": {
+      "type": "object",
+      "description": "A headline number (KPI tile). Use instead of a chart when the message is one value.",
+      "properties": {
+        "component": {
+          "const": "Stat"
+        },
+        "label": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+        },
+        "value": {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicNumber"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "integer",
+            "compact",
+            "percent",
+            "currency"
+          ],
+          "default": "auto"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "delta": {
+          "type": "object",
+          "description": "Change versus a reference, shown with direction and sentiment.",
+          "properties": {
+            "value": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicNumber"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "percent",
+                "absolute"
+              ],
+              "default": "auto"
+            },
+            "sentiment": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "positiveIsGood",
+                "negativeIsGood",
+                "neutral"
+              ],
+              "default": "positiveIsGood"
+            },
+            "reference": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString",
+              "description": "e.g. 'vs. mes anterior'."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "trend": {
+          "type": "object",
+          "description": "Optional sparkline drawn from rows in the data model.",
+          "properties": {
+            "data": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicValue"
+            },
+            "x": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "field"
+          ],
+          "additionalProperties": false
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "component",
+        "label",
+        "value"
+      ]
+    }
+  },
+  "functions": {},
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/Chart"
+        },
+        {
+          "$ref": "#/components/Series"
+        },
+        {
+          "$ref": "#/components/Stat"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "component"
+      }
+    },
+    "anyFunction": {
+      "description": "This catalog defines no functions.",
+      "not": {}
+    }
+  }
+}

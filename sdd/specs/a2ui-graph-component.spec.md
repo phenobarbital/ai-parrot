@@ -14,7 +14,7 @@ base_branch: dev
 **Status**: draft
 **Target version**: 0.30.0
 **Source brainstorm**: `sdd/proposals/a2ui-rich-visualizations.brainstorm.md` (umbrella, **revision 2**: Option D viz-core grammar catalog for charts + Option B's `Graph`/`Timeline`; this spec is its `a2ui-graph-component` capability and now also carries the **viz-core catalog shell**)
-**Source artifacts**: `artifacts/a2ui/viz-core.catalog.json` (viz-core draft 0.1), `artifacts/a2ui/viz-core.example.jsonl`
+**Source artifacts**: `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json` (viz-core draft 0.1), `sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl` (tracked copies; the user's working files under `artifacts/a2ui/` are gitignored)
 **Sibling specs (same umbrella)**: `a2ui-viz-core-charts` (not yet written; depends on this spec's shell), `a2ui-live-workflow-surface` (not yet written; depends on this spec's `Graph`)
 
 ---
@@ -255,7 +255,7 @@ graph/mermaid.py::to_mermaid ◀── GraphSpec (docs export, lowering's graph-
 |---|---|---|
 | `parrot/outputs/a2ui/catalog/__init__.py` | modifies | `_CATALOG` keyed by `(catalog_id, name)`; `get_component(name, catalog_id=None)`; `list_components(catalog_id=None)`; `catalog_instructions(catalog_ids=None)`; `_component_exists` keyed; gate lookup at :498 uses the resolved catalog id |
 | `parrot/outputs/a2ui/catalog/viz_core/__init__.py` (new) | creates | `VIZ_CORE_CATALOG_ID`, `VIZ_CORE_INSTRUCTIONS`, registration import of `graph` |
-| `parrot/outputs/a2ui/catalog/viz_core/spec/catalog.json` (new, vendored copy of the artifact) | creates | design reference for the charts spec's drift test; **not** loaded at runtime here |
+| `parrot/outputs/a2ui/catalog/viz_core/spec/catalog.json` (new, vendored copy of `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json`) | creates | design reference for the charts spec's drift test; **not** loaded at runtime here |
 | `parrot/outputs/a2ui/catalog/viz_core/graph.py` (new) | creates | `GRAPH_SCHEMA = derive_schema(GraphSpec, …)`, `GRAPH_INSTRUCTIONS`, `@register_component("Graph", catalog_id=VIZ_CORE_CATALOG_ID)` |
 | `parrot/outputs/a2ui/catalog/parrot/_derive.py::derive_schema` | uses | `derive_schema(GraphSpec, binding_fields=("data",), required=("nodes", "edges"))` |
 | `parrot/outputs/a2ui/catalog/export.py` | extends | `write_catalog_definition(path, *, catalog_id=DEFAULT_CATALOG_ID)`; instructions scoped per exported catalog |
@@ -495,7 +495,7 @@ def intercepts(table: frozenset[tuple[str, str]], comp: Component, surface_catal
 
 ### Module 0: viz-core catalog shell
 - **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/viz_core/__init__.py` (new),
-  `catalog/viz_core/spec/catalog.json` (vendored copy of `artifacts/a2ui/viz-core.catalog.json`),
+  `catalog/viz_core/spec/catalog.json` (vendored copy of `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json`),
   `catalog/__init__.py`, `catalog/export.py`, `producer.py`,
   `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/_intercept.py` (new),
   `ui/.../canvas/a2ui/a2ui-types.ts`
@@ -672,7 +672,7 @@ def intercepts(table: frozenset[tuple[str, str]], comp: Component, surface_catal
 | `test_flow_to_graph_to_mermaid_roundtrip` | dev-loop `FlowDefinition` fixture (mapping) → `flow_definition_to_graph` → `build_graph` → `to_mermaid` → `from_mermaid` equals the adapter's spec modulo positions, `accessibleDescription`, `size` |
 | `test_graph_renders_on_every_registered_renderer` | for each `register_a2ui_renderer` name: render a `Graph` envelope; native lanes have no `Graph` degradation record, others have exactly one record and a lowered `description` + `graph-source` Text |
 | `test_catalog_definition_includes_graph` | `export_catalog_definition(catalog_id=VIZ_CORE_CATALOG_ID)["components"]["Graph"]` present with the derived schema; the Parrot export (`DEFAULT_CATALOG_ID`) does NOT contain `Graph` |
-| `test_mixed_catalog_surface_validates` | the shape of `artifacts/a2ui/viz-core.example.jsonl` line 1 with `Stat`/`Chart`/`Series` replaced by one viz-core `Graph` and a Basic `Column` root validates; the same with the `Graph` lacking `catalogId` fails with `UNKNOWN_COMPONENT` |
+| `test_mixed_catalog_surface_validates` | the shape of `sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl` line 1 with `Stat`/`Chart`/`Series` replaced by one viz-core `Graph` and a Basic `Column` root validates; the same with the `Graph` lacking `catalogId` fails with `UNKNOWN_COMPONENT` |
 | `test_frontend_guide_graph_example_validates` | the `Graph` example added to `docs/frontend/agentdashboard-a2ui-reference.md` validates (extends `tests/integration/test_frontend_guide_examples.py`) |
 
 ### Test Data / Fixtures
@@ -691,7 +691,7 @@ def mermaid_samples() -> dict[str, str]:
 
 @pytest.fixture
 def viz_core_example_envelope() -> dict:
-    """artifacts/a2ui/viz-core.example.jsonl line 1, loaded verbatim (mixed-catalog shape reference)."""
+    """sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl line 1, loaded verbatim (mixed-catalog shape reference)."""
 
 GOLDEN_DIR / "graph_lowered.json"   # regenerated by the golden helper used in test_components_*.py
 ```
@@ -880,11 +880,10 @@ class FlowDefinition(BaseModel): flow; version; description; created_at; updated
 # packages/ai-parrot-server/ui/src/lib/components/visualizations/ECharts.svelte — `import * as echarts from "echarts/core"` (:10), lazy full-build import (:85)
 # packages/ai-parrot-server/ui/src/lib/features.ts — `a2ui: __AGENTCHAT_A2UI__` (:31)
 
-# Source artifacts (design reference, verified 2026-09-05)
-#   artifacts/a2ui/viz-core.catalog.json — $id/catalogId "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json";
+# Source artifacts (design reference, verified 2026-09-05; tracked copies under sdd/proposals/assets/a2ui-viz-core/, user working copies under artifacts/a2ui/ which IS gitignored at .gitignore:283)
+#   viz-core.catalog.json — $id/catalogId "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json";
 #     components Chart/Series/Stat; `instructions` = nine guideline rules; every $ref → a2ui.org common_types $defs that exist in the vendored copy
-#   artifacts/a2ui/viz-core.example.jsonl — line 1 createSurface (surface catalogId = BASIC; per-component catalogId = viz-core), line 2 updateDataModel
-#   `artifacts/` is NOT gitignored (git check-ignore → 1)
+#   viz-core.example.jsonl — line 1 createSurface (surface catalogId = BASIC; per-component catalogId = viz-core), line 2 updateDataModel
 
 # tests
 # packages/ai-parrot/tests/outputs/a2ui/test_components_chart_datatable_map.py — golden pattern: GOLDEN_DIR = Path(__file__).parent / "golden"; _dump(tree); _validates(tree) wraps flat components under a Column root and calls validate_envelope
