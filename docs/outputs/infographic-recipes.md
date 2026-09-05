@@ -63,18 +63,46 @@ lets `narrative_facts` take other transformers' OUTPUTS as its inputs.
 
 ### Stores
 
-`AbstractRecipeStore` (`parrot.outputs.a2ui.recipes.store`) — two backends,
-both core:
+`AbstractRecipeStore` (`parrot.outputs.a2ui.recipes.store`) — three backends:
 
-- **`FileRecipeStore(directory)`** — one YAML file per recipe
+- **`FileRecipeStore(directory)`** (core) — one YAML file per recipe
   (`<directory>/<name>.yaml`, or `<directory>/<owner>/<name>.yaml` when
-  owner-scoped). Atomic writes (write-to-temp + `os.replace`).
-- **`DBRecipeStore(redis_url=..., namespace=...)`** — Redis-backed (mirrors
-  `parrot.skills.store.SkillRegistry`'s actual persistence mechanism — Redis
-  + in-memory fallback, NOT a SQL table), with an in-memory fallback when
-  Redis is unset/unreachable.
+  owner-scoped). Atomic writes (write-to-temp + `os.replace`). Recipes
+  travel baked into a deployment artifact — changing a dashboard means a
+  deploy. Best for hand-authored recipes checked into a repo.
+- **`DBRecipeStore(redis_url=..., namespace=...)`** (core) — **Redis**,
+  despite the name (mirrors `parrot.skills.store.SkillRegistry`'s actual
+  persistence mechanism — Redis + in-memory fallback, NOT a SQL table).
+  Degrades to in-memory when Redis is unset/unreachable; a flush loses
+  every recipe. Invisible to SQL.
+- **`PgRecipeStore(dsn=None, *, schema="navigator")`** (FEAT-528,
+  `parrot.handlers.models.recipes`, ai-parrot-server) — relational,
+  one row per recipe in `<schema>.infographic_recipes` (`(name, owner)`
+  primary key), created by a lazy `ensure_schema()` safe to call on every
+  boot. Mirrors `PgUISurfaceStore`'s connection/DDL idiom (same
+  `navigator` schema a recipe's produced surfaces already live in — see
+  `parrot.handlers.models.ui_surfaces`), so a recipe and the `ui_surfaces`
+  row it produces can live side by side, backed up and queried the same
+  way. `title`/`description` are denormalised columns so `list()` never
+  deserialises the full recipe JSONB. Takes an explicit `schema=` keyword
+  (unlike `PgUISurfaceStore`, which hardcodes `navigator`) so a host is not
+  forced onto the same schema assumption.
 
-Both share one contract: `save` (overwrite + `updated_at` bump), `get`,
+  ```python
+  from parrot.handlers.models.recipes import PgRecipeStore
+
+  store = PgRecipeStore()          # parrot.conf.default_dsn, schema="navigator"
+  await store.ensure_schema()      # idempotent; first store use also triggers it lazily
+  await store.save(recipe)         # upsert on (name, owner), bumps updated_at
+  ```
+
+**Choosing one**: `FileRecipeStore` for recipes that ARE deploy artifacts
+(hand-authored, reviewed in a PR); `PgRecipeStore` when a recipe should be
+editable, queryable, and backed-up DATA — the default choice once a host
+already runs Postgres for `ui_surfaces`; `DBRecipeStore` only when Redis is
+the durability story you already have and SQL visibility does not matter.
+
+All three share one contract: `save` (overwrite + `updated_at` bump), `get`,
 `list` (lightweight summaries only), `delete`. `RecipeNotFoundError` lists
 available names; `RecipeSchemaVersionError` guards `schema_version` drift.
 
@@ -263,6 +291,70 @@ block in the YAML and set a real principal) — scheduled replays run under
 THAT principal, resolved into a minimal `PermissionContext`, and **never**
 fall back to a server identity (spec G8). A missing principal fails the job
 outright.
+
+### Replaying in another service (FEAT-528)
+
+A host that wants to replay a recipe needs its registered
+`@infographic_transformer` functions in-process — and nothing else from
+the agent that ships them: no agent class, no LLM, no
+`ai-parrot-visualizations`. Registration is purely an import side effect,
+and an agent's transformer module (e.g. `agents/flex_dashboard/
+transformers.py`) is normally only reachable through its author's own
+package layout — which a host with its own top-level package of the same
+name cannot import (this is exactly the failure Module 2 of FEAT-528
+fixed: a plain `import agents.flex_dashboard.transformers` only resolves
+when the process's OWN `agents/` directory happens to be on `sys.path` as
+the `agents` package).
+
+`load_transformer_module` (`parrot.tools.infographic_recipes`) is the
+supported, documented answer:
+
+```python
+from parrot.tools.infographic_recipes import load_transformer_module, RecipeRunner
+from parrot.handlers.models.recipes import PgRecipeStore
+from parrot.tools.dataset_manager.tool import DatasetManager
+
+load_transformer_module("/path/to/agents/flex_dashboard/transformers.py")
+
+dataset_manager = DatasetManager(generate_guide=False)
+dataset_manager.add_dataframe("hours", hours_df)   # or add_query(...) over a real source
+# ... register every dataset alias the recipe's data_sources reference ...
+
+runner = RecipeRunner(PgRecipeStore(dsn), dataset_manager)
+artifact = await runner.run("flex-program-dashboard", pctx=pctx)
+```
+
+It imports a transformer module by FILE PATH, under a deterministic
+synthetic module name derived from the resolved path — a second call for
+the same path is a no-op (returns the already-imported module; never
+re-registers). If the module's directory has a sibling `__init__.py`
+(true for `agents/flex_dashboard/`), the module is loaded AS A PACKAGE
+SUBMODULE so its own relative imports (e.g. `transformers.py`'s `from
+.normalize import ...`) resolve correctly — no `sys.path` mutation, no
+dependency on any particular top-level package name being free.
+
+**The params-vs-filtering rule** (do not assume more than the recipe
+declares): a recipe's `params` reach the underlying data fetch ONLY through
+`DataSourceSpec.conditions`/`sql` (`RecipeRunner._fetch_frames`,
+`runner.py`) — a data source with neither declares no conditions, and its
+fetch is therefore UNFILTERED regardless of what params a caller passes.
+Flex's own published recipe declares no `conditions`/`sql` on any data
+source (its params only feed `_apply_filters` INSIDE each transformer,
+post-fetch, in pandas) — replaying it in another service fetches the full
+frame every time; filtering is a property of a specific recipe's data
+sources, not a guarantee this replay path adds on your behalf.
+
+**Still open**: `agents/flex_dashboard*` and `agents/finance_reporter.py`
+are company agents living in the framework's repo, which the standing
+rule forbids ("ai-parrot es un framework de IA, no de empresa") — moving
+both to `navigator-plugins` is tracked as a separate work item (spec §8),
+owner Jesús, not performed by FEAT-528. Module 2's parent-agnostic import
+fix and `load_transformer_module` make that move SAFE (the sibling
+package no longer cares what its parent is named); they do not perform
+it. `finance_reporter.py:73`'s `SKILLS_DIR` anchoring (`parents[1]/
+.agent/skills`, resolved relative to the file's OWN location) will
+silently resolve to nothing once that file relocates to a different
+repo — repairing that anchor is part of the move, not of this feature.
 
 ---
 
@@ -575,3 +667,33 @@ exercises the full pipeline against synthetic fixture CSVs (derived from
 No pixel/screenshot assertions (no browser in CI) — structure is asserted
 via the embedded `dataModel` JSON's key set and static HTML markers; value
 changes are asserted on the actual numbers.
+
+### `PgRecipeStore` and the host loader (FEAT-528)
+
+Three additional suites cover the third store and the host-side loader,
+all gated on a live scratch Postgres — set `NAVIGATOR_PG_DSN` (skipped
+automatically when it is unset):
+
+- `tests/unit/handlers/test_pg_recipe_store.py` — round-trip, upsert
+  (`updated_at` bump, no second row), owner scoping, `RecipeNotFoundError`/
+  `RecipeSchemaVersionError` parity with `FileRecipeStore`/`DBRecipeStore`,
+  `list()` summaries, and idempotent `ensure_schema()`.
+- `tests/integration/test_pg_recipe_store_replay.py` — publish through
+  store A, replay through a SEPARATE store B instance (proving the row is
+  the only shared state); `register_recipe_routes` wired onto a real
+  `aiohttp.web.Application` with the same three views `manager.py`
+  registers; the REST `GET`/`POST .../run` lane against a real
+  `PgRecipeStore` (not a mock).
+- `tests/integration/test_foreign_host_flex_replay.py` — the FieldSync
+  shape end-to-end: `load_transformer_module` registers flex's
+  transformers in a subprocess with NO `agents` package on `sys.path`,
+  six `DatasetManager` frames stand in for querysource, the recipe is read
+  back from Postgres, and the assembled envelope carries all five
+  dashboard sections — with no `FlexDashboard` instance anywhere in the
+  process.
+
+`load_transformer_module` itself (`tests/unit/tools/
+test_load_transformer_module.py`) and the parent-agnostic import fix
+(`tests/unit/agents/test_flex_dashboard_importability.py`) are unit-tested
+without any database — see those files' own docstrings for the
+mutation-checked regression story.
