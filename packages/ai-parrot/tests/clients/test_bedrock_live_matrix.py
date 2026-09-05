@@ -45,10 +45,18 @@ from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 
 pytestmark = [pytest.mark.real_llm, pytest.mark.asyncio]
 
-#: Kept tiny on purpose — this is a connectivity/wiring probe, not a quality
+#: Kept small on purpose — this is a connectivity/wiring probe, not a quality
 #: eval. One short word is enough to prove the round trip produced real text.
+#: 16 is NOT enough: several catalogued models (Claude 5's adaptive thinking,
+#: gpt-oss-120b / minimax-m2.5's hidden chain-of-thought) spend part of the
+#: completion budget on reasoning before emitting a single visible character,
+#: so a too-tight cap truncates before any answer appears — Bedrock Converse
+#: just returns a stopReason of "max_tokens" with empty/partial text, but the
+#: OpenAI SDK's chat.completions.parse() helper that BedrockMantleClient goes
+#: through raises ``openai.LengthFinishReasonError`` outright. 256 clears the
+#: reasoning overhead on every model above while staying cheap.
 PROMPT = "Reply with exactly one word: PONG"
-MAX_TOKENS = 16
+MAX_TOKENS = 256
 TIMEOUT_SECONDS = 60.0
 
 
