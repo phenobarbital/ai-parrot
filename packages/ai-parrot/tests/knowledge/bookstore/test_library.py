@@ -1,0 +1,312 @@
+"""Tests for the Bookstore manager (ingestion + read surface)."""
+
+from __future__ import annotations
+
+import builtins
+from pathlib import Path
+
+import pytest
+
+from parrot.knowledge.bookstore.config import LibraryLocation
+from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
+
+from .conftest import SAMPLE_MARKDOWN
+
+
+@pytest.fixture
+def locations(tmp_path) -> list[LibraryLocation]:
+    return [
+        LibraryLocation(scope="project", root=tmp_path / "proj" / "library"),
+        LibraryLocation(scope="global", root=tmp_path / "glob" / "library"),
+    ]
+
+
+@pytest.fixture
+def book_md(tmp_path) -> Path:
+    path = tmp_path / "synthetic-handbook.md"
+    path.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def store(locations, fake_adapter) -> Bookstore:
+    return Bookstore(locations, adapter=fake_adapter)
+
+
+@pytest.fixture
+def store_no_llm(locations) -> Bookstore:
+    return Bookstore(locations)
+
+
+@pytest.mark.asyncio
+async def test_add_book_markdown_with_llm(store, book_md, locations):
+    card, status = await store.add_book(book_md)
+    assert status == "added"
+    assert card.book_id == "synthetic-handbook"
+    assert card.card_origin == "llm"
+    assert card.title == "Synthetic Handbook"
+    assert card.authors == ["Ada Example"]
+    assert "async python" in card.topics
+    assert card.chapter_count >= 1
+    assert card.toc_digest
+    # Tree JSON + catalog row exist on disk in the project scope.
+    assert (locations[0].trees_dir / "synthetic-handbook.json").is_file()
+    assert (locations[0].db_path).is_file()
+
+
+@pytest.mark.asyncio
+async def test_add_book_sha_skip_and_force(store, book_md):
+    card1, status1 = await store.add_book(book_md)
+    card2, status2 = await store.add_book(book_md)
+    assert (status1, status2) == ("added", "skipped")
+    assert card2.book_id == card1.book_id
+    _, status3 = await store.add_book(book_md, force=True)
+    assert status3 == "updated"
+
+
+@pytest.mark.asyncio
+async def test_add_book_no_llm_fallback_card(store_no_llm, book_md):
+    card, status = await store_no_llm.add_book(book_md)
+    assert status == "added"
+    assert card.card_origin == "fallback"
+    assert card.title == "Synthetic Handbook"  # de-slugified filename
+    assert card.topics  # top-level chapter titles
+
+
+@pytest.mark.asyncio
+async def test_add_book_manual_overrides(store, book_md):
+    card, _ = await store.add_book(
+        book_md, title="My Handbook", authors=["Me"], topics=["testing"]
+    )
+    assert card.card_origin == "manual"
+    assert (card.title, card.authors, card.topics) == (
+        "My Handbook",
+        ["Me"],
+        ["testing"],
+    )
+    assert card.book_id == "my-handbook"
+
+
+@pytest.mark.asyncio
+async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
+    txt = tmp_path / "notes.txt"
+    txt.write_text("plain text", encoding="utf-8")
+    with pytest.raises(BookstoreError, match="LLM"):
+        await store_no_llm.add_book(txt)
+
+
+@pytest.mark.asyncio
+async def test_add_book_unsupported_format(store, tmp_path):
+    bad = tmp_path / "book.pptx"
+    bad.write_text("x", encoding="utf-8")
+    with pytest.raises(BookstoreError, match="Unsupported format"):
+        await store.add_book(bad)
+
+
+@pytest.mark.asyncio
+async def test_epub_without_loaders_package(store, tmp_path, monkeypatch):
+    epub = tmp_path / "book.epub"
+    epub.write_bytes(b"fake epub")
+    real_import = builtins.__import__
+
+    def _blocked(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("No module named 'parrot_loaders'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+    with pytest.raises(BookstoreError, match="ai-parrot-loaders"):
+        await store.add_book(epub)
+
+
+@pytest.mark.asyncio
+async def test_slug_collision_across_scopes_is_suffixed(store, tmp_path):
+    """A global book must never receive a book_id already used in the
+    project scope (or vice versa) — merged listings dedupe by book_id
+    with project precedence, so a collision would shadow the book."""
+    a = tmp_path / "same-book.md"
+    a.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    b = tmp_path / "same_book.md"
+    b.write_text(SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8")
+    card_a, _ = await store.add_book(a, title="Same Book")
+    card_b, _ = await store.add_book(b, scope="global", title="Same Book")
+    assert card_a.book_id == "same-book"
+    assert card_b.book_id == "same-book-2"
+    listed = {c.book_id for c in store.list_books()}
+    assert {"same-book", "same-book-2"} <= listed
+
+
+@pytest.mark.asyncio
+async def test_slug_collision_suffixing(store, tmp_path):
+    a = tmp_path / "same-title.md"
+    a.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    b = tmp_path / "same_title.md"
+    b.write_text(SAMPLE_MARKDOWN + "\nExtra line to change the sha.\n", encoding="utf-8")
+    card_a, _ = await store.add_book(a, title="Same Title")
+    card_b, _ = await store.add_book(b, title="Same Title")
+    assert card_a.book_id == "same-title"
+    assert card_b.book_id == "same-title-2"
+
+
+@pytest.mark.asyncio
+async def test_read_surface_toc_search_and_section(store, book_md):
+    card, _ = await store.add_book(book_md)
+    toc = store.get_toc(card.book_id)
+    assert toc["entries"]
+    node_id = toc["entries"][0]["node_id"]
+    section = store.read_section(card.book_id, node_id)
+    assert section["book_title"] == card.title
+    assert section["content"]
+    hits = await store.search_book(card.book_id, "vector search")
+    assert hits and {"node_id", "title", "score"} <= set(hits[0])
+
+
+@pytest.mark.asyncio
+async def test_read_section_unknown_node(store, book_md):
+    card, _ = await store.add_book(book_md)
+    with pytest.raises(BookstoreError, match="Unknown section"):
+        store.read_section(card.book_id, "9999")
+
+
+@pytest.mark.asyncio
+async def test_no_llm_search_book_is_bm25_only(store_no_llm, book_md):
+    card, _ = await store_no_llm.add_book(book_md)
+    hits = await store_no_llm.search_book(card.book_id, "vector search")
+    assert hits
+    assert all(hit["source"] == "bm25" for hit in hits)
+
+
+@pytest.mark.asyncio
+async def test_cross_book_search_no_llm(store_no_llm, book_md):
+    card, _ = await store_no_llm.add_book(book_md)
+    out = await store_no_llm.search("vector search")
+    assert out["books"]
+    assert out["books"][0]["book_id"] == card.book_id
+    assert out["books"][0]["results"]
+
+
+def _install_fake_docx_loader(monkeypatch, markdown: str):
+    """Register a fake parrot_loaders.docx module in sys.modules."""
+    import sys
+    import types
+
+    class _FakeMSWordLoader:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def docx_to_markdown(self, path):
+            return markdown
+
+    parent = types.ModuleType("parrot_loaders")
+    module = types.ModuleType("parrot_loaders.docx")
+    module.MSWordLoader = _FakeMSWordLoader
+    parent.docx = module
+    monkeypatch.setitem(sys.modules, "parrot_loaders", parent)
+    monkeypatch.setitem(sys.modules, "parrot_loaders.docx", module)
+
+
+@pytest.mark.asyncio
+async def test_add_book_docx_via_fake_loader(store, tmp_path, monkeypatch):
+    _install_fake_docx_loader(monkeypatch, SAMPLE_MARKDOWN)
+    docx = tmp_path / "handbook.docx"
+    docx.write_bytes(b"fake docx bytes")
+    card, status = await store.add_book(docx)
+    assert status == "added"
+    assert card.source_format == "docx"
+    assert card.chapter_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_docx_without_loaders_package(store, tmp_path, monkeypatch):
+    docx = tmp_path / "doc.docx"
+    docx.write_bytes(b"fake docx")
+    real_import = builtins.__import__
+
+    def _blocked(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("No module named 'parrot_loaders'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+    with pytest.raises(BookstoreError, match="ai-parrot-loaders"):
+        await store.add_book(docx)
+
+
+def test_iter_folder_files_recursive(tmp_path):
+    from parrot.knowledge.bookstore.library import Bookstore
+
+    root = tmp_path / "books"
+    (root / "sub").mkdir(parents=True)
+    (root / "a.md").write_text("x", encoding="utf-8")
+    (root / "b.png").write_bytes(b"x")
+    (root / "sub" / "c.pdf").write_bytes(b"x")
+    flat_supported, flat_ignored = Bookstore.iter_folder_files(root)
+    assert [p.name for p in flat_supported] == ["a.md"]
+    assert [p.name for p in flat_ignored] == ["b.png"]
+    rec_supported, _ = Bookstore.iter_folder_files(root, recursive=True)
+    assert [p.name for p in rec_supported] == ["a.md", "c.pdf"]
+
+
+def test_iter_folder_files_not_a_directory(tmp_path):
+    from parrot.knowledge.bookstore.library import Bookstore
+
+    with pytest.raises(BookstoreError, match="Not a directory"):
+        Bookstore.iter_folder_files(tmp_path / "missing")
+
+
+@pytest.mark.asyncio
+async def test_add_folder_continues_after_failures(store_no_llm, tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    (root / "two.md").write_text(
+        SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8"
+    )
+    # .txt needs an LLM → fails in the no-LLM store; loop must continue.
+    (root / "notes.txt").write_text("plain text", encoding="utf-8")
+    (root / "cover.png").write_bytes(b"x")
+    out = await store_no_llm.add_folder(root)
+    by_status = {}
+    for entry in out["results"]:
+        by_status.setdefault(entry["status"], []).append(entry)
+    assert len(by_status["added"]) == 2
+    assert len(by_status["failed"]) == 1
+    assert "LLM" in by_status["failed"][0]["error"]
+    assert out["ignored"] and out["ignored"][0].endswith("cover.png")
+    listed = {c.book_id for c in store_no_llm.list_books()}
+    assert {"one", "two"} <= listed
+
+
+@pytest.mark.asyncio
+async def test_add_folder_rerun_skips_by_sha(store, tmp_path, book_md):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    first = await store.add_folder(root)
+    second = await store.add_folder(root)
+    assert first["results"][0]["status"] == "added"
+    assert second["results"][0]["status"] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_remove_book(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    assert await store.remove_book(card.book_id) is True
+    assert not (locations[0].trees_dir / f"{card.book_id}.json").exists()
+    with pytest.raises(BookstoreError):
+        store.get_card(card.book_id)
+
+
+@pytest.mark.asyncio
+async def test_global_scope_ingest_and_resolution(store, book_md, locations):
+    card, _ = await store.add_book(book_md, scope="global")
+    assert card.scope == "global"
+    assert (locations[1].trees_dir / f"{card.book_id}.json").is_file()
+    resolved, loc = store.resolve_book(card.book_id)
+    assert loc.scope == "global"
+    assert resolved.scope == "global"
+
+
+def test_bookstore_requires_locations():
+    with pytest.raises(BookstoreError):
+        Bookstore([])
