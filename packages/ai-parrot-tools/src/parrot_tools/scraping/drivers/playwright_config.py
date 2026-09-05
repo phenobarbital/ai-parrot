@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 _VALID_BROWSER_TYPES = frozenset({"chromium", "firefox", "webkit"})
+_VALID_ENGINES = frozenset({"playwright", "obscura"})
 
 
 @dataclass
@@ -49,6 +50,27 @@ class PlaywrightConfig:
             ``"msedge"``). Required to open a real Google Chrome profile
             with its keyring-encrypted data; only meaningful for
             ``browser_type="chromium"``.
+        engine: Connection engine — ``"playwright"`` (default) launches a
+            local browser as before; ``"obscura"`` connects to a
+            supervised Obscura CDP endpoint via
+            ``chromium.connect_over_cdp()`` instead of launching a
+            browser, preserving all other driver methods unchanged.
+        cdp_endpoint_url: Explicit CDP endpoint to connect to when
+            ``engine="obscura"``, e.g. ``"http://127.0.0.1:9222"``. When
+            unset, the endpoint is derived from ``obscura_port`` on
+            ``127.0.0.1``.
+        obscura_binary: Path to (or ``PATH``-resolvable name of) the
+            Obscura binary. Not used by ``PlaywrightDriver`` itself —
+            carried through for callers (e.g. the driver factory or CLI)
+            that supervise the Obscura process via
+            ``parrot.mcp.obscura.ObscuraProcessManager``.
+        obscura_port: CDP port of the supervised Obscura process, used to
+            derive ``cdp_endpoint_url`` when it is not set explicitly.
+        obscura_stealth: Obscura stealth-mode flag, carried through for
+            process supervision callers; unused by this driver directly.
+        obscura_allow_private_network: Obscura
+            ``--allow-private-network`` flag, carried through for process
+            supervision callers; unused by this driver directly.
     """
 
     browser_type: str = "chromium"
@@ -71,6 +93,12 @@ class PlaywrightConfig:
     storage_state: Optional[str] = None
     user_data_dir: Optional[str] = None
     channel: Optional[str] = None
+    engine: str = "playwright"
+    cdp_endpoint_url: Optional[str] = None
+    obscura_binary: Optional[str] = None
+    obscura_port: int = 9222
+    obscura_stealth: bool = False
+    obscura_allow_private_network: bool = False
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -78,4 +106,13 @@ class PlaywrightConfig:
             raise ValueError(
                 f"Invalid browser_type '{self.browser_type}'. "
                 f"Must be one of: {', '.join(sorted(_VALID_BROWSER_TYPES))}"
+            )
+        if self.engine not in _VALID_ENGINES:
+            raise ValueError(
+                f"Invalid engine '{self.engine}'. "
+                f"Must be one of: {', '.join(sorted(_VALID_ENGINES))}"
+            )
+        if not (0 < self.obscura_port < 65536):
+            raise ValueError(
+                f"obscura_port out of range: {self.obscura_port}"
             )

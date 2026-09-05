@@ -4,7 +4,7 @@ All Playwright API calls are mocked — no real browser is required.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from parrot.tools.scraping.drivers.playwright_driver import PlaywrightDriver
 from parrot.tools.scraping.drivers.playwright_config import PlaywrightConfig
@@ -495,6 +495,124 @@ class TestQuit:
     async def test_quit_when_not_started(self, driver):
         """Quit gracefully when no resources were initialized."""
         await driver.quit()  # Should not raise
+
+
+# ── Obscura CDP Mode (FEAT-530, TASK-2876) ──────────────────────
+
+
+class TestObscuraCDPMode:
+    """Connect-over-CDP mode connects to a supervised Obscura endpoint.
+
+    All Playwright API calls are mocked; process supervision itself is
+    `parrot.mcp.obscura.ObscuraProcessManager`'s job (TASK-2875), not
+    this driver's.
+    """
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_connects_over_cdp(self):
+        """Reuses the CDP endpoint's default context/page when present."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_page.url = "about:blank"
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(
+            engine="obscura", cdp_endpoint_url="http://127.0.0.1:9333"
+        )
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9333"
+        )
+        assert driver._browser is mock_browser
+        assert driver._context is mock_context
+        assert driver._page is mock_page
+        assert driver.current_url == "about:blank"
+        mock_context.set_default_timeout.assert_called_once_with(
+            config.timeout * 1000
+        )
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_cdp_derives_endpoint_from_obscura_port(self):
+        """Without an explicit cdp_endpoint_url, the endpoint is derived
+        from obscura_port on 127.0.0.1, and a context/page are created
+        when the CDP endpoint has none yet."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+
+        mock_browser.contexts = []
+        mock_context.pages = []
+        mock_context.set_default_timeout = MagicMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(engine="obscura", obscura_port=9222)
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9222"
+        )
+        mock_browser.new_context.assert_called_once()
+        mock_context.new_page.assert_called_once()
+        assert driver._page is mock_page
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_quit_does_not_close_external_browser_unless_owned(
+        self,
+    ):
+        """quit() only invokes Playwright's own close()/stop() — which,
+        per Playwright's CDP semantics, disconnect rather than terminate
+        the remote browser process. The driver never holds (and so never
+        kills) a separate process handle for a supervised Obscura
+        instance; that ownership stays with
+        `parrot.mcp.obscura.ObscuraProcessManager`."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(engine="obscura")
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        context = driver._context
+        browser = driver._browser
+        playwright = driver._playwright
+
+        await driver.quit()
+
+        context.close.assert_called_once()
+        browser.close.assert_called_once()
+        playwright.stop.assert_called_once()
+        assert driver._page is None
+        assert driver._context is None
+        assert driver._browser is None
+        assert driver._playwright is None
 
 
 # ── Lazy Import ──────────────────────────────────────────────────

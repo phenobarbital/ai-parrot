@@ -150,3 +150,45 @@ class TestPlaywrightConfigImports:
         )
 
         assert PC is not None
+
+
+class TestPlaywrightConfigObscuraMode:
+    """FEAT-530 (TASK-2876): Obscura/CDP connection settings."""
+
+    def test_playwright_config_obscura_mode(self):
+        """Obscura mode preserves existing fields and carries CDP settings."""
+        config = PlaywrightConfig(
+            engine="obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            obscura_binary="/usr/local/bin/obscura",
+            obscura_port=9333,
+            obscura_stealth=True,
+            obscura_allow_private_network=True,
+        )
+
+        assert config.engine == "obscura"
+        assert config.cdp_endpoint_url == "http://127.0.0.1:9333"
+        assert config.obscura_binary == "/usr/local/bin/obscura"
+        assert config.obscura_port == 9333
+        assert config.obscura_stealth is True
+        assert config.obscura_allow_private_network is True
+        # Existing fields remain supported and unaffected.
+        assert config.browser_type == "chromium"
+        assert config.headless is True
+
+    def test_default_engine_is_playwright(self):
+        config = PlaywrightConfig()
+        assert config.engine == "playwright"
+        assert config.cdp_endpoint_url is None
+        assert config.obscura_binary is None
+        assert config.obscura_port == 9222
+        assert config.obscura_stealth is False
+        assert config.obscura_allow_private_network is False
+
+    def test_invalid_engine_raises(self):
+        with pytest.raises(ValueError, match="Invalid engine"):
+            PlaywrightConfig(engine="selenium")
+
+    def test_invalid_obscura_port_raises(self):
+        with pytest.raises(ValueError, match="obscura_port"):
+            PlaywrightConfig(obscura_port=0)

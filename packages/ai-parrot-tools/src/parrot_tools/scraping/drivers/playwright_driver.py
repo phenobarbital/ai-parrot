@@ -41,16 +41,36 @@ class PlaywrightDriver(AbstractDriver):
     async def start(self) -> None:
         """Launch browser and create a default context + page.
 
-        When ``config.user_data_dir`` is set, a *persistent context* is
-        launched over that profile directory instead of a fresh browser +
-        incognito context, so the page sees the profile's cookies, saved
-        sessions and credential store (``config.channel="chrome"`` opens
-        a real installed Google Chrome for real Chrome profiles).
+        When ``config.engine == "obscura"``, no browser is launched.
+        Instead, Playwright connects to a supervised Obscura CDP endpoint
+        via ``chromium.connect_over_cdp()`` (Obscura speaks CDP) and reuses
+        its default context/page if one already exists, falling back to
+        creating a new context/page otherwise. Process ownership of the
+        Obscura endpoint stays with
+        ``parrot.mcp.obscura.ObscuraProcessManager`` — this driver never
+        starts or stops that process.
+
+        Otherwise (``config.engine == "playwright"``, the default),
+        behavior is unchanged: when ``config.user_data_dir`` is set, a
+        *persistent context* is launched over that profile directory
+        instead of a fresh browser + incognito context, so the page sees
+        the profile's cookies, saved sessions and credential store
+        (``config.channel="chrome"`` opens a real installed Google Chrome
+        for real Chrome profiles).
         """
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
         browser_launcher = getattr(self._playwright, self.config.browser_type)
+
+        if self.config.engine == "obscura":
+            await self._start_obscura_cdp(browser_launcher)
+            self.logger.info(
+                "PlaywrightDriver connected to Obscura over CDP: endpoint=%s",
+                self._cdp_endpoint(),
+            )
+            return
+
         launch_kwargs: Dict[str, Any] = {
             "headless": self.config.headless,
             "slow_mo": self.config.slow_mo,
@@ -91,7 +111,16 @@ class PlaywrightDriver(AbstractDriver):
         )
 
     async def quit(self) -> None:
-        """Close browser and release resources."""
+        """Close browser and release resources.
+
+        Only Playwright-owned resources are closed here. In
+        ``config.engine == "obscura"`` (CDP) mode, ``Browser.close()``
+        disconnects Playwright's client and clears contexts it created —
+        per Playwright's own CDP semantics it does **not** terminate the
+        remote browser process, so the externally supervised Obscura
+        process is left running for
+        ``parrot.mcp.obscura.ObscuraProcessManager`` to manage.
+        """
         if self._context:
             await self._context.close()
             self._context = None
@@ -374,6 +403,45 @@ class PlaywrightDriver(AbstractDriver):
         return list(self._responses)
 
     # ── Internal Helpers ─────────────────────────────────────────
+
+    def _cdp_endpoint(self) -> str:
+        """Resolve the Obscura CDP endpoint URL from the config.
+
+        Returns:
+            ``config.cdp_endpoint_url`` if set, otherwise
+            ``http://127.0.0.1:{config.obscura_port}``.
+        """
+        return self.config.cdp_endpoint_url or (
+            f"http://127.0.0.1:{self.config.obscura_port}"
+        )
+
+    async def _start_obscura_cdp(self, browser_launcher: Any) -> None:
+        """Connect to a supervised Obscura endpoint over CDP.
+
+        Reuses the endpoint's default context/page when one already
+        exists (the common case for a supervised Obscura process),
+        falling back to creating a new context/page so every
+        ``AbstractDriver`` method sees a valid ``self._page``.
+
+        Args:
+            browser_launcher: The Chromium ``BrowserType`` from the
+                started Playwright instance.
+        """
+        endpoint = self._cdp_endpoint()
+        self._browser = await browser_launcher.connect_over_cdp(endpoint)
+
+        if self._browser.contexts:
+            self._context = self._browser.contexts[0]
+        else:
+            context_kwargs = self._build_context_kwargs()
+            context_kwargs.pop("storage_state", None)
+            self._context = await self._browser.new_context(**context_kwargs)
+        self._context.set_default_timeout(self.config.timeout * 1000)
+
+        if self._context.pages:
+            self._page = self._context.pages[0]
+        else:
+            self._page = await self._context.new_page()
 
     def _resolve_selector(self, selector: str) -> str:
         """Auto-detect and prefix XPath selectors for Playwright.
