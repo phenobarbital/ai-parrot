@@ -9,6 +9,7 @@ Import any event class from this package for convenience:
 SubscriberErrorEvent lives in meta.py (not here) because it is a
 meta-level event emitted by the registry, not by domain code.
 """
+
 from parrot.core.events.lifecycle.events.agent import (
     AgentInitializedEvent,
     AgentConfiguredEvent,
@@ -37,6 +38,7 @@ from parrot.core.events.lifecycle.events.tool import (
     ToolCallFailedEvent,
 )
 from parrot.core.events.lifecycle.events.message import MessageAddedEvent
+from parrot.core.events.lifecycle.events.memory import Stage2CompactionNeededEvent
 from parrot.core.events.lifecycle.events.flow import (
     FlowStartedEvent,
     FlowCompletedEvent,
@@ -72,6 +74,8 @@ __all__ = [
     "ToolCallFailedEvent",
     # Message domain
     "MessageAddedEvent",
+    # Memory domain (FEAT-525)
+    "Stage2CompactionNeededEvent",
     # Flow / node orchestration domain (FEAT-176 Phase 1.5)
     "FlowStartedEvent",
     "FlowCompletedEvent",

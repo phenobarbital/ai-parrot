@@ -237,10 +237,18 @@ def test_render_imports_no_compaction():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Widened `render_history`'s first parameter to
+`Optional[ConversationHistory] | Sequence[TurnView]` via a new
+`_iter_rows()` helper that dispatches by duck-typing (`.turns` attribute
+⇒ history, else a view sequence) and yields shared
+`(turn_id, chatbot_id, user_text, assistant_text)` rows consumed by the
+existing merge/alternation loop. `TurnView` imported only under
+`if TYPE_CHECKING:`. Blank `assistant_text` on a view renders as a blank
+row (suffix never rescues it). All 5 new tests plus the full 25-test
+FEAT-524 `test_render_history.py` regression suite pass unchanged
+(byte-identical plain-history output verified); full `tests/unit/memory/`
+suite (95 tests) green; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

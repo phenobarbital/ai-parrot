@@ -174,10 +174,22 @@ def test_apply_commit_boundary_and_flag():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/budget.py`: `MODEL_WINDOWS`
+starter table (longest-prefix-first matching via `_SORTED_PREFIXES`),
+`resolve_window`, `build_default_budget`, `compaction_disabled_by_env`
+(`PARROT_COMPACTION_DISABLED`, distinct from FEAT-380's variable),
+`apply_usage` (EWMA α=0.2, first-sample sets calibration directly,
+clamped [0.5, 2.0], returns the same object on a degenerate sample),
+`apply_commit` (4-arg contract per this task's Scope, superseding the
+3-arg summary in spec §2's code block — boundary replaced only when the
+commit's is non-`None`, `stage2_needed` OR'd, never cleared). Re-exports
+`EWMA_ALPHA`/`CALIBRATION_MIN`/`CALIBRATION_MAX`/`FALLBACK_WINDOW` from
+`models.py` rather than duplicating the literals. All 9 tests pass
+(5 parametrized `resolve_window` cases + 4 others); `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — followed this task's own `apply_commit`
+signature (`state, commit, tokenizer, provider_prompt_tokens`), which is
+more specific than and supersedes the spec §2 3-arg summary, per the
+task's explicit instruction.

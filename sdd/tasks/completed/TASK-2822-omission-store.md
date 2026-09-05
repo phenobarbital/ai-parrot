@@ -191,10 +191,19 @@ async def test_put_many(store):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/omission.py`:
+`content_id()` (blake2b-8, `om_` prefix), `EXPIRED_MESSAGE` format
+string, `OmissionStore` ABC (`ttl`, abstract `put`/`get`/`list_by_turn`/
+`clear`, concrete `put_many` looping over `put`), `InMemoryOmissionStore`
+(two dicts), `RedisOmissionStore` (shares an existing async client;
+content hash + turn-index hash of JSON lists; `expire` only when `ttl`
+is set), `FileOmissionStore` (`aiofiles`-based, `_omitted/{safe(session_key)}/
+{content_id}.txt` + `index.json`; `ttl` ignored with a debug log). All 7
+task-specified tests pass (parametrized ×3 backends + Redis-fake ttl +
+put_many).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Wrote the full `_RecordingRedis` fake in
+the test file (the task's Test Specification elided its body with
+`...`).

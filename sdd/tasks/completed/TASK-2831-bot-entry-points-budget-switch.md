@@ -225,10 +225,44 @@ def test_max_context_turns_ceiling_override(make_chatbot):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Switched all 4 `bots/base.py` render sites (`conversation`,
+`invoke`, `ask`, `ask_stream`) to `rendered_history, compaction_result =
+await self.render_context_history(conversation_history)` and the 3
+happy-path save sites to build a `CompactionCommit` via
+`estimate_prompt_tokens`/`build_compaction_commit` and pass
+`compaction=commit`; removed the now-unused `render_history` import.
+`bots/data.py`: same render + save switch. `bots/voice.py`: switched
+the `ask()` render site (its `CompactionResult` is discarded — that
+method has no save site, no rendered prompt to pair for calibration);
+the two transcript saves keep `compaction=None` by relying on the
+parameter's default (no source change needed there — already matched
+Scope's instruction). `bots/chatbot.py`: `max_context_turns` default
+`None` at all 4 sites (`getattr` fallback ×3, `_from_db` ×1), with a
+comment documenting the `_from_db` `value or default` / DB-`0` edge
+case per the task's own note. All 17 task-specified tests pass;
+`git diff --stat -- packages/ai-parrot/src/parrot/clients` confirmed
+empty (C11); full `tests/unit/bots`+`tests/unit/memory` regression
+(434 tests) green aside from the 5 independently-confirmed pre-existing
+flaky failures already documented in TASK-2825/2830's notes; lint
+diffed line-by-line against baseline across all 4 modified files —
+zero new findings (only line-number shifts in `data.py` from the
+import removal).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) `test_commit_reaches_add_turn` is
+parametrized over `["conversation", "invoke", "ask"]` only, not all
+four entry points as the acceptance-criteria bullet's "(×4)" implies —
+`ask_stream` has exactly one save site (used for both the completed and
+the partial/error case) and the Scope text is explicit that it "keeps
+compaction=None" there; testing it as a commit-carrying path would
+contradict that same instruction. Covered separately by
+`test_ask_stream_partial_save_no_commit` (renamed intent: also
+discovered `ask_stream` catches a mid-stream client exception
+internally and synthesizes a fallback `AIMessage` rather than
+propagating it — the test asserts on the persisted turn, not a raised
+exception). (2) `test_kill_switch_byte_equality`'s given assertion
+snapshot the expected render *after* running the entry point, which
+double-counts the round's own newly-saved turn; fixed by snapshotting
+history before the round (asserting full-list equality once list-length
+was corrected, not `[:len(expected)]`).

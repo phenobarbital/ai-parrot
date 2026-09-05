@@ -277,10 +277,49 @@ async def test_flush_failure_falls_back_to_plain(bot, database_history, monkeypa
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Added `_context_budget_raw`/`_budget_window_logged` to
+`AbstractBot.__init__` (before `configure_conversation_memory()` runs);
+changed `max_context_turns` default from `50` to `None` (verified via
+grep it was the only read of that attribute in `abstract.py`); added
+`context_budget` property, `render_context_history`,
+`estimate_prompt_tokens`, `build_compaction_commit`,
+`_register_recovery_tool`; extended `save_conversation_turn` with a
+keyword-only `compaction` parameter (reads the persisted `stage2_needed`
+flag before the write so the Stage-2 event fires exactly once, passes
+`compaction=` into `add_turn`, emits `Stage2CompactionNeededEvent` after
+`MessageAddedEvent` on the first False→True flip); called
+`_register_recovery_tool()` at the tail of `configure_conversation_memory`
+(covers both the success and in-memory-fallback branches). Created
+`core/events/lifecycle/events/memory.py` (`Stage2CompactionNeededEvent`)
+and wired it into `events/__init__.py`. All 7 task-specified tests in
+`test_context_budget.py` pass; the event was added to
+`test_concrete_events.py`'s parametrized `ALL_CLASSES` (201 events
+tests pass); `git diff --stat -- packages/ai-parrot/src/parrot/clients`
+confirmed empty (C11); broader `tests/unit/bots/`+`tests/unit/memory/`+
+`tests/unit/events/` regression (610 tests) green aside from 6
+independently-confirmed pre-existing failures (bisected via `git
+stash`, unrelated to this task: `test_flex_dashboard_agent`,
+`test_infographic_authoring_mixin`, 3× `test_pandasagent_stale_data_variables`,
+`test_agent_name_is_not_pii_field`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: `Stage2CompactionNeededEvent` is created here (spec lists it under Module 13) because this task is its emitter; `CompactionCommit` carries two telemetry fields (`history_estimate`, `dropped_turns`, default 0) beyond the spec's three so the event can report real numbers. | describe others if any
+**Deviations from spec**: (1) `Stage2CompactionNeededEvent` is created
+here (spec lists it under Module 13) because this task is its emitter;
+`CompactionCommit` carries two telemetry fields (`history_estimate`,
+`dropped_turns`, default 0) beyond the spec's three so the event can
+report real numbers — both per the task's own stated deviation. (2)
+Fixed two existing tests whose contracts this task's Scope explicitly
+authorized breaking: `test_memory_key_id.py::
+test_save_conversation_turn_takes_no_chatbot_id_argument` pinned the
+old 4-parameter `save_conversation_turn` signature — updated to expect
+the new keyword-only `compaction` parameter. `test_bot_history_wiring.py`'s
+`RecordingMemory` test double overrode the now-concrete `add_turn`
+(TASK-2826 hard cut: no subclass may override it anymore) — switched it
+to override `_store_turn` instead, keeping the same `"add_turn"` spy
+label since that is still semantically the write it observes. (3) Added
+`make_bot`/`event_recorder` fixtures to `tests/unit/bots/conftest.py`
+(referenced by this task's own Test Specification as pre-existing
+"conftest helpers" but did not exist yet) and a local `bot` fixture in
+`test_context_budget.py`, following the `RecordingClient`/`bot` fixture
+precedent in `tests/unit/memory/test_history_ownership.py`.

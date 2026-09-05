@@ -208,10 +208,15 @@ def test_needs_recount_on_mismatch():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-04
+**Notes**: Implemented `parrot/memory/compaction/tokens.py`:
+`TokenCounter` protocol, `TiktokenCounter` (lazy module-level `_ENCODINGS`
+cache keyed by encoding name), `HeuristicCounter`, `get_default_counter()`
+(tries `tiktoken.get_encoding("o200k_base")`, falls back to heuristic
+with a one-time warning via module logger), `count_turn()` (excludes
+`context_used`; sums canonical-JSON input + output + error token counts
+over `tool_invocations`), `needs_recount()`. All four task-specified
+tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
