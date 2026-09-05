@@ -16,16 +16,19 @@ The upstream `obscura` crate publicly re-exports `Browser`, `BrowserConfig`, `Pa
 
 ## Citations
 
-- path: `https://github.com/h4ckf0r0day/obscura/blob/main/crates/obscura/Cargo.toml`
-  lines: 247-289 (accessed 2026-09-05)
+- path: `https://github.com/h4ckf0r0day/obscura/blob/v0.2.2/crates/obscura/Cargo.toml`
+  lines: 3, 10-14, 16-24 (verified 2026-09-05, revision 2; the file is 31 lines — the original citation 247-289 did not exist)
   symbol: `obscura` crate features and dependencies
   excerpt: |
-    The crate is version 0.1.0, defaults to `api`, and defines `render` as
-    `api` plus `obscura-browser/render`; it depends on workspace browser/net
-    crates and Tokio.
+    version = "0.1.0"; features default=["api"], stealth, render =
+    ["api", "obscura-browser/render"]; `obscura-browser` and `obscura-net`
+    are optional **path** dependencies; `tokio` (rt) optional. No V8 and no
+    git dependency appear in this manifest — V8 enters through the workspace
+    path crates, and "git dependency" refers to how consumers pull the crate
+    (it is not on crates.io).
 
-- path: `https://github.com/h4ckf0r0day/obscura/blob/main/crates/obscura/src/lib.rs`
-  lines: 261-315 (accessed 2026-09-05)
+- path: `https://github.com/h4ckf0r0day/obscura/blob/v0.2.2/crates/obscura/src/lib.rs`
+  lines: 24-32 (verified 2026-09-05, revision 2; the file is 32 lines — the original citation 261-315 did not exist)
   symbol: public Rust API
   excerpt: |
     The crate publicly exports Browser, BrowserConfig, Cookie, CookieStore,
@@ -53,7 +56,9 @@ The upstream `obscura` crate publicly re-exports `Browser`, `BrowserConfig`, `Pa
   symbol: existing PyO3/Maturin packaging precedent
   excerpt: |
     ai-parrot's navrules package uses maturin with a Rust manifest and a PyO3
-    extension-module feature.
+    extension-module feature. Two more Rust crates live in core:
+    `packages/ai-parrot/src/parrot/yaml-rs/Cargo.toml` and
+    `packages/ai-parrot/src/parrot/codec-rs/Cargo.toml` (revision 2).
 
 ## Notes
 

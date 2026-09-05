@@ -9,6 +9,10 @@
     {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py", "symbol": "PlaywrightDriver.start", "lines": "15-105", "role": "Playwright launch and lifecycle implementation", "evidence": ["F001", "F002"], "confidence": "high"},
     {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py", "symbol": "PlaywrightConfig", "lines": "12-73", "role": "launch and context configuration", "evidence": ["F002"], "confidence": "high"},
     {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/driver_factory.py", "symbol": "DriverFactory", "lines": "1-80", "role": "driver selection seam", "evidence": ["F001", "F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/toolkit_models.py", "symbol": "DriverConfig", "lines": "15-60", "role": "closed Literal driver_type/browser fields consumed by both selection seams", "evidence": ["F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/driver_context.py", "symbol": "DriverRegistry", "lines": "36-60,188", "role": "toolkit session-mode driver selection seam", "evidence": ["F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/driver.py", "symbol": "SeleniumSetup.debugger_address", "lines": "68,108,184-187", "role": "existing Selenium attach-to-debugger seam", "evidence": ["F009"], "confidence": "high"},
+    {"path": "https://github.com/h4ckf0r0day/obscura/blob/v0.2.2/crates/obscura-cdp/src/server.rs", "symbol": "HTTP control plane", "lines": "86,177,208,736-740,786-800", "role": "/json/version served; webSocketDebuggerUrl hardcoded to 127.0.0.1", "evidence": ["F007"], "confidence": "high"},
     {"path": "packages/ai-parrot/src/parrot/mcp/integration.py", "symbol": "create_chrome_devtools_mcp_server", "lines": "1105-1190", "role": "external browser MCP server configuration", "evidence": ["F003"], "confidence": "high"},
     {"path": "packages/ai-parrot/src/parrot/bots/chrome.py", "symbol": "WebAgent.configure", "lines": "290-334", "role": "agent wiring for Chrome DevTools MCP", "evidence": ["F003"], "confidence": "high"},
     {"path": "packages/ai-parrot-server/src/parrot/mcp/chrome.py", "symbol": "ChromeManager", "lines": "8-70", "role": "managed local browser process lifecycle", "evidence": ["F003"], "confidence": "medium"},
@@ -17,8 +21,8 @@
     {"path": "packages/navrules/rust/Cargo.toml", "symbol": "navrules_native", "lines": "8-23", "role": "Rust extension crate precedent", "evidence": ["F004"], "confidence": "high"},
     {"path": "https://github.com/h4ckf0r0day/obscura", "symbol": "CDP, Playwright, and MCP surfaces", "lines": "README sections", "role": "upstream compatibility and limitation evidence", "evidence": ["F005", "F007"], "confidence": "medium"},
     {"path": "https://github.com/h4ckf0r0day/obscura/releases", "symbol": "v0.2.2", "lines": "139-199", "role": "selected upstream release", "evidence": ["F010"], "confidence": "high"},
-    {"path": "https://github.com/h4ckf0r0day/obscura/blob/main/crates/obscura/src/lib.rs", "symbol": "Browser/Page public API", "lines": "261-315", "role": "native Rust embedding surface", "evidence": ["F008"], "confidence": "medium"},
-    {"path": "https://github.com/h4ckf0r0day/obscura/blob/main/crates/obscura-mcp/src/lib.rs", "symbol": "obscura_mcp::run and browser tool dispatch", "lines": "2572-2696,3537-3624", "role": "direct MCP server surface", "evidence": ["F007"], "confidence": "medium"}
+    {"path": "https://github.com/h4ckf0r0day/obscura/blob/v0.2.2/crates/obscura/src/lib.rs", "symbol": "Browser/Page public API", "lines": "24-32", "role": "native Rust embedding surface", "evidence": ["F008"], "confidence": "medium"},
+    {"path": "https://github.com/h4ckf0r0day/obscura/blob/v0.2.2/crates/obscura-mcp/src/lib.rs", "symbol": "obscura_mcp::run and browser tool dispatch", "lines": "223-228,235-238,314-720,742-759", "role": "direct MCP server surface", "evidence": ["F007"], "confidence": "medium"}
   ],
   "constraints": [
     {"claim": "The first adapter should preserve AbstractDriver and DriverFactory contracts.", "evidence": ["F001", "F002"]},
@@ -26,8 +30,10 @@
     {"claim": "The direct Obscura MCP option can use the existing external stdio MCP configuration model, but introduces a separate browser tool contract.", "evidence": ["F003", "F004", "F007"]},
     {"claim": "Native PyO3 embedding is exposed by upstream Rust APIs but carries V8, Tokio, dependency pinning, and packaging risks.", "evidence": ["F004", "F008"]},
     {"claim": "Rendering and browser behavior require compatibility tests against representative pages before default adoption.", "evidence": ["F005", "F006"]},
-    {"claim": "Selenium's CDP support does not establish direct control of an arbitrary Obscura CDP WebSocket; a WebDriver bridge or upstream WebDriver implementation would be required.", "evidence": ["F009"]},
-    {"claim": "The selected upstream release is Obscura v0.2.2 on Linux.", "evidence": ["F010"]}
+    {"claim": "Selenium's CDP support does not establish direct control of an arbitrary Obscura CDP WebSocket; SeleniumSetup already exposes debugger_address, so an end-to-end experiment settles it before any WebDriver bridge is proposed.", "evidence": ["F009"]},
+    {"claim": "The selected upstream release is Obscura v0.2.2 on Linux.", "evidence": ["F010"]},
+    {"claim": "Obscura's /json/version advertises a loopback webSocketDebuggerUrl, so remote or containerized Obscura must be reached by explicit ws:// endpoint (chrome-devtools-mcp --ws-endpoint, Playwright connect_over_cdp), and create_chrome_devtools_mcp_server must stop launching Chrome implicitly for Obscura mode.", "evidence": ["F003", "F007"]},
+    {"claim": "Engine selection must be threaded through DriverConfig, DriverRegistry and DriverFactory; DriverConfig's Literal fields are closed today.", "evidence": ["F002"]}
   ],
   "recommendation": {
     "next_step": "sdd-spec",

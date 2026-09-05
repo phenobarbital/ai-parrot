@@ -46,6 +46,24 @@ Selenium WebDriver is based on the W3C WebDriver protocol and its Python Chromiu
     plus a CDP domain surface. The reviewed README does not advertise WebDriver
     or ChromeDriver support.
 
+- path: `packages/ai-parrot-tools/src/parrot_tools/scraping/driver.py`
+  lines: 68, 108, 184-187 (revision 2)
+  symbol: `SeleniumSetup.debugger_address`
+  excerpt: |
+    `SeleniumSetup` already accepts `debugger_address` and sets
+    `options.debugger_address` on ChromeOptions ("Attach to an existing
+    Chrome started with --remote-debugging-port"). The attach seam exists;
+    only the end-to-end result against Obscura is unknown.
+
 ## Notes
+
+**Revision 2 — experiment for the compatibility matrix**: start
+`obscura serve --port 9222 --allow-private-network` (v0.2.2, render build),
+then `SeleniumSetup(browser="chrome", debugger_address="127.0.0.1:9222")`
+and run the `AbstractDriver` contract tests through `SeleniumDriver`.
+Outcome PASS → Selenium gains Obscura via the existing option, no bridge.
+Outcome FAIL (expected: ChromeDriver version/handshake checks against a
+non-Chrome `/json/version`) → record the failure mode; a WebDriver bridge
+becomes a separate proposal only if Selenium parity is actually required.
 
 The realistic Selenium choices are to keep Selenium for Chrome and use Obscura through the Playwright/CDP path, build a W3C WebDriver-to-CDP bridge, or add a WebDriver server to Obscura upstream. A Selenium-facing `ObscuraDriver` that merely points `debugger_address` at Obscura is unsupported until an end-to-end experiment proves ChromeDriver accepts and controls the non-Chrome endpoint.
