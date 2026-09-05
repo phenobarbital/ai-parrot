@@ -53,10 +53,21 @@ class DriverFactory:
 
                 Key fields:
 
-                - ``driver_type``: ``"selenium"`` or ``"playwright"``
-                  (default: ``"selenium"``)
-                - ``browser``: Browser name (default: ``"chrome"``)
+                - ``driver_type``: ``"selenium"``, ``"playwright"``, or
+                  ``"obscura"`` (default: ``"selenium"``). ``"obscura"``
+                  returns a ``PlaywrightDriver`` connected over CDP to a
+                  supervised Obscura process (see
+                  ``parrot.mcp.obscura.ObscuraProcessManager``) — it does
+                  not launch a browser itself.
+                - ``browser``: Browser name (default: ``"chrome"``).
+                  Ignored for ``driver_type="obscura"``, which always
+                  connects over Chromium CDP (Obscura speaks CDP as a
+                  Chromium-compatible engine).
                 - ``headless``: Whether to run headless (default: ``True``)
+                - ``cdp_endpoint_url``, ``obscura_binary``,
+                  ``obscura_port``, ``obscura_stealth``,
+                  ``obscura_allow_private_network``: forwarded to
+                  ``PlaywrightConfig`` when ``driver_type="obscura"``.
                 - Plus driver-specific options.
 
         Returns:
@@ -108,6 +119,44 @@ class DriverFactory:
             logger.info("Creating PlaywrightDriver (browser=%s)", pw_browser)
             return PlaywrightDriver(pw_config)
 
+        if driver_type == "obscura":
+            from .drivers.playwright_config import (
+                PlaywrightConfig,
+            )
+            from .drivers.playwright_driver import (
+                PlaywrightDriver,
+            )
+
+            # Obscura is a CDP-speaking, Chromium-compatible engine — it is
+            # never selected via the generic `browser` mapping, and it must
+            # not silently fall back to launching Chrome/Chromium locally.
+            pw_config = PlaywrightConfig(
+                browser_type="chromium",
+                engine="obscura",
+                headless=headless,
+                slow_mo=config.get("slow_mo", 0),
+                timeout=config.get("default_timeout", 30),
+                viewport=config.get("viewport"),
+                locale=config.get("locale"),
+                timezone=config.get("timezone"),
+                proxy=config.get("proxy"),
+                ignore_https_errors=config.get("ignore_https_errors", False),
+                storage_state=config.get("storage_state"),
+                cdp_endpoint_url=config.get("cdp_endpoint_url"),
+                obscura_binary=config.get("obscura_binary"),
+                obscura_port=config.get("obscura_port", 9222),
+                obscura_stealth=config.get("obscura_stealth", False),
+                obscura_allow_private_network=config.get(
+                    "obscura_allow_private_network", False
+                ),
+            )
+            logger.info(
+                "Creating PlaywrightDriver in Obscura CDP mode (endpoint=%s)",
+                pw_config.cdp_endpoint_url
+                or f"http://127.0.0.1:{pw_config.obscura_port}",
+            )
+            return PlaywrightDriver(pw_config)
+
         if driver_type == "selenium":
             from .drivers.selenium_driver import (
                 SeleniumDriver,
@@ -133,7 +182,7 @@ class DriverFactory:
 
         raise ValueError(
             f"Unknown driver_type: {driver_type!r}. "
-            "Supported values: 'selenium', 'playwright'."
+            "Supported values: 'selenium', 'playwright', 'obscura'."
         )
 
     @staticmethod

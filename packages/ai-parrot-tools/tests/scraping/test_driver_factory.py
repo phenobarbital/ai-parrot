@@ -49,6 +49,73 @@ class TestDriverFactoryCreate:
             DriverFactory.create({"driver_type": "puppeteer"})
 
 
+# ── Obscura Driver Selection (FEAT-530, TASK-2877) ──────────────
+
+
+class TestDriverFactoryObscura:
+    @patch(
+        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
+    )
+    def test_factory_creates_obscura_playwright_driver(self, mock_cls):
+        """driver_type='obscura' returns PlaywrightDriver with CDP settings."""
+        mock_cls.return_value = MagicMock(spec=AbstractDriver)
+        driver = DriverFactory.create(
+            {
+                "driver_type": "obscura",
+                "cdp_endpoint_url": "http://127.0.0.1:9333",
+                "obscura_binary": "/usr/local/bin/obscura",
+                "obscura_port": 9333,
+                "obscura_stealth": True,
+                "obscura_allow_private_network": True,
+            }
+        )
+
+        mock_cls.assert_called_once()
+        pw_config = mock_cls.call_args.args[0]
+        assert pw_config.engine == "obscura"
+        assert pw_config.browser_type == "chromium"
+        assert pw_config.cdp_endpoint_url == "http://127.0.0.1:9333"
+        assert pw_config.obscura_binary == "/usr/local/bin/obscura"
+        assert pw_config.obscura_port == 9333
+        assert pw_config.obscura_stealth is True
+        assert pw_config.obscura_allow_private_network is True
+        assert isinstance(driver, AbstractDriver)
+
+    @patch(
+        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
+    )
+    def test_obscura_ignores_browser_field_forces_chromium(self, mock_cls):
+        """`browser` is irrelevant for Obscura — it always connects over
+        Chromium CDP and must never silently fall back to Chrome/Chromium
+        launch."""
+        mock_cls.return_value = MagicMock(spec=AbstractDriver)
+        DriverFactory.create({"driver_type": "obscura", "browser": "firefox"})
+
+        pw_config = mock_cls.call_args.args[0]
+        assert pw_config.browser_type == "chromium"
+        assert pw_config.engine == "obscura"
+
+    @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
+    @patch(
+        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
+    )
+    def test_factory_preserves_selenium_and_playwright_launch_modes(
+        self, mock_pw_cls, mock_selenium_cls
+    ):
+        """Adding 'obscura' does not change selenium/playwright dispatch."""
+        mock_selenium_cls.return_value = MagicMock(spec=AbstractDriver)
+        selenium_driver = DriverFactory.create({"driver_type": "selenium"})
+        assert isinstance(selenium_driver, AbstractDriver)
+        mock_selenium_cls.assert_called_once()
+
+        mock_pw_cls.return_value = MagicMock(spec=AbstractDriver)
+        pw_driver = DriverFactory.create({"driver_type": "playwright"})
+        assert isinstance(pw_driver, AbstractDriver)
+        mock_pw_cls.assert_called_once()
+        pw_config = mock_pw_cls.call_args.args[0]
+        assert pw_config.engine == "playwright"
+
+
 # ── Browser Mapping ──────────────────────────────────────────────
 
 
