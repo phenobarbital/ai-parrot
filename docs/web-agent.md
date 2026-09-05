@@ -28,10 +28,13 @@ profile instead, see [WebNavigatorAgent](web-navigator-agent.md).
 WebAgent (BasicAgent)
    │  configure()
    ▼
-add_chrome_devtools_mcp_server(browser_url=..., headless=..., user_data_dir=...)
+add_chrome_devtools_mcp_server(browser_url=..., headless=..., ensure_running=True)
    │
-   ├── ChromeManager (parrot.mcp.chrome)  ── launches Chrome with
-   │      --remote-debugging-port=<port> if nothing answers on it
+   ├── ensure_chrome_running()  ── only when ensure_running=True and the host
+   │      │                        is loopback (skipped with auto_connect=True)
+   │      └── ChromeManager (parrot.mcp.chrome, async: aiohttp probe +
+   │            asyncio subprocess) ── launches Chrome with
+   │            --remote-debugging-port=<port> if nothing answers on it
    │
    └── MCP stdio client ──► npx -y chrome-devtools-mcp@latest --browser-url=http://127.0.0.1:9222 ...
                                    │
@@ -40,6 +43,12 @@ add_chrome_devtools_mcp_server(browser_url=..., headless=..., user_data_dir=...)
 
 `ChromeConfig` (Pydantic) captures the subset of `chrome-devtools-mcp`
 flags AI-Parrot needs and renders them with `to_mcp_args()`.
+
+`create_chrome_devtools_mcp_server()` is a pure config builder — it never
+starts a browser. Starting (or reusing) the managed local Chrome is the job
+of the async `ensure_chrome_running()` helper, which the
+`add_chrome_devtools_mcp_server()` hook awaits before connecting. Pass
+`ensure_running=False` when you manage the browser yourself.
 
 ## Requirements
 
@@ -60,7 +69,7 @@ async def main():
         chrome_config=ChromeConfig(headless=False, viewport="1920x1080"),
         llm="google:gemini-2.5-flash",
     )
-    await agent.configure()   # starts Chrome (if needed) + the MCP server
+    await agent.configure()   # awaits Chrome startup (if needed) + the MCP server
     result = await agent.ask(
         "Go to https://quotes.toscrape.com, open the 'love' tag and list the authors"
     )
@@ -82,7 +91,7 @@ asyncio.run(main())
 | `executable_path` | `None` | Explicit Chrome binary. |
 | `isolated` | `False` | Temporary user-data-dir, cleaned up on close. |
 | `no_usage_statistics` | `True` | Opt out of `chrome-devtools-mcp` telemetry. |
-| `auto_connect` | `False` | Let `chrome-devtools-mcp` discover a running local Chrome (Chrome ≥ 144). Skips `ChromeManager`. |
+| `auto_connect` | `False` | Let `chrome-devtools-mcp` discover a running local Chrome (Chrome ≥ 144). Skips `ensure_chrome_running()` / `ChromeManager`. |
 
 `WebAgent` itself also accepts `default_timeout_ms` (per-test timeout for
 `run_tests`, default 60 s) and `screenshot_dir` (where failure screenshots
@@ -90,8 +99,10 @@ are saved).
 
 ## Attaching to your own Chrome (remote debugging)
 
-By default `ChromeManager` launches a **profile-less** Chrome when nothing
-answers on the debugging port. To reuse your sessions, extensions and saved
+By default `ensure_chrome_running()` has `ChromeManager` launch a
+**profile-less** Chrome when nothing answers on the debugging port (the
+probe and the launch are fully async, so `configure()` never blocks the
+event loop while Chrome comes up). To reuse your sessions, extensions and saved
 logins, start Chrome yourself with the debugging port open and a dedicated
 user-data directory, then point `WebAgent` at it.
 
@@ -143,6 +154,11 @@ Any bot can gain the same capability without subclassing `WebAgent`:
 
 ```python
 await bot.add_chrome_devtools_mcp_server(browser_url="http://127.0.0.1:9222")
+
+# Browser managed elsewhere (container, CI, a remote host): skip the launch
+await bot.add_chrome_devtools_mcp_server(
+    browser_url="http://127.0.0.1:9222", ensure_running=False
+)
 ```
 
 ## QA test execution

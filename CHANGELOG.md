@@ -55,6 +55,33 @@ Spec: `sdd/specs/conversation-history-ownership.spec.md`.
 Legacy un-segmented Redis/File histories are **re-keyed lazily on first read**;
 the legacy record is left in place for rollback. No offline migration job.
 
+### Fixed
+
+#### Hotfix `chromemanager-async-migration`: async `ChromeManager` (requests → aiohttp)
+
+`ChromeManager` (`parrot.mcp.chrome`, ai-parrot-server) probed and launched
+Chrome with `requests`, `subprocess` and `time.sleep`, and was reached from the
+async `add_chrome_devtools_mcp_server()` hook — so `WebAgent.configure()` could
+block the event loop for 10+ seconds while Chrome came up.
+Spec: `sdd/specs/chromemanager-async-migration.spec.md`.
+
+- `ChromeManager.is_running()`, `start(headless=True, timeout=10.0)` and
+  `stop()` are now coroutines (aiohttp probe of `/json/version`,
+  `asyncio.create_subprocess_exec`, `asyncio.sleep`/`wait_for`). The
+  `requests` import is gone. `is_chrome_running()` remains as a deprecated
+  coroutine alias of `is_running()`; `is_port_open()` was removed.
+- `create_chrome_devtools_mcp_server()` no longer launches Chrome as a side
+  effect — it is a pure `MCPServerConfig` builder. Callers that built a
+  config and called `add_mcp_server()` themselves must now call the new
+  `ensure_chrome_running(browser_url, headless=False)` coroutine (or use the
+  mixin hook).
+- `MCPEnabledMixin.add_chrome_devtools_mcp_server()` gained
+  `ensure_running: bool = True`: it awaits `ensure_chrome_running()` before
+  connecting (skipped when `auto_connect=True`). `WebAgent` behaviour is
+  unchanged. `MCPEnabledMixin.shutdown()` now awaits `ChromeManager.stop()`.
+- The `WebAgent` unit tests no longer spawn a real Chrome when calling the
+  factory with default arguments.
+
 ### Added
 
 #### FEAT-520: GraphIndex Postgres Backend — Bitemporal Plane + One-Pass Hybrid Retrieval
