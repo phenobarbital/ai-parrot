@@ -290,7 +290,7 @@ structured-output schema.
 
 | | `WebNavigatorAgent` | `WebAgent` |
 |---|---|---|
-| Browser control | Playwright/Selenium launch Chrome | Attaches to a running Chrome via CDP |
+| Browser control | Playwright/Selenium launch Chrome | Attaches to a running Chrome via CDP (starts one asynchronously if none answers, unless `ensure_running=False`) |
 | What the LLM does | Picks a catalogued action (deterministic replay) | Navigates freely with DevTools tools |
 | Profile | `user_data_dir` + `profile_directory` in the constructor | `--user-data-dir` when starting Chrome |
 | Extra deps | `playwright` or `selenium` | Node / `npx` (`chrome-devtools-mcp`) |
