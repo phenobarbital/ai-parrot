@@ -69,7 +69,7 @@
       "title": "Register the native Obscura MCP server",
       "feature_id": "FEAT-530",
       "feature": "obscura-new-browser-headless",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,8 +79,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-05T15:59:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2878-obscura-native-mcp.md"
+      "completed_at": "2026-09-05T16:21:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2878-obscura-native-mcp.md"
     },
     {
       "id": "TASK-2879",
