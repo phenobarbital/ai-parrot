@@ -17,7 +17,7 @@ judgment around it (CHANGELOG wording, safety gates, the publish decision).
 ## Usage
 
 ```
-/release patch                  # 0.26.1 -> 0.26.2 across all 11 packages
+/release patch                  # 0.28.1 -> 0.28.2 across all 28 packages
 /release minor
 /release major
 /release patch --only ai-parrot ai-parrot-server
@@ -27,11 +27,23 @@ judgment around it (CHANGELOG wording, safety gates, the publish decision).
 
 ## How versioning works here
 
-- **11 distributions**, each with its own independent version. Ten read it
+- **28 distributions**, each with its own independent version. Ten read it
   from a `version.py` (`dynamic = ["version"]`); **`navrules` repeats the
   number in three files** — `src/navrules/__init__.py`, `pyproject.toml`,
-  `rust/Cargo.toml` — which `release.py` keeps in lockstep.
-- Five siblings pin `ai-parrot>=<core>`; a core bump re-pins all of them.
+  `rust/Cargo.toml` — and **`parrot-codec` in two** (`pyproject.toml` +
+  `Cargo.toml`), which `release.py` keeps in lockstep.
+- The **15 `ai-parrot-client-<provider>` LLM-client satellites** (FEAT-523)
+  and `ai-parrot-openlit-bridge` keep a *static* `version = "X.Y.Z"` in
+  their `pyproject.toml`. `release.py` and the Makefile discover the
+  satellites by globbing `packages/ai-parrot-client-*/` — a new provider
+  needs no registration. Per-satellite alias: `--only client-anthropic`.
+- Twenty siblings pin `ai-parrot>=<core>` (the five classic ones plus the 15
+  client satellites); a core bump re-pins all of them.
+- **First publish of a NEW distribution name is manual.** `release.yml`
+  publishes via PyPI trusted publishing, which can only upload to a project
+  that already exists (or has a pending publisher). Bootstrap a new satellite
+  with `make build-clients publish-clients` (twine, credentials from
+  `~/.pypirc`) once; every later version then ships from `release.yml`.
 - **The git tag is the core `ai-parrot` version** (`0.26.1`, `0.26.0`, …),
   lightweight, not annotated.
 - `.github/workflows/release.yml` fires on `release: [created]`, builds all

@@ -135,6 +135,9 @@
   font-weight: var(--font-weight-semibold);
   color: var(--neutral-text);
 }
+.a2ui-html-document {
+  display: block;
+}
 .a2ui-icon {
   display: inline-flex;
   height: calc(var(--spacing) * 4);

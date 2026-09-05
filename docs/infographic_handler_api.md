@@ -32,14 +32,16 @@ All endpoints live on `InfographicTalk`, which subclasses `AgentTalk`. Routes ar
 | `GET`  | `/api/v1/agents/infographic/themes` | List available themes |
 | `GET`  | `/api/v1/agents/infographic/themes/{name}` | Get a theme definition |
 | `POST` | `/api/v1/agents/infographic/themes` | Register a custom theme (global) |
+| `POST` | `/api/v1/agents/infographic/render` | Deterministic, bot-less render (FEAT-327) — no `{agent_id}`, no LLM; `?async=true` returns `202 {"job_id": ...}` |
+| `GET`  | `/api/v1/agents/infographic/render/jobs/{job_id}` | Poll an async render job's status (FEAT-327/TASK-1891) |
 
-Implementation reference: `packages/ai-parrot/src/parrot/handlers/infographic.py`.
+Implementation reference: `packages/ai-parrot-server/src/parrot/handlers/infographic.py`.
 
 ---
 
 ## 3. Content Negotiation (Generation)
 
-The generation endpoint can return **HTML** or **JSON** depending on what the caller asks for. Negotiation logic lives in `_negotiate_accept()` (`handlers/infographic.py:384-404`).
+The generation endpoint can return **HTML** or **JSON** depending on what the caller asks for. Negotiation logic lives in `_negotiate_accept()` (`packages/ai-parrot-server/src/parrot/handlers/infographic.py:819`).
 
 Priority (highest wins):
 
@@ -428,6 +430,17 @@ type InfographicResponse = {
 
 The JSON generation endpoint wraps this in `{ "infographic": InfographicResponse }`.
 
+> **FEAT-527 note**: this handler's `POST /{agent_id}` (LLM-authored) and
+> `POST /render` (deterministic) generation lanes do **not** carry an
+> `a2ui_envelope` — `AbstractBot.get_infographic()` and the deterministic
+> `RenderResponse` (`model_config = ConfigDict(extra="forbid")`) are
+> explicit Non-Goals of FEAT-527's dual-emit work (candidate follow-up).
+> The dual-emit `a2ui_envelope` contract lives on the **chat** path instead
+> (`AgentTalk`'s `output_mode: infographic`/`a2ui` JSON envelope, produced
+> via `InfographicToolkit`/`PandasAgent`/`BaseBot`) — see
+> `docs/toolkits/infographic_toolkit.md` "HTTP Response Shape" and
+> `docs/outputs/a2ui-v1.md` "Infographics: dual emission".
+
 ---
 
 ## 9. Known Limitations (v1)
@@ -462,8 +475,8 @@ This is a suggestion for the frontend spec, not a binding contract:
 
 | Concern | File |
 |---|---|
-| Handler class & routes | `packages/ai-parrot/src/parrot/handlers/infographic.py` |
-| Route registration | `packages/ai-parrot/src/parrot/manager/manager.py:727-749` |
+| Handler class & routes | `packages/ai-parrot-server/src/parrot/handlers/infographic.py` |
+| Route registration | `packages/ai-parrot-server/src/parrot/manager/manager.py:2151-2180` |
 | SDK helpers (`list_templates`, `register_template`, …) | `packages/ai-parrot/src/parrot/helpers/infographics.py` |
 | Block / envelope models | `packages/ai-parrot/src/parrot/models/infographic.py` |
 | Built-in templates | `packages/ai-parrot/src/parrot/models/infographic_templates.py` |

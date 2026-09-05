@@ -64,6 +64,7 @@ from parrot.outputs.a2ui.renderers import (
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.catalog.parrot.htmldocument import parse_html_document_placeholder_title
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.a2ui.serialization import serialize as serialize_a2ui_message
 from parrot.outputs.cards import (
@@ -429,8 +430,26 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
     def _render_Text(self, node: BasicNode, state: _RenderState) -> ACElement:
         props = node.model_extra or {}
         role = None
+        extensions: dict[str, Any] = {}
         if node.metadata is not None and node.metadata.extensions is not None:
-            role = node.metadata.extensions.root.get("parrot_role")
+            extensions = node.metadata.extensions.root
+            role = extensions.get("parrot_role")
+
+        if role == "html_document":
+            # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
+            # HTML — adaptive_cards cannot embed it either, so it ALWAYS
+            # degrades: a TextBlock with the title, plus a top-level
+            # Action.OpenUrl to the signed artifact URL when one exists
+            # (same bottom-action-bar convention as a Button's own
+            # `functionCall=openUrl`, `_render_Button` above). Recorded.
+            state.degradations.append(degradation_record(node, "adaptive_cards cannot embed HtmlDocument"))
+            placeholder = str(props.get("text") or "")
+            title = parse_html_document_placeholder_title(placeholder)
+            src_url = extensions.get("parrot_src_url")
+            if src_url:
+                state.actions.append(ActionOpenUrl(title=title or "Open document", url=str(src_url)))
+            return TextBlock(text=title, weight="Bolder")
+
         kwargs: dict[str, Any] = {}
         if role in _TITLE_ROLES:
             kwargs["size"] = "Large"

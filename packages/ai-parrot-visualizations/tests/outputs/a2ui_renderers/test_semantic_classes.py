@@ -182,7 +182,40 @@ class TestGoldensUntouched:
         # (TASK-2715); catalog/parrot/__init__.py registering the new
         # `filterbar` module in its import list is the one other
         # unavoidable touch — every new catalog component requires it.
-        assert all("filterbar" in c or c.endswith("catalog/parrot/__init__.py") for c in changed), changed
+        #
+        # FEAT-527 permits three further, explicit, spec-sanctioned classes
+        # of change:
+        # 1. TASK-2859/2860: "FEAT-493 froze them for its scope; this
+        #    feature legitimately changes lower() output for
+        #    Infographic/Chart/KPICard/DataTable" (spec §7 "Golden
+        #    fixtures"). Presentation-parity props (chart types/layout,
+        #    KPICard icon/color, DataTable style, Infographic half-width Row
+        #    grouping) are additive and gated on the value being present, so
+        #    none of the FROZEN goldens actually changed byte-for-byte —
+        #    only the `lower()` source allowing the new behavior did.
+        # 2. TASK-2862: the generic `tool_only` registration gate
+        #    (`catalog/base.py`, `catalog/__init__.py`) — additive, mirrors
+        #    the existing `requires_actions` gate mechanism.
+        # 3. TASK-2863: a brand-new component, `HtmlDocument` (spec G5) —
+        #    same "new component" precedent as `filterbar.py`.
+        _FEAT_527_FROZEN_LOWER_FILES = (
+            "catalog/parrot/chart.py",
+            "catalog/parrot/datatable.py",
+            "catalog/parrot/infographic.py",
+            "catalog/parrot/kpicard.py",
+        )
+        _FEAT_527_TOOL_ONLY_GATE_FILES = (
+            "catalog/base.py",
+            "catalog/__init__.py",
+        )
+        assert all(
+            "filterbar" in c
+            or "htmldocument" in c
+            or c.endswith("catalog/parrot/__init__.py")
+            or c.endswith(_FEAT_527_FROZEN_LOWER_FILES)
+            or c.endswith(_FEAT_527_TOOL_ONLY_GATE_FILES)
+            for c in changed
+        ), changed
 
 
 class TestTailwindCoverageIntegration:

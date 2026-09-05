@@ -17,8 +17,10 @@ from parrot.knowledge.wiki.codex.installer import (
 
 
 @pytest.fixture
-def repo(tmp_path: Path) -> Path:
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / ".git").mkdir()
+    monkeypatch.setenv("PARROT_LIBRARY_DIR", str(tmp_path / "missing-library"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "global"))
     return tmp_path
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "parrot_codec"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Optional Rust columnar-transform extension for parrot.tools.compression (FEAT-380)"
 

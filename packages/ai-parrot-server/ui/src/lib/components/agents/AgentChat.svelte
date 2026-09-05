@@ -58,6 +58,7 @@
   import * as canvasTabManager from "./canvas/canvas-tab-manager.svelte.js";
   import { createBlock, isCanvasBlockArray } from "./canvas/canvas-block-types";
   import type { CanvasBlock } from "./canvas/canvas-block-types";
+  import { buildInfographicTabData } from "./canvas/infographic-tab-builder";
   import IntegrationsMenu from "./integrations/IntegrationsMenu.svelte";
   import ConnectIntegrationPill from "./integrations/ConnectIntegrationPill.svelte";
   import { features } from "$lib/features";
@@ -1025,6 +1026,7 @@
                         ? responseText
                         : null,
                   sources: resolveAgentSources(agentResult.sources),
+                  a2ui_envelope: agentResult.a2ui_envelope,
                 };
               }
             }
@@ -1365,6 +1367,7 @@
                   ? responseText
                   : null,
             sources: resolveAgentSources(result.sources),
+            a2ui_envelope: result.a2ui_envelope,
           };
         }
       }
@@ -1549,6 +1552,7 @@
         output_mode: effectiveOutputMode,
         htmlResponse: isInteractive ? null : isHtml ? responseText : null,
         sources: resolveAgentSources(result.sources),
+        a2ui_envelope: result.a2ui_envelope,
         // Spoken answer (present only when TTS succeeded) — kept in-memory only.
         // FEAT-169: in avatar mode, audio comes from the LiveKit room — do not play audio_base64
         audio_base64: avatarLive ? undefined : result.audio_base64,
@@ -1845,30 +1849,15 @@
    * fall back to the URL (iframe src).
    */
   function maybeOpenInfographicCanvas(message: AgentMessage) {
-    if (message.output_mode !== "infographic") return;
-
-    const meta = message.metadata;
-    const inlineHtml =
-      !meta?.html_inline_omitted && typeof message.output === "string"
-        ? message.output
-        : "";
-    const url = meta?.html_url;
-
-    const common = { template: meta?.template_name, theme: meta?.theme };
-    let tabData: {
-      mode: "html";
-      html?: string;
-      url?: string;
-      template?: string;
-      theme?: string;
-    } | null = null;
-    if (inlineHtml.includes("<html") || inlineHtml.includes("<!DOCTYPE")) {
-      tabData = { mode: "html", html: inlineHtml, ...common };
-    } else if (url) {
-      tabData = { mode: "html", url, ...common };
-    }
+    // FEAT-527: dual-emit routing — opens in mode:"a2ui" when features.a2ui
+    // is on and the turn carries an a2ui_envelope with an Infographic/Report
+    // root; otherwise falls back to the pre-existing HTML tab logic
+    // (byte-identical when the flag is off or no envelope is present). See
+    // `buildInfographicTabData` for the full decision table.
+    const tabData = buildInfographicTabData(message, features);
     if (!tabData) return;
 
+    const meta = message.metadata;
     canvasTabManager.initCanvas();
     const title = meta?.template_name
       ? `Infographic (${meta.template_name})`

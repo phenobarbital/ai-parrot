@@ -7,7 +7,8 @@
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
 		install-supertonic injection-model docker-tool-worker docker-integrations docker-dev \
-		apply-commcenter-ddl
+		apply-commcenter-ddl build-clients publish-clients \
+		bump-all bump-patch-clients bump-minor-clients bump-major-clients
 
 # Python version to use
 PYTHON_VERSION := 3.12
@@ -369,6 +370,25 @@ release: lint test clean check-registry build-rust build-server-ui
 	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
 	uv publish dist/navrules-*.tar.gz dist/navrules-*.whl
 	uv publish dist/parrot_codec-*.tar.gz dist/parrot_codec-*.whl
+	@$(MAKE) --no-print-directory build-clients publish-clients
+
+# Build wheel + sdist for every ai-parrot-client-<provider> satellite into
+# dist/ (pure-Python PEP 420 namespace packages — no Rust/Cython step).
+build-clients:
+	@for p in $(CLIENT_PACKAGES) ai-parrot-openlit-bridge; do \
+		echo "==> uv build --package $$p"; \
+		uv build --package $$p --out-dir dist || exit 1; \
+	done
+
+# Upload the client satellites with twine (credentials from ~/.pypirc).
+# The FIRST publish of a new distribution name MUST go through here:
+# release.yml's trusted publisher can only upload to a PyPI project that
+# already exists (or has a pending publisher configured). Once every
+# satellite exists on PyPI, later versions ship from release.yml like the
+# other siblings. `--skip-existing` makes a re-run after a partial upload safe.
+publish-clients:
+	uvx twine check dist/ai_parrot_client_* dist/ai_parrot_openlit_bridge*
+	uvx twine upload --skip-existing dist/ai_parrot_client_* dist/ai_parrot_openlit_bridge*
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -575,10 +595,14 @@ distclean:
 #   ai-parrot-embeddings -> packages/ai-parrot-embeddings/src/parrot/embeddings/version.py
 #   ai-parrot-visualizations -> packages/ai-parrot-visualizations/src/parrot/outputs/formats/version.py
 #   ai-parrot-integrations -> packages/ai-parrot-integrations/src/parrot/integrations/version.py
+#   ai-parrot-client-<provider> -> packages/ai-parrot-client-<provider>/pyproject.toml
+#                                  (FEAT-523: static `version = "X.Y.Z"`, no version.py)
 #
 # bump-patch / bump-minor / bump-major bump the CORE package and sync
-# the ai-parrot>= dependency in tools/loaders pyproject.toml.
-# Use bump-patch-tools / bump-patch-loaders (etc.) for sub-packages.
+# the ai-parrot>= dependency in every sibling pyproject.toml.
+# Use bump-patch-tools / bump-patch-loaders (etc.) for sub-packages,
+# bump-patch-client-<provider> for one LLM-client satellite, or
+# bump-patch-clients for all of them. bump-all bumps everything (patch).
 
 VERSION_FILE := packages/ai-parrot/src/parrot/version.py
 TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
@@ -593,6 +617,14 @@ ADVISORS_VERSION_FILE := packages/ai-parrot-advisors/src/parrot/advisors/version
 NAVRULES_INIT := packages/navrules/src/navrules/__init__.py
 NAVRULES_PYPROJECT := packages/navrules/pyproject.toml
 NAVRULES_CARGO := packages/navrules/rust/Cargo.toml
+
+# FEAT-523: the ai-parrot-client-<provider> LLM-client satellites. Discovered
+# by glob so a new satellite is bumped/built/published without editing this
+# Makefile. CLIENT_SLUGS strips the `ai-parrot-client-` prefix (anthropic,
+# groq, ...) for the bump-<part>-client-% pattern targets below. Keep in sync
+# with scripts/release.py, which globs the same directories.
+CLIENT_PACKAGES := $(patsubst packages/%/pyproject.toml,%,$(wildcard packages/ai-parrot-client-*/pyproject.toml))
+CLIENT_SLUGS := $(patsubst ai-parrot-client-%,%,$(CLIENT_PACKAGES))
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
 # part: patch=2, minor=1, major=0
@@ -627,6 +659,23 @@ define _bump_navrules
 	ct = open('$(NAVRULES_CARGO)').read(); \
 	open('$(NAVRULES_CARGO)', 'w').write(re.sub(r'^version = \".+\"', f'version = \"{nv}\"', ct, count=1, flags=re.MULTILINE)); \
 	print(f'navrules: {version} → {nv}  (__init__.py + pyproject.toml + Cargo.toml)')"
+endef
+
+# Helper: bump a static `version = "X.Y.Z"` in a pyproject.toml (first match —
+# `[build-system]` precedes `[project]` in every satellite, so the first
+# `^version =` line IS the package version). Usage: $(call _bump_toml,file,part)
+define _bump_toml
+	@python -c "import re; \
+	content = open('$(1)').read(); \
+	version = re.search(r'^version = \"(.+)\"', content, flags=re.MULTILINE).group(1); \
+	parts = version.split('.'); \
+	idx = $(2); \
+	parts[idx] = str(int(parts[idx]) + 1); \
+	parts[idx+1:] = ['0'] * len(parts[idx+1:]); \
+	new_version = '.'.join(parts); \
+	new_content = re.sub(r'^version = \".+\"', f'version = \"{new_version}\"', content, count=1, flags=re.MULTILINE); \
+	open('$(1)', 'w').write(new_content); \
+	print(f'$(1): {version} → {new_version}')"
 endef
 
 # --- Core package (ai-parrot) ---
@@ -740,6 +789,24 @@ bump-minor-navrules:
 bump-major-navrules:
 	$(call _bump_navrules,0)
 
+# --- LLM-client satellites (ai-parrot-client-<provider>, FEAT-523) ---
+# One satellite:  make bump-patch-client-anthropic   (slug = dir minus prefix)
+# All satellites: make bump-patch-clients
+bump-patch-client-%:
+	$(call _bump_toml,packages/ai-parrot-client-$*/pyproject.toml,2)
+
+bump-minor-client-%:
+	$(call _bump_toml,packages/ai-parrot-client-$*/pyproject.toml,1)
+
+bump-major-client-%:
+	$(call _bump_toml,packages/ai-parrot-client-$*/pyproject.toml,0)
+
+bump-patch-clients: $(addprefix bump-patch-client-,$(CLIENT_SLUGS))
+
+bump-minor-clients: $(addprefix bump-minor-client-,$(CLIENT_SLUGS))
+
+bump-major-clients: $(addprefix bump-major-client-,$(CLIENT_SLUGS))
+
 # --- Bump ALL packages at once (patch) ---
 bump-all:
 	$(call _bump,$(VERSION_FILE),2)
@@ -753,6 +820,7 @@ bump-all:
 	$(call _bump,$(SERVER_VERSION_FILE),2)
 	$(call _bump,$(ADVISORS_VERSION_FILE),2)
 	$(call _bump_navrules,2)
+	@$(MAKE) --no-print-directory bump-patch-clients
 	@$(MAKE) _sync-core-dep
 
 # Sync ai-parrot>= dependency in tools/loaders pyproject.toml

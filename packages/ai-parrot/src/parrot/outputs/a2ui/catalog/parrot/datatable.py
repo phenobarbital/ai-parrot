@@ -30,10 +30,21 @@ DATATABLE_SCHEMA: dict[str, Any] = derive_schema(
     required=("columns",),
 )
 
+# FEAT-527: presentation-only prop, hand-added — `StructuredTableConfig` (the
+# frontend-agnostic STRUCTURED_TABLE renderer contract) intentionally carries
+# no visual-style field, so this is NOT derived via `derive_schema`. Values
+# mirror `parrot.models.infographic.TableStyle`.
+DATATABLE_SCHEMA["properties"]["style"] = {
+    "type": "string",
+    "enum": ["default", "striped", "bordered", "compact", "comparison"],
+    "description": "Visual style variant (FEAT-527).",
+}
+
 DATATABLE_INSTRUCTIONS = (
     "Use DataTable to present tabular rows. Declare `columns` (each with `name` and "
     'optional `type`/`title`/`format`). Bind rows with `data: {"path": "/pointer"}`. '
-    "Set `totalRows`/`truncated` when the row set is capped. Display-only."
+    "Set `totalRows`/`truncated` when the row set is capped. Optional `style` "
+    "(default/striped/bordered/compact/comparison). Display-only."
 )
 
 
@@ -95,6 +106,8 @@ class DataTableComponent:
             body_extensions["parrot_total_rows"] = props["totalRows"]
         if props.get("truncated"):
             body_extensions["parrot_truncated"] = True
+        if props.get("style") is not None:
+            body_extensions["parrot_style"] = props["style"]
 
         top_children.append(
             BasicNode(

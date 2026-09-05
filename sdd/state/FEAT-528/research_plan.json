@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The request is additive and asks for feasibility and architecture options for a new browser engine, with no defect reported.",
+  "queries": [
+    {"id": "Q001", "intent": "Locate the shared browser driver contract and existing Playwright/Selenium implementations", "type": "wiki_query", "priority": 1, "depth": 0},
+    {"id": "Q002", "intent": "Read the driver factory and Playwright configuration to identify engine and connection seams", "type": "read", "priority": 1, "depth": 0},
+    {"id": "Q003", "intent": "Locate the Chrome DevTools MCP server factory, agent wiring, and managed browser lifecycle", "type": "wiki_query", "priority": 1, "depth": 0},
+    {"id": "Q004", "intent": "Locate local MCP toolkit configuration and installation behavior for Codex and other MCP hosts", "type": "read", "priority": 1, "depth": 0},
+    {"id": "Q005", "intent": "Verify existing Rust/PyO3/Maturin package patterns and whether Obscura is already present", "type": "grep", "priority": 1, "depth": 0},
+    {"id": "Q006", "intent": "Review recent history for scraping, MCP, and Rust integration paths", "type": "git_log", "priority": 2, "depth": 0},
+    {"id": "Q007", "intent": "Verify Obscura's upstream CDP, Playwright, MCP, distribution, rendering, and maturity claims", "type": "web_read", "priority": 1, "depth": 0}
+  ],
+  "expected_findings": [
+    "Existing driver and MCP seams",
+    "Current configuration and lifecycle contracts",
+    "Existing local MCP exposure path",
+    "Existing PyO3/Maturin pattern and absence or presence of Obscura code",
+    "Upstream compatibility and limitations"
+  ],
+  "meta": {"source_signals": {"named_entities": ["Obscura", "Playwright", "Selenium", "Chrome DevTools MCP", "PyO3", "Codex"], "verbs": ["providing", "connect", "use", "added", "think"], "polarity": "positive"}}
+}

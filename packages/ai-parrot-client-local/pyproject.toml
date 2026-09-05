@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-local"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local (Ollama/llama.cpp, OpenAI-compatible) LLM client for AI-Parrot (parrot.clients.local)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.29.0",
     # No extra SDK: LocalLLMClient extends OpenAIBaseClient (core) and
     # talks to any OpenAI-compatible local server (Ollama, llama.cpp, ...)
     # over the base_url it's given — nothing else to declare.

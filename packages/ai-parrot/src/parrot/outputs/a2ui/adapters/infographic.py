@@ -49,14 +49,11 @@ Block              A2UI v1.0 component
 ``image``          ``Image{url, fit, description}``
 =================  =====================================================
 
-Known lossy degradations (spec §8, OQ-C):
+Known lossy degradations (spec §8, OQ-C; FEAT-527 removed the chart-type
+collapse and now forwards table ``style``, bullet ``columns``, hero-card
+``icon``/``color``/``comparison_period``, and chart presentation fields —
+nothing presentation-relevant is dropped any more):
 
-* Chart types with no A2UI equivalent (``radar``, ``heatmap``, ``treemap``,
-  ``gauge``, ``funnel``, ``waterfall``, ``donut``) collapse to the nearest
-  supported type — see :data:`CHART_TYPE_MAP`.
-* Presentation-only fields (``layout``, ``color_by_sign``, per-series colors,
-  table ``style``, bullet ``columns``…) are dropped: A2UI carries data and
-  semantics, and the renderer owns presentation.
 * ``InfoCard`` ``title`` is omitted for blocks with no title-like field. The
   lowering in ``catalog/parrot/infocard.py`` skips absent properties, so this
   degrades to a title-less card rather than an invented heading.
@@ -76,23 +73,27 @@ from parrot.outputs.a2ui.models import CreateSurface
 __all__ = ["CHART_TYPE_MAP", "infographic_response_to_envelope"]
 
 
-#: ``ChartType`` (legacy, 12 members) → A2UI ``Chart`` ``type`` enum
-#: (``bar``/``line``/``area``/``scatter``/``pie``/``map``). Types with no direct
-#: equivalent collapse to their nearest supported neighbour — a documented,
-#: deterministic degradation, never a silent drop.
+#: ``ChartType`` (legacy, 12 members) → A2UI ``Chart`` ``type`` enum.
+#: FEAT-527: identity for every legacy type — the A2UI ``Chart`` schema
+#: (derived from ``StructuredChartConfig``) now accepts ``donut``/``radar``
+#: and the 5 new types (``gauge``/``funnel``/``waterfall``/``heatmap``/
+#: ``treemap``) directly, so nothing collapses any more. Kept as a mapping
+#: (rather than a passthrough) so an unrecognised future chart type still
+#: degrades deterministically to :data:`_CHART_FALLBACK` instead of being
+#: forwarded verbatim and failing catalog validation.
 CHART_TYPE_MAP: dict[str, str] = {
     "bar": "bar",
     "line": "line",
     "area": "area",
     "scatter": "scatter",
     "pie": "pie",
-    "donut": "pie",
-    "radar": "line",
-    "funnel": "bar",
-    "waterfall": "bar",
-    "heatmap": "bar",
-    "treemap": "bar",
-    "gauge": "bar",
+    "donut": "donut",
+    "radar": "radar",
+    "gauge": "gauge",
+    "funnel": "funnel",
+    "waterfall": "waterfall",
+    "heatmap": "heatmap",
+    "treemap": "treemap",
 }
 
 _CHART_FALLBACK = "bar"
@@ -262,6 +263,33 @@ class _Converter:
             "showLegend": block.get("show_legend") is not False,
             "data": self._bind_rows("charts", key, rows),
         }
+
+        # FEAT-527: forward presentation fields the Chart schema already
+        # accepts. Omit keys whose block value is None — never invent.
+        if block.get("description") is not None:
+            properties["description"] = block["description"]
+        if block.get("color_by_sign") is not None:
+            properties["colorBySign"] = block["color_by_sign"]
+        if block.get("positive_color") is not None:
+            properties["positiveColor"] = block["positive_color"]
+        if block.get("negative_color") is not None:
+            properties["negativeColor"] = block["negative_color"]
+        if block.get("trendline") is not None:
+            properties["trendline"] = block["trendline"]
+        if block.get("x_axis_mode") is not None:
+            properties["xAxisMode"] = block["x_axis_mode"]
+        if block.get("x_axis_label") is not None:
+            properties["xAxisLabel"] = block["x_axis_label"]
+        if block.get("y_axis_label") is not None:
+            properties["yAxisLabel"] = block["y_axis_label"]
+        if block.get("layout") is not None:
+            properties["layout"] = block["layout"]
+
+        # Per-series colours → palette, only when at least one is set.
+        series_colors = [s.get("color") for s in series]
+        if any(c is not None for c in series_colors):
+            properties["palette"] = series_colors
+
         return _descriptor("Chart", properties)
 
     def _table(self, block: dict[str, Any]) -> dict[str, Any]:
@@ -288,18 +316,24 @@ class _Converter:
             "totalRows": len(rows),
             "data": self._bind_rows("tables", key, rows),
         }
+        if block.get("style") is not None:
+            properties["style"] = block["style"]
         return _descriptor("DataTable", properties)
 
     def _hero_card(self, block: dict[str, Any]) -> dict[str, Any]:
-        return _descriptor(
-            "KPICard",
-            {
-                "label": block.get("label") or "",
-                "value": block.get("value") or "",
-                "delta": block.get("trend_value"),
-                "trend": block.get("trend"),
-            },
-        )
+        properties: dict[str, Any] = {
+            "label": block.get("label") or "",
+            "value": block.get("value") or "",
+            "delta": block.get("trend_value"),
+            "trend": block.get("trend"),
+        }
+        if block.get("icon") is not None:
+            properties["icon"] = block["icon"]
+        if block.get("color") is not None:
+            properties["color"] = block["color"]
+        if block.get("comparison_period") is not None:
+            properties["comparisonPeriod"] = block["comparison_period"]
+        return _descriptor("KPICard", properties)
 
     def _timeline(self, block: dict[str, Any]) -> dict[str, Any]:
         events = []
@@ -338,7 +372,16 @@ class _Converter:
             _descriptor("Text", {"text": item if isinstance(item, str) else str(item)})
             for item in (block.get("items") or [])
         ]
-        return _descriptor("List", {"direction": "vertical", "children": items})
+        properties: dict[str, Any] = {"direction": "vertical", "children": items}
+        # FEAT-527: `columns` is presentation-only (grid layout hint) — record
+        # it as metadata.extensions on the List descriptor rather than a
+        # visible prop. `List` is a Basic Catalog primitive, so this
+        # "metadata" key reaches `_lower_child`'s primitive branch verbatim
+        # (`BasicNode(id=child_id, component=name, **props)`), landing on the
+        # lowered BasicNode's own `metadata` field.
+        if block.get("columns") is not None:
+            properties["metadata"] = {"extensions": {"parrot_columns": block["columns"]}}
+        return _descriptor("List", properties)
 
     def _checklist(self, block: dict[str, Any]) -> dict[str, Any]:
         """Map a ``checklist`` block to a ``List`` of ``CheckBox{label, value}``."""
