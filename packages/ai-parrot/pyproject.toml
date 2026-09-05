@@ -179,6 +179,8 @@ parrot = "parrot.cli:cli"
 parrot-graphindex = "parrot.knowledge.graphindex.cli:main"
 # LLM Wiki CLI — machine-first codebase KB for coding assistants (FEAT-260).
 wikitoolkit = "parrot.knowledge.wiki.cli:main"
+# Bookstore CLI — personal indexed book library over PageIndex trees.
+bookstore = "parrot.knowledge.bookstore.cli:main"
 # parrot-fs moved to ai-parrot-server in FEAT-203
 
 [project.optional-dependencies]
@@ -299,6 +301,15 @@ leiden = [
 wiki = [
     "ai-parrot[graphindex,wiki-languages,wiki-structural,leiden]",
     "pymupdf>=1.27",
+]
+
+# Bookstore — personal indexed book library (`bookstore` CLI + MCP server).
+# bm25s powers the no-LLM lexical in-book search; pymupdf/pymupdf4llm power
+# native PDF ingestion via PageIndex.
+bookstore = [
+    "bm25s>=0.2",
+    "pymupdf>=1.27",
+    "pymupdf4llm>=0.0.27",
 ]
 
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203.

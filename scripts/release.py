@@ -8,6 +8,13 @@ maturin/PyO3 package and repeats the same number in three places
 (``__init__.py``, ``pyproject.toml``, ``rust/Cargo.toml``) which must stay
 in lockstep or the wheel metadata disagrees with the Python module.
 
+The ``ai-parrot-client-<provider>`` LLM-client satellites (FEAT-523, PEP 420
+namespace packages under ``parrot.clients.<provider>``) keep a *static*
+``version = "X.Y.Z"`` in their ``pyproject.toml`` — no ``version.py`` — and
+are discovered by globbing ``packages/ai-parrot-client-*/`` so a new
+provider satellite is picked up without editing this file. The same applies
+to ``ai-parrot-openlit-bridge``.
+
 ``.github/workflows/release.yml`` fires on ``release: [created]``, builds all
 distributions and publishes them to PyPI with ``skip-existing: true`` — so a
 package whose version did not move is simply skipped rather than failing the
@@ -159,6 +166,24 @@ PACKAGES: list[Package] = [
             [("packages/ai-parrot/src/parrot/codec-rs/pyproject.toml", "toml"),
              ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml")],
             "packages/ai-parrot/src/parrot/codec-rs", aliases=["codec"]),
+    # FEAT-523: the ai-parrot-client-<provider> LLM-client satellites. Each
+    # keeps a static `version = "X.Y.Z"` in its pyproject.toml (no version.py;
+    # `[build-system]` precedes `[project]`, so the first `^version =` line IS
+    # the package version). Glob-discovered so a new provider satellite is
+    # bumped without touching this list; alias is the name minus the
+    # `ai-parrot-` prefix (e.g. `--only client-anthropic`).
+    *[
+        Package(p.name,
+                [(f"packages/{p.name}/pyproject.toml", "toml")],
+                f"packages/{p.name}",
+                aliases=[p.name.removeprefix("ai-parrot-")])
+        for p in sorted((REPO_ROOT / "packages").glob("ai-parrot-client-*"))
+        if (p / "pyproject.toml").is_file()
+    ],
+    Package("ai-parrot-openlit-bridge",
+            [("packages/ai-parrot-openlit-bridge/pyproject.toml", "toml")],
+            "packages/ai-parrot-openlit-bridge",
+            aliases=["openlit-bridge", "openlit"]),
 ]
 
 CORE = PACKAGES[0]
@@ -243,16 +268,16 @@ def cmd_status(args: argparse.Namespace) -> int:
     """Print the version table without touching anything."""
     tag = last_tag()
     print(f"Last tag: {tag or '(none)'}\n")
-    print(f"{'PACKAGE':<26} {'VERSION':<10} {'COMMITS SINCE TAG':>18}")
-    print("-" * 56)
+    print(f"{'PACKAGE':<28} {'VERSION':<10} {'COMMITS SINCE TAG':>18}")
+    print("-" * 58)
     for pkg in PACKAGES:
         missing = [f for f, _ in pkg.files if not (REPO_ROOT / f).exists()]
         if missing:
-            print(f"{pkg.dist:<26} {'MISSING':<10} {missing[0]}")
+            print(f"{pkg.dist:<28} {'MISSING':<10} {missing[0]}")
             continue
         n = commits_since(tag, pkg.path)
         marker = "" if n else "  (unchanged)"
-        print(f"{pkg.dist:<26} {pkg.current():<10} {n:>18}{marker}")
+        print(f"{pkg.dist:<28} {pkg.current():<10} {n:>18}{marker}")
     print("\nTag for the next release is the ai-parrot (core) version.")
     return 0
 
@@ -274,7 +299,7 @@ def cmd_bump(args: argparse.Namespace) -> int:
         files = pkg.write(new, dry_run=dry)
         touched.extend(files)
         extra = f"  [{len(files)} files]" if len(files) > 1 else ""
-        print(f"  {pkg.dist:<26} {current:>9} -> {new}{extra}")
+        print(f"  {pkg.dist:<28} {current:>9} -> {new}{extra}")
 
     core_new = next(
         (new for pkg, _, new in plan if pkg is CORE), CORE.current()

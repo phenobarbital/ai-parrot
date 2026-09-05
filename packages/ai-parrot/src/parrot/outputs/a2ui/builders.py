@@ -32,6 +32,7 @@ __all__ = [
     "build_card",
     "build_chart",
     "build_datatable",
+    "build_html_document",
     "build_infographic",
     "build_kpicard",
     "build_map",
@@ -240,3 +241,55 @@ def build_infographic(
     if theme is not None:
         props["theme"] = theme
     return build_surface("Infographic", props, surface_id=surface_id, data_model=data_model, metadata=metadata)
+
+
+def build_html_document(
+    *,
+    title: str,
+    html: str | None = None,
+    src_url: str | None = None,
+    theme: str | None = None,
+    surface_id: str = "html-document",
+    metadata: ComponentMetadata | None = None,
+) -> CreateSurface:
+    """Build a tool-only display envelope carrying a single HtmlDocument component.
+
+    Wraps a TRUSTED, already-rendered HTML document (e.g. the Jinja
+    ``render_template`` lane, FEAT-527 spec G5) as an opaque A2UI surface.
+    Always emitted with ``origin=ProducerOrigin.TOOL`` — ``HtmlDocument`` is
+    registered ``tool_only=True`` (TASK-2862) and an LLM-origin envelope
+    containing it fails :func:`~parrot.outputs.a2ui.catalog.validate_envelope`.
+
+    Args:
+        title: Document title.
+        html: Trusted, fully rendered HTML (inline when < 50 KB). Exactly
+            one of ``html``/``src_url`` must be given.
+        src_url: Signed artifact URL when the document is too large to inline.
+        theme: Optional theme hint.
+        surface_id: Envelope surface id.
+        metadata: Optional component-level metadata (e.g. carrying
+            ``extensions.parrot_optional``) forwarded to the underlying
+            ``build_surface`` call and attached to the root component.
+
+    Returns:
+        The validated ``CreateSurface``.
+
+    Raises:
+        ValueError: If neither or both of ``html``/``src_url`` are given.
+    """
+    if (html is None) == (src_url is None):
+        raise ValueError("build_html_document requires exactly one of 'html' or 'src_url'.")
+    props: dict[str, Any] = {"title": title}
+    if html is not None:
+        props["html"] = html
+    if src_url is not None:
+        props["srcUrl"] = src_url
+    if theme is not None:
+        props["theme"] = theme
+    return build_surface(
+        "HtmlDocument",
+        props,
+        surface_id=surface_id,
+        origin=ProducerOrigin.TOOL,
+        metadata=metadata,
+    )

@@ -1,0 +1,112 @@
+# FEAT-527 full suite run — evidence log (TASK-2869)
+# Generated 2026-09-05, worktree feat-FEAT-527-infographic-a2ui-migration
+
+## 1. Genuine regression found and fixed during this evidence pass
+
+`packages/ai-parrot/tests/outputs/test_legacy_deprecation.py::TestLegacyDeprecationWarnings::test_infographic_html_path_only_warns`
+was asserting the OLD FEAT-273 behavior (unconditional DeprecationWarning on
+the infographic-HTML lane) that TASK-2856 intentionally removed as part of
+FEAT-527's "dual-emit forever" contract (spec §5 G7 amendment). This was a
+gap missed during TASK-2856; fixed here as a TASK-2869 companion fix.
+
+Renamed to `test_infographic_html_path_emits_no_warning`, rewritten to
+assert NO A2UI DeprecationWarning fires (was: asserting one WOULD fire).
+
+Command:
+    pytest packages/ai-parrot/tests/outputs/test_legacy_deprecation.py -q
+Result: 21 passed, 8 warnings in 2.68s
+
+ruff check on the file: exactly one pre-existing finding, confirmed
+pre-existing via `git diff` (my edit only touched the test method body,
+lines 59-73; the flagged `import contextlib` at line 101 sits in a
+pre-existing "small helpers" section untouched by this change):
+
+    E402 Module level import not at top of file
+       --> packages/ai-parrot/tests/outputs/test_legacy_deprecation.py:101:1
+
+## 2. Core package — tests/tools + tests/handlers + tests/outputs
+
+Command:
+    PYTHONPATH=.../ai-parrot/src:.../ai-parrot-tools/src:.../ai-parrot-visualizations/src:.../ai-parrot-server/src \
+    pytest packages/ai-parrot/tests/tools packages/ai-parrot/tests/handlers \
+           packages/ai-parrot/tests/outputs -q --continue-on-collection-errors
+
+After my changes: 96 failed, 2316 passed, 9 skipped, 190 warnings in 58.94s
+Before my changes (`git stash` of test_legacy_deprecation.py fix, same
+command re-run): 97 failed, same pass/skip counts.
+
+`diff before_failures.txt after_failures.txt` shows exactly ONE line
+removed and nothing else changed:
+    < FAILED packages/ai-parrot/tests/outputs/test_legacy_deprecation.py::TestLegacyDeprecationWarnings::test_infographic_html_path_only_warns
+
+All remaining 96 failures are IDENTICAL before/after (dataset_handler,
+dataset_integration, dataset_routes, jinja2, pep420 version-module test,
+formatter_retry, template_report, plus a few that look infographic-related
+by name — `test_infographic_html_renderer_via_registry`,
+`test_infographic_renderer_is_html_renderer`,
+`test_infographic_system_prompt_survives_html_override`). These were
+verified in earlier tasks (TASK-2861/2864) to be pre-existing
+test-ordering/global-registry-state pollution: they pass cleanly when
+their modules are run in isolation, e.g.:
+    pytest packages/ai-parrot/tests/outputs/formats/test_pep420_integration.py \
+           packages/ai-parrot/tests/outputs/formats/test_renderer_registry.py
+    -> 1 failed [unrelated pep420 version-module test, pre-existing], 46 passed
+
+Not caused by FEAT-527. No task in this feature touches
+dataset_handler/dataset_integration/dataset_routes/jinja2/template_report/
+formatter_retry.
+
+## 3. Core package — tests/unit
+
+Command:
+    pytest packages/ai-parrot/tests/unit -q --continue-on-collection-errors
+Result: stalls deterministically around 79% collected/run and has to be
+`timeout -s KILL`'d — this matches a previously known, pre-existing
+environmental hang in this suite (documented separately; unrelated to any
+FEAT-527 task, no FEAT-527 task touches tests/unit). One collection error
+also pre-exists and is unrelated:
+    ERROR packages/ai-parrot/tests/unit/test_save_learned_skill_tool.py
+    ImportError: cannot import name 'SaveLearnedSkillTool' from
+    'parrot.memory.skills.tools' (no FEAT-527 task touches this module).
+Not run to completion for this evidence pass; not blocking for FEAT-527
+(out of scope, pre-existing).
+
+## 4. ai-parrot-visualizations — tests/outputs
+
+Command:
+    pytest packages/ai-parrot-visualizations/tests/outputs -q --continue-on-collection-errors
+Result: 277 passed, 11 warnings in 3.68s (warnings are pre-existing
+`@pytest.mark.asyncio` on non-async folium/interactive_html test
+functions, unrelated to FEAT-527).
+
+## 5. ai-parrot-server — focused FEAT-527 test files
+
+Command:
+    pytest packages/ai-parrot-server/tests/test_a2a_a2ui_dispatch.py \
+           packages/ai-parrot-server/tests/test_a2a_output_mode.py \
+           packages/ai-parrot-server/tests/test_agenttalk_dual_emit.py \
+           packages/ai-parrot-server/tests/test_agenttalk_infographic_explanation.py \
+           -q --continue-on-collection-errors
+Result: 27 passed, 8 warnings in 2.72s
+
+## 6. ai-parrot-server/ui — pnpm test
+
+Command (run from packages/ai-parrot-server/ui):
+    pnpm test
+Result: Test Files 44 passed (44), Tests 284 passed (284), Duration 18.73s
+
+## Summary
+
+- 1 genuine regression found (missed during TASK-2856) and fixed as a
+  TASK-2869 companion fix, verified in isolation (21/21) and via
+  before/after diff on the combined suite (97 -> 96 failures, exactly the
+  1 line expected, nothing else moved).
+- All other failures across tests/tools + tests/handlers + tests/outputs
+  are byte-for-byte identical before and after FEAT-527's changes —
+  confirmed pre-existing test-ordering/global-state pollution, not
+  FEAT-527 regressions.
+- tests/unit has a pre-existing environmental hang and one pre-existing
+  unrelated collection error; not run to completion, not in scope.
+- ai-parrot-visualizations tests/outputs: 277/277 clean.
+- ai-parrot-server focused FEAT-527 suites: 27/27 clean.
+- ai-parrot-server/ui pnpm test: 284/284 clean.

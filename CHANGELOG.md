@@ -7,9 +7,51 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [0.29.0] — 2026-09-05 — PEP 420 LLM-client satellites, memory-less clients
+
 ### Breaking Changes
 
-#### FEAT-524: Conversation History Ownership — memory-less clients (0.29.0)
+#### FEAT-523: PEP 420 LLM clients — every provider ships from its own `ai-parrot-client-<provider>` satellite
+
+Core `ai-parrot` no longer bundles any provider client. Each provider is a
+separate distribution — a PEP 420 namespace package under
+`parrot.clients.<provider>` that registers itself with `LLMFactory` through
+the `parrot.clients` entry-point group. Hard cut: no deprecation shims.
+
+Spec: `sdd/specs/pep-420-llm-clients.spec.md`.
+
+**15 new distributions**: `ai-parrot-client-openai`, `-anthropic`,
+`-google`, `-amazon`, `-meta`, `-gemma4`, `-hf`, `-groq`, `-grok`, `-zai`,
+`-nvidia`, `-moonshot`, `-openrouter`, `-local`, `-vllm`.
+
+- **Extras install satellites.** `ai-parrot[anthropic]`, `[openai]`,
+  `[google]`, `[groq]`, `[bedrock-native]`, … each pull the matching
+  satellite; `ai-parrot[llms]` pulls all 15. `openai` / `tiktoken` stay core
+  dependencies because `OpenAIBaseClient` stays in core (subclassed by seven
+  satellites).
+- **`LLMFactory.create()` for a provider whose satellite is not installed
+  raises `ImportError` naming the distribution to install.**
+- **Module renames** (callers updated in-feature):
+  `parrot.clients.gpt` → `parrot.clients.openai`;
+  `.claude` / `.claude_agent` / `.claude_agent_bridge` / `.anthropic_backends`
+  → `.anthropic`; `.bedrock` + `.nova` → `.amazon`; `.live` → `.google.live`;
+  `.localllm` → `.local`; `gemma4`, `hf`, `groq`, `grok`, `zai`, `nvidia`,
+  `moonshot`, `openrouter`, `vllm` become `clients/<provider>/` folder
+  subpackages (`{__init__,client,models}.py`).
+- **Provider enums left `parrot.models`.** Every `parrot.models.<provider>`
+  enum now lives in `parrot.clients.<provider>.models`;
+  `parrot/models/{openai,claude,groq,localllm,moonshot,nvidia,openrouter,zai,bedrock_models}.py`
+  are deleted. `LiveVoiceResponse` moved to `parrot.models.voice`.
+- Added `LLMFactory.list_providers()` / `list_models()` (entry-point-backed
+  catalogue); the server LLM handler lists models through it.
+- Release tooling now covers 28 distributions: `scripts/release.py`,
+  `make bump-all` and `release.yml` discover the satellites;
+  `make build-clients publish-clients` bootstraps a never-published
+  satellite on PyPI with twine.
+
+#### FEAT-524: Conversation History Ownership — memory-less clients
 
 `ConversationHistory` had two owners: `AbstractClient` and `AbstractBot` both
 read and both wrote it under the same key. Every stateful round persisted **two**
@@ -84,6 +126,66 @@ Spec: `sdd/specs/chromemanager-async-migration.spec.md`.
 
 ### Added
 
+#### FEAT-525: Per-turn conversation compaction
+
+Deterministic, budget-driven retention of conversation history — the
+extension point FEAT-524 left open. Guide:
+`docs/memory/per-turn-conversation-compaction.md`.
+
+- `ConversationMemory.add_turn()` is now a concrete template method
+  (Stage 0 normalize → Stage 0.5 token count → write-time oversize offload →
+  one write via the abstract `_store_turn()`). Custom backends implement
+  `_store_turn`, never `add_turn`.
+- `parrot.memory.compaction.compact_history()` — pure three-tier pre-pass
+  (verbatim / pruned / dropped) driven by a `ContextBudget` auto-resolved
+  per model from `MODEL_WINDOWS`; kill switch `context_budget=False` or
+  `PARROT_COMPACTION_DISABLED=1`. `PrunePolicy` registry with built-ins.
+- Pruned tool output is offloaded to a memory-owned `OmissionStore`
+  (InMemory / Redis / File) and recoverable through the
+  `read_omitted_content` tool (ContextVar-scoped, fails closed; excluded
+  from `search_tools`).
+- `AbstractBot.render_context_history()` feeds every bot entry point;
+  `save_conversation_turn(compaction=)`; `ConversationTurn` schema v2;
+  `render_history()` also accepts `Sequence[TurnView]`.
+
+#### FEAT-526: Meta (Muse) LLM client — `ai-parrot-client-meta`
+
+- `MetaClient` in `parrot.clients.meta` (subclass of `OpenAIBaseClient`),
+  `LLMFactory.create("meta:muse-spark-1.3")`, with a `MetaModel` catalogue
+  of the seven live-verified model ids and capability sets.
+- Chat Completions path (chat, tool calling, structured output, streaming,
+  `invoke()`) plus a client-local Responses API path unlocking search
+  grounding and `count_input_tokens()`. Live e2e suite mirrors the OpenAI
+  one.
+
+#### FEAT-522: Interactive HTML `Map` components + generated Tailwind CSS
+
+- `Map` renders as a real interactive Leaflet map — top-level and
+  Infographic-nested — inside `interactive-html` documents through a shared
+  `build_map_document()`; `MarkerCluster` wraps a layer past 500 points
+  (per-layer overridable).
+- Genuinely offline: folium CDN resources are swapped for vendored
+  data URIs (license manifest included), which also closes the CDN leak in
+  the standalone `folium_map` renderer.
+- `scripts/generate_a2ui_css.py` AST-scans every class `interactive_html.py`
+  emits and generates Tailwind v4 CSS folded into
+  `DesignSystem.stylesheet()`; a CI freshness gate (`--check`) keeps the
+  generated CSS and vendored assets from drifting.
+
+#### FEAT-521: Python REPL worker — idle detection and memory guardrails
+
+- `ProcessObserver` samples every live worker (CPU time, RSS, state, thread
+  count) and derives `settled` / `computing` / `stalled` verdicts; every
+  timeout, bootstrap failure and namespace-loss error names the verdict and
+  the last sample.
+- Two-stage deadline: SIGINT first (the worker returns a bounded
+  `interrupted` result and keeps its namespace), SIGKILL only after
+  `interrupt_grace_ms`.
+- `WorkerPool` enforces a host memory reserve with pressure eviction.
+  `execution_mode="inprocess"` escape hatch and worker bootstrap
+  diagnostics; `python_repl_execution_mode` exposed on `flex_dashboard` /
+  `finance_reporter`.
+
 #### FEAT-520: GraphIndex Postgres Backend — Bitemporal Plane + One-Pass Hybrid Retrieval
 
 Third GraphIndex persistence backend (`PostgresPersistence`) at parity
@@ -118,6 +220,17 @@ zero SQLAlchemy; `PgVectorStore` is explicitly not reused.
   (duck-typed).
 - Docs: [`docs/graphindex.md`](docs/graphindex.md) backend matrix,
   Temporal API, and Hybrid Retrieval sections.
+
+### Fixed
+
+- **Security** — closed a path-injection on `PandasAgent.report_dir`
+  (CodeQL alert #213).
+- Google client: `invoke()` recovers a raw-string structured parse; no
+  longer forces `thinking_budget=0` on `gemini-3.5-flash-lite`.
+- OpenAI-family `ask()` no longer double-encodes the current turn;
+  gemma4 / hf `ask_stream()` forward `history=`.
+- dev-loop: dropped the unusable `model: gpt-5.5` from `sdd-secondopinion`;
+  SDD command frontmatter uses the valid `haiku` alias.
 
 ---
 

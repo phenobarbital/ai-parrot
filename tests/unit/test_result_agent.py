@@ -33,6 +33,17 @@ class TestResultAgentRegistration:
         tool_names = [t.name if hasattr(t, "name") else str(t) for t in tools]
         assert any("render" in n.lower() or "infographic" in n.lower() for n in tool_names)
 
+    def test_toolkit_emits_a2ui_by_default(self):
+        """Code-review gap (spec §3 Module 1 test table, FEAT-527):
+        ResultAgent.agent_tools() builds its InfographicToolkit with no
+        explicit emit_a2ui= — prove it inherits the toolkit's dual-emit
+        default rather than only implicitly via the toolkit's own test."""
+        from parrot.bots.flows.result_agent import ResultAgent
+        agent = ResultAgent(name="test-result-agent")
+        agent.agent_tools()
+        assert agent._toolkit is not None
+        assert agent._toolkit._emit_a2ui is True
+
 
 class TestResultAgentDefaultLLM:
     def test_default_llm_when_none_supplied(self):

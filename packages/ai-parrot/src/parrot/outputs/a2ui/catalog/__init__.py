@@ -42,6 +42,7 @@ from parrot.outputs.a2ui.catalog.base import (
     DUPLICATE_ID,
     INLINE_DATA_NOT_ALLOWED_FOR_LLM,
     MISSING_ROOT,
+    TOOL_ONLY_NOT_ALLOWED_FOR_LLM,
     UNALLOWED_CHILD,
     UNALLOWED_PARENT,
     UNKNOWN_COMPONENT,
@@ -112,6 +113,7 @@ def register_component(
     is_primitive: bool = False,
     allowed_parents: list[str] | None = None,
     allowed_children: list[str] | None = None,
+    tool_only: bool = False,
 ) -> Callable[[type], type]:
     """Register a catalog component under ``name``.
 
@@ -130,6 +132,9 @@ def register_component(
             appear under.
         allowed_children: If set, restricts which component types this one
             may contain as ``child``/``children``.
+        tool_only: Marks the component as tool-only (FEAT-527). LLM-produced
+            envelopes containing it are rejected by :func:`validate_envelope`
+            (same gate mechanism as ``requires_actions``).
 
     Returns:
         The class decorator.
@@ -157,6 +162,7 @@ def register_component(
             is_primitive=is_primitive,
             allowed_parents=allowed_parents,
             allowed_children=allowed_children,
+            tool_only=tool_only,
         )
         _CATALOG[name] = RegisteredComponent(definition=definition, component_cls=cls)
         # Attach for convenient access from instances / renderers.
@@ -407,6 +413,10 @@ def validate_envelope(
     * For ``origin=LLM``, no component carries a non-null ``action`` OR is
       registered with ``requires_actions=True``
       (``ACTION_NOT_ALLOWED_FOR_LLM`` — G2/D10b gate).
+    * For ``origin=LLM``, no component is registered with ``tool_only=True``
+      (``TOOL_ONLY_NOT_ALLOWED_FOR_LLM`` — FEAT-527 gate; e.g.
+      ``HtmlDocument``, which carries raw HTML and may only be emitted by
+      deterministic tool producers).
     * For ``origin=LLM``, ``Chart``/``DataTable``/``Map`` components do not
       inline a ``data``/``datasets`` row list — only a ``{"path": ...}``
       data-model binding is allowed (``INLINE_DATA_NOT_ALLOWED_FOR_LLM`` —
@@ -497,6 +507,18 @@ def validate_envelope(
                     "message": (
                         f"LLM-produced envelopes may not contain an 'action' "
                         f"(component {comp.component!r}, id={comp.id!r})."
+                    ),
+                    "path": comp.id,
+                }
+            )
+
+        if origin is ProducerOrigin.LLM and entry_for_gate is not None and entry_for_gate.definition.tool_only:
+            issues.append(
+                {
+                    "code": TOOL_ONLY_NOT_ALLOWED_FOR_LLM,
+                    "message": (
+                        f"Component {comp.component!r} (id={comp.id!r}) is tool-only and "
+                        "cannot appear in an LLM-produced envelope."
                     ),
                     "path": comp.id,
                 }

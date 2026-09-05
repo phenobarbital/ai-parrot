@@ -20,13 +20,20 @@ KPICARD_SCHEMA: dict[str, Any] = {
         "unit": {"type": "string"},
         "delta": {"description": "Change vs. a baseline (number, string, or binding)."},
         "trend": {"type": "string", "enum": ["up", "down", "flat"]},
+        "icon": {"type": "string", "description": "Optional icon glyph/name (FEAT-527)."},
+        "color": {"type": "string", "description": "Optional accent CSS colour (FEAT-527)."},
+        "comparisonPeriod": {
+            "type": "string",
+            "description": "Optional label for the baseline period the delta compares against (FEAT-527).",
+        },
     },
     "required": ["label", "value"],
 }
 
 KPICARD_INSTRUCTIONS = (
     "Use KPICard to highlight a single headline metric. Provide `label` and `value`; "
-    "optionally `unit`, `delta`, and `trend` (up/down/flat). Display-only."
+    "optionally `unit`, `delta`, `trend` (up/down/flat), `icon`, `color`, and "
+    "`comparisonPeriod` (e.g. 'vs Q2'). Display-only."
 )
 
 
@@ -87,9 +94,20 @@ class KPICardComponent:
                     },
                 )
             )
+        # FEAT-527: icon/color/comparisonPeriod are presentation-only metadata
+        # — they ride on the existing Card's extensions, never as new visible
+        # Text nodes (renderer-owned presentation, same policy as parrot_variant).
+        card_extensions: dict[str, Any] = {"parrot_variant": "kpi"}
+        if props.get("icon") is not None:
+            card_extensions["parrot_icon"] = props["icon"]
+        if props.get("color") is not None:
+            card_extensions["parrot_color"] = props["color"]
+        if props.get("comparisonPeriod") is not None:
+            card_extensions["parrot_comparison_period"] = props["comparisonPeriod"]
+
         return BasicNode(
             id=component.id,
             component="Card",
             child=BasicNode(component="Column", children=children),
-            metadata={"extensions": {"parrot_variant": "kpi"}},
+            metadata={"extensions": card_extensions},
         )

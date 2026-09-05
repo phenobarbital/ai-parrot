@@ -1,0 +1,109 @@
+{
+  "feature": "pg-recipe-store-and-agent-package-importability",
+  "feature_id": "FEAT-528",
+  "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-05T04:50:44.635842+00:00",
+  "completed_at": null,
+  "notes": "Decomposed 2026-09-05 after the FEAT-559 audit. Ids TASK-2870..2874 reserved by scripts/sdd/reserve_ids.py (commit 0027b07a6). Two independent lanes: Module 1 (2870) and Module 2 (2871→2872); 2873 joins them; 2874 documents. Consumer: FieldSync FEAT-559 imports PgRecipeStore from parrot.handlers.models.recipes and load_transformer_module from parrot.tools.infographic_recipes — contract dependency, not a schedule gate (Juan 2026-09-04).",
+  "tasks": [
+    {
+      "id": "TASK-2870",
+      "slug": "pg-recipe-store",
+      "title": "PgRecipeStore — relational AbstractRecipeStore beside PgUISurfaceStore",
+      "feature_id": "FEAT-528",
+      "feature": "pg-recipe-store-and-agent-package-importability",
+      "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Module 1. New file in ai-parrot-server; shares no file with the Module 2 lane. Needs NAVIGATOR_PG_DSN for its tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2870-pg-recipe-store.md"
+    },
+    {
+      "id": "TASK-2871",
+      "slug": "load-transformer-module",
+      "title": "load_transformer_module — host-side loader for a recipe's transformers",
+      "feature_id": "FEAT-528",
+      "feature": "pg-recipe-store-and-agent-package-importability",
+      "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Module 2 item 3. New loader in parrot.tools.infographic_recipes; independent of 2870. Must land before 2872, which calls it from flex_dashboard.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2871-load-transformer-module.md"
+    },
+    {
+      "id": "TASK-2872",
+      "slug": "flex-package-parent-agnostic",
+      "title": "Make agents/flex_dashboard parent-agnostic — relative imports + path-anchored sibling load",
+      "feature_id": "FEAT-528",
+      "feature": "pg-recipe-store-and-agent-package-importability",
+      "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2871"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 2 items 1-2. Edits agents/flex_dashboard.py and agents/flex_dashboard/transformers.py only. Mutation-checked regression test.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2872-flex-package-parent-agnostic.md"
+    },
+    {
+      "id": "TASK-2873",
+      "slug": "pg-store-and-foreign-host-integration",
+      "title": "Integration — publish/replay through PgRecipeStore, REST lane, foreign-host replay",
+      "feature_id": "FEAT-528",
+      "feature": "pg-recipe-store-and-agent-package-importability",
+      "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2870",
+        "TASK-2872"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Joins both lanes. Tests only; no production change allowed — a needed change is a spec finding.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2873-pg-store-and-foreign-host-integration.md"
+    },
+    {
+      "id": "TASK-2874",
+      "slug": "recipe-store-and-loader-docs",
+      "title": "Docs — PgRecipeStore as the third store, load_transformer_module as the host contract",
+      "feature_id": "FEAT-528",
+      "feature": "pg-recipe-store-and-agent-package-importability",
+      "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2873"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation only; docs/outputs/infographic-recipes.md.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2874-recipe-store-and-loader-docs.md"
+    }
+  ]
+}
