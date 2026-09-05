@@ -56,3 +56,37 @@ def test_load_transformer_module_bare_file(tmp_path):
             """))
     load_transformer_module(mod_path)
     assert transformer_registry.get("t_2871_bare_probe") is not None
+
+
+def test_reuses_module_already_imported_through_its_package_path(tmp_path, monkeypatch):
+    """Code-review finding (2026-09-05): if the sibling module was ALREADY
+    imported the ordinary way (``import hostpkg2.transformers``), the loader
+    must return that module instead of re-executing it under a synthetic
+    name — otherwise the decorators register DIFFERENT function objects
+    under the same transformer names and ``register()`` raises."""
+    import importlib
+    import sys
+
+    pkg = tmp_path / "hostpkg2"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "transformers.py").write_text(textwrap.dedent("""
+            from parrot.outputs.a2ui.recipes.transformers import infographic_transformer
+
+
+            @infographic_transformer(name="t_2871_dup_probe")
+            def dup_probe(inputs, params):
+                return {"v": 1}
+            """))
+    monkeypatch.syspath_prepend(str(tmp_path))
+    ordinary = importlib.import_module("hostpkg2.transformers")
+    try:
+        # Would raise ValueError("already registered to a different function")
+        # before the fix, because a second synthetic-package load re-ran the
+        # decorator with a new function object.
+        loaded = load_transformer_module(pkg / "transformers.py")
+        assert loaded is ordinary
+        assert transformer_registry.get("t_2871_dup_probe") is not None
+    finally:
+        sys.modules.pop("hostpkg2.transformers", None)
+        sys.modules.pop("hostpkg2", None)

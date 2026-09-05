@@ -14,8 +14,45 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
+
+#: Serialises first loads. ``sys.modules`` check-then-act is not atomic, and a
+#: second concurrent first load of the same path would re-execute the module
+#: and make ``TransformerRegistry.register`` raise on the duplicate function
+#: objects (code-review finding, 2026-09-05).
+_LOAD_LOCK = threading.RLock()
+
+
+def _already_loaded(file: Path) -> ModuleType | None:
+    """Return the module already imported from ``file``, under ANY name.
+
+    A host (or this repo's own tests) may have imported the sibling module
+    through its ordinary package path — ``agents.flex_dashboard.transformers``
+    — before the agent file is discovered and calls this loader. Loading it
+    again under a synthetic name would re-execute the decorators and register
+    DIFFERENT function objects under the same names, which
+    ``TransformerRegistry.register`` refuses (code-review finding, 2026-09-05).
+
+    Args:
+        file: The resolved path of the module to look for.
+
+    Returns:
+        The existing module object, or ``None`` when nothing in
+        ``sys.modules`` was loaded from that file.
+    """
+    target = str(file)
+    for module in list(sys.modules.values()):
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        try:
+            if str(Path(module_file).resolve()) == target:
+                return module
+        except (OSError, RuntimeError):  # pragma: no cover — exotic loaders
+            continue
+    return None
 
 
 def _digest(path: Path) -> str:
@@ -42,7 +79,10 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
     Loading the same resolved path twice is idempotent: the second call
     returns the already-imported module from ``sys.modules`` without
     re-executing it (so its ``@infographic_transformer`` functions are never
-    registered twice).
+    registered twice). The same holds when the module was FIRST imported
+    through its ordinary package path (``import pkg.transformers``): the
+    existing module is returned rather than re-executed under a synthetic
+    name. First loads are serialised by a process-wide lock.
 
     Args:
         path: Path to the transformer module file (e.g.
@@ -61,6 +101,19 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
     if not file.is_file():
         raise FileNotFoundError(file)
 
+    with _LOAD_LOCK:
+        existing = _already_loaded(file)
+        if existing is not None:
+            return existing
+        return _load_under_synthetic_name(file, name)
+
+
+def _load_under_synthetic_name(file: Path, name: str | None) -> ModuleType:
+    """Load ``file`` under a deterministic synthetic (package or module) name.
+
+    Caller holds ``_LOAD_LOCK`` and has verified nothing in ``sys.modules``
+    was already loaded from ``file``.
+    """
     pkg_init = file.parent / "__init__.py"
     if pkg_init.is_file():
         pkg = name or f"parrot_transformers_{_digest(file.parent)}"
