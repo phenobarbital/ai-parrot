@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-528
 **Date**: 2026-09-04
 **Author**: Juan Ruffato (jfrruffato@trocglobal.com) + Claude
-**Status**: draft
+**Status**: approved (Juan, 2026-09-04 — all section 8 questions resolved; agent relocation left open for Jesús)
 **Target version**: not chosen by this spec. Work is based on `dev` and lands by PR; whoever cuts the release decides the number (Juan, 2026-09-04).
 **Reserved via**: `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label pg-recipe-store-and-agent-package-importability` → `FEAT-528` (commit `0a27686cd`). The allocator returned 528, not the ledger's cached 527, because `infographic-a2ui-migration` had already claimed 527 on `origin/dev`.
 **Downstream consumer**: FieldSync `FEAT-559` — `fieldsync/sdd/proposals/fieldsync-a2ui-surfaces-plane.brainstorm.md`. That feature mounts parrot's `ui_surfaces` REST lane in `fieldsync-api` and is blocked on both modules below.
