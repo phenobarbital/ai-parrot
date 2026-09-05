@@ -52,6 +52,7 @@ from parrot.outputs.a2ui.renderers import (
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.catalog.parrot.htmldocument import parse_html_document_placeholder_title
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
@@ -439,11 +440,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             # one exists, else the placeholder text. Always recorded.
             degradations.append(degradation_record(node, "ssr-html cannot embed HtmlDocument"))
             placeholder = str(props.get("text") or "")
-            title = (
-                placeholder[len("[HTML document: ") : -1]
-                if placeholder.startswith("[HTML document: ") and placeholder.endswith("]")
-                else placeholder
-            )
+            title = parse_html_document_placeholder_title(placeholder)
             src_url = extensions.get("parrot_src_url")
             if src_url:
                 return (

@@ -33,9 +33,18 @@ HTMLDOCUMENT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Signed artifact URL when the document is too large to inline.",
         },
+        # NITPICK (code review): accepted end-to-end (schema -> build_html_document
+        # -> InfographicRenderResult) for shape symmetry with the toolkit's other
+        # theme-carrying artifacts, but no renderer currently reads it — the
+        # placeholder/iframe embed both ignore it. Not removed (a documented,
+        # additive no-op is cheaper than a breaking schema change); a future
+        # renderer MAY start honouring it (e.g. an iframe `?theme=` query param).
         "theme": {"type": "string"},
     },
     "required": ["title"],
+    # NITPICK (code review): this `oneOf` is documentation-only — it is never
+    # evaluated as JSON Schema validation at runtime. The actual html/srcUrl
+    # XOR is enforced in Python by build_html_document().
     "oneOf": [{"required": ["html"]}, {"required": ["srcUrl"]}],
 }
 
@@ -87,3 +96,32 @@ class HtmlDocumentComponent:
             child=BasicNode(component="Column", children=children),
             metadata={"extensions": {"parrot_variant": "html-document"}},
         )
+
+
+_PLACEHOLDER_PREFIX = "[HTML document: "
+_PLACEHOLDER_SUFFIX = "]"
+
+
+def parse_html_document_placeholder_title(placeholder: str) -> str:
+    """Recover the ``title`` from a lowered ``HtmlDocument`` placeholder Text.
+
+    Code-review fix (FEAT-527): this is the shared inverse of the
+    ``f"[HTML document: {title}]"`` format string built in :meth:`lower`
+    above — it used to be duplicated independently in the ``ssr-html`` and
+    ``adaptive_cards`` renderers (satellite package), which read this Text
+    node's ``props.get("text")`` back out when degrading a non-embeddable
+    ``HtmlDocument``.
+
+    Args:
+        placeholder: The degraded node's ``text`` value (e.g. from
+            ``props.get("text") or ""``). Any string not matching the
+            ``"[HTML document: ...]"`` shape is returned unchanged — a
+            renderer should never raise over a cosmetic title fallback.
+
+    Returns:
+        The original ``title``, or ``placeholder`` itself when it doesn't
+        match the expected wrapper shape.
+    """
+    if placeholder.startswith(_PLACEHOLDER_PREFIX) and placeholder.endswith(_PLACEHOLDER_SUFFIX):
+        return placeholder[len(_PLACEHOLDER_PREFIX) : -len(_PLACEHOLDER_SUFFIX)]
+    return placeholder

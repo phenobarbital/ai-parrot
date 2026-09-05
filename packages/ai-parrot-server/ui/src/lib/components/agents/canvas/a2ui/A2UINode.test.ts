@@ -149,4 +149,22 @@ describe('A2UINode', () => {
     });
     expect(screen.getByText(/chart feature disabled/i)).toBeInTheDocument();
   });
+
+  it('Chart with features.charts off still renders title/description', () => {
+    // Code-review regression guard: A2UINode used to gate the ENTIRE Chart
+    // branch (including title/description) behind features.charts with its
+    // own duplicate placeholder — skipping title/description whenever the
+    // flag was off, unlike InfographicChartBlock's own internal gate (which
+    // only hides the chart drawing, not the surrounding title/description).
+    render(A2UINode, {
+      descriptor: {
+        component: 'Chart',
+        properties: { title: 'Revenue', description: 'By month', type: 'bar', x: 'label', y: ['v'] },
+      },
+      dataModel: {},
+    });
+    expect(screen.getByText('Revenue')).toBeInTheDocument();
+    expect(screen.getByText('By month')).toBeInTheDocument();
+    expect(screen.getByText(/chart feature disabled/i)).toBeInTheDocument();
+  });
 });

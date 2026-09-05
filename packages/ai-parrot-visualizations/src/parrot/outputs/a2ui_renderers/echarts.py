@@ -178,7 +178,35 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 base_option["xAxis"] = {"type": "category", "data": categories}
                 base_option["yAxis"] = {"type": "category", "data": list(y_cols)}
             elif chart_type == "radar":
-                base_option["radar"] = {"indicator": [{"name": str(c)} for c in categories]}
+                base_option["radar"] = {
+                    "indicator": [
+                        self._radar_indicator(str(c), idx, y_cols, rows) for idx, c in enumerate(categories)
+                    ]
+                }
+            # Code-review fix (FEAT-527): palette/colorBySign used to only be
+            # applied in the standard per-y-column path below — the early
+            # return above meant they were silently dropped for every
+            # row-native chart type, even though the adapter forwards them
+            # into the envelope correctly. `palette` (top-level `color`) is
+            # safe to apply uniformly. `colorBySign` only makes sense for the
+            # waterfall lane's signed "delta" series (bar/waterfall are the
+            # documented colorBySign use case; the other row-native shapes
+            # — gauge/funnel/treemap/heatmap/radar — have no flat signed
+            # scalar dimension for a piecewise visualMap to target).
+            palette = props.get("palette")
+            if palette:
+                base_option["color"] = list(palette)
+            if chart_type == "waterfall" and props.get("colorBySign"):
+                base_option["visualMap"] = {
+                    "type": "piecewise",
+                    "show": False,
+                    "seriesIndex": 1,
+                    "dimension": 0,
+                    "pieces": [
+                        {"max": 0, "color": props.get("negativeColor") or "#d62728"},
+                        {"min": 0, "color": props.get("positiveColor") or "#2ca02c"},
+                    ],
+                }
             return base_option
 
         series = []
@@ -386,6 +414,35 @@ class EChartsRenderer(AbstractA2UIRenderer):
             ]
 
         return []  # pragma: no cover — chart_type is always one of the above
+
+    @staticmethod
+    def _radar_indicator(name: str, idx: int, y_cols: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build one radar ``indicator`` entry, with a ``max`` bound (FEAT-527 fix).
+
+        ECharts radar axes default to an unbounded scale when ``max`` is
+        omitted, which visually flattens/degenerates real data. Derive the
+        bound from the largest numeric value across all y-column series at
+        this row index — every series' ``value`` array is one entry per
+        indicator (row), so this is the actual ceiling that dimension needs
+        to display. Omit ``max`` (rather than guessing) when no numeric
+        value is available at this row.
+
+        Args:
+            name: The indicator's display name (the row's x/category value).
+            idx: The row index this indicator corresponds to.
+            y_cols: Value column names (one radar series per column).
+            rows: Bound data rows.
+
+        Returns:
+            An ``{"name": ...}`` dict, plus ``"max"`` when derivable.
+        """
+        indicator: dict[str, Any] = {"name": name}
+        if idx < len(rows) and isinstance(rows[idx], dict):
+            values = [rows[idx].get(col) for col in y_cols]
+            numeric = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            if numeric:
+                indicator["max"] = max(numeric)
+        return indicator
 
     @staticmethod
     def _heatmap_visual_map(series: list[dict[str, Any]]) -> dict[str, Any]:

@@ -4,7 +4,6 @@
 	// Reuses the EXISTING infographic block renderers (Chart/DataTable/
 	// Timeline) instead of a second rendering stack — only KPICard/InfoCard/
 	// HtmlDocument/the Basic primitives are rendered inline here.
-	import { features } from '$lib/features';
 	import { resolveProps } from './a2ui-binding';
 	import { toChartBlockData } from './a2ui-chart-adapter';
 	import type { SectionDescriptor } from './a2ui-types';
@@ -71,13 +70,12 @@
 		color={resolved.color as string | undefined}
 	/>
 {:else if component === 'Chart'}
-	{#if features.charts}
-		<InfographicChartBlock {...toChartBlockData(properties, dataModel)} />
-	{:else}
-		<div class="a2ui-placeholder text-sm text-muted-foreground italic p-3">
-			Chart feature disabled in this build.
-		</div>
-	{/if}
+	<!-- Code-review fix: InfographicChartBlock already gates its own chart
+	     internals behind features.charts (with an identical placeholder) and
+	     renders title/description regardless of the flag — the outer gate
+	     here duplicated the check AND, worse, suppressed title/description
+	     whenever the flag was off. Let the delegated component own it. -->
+	<InfographicChartBlock {...toChartBlockData(properties, dataModel)} />
 {:else if component === 'DataTable'}
 	<InfographicTableBlock {...tableData} />
 {:else if component === 'Timeline'}

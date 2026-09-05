@@ -195,6 +195,61 @@ class TestInfographicComponent:
         assert not any(c.component == "Row" for c in section.children)
         assert any(c.component == "Card" for c in section.children)
 
+    def test_half_layout_pairing_reaches_nested_column_children(self):
+        """Code-review regression guard (FEAT-527): the adapter's `_tabs()`
+        wraps each accordion/tab_view pane's blocks in a
+        `Column{children: [...]}` descriptor, nested INSIDE a section's own
+        component list — not a section's direct children. Half-layout
+        pairing used to only apply at the section level (`_lower_section`),
+        so a half-width chart inside such a pane never got grouped into a
+        Row. Prove the pairing now reaches this nested case too."""
+        comp = Component(
+            id="root",
+            component="Infographic",
+            title="T",
+            sections=[
+                {
+                    "heading": "S",
+                    "components": [
+                        {
+                            "component": "Column",
+                            "properties": {
+                                "children": [
+                                    {
+                                        "component": "Chart",
+                                        "properties": {
+                                            "type": "bar",
+                                            "x": "m",
+                                            "y": ["v"],
+                                            "layout": "half",
+                                            "data": {"path": "/a"},
+                                        },
+                                    },
+                                    {
+                                        "component": "Chart",
+                                        "properties": {
+                                            "type": "donut",
+                                            "x": "m",
+                                            "y": ["v"],
+                                            "layout": "half",
+                                            "data": {"path": "/b"},
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
+        tree = infographic.InfographicComponent().lower(comp, {"a": [], "b": []})
+        section = tree.child.children[1]
+        nested_column = next(c for c in section.children if c.component == "Column")
+        rows = [c for c in nested_column.children if c.component == "Row"]
+        assert len(rows) == 1
+        assert len(rows[0].children) == 2
+        assert rows[0].metadata.extensions.root["parrot_layout"] == "half"
+
 
 class TestReportComponent:
     def test_report_registered_in_catalog(self):

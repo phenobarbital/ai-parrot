@@ -202,9 +202,62 @@ class TestNewChartTypes:
         option = EChartsRenderer()._build_option(
             {"type": "radar", "x": "m", "y": ["v"], "data": [{"m": "a", "v": 1}, {"m": "b", "v": 2}]}
         )
-        assert option["radar"]["indicator"] == [{"name": "a"}, {"name": "b"}]
+        # Code-review regression guard: indicators used to carry no "max",
+        # which produces degenerate/flat radar axes for real data — each
+        # indicator's max is now the largest value across y-columns at that
+        # row (row "a" -> v=1, row "b" -> v=2).
+        assert option["radar"]["indicator"] == [{"name": "a", "max": 1}, {"name": "b", "max": 2}]
         assert option["series"][0]["data"][0]["value"] == [1, 2]
+
+    async def test_radar_indicator_omits_max_when_no_numeric_value(self):
+        option = EChartsRenderer()._build_option(
+            {"type": "radar", "x": "m", "y": ["v"], "data": [{"m": "a", "v": None}]}
+        )
+        assert option["radar"]["indicator"] == [{"name": "a"}]
 
     async def test_donut_radius_applied(self):
         option = EChartsRenderer()._build_option({"type": "donut", "x": "m", "y": ["v"], "data": [{"m": "a", "v": 1}]})
         assert option["series"][0]["radius"] == ["40%", "70%"]
+
+    async def test_row_native_types_forward_palette(self):
+        # Code-review regression guard: palette/colorBySign used to only be
+        # applied in the standard per-y-column path — the row-native early
+        # return silently dropped them for gauge/funnel/treemap/heatmap/
+        # waterfall/radar, even though the adapter forwards them correctly.
+        for chart_type in ("gauge", "funnel", "treemap", "heatmap", "waterfall", "radar"):
+            option = EChartsRenderer()._build_option(
+                {
+                    "type": chart_type,
+                    "x": "m",
+                    "y": ["v"],
+                    "data": [{"m": "a", "v": 1}, {"m": "b", "v": -2}],
+                    "palette": ["#111111", "#222222"],
+                }
+            )
+            assert option["color"] == ["#111111", "#222222"], chart_type
+
+    async def test_waterfall_color_by_sign_targets_the_delta_series(self):
+        option = EChartsRenderer()._build_option(
+            {
+                "type": "waterfall",
+                "x": "m",
+                "y": ["v"],
+                "data": [{"m": "a", "v": 10}, {"m": "b", "v": -5}],
+                "colorBySign": True,
+                "positiveColor": "#0a0",
+                "negativeColor": "#a00",
+            }
+        )
+        assert option["visualMap"]["seriesIndex"] == 1
+        assert option["visualMap"]["pieces"] == [
+            {"max": 0, "color": "#a00"},
+            {"min": 0, "color": "#0a0"},
+        ]
+
+    async def test_gauge_color_by_sign_is_not_applied(self):
+        # gauge has no flat signed scalar series for a piecewise visualMap
+        # to target — colorBySign is a documented bar/waterfall-only feature.
+        option = EChartsRenderer()._build_option(
+            {"type": "gauge", "x": "m", "y": ["v"], "data": [{"m": "a", "v": 1}], "colorBySign": True}
+        )
+        assert "visualMap" not in option

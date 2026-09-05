@@ -86,4 +86,20 @@ describe('InfographicCanvas — a2ui mode', () => {
     await screen.findByText('Q1 Report', {}, { timeout: 3000 });
     expect(screen.getByRole('button', { name: 'HTML' })).toBeDisabled();
   });
+
+  it('still falls back to the url iframe when html is an empty string', async () => {
+    // Code-review regression guard: the previous ternary short-circuited to
+    // `false` whenever `html === ''` (as opposed to `undefined`), dropping
+    // the `url` fallback entirely even though a valid url was present.
+    openA2uiTab({ html: '', url: 'https://x/a.html' });
+    render(InfographicCanvas, { data: null });
+    await screen.findByText('Q1 Report', {}, { timeout: 3000 });
+
+    const htmlButton = screen.getByRole('button', { name: 'HTML' });
+    expect(htmlButton).not.toBeDisabled();
+    htmlButton.click();
+    await tick();
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement;
+    expect(iframe.getAttribute('src')).toBe('https://x/a.html');
+  });
 });

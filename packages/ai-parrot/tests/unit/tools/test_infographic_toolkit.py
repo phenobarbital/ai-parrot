@@ -587,6 +587,21 @@ class TestRenderTemplateHtmlDocumentEnvelope:
         )
         return tk
 
+    @pytest.fixture
+    def toolkit_with_multibyte_template(self, fake_artifact_store):
+        # Code-review regression guard: _INLINE_THRESHOLD is a 50 KB *byte*
+        # budget. 45,000 non-ASCII 2-byte UTF-8 characters is ~90 KB on the
+        # wire but only 45,000+ Python str code points — well under the old
+        # (buggy) len()-based check, which would have inlined this. This
+        # fixture must stay pure multi-byte (no ASCII padding) so a
+        # regression back to len(html) can't accidentally still pass.
+        multibyte_html = "<html><body>" + ("é" * 45_000) + "</body></html>"
+        tk = InfographicToolkit(
+            artifact_store=fake_artifact_store,
+            templates={"multibyte": multibyte_html},
+        )
+        return tk
+
     @pytest.mark.asyncio
     async def test_render_template_emits_htmldocument_inline(self, toolkit_with_template):
         res = await toolkit_with_template.render_template("hello", data={"title": "Hi"})
@@ -599,6 +614,17 @@ class TestRenderTemplateHtmlDocumentEnvelope:
     @pytest.mark.asyncio
     async def test_render_template_large_document_uses_src_url(self, toolkit_with_big_template):
         res = await toolkit_with_big_template.render_template("big")
+        root = res.a2ui_envelope["createSurface"]["components"][0]
+        assert root["srcUrl"] == res.html_url
+        assert "html" not in root
+        assert res.html_inline is None
+
+    @pytest.mark.asyncio
+    async def test_render_template_multibyte_document_uses_src_url(self, toolkit_with_multibyte_template):
+        # Code-review regression guard: proves the threshold check counts
+        # UTF-8 bytes, not Python str code points (45,000 chars is under
+        # 50,000 code points but ~90 KB of UTF-8 bytes — must NOT inline).
+        res = await toolkit_with_multibyte_template.render_template("multibyte")
         root = res.a2ui_envelope["createSurface"]["components"][0]
         assert root["srcUrl"] == res.html_url
         assert "html" not in root

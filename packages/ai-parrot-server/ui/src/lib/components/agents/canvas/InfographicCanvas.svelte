@@ -58,9 +58,17 @@
 	let hasJson = $derived(tabData?.mode === 'json' && tabData?.infographic != null);
 	// FEAT-527: an a2ui tab additionally carries url/html so the toolbar's
 	// Rendered/HTML toggle can still fall back to the iframe view.
-	let hasA2ui = $derived(tabData?.mode === 'a2ui' && !!tabData.envelope);
+	// Code-review fix: `tabData?.envelope` (not `tabData.envelope`) — TS
+	// control-flow narrowing can't prove `tabData` non-null across the `&&`
+	// from an optional-chained left operand.
+	let hasA2ui = $derived(tabData?.mode === 'a2ui' && !!tabData?.envelope);
+	// Code-review fix: the previous ternary dropped the `url` fallback
+	// entirely whenever `tabData.html === ''` (rather than `undefined`) —
+	// an empty-but-present string short-circuited straight to `false`
+	// without ever checking `url`. OR the two conditions instead.
 	let a2uiHasHtmlFallback = $derived(
-		hasA2ui && (typeof tabData?.html === 'string' ? tabData.html.length > 0 : !!tabData?.url),
+		hasA2ui &&
+			((typeof tabData?.html === 'string' && tabData.html.length > 0) || !!tabData?.url),
 	);
 	let isEmpty = $derived(!isLoading && !hasHtml && !hasUrl && !hasJson && !hasA2ui);
 
@@ -339,7 +347,10 @@
 			</div>
 			<div class="flex-1 min-h-0 overflow-auto">
 				{#if a2uiView === 'rendered' && features.a2ui}
-					<A2UISurface envelope={tabData.envelope} />
+					<!-- Code-review fix: `tabData?.envelope` — `hasA2ui` proves this
+					     at runtime, but TS can't narrow a derived boolean back to
+					     `tabData` itself. -->
+					<A2UISurface envelope={tabData?.envelope} />
 				{:else if typeof tabData?.html === 'string' && tabData.html.length > 0}
 					<!-- FEAT-527 code-review fix: srcdoc content must NOT carry
 					     allow-same-origin — combined with allow-scripts it would let

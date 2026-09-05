@@ -88,6 +88,18 @@ _infographic_pctx_var: "contextvars.ContextVar[Any | None]" = contextvars.Contex
 
 _INLINE_THRESHOLD: int = 50_000
 
+
+def _html_byte_length(html: str) -> int:
+    """Return the UTF-8 byte length of ``html`` (code-review fix, FEAT-527).
+
+    ``_INLINE_THRESHOLD`` is a wire-size budget ("50 KB"), so it must be
+    compared against UTF-8 *bytes*, not Python ``str`` code points — a
+    document made mostly of multi-byte characters (e.g. non-ASCII text)
+    can be well under the code-point threshold while still exceeding the
+    intended byte budget on the wire.
+    """
+    return len(html.encode("utf-8"))
+
 # Maximum number of DataFrame rows serialised into the LLM enhance context.
 # Larger DataFrames are truncated with a warning to avoid excessive token usage.
 MAX_ENHANCE_ROWS: int = 50
@@ -169,7 +181,7 @@ class InfographicRenderResult(BaseModel):
 
     artifact_id: str
     html_url: str
-    html_inline: Optional[str] = None  # None when len(html) >= _INLINE_THRESHOLD
+    html_inline: Optional[str] = None  # None when _html_byte_length(html) >= _INLINE_THRESHOLD
     template_name: str
     theme: Optional[str] = None
     data_variables: List[str] = Field(default_factory=list)
@@ -517,7 +529,7 @@ class InfographicToolkit(AbstractToolkit):
             template.name,
             validated_theme,
             enhanced,
-            len(html),
+            _html_byte_length(html),
         )
 
         a2ui_envelope = None
@@ -532,7 +544,7 @@ class InfographicToolkit(AbstractToolkit):
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
-            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            html_inline=html if _html_byte_length(html) < _INLINE_THRESHOLD else None,
             template_name=template.name,
             theme=validated_theme,
             data_variables=data_variables,
@@ -623,7 +635,7 @@ class InfographicToolkit(AbstractToolkit):
             "Rendered template infographic: template=%s theme=%s size=%d bytes",
             template_name,
             theme,
-            len(html),
+            _html_byte_length(html),
         )
 
         a2ui_envelope = None
@@ -643,7 +655,7 @@ class InfographicToolkit(AbstractToolkit):
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
-            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            html_inline=html if _html_byte_length(html) < _INLINE_THRESHOLD else None,
             template_name=template_name,
             theme=theme,
             data_variables=[],
@@ -757,7 +769,7 @@ class InfographicToolkit(AbstractToolkit):
             "Rendered data-splice infographic: template=%s marker=%s size=%d bytes",
             template_name,
             effective_marker,
-            len(html),
+            _html_byte_length(html),
         )
 
         a2ui_envelope = None
@@ -775,7 +787,7 @@ class InfographicToolkit(AbstractToolkit):
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
-            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            html_inline=html if _html_byte_length(html) < _INLINE_THRESHOLD else None,
             template_name=template_name,
             theme=None,
             data_variables=[],
@@ -943,7 +955,7 @@ class InfographicToolkit(AbstractToolkit):
         from parrot.outputs.a2ui.builders import build_html_document
         from parrot.outputs.a2ui.serialization import serialize
 
-        inline = len(html) < _INLINE_THRESHOLD
+        inline = _html_byte_length(html) < _INLINE_THRESHOLD
         try:
             envelope = build_html_document(
                 title=title,
