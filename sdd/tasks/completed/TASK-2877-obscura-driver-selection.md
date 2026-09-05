@@ -71,7 +71,36 @@ Keep DriverFactory.create() synchronous and return an unstarted driver, matching
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-05
+**Notes**: Added a `driver_type == "obscura"` branch to
+`DriverFactory.create()` that builds a `PlaywrightConfig(engine="obscura",
+browser_type="chromium", ...)` (forwarding `cdp_endpoint_url`,
+`obscura_binary`, `obscura_port`, `obscura_stealth`,
+`obscura_allow_private_network` plus the usual viewport/locale/timezone/
+proxy/timeout options) and returns it wrapped in `PlaywrightDriver`,
+exactly mirroring the existing `"playwright"` branch's structure.
+`browser` is intentionally ignored for Obscura — `browser_type` is always
+forced to `"chromium"` since Obscura only speaks CDP as a
+Chromium-compatible engine, so it can never silently fall back to
+launching a local Chrome/Chromium. The `"selenium"`/`"playwright"`
+branches and the default `driver_type` are untouched; the unknown-type
+error message now lists `'obscura'`. `toolkit.py` required **no** change:
+its `WebScrapingTool.__init__` already merges `driver_config` overrides
+into `factory_config` before calling `DriverFactory.create()`
+(`packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py:362-371`),
+so `obscura_*`/`cdp_endpoint_url` keys pass through generically —
+verified this pass-through exists rather than guessing, per the task's
+"MODIFY if required" wording (`WebScrapingToolkit`'s separate
+`DriverRegistry`-based session path in `driver_context.py`/
+`toolkit_models.py` was intentionally left untouched — it is not in this
+task's file list or Codebase Contract). New tests: obscura config
+forwarding, forced-chromium-ignoring-`browser`, and an explicit
+selenium+playwright preservation test. All 49 factory/integration tests
+pass; full `scraping/` suite: 838 passed (7 pre-existing failures in
+`test_toolkit_integration.py` confirmed unrelated — missing FEAT-013
+`CrawlEngine` dependency, reproduced identically on `git stash`); ruff
+clean.
+**Deviations from spec**: none — reuses `PlaywrightConfig`/
+`PlaywrightDriver` per the spec's "Does NOT Exist" constraint (no
+`ObscuraDriver`).
