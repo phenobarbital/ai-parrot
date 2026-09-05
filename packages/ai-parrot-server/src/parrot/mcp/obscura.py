@@ -16,6 +16,7 @@ See `sdd/specs/obscura-new-browser-headless.spec.md` (FEAT-530), Module 1.
 import asyncio
 import logging
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -255,3 +256,63 @@ class ObscuraProcessManager:
             "endpoint": self.endpoint,
             "pid": self.process.pid if self.process is not None else None,
         }
+
+
+# ── CLI cross-invocation lifecycle adapter (FEAT-530, TASK-2879) ────
+#
+# `ObscuraProcessManager` tracks ownership only in-process
+# (`_owns_process`/`self.process`), which is correct for an embedded,
+# long-lived caller (an agent process holding one `ObscuraProcessManager`
+# for its own lifetime) but cannot survive across two separate CLI
+# invocations — `parrot mcp obscura start` and a later
+# `parrot mcp obscura stop` are different OS processes with no shared
+# Python state. This small PID-file adapter is the CLI's own
+# cross-invocation bookkeeping; `ObscuraProcessManager` itself never
+# reads or writes these files.
+
+
+def default_pid_file(port: int) -> Path:
+    """Default PID-file path for a supervised Obscura process on `port`.
+
+    Args:
+        port: The CDP port the process was started on.
+
+    Returns:
+        Path: `{tempdir}/obscura-{port}.pid`.
+    """
+    return Path(tempfile.gettempdir()) / f"obscura-{port}.pid"
+
+
+def write_pid_file(path: Path, pid: int) -> None:
+    """Persist `pid` to `path` for a later CLI `stop`/`status` invocation.
+
+    Args:
+        path: PID-file path (typically `default_pid_file(port)`).
+        pid: Process id to record.
+    """
+    path.write_text(str(pid))
+
+
+def read_pid_file(path: Path) -> Optional[int]:
+    """Read a previously written PID.
+
+    Args:
+        path: PID-file path to read.
+
+    Returns:
+        Optional[int]: The recorded PID, or `None` if `path` does not
+        exist or does not contain a valid integer.
+    """
+    try:
+        return int(path.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def remove_pid_file(path: Path) -> None:
+    """Remove `path` if present.
+
+    Args:
+        path: PID-file path to remove. A missing file is not an error.
+    """
+    path.unlink(missing_ok=True)

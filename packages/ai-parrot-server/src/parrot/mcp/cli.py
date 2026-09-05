@@ -1,4 +1,7 @@
 import asyncio
+import json
+import os
+import signal
 import sys
 import importlib.util
 from importlib import import_module
@@ -187,3 +190,207 @@ async def _run_standalone_server(mcp_server: ParrotMCPServer):
         logger.info("Interrupted by user")
     finally:
         await server.stop()
+
+
+# ── Obscura lifecycle commands (FEAT-530) ────────────────────────
+#
+# `ObscuraProcessManager` (parrot.mcp.obscura) tracks process ownership
+# only in-process (`_owns_process`), which is correct for an embedded,
+# long-lived caller (an agent process) but cannot survive across two
+# separate CLI invocations (`start` in one process, `stop`/`status` in
+# another). These commands therefore delegate lifecycle *decisions* to
+# `ObscuraProcessManager` (start/readiness, CDP status probing) but use
+# a small PID-file adapter (`default_pid_file`/`write_pid_file`/
+# `read_pid_file`/`remove_pid_file`, also in `parrot.mcp.obscura`) to
+# find the process again on `stop`. Never launches Chrome/Selenium as a
+# fallback.
+
+
+@mcp.group("obscura")
+def obscura_group():
+    """Supervised Obscura process lifecycle commands (FEAT-530)."""
+
+
+@obscura_group.command("start")
+@click.option(
+    "--binary", "binary_path", required=True,
+    help="Path to (or PATH-resolvable name of) the Obscura binary.",
+)
+@click.option("--host", default="127.0.0.1", show_default=True, help="CDP bind host.")
+@click.option("--port", default=9222, show_default=True, type=int, help="CDP port.")
+@click.option(
+    "--stealth", is_flag=True, default=False,
+    help="Enable Obscura's stealth mode.",
+)
+@click.option(
+    "--allow-private-network", is_flag=True, default=False,
+    help=(
+        "Enable --allow-private-network. Required for local fixtures; "
+        "do not enable by default in general deployments."
+    ),
+)
+@click.option(
+    "--attach-only", is_flag=True, default=False,
+    help="Adopt an already-running endpoint instead of spawning a new process.",
+)
+@click.option(
+    "--startup-timeout", default=10.0, show_default=True, type=float,
+    help="Seconds to wait for the CDP endpoint to become ready.",
+)
+def obscura_start(
+    binary_path, host, port, stealth, allow_private_network, attach_only,
+    startup_timeout,
+):
+    """Start (or adopt) the supervised Obscura process."""
+    asyncio.run(
+        _obscura_start(
+            binary_path, host, port, stealth, allow_private_network,
+            attach_only, startup_timeout,
+        )
+    )
+
+
+async def _obscura_start(
+    binary_path, host, port, stealth, allow_private_network, attach_only,
+    startup_timeout,
+):
+    from .obscura import (
+        ObscuraProcessConfig,
+        ObscuraProcessManager,
+        default_pid_file,
+        write_pid_file,
+    )
+
+    config = ObscuraProcessConfig(
+        binary_path=binary_path,
+        host=host,
+        port=port,
+        stealth=stealth,
+        allow_private_network=allow_private_network,
+        attach_only=attach_only,
+        startup_timeout=startup_timeout,
+    )
+    manager = ObscuraProcessManager(config)
+    try:
+        endpoint = await manager.start()
+    except RuntimeError as exc:
+        click.echo(f"Error starting Obscura: {exc}", err=True)
+        sys.exit(1)
+        return
+
+    if manager.process is not None:
+        write_pid_file(default_pid_file(port), manager.process.pid)
+    click.echo(f"Obscura ready at {endpoint}")
+
+
+@obscura_group.command("stop")
+@click.option(
+    "--port", default=9222, show_default=True, type=int,
+    help="CDP port of the supervised process to stop.",
+)
+def obscura_stop(port):
+    """Stop a previously started supervised Obscura process."""
+    asyncio.run(_obscura_stop(port))
+
+
+async def _obscura_stop(port):
+    from .obscura import default_pid_file, read_pid_file, remove_pid_file
+
+    pid_file = default_pid_file(port)
+    pid = read_pid_file(pid_file)
+    if pid is None:
+        click.echo(
+            f"No supervised Obscura process found for port {port} "
+            f"(no PID file at {pid_file}).",
+            err=True,
+        )
+        sys.exit(1)
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        click.echo(f"Obscura process {pid} was already gone.", err=True)
+        remove_pid_file(pid_file)
+        return
+    except OSError as exc:
+        click.echo(f"Error stopping Obscura process {pid}: {exc}", err=True)
+        sys.exit(1)
+        return
+
+    remove_pid_file(pid_file)
+    click.echo(f"Stopped Obscura process {pid} on port {port}.")
+
+
+@obscura_group.command("status")
+@click.option("--host", default="127.0.0.1", show_default=True, help="CDP host to probe.")
+@click.option("--port", default=9222, show_default=True, type=int, help="CDP port to probe.")
+def obscura_status(host, port):
+    """Report whether a supervised Obscura CDP endpoint is responsive."""
+    asyncio.run(_obscura_status(host, port))
+
+
+async def _obscura_status(host, port):
+    from .obscura import (
+        ObscuraProcessConfig,
+        ObscuraProcessManager,
+        default_pid_file,
+        read_pid_file,
+    )
+
+    # attach_only=True: a status probe must never spawn a process — it
+    # only reports what's currently observable (CDP readiness + any
+    # known PID file), regardless of who started it.
+    config = ObscuraProcessConfig(
+        binary_path="obscura", host=host, port=port, attach_only=True,
+    )
+    manager = ObscuraProcessManager(config)
+    status = await manager.status()
+    status["pid"] = read_pid_file(default_pid_file(port))
+    click.echo(json.dumps(status))
+
+
+@obscura_group.command("mcp-config")
+@click.option(
+    "--binary", "binary_path", default=None,
+    help="Path to (or PATH-resolvable name of) the Obscura binary.",
+)
+@click.option("--name", default="obscura", show_default=True, help="MCP server name.")
+@click.option(
+    "--port", default=9222, show_default=True, type=int,
+    help="CDP port Obscura's native MCP mode should use internally.",
+)
+@click.option("--stealth", is_flag=True, default=False, help="Enable Obscura's stealth mode.")
+@click.option(
+    "--allow-private-network", is_flag=True, default=False,
+    help="Enable --allow-private-network.",
+)
+def obscura_mcp_config(binary_path, name, port, stealth, allow_private_network):
+    """Print the native `obscura mcp` stdio config (for Codex/MCP hosts).
+
+    This is the documented command/config path for native Obscura MCP:
+    paste the printed ``command``/``args`` into any MCP host's stdio
+    server configuration (Codex, Claude Code, etc.), or use
+    ``parrot.mcp.integration.create_obscura_mcp_server()`` /
+    ``MCPEnabledMixin.add_obscura_mcp_server()`` directly from Python.
+    """
+    from parrot.mcp.integration import create_obscura_mcp_server
+
+    config = create_obscura_mcp_server(
+        binary_path=binary_path,
+        name=name,
+        port=port,
+        stealth=stealth,
+        allow_private_network=allow_private_network,
+    )
+    click.echo(
+        json.dumps(
+            {
+                "name": config.name,
+                "command": config.command,
+                "args": config.args,
+                "transport": config.transport,
+            },
+            indent=2,
+        )
+    )
