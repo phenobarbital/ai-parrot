@@ -1,162 +1,154 @@
+"""LLM client factory: string-spec parsing + provider discovery/catalogue.
+
+FEAT-523 (TASK-2854): core no longer statically imports any concrete
+provider client at module scope, and no longer knows about any provider
+by name — ``SUPPORTED_CLIENTS`` is a lazily-populated registry, filled in
+by :func:`_discover` purely from **entry points**
+(``importlib.metadata.entry_points(group="parrot.clients")``): each
+installed satellite distribution (``ai-parrot-client-<provider>``)
+declares one entry point per provider key; the value is a zero-arg loader
+(``EntryPoint.load``) resolved lazily, exactly like the pre-existing
+``_lazy_*`` closures this module used to hand-write before TASK-2847.
+
+TASK-2847..2853 introduced and then emptied out a second, transitional
+source — an in-core provider walk (``_IN_CORE_PROVIDERS``) for providers
+that still lived inside ``ai-parrot`` core while their satellite
+extraction was in flight. That tuple and its consuming branch in
+:func:`_discover` are gone as of this task: with all 15 providers
+extracted, entry points are the only source, and a venv with zero
+satellites installed now genuinely sees zero registered providers
+(``LLMFactory.list_providers() == {}``), rather than falling back to
+importing anything from ``ai-parrot`` itself.
+
+Discovery is intentionally **not** run eagerly at import time — importing
+``parrot.clients.factory`` must never import any provider, satellite or
+not. Instead, ``SUPPORTED_CLIENTS`` is a small ``dict`` subclass that
+triggers :func:`_discover` lazily, on first read (``in``, ``[]``, ``.get``,
+``.keys()``, ``.items()``, ``.values()``, iteration, ``len()``) — this
+keeps every existing ``from parrot.clients.factory import SUPPORTED_CLIENTS``
+call site (there are about a dozen across core/server/pipelines) working
+unchanged, whether they read it inline or hold on to the imported name.
+"""
+
+import importlib.metadata as importlib_metadata
+import logging
 from typing import Any, Dict, Optional, Tuple
+
 from .base import AbstractClient
-from .claude import AnthropicClient
-from .google import GoogleGenAIClient
-from .gpt import OpenAIClient
-from .groq import GroqClient
-from .grok import GrokClient
-from .openrouter import OpenRouterClient
-from .localllm import LocalLLMClient
-from .vllm import vLLMClient
-from .nvidia import NvidiaClient
-from .zai import ZaiClient
-from .moonshot import MoonshotClient
-from .meta import MetaClient
+
+logger = logging.getLogger(__name__)
+
+# Guards _discover() so repeated calls (from create()/list_providers()/
+# list_models()/supported_clients(), or from every SUPPORTED_CLIENTS read)
+# are no-ops after the first successful pass. Tests reset this directly
+# (``monkeypatch.setattr(factory, "_DISCOVERED", False, raising=False)``)
+# to force a fresh discovery pass against mocked entry points.
+_DISCOVERED = False
+
+# key -> distribution name (the installed satellite's distribution name
+# that supplied the entry point). Backs LLMFactory.list_providers().
+_PROVIDER_DIST: Dict[str, str] = {}
 
 
-def _lazy_gemma4():
-    from .gemma4 import Gemma4Client
+class _LazyClientRegistry(dict):
+    """A ``dict`` that populates itself via :func:`_discover` on first read.
 
-    return Gemma4Client
-
-
-def _lazy_bedrock_converse():
-    """Lazy loader for :class:`BedrockConverseClient` (FEAT-302).
-
-    Importing :mod:`parrot.clients.bedrock` is cheap — it only imports
-    ``aioboto3`` lazily inside ``get_client()`` — but this loader keeps the
-    same pattern as :func:`_lazy_gemma4` / :func:`_lazy_claude_agent` for
-    consistency and to defer the import until the client is actually
-    requested via the factory.
-
-    Returns:
-        The :class:`BedrockConverseClient` class.
+    Still a real ``dict`` instance — ``_discover()`` mutates it in place
+    (``SUPPORTED_CLIENTS[key] = value``), it is never rebound — so the
+    ~12 existing ``from parrot.clients.factory import SUPPORTED_CLIENTS``
+    call sites across core/server/pipelines keep working unchanged; only
+    read access is intercepted, to trigger discovery lazily instead of
+    eagerly at import time.
     """
-    from .bedrock import BedrockConverseClient
 
-    return BedrockConverseClient
+    def _ensure_discovered(self) -> None:
+        _discover()
+
+    def __contains__(self, key: object) -> bool:
+        self._ensure_discovered()
+        return super().__contains__(key)
+
+    def __getitem__(self, key):
+        self._ensure_discovered()
+        return super().__getitem__(key)
+
+    def __iter__(self):
+        self._ensure_discovered()
+        return super().__iter__()
+
+    def __len__(self) -> int:
+        self._ensure_discovered()
+        return super().__len__()
+
+    def get(self, key, default=None):
+        self._ensure_discovered()
+        return super().get(key, default)
+
+    def keys(self):
+        self._ensure_discovered()
+        return super().keys()
+
+    def items(self):
+        self._ensure_discovered()
+        return super().items()
+
+    def values(self):
+        self._ensure_discovered()
+        return super().values()
 
 
-def _lazy_nova():
-    """Lazy loader for :class:`NovaClient` (FEAT-315).
+SUPPORTED_CLIENTS: Dict[str, Any] = _LazyClientRegistry()
 
-    Importing :mod:`parrot.clients.nova` is cheap — the text/generation
-    paths only import ``aioboto3`` lazily inside ``get_client()``, and the
-    Pre-Alpha voice SDK (``aws_sdk_bedrock_runtime``) is imported lazily
-    inside ``stream_voice()`` — but this loader keeps the same pattern as
-    :func:`_lazy_bedrock_converse` / :func:`_lazy_gemma4` for consistency
-    and to defer the import until the client is actually requested via the
-    factory.
 
-    Returns:
-        The :class:`NovaClient` class.
+def _register(key: str, value: Any, dist_name: str) -> None:
+    """Register ``value`` under ``key`` unless the key is already claimed.
+
+    First registration wins. A later attempt to register a *different*
+    value under an already-claimed key is logged and dropped (spec §4
+    ``test_duplicate_entry_point_warning``). Re-registering the exact same
+    object under an alias name it is already registered under (e.g.
+    ``GoogleClient = GoogleGenAIClient`` re-exported alongside
+    ``GoogleGenAIClient`` in the same provider's ``__all__``) is not a
+    conflict and is skipped silently.
     """
-    from .nova import NovaClient
+    # NOTE: uses the base `dict` methods (never the overridden ones on
+    # `_LazyClientRegistry`) — we are called from inside `_discover()`
+    # itself, before `_DISCOVERED` is set; going through the lazy-triggering
+    # methods here would recurse back into `_discover()`.
+    if dict.__contains__(SUPPORTED_CLIENTS, key):
+        existing = dict.__getitem__(SUPPORTED_CLIENTS, key)
+        if existing is value:
+            return
+        logger.warning(
+            "Duplicate LLM provider key '%s' from distribution '%s' ignored; " "already registered by '%s'.",
+            key,
+            dist_name,
+            _PROVIDER_DIST.get(key, "?"),
+        )
+        return
+    dict.__setitem__(SUPPORTED_CLIENTS, key, value)
+    _PROVIDER_DIST[key] = dist_name
 
-    return NovaClient
 
+def _discover() -> None:
+    """Populate ``SUPPORTED_CLIENTS`` from installed satellites' entry
+    points. Idempotent, guarded by :data:`_DISCOVERED`.
 
-def _lazy_bedrock_mantle():
-    """Lazy loader for :class:`BedrockMantleClient` (FEAT-407).
-
-    Keeps the same deferred-import pattern as :func:`_lazy_nova` /
-    :func:`_lazy_bedrock_converse`.
-
-    Returns:
-        The :class:`BedrockMantleClient` class.
+    FEAT-523 (TASK-2854): this is now the *only* source. With zero
+    ``ai-parrot-client-*`` satellites installed, ``SUPPORTED_CLIENTS``
+    stays empty and ``LLMFactory.list_providers()`` returns ``{}`` — core
+    genuinely does not know about any provider until one is installed.
     """
-    from .nova.mantle import BedrockMantleClient
+    global _DISCOVERED
+    if _DISCOVERED:
+        return
 
-    return BedrockMantleClient
+    for ep in importlib_metadata.entry_points(group="parrot.clients"):
+        dist_name = ep.dist.name if getattr(ep, "dist", None) is not None else ep.name
+        _register(ep.name, ep.load, dist_name)
 
+    _DISCOVERED = True
 
-def _lazy_claude_agent():
-    """Lazy loader for :class:`ClaudeAgentClient`.
-
-    Importing :mod:`parrot.clients.claude_agent` is itself cheap (it does
-    not pull in :mod:`claude_agent_sdk` at module scope), but
-    instantiating the client and calling any of its methods will require
-    the optional ``ai-parrot[claude-agent]`` extra to be installed. This
-    loader catches a missing-SDK ``ImportError`` and re-raises it with an
-    actionable ``pip install`` hint so the failure surface at
-    :py:meth:`LLMFactory.create` time is clear.
-
-    Returns:
-        The :class:`ClaudeAgentClient` class.
-
-    Raises:
-        ImportError: When :mod:`claude_agent_sdk` cannot be imported,
-            wrapped with a hint to install the ``[claude-agent]`` extra.
-    """
-    try:
-        from .claude_agent import ClaudeAgentClient
-
-        return ClaudeAgentClient
-    except ImportError as exc:
-        raise ImportError(
-            "ClaudeAgentClient requires claude-agent-sdk. " "Install with: pip install ai-parrot[claude-agent]"
-        ) from exc
-
-
-def _lazy_openai_codex():
-    """Lazy loader for :class:`OpenAICodexClient`.
-
-    Importing :mod:`parrot.clients.codex_agent` does not import the optional
-    ``openai_codex`` SDK at module scope. The SDK is resolved only when the
-    SDK backend is used; the CLI backend can reuse installed Codex CLI auth.
-    """
-    from .codex_agent import OpenAICodexClient
-
-    return OpenAICodexClient
-
-
-SUPPORTED_CLIENTS = {
-    "claude": AnthropicClient,
-    "anthropic": AnthropicClient,
-    # FEAT-232: AWS Bedrock and AWS-workspace backends — both resolve to
-    # AnthropicClient; the `backend` kwarg is injected via PROVIDER_BACKEND below.
-    "bedrock": AnthropicClient,
-    "anthropic-aws": AnthropicClient,
-    # FEAT-302: native Bedrock Converse API client — distinct key, coexists
-    # with "bedrock" above (AnthropicClient's Bedrock backend, FEAT-232).
-    "bedrock-converse": _lazy_bedrock_converse,
-    # FEAT-315: unified client for all Amazon Nova models (text/voice/image/
-    # video) on Bedrock — distinct key, coexists with "bedrock-converse"
-    # above (non-Nova families: Claude/Llama/Mistral/...).
-    "nova": _lazy_nova,
-    # FEAT-407: Amazon Bedrock Mantle — OpenAI-compatible API for
-    # Bedrock-hosted models, authenticated with a bearer API key (no
-    # SigV4/boto). Distinct key, coexists with "bedrock" (FEAT-232),
-    # "bedrock-converse" (FEAT-302), and "nova" (FEAT-315) above.
-    "bedrock-mantle": _lazy_bedrock_mantle,
-    "mantle": _lazy_bedrock_mantle,
-    "google": GoogleGenAIClient,
-    "openai": OpenAIClient,
-    "groq": GroqClient,
-    "grok": GrokClient,
-    "xai": GrokClient,
-    "zai": ZaiClient,
-    "z.ai": ZaiClient,
-    "openrouter": OpenRouterClient,
-    "nvidia": NvidiaClient,
-    "moonshot": MoonshotClient,
-    "kimi": MoonshotClient,
-    # FEAT-526: Meta Model API (Muse Spark family).
-    "meta": MetaClient,
-    "muse": MetaClient,
-    "meta-muse": MetaClient,
-    "local": LocalLLMClient,
-    "localllm": LocalLLMClient,
-    "ollama": LocalLLMClient,
-    "vllm": vLLMClient,
-    "llamacpp": LocalLLMClient,
-    "gemma4": _lazy_gemma4,
-    "claude-agent": _lazy_claude_agent,
-    "claude-code": _lazy_claude_agent,
-    "codex-agent": _lazy_openai_codex,
-    "openai-codex": _lazy_openai_codex,
-    "codex-code": _lazy_openai_codex,
-}
 
 # FEAT-232: provider keys that require a specific AnthropicClient backend value.
 # When a provider key is present here, LLMFactory.create() injects
@@ -201,6 +193,67 @@ class LLMFactory:
         return llm.strip(), None
 
     @staticmethod
+    def _discover() -> None:
+        """Public-ish hook for tests / callers that want to force discovery
+        without going through ``create()``/``list_providers()``/``list_models()``.
+        """
+        _discover()
+
+    @staticmethod
+    def supported_clients() -> Dict[str, Any]:
+        """Discover-then-return ``SUPPORTED_CLIENTS``.
+
+        Prefer this over importing ``SUPPORTED_CLIENTS`` directly when the
+        call site needs a guaranteed-populated snapshot without relying on
+        the lazy-dict read hooks (e.g. before handing the mapping to
+        something that only ever calls plain ``dict`` methods on it).
+        """
+        _discover()
+        return SUPPORTED_CLIENTS
+
+    @staticmethod
+    def list_providers() -> Dict[str, str]:
+        """Return every discovered provider key mapped to the installed
+        satellite distribution name that supplied it. Empty with zero
+        ``ai-parrot-client-*`` satellites installed.
+        """
+        _discover()
+        return dict(_PROVIDER_DIST)
+
+    @staticmethod
+    def list_models(provider: str) -> Dict[str, list]:
+        """Return the active/deprecated model catalogue for ``provider``.
+
+        Args:
+            provider: A provider key registered in ``SUPPORTED_CLIENTS``.
+
+        Returns:
+            ``{"active": [...model values...], "deprecated": [...aliases...]}``
+
+        Raises:
+            ImportError: If ``provider`` is not a known key.
+        """
+        _discover()
+        key = provider.lower()
+        if key not in SUPPORTED_CLIENTS:
+            raise ImportError(
+                f"No LLM client for provider '{key}'. Install ai-parrot-client-{key} "
+                f"or choose one of: {sorted(LLMFactory.list_providers())}"
+            )
+        client_class = SUPPORTED_CLIENTS[key]
+        if callable(client_class) and not isinstance(client_class, type):
+            client_class = client_class()
+        return {
+            "active": [m.value for m in client_class.models],
+            # Not every client defines `deprecated_models` — only classes
+            # with actual deprecations (e.g. OpenAIClient) declare it;
+            # AbstractClient carries no base default (base.py is out of
+            # scope for this feature), so this must getattr rather than
+            # rely on the attribute always existing.
+            "deprecated": list(getattr(client_class, "deprecated_models", None) or {}),
+        }
+
+    @staticmethod
     def create(
         llm: str, model_args: Optional[Dict[str, Any]] = None, tool_manager: Optional[Any] = None, **kwargs
     ) -> AbstractClient:
@@ -232,13 +285,18 @@ class LLMFactory:
         if not isinstance(llm, str):
             raise ValueError(f"LLMFactory.create expects string, got {type(llm).__name__}")
 
+        _discover()
+
         # Parse provider and model
         provider, model = LLMFactory.parse_llm_string(llm)
         provider = provider.lower()
 
         # Validate provider
         if provider not in SUPPORTED_CLIENTS:
-            raise ValueError(f"Unsupported LLM provider: '{provider}'. " f"Supported: {list(SUPPORTED_CLIENTS.keys())}")
+            raise ImportError(
+                f"No LLM client for provider '{provider}'. Install ai-parrot-client-{provider} "
+                f"or choose one of: {sorted(LLMFactory.list_providers())}"
+            )
 
         # Get client class (resolve lazy loaders)
         client_class = SUPPORTED_CLIENTS[provider]

@@ -6,6 +6,7 @@ from navconfig.logging import logging
 
 from parrot.bots.data import PandasAgent
 from parrot.registry import agent_registry
+from parrot.utils.paths import validate_path_segment
 
 class DataAnalystHandler(BaseView):
     """
@@ -24,6 +25,17 @@ class DataAnalystHandler(BaseView):
         name = payload.get("name", "In-Memory Data Analyst")
         agent_id = payload.get("agent_id") or str(uuid.uuid4())
         chatbot_id = payload.get("chatbot_id") or str(uuid.uuid4())
+
+        # ``agent_id`` becomes an on-disk path component (STATIC_DIR/<agent_id>/…),
+        # so an unsafe value is a path-traversal vector (CWE-22). Reject it here
+        # with a 400 instead of letting it fail deeper as a 500.
+        try:
+            validate_path_segment(agent_id, name="agent_id")
+        except ValueError as exc:
+            return JSONResponse(
+                {"status": "error", "message": str(exc)},
+                status=400
+            )
         agent_name = payload.get("agent_name", name)
         
         # Accept LLM config to be similar to other agent creations:

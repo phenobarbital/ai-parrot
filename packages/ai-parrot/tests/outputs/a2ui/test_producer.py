@@ -288,7 +288,7 @@ class TestE2ELLMProducerFirstShotRate:
     pytestmark = pytest.mark.asyncio
 
     async def test_first_shot_rate_at_least_85_percent(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient()
         successes = 0

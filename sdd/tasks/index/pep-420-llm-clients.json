@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-04T22:34:28+00:00",
   "tasks": [
     {
       "id": "TASK-2841",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches parrot/models/__init__.py and parrot/models/google.py that every following folder-conversion task also edits; must land first.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2841-core-convention-google-and-live-voice.md"
+      "completed_at": "2026-09-04T17:22:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2841-core-convention-google-and-live-voice.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2842",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Sequential: edits parrot/models/__init__.py, factory.py import lines and the shared conformance test.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2842-openai-folder.md"
+      "completed_at": "2026-09-04T17:35:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2842-openai-folder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2843",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Sequential: shares factory.py import block, parrot/models/__init__.py and the conformance test with siblings.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2843-openai-wire-wrapper-folders.md"
+      "completed_at": "2026-09-04T17:51:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2843-openai-wire-wrapper-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2844",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Sequential: shares factory.py import block, parrot/models/__init__.py and the conformance test.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2844-anthropic-groq-grok-zai-folders.md"
+      "completed_at": "2026-09-04T18:11:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2844-anthropic-groq-grok-zai-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2845",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Sequential: shares factory.py lazy closures and the conformance test with siblings.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2845-amazon-gemma4-hf-folders.md"
+      "completed_at": "2026-09-04T18:29:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2845-amazon-gemma4-hf-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2846",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +130,9 @@
       "parallelism_notes": "Sequential: touches conf.py and bots/agent.py which FEAT-525 may also touch — rebase-check.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2846-core-callsite-hard-cut.md"
+      "completed_at": "2026-09-04T19:22:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2846-core-callsite-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2847",
@@ -135,7 +141,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -145,8 +151,9 @@
       "parallelism_notes": "Sequential: rewrites factory.py and clients/__init__.py which every satellite task then relies on.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2847-factory-discovery-and-catalogue.md"
+      "completed_at": "2026-09-04T19:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2847-factory-discovery-and-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2848",
@@ -155,7 +162,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,8 +172,9 @@
       "parallelism_notes": "Sequential after the factory API exists; disjoint files from the satellite tasks, but keep it before them so the server never imports a moved module.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2848-server-llm-handler-catalogue.md"
+      "completed_at": "2026-09-04T19:59:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2848-server-llm-handler-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2849",
@@ -175,7 +183,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,8 +194,9 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (openai, meta) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2849-satellites-openai-meta.md"
+      "completed_at": "2026-09-04T20:21:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2849-satellites-openai-meta.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2850",
@@ -196,7 +205,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -207,8 +216,9 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (anthropic, amazon) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2850-satellites-anthropic-amazon.md"
+      "completed_at": "2026-09-04T20:30:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2850-satellites-anthropic-amazon.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2851",
@@ -217,7 +227,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -228,8 +238,9 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (google, gemma4, hf) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2851-satellites-google-gemma4-hf.md"
+      "completed_at": "2026-09-04T20:38:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2851-satellites-google-gemma4-hf.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2852",
@@ -238,7 +249,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -249,8 +260,9 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (groq, grok, zai) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2852-satellites-groq-grok-zai.md"
+      "completed_at": "2026-09-04T20:58:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2852-satellites-groq-grok-zai.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2853",
@@ -259,7 +271,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -270,8 +282,9 @@
       "parallelism_notes": "parallel: true — moves a disjoint folder set (nvidia, moonshot, openrouter, local, vllm) into new packages/ dirs; only shared file is root pyproject.toml `members` (already `packages/*` glob, no edit needed). Can run in its own worktree alongside TASK-2849..2853.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2853-satellites-nvidia-moonshot-openrouter-local-vllm.md"
+      "completed_at": "2026-09-04T21:16:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2853-satellites-nvidia-moonshot-openrouter-local-vllm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2854",
@@ -280,7 +293,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -294,8 +307,9 @@
       "parallelism_notes": "Sequential: needs all 15 satellite names; edits core pyproject.toml and factory.py.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2854-core-extras-workspace-cleanup.md"
+      "completed_at": "2026-09-04T21:34:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2854-core-extras-workspace-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2855",
@@ -304,7 +318,7 @@
       "feature_id": "FEAT-523",
       "feature": "pep-420-llm-clients",
       "spec": "sdd/specs/pep-420-llm-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -314,8 +328,9 @@
       "parallelism_notes": "Sequential: final gate over all satellites.",
       "assigned_to": null,
       "started_at": "2026-09-04T16:38:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2855-tests-migration-verification.md"
+      "completed_at": "2026-09-04T21:53:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2855-tests-migration-verification.md",
+      "verification": "verified"
     }
   ],
   "superseded_tasks": {

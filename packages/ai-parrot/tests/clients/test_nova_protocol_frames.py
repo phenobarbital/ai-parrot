@@ -2,11 +2,11 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def _client():
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         return NovaClient(model="nova-2-sonic", region="us-east-1", voice_id="matthew")
 
 
@@ -32,11 +32,13 @@ async def _capture_opening_frames(client, system_prompt="be brief"):
         return
         yield  # pragma: no cover — makes this an async generator
 
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-         patch.object(client, "_open_stream", return_value=AsyncMock()), \
-         patch.object(client, "_send_event", new=capture), \
-         patch.object(client, "_iter_events", new=no_events), \
-         patch.object(client, "_close_stream", new=AsyncMock()):
+    with (
+        patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+        patch.object(client, "_open_stream", return_value=AsyncMock()),
+        patch.object(client, "_send_event", new=capture),
+        patch.object(client, "_iter_events", new=no_events),
+        patch.object(client, "_close_stream", new=AsyncMock()),
+    ):
         async for _ in client.stream_voice(audio(), system_prompt=system_prompt):
             pass
     return sent
@@ -61,9 +63,9 @@ class TestOpeningSequence:
     async def test_audio_content_start_is_interactive(self):
         sent = await _capture_opening_frames(_client())
         audio_starts = [
-            e["event"]["contentStart"] for e in sent
-            if "contentStart" in e.get("event", {})
-            and e["event"]["contentStart"].get("type") == "AUDIO"
+            e["event"]["contentStart"]
+            for e in sent
+            if "contentStart" in e.get("event", {}) and e["event"]["contentStart"].get("type") == "AUDIO"
         ]
         assert audio_starts[0]["interactive"] is True
         assert audio_starts[0]["audioInputConfiguration"]["audioType"] == "SPEECH"
@@ -72,9 +74,9 @@ class TestOpeningSequence:
     async def test_system_content_start_shape(self):
         sent = await _capture_opening_frames(_client())
         sys_starts = [
-            e["event"]["contentStart"] for e in sent
-            if "contentStart" in e.get("event", {})
-            and e["event"]["contentStart"].get("role") == "SYSTEM"
+            e["event"]["contentStart"]
+            for e in sent
+            if "contentStart" in e.get("event", {}) and e["event"]["contentStart"].get("role") == "SYSTEM"
         ]
         assert sys_starts[0]["interactive"] is False
         assert sys_starts[0]["textInputConfiguration"] == {"mediaType": "text/plain"}

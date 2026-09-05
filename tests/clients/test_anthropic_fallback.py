@@ -7,7 +7,7 @@ from anthropic import RateLimitError, APIStatusError, InternalServerError
 
 def _make_client():
     """Create an AnthropicClient instance without full __init__."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     client = AnthropicClient.__new__(AnthropicClient)
     client._fallback_model = "claude-sonnet-4.5"
@@ -48,7 +48,7 @@ class TestAnthropicFallbackModel:
     """Test that AnthropicClient has the correct fallback model default."""
 
     def test_fallback_model_default(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         assert AnthropicClient._fallback_model == "claude-sonnet-4.5"
 
@@ -112,7 +112,7 @@ class TestAnthropicAskFallback:
     """Test fallback behavior in the ask() method."""
 
     def _setup_client(self, model="claude-opus-4"):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client._fallback_model = "claude-sonnet-4.5"
@@ -153,7 +153,7 @@ class TestAnthropicAskFallback:
 
         mock_ai_message = MagicMock()
         mock_ai_message.metadata = {}
-        with patch("parrot.clients.claude.AIMessageFactory") as mock_factory:
+        with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
             mock_factory.from_claude.return_value = mock_ai_message
             result = await client.ask("Hello", model="claude-opus-4")
 
@@ -219,7 +219,7 @@ class TestAnthropicAskFallback:
 
         mock_ai_message = MagicMock()
         mock_ai_message.metadata = {}
-        with patch("parrot.clients.claude.AIMessageFactory") as mock_factory:
+        with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
             mock_factory.from_claude.return_value = mock_ai_message
             result = await client.ask("Hello", model="claude-opus-4")
 
@@ -234,7 +234,7 @@ class TestAnthropicSdkRetries:
 
     @pytest.mark.asyncio
     async def test_sdk_max_retries_preserved(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client.api_key = "test-key"

@@ -10,7 +10,7 @@ OpenAI-only model id to a non-OpenAI endpoint.
 
 This module MUST NOT contain any OpenAI-specific model-id literal — that is
 OpenAI-the-provider knowledge and belongs exclusively in
-:mod:`parrot.clients.gpt`.
+:mod:`parrot.clients.openai`.
 
 See ``sdd/specs/openai-compatible-clients.spec.md`` (FEAT-438) §3 Module 1.
 """
@@ -55,7 +55,7 @@ from .base import AbstractClient
 # The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
 # DEBUG. Quieted here — the base of EVERY OpenAI-protocol client — so Bedrock
 # Mantle, OpenRouter, Moonshot, Nvidia, vLLM and LocalLLM are covered, not
-# just parrot.clients.gpt. See parrot.utils.http_logging for the name split.
+# just parrot.clients.openai. See parrot.utils.http_logging for the name split.
 quiet_http_loggers()
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class OpenAIBaseClient(AbstractClient):
     Subclasses that speak the OpenAI chat-completions wire protocol under a
     provider-specific label (Bedrock Mantle, OpenRouter, Moonshot, Nvidia,
     LocalLLM/vLLM, and — in Phase 2 — Groq/Zai via their native SDKs) should
-    inherit from this class instead of :class:`~parrot.clients.gpt.OpenAIClient`
+    inherit from this class instead of :class:`~parrot.clients.openai.OpenAIClient`
     directly, so they never inherit OpenAI-the-provider defaults (OpenAI-only
     model ids, Responses-API routing, Sora, etc.).
     """
@@ -147,7 +147,7 @@ class OpenAIBaseClient(AbstractClient):
         """Coerce *model* to ``str``. Identity — no deprecation logic.
 
         The base carries no knowledge of any provider's model catalog or
-        deprecation schedule; :class:`~parrot.clients.gpt.OpenAIClient`
+        deprecation schedule; :class:`~parrot.clients.openai.OpenAIClient`
         overrides this with OpenAI-specific alias/deprecation handling.
 
         Args:
@@ -183,7 +183,7 @@ class OpenAIBaseClient(AbstractClient):
 
         Always ``False`` in the base — Responses-API routing is
         OpenAI-the-provider behavior owned by
-        :class:`~parrot.clients.gpt.OpenAIClient`.
+        :class:`~parrot.clients.openai.OpenAIClient`.
 
         Args:
             model_str: The resolved model id.
@@ -314,7 +314,7 @@ class OpenAIBaseClient(AbstractClient):
         """Shared tool-calling loop for ``ask()``/``resume()`` (FEAT-438 Module 2).
 
         Replaces the two inline, duplicated while-loops that previously
-        lived in :class:`~parrot.clients.gpt.OpenAIClient`'s ``ask()``
+        lived in :class:`~parrot.clients.openai.OpenAIClient`'s ``ask()``
         (gpt.py:947-1143) and ``resume()`` (gpt.py:1190-1257): executes any
         pending tool calls on *result*, appends the assistant/tool messages,
         re-invokes *call_completion* for the next round, and repeats until
@@ -540,7 +540,7 @@ class OpenAIBaseClient(AbstractClient):
         ``OpenAIBaseClient`` subclass that speaks the plain OpenAI wire
         protocol. Subclasses needing Responses-API routing, deep-research
         dispatch, or other OpenAI-provider-only behavior override this
-        method (currently only :class:`~parrot.clients.gpt.OpenAIClient`,
+        method (currently only :class:`~parrot.clients.openai.OpenAIClient`,
         which reuses :meth:`_chat_completion`/:meth:`_run_tool_call_loop`
         from this base while keeping its own richer ``ask()``).
 
@@ -899,7 +899,7 @@ class OpenAIBaseClient(AbstractClient):
         Generic chat-completions streaming implementation shared by every
         ``OpenAIBaseClient`` subclass. Subclasses needing Responses-API
         routing or other OpenAI-provider-only streaming behavior override
-        this method (currently only :class:`~parrot.clients.gpt.OpenAIClient`).
+        this method (currently only :class:`~parrot.clients.openai.OpenAIClient`).
         Routes through :meth:`_chat_completion` with ``stream=True``
         (FEAT-438 G3 — the single completion funnel) instead of calling the
         SDK directly, so a subclass's funnel override applies to streaming
@@ -1186,7 +1186,7 @@ class OpenAIBaseClient(AbstractClient):
             temperature: Sampling temperature.
             use_tools: Whether to inject registered tools.
             tools: Additional tool definitions (unused — kept for interface
-                parity with :class:`~parrot.clients.gpt.OpenAIClient`).
+                parity with :class:`~parrot.clients.openai.OpenAIClient`).
 
         Returns:
             :class:`InvokeResult` with parsed output.

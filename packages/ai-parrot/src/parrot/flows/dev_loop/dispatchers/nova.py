@@ -13,12 +13,12 @@ Converse — ``BedrockConverseBase`` exposes no OpenAI-shaped
 ``_chat_completion``, so the base dispatcher's ``_chat_completion`` would
 raise ``DispatchExecutionError("... does not expose chat completion")``
 against it. Instead, the injected ``client_factory`` builds a
-:class:`~parrot.clients.nova.mantle.BedrockMantleClient` pointed at the
+:class:`~parrot.clients.amazon.nova.mantle.BedrockMantleClient` pointed at the
 bedrock-mantle base URL, reusing the inherited tool loop, Redis event
 streaming, cwd-safety guard, and output validation unchanged.
 
 FEAT-438 code-review fix: this used to construct a plain
-:class:`~parrot.clients.gpt.OpenAIClient` here instead of
+:class:`~parrot.clients.openai.OpenAIClient` here instead of
 ``BedrockMantleClient``. Since ``OpenAIClient`` carries OpenAI-the-
 provider's own ``gpt-*`` defaults (``_default_model``/``_fallback_model``/
 ``_lightweight_model``), a capacity-error fallback on this dispatcher's
@@ -32,14 +32,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from parrot import conf
 from parrot.clients.factory import LLMFactory
-from parrot.clients.nova import NovaClient
-from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
@@ -58,6 +56,12 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.models.nova import effective_max_tokens
 from parrot.flows.dev_loop.session_state import SessionHost
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # FEAT-523 (TASK-2846): type-check-only — core must not import a
+    # provider module at module scope (AC-3); the real import is
+    # deferred to the methods/functions that instantiate this client.
+    from parrot.clients.amazon.nova import NovaClient
+
 
 class NovaCodeDispatcher(LLMCodeDispatcher):
     """Local coding-agent loop bound to Bedrock via the bedrock-mantle endpoint.
@@ -68,7 +72,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
     OpenAI-compatible client pointed at
     ``https://bedrock-mantle.{region}.api.aws/v1`` instead of the default
     ``LLMFactory``-resolved client (which would resolve ``"nova:"`` to
-    :class:`~parrot.clients.nova.client.NovaClient`, a Converse-only client
+    :class:`~parrot.clients.amazon.nova.client.NovaClient`, a Converse-only client
     with no chat-completion shape).
     """
 
@@ -117,6 +121,10 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
             DispatchExecutionError: When the mantle base URL or the Bedrock
                 API key cannot be resolved — names the missing config key.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.amazon.nova.mantle import BedrockMantleClient
+
         _provider, model = LLMFactory.parse_llm_string(llm)
         init_params: Dict[str, Any] = {}
         if model:
@@ -285,6 +293,10 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         self._review_base = review_base
         self._review_commit = review_commit
         self._max_diff_chars = max_diff_chars
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.amazon.nova import NovaClient
+
         self._client = client or NovaClient()
         self.logger = logging.getLogger(__name__)
 
@@ -530,6 +542,10 @@ async def summarize_pr_changes(
         ``## Summary of changes``), or ``""`` on any exception, timeout,
         missing credentials, or empty model response.
     """
+    # FEAT-523 (TASK-2846): lazy import — core must not import a
+    # provider module at module scope (AC-3).
+    from parrot.clients.amazon.nova import NovaClient
+
     log = logger or logging.getLogger(__name__)
     # code-review fix: DEV_LOOP_NOVA_MECHANICAL_MODEL was declared in
     # conf.py but never actually consumed anywhere — wire it into the

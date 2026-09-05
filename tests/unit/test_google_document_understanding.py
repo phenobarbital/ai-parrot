@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage, StructuredOutputConfig
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 # ---------------------------------------------------------------------------
 # Helper factories

@@ -1,17 +1,42 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import asyncio
 import json
 import aiofiles
 from pathlib import Path
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .compaction.omission import FileOmissionStore, OmissionStore
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .compaction.tokens import TokenCounter
 
 
 class FileConversationMemory(ConversationMemory):
     """File-based implementation of conversation memory."""
 
-    def __init__(self, base_path: str = "./conversations"):
-        super().__init__()
+    def __init__(
+        self,
+        base_path: str = "./conversations",
+        *,
+        token_counter: Optional["TokenCounter"] = None,
+        omission_store: Optional[OmissionStore] = None,
+        normalize: bool = True,
+    ) -> None:
+        """Initialize the store.
+
+        Args:
+            base_path: Root directory for conversation history files.
+            token_counter: Stage 0.5 counter override (see
+                :class:`~parrot.memory.abstract.ConversationMemory`).
+            omission_store: Omission-store override; defaults to a
+                :class:`FileOmissionStore` sharing ``base_path``.
+            normalize: Disables Stage 0 for this instance when ``False``.
+        """
         self.base_path = Path(base_path)
+        super().__init__(
+            token_counter=token_counter,
+            omission_store=omission_store or FileOmissionStore(self.base_path),
+            normalize=normalize,
+        )
         self.base_path.mkdir(exist_ok=True)
         self._lock = asyncio.Lock()
 
@@ -116,13 +141,21 @@ class FileConversationMemory(ConversationMemory):
         async with self._lock:
             await self._write_history(history)
 
-    async def add_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+    async def _store_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        compaction_state: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Add a turn to the conversation."""
+        """Append ``turn``, set ``metadata['compaction']`` when given, and rewrite the file once."""
         history = await self.get_history(user_id, session_id, chatbot_id)
         if history:
             history.add_turn(turn)
+            if compaction_state is not None:
+                history.metadata["compaction"] = compaction_state
             await self.update_history(history)
 
     async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
@@ -131,6 +164,7 @@ class FileConversationMemory(ConversationMemory):
         if history:
             history.clear_turns()
             await self.update_history(history)
+        await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
 
     async def list_sessions(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all session IDs for a user."""
@@ -164,6 +198,7 @@ class FileConversationMemory(ConversationMemory):
 
     async def delete_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Delete a conversation history entirely."""
+        await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
         async with self._lock:
             file_path = self._get_file_path(user_id, session_id, chatbot_id)
             if file_path.exists():

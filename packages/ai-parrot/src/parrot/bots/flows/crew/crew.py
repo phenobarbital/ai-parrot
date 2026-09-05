@@ -46,10 +46,9 @@ from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 
 from ...agent import BasicAgent
-from ...abstract import AbstractBot
+from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
-from ....clients.google import GoogleGenAIClient
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool, ToolResult
@@ -210,12 +209,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         if isinstance(llm, str):
-            client_cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(llm.lower(), None))
             self._llm = client_cls(**kwargs) if client_cls else None
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            client_cls = SUPPORTED_CLIENTS.get("google")
+            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get("google"))
             self._llm = client_cls(**kwargs) if client_cls else None
         self.truncation_length = (
             truncation_length if truncation_length is not None else self.__class__.default_truncation_length
@@ -2097,6 +2096,11 @@ Current task: {current_input}"""
 
         if not self._llm:
             # Let's create an LLM session if none is provided:
+            # FEAT-523 (TASK-2852): lazy import — core must not import a
+            # provider module at module scope (AC-3); "google" now ships
+            # from the ai-parrot-client-google satellite.
+            from ....clients.google import GoogleGenAIClient
+
             self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
 
         agent_sequence = agent_sequence or list(self.agents.keys())
@@ -4348,7 +4352,7 @@ above. Ensure the summary:
             try:
                 # Default to Google GenAI if no LLM provided
                 self.logger.warning("No LLM provided for executive summary. Defaulting to Google GenAI.")
-                self._llm = SUPPORTED_CLIENTS["google"]()
+                self._llm = _resolve_supported_client(SUPPORTED_CLIENTS["google"])()
             except Exception as ex:
                 self.logger.error(f"Failed to initialize default LLM: {ex}")
                 raise ValueError(

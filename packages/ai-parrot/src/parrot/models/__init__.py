@@ -19,7 +19,7 @@ from .outputs import (
     ImageGenerationPrompt,
     SpeakerConfig,
     SpeechGenerationPrompt,
-    VideoGenerationPrompt
+    VideoGenerationPrompt,
 )
 from .infographic import (
     BlockType,
@@ -74,7 +74,6 @@ from .generation import (
     VideoResolution,
 )
 from .google import (
-    GoogleModel,
     TTSVoice,
     MusicGenre,
     MusicMood,
@@ -94,18 +93,6 @@ from .datasets import (
     DatasetDeleteResponse,
     DatasetErrorResponse,
 )
-from .vllm import (
-    VLLMConfig,
-    VLLMSamplingParams,
-    VLLMLoRARequest,
-    VLLMGuidedParams,
-    VLLMBatchRequest,
-    VLLMBatchResponse,
-    VLLMServerInfo,
-    pydantic_to_guided_json,
-)
-from .nvidia import NvidiaModel
-from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
     AgentDefinition,
@@ -133,7 +120,6 @@ __all__ = (
     "OutputFormat",
     "ToolCall",
     "CompletionUsage",
-    "ZaiModel",
     "ToolConfig",
     "AIMessage",
     "AIMessageFactory",
@@ -147,7 +133,6 @@ __all__ = (
     "SpeakerConfig",
     "SpeechGenerationPrompt",
     "VideoGenerationPrompt",
-    "GoogleModel",
     "TTSVoice",
     "VoiceConfig",
     "AudioFormat",
@@ -168,15 +153,6 @@ __all__ = (
     "DatasetUploadResponse",
     "DatasetDeleteResponse",
     "DatasetErrorResponse",
-    # vLLM models
-    "VLLMConfig",
-    "VLLMSamplingParams",
-    "VLLMLoRARequest",
-    "VLLMGuidedParams",
-    "VLLMBatchRequest",
-    "VLLMBatchResponse",
-    "VLLMServerInfo",
-    "pydantic_to_guided_json",
     # Infographic models
     "BlockType",
     "ChartType",
@@ -223,8 +199,6 @@ __all__ = (
     "InfographicTemplate",
     "InfographicTemplateRegistry",
     "infographic_registry",
-    # Nvidia models
-    "NvidiaModel",
     # Crew definition models
     "ExecutionMode",
     "AgentDefinition",

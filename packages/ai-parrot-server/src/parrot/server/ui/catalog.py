@@ -9,6 +9,7 @@ Follows the same authenticated-endpoint pattern as
 ``parrot.server.ui.status.AdminStatusHandler`` (TASK-2524): the response
 models here are also the TS codegen source (``scripts/generate_ts_types.py``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,18 +44,25 @@ class AdminCatalog(BaseModel):
 def _dedup_llm_providers() -> list[str]:
     """Return ``SUPPORTED_CLIENTS`` keys deduplicated by resolved client.
 
-    ``SUPPORTED_CLIENTS`` maps several alias keys to the same client class
-    (or, for some providers, the same lazy-loader function) — e.g.
-    ``claude``/``anthropic`` both resolve to ``AnthropicClient``,
-    ``claude-agent``/``claude-code`` both resolve to the same lazy loader.
-    Keeps the first key encountered per resolved value, sorted.
+    ``SUPPORTED_CLIENTS`` maps several alias keys to the same client
+    class — e.g. ``claude``/``anthropic`` both resolve to
+    ``AnthropicClient``, ``claude-agent``/``claude-code`` both resolve to
+    the same lazy loader. FEAT-523 (TASK-2853): every provider now
+    registers via a real `parrot.clients` entry point, so each alias key
+    carries its *own* ``EntryPoint`` (and thus its own ``.load`` bound
+    method) even when they target the same class — comparing the raw
+    registry values no longer detects the alias relationship, so each
+    value is resolved (zero-arg lazy loaders are called) before
+    deduplicating. Keeps the first key encountered per resolved value,
+    sorted.
     """
     seen: list[object] = []
     providers: list[str] = []
     for key, value in SUPPORTED_CLIENTS.items():
-        if value in seen:
+        resolved = value() if callable(value) and not isinstance(value, type) else value
+        if resolved in seen:
             continue
-        seen.append(value)
+        seen.append(resolved)
         providers.append(key)
     return sorted(providers)
 
@@ -69,13 +77,13 @@ def _knowledge_base_options() -> list[KnowledgeBaseOption]:
     """
     options = [
         KnowledgeBaseOption(
-            class_path=(
-                f"{RedisKnowledgeBase.__module__}.{RedisKnowledgeBase.__qualname__}"
-            ),
+            class_path=(f"{RedisKnowledgeBase.__module__}.{RedisKnowledgeBase.__qualname__}"),
             name=RedisKnowledgeBase.__name__,
-            description=(RedisKnowledgeBase.__doc__ or "").strip().splitlines()[0]
-            if (RedisKnowledgeBase.__doc__ or "").strip()
-            else None,
+            description=(
+                (RedisKnowledgeBase.__doc__ or "").strip().splitlines()[0]
+                if (RedisKnowledgeBase.__doc__ or "").strip()
+                else None
+            ),
         ),
     ]
     try:
@@ -85,17 +93,15 @@ def _knowledge_base_options() -> list[KnowledgeBaseOption]:
             KnowledgeBaseOption(
                 class_path=f"{LocalKB.__module__}.{LocalKB.__qualname__}",
                 name=LocalKB.__name__,
-                description=(LocalKB.__doc__ or "").strip().splitlines()[0]
-                if (LocalKB.__doc__ or "").strip()
-                else None,
+                description=(
+                    (LocalKB.__doc__ or "").strip().splitlines()[0] if (LocalKB.__doc__ or "").strip() else None
+                ),
             )
         )
     except Exception as exc:  # noqa: BLE001
         # ai-parrot-embeddings absent (or any other import-time failure) —
         # degrade gracefully, never raise from the catalog builder.
-        logging.getLogger(__name__).warning(
-            "LocalKB unavailable, dropping from Admin UI catalog: %s", exc
-        )
+        logging.getLogger(__name__).warning("LocalKB unavailable, dropping from Admin UI catalog: %s", exc)
     return options
 
 

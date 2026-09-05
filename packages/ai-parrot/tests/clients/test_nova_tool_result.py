@@ -2,10 +2,9 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
-TOOL_USE = {"toolUse": {"toolName": "get_weather", "toolUseId": "tu_1",
-                        "content": '{"location": "Miami"}'}}
+TOOL_USE = {"toolUse": {"toolName": "get_weather", "toolUseId": "tu_1", "content": '{"location": "Miami"}'}}
 TOOL_END = {"contentEnd": {"type": "TOOL"}}
 TEXT_END = {"contentEnd": {"type": "TEXT"}}
 END = {"completionEnd": {}}
@@ -20,7 +19,7 @@ async def _run(frames, execute=None):
     fixture) — this exercises protocol logic only, on both Python 3.11 (SDK
     absent) and 3.13 (SDK present).
     """
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         client = NovaClient(model="nova-2-sonic", region="us-east-1")
     sent = []
 
@@ -36,12 +35,14 @@ async def _run(frames, execute=None):
         yield None
 
     execute = execute or AsyncMock(return_value="Sunny, 25C")
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-         patch.object(client, "_open_stream", return_value=AsyncMock()), \
-         patch.object(client, "_send_event", new=capture), \
-         patch.object(client, "_iter_events", new=iter_events), \
-         patch.object(client, "_close_stream", new=AsyncMock()), \
-         patch.object(client, "_execute_tool", new=execute):
+    with (
+        patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+        patch.object(client, "_open_stream", return_value=AsyncMock()),
+        patch.object(client, "_send_event", new=capture),
+        patch.object(client, "_iter_events", new=iter_events),
+        patch.object(client, "_close_stream", new=AsyncMock()),
+        patch.object(client, "_execute_tool", new=execute),
+    ):
         out = [r async for r in client.stream_voice(audio())]
     return out, sent, execute
 
@@ -83,8 +84,7 @@ class TestToolArguments:
 
     @pytest.mark.asyncio
     async def test_malformed_content_reported_as_tool_error(self):
-        bad = {"toolUse": {"toolName": "get_weather", "toolUseId": "tu_1",
-                           "content": "not json{"}}
+        bad = {"toolUse": {"toolName": "get_weather", "toolUseId": "tu_1", "content": "not json{"}}
         out, sent, execute = await _run([bad, TOOL_END, END])
         execute.assert_not_called()
         errored = [tc for r in out for tc in r.tool_calls if tc.error]
@@ -107,8 +107,7 @@ class TestToolResultEnvelope:
         result = _frames(sent, "toolResult")[0]
         assert "toolUseId" not in result
         assert "contentName" in result
-        tool_starts = [c for c in _frames(sent, "contentStart")
-                       if c.get("type") == "TOOL"]
+        tool_starts = [c for c in _frames(sent, "contentStart") if c.get("type") == "TOOL"]
         assert tool_starts[0]["toolResultInputConfiguration"]["toolUseId"] == "tu_1"
         assert tool_starts[0]["role"] == "TOOL"
         assert tool_starts[0]["interactive"] is False
@@ -116,8 +115,7 @@ class TestToolResultEnvelope:
     @pytest.mark.asyncio
     async def test_content_name_matches_across_three_frames(self):
         _, sent, _ = await _run([TOOL_USE, TOOL_END, END])
-        tool_start = [c for c in _frames(sent, "contentStart")
-                      if c.get("type") == "TOOL"][0]
+        tool_start = [c for c in _frames(sent, "contentStart") if c.get("type") == "TOOL"][0]
         result = _frames(sent, "toolResult")[0]
         assert result["contentName"] == tool_start["contentName"]
 
@@ -126,6 +124,7 @@ class TestToolResultEnvelope:
         """Regression guard (code review): a tool can legitimately return a
         non-JSON-serializable object (e.g. a DataFrame). json.dumps() on it
         must not escape _send_tool_result() and abort the whole turn."""
+
         class NotJsonSerializable:
             def __str__(self):
                 return "not-json-serializable-repr"

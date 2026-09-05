@@ -18,11 +18,17 @@ Public surface:
     (cardinality explosion).
   * ``current_session_id`` — module-level ``ContextVar[Optional[str]]`` with
     default ``None``. Same rationale as ``current_user_id``.
+  * ``current_memory_key_id`` — module-level ``ContextVar[Optional[str]]``
+    with default ``None``. FEAT-525: carries the bot's ``memory_key_id``
+    (the key a conversation is stored under) so ``read_omitted_content``
+    can scope its omission-store lookup without a bot reference. Bound
+    *after* ``user_id``/``session_id`` are defaulted, so it is never set
+    while the other two are still ``None``.
   * ``agent_identity(name)`` — context-manager helper that does a token-based
     ``set()`` / ``reset()`` so nested scopes restore the prior value.
-  * ``invocation_context(agent_name, user_id, session_id)`` — context-manager
-    that binds all three ContextVars atomically. Preferred over setting them
-    individually.
+  * ``invocation_context(agent_name, user_id, session_id, memory_key_id)`` —
+    context-manager that binds all four ContextVars atomically. Preferred
+    over setting them individually.
   * ``current_run_id`` — module-level ``ContextVar[Optional[str]]`` with
     default ``None``. FEAT-479: carries the dev-loop / dev-flow run
     identifier so usage-accounting events emitted deep inside
@@ -46,6 +52,7 @@ __all__ = [
     "current_agent_name",
     "current_user_id",
     "current_session_id",
+    "current_memory_key_id",
     "agent_identity",
     "invocation_context",
     "current_run_id",
@@ -58,6 +65,12 @@ current_agent_name: ContextVar[Optional[str]] = ContextVar("parrot_current_agent
 current_user_id: ContextVar[Optional[str]] = ContextVar("parrot_current_user_id", default=None)
 
 current_session_id: ContextVar[Optional[str]] = ContextVar("parrot_current_session_id", default=None)
+
+#: FEAT-525: the bot's ``memory_key_id`` for the current invocation. Bound
+#: after ``user_id``/``session_id`` are defaulted at every entry point (see
+#: ``bots/base.py``) so ``read_omitted_content`` never observes a session
+#: that is only partially scoped.
+current_memory_key_id: ContextVar[Optional[str]] = ContextVar("parrot_current_memory_key_id", default=None)
 
 
 @contextmanager
@@ -93,31 +106,39 @@ def invocation_context(
     agent_name: Optional[str],
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    memory_key_id: Optional[str] = None,
 ) -> Iterator[None]:
-    """Bind agent name, user_id, and session_id for the duration of the block.
+    """Bind agent name, user_id, session_id and memory_key_id for the block.
 
-    Uses token-based ``set()`` / ``reset()`` on all three ContextVars so
+    Uses token-based ``set()`` / ``reset()`` on all four ContextVars so
     nested invocations restore the prior values correctly on exit.
 
     Args:
         agent_name: The ``AbstractBot.name`` of the invoking agent.
         user_id: The user identifier from the invocation scope.
         session_id: The session identifier from the invocation scope.
+        memory_key_id: The bot's ``memory_key_id`` (FEAT-525). Callers
+            should pass this only after ``user_id``/``session_id`` have
+            already been defaulted.
 
     Example::
 
-        with invocation_context("porygon", user_id="u-42", session_id="s-7"):
+        with invocation_context("porygon", user_id="u-42", session_id="s-7",
+                                memory_key_id="porygon"):
             # current_agent_name.get() == "porygon"
             # current_user_id.get() == "u-42"
             # current_session_id.get() == "s-7"
-        # all three restored to their prior values
+            # current_memory_key_id.get() == "porygon"
+        # all four restored to their prior values
     """
     tok_agent = current_agent_name.set(agent_name)
     tok_user = current_user_id.set(user_id)
     tok_session = current_session_id.set(session_id)
+    tok_memkey = current_memory_key_id.set(memory_key_id)
     try:
         yield
     finally:
+        current_memory_key_id.reset(tok_memkey)
         current_session_id.reset(tok_session)
         current_user_id.reset(tok_user)
         current_agent_name.reset(tok_agent)

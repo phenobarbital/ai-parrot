@@ -365,7 +365,7 @@ async def test_groq_ask_stream_no_usage_data():
 @pytest.mark.asyncio
 async def test_anthropic_contract_shape():
     """AnthropicClient contract shape: conforming generator is consumed correctly."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     sentinel = _make_aimessage(provider="claude", model="claude-sonnet-4-6")
 
@@ -386,7 +386,7 @@ async def test_anthropic_contract_shape():
 @pytest.mark.asyncio
 async def test_openai_contract_shape():
     """OpenAIClient contract shape: conforming generator is consumed correctly."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     sentinel = _make_aimessage(provider="openai", model="gpt-5-mini")
 
@@ -424,7 +424,7 @@ async def test_grok_contract_shape():
 @pytest.mark.asyncio
 async def test_claude_agent_contract_shape():
     """ClaudeAgentClient contract shape: conforming generator is consumed correctly."""
-    from parrot.clients.claude_agent import ClaudeAgentClient
+    from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
     sentinel = _make_aimessage(provider="claude-agent", model="claude-sonnet-4-6")
 

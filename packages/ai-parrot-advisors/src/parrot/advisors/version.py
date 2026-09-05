@@ -1,6 +1,6 @@
 """AI-Parrot Advisors version information."""
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 __title__ = "ai-parrot-advisors"
 __description__ = "Product Advisor and selection matching components for AI-Parrot"
 __author__ = "Jesus Lara"
