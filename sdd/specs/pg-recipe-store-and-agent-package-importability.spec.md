@@ -12,7 +12,7 @@ base_branch: dev
 **Date**: 2026-09-04
 **Author**: Juan Ruffato (jfrruffato@trocglobal.com) + Claude
 **Status**: draft
-**Target version**: next minor after 0.29.0
+**Target version**: not chosen by this spec. Work is based on `dev` and lands by PR; whoever cuts the release decides the number (Juan, 2026-09-04).
 **Reserved via**: `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label pg-recipe-store-and-agent-package-importability` → `FEAT-528` (commit `0a27686cd`). The allocator returned 528, not the ledger's cached 527, because `infographic-a2ui-migration` had already claimed 527 on `origin/dev`.
 **Downstream consumer**: FieldSync `FEAT-559` — `fieldsync/sdd/proposals/fieldsync-a2ui-surfaces-plane.brainstorm.md`. That feature mounts parrot's `ui_surfaces` REST lane in `fieldsync-api` and is blocked on both modules below.
 
@@ -49,7 +49,8 @@ A host that wants to replay a flex recipe needs those transformers registered in
 - Renaming `DBRecipeStore`, however misleading the name is. That is a breaking change for its users and belongs in its own feature.
 - Any change to `AbstractRecipeStore`'s method contract. The new store implements the existing five methods.
 - Adding a `program_slug` or any tenancy column to `ui_surfaces`. FieldSync stamps the program in `recipe_params` for now; a first-class column is a separate request.
-- Moving the flex agent out of `agents/`, or renaming the sibling package. Module 2 fixes importability without relocating anything.
+- **Relocating `flex_dashboard` and `finance_reporter` to `navigator-plugins`.** Juan's position, 2026-09-04, and this spec agrees with it: they are company agents and do not belong in the framework's repo. But the move is Jesús's to make, it lands in a third repository, and Module 2's enablers are its precondition, not its substitute. Tracked as a separate work item, not a module here.
+- Renaming the sibling package (`agents/flex_dashboard_kit/`). Module 2 fixes parent-agnosticism without renaming anything.
 - Anything in FEAT-527 (infographic → A2UI dual-emit). Verified non-overlapping: that feature's five modules touch emit defaults, presentation parity, the bundled-UI renderer, `HtmlDocument` and docs. No shared file with this spec.
 
 ---
@@ -118,7 +119,7 @@ CREATE INDEX IF NOT EXISTS ix_infographic_recipes_owner
 ### New Public Interfaces
 
 ```python
-# parrot/outputs/a2ui/recipes/store.py  (or a new pg_store.py re-exported there)
+# parrot/handlers/models/recipes.py — beside PgUISurfaceStore (Juan, 2026-09-04)
 class PgRecipeStore(AbstractRecipeStore):
     def __init__(self, dsn: str | None = None, *, schema: str = "navigator") -> None: ...
     async def ensure_schema(self) -> None: ...
@@ -139,16 +140,18 @@ def load_transformer_module(path: str | Path, *, name: str | None = None) -> Mod
 ## 3. Module Breakdown
 
 ### Module 1: `PgRecipeStore`
-- **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/recipes/pg_store.py`, re-exported from `recipes/store.py` and `recipes/__init__.py`
+- **Path**: `packages/ai-parrot-server/src/parrot/handlers/models/recipes.py`, beside `models/ui_surfaces.py`. **Decided by Juan, 2026-09-04: next to its twin.** The ABC lives in core, but `PgUISurfaceStore` is the class this one mirrors line for line, and keeping the two relational stores together beats keeping the store next to its interface.
 - **Responsibility**: A relational `AbstractRecipeStore`. Lazy `ensure_schema()` creating `navigator.infographic_recipes`, mirroring `PgUISurfaceStore`'s `_ensure_ready()` idiom so the first store use creates the table. `save` upserts on `(name, owner)` and bumps `updated_at`. `get` raises `RecipeNotFoundError` when absent and runs the same `_check_schema_version` gate the other stores run. `list` returns the lightweight summaries from the denormalised columns. `delete` raises `RecipeNotFoundError` when absent, matching the sibling implementations. `_raw_schema_version` reads the column, not the JSON.
 - **Depends on**: nothing new. `asyncdb` and `RecipeNotFoundError` / `RecipeSchemaVersionError` already exist in this module.
 
-### Module 2: Agent-package importability
-- **Path**: `agents/flex_dashboard/transformers.py`, `agents/flex_dashboard/normalize.py`, `agents/flex_dashboard.py`, `packages/ai-parrot/src/parrot/tools/infographic_recipes/__init__.py`
-- **Responsibility**: Three changes.
-  1. **Relative imports inside the sibling package.** `transformers.py:53` becomes `from .normalize import (...)`. A relative import resolves against whatever the package's real parent turns out to be, so the package works as `agents.flex_dashboard`, `docs.flex_dashboard` or a top-level `flex_dashboard` without edits.
-  2. **Path-anchored sibling load in the agent module.** `flex_dashboard.py:83`'s `import agents.flex_dashboard.transformers` is replaced by a load anchored on `_PACKAGE_DIR`, which the module already computes at `:88` for `skills/` and `kb/`. The agent then no longer assumes a package named `agents`, which also removes the "regular package shadows the module" footgun its own docstring documents at `:19-47`.
-  3. **A public host-side loader.** `load_transformer_module(path)` imports a module by file location under a synthetic name and returns it, so a host that only wants the transformers registered never touches the agent class, its LLM, or its toolkit. This is the supported answer to "how do I replay this recipe in my own service".
+### Module 2: Make an agent package parent-agnostic
+- **Path**: `agents/flex_dashboard/transformers.py`, `agents/flex_dashboard.py`, `packages/ai-parrot/src/parrot/tools/infographic_recipes/__init__.py`
+- **Responsibility**: **Reframed by Juan on 2026-09-04.** The original framing was "make parrot's `agents/` package importable from a host". That premise is wrong: the distributed package is built from `src/` only (`[tool.setuptools.packages.find] where = ["src"]`), so the repo-root `agents/` directory **is not shipped at all**, and the `parrot/agents/` module that IS shipped holds framework agents (`claude_code`, `codex_code`, `obsidian`, `meeting_registry`, `demo`) — not `flex_dashboard`, not `finance_reporter`. Those two are **company agents living in the framework's working directory**, which the standing rule forbids: *"ai-parrot es un framework de IA, no de empresa."* They belong in `navigator-plugins`, the shared agent home both `fieldsync-api` and the agents host already point `AGENTS_DIR` at.
+  So this module ships only the **generic enablers** that let an agent package live outside this repo, and nothing agent-specific:
+  1. **Relative imports inside a sibling package.** `transformers.py:53`'s `from agents.flex_dashboard.normalize import (...)` becomes `from .normalize import (...)`. A relative import resolves against whatever the real parent turns out to be, so the package works as `agents.flex_dashboard`, `docs.flex_dashboard`, or a top-level `flex_dashboard`, with no edit on the move.
+  2. **Path-anchored sibling load in the agent module.** `flex_dashboard.py:83`'s `import agents.flex_dashboard.transformers` is replaced by a load anchored on `_PACKAGE_DIR`, which the module already computes at `:88` for `skills/` and `kb/`. This also removes the "regular package shadows the module" footgun its own docstring documents at `:19-47` and defers to a reviewer.
+  3. **A public host-side loader.** `load_transformer_module(path)` imports a module by file location under a synthetic name and returns it, so a host registers a recipe's transformers without touching the agent class, its LLM or its toolkit. This is the supported answer to "how do I replay this recipe in my own service", and it is what makes the agents' eventual relocation a non-event for consumers.
+  These changes are correct whether or not the agents move, and they are the precondition for moving them cleanly.
 - **Depends on**: none. Independent of Module 1 at file level; the two can be implemented in parallel.
 
 ### Module 3: Documentation
@@ -340,6 +343,7 @@ ModuleNotFoundError: No module named 'agents.flex_dashboard'
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | `PgRecipeStore` | `register_recipe_routes` | passed as `recipe_store=` | `infographic_recipes.py:78-85` |
+| `PgRecipeStore` | `AbstractRecipeStore` | imports the ABC from core into server | `recipes/store.py:175` |
 | `PgRecipeStore` | `RecipeRunner` | constructor's first positional argument | `agents/flex_dashboard.py:697` (`RecipeRunner(self._require_recipe_store(), self._dataset_manager)`) |
 | `PgRecipeStore` | `UISurfacesHandler` refresh | `app["recipe_runner"]` wired by `register_recipe_routes` | `ui_surfaces.py:303-306` |
 | `PgRecipeStore.ensure_schema` | `navigator` schema | `CREATE TABLE IF NOT EXISTS` | mirrors `ui_surfaces.py:88-112` |
@@ -364,8 +368,14 @@ None new. `asyncdb` is already a dependency and is what `PgUISurfaceStore` uses.
 
 ## 8. Open Questions
 
-- [ ] **Module placement**: `PgRecipeStore` in `ai-parrot` (`parrot/outputs/a2ui/recipes/`) beside the other two stores, or in `ai-parrot-server` beside `PgUISurfaceStore`? The contract it implements lives in core; its twin lives in server. Recommended: core, next to the ABC and the two siblings, because nothing about it is HTTP. — *Owner: Jesús*
-- [ ] **Table name and schema**: `navigator.infographic_recipes` proposed, with a `schema=` constructor keyword so a host can place it elsewhere. Does the `navigator` default belong in a library, or should the schema be required? — *Owner: Jesús*
-- [ ] **Module 2 shape**: relative imports plus a path-anchored sibling load is the minimal fix. The alternative Jesús's own docstring floats is renaming the sibling package (`agents/flex_dashboard_kit/`), which the flex spec's Module 3 architecture mandated against. Confirm the minimal fix is acceptable. — *Owner: Jesús*
-- [ ] **Whether `finance_reporter` needs the same treatment.** It has no sibling package, but `SKILLS_DIR = Path(__file__).resolve().parents[1] / ".agent" / "skills"` (`:73`) is anchored to the repo layout, so it silently finds nothing when the file is relocated. Same class of defect, different symptom. Fold in or file separately? — *Owner: Jesús*
-- [ ] **Target version**, given 0.29.0 just released and FEAT-527 targets it. — *Owner: Jesús*
+Answered by Juan on 2026-09-04 unless marked open.
+
+- [x] **Module placement.** — *Juan*: **beside its twin**, in `ai-parrot-server` next to `PgUISurfaceStore`, not in core beside the ABC.
+- [x] **Table name and schema.** — *Juan*: as proposed. `navigator.infographic_recipes` as the default, with a `schema=` constructor keyword so a host can place it elsewhere.
+- [x] **Module 2 shape.** — *Juan*: the minimal fix. Relative imports inside the package plus a path-anchored sibling load. No rename.
+- [x] **Whether `finance_reporter` needs the same treatment.** — *Juan* rejected the premise: *"estos son agentes de la empresa y no deben estar viviendo en parrot."* Verified and correct — the repo-root `agents/` directory is not distributed, and the shipped `parrot/agents/` module holds framework agents only. So `finance_reporter`'s repo-anchored `SKILLS_DIR` (`:73`) is not fixed here; it is fixed as part of moving both agents to `navigator-plugins`, where the anchoring has to be revisited anyway.
+- [x] **Target version.** — *Juan*: not ours to choose. Base on `dev`, send a PR, and whoever cuts the release picks the number.
+
+**Still open**
+
+- [ ] **Who moves `flex_dashboard` and `finance_reporter` to `navigator-plugins`, and when.** Module 2 makes the move safe; it does not perform it. The move must also repair `finance_reporter`'s `parents[1]/.agent/skills` anchoring, which silently resolves to nothing once the file relocates. — *Owner: Jesús*
