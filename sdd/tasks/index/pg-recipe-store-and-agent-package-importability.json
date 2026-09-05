@@ -15,7 +15,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Module 1. New file in ai-parrot-server; shares no file with the Module 2 lane. Needs NAVIGATOR_PG_DSN for its tests.",
       "assigned_to": null,
       "started_at": "2026-09-05T05:01:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2870-pg-recipe-store.md"
+      "completed_at": "2026-09-05T05:12:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2870-pg-recipe-store.md"
     },
     {
       "id": "TASK-2871",

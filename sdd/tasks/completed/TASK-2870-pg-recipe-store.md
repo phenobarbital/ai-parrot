@@ -185,8 +185,34 @@ def test_bad_schema_name_rejected():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: All 9 tests pass against the scratch Postgres fixture
+(`NAVIGATOR_PG_DSN`). `ruff check` clean. Exported from
+`parrot.handlers.models` and `parrot.handlers.models.recipes` per spec.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: two verified runtime facts diverge from the
+Codebase Contract's template citation of `PgUISurfaceStore`, both fixed
+here (not in `ui_surfaces.py`, which is out of scope):
+
+1. `conn.fetchrow(sql, *args)` — the installed `asyncdb` driver's
+   `pg.fetchrow()` is a no-argument CURSOR method (verified live against
+   asyncdb 2.15.10 and cross-checked against every other installed
+   asyncdb copy on this machine), not a `(sentence, *args)` single-row
+   query. Used `conn.fetch_one(sql, *args)` instead, which is the
+   correct single-row query-with-params method on this driver.
+2. `json.dumps(...)` before a `$N::jsonb` parameter double-encodes: the
+   driver's registered jsonb codec itself calls its own encoder's
+   `dumps()` on whatever value it receives, so pre-serializing produces
+   a jsonb *string scalar*, not an object (verified live: a subsequent
+   `jsonb_set` on such a row raises "cannot set path in scalar", and the
+   round-trip through `get()` only "worked" by accident because the read
+   path double-decodes symmetrically). Fixed by passing the raw dict
+   (`recipe.model_dump(mode="json")`) directly to the `::jsonb`
+   parameter, letting the codec encode it exactly once.
+
+Both are pre-existing facts about the pinned `asyncdb>=2.11.6` /
+installed `2.15.10` driver, not something this task changed; flagging
+here since `PgUISurfaceStore.save()`/`.get()` appear to share the same
+two patterns and were not verified against a live database as part of
+this task (out of scope: NOT in scope to touch `ui_surfaces.py`).
