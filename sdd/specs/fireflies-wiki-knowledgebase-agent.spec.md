@@ -647,9 +647,142 @@ No new third-party dependencies — provider SDKs (Google / Anthropic / OpenAI-C
 
 ---
 
+## Amendments (post-implementation)
+
+These record deltas decided or discovered **during implementation** and two
+adversarial-review remediation rounds (Codex). The module text above is
+preserved as the historical design intent; where an amendment refines or
+supersedes it, the amendment governs. Each item cites the code that
+implements it under `packages/ai-parrot/src/parrot/flows/wiki_ingest/`.
+
+### A1 — Agent tier-client lifecycle (Modules 1, 6, 13)
+`ingest()`/`query()` now open their tiered LLM clients for the run
+(`async with self.strong_client, self.cheap_client:` / `async with
+self.strong_client:`), because the runner nodes call `client.invoke(...)`,
+which — unlike `complete()` — requires the per-loop SDK client to be
+*entered* ("not initialised" otherwise). This makes the agent self-contained
+so the scheduler/daemon path (`parrot serve`) works without a caller
+pre-opening the clients. `configure()` still only *builds* them. (`agent.py`.)
+
+### A2 — Transactional per-meeting compile & non-aborting batch (Modules 6, 17)
+- The per-meeting compile phase is wrapped: on **any** exception after
+  compiled writes begin (contradiction detection onward) every write is
+  rolled back via `_rollback()` (never `Raw/`), and a normal §34-style
+  failure is returned — never a partial, unregistered ingest that the
+  raw-id gate would then permanently skip. (Module 17; `runner.py`.)
+- A §34 validation failure **or** a compile exception → rollback +
+  quarantine (Module 17) + exactly **one** review item (a dedicated
+  `_queue_review_item()` helper replaced the prior queue loop, which wrote
+  zero or duplicate validation-failure entries).
+- Post-validation bookkeeping (`record_synced` + §33 log + review items) is
+  wrapped so a failure there surfaces an error and the batch **continues**
+  instead of aborting the whole run. (`runner.py`.)
+
+### A3 — Contract-conformance remediation (adversarial review)
+- **`Private/` exclusion (§1) on BOTH planes.** The derived GraphIndex
+  loader *and* the vault `ObsidianToolkit` exclude `Private/`. The vault
+  backend gained an additive, default-off `extra_skip_patterns`
+  (`interfaces/obsidian/`), and `build_vault_toolkit()` passes
+  `["Private"]` so whole-vault `search_notes`/`catalog_notes` (query, lint,
+  entity matching, overview) never traverse private notes. (`vault.py`,
+  `graph.py`.)
+- **Match-before-create context (§15.1).** The orchestrator builds an
+  `ExistingContext` once per run (canonical project names, entity/concept
+  names, `Wiki/index.md` + `Wiki/overview.md` excerpts) and passes it to
+  classification, so the classifier can match an existing project/entity by
+  spelling variant instead of creating a duplicate canonical page.
+  (`runner._build_existing_context`, `classify.py`.)
+- **Contradiction linkage (§22 rule 6).** A detected contradiction is linked
+  from the new meeting source page's `## Contradictions` **and** the
+  affected project's `## Unresolved Contradictions`, not left standalone.
+  (`runner.py`, `meeting_page.py`, `project_reconcile.py`.)
+- **Action items round-trip.** The meeting-page re-parse recovers the
+  `## Action Items` Markdown **table** (owner/due/status/confidence), so
+  action items reach daily synthesis and project reconcile instead of being
+  silently dropped. (`runner._extraction_from_meeting`.)
+- **Project navigation.** `Wiki/index.md` and the §31 archive workflow
+  enumerate canonical project pages at the nested
+  `Projects/<Name>/<Name>.md` shape (a non-recursive listing found none);
+  and ingest now seeds/maintains each project's §18
+  `Meeting Summaries/index.md`. (`runner.py`, `archive.py`, `indexes.py`.)
+- **Additional projects (§16/§19).** Every classified project — primary
+  **and** each `additional_projects` entry — is reconciled (source-link +
+  current-state update + its own meeting index), not merely linked from the
+  meeting page. (Operator decision; applies to the `full` profile — the
+  `backfill` profile reconciles the primary only; see A5.) (`runner._reconcile_project`.)
+- **Entity frontmatter preservation (§10.3).** An entity update preserves
+  the original `created` timestamp and **merges** `projects`/`aliases`/
+  `source_pages`/`tags` instead of overwriting them. (`entities.py`.)
+- **Human Notes verbatim (§2 rule 13).** Human Notes are parsed WITHOUT
+  whitespace stripping, so leading indentation (e.g. an indented code block)
+  round-trips unchanged. (`render/project._parse_section_raw`, `entities.py`.)
+- **Bounded chunk.** The per-run `limit` bounds the COMBINED fresh +
+  Module-17 retry batch (oldest-first), not just fresh meetings. (`runner.py`.)
+
+### A4 — Rate-limit-safe, progressive backfill (Modules 2, 6)
+The Fireflies MCP shares the account's API rate limits (Free 50/day · Pro
+500/day · Business/Ent. 60/min); each new meeting costs ~2 Fireflies calls.
+- **`max_new`** (`conf.WIKI_KB_MAX_NEW_PER_RUN` / `ingest(max_new=…)`) caps
+  the number of NEW meetings fetched while the fetch-gate pages PAST
+  already-known meetings — so a chunked backfill *progresses* (a bare
+  `limit` re-lists the newest, already-processed meetings and stalls). It
+  also bounds per-run Fireflies calls (~2×`max_new`) and LLM cost.
+  (`fetch_gate.py`, `runner.py`.)
+- **Graceful fetch failure.** A rate-limit is surfaced by the MCP tool
+  wrapper as a FAILED `ToolResult` (not an exception); passing that through
+  previously fabricated an EMPTY transcript that was hashed + stored +
+  permanently skipped. A failed content fetch now raises `_FetchError` →
+  the meeting is skipped this run (retried next), and after
+  `_MAX_CONSECUTIVE_FETCH_FAILURES` (3) the run stops early and resumes
+  cheaply via the raw-id gate. (`fetch_gate.py`.)
+
+### A5 — LLM cost optimization (Modules 6, 7, 10)
+- **Batched, cheap-tier entity/concept resolution.** `nodes/entity_concept_batch.py`
+  resolves ALL of a meeting's entities + concepts in ONE **cheap-tier** call
+  (was one **strong-tier** call per person/product/company/concept — the
+  dominant per-meeting cost). The match-before-create lookup stays
+  deterministic; `entities.py`/`concepts.py` were split into
+  `resolve_existing_*` + `build_*_prompt` + `apply_*_extraction` so the
+  single-item resolvers and the batch render byte-identical pages.
+  *Basis for the contract flexibility:* the G7 tiering ("strong =
+  reconciliation / ambiguous classification / contradiction reasoning") and
+  the one-call-per-entity fan-out are guideline/impl-level — entity/concept
+  work is bulk *extraction* (cheap tier), and the contract mandates the
+  output pages, not the number or tier of LLM calls.
+- **Ingest profiles.** `IngestProfile` + `conf.WIKI_KB_INGEST_PROFILE` /
+  `ingest(profile=…)`: `"full"` (default, unchanged) vs `"backfill"` (a
+  reduced-fidelity, lower-cost one-time historical import — summary-only
+  classify via `run_classify(allow_transcript_fallback=False)`,
+  primary-project reconcile only, no contradiction detection, no per-run
+  overview update; entities/concepts still resolved, cheap + batched).
+  Trade-off: under `backfill` a multi-project meeting's link to a
+  non-primary project may dangle until a later `full` run reconciles it
+  (caught by `lint`, not the §34 gate). (`runner.py`, `classify.py`.)
+
+### New configuration keys (Module 1 addendum)
+
+| Key | Default | Introduced | Purpose |
+|---|---|---|---|
+| `WIKI_KB_MAX_REPROCESS_ATTEMPTS` | `3` | Module 17 | Bounded auto-retry cap for quarantined meetings |
+| `WIKI_KB_MAX_NEW_PER_RUN` | unset (no cap) | A4 | Backfill chunk size — NEW meetings fetched per run |
+| `WIKI_KB_INGEST_PROFILE` | `"full"` | A5 | Cost/fidelity profile (`full` / `backfill`) |
+
+(`WIKI_KB_MAX_CATCHUP_DAYS`, default 90, already existed as the G10
+large-backlog guard; raise it, e.g. to 280, for a one-time 2026 backfill.)
+
+### New §26 review types (Module 12 addendum)
+`failed-processing`, `reprocess-exhausted` (Module 17), and
+`entity-resolution-failed` (a best-effort entity/concept batch failure — the
+meeting still compiles; surfaced, never silently swallowed). (`review_queue.ALLOWED_REVIEW_TYPES`.)
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Arturo Martinez | Initial draft from brainstorm (Option B); all decisions resolved; contract amended R1–R3/D1–D8 + chronological |
 | 0.2 | 2026-08-31 | Arturo Martinez | Final-pass audit: additive-only (G11), §3.1 contract operationalization, hourly+catch-up (G10), provider-agnostic tiers (G7), §8/§16/§28 coverage (filenames/links/tz/no-fabrication/new-project/query-distinctions); contract rule #3 amended |
+| 0.3 | 2026-09-01 | Arturo Martinez / Claude | Codex review remediation round 1 + client-lifecycle fix (Amendments A1, A2, parts of A3) |
+| 0.4 | 2026-09-03 | Arturo Martinez / Claude | Module 17 quarantine wired; Codex review remediation round 2 (Amendment A3) |
+| 0.5 | 2026-09-05 | Arturo Martinez / Claude | Rate-limit-safe progressive backfill (A4) + LLM cost optimization: batched cheap entities + ingest profiles (A5); Amendments section added |
