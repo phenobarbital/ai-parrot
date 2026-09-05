@@ -166,9 +166,77 @@ def test_flex_module_loads_without_agents_package(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Mutation-check evidence**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: `agents/flex_dashboard/transformers.py:53` now uses `from
+.normalize import (...)`; `agents/flex_dashboard.py` no longer has any
+`import agents.*` line — the transformer registration is now
+`load_transformer_module(_PACKAGE_DIR / "transformers.py")`, called right
+after `_PACKAGE_DIR` is defined. The docstring `.. warning::` block is
+rewritten to describe the FEAT-528 fix and correctly narrow the one
+remaining true limitation (regular-package shadowing of a plain
+`from agents.flex_dashboard import FlexDashboard`, unaffected by this
+task, still resolved the same way production always has:
+`parrot.registry.registry.AgentRegistry._load_modules_from_directory`
+loading by file location). `ruff check agents/flex_dashboard.py
+agents/flex_dashboard/` clean. Both new regression tests pass:
+`test_transformers_import_under_foreign_parent`,
+`test_flex_module_loads_without_agents_package`.
 
-**Deviations from spec**: none | describe if any
+**Mutation-check evidence**: reverted `transformers.py:53` back to
+`from agents.flex_dashboard.normalize import (...)` and re-ran
+`test_transformers_import_under_foreign_parent` — it went RED with
+`ModuleNotFoundError: No module named 'agents.flex_dashboard'` (the copy
+under `hostpkg/flex_dashboard/transformers.py`, loaded with no real
+`agents` package on the path). Restored the relative-import fix
+immediately after and confirmed both tests green again.
+
+**Deviations from spec**: one, outside the task's declared file list —
+recorded here rather than applied silently, per the anti-hallucination/
+file-fidelity rule, because leaving it unfixed left a REAL regression in
+the existing test suite (verified with a clean before/after comparison,
+not asserted):
+
+Four EXISTING test files elsewhere in the repo each carried their own
+copy of a helper that pre-registers `agents`, `agents.flex_dashboard`,
+`agents.flex_dashboard.normalize`, and `agents.flex_dashboard.transformers`
+under those REAL dotted names in `sys.modules` before loading the agent
+file under a synthetic name — a workaround that existed ONLY because the
+OLD `flex_dashboard.py` did a plain `import agents.flex_dashboard.
+transformers`, which needed those real names resolvable. Once this task
+replaces that with `load_transformer_module()` (TASK-2871), that
+pre-registration becomes actively harmful: `load_transformer_module`
+computes its OWN deterministic synthetic name from the resolved file
+path, independent of the real dotted name, so it re-executes
+`transformers.py` under a NEW name — and since the transformer functions
+it defines are now different objects from the ones already registered
+under the real name, `TransformerRegistry.register()` raises `ValueError:
+... already registered to a different function`. Confirmed by a clean
+before/after run of the whole `test_flex_dashboard_*` suite in
+`packages/ai-parrot/tests/unit/bots/`: baseline (this task's code
+reverted) = 73 passed / 9 errors (9 errors are a PRE-EXISTING, unrelated
+`ai-parrot-visualizations` `ImportError`, confirmed present with or
+without this task's change); with only `agents/flex_dashboard.py` and
+`agents/flex_dashboard/transformers.py` changed and NOTHING else = 52
+passed / 9 failed / 21 errors — a real, reproducible regression, not a
+flake.
+
+Fixed by editing FOUR test files to stop pre-registering the now-
+obsolete real dotted names and instead either (a) just load the agent
+file directly (`test_flex_dashboard_agent.py`, `test_flex_dashboard_
+descriptors.py`, `test_flex_dashboard_skills.py` — the pre-registration
+chain is deleted; the agent's own `load_transformer_module()` call
+handles transformer registration now), or (b) route through the SAME
+public loader the agent itself uses (`test_flex_dashboard_transformers.
+py` — switched from its own real-dotted-name loading chain to
+`load_transformer_module(_FLEX_DIR / "transformers.py")`, so it shares
+the exact same deterministic synthetic name as the agent's own call for
+the same resolved path, making single-registration order-independent
+across the whole test session). Re-ran the full `test_flex_dashboard_*`
+suite after these four fixes: 73 passed / 9 errors — IDENTICAL to
+baseline. `ruff check` clean on all four. No production code beyond the
+two files already declared in scope was touched; `test_finance_reporter_
+descriptors.py` and `packages/ai-parrot/tests/integration/
+test_flex_dashboard_e2e.py` (untouched) still pass (29 passed / 1
+skipped), confirming `finance_reporter` truly needed no analogous change
+(spec §8, out of scope).

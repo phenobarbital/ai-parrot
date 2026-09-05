@@ -51,7 +51,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Module 2 items 1-2. Edits agents/flex_dashboard.py and agents/flex_dashboard/transformers.py only. Mutation-checked regression test.",
       "assigned_to": null,
       "started_at": "2026-09-05T05:01:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2872-flex-package-parent-agnostic.md"
+      "completed_at": "2026-09-05T05:24:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2872-flex-package-parent-agnostic.md"
     },
     {
       "id": "TASK-2873",
