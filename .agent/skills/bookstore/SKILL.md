@@ -63,10 +63,16 @@ Indexing is a minutes-long LLM batch job, so it lives in the CLI:
 bookstore add path/to/book.pdf            # index into .parrot/library
 bookstore add book.epub --global          # index into ~/.parrot/library
 bookstore add notes.md --no-llm           # deterministic carding
+bookstore add-folder ./libros --recursive # bulk: every pdf/md/txt/epub/docx
+bookstore add-folder ./libros --dry-run   # preview what would be indexed
 bookstore card <book_id> --refresh        # re-card after enabling an LLM
 bookstore remove <book_id>
 bookstore locations                       # show resolved library dirs
 ```
+
+`add-folder` processes files sequentially, continues past failures, and
+skips files already indexed (sha256 dedupe) — safe to re-run on the
+same folder after dropping new books into it.
 
 The LLM is configured with `PARROT_BOOKSTORE_LLM="provider:model"`
 (optional `PARROT_BOOKSTORE_LLM_LIGHT` for cheap helper calls, same

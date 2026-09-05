@@ -46,6 +46,8 @@ _FORMAT_BY_SUFFIX = {
     ".markdown": "md",
     ".txt": "txt",
     ".epub": "epub",
+    # .doc (legacy binary) is deliberately absent: python-docx can't read it.
+    ".docx": "docx",
 }
 
 
@@ -416,6 +418,13 @@ class Bookstore:
                         path.read_text, encoding="utf-8"
                     ),
                 )
+            elif fmt == "docx":
+                markdown = await self._docx_to_markdown(path)
+                await toolkit.insert_markdown(
+                    tree_name=slug,
+                    markdown=markdown,
+                    doc_name=title or path.stem,
+                )
             else:  # epub
                 markdown = await self._epub_to_markdown(path)
                 await toolkit.insert_markdown(
@@ -498,6 +507,29 @@ class Bookstore:
             logger.warning("LLM carding failed (%s); using fallback card", exc)
             return fallback_card_fields(path, toc_entries)
 
+    async def _docx_to_markdown(self, path: Path) -> str:
+        """Convert a Word document to markdown via parrot_loaders.
+
+        Reuses ``MSWordLoader.docx_to_markdown`` (heading styles →
+        markdown headings, tables → markdown tables). Lazy import —
+        ``ai-parrot-loaders`` is a separate distribution and core must
+        not hard-depend on it. A document with no Word heading styles
+        yields heading-less markdown and therefore a 0-chapter tree
+        (same accepted behavior as the markdown route).
+        """
+        try:
+            from parrot_loaders.docx import MSWordLoader
+        except ImportError as exc:
+            raise BookstoreError(
+                "DOCX support requires the ai-parrot-loaders package "
+                "(pip install ai-parrot-loaders)"
+            ) from exc
+        loader = MSWordLoader(str(path))
+        markdown = await asyncio.to_thread(loader.docx_to_markdown, path)
+        if not (markdown or "").strip():
+            raise BookstoreError(f"No readable content found in {path.name}")
+        return markdown
+
     async def _epub_to_markdown(self, path: Path) -> str:
         """Convert an EPUB to one markdown document via parrot_loaders.
 
@@ -529,6 +561,85 @@ class Bookstore:
             raise BookstoreError(f"No readable chapters found in {path.name}")
         book_title = path.stem.replace("_", " ").replace("-", " ").title()
         return f"# {book_title}\n\n" + "\n\n".join(parts)
+
+    @staticmethod
+    def iter_folder_files(
+        folder: str | Path, recursive: bool = False
+    ) -> tuple[list[Path], list[Path]]:
+        """Enumerate a folder's ingestable files.
+
+        Args:
+            folder: Directory to scan.
+            recursive: Also descend into subdirectories.
+
+        Returns:
+            ``(supported, ignored)`` — files whose suffix ``add_book``
+            can ingest, and the rest — both in stable alphabetical
+            order (relative path).
+
+        Raises:
+            BookstoreError: When ``folder`` is not a directory.
+        """
+        root = Path(folder).expanduser().resolve()
+        if not root.is_dir():
+            raise BookstoreError(f"Not a directory: {root}")
+        pattern = "**/*" if recursive else "*"
+        supported: list[Path] = []
+        ignored: list[Path] = []
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() in _FORMAT_BY_SUFFIX:
+                supported.append(path)
+            else:
+                ignored.append(path)
+        return supported, ignored
+
+    async def add_folder(
+        self,
+        folder: str | Path,
+        scope: str = "project",
+        recursive: bool = False,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Index every supported file in a folder, one book per file.
+
+        Files are processed sequentially — each book can be a
+        minutes-long LLM batch, and sequential ingest is friendly to
+        provider rate limits. A failing file never stops the loop; its
+        error is recorded and the next file proceeds.
+
+        Args:
+            folder: Directory holding the books.
+            scope: Target library (``"project"`` or ``"global"``).
+            recursive: Also ingest files in subdirectories.
+            force: Re-index files already catalogued (by sha256).
+
+        Returns:
+            ``{"folder", "results": [{file, status, book_id?, error?}],
+            "ignored": [paths]}`` where status is ``added`` /
+            ``updated`` / ``skipped`` / ``failed``.
+        """
+        supported, ignored = self.iter_folder_files(folder, recursive=recursive)
+        results: list[dict[str, Any]] = []
+        for path in supported:
+            try:
+                card, status = await self.add_book(
+                    path, scope=scope, force=force
+                )
+                results.append(
+                    {"file": str(path), "status": status, "book_id": card.book_id}
+                )
+            except Exception as exc:  # noqa: BLE001 — keep the loop alive
+                logger.warning("Failed to ingest %s: %s", path, exc)
+                results.append(
+                    {"file": str(path), "status": "failed", "error": str(exc)}
+                )
+        return {
+            "folder": str(Path(folder).expanduser().resolve()),
+            "results": results,
+            "ignored": [str(p) for p in ignored],
+        }
 
     async def remove_book(self, book_id: str) -> bool:
         """Remove a book — catalog row plus its PageIndex tree."""

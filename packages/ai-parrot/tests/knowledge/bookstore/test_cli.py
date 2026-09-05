@@ -80,6 +80,70 @@ def test_add_anchors_relative_path_to_invocation_cwd(tmp_path, monkeypatch):
     assert (tmp_path / "lib" / "trees" / "b.json").is_file()
 
 
+SAMPLE_BOOK = (
+    "# Sample\n\nEnough content to clear the markdown thinning threshold "
+    "for this synthetic single-chapter book fixture used by the CLI tests.\n"
+)
+
+
+def _books_folder(tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_BOOK, encoding="utf-8")
+    (root / "two.md").write_text(SAMPLE_BOOK + "\nDifferent sha.\n", encoding="utf-8")
+    (root / "cover.png").write_bytes(b"x")
+    return root
+
+
+def test_add_folder_dry_run_changes_nothing(tmp_path, monkeypatch):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["add-folder", str(root), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Would index 2 file(s)" in result.output
+    assert "cover.png" in result.output
+    assert not (tmp_path / "lib").exists()
+
+
+def test_add_folder_ingests_all_supported_files(tmp_path, monkeypatch):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "added: 2" in result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+    assert (tmp_path / "lib" / "trees" / "two.json").is_file()
+    # Re-run: sha dedupe skips everything.
+    rerun = CliRunner().invoke(
+        bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"]
+    )
+    assert rerun.exit_code == 0, rerun.output
+    assert "skipped: 2" in rerun.output
+
+
+def test_add_folder_relative_path_anchors_to_invocation_cwd(
+    tmp_path, monkeypatch
+):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["add-folder", "books", "--no-llm"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+
+
 def test_list_requires_existing_library(tmp_path, monkeypatch):
     lone = tmp_path / "nowhere"
     lone.mkdir()

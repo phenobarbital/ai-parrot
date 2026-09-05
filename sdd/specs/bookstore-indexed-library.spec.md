@@ -76,10 +76,18 @@ MCP surface stays non-destructive.
 sha256 dedupe (skip / `--force` reindex) → unique slug → per-format
 import: PDF native (`import_pdf`), Markdown (`insert_markdown`),
 plain text (`insert_content`, requires LLM), EPUB via **lazy**
-`parrot_loaders.EpubLoader` import (core never hard-depends on the
-loaders distribution) → `derive_toc` → LLM carding or fallback
+`parrot_loaders.EpubLoader` import, DOCX via **lazy**
+`parrot_loaders.MSWordLoader.docx_to_markdown` (core never
+hard-depends on the loaders distribution; legacy `.doc` is excluded —
+python-docx cannot read it) → `derive_toc` → LLM carding or fallback
 (filename title + chapter topics) → catalog upsert. Failed imports
 delete the partial tree.
+
+**Bulk ingest** — `bookstore add-folder <dir> [--recursive] [--dry-run]`
+(`Bookstore.iter_folder_files` + `add_folder`): sequential loop over
+every supported file, per-file progress, continues past failures
+(recorded as `failed` in the summary), sha256 dedupe makes re-runs
+idempotent; exit code is non-zero only when every file failed.
 
 ## 6. Degradation matrix
 
@@ -94,7 +102,7 @@ catalog shortlist is empty (thin fallback cards).
 
 ## 7. Acceptance criteria (all verified)
 
-- [x] 51 tests in `packages/ai-parrot/tests/knowledge/bookstore/`
+- [x] 60 tests in `packages/ai-parrot/tests/knowledge/bookstore/`
       (models/config/catalog/library/toolkit/cli/mcp) pass, including
       regression tests for the adversarial-review findings (CLI
       invocation-CWD anchoring, cross-scope slug collisions, toolkit

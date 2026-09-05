@@ -97,7 +97,7 @@ async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
 
 @pytest.mark.asyncio
 async def test_add_book_unsupported_format(store, tmp_path):
-    bad = tmp_path / "book.docx"
+    bad = tmp_path / "book.pptx"
     bad.write_text("x", encoding="utf-8")
     with pytest.raises(BookstoreError, match="Unsupported format"):
         await store.add_book(bad)
@@ -183,6 +183,109 @@ async def test_cross_book_search_no_llm(store_no_llm, book_md):
     assert out["books"]
     assert out["books"][0]["book_id"] == card.book_id
     assert out["books"][0]["results"]
+
+
+def _install_fake_docx_loader(monkeypatch, markdown: str):
+    """Register a fake parrot_loaders.docx module in sys.modules."""
+    import sys
+    import types
+
+    class _FakeMSWordLoader:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def docx_to_markdown(self, path):
+            return markdown
+
+    parent = types.ModuleType("parrot_loaders")
+    module = types.ModuleType("parrot_loaders.docx")
+    module.MSWordLoader = _FakeMSWordLoader
+    parent.docx = module
+    monkeypatch.setitem(sys.modules, "parrot_loaders", parent)
+    monkeypatch.setitem(sys.modules, "parrot_loaders.docx", module)
+
+
+@pytest.mark.asyncio
+async def test_add_book_docx_via_fake_loader(store, tmp_path, monkeypatch):
+    _install_fake_docx_loader(monkeypatch, SAMPLE_MARKDOWN)
+    docx = tmp_path / "handbook.docx"
+    docx.write_bytes(b"fake docx bytes")
+    card, status = await store.add_book(docx)
+    assert status == "added"
+    assert card.source_format == "docx"
+    assert card.chapter_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_docx_without_loaders_package(store, tmp_path, monkeypatch):
+    docx = tmp_path / "doc.docx"
+    docx.write_bytes(b"fake docx")
+    real_import = builtins.__import__
+
+    def _blocked(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("No module named 'parrot_loaders'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+    with pytest.raises(BookstoreError, match="ai-parrot-loaders"):
+        await store.add_book(docx)
+
+
+def test_iter_folder_files_recursive(tmp_path):
+    from parrot.knowledge.bookstore.library import Bookstore
+
+    root = tmp_path / "books"
+    (root / "sub").mkdir(parents=True)
+    (root / "a.md").write_text("x", encoding="utf-8")
+    (root / "b.png").write_bytes(b"x")
+    (root / "sub" / "c.pdf").write_bytes(b"x")
+    flat_supported, flat_ignored = Bookstore.iter_folder_files(root)
+    assert [p.name for p in flat_supported] == ["a.md"]
+    assert [p.name for p in flat_ignored] == ["b.png"]
+    rec_supported, _ = Bookstore.iter_folder_files(root, recursive=True)
+    assert [p.name for p in rec_supported] == ["a.md", "c.pdf"]
+
+
+def test_iter_folder_files_not_a_directory(tmp_path):
+    from parrot.knowledge.bookstore.library import Bookstore
+
+    with pytest.raises(BookstoreError, match="Not a directory"):
+        Bookstore.iter_folder_files(tmp_path / "missing")
+
+
+@pytest.mark.asyncio
+async def test_add_folder_continues_after_failures(store_no_llm, tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    (root / "two.md").write_text(
+        SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8"
+    )
+    # .txt needs an LLM → fails in the no-LLM store; loop must continue.
+    (root / "notes.txt").write_text("plain text", encoding="utf-8")
+    (root / "cover.png").write_bytes(b"x")
+    out = await store_no_llm.add_folder(root)
+    by_status = {}
+    for entry in out["results"]:
+        by_status.setdefault(entry["status"], []).append(entry)
+    assert len(by_status["added"]) == 2
+    assert len(by_status["failed"]) == 1
+    assert "LLM" in by_status["failed"][0]["error"]
+    assert out["ignored"] and out["ignored"][0].endswith("cover.png")
+    listed = {c.book_id for c in store_no_llm.list_books()}
+    assert {"one", "two"} <= listed
+
+
+@pytest.mark.asyncio
+async def test_add_folder_rerun_skips_by_sha(store, tmp_path, book_md):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    first = await store.add_folder(root)
+    second = await store.add_folder(root)
+    assert first["results"][0]["status"] == "added"
+    assert second["results"][0]["status"] == "skipped"
 
 
 @pytest.mark.asyncio

@@ -81,7 +81,7 @@ class BookCard(BaseModel):
     scope: Literal["project", "global"] = "project"
     source_path: str
     source_sha256: str
-    source_format: Literal["pdf", "md", "txt", "epub"]
+    source_format: Literal["pdf", "md", "txt", "epub", "docx"]
     page_count: Optional[int] = None
     chapter_count: int = 0
     added_at: str

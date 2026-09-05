@@ -148,6 +148,96 @@ def add(
     _echo_card(card)
 
 
+@bookstore.command("add-folder")
+@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.option("--recursive", "-r", is_flag=True, help="Descend into subdirectories.")
+@click.option(
+    "--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library."
+)
+@click.option("--force", is_flag=True, help="Re-index files already added.")
+@click.option("--no-llm", is_flag=True, help="Skip LLM carding/summaries.")
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="List what would be indexed, change nothing."
+)
+def add_folder(
+    folder: str,
+    recursive: bool,
+    global_scope: bool,
+    force: bool,
+    no_llm: bool,
+    llm: Optional[str],
+    dry_run: bool,
+) -> None:
+    """Index every supported file (pdf/md/txt/epub/docx) in FOLDER.
+
+    Files are processed sequentially; a failing file is reported and the
+    loop continues with the next one.
+    """
+    # Anchor a relative FOLDER to the invocation directory NOW — the
+    # heavy imports below chdir() the process (see _INVOCATION_CWD).
+    folder = str((Path(_INVOCATION_CWD) / folder).resolve())
+
+    from .library import Bookstore, BookstoreError
+
+    try:
+        supported, ignored = Bookstore.iter_folder_files(
+            folder, recursive=recursive
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not supported:
+        click.echo("No ingestable files found (pdf/md/txt/epub/docx).")
+        return
+    if dry_run:
+        click.echo(f"Would index {len(supported)} file(s):")
+        for path in supported:
+            click.echo(f"  + {path}")
+        for path in ignored:
+            click.echo(f"  - (ignored) {path}")
+        return
+
+    scope = "global" if global_scope else "project"
+    store = _open_bookstore(
+        llm_spec=llm,
+        scope_needed=scope,
+        use_llm=not no_llm,
+    )
+
+    async def _run() -> list[dict]:
+        results: list[dict] = []
+        total = len(supported)
+        for i, path in enumerate(supported, start=1):
+            try:
+                card, status = await store.add_book(
+                    path, scope=scope, force=force
+                )
+                results.append(
+                    {"file": str(path), "status": status, "book_id": card.book_id}
+                )
+                click.echo(f"[{i}/{total}] {status}: {card.book_id}")
+            except Exception as exc:  # noqa: BLE001 — keep the loop alive
+                results.append(
+                    {"file": str(path), "status": "failed", "error": str(exc)}
+                )
+                click.echo(f"[{i}/{total}] FAILED: {path} — {exc}")
+        return results
+
+    results = asyncio.run(_run())
+    counts: dict[str, int] = {}
+    for entry in results:
+        counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+    summary = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+    click.echo(f"Done — {summary}" + (f" (ignored: {len(ignored)})" if ignored else ""))
+    failures = [e for e in results if e["status"] == "failed"]
+    if failures and len(failures) == len(results):
+        raise click.ClickException("every file failed to ingest")
+
+
 @bookstore.command("list")
 @click.option("--json", "as_json", is_flag=True, help="JSON output.")
 def list_cmd(as_json: bool) -> None:
