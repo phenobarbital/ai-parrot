@@ -16,7 +16,7 @@ Backends:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Iterable, Optional
 
 from .index import VaultIndex
 from .models import (
@@ -38,13 +38,31 @@ class VaultAccessError(RuntimeError):
 class ObsidianVaultInterface(ABC):
     """Abstract async interface over an Obsidian vault."""
 
-    def __init__(self, vault_name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        vault_name: Optional[str] = None,
+        extra_skip_patterns: Optional[Iterable[str]] = None,
+    ) -> None:
+        """Initialize shared backend state.
+
+        Args:
+            vault_name: Logical vault name for node IDs and reports.
+            extra_skip_patterns: Additional directory names to exclude from
+                vault discovery, unioned with :data:`DEFAULT_SKIP_PATTERNS`
+                (``.obsidian``/``.trash``/``.git``). Backward-compatible —
+                ``None`` keeps the defaults unchanged. Callers with a
+                privacy boundary (e.g. the FEAT-481 wiki-KB agent, contract
+                §1 "never access ``Private/``") pass their own exclusions
+                here so search/catalog/list never traverse them.
+        """
         self.vault_name: str = vault_name or "vault"
         self.logger = logging.getLogger(
             f"{type(self).__module__}.{type(self).__name__}"
         )
         self.parser = ObsidianNoteParser()
-        self.skip_patterns: frozenset[str] = DEFAULT_SKIP_PATTERNS
+        self.skip_patterns: frozenset[str] = DEFAULT_SKIP_PATTERNS | frozenset(
+            extra_skip_patterns or ()
+        )
         self._index: Optional[VaultIndex] = None
         self._index_lock = asyncio.Lock()
 
