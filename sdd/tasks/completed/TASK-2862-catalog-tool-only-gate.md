@@ -163,10 +163,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: Added `ComponentDefinition.tool_only: bool = False` (base.py) and
+a new `TOOL_ONLY_NOT_ALLOWED_FOR_LLM` error code, mirroring
+`ACTION_NOT_ALLOWED_FOR_LLM`'s naming/placement. `register_component()`
+gained `tool_only: bool = False`, forwarded into the definition.
+`validate_envelope()` gate placed immediately after the `requires_actions`/
+action gate: `origin is ProducerOrigin.LLM and entry_for_gate is not None
+and entry_for_gate.definition.tool_only` → collected as a problem (not
+raised first-failure), same "report ALL problems" semantics. Updated the
+`validate_envelope()` docstring's gate list. `catalog/export.py` needed NO
+change — verified `requires_actions` (or any other per-component flag) is
+NOT exported in the catalog definition document (only `is_primitive` is
+used, for filtering only, never emitted), so there is nothing for
+`tool_only` to ride alongside. Tests: 3 new cases in
+`test_validation_v1.py` (LLM-rejected, TOOL-accepted, reported together
+with `DANGLING_CHILD`) mirroring `TestLlmOriginRejectsAction`'s exact
+style/fixtures; 2 new cases in `test_catalog.py` (default `False`,
+`True` when registered) mirroring `test_catalog_id_default`. 638/638
+targeted tests pass (`pytest packages/ai-parrot/tests/outputs/a2ui`).
+`ruff check` on all 4 touched files: all checks passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

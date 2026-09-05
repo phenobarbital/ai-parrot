@@ -78,6 +78,15 @@ class TestMixinComposition:
         from parrot.bots.mixins import InfographicAuthoringMixin as _M
         assert _M is InfographicAuthoringMixin
 
+    def test_authoring_mixin_toolkit_emits_a2ui(self, agent):
+        """Code-review gap (spec §3 Module 1 test table): the mixin's
+        auto-built toolkit (from `artifact_store=`, no explicit
+        `emit_a2ui=`) must inherit InfographicToolkit's dual-emit default —
+        prove it directly rather than only implicitly via the toolkit's own
+        default-True test."""
+        assert agent._infographic_toolkit is not None
+        assert agent._infographic_toolkit._emit_a2ui is True
+
 
 # ---------------------------------------------------------------------------
 # generate_infographic

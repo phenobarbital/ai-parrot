@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T21:27:36+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-05T00:33:39+00:00",
   "tasks": [
     {
       "id": "TASK-2856",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Start of the backend chain; touches only infographic_toolkit.py + formats/__init__.py (disjoint from M2/M4/M3 openers).",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2856-toolkit-emit-a2ui-default.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T21:48:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2856-toolkit-emit-a2ui-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2857",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +42,10 @@
       "parallel": false,
       "parallelism_notes": "Depends on envelopes being present by default; edits bots/data.py + bots/base.py.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2857-bots-dual-emit-routing.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T21:54:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2857-bots-dual-emit-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2858",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,9 +63,10 @@
       "parallel": false,
       "parallelism_notes": "Depends on the AIMessage shape produced by TASK-2857; edits handlers/agent.py.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2858-agenttalk-dual-emit-envelope.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:00:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2858-agenttalk-dual-emit-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2859",
@@ -72,16 +75,17 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent opener for Module 2; edits models/outputs.py, catalog/parrot/chart.py, adapters/infographic.py (no overlap with M1 files).",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2859-chart-type-parity-adapter-passthrough.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:07:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2859-chart-type-parity-adapter-passthrough.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2860",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,9 +103,10 @@
       "parallel": false,
       "parallelism_notes": "Same adapter file as TASK-2859; golden regeneration must follow the chart changes.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2860-kpicard-datatable-props-infographic-layout.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:16:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2860-kpicard-datatable-props-infographic-layout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2861",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -119,9 +124,10 @@
       "parallel": false,
       "parallelism_notes": "Needs the extended ChartType; satellite renderer files only.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2861-renderers-new-chart-types-degradation.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:27:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2861-renderers-new-chart-types-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2862",
@@ -130,16 +136,17 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent opener for Module 4; edits catalog/__init__.py + catalog/base.py only.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2862-catalog-tool-only-gate.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:31:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2862-catalog-tool-only-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2863",
@@ -148,7 +155,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -157,9 +164,10 @@
       "parallel": false,
       "parallelism_notes": "Requires the tool_only gate.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2863-htmldocument-component-builder.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:35:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2863-htmldocument-component-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2864",
@@ -168,7 +176,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,9 +186,10 @@
       "parallel": false,
       "parallelism_notes": "Edits infographic_toolkit.py after TASK-2856; needs build_html_document.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2864-toolkit-jinja-lane-htmldocument.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:41:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2864-toolkit-jinja-lane-htmldocument.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2865",
@@ -189,7 +198,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -198,9 +207,10 @@
       "parallel": false,
       "parallelism_notes": "Satellite renderers; needs the component shape.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2865-renderers-htmldocument.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:50:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2865-renderers-htmldocument.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2866",
@@ -209,16 +219,17 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent frontend opener; pure TS + flag plumbing, no backend files.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2866-ui-a2ui-flag-types-binding.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T22:58:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2866-ui-a2ui-flag-types-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2867",
@@ -227,7 +238,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -238,9 +249,10 @@
       "parallel": false,
       "parallelism_notes": "Needs the TS foundation and the final prop names / HtmlDocument shape.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2867-ui-a2ui-infographic-components.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T23:06:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2867-ui-a2ui-infographic-components.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2868",
@@ -249,7 +261,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -259,9 +271,10 @@
       "parallel": false,
       "parallelism_notes": "Needs the renderer and the backend envelope keys.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2868-ui-canvas-agentchat-a2ui-integration.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-04T23:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2868-ui-canvas-agentchat-a2ui-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2869",
@@ -270,7 +283,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -282,9 +295,10 @@
       "parallel": false,
       "parallelism_notes": "Documents the merged behaviour; last.",
       "assigned_to": null,
-      "started_at": "2026-09-04T21:42:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2869-docs-g7-amendment-smoke.md"
+      "started_at": "2026-09-04T21:42:56+00:00",
+      "completed_at": "2026-09-05T00:03:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2869-docs-g7-amendment-smoke.md",
+      "verification": "verified"
     }
   ]
 }

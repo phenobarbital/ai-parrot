@@ -187,10 +187,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: `KPICARD_SCHEMA` += `icon`/`color`/`comparisonPeriod`; `lower()`
+records them as `Card`-level `metadata.extensions` (`parrot_icon`,
+`parrot_color`, `parrot_comparison_period`), never new visible `Text` nodes.
+`DATATABLE_SCHEMA` (derived) hand-patched with `style` (enum mirrors
+`TableStyle`) since `StructuredTableConfig` has no style field to derive
+from; `lower()` records `parrot_style` in the row-body `metadata.extensions`.
+`InfographicComponent._lower_section()` now groups consecutive
+`properties.layout == "half"` children pairwise into a `Row` with
+`metadata.extensions.parrot_layout == "half"`; an odd trailing half-width
+child gets a single-child `Row`; `"full"`/omitted-layout children are
+unaffected. Adapter: `_hero_card()` forwards `icon`/`color`/
+`comparison_period→comparisonPeriod`; `_table()` forwards `style`;
+`_bullet_list()` records `columns` as `metadata.extensions.parrot_columns`
+on the `List` descriptor's `properties` dict (verified this reaches the
+lowered `BasicNode.metadata` because `List` is a Basic Catalog primitive —
+`_lower_child`'s primitive branch does `BasicNode(id=child_id,
+component=name, **props)`, so a `"metadata"` key in the descriptor
+properties lands on the node's own `metadata` field). All new fields are
+gated on `is not None` — never invented.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Golden diff**: NONE of `kpicard_lowered.json` / `datatable_lowered.json` /
+`infographic_lowered.json` (or `chart_lowered.json`) changed byte-for-byte
+— verified via `git status --porcelain` on the golden dir (empty) and all 3
+`test_*_lowering_golden` tests passing. This is because every new
+prop/behaviour is additive and gated on the value being present
+(`if props.get(x) is not None`), and none of the existing golden fixtures'
+component instances set `icon`/`color`/`comparisonPeriod`/`style`/`layout`
+— so `lower()`'s output for those exact fixtures is unchanged. New
+behaviour is instead covered by new, explicit unit tests (not golden diffs)
+in each `test_components_*.py` file and `adapters/test_infographic_adapter.py`.
+`test_catalog_parity.py` needed NO changes — its subset assertions on
+`DATATABLE_SCHEMA["properties"]` still hold with the extra `style` key.
+633/633 targeted tests pass (`pytest packages/ai-parrot/tests/outputs/a2ui`).
+`ruff check` on all 4 touched source modules + 4 touched test modules: all
+checks passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -1466,15 +1466,50 @@ class BaseBot(AbstractBot):
                 # now available to every ``Agent``.
                 infographic_envelope = self._extract_last_infographic_result(getattr(response, "tool_calls", None))
                 if infographic_envelope is not None:
-                    if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
-                        response.a2ui_envelope = infographic_envelope.a2ui_envelope
+                    # FEAT-527: dual-emit routing. Every render now carries an
+                    # A2UI envelope by default (emit_a2ui=True), so the
+                    # requested output_mode decides the PRIMARY shape and the
+                    # other emission rides along additively — neither lane is
+                    # dropped on the floor.
+                    a2ui_envelope = getattr(infographic_envelope, "a2ui_envelope", None)
+                    if output_mode == OutputMode.A2UI and a2ui_envelope is not None:
+                        explanation = getattr(response, "response", None)
+                        if not explanation and isinstance(response.output, str):
+                            explanation = response.output
+                        response.a2ui_envelope = a2ui_envelope
+                        response.artifact_id = infographic_envelope.artifact_id
                         finalize_a2ui_response(response)
+                        meta = dict(getattr(response, "metadata", None) or {})
+                        meta.update(
+                            {
+                                "html_url": infographic_envelope.html_url,
+                                "artifact_id": infographic_envelope.artifact_id,
+                                "template_name": infographic_envelope.template_name,
+                                "theme": infographic_envelope.theme,
+                                "enhanced": infographic_envelope.enhanced,
+                            }
+                        )
+                        response.metadata = meta
+                        if explanation:
+                            response.response = explanation
                     else:
+                        if output_mode == OutputMode.A2UI and a2ui_envelope is None:
+                            self.logger.warning(
+                                "InfographicRenderResult requested output_mode=A2UI but "
+                                "no A2UI envelope was produced; falling back to the HTML "
+                                "lane. artifact_id=%s",
+                                infographic_envelope.artifact_id,
+                            )
+                        # HTML-primary (default mode, or A2UI-requested-but-no-envelope
+                        # fallback): keep the documented HTML envelope and additionally
+                        # carry a2ui_envelope when one is available (G2/G6).
                         self._finalize_infographic_response(response, infographic_envelope)
+                        if a2ui_envelope is not None:
+                            response.a2ui_envelope = a2ui_envelope
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: " "artifact_id=%s a2ui=%s",
                         infographic_envelope.artifact_id,
-                        infographic_envelope.a2ui_envelope is not None,
+                        a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INFOGRAPHIC:
                     self.logger.warning(

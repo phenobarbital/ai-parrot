@@ -166,10 +166,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Added the additive `a2ui_envelope` key to
+`_format_infographic_response`'s JSON envelope (omitted when `None`,
+`Accept: text/html` branch untouched) and updated its docstring's shape
+example. Extended the `OutputMode.A2UI` early return in `_format_response`
+with `artifact_id` and `metadata` (existing metadata merged with
+model/provider/session_id/turn_id/response_time, mirroring the INFOGRAPHIC
+metadata block) — the existing four keys are intact. Added
+`test_agenttalk_dual_emit.py` (12 tests: envelope-present/omitted, HTML
+branch unchanged, A2UI metadata/artifact_id, streaming-gate regression
+guard) and extended `test_infographic_handler.py` with 2 tests reusing its
+`sample_infographic_response` fixture. All 3 target files' tests pass when
+run per-package (26 passed/1 skipped for ai-parrot; 12 passed for
+ai-parrot-server) — running all three files in a single combined `pytest`
+invocation hits a pre-existing, unrelated tooling limitation (documented in
+project memory: `tests/conftest.py` module names collide across the
+`ai-parrot` and `ai-parrot-server` packages, causing
+`ImportPathMismatchError`; NOT caused by this change). `ruff check` on
+`agent.py` and both test files: all checks passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Note: the acceptance criterion's single
+combined pytest command
+(`pytest packages/ai-parrot/tests/handlers/test_infographic_handler.py
+packages/ai-parrot-server/tests/test_agenttalk_dual_emit.py
+packages/ai-parrot-server/tests/test_agenttalk_infographic_explanation.py -q`)
+cannot run as one invocation in this worktree due to the pre-existing
+conftest collision above; verified instead as two separate invocations
+(ai-parrot's file alone, then both ai-parrot-server files together), both
+green.

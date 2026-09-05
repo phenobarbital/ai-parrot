@@ -172,10 +172,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-05
+**Notes**: Added `_build_html_document_envelope()` (same try/except-warning
+policy as `_build_a2ui_envelope`). `render_template()`'s synthetic-blocks
+branch replaced with a call to it (`title` defaults to
+`f"Infographic — {template_name}"`). `_build_a2ui_envelope_from_layout()`
+gained keyword-only `html: str = ""`, `html_url: str = ""`; its `layout is
+None` branch now calls `_build_html_document_envelope()` instead of
+building a synthetic `InfographicResponse`; the `layout is not None`
+descriptor branch is BYTE-IDENTICAL to before (untouched code path,
+verified: `test_declared_layout_is_used_verbatim_against_the_payload` /
+`test_non_infographic_layout_dispatches_to_build_surface` pass unmodified).
+Updated the two now-stale wiring tests in
+`test_infographic_toolkit_a2ui_wiring.py` that asserted the old synthetic
+`Infographic` root for the layout-less fallback — they now assert an
+`HtmlDocument` root with the rendered `html`/`title`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Autoescape finding (spec §8 open question)**: `TemplateEngine`'s default
+`JinjaConfig.autoescape` is `select_autoescape([...])` — CONDITIONALLY on,
+per template NAME extension (`.html`/`.xml`/`.j2`/`.jinja`/`.jinja2`).
+Verified: `test_infographic_render_template.py`'s existing
+`test_render_template_autoescapes_data` already passed before this task
+because its fixture templates are named e.g. `"echo.html.j2"` (recognized
+extension). It was effectively OFF for a template registered under a BARE
+name (no recognized extension) — the common shape for `templates=`/
+`add_template()` in-memory registration, and now the rendered HTML also
+reaches the HtmlDocument A2UI surface, not just the artifact. Per the
+task's fallback instruction, forced `autoescape=True` UNCONDITIONALLY for
+the toolkit's own `TemplateEngine` construction (both the constructor's
+`template_dirs`/`templates` branch and `add_template()`'s lazy-engine
+branch), via `config=JinjaConfig(autoescape=True)`. Verified this is a
+strict improvement with zero regressions: `test_infographic_render_template.py`
+(11 tests, uses recognized-extension names) and
+`test_infographic_data_splice.py` (12 tests) both pass unmodified.
 
-**Deviations from spec**: none | describe if any
+`InfographicTalk`'s `/render` route: verified it reaches this code via
+`render_deterministic` → the toolkit's `render()`/`render_data_template()`
+(not `render_template`, the Jinja-only lane) and consumes
+`InfographicRenderResult.a2ui_envelope` transparently (no handler-side
+shaping) — no handler change needed, per the task's own note.
+
+52/52 targeted tests pass
+(`test_infographic_toolkit.py` + `test_infographic_toolkit_a2ui_wiring.py`),
+plus 11/11 (`test_infographic_render_template.py`) and 12/12
+(`test_infographic_data_splice.py`) unmodified-and-still-green regression
+checks. `ruff check infographic_toolkit.py`: 1 pre-existing unrelated
+`F401` finding (verified present before this task, TASK-2856's completion
+note already noted it).
+
+**Deviations from spec**: none.

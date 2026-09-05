@@ -193,10 +193,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-04
+**Notes**: Flipped `InfographicToolkit.__init__(emit_a2ui: bool = True)`
+default, updated module + constructor docstrings. Removed the unconditional
+`DeprecationWarning` in `get_infographic_html_renderer()` (kept the
+`ImportError` translation and the `# FEAT-527 (amends FEAT-273 G7)` comment);
+`_A2UI_REPLACEMENTS`/`_warn_if_deprecated` untouched. Updated
+`examples/agents/a2ui/a2ui_dashboard_walkthrough.py` prose (lines 9, 155-160,
+195, 370) to stop implying `emit_a2ui=True` is required; the explicit kwarg
+at line 197 was left in place per task note. Added regression tests: default
++ opt-out unit tests in `test_infographic_toolkit.py`
+(`TestEmitA2UIDefault`); a new `TestProductionConstructorsEmitByDefault`
+class in `test_infographic_toolkit_a2ui_wiring.py` proving
+`InfographicAuthoringMixin`, `InfographicTalk._get_render_toolkit`, and
+`ResultAgent.agent_tools` all build an emitting toolkit with zero call-site
+changes; new `test_formats_infographic_html_renderer.py` asserting no
+`DeprecationWarning`. 52/52 targeted tests pass (6 pre-existing failures in
+`tests/unit/outputs/cards/` are unrelated Adaptive-Cards schema-version
+mismatches, untouched by this task). `ruff check` on touched files shows
+only pre-existing E402/F401 findings not introduced by this change.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
