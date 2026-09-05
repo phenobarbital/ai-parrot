@@ -338,7 +338,7 @@ def test_simple_summary_withholds_sensitive_tool_string_result():
 
 # ── FEAT-193 TASK-1303: capability helper + configurable whitelist tests ─────
 
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class TestSupportsCombinedToolsAndSchema:

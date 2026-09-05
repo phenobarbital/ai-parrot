@@ -25,11 +25,7 @@ from typing import (
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
-from ..clients.live import (
-    GeminiLiveClient,
-    LiveCompletionUsage,
-    LiveVoiceResponse,
-)
+from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
@@ -198,7 +194,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         VoiceBot is provider-aware via ``self.voice_config.provider``
         (FEAT-302, renamed FEAT-315): ``"google_live"`` (default) resolves
         to ``GeminiLiveClient``; ``"nova"`` (experimental) resolves to
-        :class:`~parrot.clients.nova.NovaClient` (unified Nova client —
+        :class:`~parrot.clients.amazon.nova.NovaClient` (unified Nova client —
         supersedes the now-deleted ``NovaSonicClient``). The provider
         selection is independent of whatever ``llm``/text-only provider
         string was passed to the bot — voice interactions always go
@@ -209,7 +205,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         provider = getattr(self.voice_config, "provider", "google_live")
 
         if provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             # NovaClient's default model (nova-2-lite) is the TEXT model —
             # voice sessions need the Sonic model explicitly unless the
@@ -262,6 +258,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
 
         # Default (existing behavior, unchanged): GeminiLiveClient.
+        # FEAT-523: lazy import — core must not import a provider module
+        # at module scope (AC-3); "google" ships from the
+        # ai-parrot-client-google satellite.
+        from ..clients.google.live import GeminiLiveClient
+
         config = LLMConfig(
             provider="gemini_live",
             client_class=GeminiLiveClient,
@@ -299,7 +300,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
         if config.provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             client = NovaClient(
                 model=config.model,
@@ -311,6 +312,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
         else:
             # Default (existing behavior, unchanged): GeminiLiveClient.
+            # FEAT-523: lazy import — core must not import a provider
+            # module at module scope (AC-3).
+            from ..clients.google.live import GeminiLiveClient
+
             client = GeminiLiveClient(
                 model=config.model,
                 voice_name=config.extra.get("voice_name", self.voice_config.voice_name),
@@ -368,6 +373,13 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         GoogleGenAIClient = SUPPORTED_CLIENTS.get("google")
         if not GoogleGenAIClient:
             raise ValueError("GoogleGenAIClient not available")
+        # FEAT-523 (TASK-2852): a provider registered via a real
+        # `parrot.clients` entry point (e.g. "google", extracted to
+        # ai-parrot-client-google) is stored as `ep.load` itself — a
+        # zero-arg callable, not the class directly. Resolve it the same
+        # way LLMFactory.create() does before instantiating.
+        if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+            GoogleGenAIClient = GoogleGenAIClient()
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(

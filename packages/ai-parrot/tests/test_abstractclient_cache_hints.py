@@ -2,6 +2,7 @@
 
 FEAT-181 — Provider-Agnostic Prompt Caching (TASK-1221).
 """
+
 import hashlib
 import pytest
 from parrot.bots.prompts.segments import CacheableSegment
@@ -33,7 +34,8 @@ class TestResolveSystemPrompt:
         """Create a minimal concrete instance for testing."""
         # Use AnthropicClient which is a concrete subclass
         try:
-            from parrot.clients.claude import AnthropicClient
+            from parrot.clients.anthropic import AnthropicClient
+
             return AnthropicClient.__new__(AnthropicClient)
         except Exception:
             return None

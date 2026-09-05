@@ -24,6 +24,7 @@ forked or monkeypatched to change its behaviour, only to observe it
 the established pattern in
 `packages/ai-parrot/tests/test_toolmanager_confirmation.py`).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,7 +38,7 @@ from parrot.auth.confirmation import (
     InMemoryConfirmationWindowStore,
 )
 from parrot.auth.permission import PermissionContext, UserSession
-from parrot.clients.claude_agent_bridge import ClaudeAgentToolBridge
+from parrot.clients.anthropic.claude_agent_bridge import ClaudeAgentToolBridge
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 
@@ -169,9 +170,7 @@ class TestBridgedConfirmation:
 
         async def _spy_confirm(*, tool, parameters, permission_context=None):
             captured["permission_context"] = permission_context
-            return await original_confirm(
-                tool=tool, parameters=parameters, permission_context=permission_context
-            )
+            return await original_confirm(tool=tool, parameters=parameters, permission_context=permission_context)
 
         monkeypatch.setattr(guard, "confirm", _spy_confirm)
 
@@ -304,11 +303,7 @@ class TestAgentdWiring:
             def __init__(self):
                 self.tool_manager = ToolManager()
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl", agent=AgentTargetConfig(target="x:y")))
         daemon.agent = _FakeAgentWithTools()
 
         await daemon._configure_hitl()
@@ -328,11 +323,7 @@ class TestAgentdWiring:
         class _FakeAgentNoTools:
             pass
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl-2", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl-2", agent=AgentTargetConfig(target="x:y")))
         daemon.agent = _FakeAgentNoTools()
 
         await daemon._configure_hitl()
@@ -347,20 +338,12 @@ class TestAgentdWiring:
         )
         from parrot.integrations.agentd.service import AgentDaemon, _AgentdHumanChannel
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl-3", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl-3", agent=AgentTargetConfig(target="x:y")))
         daemon.server = MagicMock()
-        daemon.server.event_broker.publish = MagicMock(
-            side_effect=lambda *a, **k: _immediate_future()
-        )
+        daemon.server.event_broker.publish = MagicMock(side_effect=lambda *a, **k: _immediate_future())
 
         channel = _AgentdHumanChannel(daemon)
-        interaction = HumanInteraction(
-            interaction_type=InteractionType.APPROVAL, question="Delete everything?"
-        )
+        interaction = HumanInteraction(interaction_type=InteractionType.APPROVAL, question="Delete everything?")
 
         delivered = await channel.send_interaction(interaction, "jesuslara")
 
@@ -377,17 +360,11 @@ class TestAgentdWiring:
         )
         from parrot.integrations.agentd.service import AgentDaemon, _AgentdHumanChannel
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl-4", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl-4", agent=AgentTargetConfig(target="x:y")))
         daemon.server = None
 
         channel = _AgentdHumanChannel(daemon)
-        interaction = HumanInteraction(
-            interaction_type=InteractionType.APPROVAL, question="Delete everything?"
-        )
+        interaction = HumanInteraction(interaction_type=InteractionType.APPROVAL, question="Delete everything?")
 
         delivered = await channel.send_interaction(interaction, "jesuslara")
 
@@ -402,11 +379,7 @@ class TestAgentdWiring:
         from parrot.integrations.agentd.server import Session
         from parrot.integrations.agentd.service import AgentDaemon, _AgentdHumanChannel
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl-5", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl-5", agent=AgentTargetConfig(target="x:y")))
         daemon._hitl_channel = _AgentdHumanChannel(daemon)
 
         received: list[HumanResponse] = []
@@ -443,11 +416,7 @@ class TestAgentdWiring:
         from parrot.integrations.agentd.server import RpcHandlerError, Session
         from parrot.integrations.agentd.service import AgentDaemon
 
-        daemon = AgentDaemon(
-            AgentServiceConfig(
-                name="test-hitl-6", agent=AgentTargetConfig(target="x:y")
-            )
-        )
+        daemon = AgentDaemon(AgentServiceConfig(name="test-hitl-6", agent=AgentTargetConfig(target="x:y")))
         session = Session(session_id="s2", writer=MagicMock())
 
         with pytest.raises(RpcHandlerError):

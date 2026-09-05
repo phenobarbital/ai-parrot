@@ -14,6 +14,7 @@ in spec §5 AC4–AC8.  Each test:
 
 No real LLM or Jira HTTP traffic is made.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -31,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # triggering the Cython chain (parrot.utils.types, parrot.bots.base, etc.).
 # ---------------------------------------------------------------------------
 
-_WORKTREE = Path(__file__).resolve().parent.parent        # packages/ai-parrot
+_WORKTREE = Path(__file__).resolve().parent.parent  # packages/ai-parrot
 _JIRA_SPEC_PY = _WORKTREE / "src/parrot/bots/jira_specialist.py"
 
 _log = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def _mk(name: str, **attrs):
     m = sys.modules.get(name)
     if m is None:
         m = types.ModuleType(name)
-        m.__path__ = []   # mark as package so sub-imports work
+        m.__path__ = []  # mark as package so sub-imports work
         sys.modules[name] = m
     for k, v in attrs.items():
         setattr(m, k, v)
@@ -64,8 +65,10 @@ if "parrot.utils" not in sys.modules:
 
 # ── parrot.bots.* stubs (prevent base.py / chatbot.py from loading) ──────
 
+
 class _AgentBase:
     """Minimal Agent stand-in so JiraSpecialist.__init__ can call super()."""
+
     model = None
     injection_probability_threshold = 0.9
 
@@ -98,6 +101,7 @@ _mk("parrot.bots.chatbot", Chatbot=_AgentBase)
 _mk("parrot.bots.agent", Agent=_AgentBase, BasicAgent=_AgentBase)
 _mk("parrot.bots.search", WebSearchAgent=_AgentBase)
 
+
 # ── parrot.bots.prompts — load REAL domain layers from worktree ───────────
 # Use spec_from_file_location so we get the actual TASK-947 layer definitions.
 def _load_prompts_module():
@@ -116,10 +120,8 @@ def _load_prompts_module():
             pass
         return m
 
-    layers_mod = _load_direct("parrot.bots.prompts.layers",
-                               _prompts_root / "layers.py")
-    domain_mod = _load_direct("parrot.bots.prompts.domain_layers",
-                               _prompts_root / "domain_layers.py")
+    layers_mod = _load_direct("parrot.bots.prompts.layers", _prompts_root / "layers.py")
+    domain_mod = _load_direct("parrot.bots.prompts.domain_layers", _prompts_root / "domain_layers.py")
 
     prompts_pkg = _mk("parrot.bots.prompts")
     # Expose names that jira_specialist._build_jira_prompt_builder needs
@@ -127,8 +129,7 @@ def _load_prompts_module():
         val = getattr(layers_mod, attr, None) or MagicMock()
         setattr(prompts_pkg, attr, val)
 
-    for attr in ("get_domain_layer", "JIRA_WORKFLOW_LAYER", "JIRA_GROUNDING_LAYER",
-                 "_DOMAIN_LAYERS"):
+    for attr in ("get_domain_layer", "JIRA_WORKFLOW_LAYER", "JIRA_GROUNDING_LAYER", "_DOMAIN_LAYERS"):
         val = getattr(domain_mod, attr, None)
         if val is not None:
             setattr(prompts_pkg, attr, val)
@@ -139,32 +140,36 @@ def _load_prompts_module():
 _load_prompts_module()
 
 # ── other parrot.* stubs ─────────────────────────────────────────────────
-_mk("parrot.conf",
-    JIRA_USERS=[], JIRA_ALLOWED_REPORTERS=[], JIRA_DEFAULT_REPORTER=None,
-    REDIS_URL="redis://localhost:6379/0")
+_mk(
+    "parrot.conf",
+    JIRA_USERS=[],
+    JIRA_ALLOWED_REPORTERS=[],
+    JIRA_DEFAULT_REPORTER=None,
+    REDIS_URL="redis://localhost:6379/0",
+)
 _mk("parrot.integrations", telegram=MagicMock())
-_mk("parrot.integrations.telegram",
-    TelegramHumanTool=MagicMock(), telegram_chat_scope=MagicMock())
+_mk("parrot.integrations.telegram", TelegramHumanTool=MagicMock(), telegram_chat_scope=MagicMock())
+
+
 def _telegram_callback_stub(*args, **kwargs):
     """Accept @telegram_callback and @telegram_callback(prefix=...) forms."""
     if args and callable(args[0]) and not kwargs:
-        return args[0]   # bare @telegram_callback
-    return lambda f: f   # @telegram_callback(prefix=...) → returns decorator
+        return args[0]  # bare @telegram_callback
+    return lambda f: f  # @telegram_callback(prefix=...) → returns decorator
 
 
-_mk("parrot.integrations.telegram.callbacks",
+_mk(
+    "parrot.integrations.telegram.callbacks",
     telegram_callback=_telegram_callback_stub,
     CallbackContext=MagicMock,
     CallbackResult=MagicMock,
-    build_inline_keyboard=MagicMock())
+    build_inline_keyboard=MagicMock(),
+)
 _mk("parrot.tools.reminder", ReminderToolkit=MagicMock())
-_mk("parrot.models.google", GoogleModel=MagicMock())
+_mk("parrot.clients.google.models", GoogleModel=MagicMock())
 _mk("parrot.auth.credentials", OAuthCredentialResolver=MagicMock())
 _mk("parrot.auth.context", UserContext=MagicMock())
-_mk("parrot.core.hooks.models",
-    HookEvent=MagicMock(),
-    TransitionAction=MagicMock(),
-    TransitionActionType=MagicMock())
+_mk("parrot.core.hooks.models", HookEvent=MagicMock(), TransitionAction=MagicMock(), TransitionActionType=MagicMock())
 # parrot_tools.jiratoolkit is the satellite-package home of JiraToolkit; the
 # real module drags in parrot.tools.manager → parrot.auth, which the stubs
 # above deliberately break. Tests patch JiraToolkit on the loaded module
@@ -175,17 +180,13 @@ _mk("parrot_tools.jiratoolkit", JiraToolkit=MagicMock())
 # TASK-1678 added `from parrot.bots._types import AgentDispatcher` to
 # jira_specialist; the stubbed parrot.bots package (__path__=[]) would make
 # that import fail, so register the real module explicitly.
-_types_spec = importlib.util.spec_from_file_location(
-    "parrot.bots._types", str(_WORKTREE / "src/parrot/bots/_types.py")
-)
+_types_spec = importlib.util.spec_from_file_location("parrot.bots._types", str(_WORKTREE / "src/parrot/bots/_types.py"))
 _types_mod = importlib.util.module_from_spec(_types_spec)
 sys.modules["parrot.bots._types"] = _types_mod
 _types_spec.loader.exec_module(_types_mod)
 
 # ── load jira_specialist.py directly from worktree ────────────────────────
-_js_spec = importlib.util.spec_from_file_location(
-    "parrot.bots.jira_specialist", str(_JIRA_SPEC_PY)
-)
+_js_spec = importlib.util.spec_from_file_location("parrot.bots.jira_specialist", str(_JIRA_SPEC_PY))
 _js_mod = importlib.util.module_from_spec(_js_spec)
 sys.modules["parrot.bots.jira_specialist"] = _js_mod
 _js_spec.loader.exec_module(_js_mod)
@@ -218,6 +219,7 @@ FABRICATION_BLOCKLIST = [
 # Helper: create a patched JiraSpecialist with mocked toolkit
 # ---------------------------------------------------------------------------
 
+
 def _make_agent() -> tuple:
     """Return (agent, mock_toolkit) with standard patches applied."""
     mock_toolkit = MagicMock()
@@ -226,10 +228,14 @@ def _make_agent() -> tuple:
 
     with (
         patch.object(_js_mod, "JiraToolkit", MagicMock()),
-        patch.object(_js_mod, "config", MagicMock(
-            get=lambda *a, **kw: "dummy",
-            getlist=lambda *a, **kw: [],
-        )),
+        patch.object(
+            _js_mod,
+            "config",
+            MagicMock(
+                get=lambda *a, **kw: "dummy",
+                getlist=lambda *a, **kw: [],
+            ),
+        ),
         patch("redis.asyncio.from_url", return_value=AsyncMock()),
     ):
         agent = JiraSpecialist()
@@ -241,6 +247,7 @@ def _make_agent() -> tuple:
 # ---------------------------------------------------------------------------
 # T1 — not_found → no fabrication
 # ---------------------------------------------------------------------------
+
 
 class TestGroundingNotFoundNoFabrication(unittest.IsolatedAsyncioTestCase):
     """T1: toolkit returns not_found; reply must contain the sentinel phrase
@@ -260,26 +267,22 @@ class TestGroundingNotFoundNoFabrication(unittest.IsolatedAsyncioTestCase):
         async def _fake_ask(question, **kwargs):
             result = await _toolkit.jira_get_issue("NAV-99999")
             if result["status"] == "not_found":
-                return (
-                    f"{SENTINEL_NOT_FOUND} NAV-99999. "
-                    "The ticket does not exist in the configured project."
-                )
+                return f"{SENTINEL_NOT_FOUND} NAV-99999. " "The ticket does not exist in the configured project."
             return result["data"]["fields"]["summary"]  # pragma: no cover
 
         self.agent.ask = AsyncMock(side_effect=_fake_ask)
 
     async def test_grounding_not_found_no_fabrication(self):
         reply = await self.agent.ask("Tell me about NAV-99999")
-        self.assertIn(f"{SENTINEL_NOT_FOUND} NAV-99999", reply,
-                      "Grounding sentinel phrase missing from reply")
+        self.assertIn(f"{SENTINEL_NOT_FOUND} NAV-99999", reply, "Grounding sentinel phrase missing from reply")
         for token in FABRICATION_BLOCKLIST:
-            self.assertNotIn(token, reply,
-                             f"Fabricated field value leaked into reply: {token!r}")
+            self.assertNotIn(token, reply, f"Fabricated field value leaked into reply: {token!r}")
 
 
 # ---------------------------------------------------------------------------
 # T2 — empty search → no ticket keys in reply
 # ---------------------------------------------------------------------------
+
 
 class TestGroundingEmptySearchNoFabrication(unittest.IsolatedAsyncioTestCase):
     """T2: toolkit returns empty; reply must not contain Jira ticket-key patterns."""
@@ -313,6 +316,7 @@ class TestGroundingEmptySearchNoFabrication(unittest.IsolatedAsyncioTestCase):
 # T3 — toolkit error → agent stops, no retry
 # ---------------------------------------------------------------------------
 
+
 class TestGroundingToolkitErrorReportsError(unittest.IsolatedAsyncioTestCase):
     """T3: toolkit raises RuntimeError; reply must contain error sentinel and
     toolkit must have been called exactly once (no retry)."""
@@ -334,13 +338,13 @@ class TestGroundingToolkitErrorReportsError(unittest.IsolatedAsyncioTestCase):
     async def test_grounding_toolkit_error_reports_error(self):
         reply = await self.agent.ask("Show me NAV-1")
         self.assertIn(SENTINEL_ERROR, reply, "Error sentinel missing from reply")
-        self.assertEqual(self.mock_toolkit.jira_get_issue.call_count, 1,
-                         "Agent must not retry after toolkit error")
+        self.assertEqual(self.mock_toolkit.jira_get_issue.call_count, 1, "Agent must not retry after toolkit error")
 
 
 # ---------------------------------------------------------------------------
 # T4 — contradiction → agent re-calls the tool
 # ---------------------------------------------------------------------------
+
 
 class TestGroundingCorrectionReCallsTool(unittest.IsolatedAsyncioTestCase):
     """T4: two-turn dialogue; user contradicts not_found answer; agent must
@@ -368,7 +372,8 @@ class TestGroundingCorrectionReCallsTool(unittest.IsolatedAsyncioTestCase):
         await self.agent.ask("Tell me about NAV-5517")
         await self.agent.ask("That ticket is not named that")
         self.assertGreaterEqual(
-            self.mock_toolkit.jira_get_issue.call_count, 2,
+            self.mock_toolkit.jira_get_issue.call_count,
+            2,
             "Agent must re-call jira_get_issue after a user correction",
         )
 
@@ -376,6 +381,7 @@ class TestGroundingCorrectionReCallsTool(unittest.IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 # T5 — cross-ticket bleed blocked
 # ---------------------------------------------------------------------------
+
 
 class TestGroundingNoCrossTicketBleed(unittest.IsolatedAsyncioTestCase):
     """T5: sequential lookups NAV-1 (ok) then NAV-2 (not_found); no NAV-1
@@ -394,14 +400,18 @@ class TestGroundingNoCrossTicketBleed(unittest.IsolatedAsyncioTestCase):
             if issue == "NAV-1":
                 return {
                     "status": "ok",
-                    "data": {"key": "NAV-1",
-                             "fields": {"summary": nav1_summary,
-                                        "assignee": {"displayName": nav1_assignee}}},
-                    "query": "NAV-1", "message": "",
+                    "data": {
+                        "key": "NAV-1",
+                        "fields": {"summary": nav1_summary, "assignee": {"displayName": nav1_assignee}},
+                    },
+                    "query": "NAV-1",
+                    "message": "",
                 }
             return {
-                "status": "not_found", "data": None,
-                "query": issue, "message": f"Issue {issue} not found.",
+                "status": "not_found",
+                "data": None,
+                "query": issue,
+                "message": f"Issue {issue} not found.",
             }
 
         self.mock_toolkit.jira_get_issue.side_effect = _fake_get
@@ -425,10 +435,8 @@ class TestGroundingNoCrossTicketBleed(unittest.IsolatedAsyncioTestCase):
     async def test_grounding_no_cross_ticket_bleed(self):
         await self.agent.ask("Show me NAV-1")
         nav2_reply = await self.agent.ask("Now NAV-2")
-        self.assertNotIn(self._NAV1_SUMMARY, nav2_reply,
-                         "NAV-1 summary leaked into NAV-2 reply")
-        self.assertNotIn(self._NAV1_ASSIGNEE, nav2_reply,
-                         "NAV-1 assignee leaked into NAV-2 reply")
+        self.assertNotIn(self._NAV1_SUMMARY, nav2_reply, "NAV-1 summary leaked into NAV-2 reply")
+        self.assertNotIn(self._NAV1_ASSIGNEE, nav2_reply, "NAV-1 assignee leaked into NAV-2 reply")
 
 
 if __name__ == "__main__":

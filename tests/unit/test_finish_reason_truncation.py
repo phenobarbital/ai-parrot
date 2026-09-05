@@ -7,6 +7,7 @@ to be truncated *before* any structured-output parse is attempted.  The shared
 :class:`~parrot.exceptions.TruncatedResponseError` (an ``InvokeError``)
 instead of letting ``_parse_structured_output`` fall back to the raw string.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -133,12 +134,12 @@ class TestRaiseIfTruncated:
     @pytest.mark.parametrize(
         "reason",
         [
-            "max_tokens",                          # Anthropic / Bedrock
-            "MAX_TOKENS",                          # Google (str)
-            "FinishReason.MAX_TOKENS",             # Google (enum repr)
-            SimpleNamespace(name="MAX_TOKENS"),    # Google (enum object)
-            "length",                              # OpenAI-compatible
-            "REASON_MAX_LEN",                      # xAI Grok
+            "max_tokens",  # Anthropic / Bedrock
+            "MAX_TOKENS",  # Google (str)
+            "FinishReason.MAX_TOKENS",  # Google (enum repr)
+            SimpleNamespace(name="MAX_TOKENS"),  # Google (enum object)
+            "length",  # OpenAI-compatible
+            "REASON_MAX_LEN",  # xAI Grok
         ],
     )
     def test_raises_for_truncation_vocabulary(self, client, reason):
@@ -163,16 +164,12 @@ class TestParseStructuredOutputGuard:
     async def test_truncated_raises_before_parsing(self, client, config):
         # Truncated JSON — would otherwise silently come back as the raw str.
         with pytest.raises(TruncatedResponseError):
-            await client._parse_structured_output(
-                '{"value": "abc', config, finish_reason="MAX_TOKENS"
-            )
+            await client._parse_structured_output('{"value": "abc', config, finish_reason="MAX_TOKENS")
 
     async def test_truncated_raises_even_if_text_parses(self, client, config):
         # Known-truncated wins over "looks fine": the payload may be an accidental prefix.
         with pytest.raises(TruncatedResponseError):
-            await client._parse_structured_output(
-                '{"value": "abc"}', config, finish_reason="length"
-            )
+            await client._parse_structured_output('{"value": "abc"}', config, finish_reason="length")
 
     async def test_no_finish_reason_keeps_legacy_fallback(self, client, config):
         # Backward compatible: callers that do not pass finish_reason keep the old behaviour.
@@ -180,9 +177,7 @@ class TestParseStructuredOutputGuard:
         assert isinstance(result, str)
 
     async def test_stop_parses_normally(self, client, config):
-        result = await client._parse_structured_output(
-            '{"value": "abc"}', config, finish_reason="stop"
-        )
+        result = await client._parse_structured_output('{"value": "abc"}', config, finish_reason="stop")
         assert isinstance(result, Payload)
         assert result.value == "abc"
 
@@ -257,9 +252,7 @@ class TestGoogleInvokeTruncation:
         response = SimpleNamespace(
             candidates=[candidate],
             text='{"value": "ab',
-            usage_metadata=SimpleNamespace(
-                prompt_token_count=1, candidates_token_count=1, total_token_count=2
-            ),
+            usage_metadata=SimpleNamespace(prompt_token_count=1, candidates_token_count=1, total_token_count=2),
         )
         sdk_client = MagicMock()
         sdk_client.aio = MagicMock()
@@ -287,7 +280,7 @@ class TestGoogleInvokeTruncation:
 
 
 def _make_openai_client():
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     client = OpenAIClient.__new__(OpenAIClient)
     client.model = "gpt-4o"
@@ -321,9 +314,7 @@ class TestOpenAIResponsesShimTruncation:
         client._prepare_responses_args = MagicMock(return_value={})
         client._call_responses_create = AsyncMock(return_value=resp)
 
-        compat = await client._responses_completion(
-            model="gpt-5", messages=[{"role": "user", "content": "x"}]
-        )
+        compat = await client._responses_completion(model="gpt-5", messages=[{"role": "user", "content": "x"}])
 
         assert compat.choices[0].finish_reason == "max_output_tokens"
         assert client._extract_finish_reason(compat) == "max_output_tokens"
@@ -333,9 +324,7 @@ class TestOpenAIResponsesShimTruncation:
     async def test_completed_status_leaves_finish_reason_none(self):
         client = _make_openai_client()
         item = SimpleNamespace(content=[{"type": "output_text", "text": "ok"}])
-        resp = SimpleNamespace(
-            output=[item], output_text=None, status="completed", incomplete_details=None, usage=None
-        )
+        resp = SimpleNamespace(output=[item], output_text=None, status="completed", incomplete_details=None, usage=None)
         client._prepare_responses_args = MagicMock(return_value={})
         client._call_responses_create = AsyncMock(return_value=resp)
 
@@ -355,15 +344,11 @@ class TestCustomParserGuard:
         sdk = MagicMock()
         sdk.chat = MagicMock()
         sdk.chat.completions = MagicMock()
-        sdk.chat.completions.create = AsyncMock(
-            return_value=SimpleNamespace(choices=[choice], usage=usage)
-        )
+        sdk.chat.completions.create = AsyncMock(return_value=SimpleNamespace(choices=[choice], usage=usage))
         bind_sdk_client(client, sdk)
 
         parser = MagicMock(return_value=Payload(value="should-not-run"))
-        cfg = StructuredOutputConfig(
-            output_type=Payload, format=OutputFormat.CUSTOM, custom_parser=parser
-        )
+        cfg = StructuredOutputConfig(output_type=Payload, format=OutputFormat.CUSTOM, custom_parser=parser)
         with pytest.raises(TruncatedResponseError):
             await client.invoke("extract", structured_output=cfg)
         parser.assert_not_called()
@@ -371,7 +356,7 @@ class TestCustomParserGuard:
 
 class TestOpenAIInvokeTruncation:
     async def test_length_raises_invoke_error(self, bind_sdk_client):
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         client.model = "gpt-4o"
@@ -393,9 +378,7 @@ class TestOpenAIInvokeTruncation:
         sdk = MagicMock()
         sdk.chat = MagicMock()
         sdk.chat.completions = MagicMock()
-        sdk.chat.completions.create = AsyncMock(
-            return_value=SimpleNamespace(choices=[choice], usage=usage)
-        )
+        sdk.chat.completions.create = AsyncMock(return_value=SimpleNamespace(choices=[choice], usage=usage))
         bind_sdk_client(client, sdk)
 
         with pytest.raises(InvokeError) as exc_info:

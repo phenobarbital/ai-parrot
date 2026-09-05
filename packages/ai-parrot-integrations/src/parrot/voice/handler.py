@@ -89,11 +89,11 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
     """Resolve the ``AbstractClient`` subclass for a given ``VoiceProvider``.
 
     Recognizes ``VoiceProvider.NOVA`` and returns
-    :class:`~parrot.clients.nova.NovaClient` (lazily imported — the
+    :class:`~parrot.clients.amazon.nova.NovaClient` (lazily imported — the
     Pre-Alpha ``aws_sdk_bedrock_runtime`` extra is optional and is only
     required at first ``stream_voice()`` call, not at import time). Every
     other currently-declared provider resolves to
-    :class:`~parrot.clients.live.GeminiLiveClient`, the only fully-wired
+    :class:`~parrot.clients.google.live.GeminiLiveClient`, the only fully-wired
     voice client at this time (``OPENAI_REALTIME`` / ``WHISPER_TTS`` are
     declared in the enum but not yet backed by dedicated client classes).
 
@@ -113,11 +113,11 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
     from parrot.models.voice import VoiceProvider as _VoiceProvider
 
     if provider == _VoiceProvider.NOVA:
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
 
         return NovaClient
 
-    from parrot.clients.live import GeminiLiveClient
+    from parrot.clients.google.live import GeminiLiveClient
 
     return GeminiLiveClient
 
@@ -650,7 +650,7 @@ class VoiceChatHandler:
         Thin wrapper around the module-level
         :func:`resolve_voice_client_class` — recognizes
         ``VoiceProvider.NOVA`` and returns
-        :class:`~parrot.clients.nova.NovaClient`.
+        :class:`~parrot.clients.amazon.nova.NovaClient`.
         """
         return resolve_voice_client_class(provider)
 

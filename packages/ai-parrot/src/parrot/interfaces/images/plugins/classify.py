@@ -4,12 +4,12 @@ from enum import Enum, EnumMeta
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
-from ....clients.google import GoogleModel, GoogleGenAIClient
 
 DEFAULT_PROMPT = """
 You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
 Please read the definitions carefully and choose the single best fit.
 """
+
 
 def is_model_class(cls) -> bool:
     return isinstance(cls, type) and issubclass(cls, BaseModel)
@@ -18,8 +18,10 @@ def is_model_class(cls) -> bool:
 def is_enum_class(cls) -> bool:
     return isinstance(cls, type) and issubclass(cls, Enum)
 
+
 class ImageCategory(str, Enum):
     """Enumeration for retail image categories."""
+
     INK_WALL = "Ink Wall"
     FRONT_OF_STORE = "Front of Store"
     SHELVES_WITH_PRODUCTS = "Shelves with Products"
@@ -30,18 +32,14 @@ class ImageCategory(str, Enum):
 
 class ImageClassification(BaseModel):
     """Schema for classifying a retail image."""
+
     category: ImageCategory = Field(
-        ...,
-        description="The best-fitting category for the image based on the provided definitions."
+        ..., description="The best-fitting category for the image based on the provided definitions."
     )
     confidence_score: float = Field(
-        ..., ge=0.0, le=1.0,
-        description="The model's confidence in its classification, from 0.0 to 1.0."
+        ..., ge=0.0, le=1.0, description="The model's confidence in its classification, from 0.0 to 1.0."
     )
-    reasoning: str = Field(
-        ...,
-        description="A brief explanation for why the image was assigned to this category."
-    )
+    reasoning: str = Field(..., description="A brief explanation for why the image was assigned to this category.")
 
 
 class ClassificationPlugin(ImagePlugin):
@@ -49,38 +47,29 @@ class ClassificationPlugin(ImagePlugin):
     ClassificationPlugin is a plugin for performing image classification.
     Uses Gemini 2.5 multimodal model for image classification tasks.
     """
+
     column_name: str = "image_classifications"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._model_name: str = kwargs.get(
-            "model_name", GoogleModel.GEMINI_2_5_FLASH.value
-        )
+        self._model_name: str = kwargs.get("model_name", "gemini-2.5-flash")
         self.prompt: List[str] = kwargs.get("prompt", DEFAULT_PROMPT)
         self.confidence: float = kwargs.get("confidence", 0.5)
         self._classification_model = kwargs.get(
-            "classification_model", self._load_classification_model(
-                ImageClassification
-            )
+            "classification_model", self._load_classification_model(ImageClassification)
         )
-        self._category_model = kwargs.get(
-            "category_model", self._load_category_model(
-                ImageCategory
-            )
-        )
+        self._category_model = kwargs.get("category_model", self._load_category_model(ImageCategory))
 
     def _load_model(self, model_name: str) -> BaseModel:
-        """ Load the classification or categorization model based on the provided model name.
+        """Load the classification or categorization model based on the provided model name.
         This method uses importlib to dynamically import the model class.
         """
         try:
-            module_path, class_name = model_name.rsplit('.', 1)
+            module_path, class_name = model_name.rsplit(".", 1)
             module = __import__(module_path, fromlist=[class_name])
             return getattr(module, class_name)
         except (ImportError, AttributeError) as e:
-            raise ValueError(
-                f"Failed to load categorization model: {model_name}. Error: {e}"
-            )
+            raise ValueError(f"Failed to load categorization model: {model_name}. Error: {e}")
 
     def _load_category_model(self, model_name: Union[str, Enum]) -> Enum:
         """
@@ -98,9 +87,7 @@ class ClassificationPlugin(ImagePlugin):
             # Attempt to import the model class dynamically
             return self._load_model(model_name)
         else:
-            raise ValueError(
-                "Category model_name must be a string or a Enum instance."
-            )
+            raise ValueError("Category model_name must be a string or a Enum instance.")
 
     def _load_classification_model(self, model_name: Union[str, BaseModel]) -> BaseModel:
         """
@@ -113,9 +100,7 @@ class ClassificationPlugin(ImagePlugin):
             # Attempt to import the model class dynamically
             return self._load_model(model_name)
         else:
-            raise ValueError(
-                "Classification model_name must be a string or a BaseModel instance."
-            )
+            raise ValueError("Classification model_name must be a string or a BaseModel instance.")
 
     async def analyze(self, image: Union[Path, Image.Image], **kwargs) -> dict:
         """
@@ -124,12 +109,13 @@ class ClassificationPlugin(ImagePlugin):
         :param image: Image Bytes opened with PIL Image.open
         :return: A dictionary containing the classification result.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider client at module scope (AC-3).
+        from ....clients.google import GoogleGenAIClient
+
         async with GoogleGenAIClient() as client:
             _result = await client.ask_to_image(
-                image=image,
-                prompt=self.prompt,
-                structured_output=self._classification_model,
-                model=self._model_name
+                image=image, prompt=self.prompt, structured_output=self._classification_model, model=self._model_name
             )
             if _result and isinstance(_result.output, self._classification_model):
                 result = _result.output
@@ -144,7 +130,5 @@ class ClassificationPlugin(ImagePlugin):
                 # If the model returns a valid classification result
                 return result.dict()
             else:
-                self.logger.error(
-                    "The model did not return a valid classification result."
-                )
+                self.logger.error("The model did not return a valid classification result.")
                 return None

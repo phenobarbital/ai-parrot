@@ -28,6 +28,7 @@ points to the *main* repo.  We extend ``parrot.__path__`` and
 ``parrot.voice.__path__`` with the worktree source directories so Python
 resolves the worktree's modified copies (same pattern as the unit tests).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -70,6 +71,7 @@ _prepend_path(_PARROT_SRC)
 # was already loaded from the main-repo editable install.
 try:
     import parrot as _parrot_pkg
+
     for _src_dir in (_INTEGRATIONS_SRC / "parrot", _PARROT_SRC / "parrot"):
         _dir_str = str(_src_dir)
         if _dir_str not in _parrot_pkg.__path__:
@@ -83,14 +85,14 @@ for _key in list(sys.modules):
     if _key in (
         "parrot.voice.handler",
         "parrot.voice",
-        "parrot.clients.live",
+        "parrot.clients.google.live",
     ):
         del sys.modules[_key]
 importlib.invalidate_caches()
 
 
 # ---------------------------------------------------------------------------
-# Inject google.genai stub so parrot.clients.live can be imported without the
+# Inject google.genai stub so parrot.clients.google.live can be imported without the
 # real google-genai distribution (which may not be installed in the test env).
 # ---------------------------------------------------------------------------
 
@@ -121,10 +123,20 @@ def _inject_genai_stub() -> None:
         MEDIA_RESOLUTION_LOW = "low"
 
     for _name in [
-        "AudioTranscriptionConfig", "LiveConnectConfig", "SpeechConfig",
-        "VoiceConfig", "PrebuiltVoiceConfig", "ContextWindowCompressionConfig",
-        "SlidingWindow", "RealtimeInputConfig", "AutomaticActivityDetection",
-        "Tool", "FunctionDeclaration", "FunctionResponse", "Content", "Part",
+        "AudioTranscriptionConfig",
+        "LiveConnectConfig",
+        "SpeechConfig",
+        "VoiceConfig",
+        "PrebuiltVoiceConfig",
+        "ContextWindowCompressionConfig",
+        "SlidingWindow",
+        "RealtimeInputConfig",
+        "AutomaticActivityDetection",
+        "Tool",
+        "FunctionDeclaration",
+        "FunctionResponse",
+        "Content",
+        "Part",
     ]:
         setattr(types_mod, _name, _Stub)
 
@@ -149,7 +161,7 @@ def _inject_genai_stub() -> None:
 _inject_genai_stub()
 
 # Import from worktree versions.
-from parrot.clients.live import LiveVoiceResponse  # noqa: E402
+from parrot.models.voice import LiveVoiceResponse  # noqa: E402
 from parrot.models.voice import (  # noqa: E402
     AudioFormat,
     VoiceCapabilities,
@@ -199,14 +211,21 @@ def _make_mock_bot() -> MagicMock:
     bot.voice_config = VoiceConfig()
     bot._llm.voice_capabilities = VoiceCapabilities(
         provider=VoiceProvider.GOOGLE_LIVE,
-        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
-        supports_per_call_inference=True, parallel_tool_execution=True,
-        emits_reconnect_signal=True, supports_session_resumption=True,
-        max_session_seconds=None, max_output_tokens=4096,
+        native_stt_only=True,
+        supports_top_p=True,
+        supports_per_call_voice=True,
+        supports_per_call_inference=True,
+        parallel_tool_execution=True,
+        emits_reconnect_signal=True,
+        supports_session_resumption=True,
+        max_session_seconds=None,
+        max_output_tokens=4096,
         input_formats=frozenset({AudioFormat.PCM_16K}),
         output_formats=frozenset({AudioFormat.PCM_24K}),
-        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
-        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+        input_sample_rates=frozenset({16000}),
+        output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}),
+        default_voice="Puck",
     )
     return bot
 
@@ -242,9 +261,7 @@ def _sent_types(connection: WebSocketConnection) -> List[str]:
 def _sent_messages(connection: WebSocketConnection) -> List[dict]:
     """Return all messages sent to the WS client."""
     return [
-        call.args[0]
-        for call in connection.ws.send_json.await_args_list
-        if call.args and isinstance(call.args[0], dict)
+        call.args[0] for call in connection.ws.send_json.await_args_list if call.args and isinstance(call.args[0], dict)
     ]
 
 
@@ -365,10 +382,13 @@ async def _drive_one_turn(
     await _await_voice_session(connection)
 
     await handler._handle_start_recording(connection, {"type": "start_recording"})
-    await handler._handle_audio_data(connection, {
-        "type": "audio_data",
-        "data": base64.b64encode(audio).decode(),
-    })
+    await handler._handle_audio_data(
+        connection,
+        {
+            "type": "audio_data",
+            "data": base64.b64encode(audio).decode(),
+        },
+    )
 
     # _handle_stop_recording discards any clip shorter than its
     # MIN_DURATION_MS (500 ms) guard by cancelling the turn outright.
@@ -478,17 +498,11 @@ async def test_voice_ws_stt_only_session() -> None:
     await handler._handle_start_session(connection, message)
 
     # Verify start_session set the flag and sent session_started with stt_only.
-    assert connection.stt_only is True, (
-        "connection.stt_only must be True after start_session with stt_only=True."
-    )
+    assert connection.stt_only is True, "connection.stt_only must be True after start_session with stt_only=True."
     sent_msgs = _sent_messages(connection)
-    session_started = next(
-        (m for m in sent_msgs if m.get("type") == "session_started"), None
-    )
+    session_started = next((m for m in sent_msgs if m.get("type") == "session_started"), None)
     assert session_started is not None, "session_started message not sent."
-    assert session_started.get("stt_only") is True, (
-        "session_started must echo stt_only=True."
-    )
+    assert session_started.get("stt_only") is True, "session_started must echo stt_only=True."
 
     # --- Drive a real mic turn, then wait for the voice task to complete ---
     await _drive_one_turn(handler, connection)
@@ -498,23 +512,19 @@ async def test_voice_ws_stt_only_session() -> None:
     all_types = _sent_types(connection)
 
     assert "transcription" in all_types, (
-        "STT-only session must emit 'transcription' (user speech). "
-        f"All sent types: {all_types}"
+        "STT-only session must emit 'transcription' (user speech). " f"All sent types: {all_types}"
     )
 
     # Verify the transcription frame carries is_user=True and the correct text.
     transcription_msgs = [m for m in _sent_messages(connection) if m.get("type") == "transcription"]
     assert transcription_msgs, "No transcription message found."
-    assert transcription_msgs[0].get("is_user") is True, (
-        "transcription frame must have is_user=True for user speech."
-    )
-    assert transcription_msgs[0].get("text") == "How are you?", (
-        f"Expected transcription text 'How are you?', got: {transcription_msgs[0].get('text')!r}"
-    )
+    assert transcription_msgs[0].get("is_user") is True, "transcription frame must have is_user=True for user speech."
+    assert (
+        transcription_msgs[0].get("text") == "How are you?"
+    ), f"Expected transcription text 'How are you?', got: {transcription_msgs[0].get('text')!r}"
 
     assert "response_chunk" not in all_types, (
-        "STT-only session must NOT emit 'response_chunk' (double-brain guard). "
-        f"All sent types: {all_types}"
+        "STT-only session must NOT emit 'response_chunk' (double-brain guard). " f"All sent types: {all_types}"
     )
 
     # The double-brain guard covers every model-output branch, not just
@@ -526,8 +536,7 @@ async def test_voice_ws_stt_only_session() -> None:
     )
     for leaked in ("display_data", "tool_call", "response_complete"):
         assert leaked not in all_types, (
-            f"STT-only session must NOT emit '{leaked}' (double-brain guard). "
-            f"All sent types: {all_types}"
+            f"STT-only session must NOT emit '{leaked}' (double-brain guard). " f"All sent types: {all_types}"
         )
 
     # The turn really carried the mic audio through
@@ -540,9 +549,7 @@ async def test_voice_ws_stt_only_session() -> None:
 
     # stt_only must propagate down to the bot, not merely gate the frames
     # on the way back out (_AskStreamVoiceClient.stream_voice → ask_stream).
-    assert seen_stt_only == [True], (
-        f"ask_stream should have been called once with stt_only=True, got {seen_stt_only}."
-    )
+    assert seen_stt_only == [True], f"ask_stream should have been called once with stt_only=True, got {seen_stt_only}."
 
 
 # ---------------------------------------------------------------------------
@@ -594,9 +601,7 @@ async def test_voice_ws_full_duplex_session() -> None:
     }
     await handler._handle_start_session(connection, message)
 
-    assert connection.stt_only is False, (
-        "connection.stt_only must default to False when absent from start_session."
-    )
+    assert connection.stt_only is False, "connection.stt_only must default to False when absent from start_session."
 
     # Drive a real mic turn, then wait for the voice task to process the
     # model audio response.
@@ -606,8 +611,7 @@ async def test_voice_ws_full_duplex_session() -> None:
     all_types = _sent_types(connection)
 
     assert "response_chunk" in all_types, (
-        "Full-duplex session must emit 'response_chunk' for model audio. "
-        f"All sent types: {all_types}"
+        "Full-duplex session must emit 'response_chunk' for model audio. " f"All sent types: {all_types}"
     )
 
     assert _MIC_AUDIO in received_audio, (
@@ -616,6 +620,6 @@ async def test_voice_ws_full_duplex_session() -> None:
         f"{sum(len(c) for c in received_audio)} bytes."
     )
 
-    assert seen_stt_only == [False], (
-        f"ask_stream should have been called once with stt_only=False, got {seen_stt_only}."
-    )
+    assert seen_stt_only == [
+        False
+    ], f"ask_stream should have been called once with stt_only=False, got {seen_stt_only}."
