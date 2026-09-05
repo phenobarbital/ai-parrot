@@ -104,3 +104,23 @@ clean.
 **Deviations from spec**: none — reuses `PlaywrightConfig`/
 `PlaywrightDriver` per the spec's "Does NOT Exist" constraint (no
 `ObscuraDriver`).
+
+**Post-review amendment (2026-09-05)**: adversarial code review (before
+push) found this completion note's "toolkit.py required no change"
+conclusion was **incomplete** — it verified `WebScrapingTool`'s
+`driver_config` pass-through but missed two other real gaps: (1)
+`DriverConfig.driver_type` (`toolkit_models.py`) was a pydantic
+`Literal["selenium", "playwright"]` that rejected `"obscura"` outright,
+so `WebScrapingToolkit(driver_type="obscura")` could not even
+construct; (2) `WebScrapingTool.initialize_driver()` (`tool.py`) raised
+`ValueError("Driver type 'obscura' not supported")` immediately after
+successfully starting the Obscura connection — its post-`start()`
+branch only handled `"selenium"`/`"playwright"`. Both are now fixed
+(see the `fix(obscura-new-browser-headless): address code-review
+findings` commit) — `DriverFactory.create({"driver_type": "obscura"})`
+now works end to end through `WebScrapingTool` too, not just when
+called bare. The `WebBrowsingToolkit`/`DriverRegistry` gap documented
+below in this same amendment cycle is *also* now fixed (see
+TASK-2880's amendment) — `DriverRegistry.register("obscura", ...)` was
+added, so the "not in scope" caveat from the original completion note
+no longer applies.

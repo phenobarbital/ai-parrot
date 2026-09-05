@@ -165,3 +165,26 @@ DriverRegistry gap above is a discovered pre-existing limitation
 (documented per spec's own "NOT in scope: fixing Obscura engine
 incompatibilities discovered by the matrix"), not a deviation from what
 this task built.
+
+**Post-review amendment (2026-09-05)**: adversarial code review (before
+push) went further than my own re-verification and found the
+`WebBrowsingToolkit`/`DriverRegistry` gap documented above was **worse
+and more foundational** than described: `DriverConfig.driver_type`
+(pydantic `Literal["selenium", "playwright"]`) rejected `"obscura"` at
+construction time — it was not merely a `start()`-time dispatch gap.
+Review also independently found (and I verified by direct trace) a
+second, separate CRITICAL gap this task's own re-verification missed:
+`WebScrapingTool.initialize_driver()` raised `ValueError` for
+`driver_type="obscura"` right after its Obscura connection had already
+succeeded. Both are now fixed in a dedicated `fix(obscura-new-browser-
+headless): address code-review findings` commit — `DriverRegistry` now
+has a real `"obscura"` entry (`_ObscuraSetup`/`_create_obscura_setup`),
+so the recommended follow-up above is done, not just proposed. The
+compatibility matrix doc's "Known gap" section was rewritten to a
+"Resolved" section reflecting this. Also fixed in the same review
+cycle (unrelated to this task's own file list, but discovered/required
+by the same adversarial pass): `ObscuraProcessManager` foreign-endpoint
+adoption, `PlaywrightDriver` reused-context closure on `quit()`, CLI
+`stop`'s unverified PID trust and missing exit confirmation, and
+`ObscuraProcessManager.start()`'s discarded-stderr/no-returncode-check
+diagnosis gap. See that commit's message for full details per finding.
