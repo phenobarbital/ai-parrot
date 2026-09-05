@@ -301,6 +301,8 @@ class TestChartPresentationFieldsForwarded:
                         "x_axis_label": "Month",
                         "y_axis_label": "Revenue",
                         "description": "Revenue by month",
+                        "trendline": True,
+                        "x_axis_mode": "time",
                         "labels": ["a"],
                         "series": [{"name": "d", "values": [1]}],
                     }
@@ -315,6 +317,12 @@ class TestChartPresentationFieldsForwarded:
         assert props["xAxisLabel"] == "Month"
         assert props["yAxisLabel"] == "Revenue"
         assert props["description"] == "Revenue by month"
+        # Code-review regression guard: these two were previously always
+        # None because ChartBlock had no matching fields — model_dump()
+        # silently dropped them before the adapter ever saw them. Now that
+        # ChartBlock declares both, prove they round-trip end to end.
+        assert props["trendline"] is True
+        assert props["xAxisMode"] == "time"
         assert "palette" not in props  # no per-series colours given
 
     def test_absent_presentation_fields_are_omitted(self):
@@ -343,6 +351,7 @@ class TestChartPresentationFieldsForwarded:
             "description",
             "palette",
             "trendline",
+            "xAxisMode",
         ):
             assert key not in props
         assert props["colorBySign"] is False

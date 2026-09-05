@@ -63,6 +63,10 @@ describe('InfographicCanvas — a2ui mode', () => {
     const iframe = document.querySelector('iframe') as HTMLIFrameElement;
     expect(iframe).toBeTruthy();
     expect(iframe.getAttribute('srcdoc')).toBe('<html><body>hi</body></html>');
+    // Code-review regression guard: srcdoc content must NOT carry
+    // allow-same-origin — combined with allow-scripts that would let the
+    // framed (agent/LLM-produced) HTML inherit this page's own origin.
+    expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-modals allow-popups');
   });
 
   it('falls back to the url iframe when no inline html is present', async () => {

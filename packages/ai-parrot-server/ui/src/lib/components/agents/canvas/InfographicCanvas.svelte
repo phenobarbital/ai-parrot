@@ -341,10 +341,16 @@
 				{#if a2uiView === 'rendered' && features.a2ui}
 					<A2UISurface envelope={tabData.envelope} />
 				{:else if typeof tabData?.html === 'string' && tabData.html.length > 0}
+					<!-- FEAT-527 code-review fix: srcdoc content must NOT carry
+					     allow-same-origin — combined with allow-scripts it would let
+					     the framed (agent/LLM-produced) HTML script inherit this
+					     page's own origin (srcdoc normally gets a null/opaque origin,
+					     which allow-same-origin defeats). Matches the safe pattern
+					     already used for the "Preview mode" srcdoc iframe below. -->
 					<iframe
 						bind:this={iframeEl}
 						srcdoc={tabData.html}
-						sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
+						sandbox="allow-scripts allow-modals allow-popups"
 						title="Infographic"
 						class="w-full h-full border-0"
 						onload={handleIframeLoad}

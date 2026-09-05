@@ -276,6 +276,8 @@ class _Converter:
             properties["negativeColor"] = block["negative_color"]
         if block.get("trendline") is not None:
             properties["trendline"] = block["trendline"]
+        if block.get("x_axis_mode") is not None:
+            properties["xAxisMode"] = block["x_axis_mode"]
         if block.get("x_axis_label") is not None:
             properties["xAxisLabel"] = block["x_axis_label"]
         if block.get("y_axis_label") is not None:
