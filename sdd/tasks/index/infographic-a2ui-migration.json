@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T21:27:36+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-05T00:03:40+00:00",
   "tasks": [
     {
       "id": "TASK-2856",
@@ -270,7 +270,7 @@
       "feature_id": "FEAT-527",
       "feature": "infographic-a2ui-migration",
       "spec": "sdd/specs/infographic-a2ui-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -283,8 +283,8 @@
       "parallelism_notes": "Documents the merged behaviour; last.",
       "assigned_to": null,
       "started_at": "2026-09-04T21:42:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2869-docs-g7-amendment-smoke.md"
+      "completed_at": "2026-09-05T00:03:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2869-docs-g7-amendment-smoke.md"
     }
   ]
 }

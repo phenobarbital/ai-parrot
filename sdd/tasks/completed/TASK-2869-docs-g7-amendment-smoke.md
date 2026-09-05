@@ -169,10 +169,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+All scope items implemented as specified:
+- FEAT-273 spec (`sdd/specs/a2ui-implementation.spec.md`) amended with two
+  insertions (G7 bullet + §5 AC line), no rewrite.
+- Five docs pages + example README updated to reflect dual-emit-by-default,
+  `a2ui_envelope`, `metadata.html_url`, `HtmlDocument`, `PUBLIC_AGENTCHAT_A2UI`,
+  and the fixed stale handler path / missing `/render` + `/render/jobs/{id}`
+  routes.
+- `examples/smoke/feat_527_dual_emit_smoke.py` created: offline (no LLM/
+  network), exercises both the typed-blocks `render()` lane (asserts
+  `Infographic` root) and the `render_template()` Jinja lane (asserts
+  `HtmlDocument` root), validates both envelopes via
+  `validate_envelope(origin=ProducerOrigin.TOOL)`. Exits 0. `ruff check`
+  clean.
+- `artifacts/logs/feat-527-dual-emit-smoke.log` and
+  `artifacts/logs/feat-527-tests.log` saved with full command lines and
+  results (force-added per the `examples/**/*.py` / `artifacts/` gitignore
+  carve-out convention, same as `sdd/templates/*.md`).
+
+**Companion fix (transparency)**: while gathering final suite evidence,
+found `packages/ai-parrot/tests/outputs/test_legacy_deprecation.py::
+test_infographic_html_path_only_warns` was still asserting the OLD FEAT-273
+behavior (an unconditional DeprecationWarning on the infographic-HTML lane)
+that TASK-2856 intentionally removed as part of this feature's "dual-emit
+forever" contract — a gap missed during TASK-2856. Renamed to
+`test_infographic_html_path_emits_no_warning` and rewrote the assertion to
+confirm no such warning fires. Verified in isolation (21 passed) and via a
+`git stash` before/after diff on the combined
+`tests/tools+tests/handlers+tests/outputs` suite: 97 -> 96 failures, with
+the diff showing exactly the one expected line removed and nothing else
+changed — confirming this was the only genuine regression and every other
+failure in that suite is pre-existing test-ordering/global-registry-state
+pollution, unrelated to FEAT-527.
+
+**Full suite evidence** (see `artifacts/logs/feat-527-tests.log`):
+- Core `tests/tools tests/handlers tests/outputs`: 96 failed (all
+  pre-existing, verified via git-stash baseline diff), 2316 passed,
+  9 skipped.
+- Core `tests/unit`: pre-existing environmental hang (~79% through the
+  run) plus one pre-existing unrelated collection error
+  (`test_save_learned_skill_tool.py`); not run to completion — out of
+  scope, no FEAT-527 task touches this module.
+- `ai-parrot-visualizations` `tests/outputs`: 277/277 passed.
+- `ai-parrot-server` focused FEAT-527 suites (`test_a2a_a2ui_dispatch.py`,
+  `test_a2a_output_mode.py`, `test_agenttalk_dual_emit.py`,
+  `test_agenttalk_infographic_explanation.py`): 27/27 passed.
+- `ai-parrot-server/ui` `pnpm test`: 284/284 passed.
+
+**Deviations from spec**: none.
