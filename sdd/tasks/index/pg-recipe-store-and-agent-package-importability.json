@@ -15,14 +15,14 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Module 1. New file in ai-parrot-server; shares no file with the Module 2 lane. Needs NAVIGATOR_PG_DSN for its tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T05:01:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2870-pg-recipe-store.md"
     },
@@ -33,14 +33,14 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Module 2 item 3. New loader in parrot.tools.infographic_recipes; independent of 2870. Must land before 2872, which calls it from flex_dashboard.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T05:01:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2871-load-transformer-module.md"
     },
@@ -51,7 +51,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,7 +60,7 @@
       "parallel": false,
       "parallelism_notes": "Module 2 items 1-2. Edits agents/flex_dashboard.py and agents/flex_dashboard/transformers.py only. Mutation-checked regression test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T05:01:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2872-flex-package-parent-agnostic.md"
     },
@@ -71,7 +71,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": false,
       "parallelism_notes": "Joins both lanes. Tests only; no production change allowed — a needed change is a spec finding.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T05:01:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2873-pg-store-and-foreign-host-integration.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": true,
       "parallelism_notes": "Documentation only; docs/outputs/infographic-recipes.md.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T05:01:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2874-recipe-store-and-loader-docs.md"
     }
