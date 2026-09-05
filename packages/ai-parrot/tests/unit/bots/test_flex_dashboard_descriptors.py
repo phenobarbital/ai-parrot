@@ -45,10 +45,12 @@ def _load_module(name: str, path: Path):
 
 
 def _load_flex_dashboard_module():
-    _load_package("agents", _AGENTS_DIR / "__init__.py", _AGENTS_DIR)
-    _load_package("agents.flex_dashboard", _FLEX_DIR / "__init__.py", _FLEX_DIR)
-    _load_module("agents.flex_dashboard.normalize", _FLEX_DIR / "normalize.py")
-    _load_module("agents.flex_dashboard.transformers", _FLEX_DIR / "transformers.py")
+    # FEAT-528 Module 2: no pre-registration needed any more — the agent
+    # file loads its own transformers via `load_transformer_module` under
+    # its own synthetic name (see test_flex_dashboard_agent.py's longer
+    # comment). Pre-loading "agents.flex_dashboard.transformers" under the
+    # real dotted name here would make that call re-execute the module
+    # under a DIFFERENT name, double-registering every transformer.
     return _load_module("flex_dashboard_agent_under_test", _AGENT_FILE)
 
 

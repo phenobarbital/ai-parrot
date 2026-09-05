@@ -18,34 +18,37 @@ transformers`), the kb docs (``kb/*.md``), and the composite skills
 
 .. warning::
 
-   **Known, confirmed limitation (external code review finding)**: because
-   ``agents/flex_dashboard/`` is a REGULAR package (has its own
-   ``__init__.py``), Python's ``FileFinder`` always resolves a plain
-   ``import agents.flex_dashboard`` — or ``from agents.flex_dashboard
-   import FlexDashboard`` — to that PACKAGE, never to THIS file, even
-   though ``FlexDashboard`` is only ever defined here. This is reproducible
-   directly (``python -c "from agents.flex_dashboard import
-   FlexDashboard"`` raises ``ImportError``). It does NOT affect the
-   application as actually deployed: ``parrot.registry.registry
-   .AgentRegistry._load_modules_from_directory`` — the real production
-   agent-discovery path — globs ``agents/*.py`` and loads each file via
+   **Resolved (FEAT-528 Module 2)**: this module and its sibling
+   ``agents/flex_dashboard/transformers.py`` used to root their imports at
+   a top-level package literally named ``agents`` (``import
+   agents.flex_dashboard.transformers`` here; ``from
+   agents.flex_dashboard.normalize import ...`` there). That only resolved
+   when the running process's OWN ``agents/`` directory was on
+   ``sys.path`` as the ``agents`` package — a host with its own
+   ``agents/`` package (e.g. FieldSync) got ``ModuleNotFoundError:
+   No module named 'agents.flex_dashboard'`` instead. Fixed by making the
+   sibling package parent-agnostic: ``transformers.py`` now uses a
+   relative import (``from .normalize import ...``), and this module loads
+   its transformers by file location, anchored on ``_PACKAGE_DIR``, via
+   :func:`parrot.tools.infographic_recipes.load_transformer_module` — the
+   same supported, documented way any OTHER host can register this
+   recipe's transformers without instantiating :class:`FlexDashboard` at
+   all (no LLM, no toolkit; see that function's docstring). See
+   ``docs/outputs/infographic-recipes.md`` § Replaying in another service.
+
+   One true fact remains, unaffected by the above: ``agents/flex_dashboard/``
+   is still a REGULAR package (has its own ``__init__.py``), so a plain
+   ``from agents.flex_dashboard import FlexDashboard`` still resolves to
+   that PACKAGE, never to THIS file — ``FlexDashboard`` is only ever
+   defined here. Production never hits this: ``parrot.registry.registry
+   .AgentRegistry._load_modules_from_directory`` — the real agent-discovery
+   path — globs ``agents/*.py`` and loads each file via
    ``importlib.util.spec_from_file_location`` under a synthetic name,
    never a plain dotted import, so ``@register_agent(name="flex_dashboard")``
-   fires correctly at boot. Every test file and the example runner in this
-   feature load this module the SAME way for the same reason (see any
-   test file's ``_load_module``/``_load_package`` helpers). A caller that
-   writes the natural ``from agents.flex_dashboard import FlexDashboard``
-   in a notebook, script, or a future ``agents.yaml``-driven
-   ``config.module`` entry WILL hit this ``ImportError`` — there is no
-   compositional fix available from within this agent's own file(s) that
-   preserves both "the class is importable via the natural path" and "the
-   sibling package's submodules (``normalize``/``transformers``) are
-   importable" simultaneously with this exact file/directory naming.
-   Resolving it for real requires renaming the sibling package (e.g. to
-   ``agents/flex_dashboard_kit/``) and updating every internal reference —
-   out of scope for this feature to do unilaterally, since the spec's own
-   Module 3 architecture mandates the current name; flagged here for the
-   PR reviewer to decide.
+   fires correctly at boot. A caller that writes the natural ``from
+   agents.flex_dashboard import FlexDashboard`` in a notebook or script
+   still needs to load this file by location instead (see any test file's
+   ``_load_module`` helper for the pattern).
 
 Prefer :meth:`FlexDashboard.publish_dashboard_recipe` over calling the
 inherited ``publish_recipe()`` directly for ``DASHBOARD_RECIPE_NAME`` — the
@@ -72,15 +75,11 @@ from parrot.tools.abstract import (
     AbstractToolArgsSchema,
     current_a2ui_surface_state,
 )
+from parrot.tools.infographic_recipes import load_transformer_module
 from parrot.tools.infographic_recipes.runner import RecipeRunner
 from parrot.tools.infographic_sections import GapReport, SectionDescriptor, SectionSpec
 from parrot.tools.working_memory import WorkingMemoryToolkit
 from pydantic import Field
-
-# Import side effect ONLY: registers the Flex transformers (payroll_hero,
-# worked_hours_by_month, ..., flex_narrative_facts) on the shared
-# `transformer_registry` — see agents/flex_dashboard/transformers.py.
-import agents.flex_dashboard.transformers  # noqa: F401
 
 #: This file's own directory — skill_paths/kb glob MUST anchor here, never
 #: to process cwd (finance_reporter.py's FEAT-420 lesson, SKILLS_DIR note).
@@ -88,6 +87,16 @@ _AGENT_DIR = Path(__file__).resolve().parent
 _PACKAGE_DIR = _AGENT_DIR / "flex_dashboard"
 SKILLS_DIR = _PACKAGE_DIR / "skills"
 KB_DIR = _PACKAGE_DIR / "kb"
+
+# Import side effect ONLY: registers the Flex transformers (payroll_hero,
+# worked_hours_by_month, ..., flex_narrative_facts) on the shared
+# `transformer_registry` — see agents/flex_dashboard/transformers.py. Loaded
+# by file location, anchored on `_PACKAGE_DIR`, rather than
+# `import agents.flex_dashboard.transformers` (FEAT-528 Module 2): a plain
+# dotted import only resolves when the process's OWN top-level package is
+# named `agents`, which a host with its own `agents/` package cannot
+# guarantee (spec §3).
+load_transformer_module(_PACKAGE_DIR / "transformers.py")
 
 #: Frozen dataset aliases (spec §2) — every transformer hard-codes these as
 #: its input frame key. Changing one means changing both sides (spec §7

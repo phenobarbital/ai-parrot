@@ -51,15 +51,18 @@ def _load_module(name: str, path: Path):
 
 
 def _load_flex_dashboard_agent_module():
-    # Pre-register the real "agents.flex_dashboard" package chain so the
-    # agent file's own `import agents.flex_dashboard.transformers` resolves
-    # from THIS worktree deterministically (same defensive chain as
-    # test_flex_dashboard_transformers.py).
-    _load_package("agents", _AGENTS_DIR / "__init__.py", _AGENTS_DIR)
-    _load_package("agents.flex_dashboard", _FLEX_DIR / "__init__.py", _FLEX_DIR)
-    _load_module("agents.flex_dashboard.normalize", _FLEX_DIR / "normalize.py")
-    _load_module("agents.flex_dashboard.transformers", _FLEX_DIR / "transformers.py")
-    # The agent FILE gets its own, distinct synthetic name.
+    # FEAT-528 Module 2: the agent file no longer does a plain
+    # `import agents.flex_dashboard.transformers` — it loads its
+    # transformers by file location via
+    # `parrot.tools.infographic_recipes.load_transformer_module`, anchored
+    # on its own `_PACKAGE_DIR`. That call registers the sibling package
+    # (and its transformers) under ITS OWN synthetic name, so pre-loading
+    # "agents.flex_dashboard"/"agents.flex_dashboard.transformers" under the
+    # real dotted names here would just make the agent file's loader
+    # re-execute `transformers.py` under a DIFFERENT name, double-
+    # registering every `@infographic_transformer` and raising. No
+    # pre-registration is needed any more — just load the agent FILE under
+    # its own distinct synthetic name.
     return _load_module("flex_dashboard_agent_under_test", _AGENT_FILE)
 
 
