@@ -14,7 +14,7 @@
       "title": "Implement supervised Obscura process management",
       "feature_id": "FEAT-530",
       "feature": "obscura-new-browser-headless",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-05T15:59:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2875-obscura-process-manager.md"
+      "completed_at": "2026-09-05T16:02:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2875-obscura-process-manager.md"
     },
     {
       "id": "TASK-2876",
