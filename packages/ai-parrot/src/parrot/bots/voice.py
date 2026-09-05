@@ -25,17 +25,18 @@ from typing import (
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
-from ..clients.live import (
-    GeminiLiveClient,
-    LiveCompletionUsage,
-    LiveVoiceResponse,
-)
+from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
 from ..mcp import MCPEnabledMixin, MCPServerConfig
-from ..memory import ConversationTurn, render_history
+from ..memory import ConversationTurn
+from ..observability.context import (
+    current_memory_key_id,
+    current_session_id,
+    current_user_id,
+)
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
 from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
@@ -193,7 +194,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         VoiceBot is provider-aware via ``self.voice_config.provider``
         (FEAT-302, renamed FEAT-315): ``"google_live"`` (default) resolves
         to ``GeminiLiveClient``; ``"nova"`` (experimental) resolves to
-        :class:`~parrot.clients.nova.NovaClient` (unified Nova client —
+        :class:`~parrot.clients.amazon.nova.NovaClient` (unified Nova client —
         supersedes the now-deleted ``NovaSonicClient``). The provider
         selection is independent of whatever ``llm``/text-only provider
         string was passed to the bot — voice interactions always go
@@ -204,7 +205,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         provider = getattr(self.voice_config, "provider", "google_live")
 
         if provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             # NovaClient's default model (nova-2-lite) is the TEXT model —
             # voice sessions need the Sonic model explicitly unless the
@@ -257,6 +258,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
 
         # Default (existing behavior, unchanged): GeminiLiveClient.
+        # FEAT-523: lazy import — core must not import a provider module
+        # at module scope (AC-3); "google" ships from the
+        # ai-parrot-client-google satellite.
+        from ..clients.google.live import GeminiLiveClient
+
         config = LLMConfig(
             provider="gemini_live",
             client_class=GeminiLiveClient,
@@ -294,7 +300,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
         if config.provider == "nova":
-            from ..clients.nova import NovaClient
+            from ..clients.amazon.nova import NovaClient
 
             client = NovaClient(
                 model=config.model,
@@ -306,6 +312,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             )
         else:
             # Default (existing behavior, unchanged): GeminiLiveClient.
+            # FEAT-523: lazy import — core must not import a provider
+            # module at module scope (AC-3).
+            from ..clients.google.live import GeminiLiveClient
+
             client = GeminiLiveClient(
                 model=config.model,
                 voice_name=config.extra.get("voice_name", self.voice_config.voice_name),
@@ -363,6 +373,13 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         GoogleGenAIClient = SUPPORTED_CLIENTS.get("google")
         if not GoogleGenAIClient:
             raise ValueError("GoogleGenAIClient not available")
+        # FEAT-523 (TASK-2852): a provider registered via a real
+        # `parrot.clients` entry point (e.g. "google", extracted to
+        # ai-parrot-client-google) is stored as `ep.load` itself — a
+        # zero-arg callable, not the class directly. Resolve it the same
+        # way LLMFactory.create() does before instantiating.
+        if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+            GoogleGenAIClient = GoogleGenAIClient()
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(
@@ -491,6 +508,12 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
+
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
 
         try:
             # Handle different input types
@@ -654,6 +677,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             yield LiveVoiceResponse(
                 text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def ask_voice(
         self, audio_input: bytes, session_id: Optional[str] = None, user_id: Optional[str] = None, **kwargs
@@ -721,65 +748,76 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
-        # Build context for system prompt
-        vector_metadata = {"activated_kbs": []}
-        ctx = kwargs.get("ctx", None)
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
 
-        # Get vector context (method handles use_vectors check internally)
-        vector_context, vector_meta = await self._build_vector_context(
-            question,
-            use_vectors=kwargs.get("use_vector_context", False),
-        )
-        if vector_meta:
-            vector_metadata["vector"] = vector_meta
+        try:
+            # Build context for system prompt
+            vector_metadata = {"activated_kbs": []}
+            ctx = kwargs.get("ctx", None)
 
-        # Get user-specific context
-        user_context = await self._build_user_context(
-            user_id=user_id,
-            session_id=session_id,
-        )
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
+                question,
+                use_vectors=kwargs.get("use_vector_context", False),
+            )
+            if vector_meta:
+                vector_metadata["vector"] = vector_meta
 
-        # Get knowledge base context
-        kb_context, kb_meta = await self._build_kb_context(
-            question,
-            user_id=user_id,
-            session_id=session_id,
-            ctx=ctx,
-        )
-        if kb_meta.get("activated_kbs"):
-            vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
-
-        # Get conversation context if available
-        rendered_history = []
-        if self.conversation_memory:
-            conversation_history = await self.get_conversation_history(user_id, session_id)
-            # FEAT-524: history goes to the provider as alternating messages.
-            rendered_history = render_history(
-                conversation_history,
-                max_turns=self.max_context_turns,
-                current_chatbot_id=self.memory_key_id,
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
             )
 
-        # Create system prompt dynamically
-        system_prompt = await self.create_system_prompt(
-            kb_context=kb_context,
-            vector_context=vector_context,
-            metadata=vector_metadata,
-            user_context=user_context,
-            **kwargs,
-        )
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
-        # Ensure LLM client is configured
-        if self._llm is None:
-            config = self._resolve_llm_config()
-            self._llm = self._create_llm_client(config)
+            # Get conversation context if available
+            rendered_history = []
+            if self.conversation_memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                # FEAT-524: history goes to the provider as alternating messages.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise. This
+                # method has no save site (no rendered prompt to pair for
+                # calibration), so the CompactionResult is discarded.
+                rendered_history, _compaction_result = await self.render_context_history(conversation_history)
 
-        # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
-        async with self._llm as client:
-            async for response in client.ask(
-                question=question, system_prompt=system_prompt, history=rendered_history, **kwargs
-            ):
-                yield response
+            # Create system prompt dynamically
+            system_prompt = await self.create_system_prompt(
+                kb_context=kb_context,
+                vector_context=vector_context,
+                metadata=vector_metadata,
+                user_context=user_context,
+                **kwargs,
+            )
+
+            # Ensure LLM client is configured
+            if self._llm is None:
+                config = self._resolve_llm_config()
+                self._llm = self._create_llm_client(config)
+
+            # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
+            async with self._llm as client:
+                async for response in client.ask(
+                    question=question, system_prompt=system_prompt, history=rendered_history, **kwargs
+                ):
+                    yield response
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def close(self):
         """Close any resources if needed."""

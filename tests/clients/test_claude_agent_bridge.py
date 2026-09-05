@@ -21,6 +21,7 @@ description, input_schema, handler) our code builds without depending on
 `claude_agent_sdk`'s internal ``mcp.server.Server``/wire-protocol layer,
 which is out of scope for this bridge module.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -109,7 +110,7 @@ def captured_server(monkeypatch):
 
 
 def _make_bridge(tool_manager=None, **kwargs):
-    from parrot.clients.claude_agent_bridge import ClaudeAgentToolBridge
+    from parrot.clients.anthropic.claude_agent_bridge import ClaudeAgentToolBridge
 
     return ClaudeAgentToolBridge(tool_manager or MagicMock(), **kwargs)
 
@@ -208,9 +209,7 @@ class TestHandlerDispatch:
 
         await handler({"text": "hi"})
 
-        tool_manager.execute_tool.assert_awaited_once_with(
-            "echo_tool", {"text": "hi"}, permission_context
-        )
+        tool_manager.execute_tool.assert_awaited_once_with("echo_tool", {"text": "hi"}, permission_context)
 
     async def test_handler_never_calls_tool_execute_directly(self, captured_server, monkeypatch):
         tool_manager = MagicMock()
@@ -329,14 +328,14 @@ class TestRecoverableFailures:
 class TestLazyImport:
     def test_module_imports_without_sdk(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "claude_agent_sdk", None)
-        sys.modules.pop("parrot.clients.claude_agent_bridge", None)
+        sys.modules.pop("parrot.clients.anthropic.claude_agent_bridge", None)
 
-        import parrot.clients.claude_agent_bridge as bridge_module
+        import parrot.clients.anthropic.claude_agent_bridge as bridge_module
 
         assert bridge_module.ClaudeAgentToolBridge is not None
 
     def test_build_server_raises_import_error_with_hint_when_sdk_missing(self, monkeypatch):
-        import parrot.clients.claude_agent_bridge as bridge_module
+        import parrot.clients.anthropic.claude_agent_bridge as bridge_module
 
         monkeypatch.setitem(sys.modules, "claude_agent_sdk", None)
         bridge = bridge_module.ClaudeAgentToolBridge(MagicMock())
@@ -404,9 +403,7 @@ class TestSelection:
             selected = bridge.select("anything", limit=15)
 
         assert len(selected) == 1
-        assert not any(
-            record.levelname == "WARNING" for record in caplog.records
-        )
+        assert not any(record.levelname == "WARNING" for record in caplog.records)
 
     def test_dropped_names_are_logged(self, wide_manager, caplog):
         bridge = _make_bridge(wide_manager)

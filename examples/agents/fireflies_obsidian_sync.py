@@ -19,7 +19,7 @@ import asyncio
 import logging
 import os
 
-from parrot.clients.codex_agent import CodexAgentRunOptions
+from parrot.clients.openai.codex_agent import CodexAgentRunOptions
 from parrot.agents.obsidian import FirefliesObsidianAgent
 
 logging.basicConfig(level=logging.INFO)
@@ -100,10 +100,7 @@ async def main():
                 print(f"     - {failure['note']}: {failure['error']}")
 
     except Exception as e:
-        logger.error(
-            f"Agent failed: {e}",
-            exc_info=True
-        )
+        logger.error(f"Agent failed: {e}", exc_info=True)
 
     finally:
         # Optional: cleanup

@@ -22,13 +22,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from parrot.clients.claude import AnthropicClient
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.anthropic import AnthropicClient
+from parrot.clients.openai import OpenAIClient
 from parrot.clients.groq import GroqClient
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.meta import MetaClient
 from parrot.clients.moonshot import MoonshotClient
-from parrot.clients.nova.mantle import BedrockMantleClient
+from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 from parrot.clients.nvidia import NvidiaClient
 from parrot.clients.openai_base import OpenAIBaseClient
 from parrot.clients.openrouter import OpenRouterClient

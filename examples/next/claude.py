@@ -5,17 +5,18 @@ import asyncio
 from PIL import Image
 from pydantic import BaseModel, Field
 from navconfig import BASE_DIR
-from parrot.clients.claude import (
+from parrot.clients.anthropic import (
     ClaudeClient,
     ClaudeModel,
-    BatchRequest
 )
+from parrot.clients.base import BatchRequest
 
 
 # Example usage and helper functions
 @dataclass
 class SummaryOutput:
     """Data structure for summary output."""
+
     title: str
     key_points: List[str]
     sentiment: str
@@ -23,6 +24,7 @@ class SummaryOutput:
 
 class SummaryResponse(TypedDict):
     """TypedDict for structured summary response."""
+
     title: str
     key_points: List[str]
     sentiment: str
@@ -42,7 +44,7 @@ async def example_usage():
                 "New York": "Sunny, 22°C",
                 "London": "Rainy, 18°C",
                 "Tokyo": "Cloudy, 26°C",
-                "Paris": "Sunny, 20°C"
+                "Paris": "Sunny, 20°C",
             }
             return weather_data.get(location, "Weather data not available")
 
@@ -51,22 +53,14 @@ async def example_usage():
             description="Get the current weather for a given location",
             input_schema={
                 "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The name of the city"
-                    }
-                },
-                "required": ["location"]
+                "properties": {"location": {"type": "string", "description": "The name of the city"}},
+                "required": ["location"],
             },
-            function=get_weather
+            function=get_weather,
         )
 
         # Simple question
-        response = await client.ask(
-            "What's the weather like in New York?",
-            model=ClaudeModel.SONNET_3_5.value
-        )
+        response = await client.ask("What's the weather like in New York?", model=ClaudeModel.SONNET_3_5.value)
         # response is an AIMessage object
         print("Weather response:", response.output)
 
@@ -82,16 +76,15 @@ async def example_usage():
                 "type": "object",
                 "properties": {
                     "length": {"type": "number", "description": "Length of rectangle"},
-                    "width": {"type": "number", "description": "Width of rectangle"}
+                    "width": {"type": "number", "description": "Width of rectangle"},
                 },
-                "required": ["length", "width"]
+                "required": ["length", "width"],
             },
-            function=calculate_area
+            function=calculate_area,
         )
 
         response = await client.ask(
-            "What is the area of a rectangle with length 5 and width 3?",
-            model=ClaudeModel.SONNET_3_5.value
+            "What is the area of a rectangle with length 5 and width 3?", model=ClaudeModel.SONNET_3_5.value
         )
         print("Area response:", response.output)
 
@@ -160,7 +153,6 @@ async def example_usage():
     #     )
     #     print("Structured Summary:", summary)
 
-
     #     # List conversations for user
     #     sessions = await client.list_conversations(user_id)
     #     print("User sessions:", sessions)
@@ -194,29 +186,29 @@ async def example_usage():
     #     print("- Weather data:", weather_response.output)
     #     print("- Tools used:", [tc.name for tc in weather_response.tool_calls])
 
-        # # Batch requests
-        # batch_requests = [
-        #     BatchRequest(
-        #         custom_id="req1",
-        #         params={
-        #             "model": ClaudeModel.SONNET_4,
-        #             "max_tokens": 1000,
-        #             "messages": [{"role": "user", "content": "What is 2+2?"}]
-        #         }
-        #     ),
-        #     BatchRequest(
-        #         custom_id="req2",
-        #         params={
-        #             "model": ClaudeModel.SONNET_4,
-        #             "max_tokens": 1000,
-        #             "messages": [{"role": "user", "content": "What is the meaning of life?"}]
-        #         }
-        #     )
-        # ]
+    # # Batch requests
+    # batch_requests = [
+    #     BatchRequest(
+    #         custom_id="req1",
+    #         params={
+    #             "model": ClaudeModel.SONNET_4,
+    #             "max_tokens": 1000,
+    #             "messages": [{"role": "user", "content": "What is 2+2?"}]
+    #         }
+    #     ),
+    #     BatchRequest(
+    #         custom_id="req2",
+    #         params={
+    #             "model": ClaudeModel.SONNET_4,
+    #             "max_tokens": 1000,
+    #             "messages": [{"role": "user", "content": "What is the meaning of life?"}]
+    #         }
+    #     )
+    # ]
 
-        # batch_results = await client.batch_ask(batch_requests)
-        # for result in batch_results:
-        #     print(f"Request {result['custom_id']}: {result['response']}")
+    # batch_results = await client.batch_ask(batch_requests)
+    # for result in batch_results:
+    #     print(f"Request {result['custom_id']}: {result['response']}")
 
     # Usage of Python Tool:
     async with ClaudeClient() as client:
@@ -224,18 +216,21 @@ async def example_usage():
         repl_tool = client.register_python_tool()
         # Use the tool through Claude
         response = await client.ask(
-            "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
-            model=ClaudeModel.SONNET_4
+            "Create a simple DataFrame with 3 rows and 2 columns, then show its info", model=ClaudeModel.SONNET_4
         )
         print(response)
 
         # Direct usage of the tool
-        result = await repl_tool.execute(code="""
+        result = await repl_tool.execute(
+            code="""
 import pandas as pd
 df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
 df.head()
-        """, debug=True)
+        """,
+            debug=True,
+        )
         print("Direct execution result:", result)  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
+
 
 #     async with ClaudeClient() as client:
 
@@ -286,91 +281,91 @@ df.head()
 #             for detection in detection_result.detections:
 #                 print(f"- {detection.product_type}: {detection.description} (confidence: {detection.confidence:.2f})")
 
-        # # Example 4: Using with conversation memory
-        # user_id = "user123"
-        # session_id = "session456"
-        # image_path = BASE_DIR.joinpath('static', "8455b202-28cf-4231-a9d9-7c175def0a93-recap.jpeg")
+# # Example 4: Using with conversation memory
+# user_id = "user123"
+# session_id = "session456"
+# image_path = BASE_DIR.joinpath('static', "8455b202-28cf-4231-a9d9-7c175def0a93-recap.jpeg")
 
-        # await client.start_conversation(user_id, session_id)
-        # # First question about an image
-        # response1 = await client.ask_to_image(
-        #     prompt="Describe what you see in this image",
-        #     image=image_path,
-        #     user_id=user_id,
-        #     session_id=session_id
-        # )
-        # print("Image analysis:", response1.response)
+# await client.start_conversation(user_id, session_id)
+# # First question about an image
+# response1 = await client.ask_to_image(
+#     prompt="Describe what you see in this image",
+#     image=image_path,
+#     user_id=user_id,
+#     session_id=session_id
+# )
+# print("Image analysis:", response1.response)
 
-        # # 2. Then ask a follow-up question about the image
-        # print("\n=== Step 2: Follow-up about the image ===")
-        # followup_response = await client.ask(
-        #     "What colors are prominent in the image we just discussed?",
-        #     user_id=user_id,
-        #     session_id=session_id  # Same session ID
-        # )
-        # print("Follow-up response:", followup_response.response)
+# # 2. Then ask a follow-up question about the image
+# print("\n=== Step 2: Follow-up about the image ===")
+# followup_response = await client.ask(
+#     "What colors are prominent in the image we just discussed?",
+#     user_id=user_id,
+#     session_id=session_id  # Same session ID
+# )
+# print("Follow-up response:", followup_response.response)
 
-        # # 3. Check conversation history
-        # print("\n=== Step 3: Conversation History ===")
-        # history = await client.get_conversation(user_id, session_id)
-        # if history:
-        #     print(f"Total turns: {len(history.turns)}")
-        #     for i, turn in enumerate(history.turns):
-        #         print(f"Turn {i+1}:")
-        #         print(f"  User: {turn.user_message[:100]}...")
-        #         print(f"  Assistant: {turn.assistant_response[:100]}...")
-        # else:
-        #     print("No conversation history found")
+# # 3. Check conversation history
+# print("\n=== Step 3: Conversation History ===")
+# history = await client.get_conversation(user_id, session_id)
+# if history:
+#     print(f"Total turns: {len(history.turns)}")
+#     for i, turn in enumerate(history.turns):
+#         print(f"Turn {i+1}:")
+#         print(f"  User: {turn.user_message[:100]}...")
+#         print(f"  Assistant: {turn.assistant_response[:100]}...")
+# else:
+#     print("No conversation history found")
 
-        # # Example 5: Using bytes data
-        # with open(str(image_path), "rb") as f:
-        #     image_bytes = f.read()
+# # Example 5: Using bytes data
+# with open(str(image_path), "rb") as f:
+#     image_bytes = f.read()
 
-        # response = await client.ask_to_image(
-        #     prompt="Analyze the technical specifications visible in this product image",
-        #     image=image_bytes,
-        #     model=ClaudeModel.SONNET_4,
-        #     temperature=0.3  # Lower temperature for more factual analysis
-        # )
-        # print("Technical analysis:", response.to_text)
+# response = await client.ask_to_image(
+#     prompt="Analyze the technical specifications visible in this product image",
+#     image=image_bytes,
+#     model=ClaudeModel.SONNET_4,
+#     temperature=0.3  # Lower temperature for more factual analysis
+# )
+# print("Technical analysis:", response.to_text)
 
-        # Example 6: Custom structured output
+# Example 6: Custom structured output
 
-        # class ProductAnalysis(BaseModel):
-        #     """Example structured output model for product analysis."""
-        #     brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
-        #     model: str = Field(description="The specific model name or number of the product")
-        #     key_features: List[str] = Field(description="List of key features visible in the image")
-        #     condition: str = Field(
-        #         description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
-        #     )
-        #     estimated_price_range: str = Field(
-        #         description="Estimated price range (e.g., '$100-200', 'Under $50')"
-        #     )
+# class ProductAnalysis(BaseModel):
+#     """Example structured output model for product analysis."""
+#     brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
+#     model: str = Field(description="The specific model name or number of the product")
+#     key_features: List[str] = Field(description="List of key features visible in the image")
+#     condition: str = Field(
+#         description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
+#     )
+#     estimated_price_range: str = Field(
+#         description="Estimated price range (e.g., '$100-200', 'Under $50')"
+#     )
 
 
-        # response = await client.ask_to_image(
-        #     prompt="""Analyze this product and respond with ONLY this JSON structure:
-        #     {
-        #         "brand": "exact brand name",
-        #         "model": "exact model name",
-        #         "key_features": ["list", "of", "features"],
-        #         "condition": "condition description",
-        #         "estimated_price_range": "price range"
-        #     }
-        #     Use exactly these field names.""",
-        #     image=image_path,
-        #     structured_output=ProductAnalysis,
-        #     model=ClaudeModel.SONNET_4
-        # )
+# response = await client.ask_to_image(
+#     prompt="""Analyze this product and respond with ONLY this JSON structure:
+#     {
+#         "brand": "exact brand name",
+#         "model": "exact model name",
+#         "key_features": ["list", "of", "features"],
+#         "condition": "condition description",
+#         "estimated_price_range": "price range"
+#     }
+#     Use exactly these field names.""",
+#     image=image_path,
+#     structured_output=ProductAnalysis,
+#     model=ClaudeModel.SONNET_4
+# )
 
-        # if response.is_structured:
-        #     analysis = response.output
-        #     print(f"Brand: {analysis.brand}")
-        #     print(f"Model: {analysis.model}")
-        #     print(f"Features: {', '.join(analysis.key_features)}")
-        #     print(f"Condition: {analysis.condition}")
-        #     print(f"Price Range: {analysis.estimated_price_range}")
+# if response.is_structured:
+#     analysis = response.output
+#     print(f"Brand: {analysis.brand}")
+#     print(f"Model: {analysis.model}")
+#     print(f"Features: {', '.join(analysis.key_features)}")
+#     print(f"Condition: {analysis.condition}")
+#     print(f"Price Range: {analysis.estimated_price_range}")
 
 if __name__ == "__main__":
     asyncio.run(example_usage())

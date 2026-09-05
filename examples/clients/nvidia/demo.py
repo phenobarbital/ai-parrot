@@ -53,6 +53,7 @@ Notes:
     - ``--seed`` makes runs reproducible: the same seed on the same prompt
       returns byte-identical output, verified against the live endpoint.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,7 +63,7 @@ import time
 
 from navconfig import config
 from parrot.clients.nvidia import NvidiaClient
-from parrot.models.nvidia import NvidiaModel
+from parrot.clients.nvidia.models import NvidiaModel
 
 from parrot.models import AIMessage
 
@@ -289,9 +290,7 @@ def resolve_model(name: str) -> str:
     if "/" in name:
         return name
     known = ", ".join(sorted(m.name for m in NvidiaModel))
-    raise SystemExit(
-        f"unknown model {name!r}: pass a vendor/model slug or one of: {known}"
-    )
+    raise SystemExit(f"unknown model {name!r}: pass a vendor/model slug or one of: {known}")
 
 
 async def generate_code(
@@ -374,10 +373,7 @@ def report_code(message: AIMessage) -> int:
         # Diagnose that specifically rather than printing a bare empty string.
         truncated = (message.finish_reason or message.stop_reason) == "length"
         if not text and truncated:
-            print(
-                "  empty answer: generation hit the max_tokens cap before any\n"
-                "  visible content was emitted."
-            )
+            print("  empty answer: generation hit the max_tokens cap before any\n" "  visible content was emitted.")
             if reasoning_text(message):
                 print(
                     "  All completion tokens went into hidden reasoning — this\n"

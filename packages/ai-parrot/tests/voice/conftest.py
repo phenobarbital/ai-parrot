@@ -11,6 +11,7 @@ would test nothing about drop-in parity.
 Adding a third provider costs exactly one entry in ``PROVIDER_BUILDERS``
 plus a scenario-event builder pair, mirroring this module's shape.
 """
+
 import sys
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -18,8 +19,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from parrot.clients.live import GeminiLiveClient
-from parrot.clients.nova import NovaClient
+from parrot.clients.google.live import GeminiLiveClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 async def empty_audio_iterator() -> AsyncIterator[bytes]:
@@ -33,6 +34,7 @@ async def empty_audio_iterator() -> AsyncIterator[bytes]:
 # ---------------------------------------------------------------------
 # Gemini — mock at the google-genai Live WebSocket session boundary
 # ---------------------------------------------------------------------
+
 
 class _FakeGeminiSession:
     """Minimal stand-in for the google-genai Live WebSocket session."""
@@ -108,9 +110,7 @@ def gemini_basic_turn_events() -> list:
         ),
         _gemini_event(
             server_content=SimpleNamespace(
-                model_turn=SimpleNamespace(
-                    parts=[SimpleNamespace(text="It's sunny.", inline_data=None)]
-                ),
+                model_turn=SimpleNamespace(parts=[SimpleNamespace(text="It's sunny.", inline_data=None)]),
             ),
         ),
         _gemini_event(
@@ -128,10 +128,7 @@ def gemini_reconnect_events() -> list:
 
 def build_gemini_client(monkeypatch, scenario: str) -> GeminiLiveClient:
     client = GeminiLiveClient(voice_name="Puck")
-    events = (
-        gemini_basic_turn_events() if scenario == "basic_turn"
-        else gemini_reconnect_events()
-    )
+    events = gemini_basic_turn_events() if scenario == "basic_turn" else gemini_reconnect_events()
     session = _FakeGeminiSession(events)
     captured_configs: list = []
     fake_sdk_client = _FakeGeminiSdkClient(session, captured_configs)
@@ -145,6 +142,7 @@ def build_gemini_client(monkeypatch, scenario: str) -> GeminiLiveClient:
 # ---------------------------------------------------------------------
 # Nova — mock at the thin SDK-wrapper boundary
 # ---------------------------------------------------------------------
+
 
 def nova_basic_turn_events() -> list:
     """One user transcription frame, then one assistant text chunk."""
@@ -172,16 +170,14 @@ def _fake_nova_events(events):
     async def _iter_events(_stream):
         for event in events:
             yield event
+
     return _iter_events
 
 
 def build_nova_client(monkeypatch, scenario: str) -> NovaClient:
     monkeypatch.setitem(sys.modules, "aws_sdk_bedrock_runtime", MagicMock())
     client = NovaClient(model="nova-2-sonic", voice_id="matthew")
-    events = (
-        nova_basic_turn_events() if scenario == "basic_turn"
-        else nova_reconnect_events()
-    )
+    events = nova_basic_turn_events() if scenario == "basic_turn" else nova_reconnect_events()
     monkeypatch.setattr(client, "_open_stream", AsyncMock(return_value=AsyncMock()))
     monkeypatch.setattr(client, "_send_event", AsyncMock())
     monkeypatch.setattr(client, "_iter_events", _fake_nova_events(events))

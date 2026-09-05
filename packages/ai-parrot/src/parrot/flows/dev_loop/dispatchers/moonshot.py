@@ -7,12 +7,10 @@ from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 
 from parrot.clients.factory import LLMFactory
-from parrot.clients.moonshot import _thinking_ctx as _moonshot_thinking_ctx
 from parrot.flows.dev_loop.dispatchers._shared import DispatchExecutionError, T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchLabels, MoonshotCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.models.moonshot import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
 
 
 class MoonshotCodeDispatcher(LLMCodeDispatcher):
@@ -60,6 +58,10 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         context variable so the model-family-specific ``extra_body``
         injection happens in one place.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.moonshot.models import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
+
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",
@@ -88,6 +90,10 @@ class MoonshotCodeDispatcher(LLMCodeDispatcher):
         messages: List[Dict[str, Any]],
         args: Dict[str, Any],
     ) -> Any:
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.moonshot.client import _thinking_ctx as _moonshot_thinking_ctx
+
         args = dict(args)
         thinking_flags = {
             "thinking": args.pop("thinking", None),

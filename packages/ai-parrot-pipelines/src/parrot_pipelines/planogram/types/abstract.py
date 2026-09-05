@@ -1,4 +1,5 @@
 """Abstract base class for planogram type composables."""
+
 from __future__ import annotations
 
 import re
@@ -17,7 +18,6 @@ from parrot.models.detections import (
     ShelfRegion,
 )
 from parrot.models.compliance import ComplianceResult
-from parrot.models.google import GoogleModel
 
 if TYPE_CHECKING:
     from ..plan import PlanogramCompliance
@@ -144,7 +144,7 @@ class AbstractPlanogramType(ABC):
         """
         for feat in features or []:
             if isinstance(feat, str) and feat.lower().startswith(_ILLUMINATION_FEATURE_PREFIX.lower()):
-                state = feat[len(_ILLUMINATION_FEATURE_PREFIX):].strip().lower()
+                state = feat[len(_ILLUMINATION_FEATURE_PREFIX) :].strip().lower()
                 return state  # "on" or "off"
         return None
 
@@ -185,9 +185,7 @@ class AbstractPlanogramType(ABC):
             x2 = min(iw, int(zone_bbox.x2))
             y2 = min(ih, int(zone_bbox.y2))
             roi_crop = img.crop((x1, y1, x2, y2))
-            self.logger.debug(
-                "Illumination check using zone crop (%d,%d,%d,%d)", x1, y1, x2, y2
-            )
+            self.logger.debug("Illumination check using zone crop (%d,%d,%d,%d)", x1, y1, x2, y2)
         elif roi is not None and hasattr(roi, "bbox"):
             x1 = int(roi.bbox.x1 * iw)
             y1 = int(roi.bbox.y1 * ih)
@@ -237,31 +235,21 @@ class AbstractPlanogramType(ABC):
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     max_tokens=128,
                 )
             raw_answer = (msg.output or "").strip().upper()
         except Exception as exc:
-            self.logger.warning(
-                "Illumination check failed: %s — returning None", exc
-            )
+            self.logger.warning("Illumination check failed: %s — returning None", exc)
             return None
 
-        state = (
-            "illumination_status: OFF"
-            if "LIGHT_OFF" in raw_answer
-            else "illumination_status: ON"
-        )
-        self.logger.info(
-            "Illumination check → answer=%r  state=%s", raw_answer, state
-        )
+        state = "illumination_status: OFF" if "LIGHT_OFF" in raw_answer else "illumination_status: ON"
+        self.logger.info("Illumination check → answer=%r  state=%s", raw_answer, state)
         return state
 
     @staticmethod
-    def _base_model_from_str(
-        s: str, brand: str = None, patterns: Optional[List[str]] = None
-    ) -> str:
+    def _base_model_from_str(s: str, brand: str = None, patterns: Optional[List[str]] = None) -> str:
         """Extract normalized base model from any text, supporting multiple brands.
 
         If ``patterns`` is provided (from planogram_config.model_normalization_patterns),
@@ -359,9 +347,7 @@ class AbstractPlanogramType(ABC):
         """
         if not fact_tags:
             return []
-        y2_vals = sorted(
-            p.detection_box.y2 for p in fact_tags if p.detection_box is not None
-        )
+        y2_vals = sorted(p.detection_box.y2 for p in fact_tags if p.detection_box is not None)
         clusters: List[List[int]] = [[y2_vals[0]]]
         for y in y2_vals[1:]:
             if y - clusters[-1][-1] <= cluster_threshold:
@@ -397,20 +383,14 @@ class AbstractPlanogramType(ABC):
         Returns:
             Updated list of ShelfRegion with refined boundaries.
         """
-        fact_tags = [
-            p for p in identified_products
-            if p.product_type == "fact_tag" and p.detection_box is not None
-        ]
+        fact_tags = [p for p in identified_products if p.product_type == "fact_tag" and p.detection_box is not None]
         row_ys = self._cluster_fact_tag_rows(fact_tags)
 
         bg_shelves = [s for s in shelf_regions if getattr(s, "is_background", False)]
         fg_shelves = [s for s in shelf_regions if not getattr(s, "is_background", False)]
 
         if not row_ys or not fg_shelves:
-            self.logger.info(
-                "use_fact_tag_boundaries: no fact-tag rows detected "
-                "— keeping static boundaries"
-            )
+            self.logger.info("use_fact_tag_boundaries: no fact-tag rows detected " "— keeping static boundaries")
             return shelf_regions
 
         if len(row_ys) < len(fg_shelves) - 1:
@@ -420,7 +400,11 @@ class AbstractPlanogramType(ABC):
                 "use_fact_tag_boundaries: found %d fact-tag rows for %d shelves "
                 "— extrapolating with shift=%+dpx (detected row=%d, "
                 "static boundary=%d)",
-                len(row_ys), len(fg_shelves), shift, row_ys[0], static_first_y2,
+                len(row_ys),
+                len(fg_shelves),
+                shift,
+                row_ys[0],
+                static_first_y2,
             )
             extrapolated = list(row_ys)
             for i in range(len(row_ys), len(fg_shelves) - 1):
@@ -429,9 +413,9 @@ class AbstractPlanogramType(ABC):
             row_ys = extrapolated
         else:
             self.logger.info(
-                "use_fact_tag_boundaries: refining %d shelves from fact-tag "
-                "rows at y=%s",
-                len(fg_shelves), row_ys,
+                "use_fact_tag_boundaries: refining %d shelves from fact-tag " "rows at y=%s",
+                len(fg_shelves),
+                row_ys,
             )
 
         r_x1 = shelf_regions[0].bbox.x1
@@ -443,16 +427,20 @@ class AbstractPlanogramType(ABC):
         new_fg: List[ShelfRegion] = []
         for i, shelf in enumerate(fg_shelves):
             base_y = row_ys[i] if i < len(row_ys) else r_y2
-            new_fg.append(ShelfRegion(
-                shelf_id=shelf.shelf_id,
-                level=shelf.level,
-                bbox=DetectionBox(
-                    x1=int(r_x1), y1=int(prev_y),
-                    x2=int(r_x2), y2=int(base_y),
-                    confidence=1.0,
-                ),
-                is_background=shelf.is_background,
-            ))
+            new_fg.append(
+                ShelfRegion(
+                    shelf_id=shelf.shelf_id,
+                    level=shelf.level,
+                    bbox=DetectionBox(
+                        x1=int(r_x1),
+                        y1=int(prev_y),
+                        x2=int(r_x2),
+                        y2=int(base_y),
+                        confidence=1.0,
+                    ),
+                    is_background=shelf.is_background,
+                )
+            )
             prev_y = base_y
 
         return bg_shelves + new_fg
@@ -486,4 +474,5 @@ class AbstractPlanogramType(ABC):
             AbstractGridStrategy instance (NoGrid by default).
         """
         from parrot_pipelines.planogram.grid.strategy import NoGrid
+
         return NoGrid()

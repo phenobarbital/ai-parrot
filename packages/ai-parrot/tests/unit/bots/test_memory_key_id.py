@@ -135,13 +135,20 @@ async def test_save_conversation_turn_rejects_unattributed_turn(bot_with_memory:
 
 
 async def test_save_conversation_turn_takes_no_chatbot_id_argument():
-    """The ``chatbot_id`` parameter is gone: no caller may choose the key."""
+    """The ``chatbot_id`` parameter is gone: no caller may choose the key.
+
+    FEAT-525 adds a keyword-only ``compaction`` parameter (the bot's
+    ``CompactionCommit`` for the round) — an authorized extension of this
+    same signature, not a reintroduction of caller-chosen attribution.
+    """
     import inspect
 
     parameters = inspect.signature(AbstractBot.save_conversation_turn).parameters
 
     assert "chatbot_id" not in parameters
-    assert list(parameters) == ["self", "user_id", "session_id", "turn"]
+    assert list(parameters) == ["self", "user_id", "session_id", "turn", "compaction"]
+    assert parameters["compaction"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["compaction"].default is None
 
 
 async def test_save_conversation_turn_without_memory_is_a_noop():

@@ -12,7 +12,6 @@ from parrot.flows.dev_loop.dispatchers._shared import T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchLabels, ZaiCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
 
 
 class ZaiCodeDispatcher(LLMCodeDispatcher):
@@ -53,6 +52,10 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         Z.ai). Logs a warning (but still dispatches) when thinking is
         requested for a model outside ``THINKING_CAPABLE_ZAI_MODELS``.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.zai.models import THINKING_CAPABLE_ZAI_MODELS
+
         args: Dict[str, Any] = {
             "tools": tools,
             "tool_choice": "auto",

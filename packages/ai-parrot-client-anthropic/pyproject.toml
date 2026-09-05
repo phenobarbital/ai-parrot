@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-client-anthropic"
+version = "0.1.0"
+description = "Anthropic (Claude) LLM client for AI-Parrot (parrot.clients.anthropic)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+dependencies = [
+    "ai-parrot",
+    "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
+    "claude-agent-sdk>=0.1.68",
+    # NOT declared here: `ai-parrot-client-amazon` — AnthropicClient's
+    # `backend="bedrock"` mode lazily imports
+    # `parrot.clients.amazon.models.translate` (backends.py) only when
+    # that backend is actually used. Install ai-parrot-client-amazon
+    # alongside this package to use the Bedrock backend.
+]
+
+[project.entry-points."parrot.clients"]
+claude = "parrot.clients.anthropic:AnthropicClient"
+anthropic = "parrot.clients.anthropic:AnthropicClient"
+bedrock = "parrot.clients.anthropic:AnthropicClient"
+anthropic-aws = "parrot.clients.anthropic:AnthropicClient"
+claude-agent = "parrot.clients.anthropic:ClaudeAgentClient"
+claude-code = "parrot.clients.anthropic:ClaudeAgentClient"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot*"]
+namespaces = true
+
+[tool.uv.sources]
+ai-parrot = { workspace = true }

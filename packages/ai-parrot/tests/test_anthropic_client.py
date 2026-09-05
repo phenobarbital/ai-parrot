@@ -1,7 +1,7 @@
 """Tests for AnthropicClient (TASK-1518 additions + regression suite).
 
 Existing tests are updated to remove the stale
-``patch('parrot.clients.claude.AsyncAnthropic')`` which patched a name that
+``patch('parrot.clients.anthropic.client.AsyncAnthropic')`` which patched a name that
 was never exported from the module (it lived only inside ``get_client()``
 or ``TYPE_CHECKING``). The tests set ``client.client`` directly and therefore
 never actually call ``get_client()``, so the patch was redundant.
@@ -12,15 +12,16 @@ FEAT-232 additions (TASK-1518):
 - Verify ``get_client()`` dispatches to the correct backend.
 - Verify credential precedence (kwarg → conf/env → None).
 """
+
 from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.models import AIMessage
 
-
 # ── Regression: existing direct-path tests (TASK-1518 parity requirement) ───
+
 
 @pytest.mark.asyncio
 async def test_anthropic_ask():
@@ -36,7 +37,7 @@ async def test_anthropic_ask():
         "content": [{"type": "text", "text": "Hello, Claude!"}],
         "model": "claude-3-5-sonnet-20241022",
         "stop_reason": "end_turn",
-        "usage": {"input_tokens": 10, "output_tokens": 5}
+        "usage": {"input_tokens": 10, "output_tokens": 5},
     }
     mock_response.model_dump.return_value = mock_response_dict
 
@@ -48,7 +49,7 @@ async def test_anthropic_ask():
     client.logger = MagicMock()  # Mock logger
 
     # Patch AIMessageFactory
-    with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+    with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
         mock_factory.from_claude.return_value = AIMessage(content="Hello, Claude!")
         # Patch the backend's build_client to return the mock
         client._backend = MagicMock()
@@ -102,7 +103,7 @@ async def test_anthropic_ask_stream():
     client._backend.build_client = AsyncMock(return_value=mock_client_instance)
     client._backend.translate_model = lambda m: m
 
-    with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+    with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
         mock_factory.from_claude.return_value = AIMessage(content="Hello Claude")
 
         chunks = []
@@ -124,7 +125,7 @@ async def test_claude_deep_research_enables_tools():
         "id": "msg_123",
         "content": [{"type": "text", "text": "Deep research response"}],
         "stop_reason": "end_turn",
-        "usage": {"input_tokens": 10, "output_tokens": 20}
+        "usage": {"input_tokens": 10, "output_tokens": 20},
     }
 
     mock_client.messages.create = AsyncMock(return_value=mock_response)
@@ -134,20 +135,17 @@ async def test_claude_deep_research_enables_tools():
     client._backend.build_client = AsyncMock(return_value=mock_client)
     client._backend.translate_model = lambda m: m
 
-    with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+    with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
         mock_factory.from_claude.return_value = AIMessage(content="Deep research response")
 
-        response = await client.ask(
-            "Research AI history",
-            deep_research=True
-        )
+        response = await client.ask("Research AI history", deep_research=True)
 
     # Verify messages.create was called
     call_args = mock_client.messages.create.call_args
     assert call_args is not None
     # System prompt should contain research instructions
-    if 'system' in call_args.kwargs:
-        assert "DEEP RESEARCH" in call_args.kwargs['system']
+    if "system" in call_args.kwargs:
+        assert "DEEP RESEARCH" in call_args.kwargs["system"]
 
 
 @pytest.mark.asyncio
@@ -176,15 +174,11 @@ async def test_claude_deep_research_accepts_parameters():
     client._backend.build_client = AsyncMock(return_value=mock_client)
     client._backend.translate_model = lambda m: m
 
-    with patch('parrot.clients.claude.AIMessageFactory') as mock_factory:
+    with patch("parrot.clients.anthropic.client.AIMessageFactory") as mock_factory:
         mock_factory.from_claude.return_value = AIMessage(content="Research result")
 
         chunks = []
-        async for chunk in client.ask_stream(
-            "Research topic",
-            deep_research=True,
-            agent_config={"mode": "research"}
-        ):
+        async for chunk in client.ask_stream("Research topic", deep_research=True, agent_config={"mode": "research"}):
             if isinstance(chunk, str):
                 chunks.append(chunk)
 
@@ -193,11 +187,13 @@ async def test_claude_deep_research_accepts_parameters():
 
 # ── FEAT-232 / TASK-1518 additions ──────────────────────────────────────────
 
+
 def test_default_backend_is_direct():
     """AnthropicClient() defaults to backend='direct'."""
     client = AnthropicClient(api_key="key")
     assert client.backend == "direct"
-    from parrot.clients.anthropic_backends import DirectBackend
+    from parrot.clients.anthropic.backends import DirectBackend
+
     assert isinstance(client._backend, DirectBackend)
 
 
@@ -205,17 +201,17 @@ def test_bedrock_backend_set():
     """AnthropicClient(backend='bedrock') stores BedrockBackend."""
     client = AnthropicClient(backend="bedrock", aws_region="us-east-1")
     assert client.backend == "bedrock"
-    from parrot.clients.anthropic_backends import BedrockBackend
+    from parrot.clients.anthropic.backends import BedrockBackend
+
     assert isinstance(client._backend, BedrockBackend)
 
 
 def test_aws_backend_set():
     """AnthropicClient(backend='aws') stores AWSWorkspaceBackend."""
-    client = AnthropicClient(
-        backend="aws", aws_region="us-east-1", workspace_id="wrkspc_x"
-    )
+    client = AnthropicClient(backend="aws", aws_region="us-east-1", workspace_id="wrkspc_x")
     assert client.backend == "aws"
-    from parrot.clients.anthropic_backends import AWSWorkspaceBackend
+    from parrot.clients.anthropic.backends import AWSWorkspaceBackend
+
     assert isinstance(client._backend, AWSWorkspaceBackend)
 
 
@@ -233,9 +229,7 @@ def test_telemetry_client_name_per_backend():
     assert bedrock._telemetry_client_name == "anthropic-bedrock"
     assert resolve_gen_ai_system(bedrock._telemetry_client_name) == "aws.bedrock"
 
-    aws = AnthropicClient(
-        backend="aws", aws_region="us-east-1", workspace_id="wrkspc_x"
-    )
+    aws = AnthropicClient(backend="aws", aws_region="us-east-1", workspace_id="wrkspc_x")
     assert aws._telemetry_client_name == "anthropic"
     assert resolve_gen_ai_system(aws._telemetry_client_name) == "anthropic"
 
@@ -255,7 +249,8 @@ def test_resolve_model_translates_for_bedrock():
 
 def test_resolve_model_with_claude_model_enum():
     """_resolve_model() accepts a ClaudeModel enum and translates it."""
-    from parrot.models.claude import ClaudeModel
+    from parrot.clients.anthropic.models import ClaudeModel
+
     client = AnthropicClient(backend="bedrock", aws_region="us-east-1")
     result = client._resolve_model(ClaudeModel.SONNET_4_6)
     assert "anthropic." in result
@@ -298,7 +293,8 @@ def test_credential_precedence_kwarg_wins():
         aws_access_key="AKIA_EXPLICIT",
         aws_region="eu-west-1",
     )
-    from parrot.clients.anthropic_backends import BedrockBackend
+    from parrot.clients.anthropic.backends import BedrockBackend
+
     assert isinstance(client._backend, BedrockBackend)
     # The explicit kwarg was passed to the backend
     assert client._backend.aws_access_key == "AKIA_EXPLICIT"

@@ -1,17 +1,49 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 import json
 from redis.asyncio import Redis
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .compaction.omission import OmissionStore, RedisOmissionStore
 from ..conf import REDIS_HISTORY_URL
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .compaction.tokens import TokenCounter
 
 
 class RedisConversation(ConversationMemory):
     """Redis-based conversation memory with proper encoding handling."""
 
-    def __init__(self, redis_url: str = None, key_prefix: str = "conversation", use_hash_storage: bool = True):
-        super().__init__()
+    def __init__(
+        self,
+        redis_url: str = None,
+        key_prefix: str = "conversation",
+        use_hash_storage: bool = True,
+        *,
+        token_counter: Optional["TokenCounter"] = None,
+        omission_store: Optional[OmissionStore] = None,
+        normalize: bool = True,
+        omission_ttl: Optional[int] = None,
+    ) -> None:
+        """Initialize the store.
+
+        Args:
+            redis_url: Redis connection URL; defaults to
+                ``REDIS_HISTORY_URL``.
+            key_prefix: Prefix for every history key this instance owns
+                (e.g. ``"chat"`` for the ``ChatStorage`` cold tier).
+            use_hash_storage: Whether to use Redis hashes (recommended) or
+                plain string keys.
+            token_counter: Stage 0.5 counter override (see
+                :class:`~parrot.memory.abstract.ConversationMemory`).
+            omission_store: Omission-store override; defaults to a
+                :class:`~parrot.memory.compaction.omission.RedisOmissionStore`
+                sharing this instance's Redis client.
+            normalize: Disables Stage 0 for this instance when ``False``.
+            omission_ttl: Expiry (seconds) for the default omission store;
+                ``None`` (default) means no expiry, independent of the
+                (TTL-less) history keys.
+        """
         self.redis_url = redis_url or REDIS_HISTORY_URL
         self.key_prefix = key_prefix
         self.use_hash_storage = use_hash_storage
@@ -22,6 +54,12 @@ class RedisConversation(ConversationMemory):
             socket_connect_timeout=5,
             socket_timeout=5,
             retry_on_timeout=True,
+        )
+        super().__init__(
+            token_counter=token_counter,
+            omission_store=omission_store
+            or RedisOmissionStore(self.redis, key_prefix=self.key_prefix, ttl=omission_ttl),
+            normalize=normalize,
         )
 
     def _get_key(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> str:
@@ -220,35 +258,70 @@ class RedisConversation(ConversationMemory):
             serialized_data = self._serialize_data(history.to_dict())
             await self.redis.set(key, serialized_data)
 
-    async def add_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+    async def _store_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        compaction_state: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Add a turn to the conversation efficiently."""
+        """Append ``turn`` and, when given, ``metadata['compaction']`` — in ONE write.
+
+        Hash mode issues exactly one ``hset`` whose mapping carries
+        ``turns``/``updated_at``[/``chatbot_id``] and, when a compaction
+        state is given, ``metadata`` (read-modify-write on the existing
+        metadata blob so other keys already there survive).
+        """
         if self.use_hash_storage:
-            # Optimized: Only update the turns field
             key = self._get_key(user_id, session_id, chatbot_id)
 
-            # Get current turns
             current_turns_data = await self.redis.hget(key, "turns")
-            if current_turns_data:
-                turns = self._deserialize_data(current_turns_data)
-            else:
-                turns = []
-
-            # Add new turn
+            turns = self._deserialize_data(current_turns_data) if current_turns_data else []
             turns.append(turn.to_dict())
 
-            # Update only the turns and updated_at fields
-            mapping = {"turns": self._serialize_data(turns), "updated_at": datetime.now().isoformat()}
+            mapping: Dict[str, Any] = {
+                "turns": self._serialize_data(turns),
+                "updated_at": datetime.now().isoformat(),
+            }
             if chatbot_id is not None:
                 mapping["chatbot_id"] = str(chatbot_id)
+            if compaction_state is not None:
+                raw_meta = await self.redis.hget(key, "metadata")
+                meta = self._deserialize_data(raw_meta) if raw_meta else {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                meta["compaction"] = compaction_state
+                mapping["metadata"] = self._serialize_data(meta)
             await self.redis.hset(key, mapping=mapping)
         else:
-            # Fallback to full history update
+            # Fallback to full history update — still one write.
             history = await self.get_history(user_id, session_id, chatbot_id)
             if history:
                 history.add_turn(turn)
+                if compaction_state is not None:
+                    history.metadata["compaction"] = compaction_state
                 await self.update_history(history)
+
+    async def _get_compaction_state(
+        self, user_id: str, session_id: str, chatbot_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Read ``metadata['compaction']`` with a single targeted ``hget`` in hash mode.
+
+        Avoids the FEAT-524 lazy legacy re-key that a full
+        :meth:`get_history` call may perform as a side effect.
+        """
+        if not self.use_hash_storage:
+            return await super()._get_compaction_state(user_id, session_id, chatbot_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
+        raw_meta = await self.redis.hget(key, "metadata")
+        if not raw_meta:
+            return None
+        meta = self._deserialize_data(raw_meta)
+        if not isinstance(meta, dict):
+            return None
+        return meta.get("compaction")
 
     async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
         """Clear a conversation history."""
@@ -265,6 +338,7 @@ class RedisConversation(ConversationMemory):
             if history:
                 history.clear_turns()
                 await self.update_history(history)
+        await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
 
     async def list_sessions(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
         """List all session IDs for a user."""
@@ -277,6 +351,7 @@ class RedisConversation(ConversationMemory):
         key = self._get_key(user_id, session_id, chatbot_id)
         result = await self.redis.delete(key)
         await self.redis.srem(self._get_user_sessions_key(user_id, chatbot_id), session_id)
+        await self.omission_store.clear(self.omission_key(user_id, session_id, chatbot_id))
         return result > 0
 
     async def close(self):

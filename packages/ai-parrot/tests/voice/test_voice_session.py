@@ -1,8 +1,9 @@
 """Unit tests for VoiceSession (FEAT-416, TASK-2149 — spec §3 Module 5)."""
+
 import asyncio
 
 import pytest
-from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import LiveVoiceResponse
 from parrot.models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from parrot.voice.session import VoiceSession
 
@@ -16,14 +17,21 @@ def _default_voice_capabilities() -> VoiceCapabilities:
     """
     return VoiceCapabilities(
         provider=VoiceProvider.GOOGLE_LIVE,
-        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
-        supports_per_call_inference=True, parallel_tool_execution=True,
-        emits_reconnect_signal=True, supports_session_resumption=True,
-        max_session_seconds=None, max_output_tokens=4096,
+        native_stt_only=True,
+        supports_top_p=True,
+        supports_per_call_voice=True,
+        supports_per_call_inference=True,
+        parallel_tool_execution=True,
+        emits_reconnect_signal=True,
+        supports_session_resumption=True,
+        max_session_seconds=None,
+        max_output_tokens=4096,
         input_formats=frozenset({AudioFormat.PCM_16K}),
         output_formats=frozenset({AudioFormat.PCM_24K}),
-        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
-        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+        input_sample_rates=frozenset({16000}),
+        output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}),
+        default_voice="Puck",
     )
 
 
@@ -34,8 +42,7 @@ class MockVoiceClient:
     def voice_capabilities(self) -> VoiceCapabilities:
         return _default_voice_capabilities()
 
-    async def stream_voice(self, audio_iterator, system_prompt=None,
-                            session_id=None, user_id=None, **kwargs):
+    async def stream_voice(self, audio_iterator, system_prompt=None, session_id=None, user_id=None, **kwargs):
         async for chunk in audio_iterator:
             if chunk is None:
                 break
@@ -49,6 +56,7 @@ def mock_send_fn():
 
     async def send(payload):
         frames.append(payload)
+
     send.frames = frames
     return send
 
@@ -136,5 +144,6 @@ class TestVoiceSession:
         import inspect
 
         from parrot.voice import session as session_module
+
         src = inspect.getsource(session_module)
         assert "aiohttp" not in src

@@ -77,7 +77,7 @@ class TestClaudeAgentLazyImport:
     """``ClaudeAgentClient()`` must not import claude_agent_sdk at construction."""
 
     def test_init_does_not_import_sdk(self):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         # The module itself must not have eagerly loaded claude_agent_sdk.
         # Construction should likewise be import-free.
@@ -101,8 +101,8 @@ class TestClaudeAgentAsk:
 
     @pytest.mark.asyncio
     async def test_ask_assembles_text(self, fake_claude_agent_messages):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
 
@@ -128,8 +128,8 @@ class TestClaudeAgentAskStream:
 
     @pytest.mark.asyncio
     async def test_yields_text_in_order(self, fake_claude_agent_messages):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
         from parrot.models import AIMessage
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
@@ -156,8 +156,8 @@ class TestClaudeAgentToolUseRecorded:
 
     @pytest.mark.asyncio
     async def test_tool_use_recorded(self):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         # Build a stream with a ToolUseBlock interleaved with text.
         try:
@@ -241,7 +241,7 @@ class TestClaudeAgentBatchAskUnsupported:
 
     @pytest.mark.asyncio
     async def test_batch_ask_raises(self):
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         client = ClaudeAgentClient()
         with pytest.raises(NotImplementedError, match="AnthropicClient"):
@@ -260,7 +260,7 @@ class TestClaudeAgentBatchAskUnsupported:
         ],
     )
     async def test_unsupported_methods_raise(self, method_name: str):
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         client = ClaudeAgentClient()
         method = getattr(client, method_name)
@@ -272,7 +272,7 @@ class TestClaudeAgentRunOptions:
     """``ClaudeAgentRunOptions`` is a Pydantic model with the documented surface."""
 
     def test_basic_fields(self):
-        from parrot.clients.claude_agent import ClaudeAgentRunOptions
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 
         opts = ClaudeAgentRunOptions(
             allowed_tools=["Read", "Bash"],
@@ -290,12 +290,26 @@ class TestFactoryRegistration:
     """``LLMFactory`` resolves ``claude-agent`` / ``claude-code``."""
 
     def test_supported_clients_includes_keys(self):
-        from parrot.clients.factory import SUPPORTED_CLIENTS, _lazy_claude_agent
+        # FEAT-523 (TASK-2850): `_lazy_claude_agent` no longer exists —
+        # factory.py's hand-written `_lazy_*` closures were all removed
+        # by TASK-2847's rewrite; "claude-agent"/"claude-code" now
+        # register via a real `parrot.clients` entry point
+        # (ai-parrot-client-anthropic), whose value is the entry point's
+        # own zero-arg loader, resolved the same way LLMFactory.create()
+        # does.
+        from parrot.clients.anthropic import ClaudeAgentClient
+        from parrot.clients.factory import SUPPORTED_CLIENTS
 
         assert "claude-agent" in SUPPORTED_CLIENTS
         assert "claude-code" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["claude-agent"] is _lazy_claude_agent
-        assert SUPPORTED_CLIENTS["claude-code"] is _lazy_claude_agent
+
+        def _resolve(entry):
+            if callable(entry) and not isinstance(entry, type):
+                return entry()
+            return entry
+
+        assert _resolve(SUPPORTED_CLIENTS["claude-agent"]) is ClaudeAgentClient
+        assert _resolve(SUPPORTED_CLIENTS["claude-code"]) is ClaudeAgentClient
 
     def test_parse_llm_string_claude_agent(self):
         from parrot.clients.factory import LLMFactory
@@ -353,8 +367,8 @@ class TestClaudeAgentResume:
 
     @pytest.mark.asyncio
     async def test_resume_collects_messages(self, fake_claude_agent_messages):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
 
@@ -414,7 +428,7 @@ class TestBridgeInjection:
     """`_build_options()` bridges registered tools as an SDK-MCP server."""
 
     def test_no_tool_manager_injects_no_server(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -425,7 +439,7 @@ class TestBridgeInjection:
         assert "mcp_servers" not in captured
 
     def test_empty_registry_injects_no_server(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -436,7 +450,7 @@ class TestBridgeInjection:
         assert "mcp_servers" not in captured
 
     def test_server_injected_when_tools_registered(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -451,7 +465,7 @@ class TestBridgeInjection:
         assert captured["mcp_servers"]["parrot"]["type"] == "sdk"
 
     def test_caller_supplied_mcp_servers_survive_merge(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -466,7 +480,7 @@ class TestBridgeInjection:
         assert "parrot" in captured["mcp_servers"]
 
     def test_extra_options_mcp_servers_still_wins(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -480,7 +494,7 @@ class TestBridgeInjection:
         assert captured["mcp_servers"] == {"only": "this"}
 
     def test_expose_parrot_tools_false_disables_bridge(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -495,8 +509,8 @@ class TestBridgeInjection:
 
     @pytest.mark.asyncio
     async def test_use_tools_false_disables_bridge(self, fake_claude_agent_messages, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         captured, fake_options = _fake_options_capture()
         fake_query = _fake_query_factory(fake_claude_agent_messages)
@@ -515,7 +529,7 @@ class TestAllowedToolsReconciliation:
     """`allowed_tools` gains the exposed `mcp__parrot__*` names when set."""
 
     def test_set_allowed_tools_gains_exposed_names(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -531,7 +545,7 @@ class TestAllowedToolsReconciliation:
         assert "mcp__parrot__stub_tool" in captured["allowed_tools"]
 
     def test_empty_allowed_tools_gains_exposed_names(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -545,7 +559,7 @@ class TestAllowedToolsReconciliation:
         assert captured["allowed_tools"] == ["mcp__parrot__stub_tool"]
 
     def test_unset_allowed_tools_stays_unset(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -558,7 +572,7 @@ class TestAllowedToolsReconciliation:
         assert "allowed_tools" not in captured
 
     def test_bare_colliding_name_not_appended(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured, fake_options = _fake_options_capture()
         monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
@@ -580,8 +594,8 @@ class TestPromptThreading:
 
     @pytest.mark.asyncio
     async def test_ask_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         captured = {}
         original_build = ca_module.ClaudeAgentClient._build_options
@@ -605,8 +619,8 @@ class TestPromptThreading:
 
     @pytest.mark.asyncio
     async def test_ask_stream_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         captured = {}
         original_build = ca_module.ClaudeAgentClient._build_options
@@ -631,8 +645,8 @@ class TestPromptThreading:
 
     @pytest.mark.asyncio
     async def test_invoke_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         captured = {}
         original_build = ca_module.ClaudeAgentClient._build_options
@@ -656,8 +670,8 @@ class TestPromptThreading:
 
     @pytest.mark.asyncio
     async def test_resume_threads_user_input(self, fake_claude_agent_messages, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
-        from parrot.clients.claude_agent import ClaudeAgentClient
+        from parrot.clients.anthropic import claude_agent as ca_module
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
         captured = {}
         original_build = ca_module.ClaudeAgentClient._build_options
@@ -690,7 +704,7 @@ async def test_claude_agent_live_smoke():
     """
     if not shutil.which("claude"):
         pytest.skip("claude CLI not found on PATH")
-    from parrot.clients.claude_agent import ClaudeAgentClient
+    from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
 
     client = ClaudeAgentClient()
     result = await client.ask("Say the word PONG and nothing else.")
@@ -718,7 +732,7 @@ class TestSessionResume:
 
     @pytest.mark.asyncio
     async def test_first_turn_creates_and_second_resumes(self, fake_claude_agent_messages):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured: list[Any] = []
         client = ca_module.ClaudeAgentClient()
@@ -752,7 +766,7 @@ class TestSessionResume:
 
     @pytest.mark.asyncio
     async def test_distinct_conversations_do_not_share_a_session(self, fake_claude_agent_messages):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured: list[Any] = []
         client = ca_module.ClaudeAgentClient()
@@ -782,7 +796,7 @@ class TestSessionResume:
     @pytest.mark.asyncio
     async def test_without_a_session_id_nothing_is_tracked(self, fake_claude_agent_messages):
         """A stateless caller must not accumulate session state."""
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         client = ca_module.ClaudeAgentClient()
         with patch.object(
@@ -802,7 +816,7 @@ class TestSessionResume:
     async def test_resume_passes_only_resume(self, fake_claude_agent_messages):
         """``resume()`` used to pass BOTH resume and session_id, so every
         resume exited 1."""
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured: list[Any] = []
         client = ca_module.ClaudeAgentClient()

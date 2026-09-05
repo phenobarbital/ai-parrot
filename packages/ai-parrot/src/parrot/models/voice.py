@@ -15,14 +15,18 @@ integrations ``parrot.voice.models.VoiceConfig`` is now a deprecation-warning
 re-export of this class (see that module for the shim); ``VoiceProvider`` is
 re-exported there too, without a deprecation warning (a move, not a rename).
 """
-from dataclasses import dataclass
+
+import base64
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 
 # Voice models
 class AudioFormat(Enum):
     """Audio formats for voice sessions."""
+
     PCM_16K = "audio/pcm;rate=16000"
     PCM_24K = "audio/pcm;rate=24000"
 
@@ -37,11 +41,12 @@ class VoiceProvider(str, Enum):
     keep working once ``VoiceConfig.__post_init__`` coerces the
     ``provider`` field to this enum.
     """
+
     GOOGLE_LIVE = "google_live"
     OPENAI_REALTIME = "openai_realtime"
     WHISPER_TTS = "whisper_tts"
     # FEAT-302/FEAT-315: Amazon Nova 2 Sonic bidirectional voice —
-    # backed by parrot.clients.nova.NovaClient. FEAT-315 breaking change:
+    # backed by parrot.clients.amazon.nova.NovaClient. FEAT-315 breaking change:
     # renamed from the previous snake-case provider key; no alias kept.
     NOVA = "nova"
 
@@ -56,6 +61,7 @@ class VoiceConfig:
     ``max_reconnects``), and parallel-tool-execution fields introduced by
     the Voice Agent Framework (spec §2).
     """
+
     # Provider
     provider: VoiceProvider = VoiceProvider.GOOGLE_LIVE
 
@@ -165,6 +171,7 @@ class VoiceStreamOptions:
         enable_input_transcription: Whether to transcribe user audio.
         enable_output_transcription: Whether to transcribe model audio.
     """
+
     temperature: float = 0.7
     max_tokens: int = 4096
     top_p: float = 0.9
@@ -212,6 +219,7 @@ class VoiceCapabilities:
         voice_catalog: The set of provider-native voice names.
         default_voice: The provider's default voice name.
     """
+
     provider: VoiceProvider
 
     # Behavioral knobs
@@ -239,3 +247,182 @@ class VoiceCapabilities:
     # Synthesis
     voice_catalog: frozenset[str]
     default_voice: str
+
+
+# =============================================================================
+# Live-response models (FEAT-523, TASK-2841): relocated byte-identical from
+# ``parrot/clients/live.py`` (now ``parrot/clients/google/live.py``).
+# ``LiveVoiceResponse`` is the only type ``parrot.clients.protocols.
+# VoiceCapable`` needs, but it depends on the three dataclasses below, and
+# all four are pure data (no I/O, no client/SDK imports) — moved together
+# so core never has to import a satellite to type-check ``VoiceCapable``.
+# =============================================================================
+
+
+@dataclass
+class LiveCompletionUsage:
+    """
+    Usage tracking for Gemini Live API responses.
+
+    Compatible with CompletionUsage from parrot.models.basic
+    """
+
+    # Core token metrics
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    # Aliases for Gemini naming
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    # Audio-specific metrics
+    input_audio_duration_ms: float = 0.0
+    output_audio_duration_ms: float = 0.0
+
+    # Timing
+    response_time_ms: float = 0.0
+    first_token_time_ms: float = 0.0
+
+    # Tool execution
+    tool_calls_executed: int = 0
+    tool_execution_time_ms: float = 0.0
+
+    # Provider metadata
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Sync aliases
+        if self.input_tokens and not self.prompt_tokens:
+            self.prompt_tokens = self.input_tokens
+        if self.output_tokens and not self.completion_tokens:
+            self.completion_tokens = self.output_tokens
+        if not self.total_tokens:
+            self.total_tokens = self.prompt_tokens + self.completion_tokens
+
+    @classmethod
+    def from_gemini_usage(cls, usage_metadata: Any) -> "LiveCompletionUsage":
+        """Create from Gemini usage metadata when available."""
+        if usage_metadata is None:
+            return cls()
+
+        return cls(
+            prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            completion_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            total_tokens=getattr(usage_metadata, "total_token_count", 0) or 0,
+            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            extra=usage_metadata.__dict__ if hasattr(usage_metadata, "__dict__") else {},
+        )
+
+
+@dataclass
+class LiveToolCall:
+    """Represents a tool call from Gemini Live API."""
+
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    execution_time_ms: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "arguments": self.arguments,
+            "result": self.result,
+            "error": self.error,
+            "execution_time_ms": self.execution_time_ms,
+        }
+
+
+@dataclass
+class VoiceTurnMetadata:
+    """Metadata for a single voice turn/response."""
+
+    turn_id: str
+    started_at: datetime = field(default_factory=datetime.now)
+    ended_at: Optional[datetime] = None
+    input_transcription: Optional[str] = None
+    output_transcription: Optional[str] = None
+    tool_calls_count: int = 0
+    was_interrupted: bool = False
+
+    @property
+    def duration_ms(self) -> float:
+        if self.ended_at:
+            return (self.ended_at - self.started_at).total_seconds() * 1000
+        return 0.0
+
+
+@dataclass
+class LiveVoiceResponse:
+    """
+    Response from GeminiLiveClient voice interaction.
+
+    Enhanced version of VoiceResponse with CompletionUsage metadata
+    for consistency with other AbstractClient implementations.
+    """
+
+    # Content
+    text: str = ""
+    audio_data: Optional[bytes] = None
+    audio_format: str = "audio/pcm;rate=24000"
+
+    # State
+    is_complete: bool = False
+    is_interrupted: bool = False
+
+    # Tool calls
+    tool_calls: List[LiveToolCall] = field(default_factory=list)
+
+    # Usage metadata - consistent with CompletionUsage
+    usage: Optional[LiveCompletionUsage] = None
+
+    # Turn metadata
+    turn_metadata: Optional[VoiceTurnMetadata] = None
+
+    # Session info
+    session_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+    # Speaker attribution (FEAT-408, canonicalized lowercase in FEAT-418)
+    role: Optional[str] = None
+    """Speaker this frame is attributed to: "user" or "assistant" (canonical
+    lowercase form, FEAT-418). GeminiLiveClient sets this on every
+    model-originated and user-transcription frame as of FEAT-418
+    (previously always None here; user transcription instead traveled via
+    the now-removed metadata["user_transcription"])."""
+
+    # Extra metadata
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_websocket_message(self) -> Dict[str, Any]:
+        """Format for WebSocket transmission."""
+
+        return {
+            "type": "voice_response",
+            "text": self.text,
+            "audio_base64": base64.b64encode(self.audio_data).decode() if self.audio_data else None,
+            "audio_format": self.audio_format,
+            "is_complete": self.is_complete,
+            "is_interrupted": self.is_interrupted,
+            "tool_calls": [tc.to_dict() for tc in self.tool_calls],
+            "usage": (
+                {
+                    "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
+                    "completion_tokens": self.usage.completion_tokens if self.usage else 0,
+                    "total_tokens": self.usage.total_tokens if self.usage else 0,
+                    "response_time_ms": self.usage.response_time_ms if self.usage else 0,
+                }
+                if self.usage
+                else None
+            ),
+            "metadata": self.metadata,
+            "session_id": self.session_id,
+            "turn_id": self.turn_id,
+            "role": self.role,
+        }

@@ -8,7 +8,6 @@ import pandas as pd
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from ..models.responses import AIMessage, AgentResponse
-from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from .prompts.builder import PromptBuilder
@@ -102,6 +101,10 @@ class BasicAgent(Chatbot, NotificationMixin):
         ##  Logging:
         self.logger = logging.getLogger(f"{self.name}.Agent")
         ## Google GenAI Client (for multi-modal responses and TTS generation):
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider client at module scope (AC-3).
+        from ..clients.google import GoogleGenAIClient
+
         default_client = GoogleGenAIClient()
         if self._llm_raw is None:
             self.client = default_client
@@ -237,10 +240,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         wm_toolkits = [t for t in tool_iter if isinstance(t, WorkingMemoryToolkit)]
         if not wm_toolkits:
             return
-        repl_tools = [
-            t for t in tool_iter
-            if isinstance(t, PythonREPLTool) and callable(getattr(t, "snapshot", None))
-        ]
+        repl_tools = [t for t in tool_iter if isinstance(t, PythonREPLTool) and callable(getattr(t, "snapshot", None))]
         if not repl_tools:
             return
         for wm in wm_toolkits:
@@ -251,7 +251,8 @@ class BasicAgent(Chatbot, NotificationMixin):
                     wm._tool_locals[key] = await tool.snapshot()
                     self.logger.debug(
                         "Wired %s namespace into WorkingMemoryToolkit '%s'",
-                        key, getattr(wm, "name", wm),
+                        key,
+                        getattr(wm, "name", wm),
                     )
 
     async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:

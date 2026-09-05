@@ -237,6 +237,15 @@ class ToolSchemaAdapter:
         }
 
 
+#: Tool names that are internal machinery, never surfaced by relevance
+#: search (`rank_tools`/`search_tools`): `search_tools` itself, and
+#: FEAT-525's `read_omitted_content` recovery tool. Both are registered
+#: like any other tool (`register_tool(function=...)`) and remain fully
+#: callable and present in `get_tool_schemas()`/`list_tools()` — only the
+#: search ranking hides them.
+_INTERNAL_TOOL_NAMES: frozenset[str] = frozenset({"search_tools", "read_omitted_content"})
+
+
 class ToolManager(MCPToolManagerMixin):
     """
     Unified tool manager for handling tools across AbstractBot and AbstractClient.
@@ -598,14 +607,15 @@ class ToolManager(MCPToolManagerMixin):
 
         Returns:
             List of `(score, tool)` tuples, best score first. `tool` is the
-            raw registered object (`ToolDefinition` or `AbstractTool`), the
-            tool literally named `search_tools` is always excluded.
+            raw registered object (`ToolDefinition` or `AbstractTool`);
+            internal tools (`_INTERNAL_TOOL_NAMES` — `search_tools` and
+            `read_omitted_content`) are always excluded.
         """
         query_norm = query.lower().strip()
 
         scored: list[tuple[float, str, Any]] = []
         for name, tool in self._tools.items():
-            if name == "search_tools":
+            if name in _INTERNAL_TOOL_NAMES:
                 continue
 
             description = self._tool_description(tool)

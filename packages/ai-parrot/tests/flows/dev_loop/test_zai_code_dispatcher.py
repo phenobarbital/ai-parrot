@@ -19,8 +19,7 @@ from parrot.flows.dev_loop import (
     ZaiCodeDispatchProfile,
     ZaiCodeDispatcher,
 )
-from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
-
+from parrot.clients.zai.models import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
 
 # ---------------------------------------------------------------------------
 # Module 1 — registry / client defaults
@@ -348,9 +347,7 @@ async def test_zai_invalid_final_tool_payload_raises_validation_error(
     brief,
     _patch_worktree_base,
 ):
-    client = _FakeZaiClient(
-        [_Message(tool_calls=[_ToolCall("call_1", "final_output", {"files_changed": []})])]
-    )
+    client = _FakeZaiClient([_Message(tool_calls=[_ToolCall("call_1", "final_output", {"files_changed": []})])])
     dispatcher = _dispatcher(monkeypatch, client)
 
     with pytest.raises(DispatchOutputValidationError):

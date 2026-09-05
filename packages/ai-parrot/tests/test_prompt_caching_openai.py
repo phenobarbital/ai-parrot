@@ -2,14 +2,16 @@
 
 FEAT-181 — Provider-Agnostic Prompt Caching (TASK-1223).
 """
+
 from parrot.bots.prompts.segments import CacheableSegment
-from parrot.clients.gpt import OpenAIClient
+from parrot.clients.openai import OpenAIClient
 
 
 class TestOpenAICacheTranslator:
     def _make_client(self):
         """Create a bare OpenAIClient instance without full init."""
         import logging
+
         client = OpenAIClient.__new__(OpenAIClient)
         client.logger = logging.getLogger("test")
         return client

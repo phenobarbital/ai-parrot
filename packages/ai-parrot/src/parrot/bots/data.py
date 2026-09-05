@@ -33,7 +33,11 @@ from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChart
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
-from ..memory.render import render_history
+from ..observability.context import (
+    current_memory_key_id,
+    current_session_id,
+    current_user_id,
+)
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -1336,6 +1340,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
 
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
+
         # Use default temperature of 0 if not specified
         if "temperature" not in kwargs:
             kwargs["temperature"] = 0.0
@@ -1344,6 +1354,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # Get conversation history (no vector search for PandasAgent)
             conversation_history = None
             rendered_history = []
+            compaction_result = None
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
@@ -1351,11 +1362,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     user_id, session_id
                 ) or await self.create_conversation_history(user_id, session_id)
                 # FEAT-524: history goes to the provider as alternating messages.
-                rendered_history = render_history(
-                    conversation_history,
-                    max_turns=self.max_context_turns,
-                    current_chatbot_id=self.memory_key_id,
-                )
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Determine output mode
             if output_mode is None:
@@ -2098,7 +2107,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             # stays authoritative over response.to_text.
                             assistant_text=answer_text or "",
                         )
-                        await self.save_conversation_turn(user_id, session_id, turn)
+                        commit = None
+                        if compaction_result is not None:
+                            commit = self.build_compaction_commit(
+                                compaction_result,
+                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                            )
+                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
                     except Exception as _save_exc:
                         self.logger.debug(
                             "Failed to persist conversation turn: %s",
@@ -2128,6 +2143,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             self.logger.error(f"Error in PandasAgent.ask(): {e}")
             # Return error response
             raise
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     def add_dataframe(
         self, name: str, df: pd.DataFrame, metadata: Optional[Dict[str, Any]] = None, regenerate_guide: bool = True

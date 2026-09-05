@@ -80,9 +80,14 @@ class RecordingMemory(InMemoryConversation):
         self.keys.append(("create_history", chatbot_id))
         return await super().create_history(user_id, session_id, metadata, chatbot_id)
 
-    async def add_turn(self, user_id, session_id, turn, chatbot_id=None):
+    async def _store_turn(self, user_id, session_id, turn, chatbot_id=None, *, compaction_state=None):
+        # FEAT-525: ConversationMemory.add_turn is now the concrete
+        # template method (normalize -> count -> offload -> _store_turn);
+        # subclasses override _store_turn instead. Keep recording under
+        # the "add_turn" label — semantically this is still the write
+        # this spy exists to observe.
         self.keys.append(("add_turn", chatbot_id))
-        return await super().add_turn(user_id, session_id, turn, chatbot_id)
+        return await super()._store_turn(user_id, session_id, turn, chatbot_id, compaction_state=compaction_state)
 
 
 async def _make_bot(**bot_kwargs: Any) -> BaseBot:

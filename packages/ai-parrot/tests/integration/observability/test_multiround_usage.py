@@ -19,7 +19,7 @@ from opentelemetry.sdk.resources import Resource
 
 from navigator_eventbus.lifecycle.global_registry import scope
 
-from parrot.clients.claude import AnthropicClient
+from parrot.clients.anthropic import AnthropicClient
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     ClientRoundEvent,
@@ -27,10 +27,10 @@ from parrot.core.events.lifecycle.events import (
 from parrot.observability.context import agent_identity
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors tests/integration/observability/test_poc.py)
 # ---------------------------------------------------------------------------
+
 
 def _make_meter_provider(reader: InMemoryMetricReader) -> MeterProvider:
     """Build a MeterProvider that exposes metrics via *reader*."""
