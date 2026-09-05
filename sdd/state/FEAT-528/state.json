@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-528",
+  "feature_slug": "obscura-new-browser-headless",
+  "started_at": "2026-09-05T13:51:21Z",
+  "updated_at": "2026-09-05T14:35:00Z",
+  "source": {"kind": "inline", "jira_key": null, "jira_url": null, "file_path": null, "raw_path": "sdd/state/FEAT-528/source.md", "fetched_at": "2026-09-05T13:51:21Z", "summary_oneline": "Evaluate Obscura as a CDP-backed browser engine and optional MCP server for ai-parrot"},
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-09-05T13:51:21Z", "completed_at": "2026-09-05T13:51:30Z"},
+    "plan": {"status": "completed", "started_at": "2026-09-05T13:51:30Z", "completed_at": "2026-09-05T13:52:00Z", "queries_total": 7, "approved_by_user": false, "edited_by_user": false, "plan_path": "sdd/state/FEAT-528/research_plan.json"},
+    "research": {"status": "completed", "started_at": "2026-09-05T13:52:00Z", "completed_at": "2026-09-05T14:30:00Z", "duration_seconds": 660, "queries_executed": 15, "queries_skipped": 0, "depth_reached": 2, "files_read": 23, "grep_calls": 7, "git_calls": 2, "truncated": false, "truncation_reason": null},
+    "synthesis": {"status": "completed", "started_at": "2026-09-05T14:10:00Z", "completed_at": "2026-09-05T14:35:00Z", "synthesis_path": "sdd/state/FEAT-528/synthesis.json", "thinking_path": null, "overall_confidence": "medium", "claims_total": 11, "claims_high_conf": 6, "claims_medium_conf": 5, "claims_low_conf": 0, "unknowns_count": 0, "lint_passed": true, "lint_iterations": 0},
+    "qa": {"status": "completed", "started_at": "2026-09-05T14:12:00Z", "completed_at": "2026-09-05T14:35:00Z", "questions_total": 5, "questions_answered": 5, "skipped_reason": null},
+    "output": {"status": "completed", "started_at": "2026-09-05T14:20:00Z", "proposal_path": "sdd/proposals/obscura-new-browser-headless.proposal.md", "commit_sha": "6fdf7542c", "next_command_recommended": "sdd-spec", "next_command_rationale": "The process-level integration is localized for specification; native embedding and Selenium support remain separately gated.", "completed_at": "2026-09-05T14:35:00Z"}
+  },
+  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "consumed": {"files_read": 23, "grep_calls": 7, "git_calls": 2, "wall_seconds": 240},
+  "errors": [{"phase": "research", "at": "2026-09-05T13:52:00Z", "message": "The supplied docs.obscura.sh pages returned an internal crawl error; equivalent upstream README evidence was available.", "recoverable": true}],
+  "resume_hint": {"next_phase": "spec", "next_action": "Run $sdd-spec obscura-new-browser-headless."}
+}
