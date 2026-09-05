@@ -85,6 +85,31 @@ class ChromeConfig(BaseModel):
         return args
 
 
+class ObscuraMCPConfig(BaseModel):
+    """Configuration for the native Obscura MCP server (FEAT-530).
+
+    When set on `WebAgent`, this registers Obscura's own `obscura mcp`
+    stdio tool schema — a separate capability from Chrome DevTools MCP,
+    added alongside (not instead of) it. `ChromeConfig`/Chrome DevTools
+    MCP registration is unaffected either way.
+
+    Attributes:
+        binary_path: Path to (or `PATH`-resolvable name of) the Obscura
+            binary. Defaults to `None`, resolved to `"obscura"` on
+            `PATH` by `create_obscura_mcp_server()`.
+        name: MCP server name.
+        port: CDP port Obscura's native MCP mode should use internally.
+        stealth: Enable Obscura's stealth mode.
+        allow_private_network: Enable `--allow-private-network`.
+    """
+
+    binary_path: str | None = None
+    name: str = "obscura"
+    port: int = Field(default=9222, ge=1, le=65535)
+    stealth: bool = False
+    allow_private_network: bool = False
+
+
 class QAAssertion(BaseModel):
     """Formal acceptance criterion for a QA test case."""
 
@@ -296,6 +321,7 @@ class WebAgent(BasicAgent):
         self,
         name: str = "WebAgent",
         chrome_config: ChromeConfig | None = None,
+        obscura_config: ObscuraMCPConfig | None = None,
         default_timeout_ms: int = 60_000,
         screenshot_dir: str | None = None,
         **kwargs,
@@ -307,12 +333,21 @@ class WebAgent(BasicAgent):
         # silently discard WEB_AGENT_SYSTEM_PROMPT. Force the legacy path.
         self._prompt_builder = None
         self.chrome_config = chrome_config or ChromeConfig()
+        # Opt-in: Obscura's native MCP tools are registered alongside Chrome
+        # DevTools MCP only when explicitly configured (FEAT-530). Chrome
+        # DevTools MCP registration above is unaffected either way.
+        self.obscura_config = obscura_config
         self.default_timeout_ms = default_timeout_ms
         self.screenshot_dir = screenshot_dir
         self.logger = logging.getLogger(f"{self.name}.WebAgent")
 
     async def configure(self, app=None) -> None:
         """Configure agent and connect Chrome DevTools MCP server.
+
+        When `obscura_config` is set, also registers Obscura's native
+        MCP server (FEAT-530) — a separate tool schema from Chrome
+        DevTools MCP, added alongside it. Chrome DevTools MCP defaults
+        remain unchanged whether or not `obscura_config` is set.
 
         Args:
             app: Optional application/framework context, forwarded to
@@ -332,6 +367,19 @@ class WebAgent(BasicAgent):
             no_usage_statistics=config.no_usage_statistics,
             auto_connect=config.auto_connect,
         )
+        # getattr(): tolerate instances built without WebAgent.__init__
+        # (e.g. `WebAgent.__new__(WebAgent)` + manual attribute assignment,
+        # a pattern already used by this module's existing tests) that
+        # therefore never set `obscura_config`.
+        oconfig = getattr(self, "obscura_config", None)
+        if oconfig is not None:
+            await self.add_obscura_mcp_server(
+                binary_path=oconfig.binary_path,
+                name=oconfig.name,
+                port=oconfig.port,
+                stealth=oconfig.stealth,
+                allow_private_network=oconfig.allow_private_network,
+            )
 
     async def run_tests(
         self,

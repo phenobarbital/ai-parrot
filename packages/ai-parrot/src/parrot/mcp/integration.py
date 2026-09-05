@@ -1223,6 +1223,67 @@ async def ensure_chrome_running(
     return manager
 
 
+def create_obscura_mcp_server(
+    *,
+    binary_path: Optional[str] = None,
+    name: str = "obscura",
+    port: int = 9222,
+    stealth: bool = False,
+    allow_private_network: bool = False,
+    env: Optional[Dict[str, str]] = None,
+    **kwargs: Any,
+) -> MCPServerConfig:
+    """Create configuration for the native Obscura MCP server.
+
+    This is Obscura's own ``obscura mcp`` stdio server exposing its
+    native browser tool schema — a separate capability from Chrome
+    DevTools MCP (:func:`create_chrome_devtools_mcp_server`), which
+    remains available and unaffected.
+
+    Unlike Chrome DevTools MCP (which attaches to a *separately*
+    launched Chrome via ``--browser-url``), Obscura's native MCP mode is
+    self-contained: the ``obscura mcp`` subprocess manages its own
+    browser engine directly and is spawned/supervised by the MCP
+    transport layer (``StdioMCPSession``) itself. This factory is
+    therefore a pure config builder — like
+    :func:`create_chrome_devtools_mcp_server`, it does **not** start or
+    supervise anything. Process supervision for the separate CDP
+    (``obscura serve``) mode used by :class:`PlaywrightDriver` is
+    :class:`parrot.mcp.obscura.ObscuraProcessManager`'s job and is
+    unrelated to this native MCP configuration.
+
+    Args:
+        binary_path: Path to (or ``PATH``-resolvable name of) the
+            Obscura binary. Defaults to ``"obscura"`` (resolved via
+            ``PATH`` by the stdio transport at connect time).
+        name: Server name.
+        port: CDP port Obscura's native MCP mode should use internally.
+        stealth: Enable Obscura's stealth mode.
+        allow_private_network: Enable ``--allow-private-network``. Must
+            not be enabled silently in general deployments.
+        env: Additional environment variables for the stdio subprocess.
+        **kwargs: Additional MCPServerConfig parameters.
+
+    Returns:
+        MCPServerConfig configured for the native Obscura MCP server.
+    """
+    command = binary_path or "obscura"
+    args = ["mcp", "--port", str(port)]
+    if stealth:
+        args.append("--stealth")
+    if allow_private_network:
+        args.append("--allow-private-network")
+
+    return MCPServerConfig(
+        name=name,
+        command=command,
+        args=args,
+        env=env,
+        transport="stdio",
+        **kwargs
+    )
+
+
 def create_google_maps_mcp_server(
     name: str = "google-maps",
     **kwargs
@@ -1555,6 +1616,47 @@ class MCPEnabledMixin:
             isolated=isolated,
             no_usage_statistics=no_usage_statistics,
             auto_connect=auto_connect,
+            **kwargs
+        )
+        return await self.add_mcp_server(config)
+
+    async def add_obscura_mcp_server(
+        self,
+        binary_path: Optional[str] = None,
+        name: str = "obscura",
+        port: int = 9222,
+        stealth: bool = False,
+        allow_private_network: bool = False,
+        env: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add the native Obscura MCP server capability.
+
+        Registers Obscura's own ``obscura mcp`` stdio tool schema — a
+        separate capability from Chrome DevTools MCP
+        (:meth:`add_chrome_devtools_mcp_server`), which remains available
+        and unaffected.
+
+        Args:
+            binary_path: Path to (or ``PATH``-resolvable name of) the
+                Obscura binary.
+            name: Server name.
+            port: CDP port Obscura's native MCP mode should use internally.
+            stealth: Enable Obscura's stealth mode.
+            allow_private_network: Enable ``--allow-private-network``.
+            env: Additional environment variables for the stdio subprocess.
+            **kwargs: Additional MCPServerConfig parameters.
+
+        Returns:
+            List of registered tool names.
+        """
+        config = create_obscura_mcp_server(
+            binary_path=binary_path,
+            name=name,
+            port=port,
+            stealth=stealth,
+            allow_private_network=allow_private_network,
+            env=env,
             **kwargs
         )
         return await self.add_mcp_server(config)
