@@ -282,13 +282,15 @@ class TestNewChartTypesDegradation:
     heatmap/treemap have no Chart.js equivalent and must degrade — visibly
     AND recorded, never silently."""
 
-    @pytest.mark.parametrize(
-        "chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"]
-    )
+    @pytest.mark.parametrize("chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"])
     async def test_unsupported_chart_type_degrades_to_bar_with_record(self, chart_type):
         env = _envelope(
             Component(
-                id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                id="root",
+                component="Chart",
+                type=chart_type,
+                x="m",
+                y=["v"],
                 data=[{"m": "a", "v": 1}],
             )
         )
@@ -309,7 +311,11 @@ class TestNewChartTypesDegradation:
     async def test_donut_and_radar_are_chartjs_natives_not_degraded(self, chart_type, expected):
         env = _envelope(
             Component(
-                id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                id="root",
+                component="Chart",
+                type=chart_type,
+                x="m",
+                y=["v"],
                 data=[{"m": "a", "v": 1}],
             )
         )
@@ -322,9 +328,7 @@ class TestNewChartTypesDegradation:
         assert config["type"] == chart_type
 
     async def test_supported_chart_type_no_degradation(self):
-        env = _envelope(
-            Component(id="root", component="Chart", type="bar", x="m", y=["v"], data=[{"m": "a", "v": 1}])
-        )
+        env = _envelope(Component(id="root", component="Chart", type="bar", x="m", y=["v"], data=[{"m": "a", "v": 1}]))
         art = await InteractiveHTMLRenderer().render(env)
         assert art.metadata.get("degraded", []) == []
 
@@ -343,7 +347,9 @@ class TestNewChartTypesDegradation:
                             {
                                 "component": "Chart",
                                 "properties": {
-                                    "type": "gauge", "x": "m", "y": ["v"],
+                                    "type": "gauge",
+                                    "x": "m",
+                                    "y": ["v"],
                                     "data": [{"m": "a", "v": 1}],
                                 },
                             }
@@ -476,7 +482,9 @@ class TestHtmlDocumentSandboxedIframe:
     async def test_htmldocument_embedded_in_sandboxed_iframe(self):
         env = _envelope(
             Component(
-                id="root", component="HtmlDocument", title="Doc",
+                id="root",
+                component="HtmlDocument",
+                title="Doc",
                 html="<html><body><script>alert(1)</script></body></html>",
             )
         )
@@ -503,9 +511,7 @@ class TestHtmlDocumentSandboxedIframe:
         assert "srcdoc=" not in out
 
     async def test_htmldocument_no_degradation_recorded(self):
-        env = _envelope(
-            Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>")
-        )
+        env = _envelope(Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>"))
         art = await InteractiveHTMLRenderer().render(env)
         assert art.metadata.get("degraded", []) == []
 

@@ -97,9 +97,7 @@ class TestChartComponent:
         props = chart.CHART_SCHEMA["properties"]
         assert "layout" in props
         # Optional[Literal[...]] renders as anyOf: [{enum: [...]}, {type: null}].
-        layout_enum = next(
-            branch["enum"] for branch in props["layout"]["anyOf"] if "enum" in branch
-        )
+        layout_enum = next(branch["enum"] for branch in props["layout"]["anyOf"] if "enum" in branch)
         assert set(layout_enum) == {"full", "half"}
 
     def test_chart_lowering_golden(self):
@@ -148,13 +146,19 @@ class TestDataTableComponent:
         props = datatable.DATATABLE_SCHEMA["properties"]
         assert "style" in props
         assert set(props["style"]["enum"]) == {
-            "default", "striped", "bordered", "compact", "comparison",
+            "default",
+            "striped",
+            "bordered",
+            "compact",
+            "comparison",
         }
 
     def test_datatable_lower_records_style_extension(self):
         comp = Component(
-            id="blk-001", component="DataTable",
-            columns=[{"name": "region"}], style="striped",
+            id="blk-001",
+            component="DataTable",
+            columns=[{"name": "region"}],
+            style="striped",
         )
         tree = datatable.DataTableComponent().lower(comp, {})
         body = tree.child.children[-1]

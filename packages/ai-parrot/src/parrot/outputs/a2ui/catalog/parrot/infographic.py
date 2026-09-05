@@ -68,7 +68,7 @@ INFOGRAPHIC_INSTRUCTIONS = (
     "`heading`, optional `text`, and a `components` list nesting other catalog "
     "components (KPICard, Chart, InfoCard, ...). Sections render in the order given "
     "(as Tabs when there is more than one). Consecutive nested components whose "
-    "`properties.layout` is `\"half\"` render side-by-side in pairs (FEAT-527). "
+    '`properties.layout` is `"half"` render side-by-side in pairs (FEAT-527). '
     "Display-only."
 )
 

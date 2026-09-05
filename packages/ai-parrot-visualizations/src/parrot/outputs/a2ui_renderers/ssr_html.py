@@ -252,9 +252,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
 
     # -- lowering (composites -> flat primitives, BEFORE baking) -------------
 
-    def _lower_composites(
-        self, envelope: CreateSurface, degradations: list[dict[str, Any]]
-    ) -> CreateSurface:
+    def _lower_composites(self, envelope: CreateSurface, degradations: list[dict[str, Any]]) -> CreateSurface:
         """Replace every non-primitive (Parrot composite) component with its
         lowered + flattened primitive equivalents, in place, in the envelope's
         own flat component list.

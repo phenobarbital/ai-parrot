@@ -162,12 +162,15 @@ class TestNewChartTypes:
     async def test_funnel_data_from_first_y_only(self):
         option = EChartsRenderer()._build_option(
             {
-                "type": "funnel", "x": "m", "y": ["v1", "v2"],
+                "type": "funnel",
+                "x": "m",
+                "y": ["v1", "v2"],
                 "data": [{"m": "a", "v1": 10, "v2": 99}, {"m": "b", "v1": 5, "v2": 1}],
             }
         )
         assert option["series"][0]["data"] == [
-            {"value": 10, "name": "a"}, {"value": 5, "name": "b"},
+            {"value": 10, "name": "a"},
+            {"value": 5, "name": "b"},
         ]
 
     async def test_treemap_data_shape(self):
@@ -179,12 +182,17 @@ class TestNewChartTypes:
     async def test_heatmap_data_and_visual_map(self):
         option = EChartsRenderer()._build_option(
             {
-                "type": "heatmap", "x": "m", "y": ["v1", "v2"],
+                "type": "heatmap",
+                "x": "m",
+                "y": ["v1", "v2"],
                 "data": [{"m": "a", "v1": 1, "v2": 2}, {"m": "b", "v1": 3, "v2": 4}],
             }
         )
         assert option["series"][0]["data"] == [
-            [0, 0, 1], [0, 1, 2], [1, 0, 3], [1, 1, 4],
+            [0, 0, 1],
+            [0, 1, 2],
+            [1, 0, 3],
+            [1, 1, 4],
         ]
         assert "visualMap" in option
         assert option["xAxis"]["data"] == ["a", "b"]
@@ -198,7 +206,5 @@ class TestNewChartTypes:
         assert option["series"][0]["data"][0]["value"] == [1, 2]
 
     async def test_donut_radius_applied(self):
-        option = EChartsRenderer()._build_option(
-            {"type": "donut", "x": "m", "y": ["v"], "data": [{"m": "a", "v": 1}]}
-        )
+        option = EChartsRenderer()._build_option({"type": "donut", "x": "m", "y": ["v"], "data": [{"m": "a", "v": 1}]})
         assert option["series"][0]["radius"] == ["40%", "70%"]

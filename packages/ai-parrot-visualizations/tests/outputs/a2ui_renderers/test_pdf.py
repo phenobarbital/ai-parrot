@@ -106,7 +106,8 @@ class TestHtmlDocumentUnderPdf:
 
     async def test_htmldocument_link_survives_print_layout(self):
         env = CreateSurface(
-            surfaceId="s", catalogId="c",
+            surfaceId="s",
+            catalogId="c",
             components=[
                 Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
             ],

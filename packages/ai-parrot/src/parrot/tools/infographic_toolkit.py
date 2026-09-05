@@ -275,9 +275,7 @@ class InfographicToolkit(AbstractToolkit):
             # `add_template()` commonly are) would otherwise render
             # unescaped. The rendered HTML now also reaches consumers via the
             # HtmlDocument A2UI surface, not just the HTML artifact.
-            self._template_engine = TemplateEngine(
-                template_dirs=template_dirs, config=JinjaConfig(autoescape=True)
-            )
+            self._template_engine = TemplateEngine(template_dirs=template_dirs, config=JinjaConfig(autoescape=True))
             if templates:
                 self._template_engine.add_templates(templates)
 
@@ -957,8 +955,7 @@ class InfographicToolkit(AbstractToolkit):
             return serialize(envelope)
         except Exception:
             self.logger.warning(
-                "A2UI HtmlDocument envelope build failed for infographic %s; "
-                "falling back to HTML-only result.",
+                "A2UI HtmlDocument envelope build failed for infographic %s; " "falling back to HTML-only result.",
                 artifact_id,
                 exc_info=True,
             )
@@ -1801,9 +1798,8 @@ class InfographicToolkit(AbstractToolkit):
                             {
                                 # Drop the "blocks.0.<type>." prefix — it is an
                                 # artefact of validating through the union.
-                                "field": ".".join(str(p) for p in err["loc"][2:]) or ".".join(
-                                    str(p) for p in err["loc"]
-                                ),
+                                "field": ".".join(str(p) for p in err["loc"][2:])
+                                or ".".join(str(p) for p in err["loc"]),
                                 "problem": err["msg"],
                             }
                             for err in exc.errors()

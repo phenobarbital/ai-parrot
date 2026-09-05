@@ -44,6 +44,7 @@ Related: ``docs/outputs/a2ui-v1.md`` (the wire), ``docs/toolkits/
 infographic_toolkit.md`` (the toolkit), ``examples/simple_infographic_agent.py``
 (the recipe/replay lane this example deliberately does not cover).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -146,6 +147,7 @@ def rule(title: str) -> None:
 # The agent
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @register_agent(name="a2ui_dashboard")
 class A2UIDashboardAgent(InfographicAuthoringMixin, PandasAgent):
     """A PandasAgent that answers with A2UI dashboard surfaces.
@@ -178,6 +180,7 @@ class A2UIDashboardAgent(InfographicAuthoringMixin, PandasAgent):
 # ═══════════════════════════════════════════════════════════════════════════
 # Step 1 — the agent
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 async def step1_agent(
     frames: Dict[str, pd.DataFrame], artifact_store: ArtifactStore
@@ -223,6 +226,7 @@ async def step1_agent(
 # Step 2 — the template contract
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 async def step2_contract(toolkit: InfographicToolkit) -> List[Dict[str, Any]]:
     """Print the template's positional block contract.
 
@@ -253,8 +257,7 @@ async def step2_contract(toolkit: InfographicToolkit) -> List[Dict[str, Any]]:
         if spec["min_items"] or spec["max_items"]:
             bounds = f"{spec['min_items'] or '-'}..{spec['max_items'] or '-'}"
         print(
-            f"  {spec['position']:^8}  {spec['block_type']:<11}  "
-            f"{'yes' if spec['required'] else 'no':<8}  {bounds}"
+            f"  {spec['position']:^8}  {spec['block_type']:<11}  " f"{'yes' if spec['required'] else 'no':<8}  {bounds}"
         )
     return contract["block_specs"]
 
@@ -262,6 +265,7 @@ async def step2_contract(toolkit: InfographicToolkit) -> List[Dict[str, Any]]:
 # ═══════════════════════════════════════════════════════════════════════════
 # Step 3 — the typed blocks
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def step3_blocks(monthly: pd.DataFrame, plans: pd.DataFrame) -> List[Dict[str, Any]]:
     """Build the six typed blocks the ``dashboard`` template expects.
@@ -358,6 +362,7 @@ def step3_blocks(monthly: pd.DataFrame, plans: pd.DataFrame) -> List[Dict[str, A
 # Step 4 — the render
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 async def step4_render(
     toolkit: InfographicToolkit,
     agent: "A2UIDashboardAgent",
@@ -432,6 +437,7 @@ async def step4_render(
 # Step 5 — the A2UI v1.0 wire
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def step5_wire(wire: Dict[str, Any]) -> CreateSurface:
     """Show the A2UI v1.0 envelope-by-key that the toolkit emits.
 
@@ -476,8 +482,10 @@ def step5_wire(wire: Dict[str, Any]) -> CreateSurface:
     # identical runs.
     print(f"  surfaceId                : {inner['surfaceId']}")
     print(f"  catalogId                : {inner['catalogId']}")
-    print(f"  components               : {len(inner['components'])} "
-          f"(root id={root['id']!r}, component={root['component']!r})")
+    print(
+        f"  components               : {len(inner['components'])} "
+        f"(root id={root['id']!r}, component={root['component']!r})"
+    )
     print(f"  root top-level props     : {sorted(k for k in root if k not in ('id', 'component'))}")
     print(f"  dataModel keys           : {sorted(inner.get('dataModel', {}))}")
 
@@ -486,8 +494,7 @@ def step5_wire(wire: Dict[str, Any]) -> CreateSurface:
 
     # The envelope is A2A-ready as-is — no re-serialization at the boundary.
     artifact = Artifact.from_a2ui_envelope(wire, name="dashboard")
-    print(f"  A2A artifact             : accepted "
-          f"(mimeType={artifact.parts[0].metadata['mimeType']})")
+    print(f"  A2A artifact             : accepted " f"(mimeType={artifact.parts[0].metadata['mimeType']})")
 
     wire_path = OUTPUT_DIR / "02_envelope_v1.json"
     wire_path.write_text(json.dumps(wire, indent=2))
@@ -522,6 +529,7 @@ def _find_bindings(node: Any, found: Optional[List[str]] = None) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════
 # Step 6 — catalog lowering
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def step6_lowering(surface: CreateSurface) -> CreateSurface:
     """Lower the Parrot composite into official Basic Catalog primitives.
@@ -571,6 +579,7 @@ def step6_lowering(surface: CreateSurface) -> CreateSurface:
 # Step 7 — baking
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def step7_baking(lowered: CreateSurface) -> List[Dict[str, Any]]:
     """Resolve every binding so the surface is self-contained.
 
@@ -613,6 +622,7 @@ def step7_baking(lowered: CreateSurface) -> List[Dict[str, Any]]:
 # Step 8 — renderers
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 async def step8_render_surfaces(surface: CreateSurface) -> Optional[Path]:
     """Render the surface through two A2UI renderers.
 
@@ -652,8 +662,10 @@ async def step8_render_surfaces(surface: CreateSurface) -> Optional[Path]:
 
         caps = renderer.capabilities
         degraded = (artifact.metadata or {}).get("degraded") or []
-        print(f"  {name:<18} interactive={str(caps.interactive):<5} "
-              f"{len(artifact.content or b''):>8,} bytes  degraded={len(degraded)}")
+        print(
+            f"  {name:<18} interactive={str(caps.interactive):<5} "
+            f"{len(artifact.content or b''):>8,} bytes  degraded={len(degraded)}"
+        )
         print(f"  {'':<18} → {path.relative_to(REPO_ROOT)}")
 
         if name == "interactive-html":
@@ -665,6 +677,7 @@ async def step8_render_surfaces(surface: CreateSurface) -> Optional[Path]:
 # ═══════════════════════════════════════════════════════════════════════════
 # The --live lane
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 async def live_lane(agent: A2UIDashboardAgent) -> Optional[Dict[str, Any]]:
     """Ask the agent for the dashboard and let the LLM drive the toolkit.
@@ -720,6 +733,7 @@ async def live_lane(agent: A2UIDashboardAgent) -> Optional[Dict[str, Any]]:
 # Serving
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def serve(directory: Path, filename: str, port: int = 8080) -> None:
     """Serve ``directory`` over HTTP and open ``filename`` in a browser.
 
@@ -756,6 +770,7 @@ def serve(directory: Path, filename: str, port: int = 8080) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 async def main(args: argparse.Namespace) -> Optional[Path]:
     """Run the walkthrough.
@@ -821,7 +836,7 @@ def _parse_args() -> argparse.Namespace:
         "--live",
         action="store_true",
         help="ask the LLM to build the dashboard instead of building the blocks in Python "
-             "(requires a configured provider key).",
+        "(requires a configured provider key).",
     )
     parser.add_argument(
         "--open",

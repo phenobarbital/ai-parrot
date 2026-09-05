@@ -1,15 +1,4 @@
-from typing import (
-    List,
-    Optional,
-    Any,
-    Tuple,
-    Union,
-    Callable,
-    Literal,
-    get_type_hints,
-    get_origin,
-    get_args
-)
+from typing import List, Optional, Any, Tuple, Union, Callable, Literal, get_type_hints, get_origin, get_args
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
@@ -19,6 +8,7 @@ from .basic import OutputFormat
 
 class OutputType(str, Enum):
     """Types of outputs that can be rendered"""
+
     TEXT = "text"
     MARKDOWN = "markdown"
     DATAFRAME = "dataframe"
@@ -32,24 +22,25 @@ class OutputType(str, Enum):
 
 class OutputMode(str, Enum):
     """Output mode enumeration"""
-    DEFAULT = "default"          # Keep as-is (BaseModel/dataclass)
-    TEXT = "text"               # Plain conversational text — markdown-free (A2A/Copilot)
-    JSON = "json"               # Serialize to JSON (using orjson)
-    TERMINAL = "terminal"       # Render for terminal display (using Rich)
-    MARKDOWN = "markdown"       # Convert to markdown
-    YAML = "yaml"               # Serialize to YAML (using yaml-rs)
-    HTML = "html"               # Convert to HTML elements (using Panel)
-    JINJA2 = "jinja2"           # Pass to Jinja2 template (using jinja2 templates)
-    JUPYTER = "jupyter"         # Render for Jupyter notebook
-    NOTEBOOK = "notebook"       # Render for Jupyter notebook
+
+    DEFAULT = "default"  # Keep as-is (BaseModel/dataclass)
+    TEXT = "text"  # Plain conversational text — markdown-free (A2A/Copilot)
+    JSON = "json"  # Serialize to JSON (using orjson)
+    TERMINAL = "terminal"  # Render for terminal display (using Rich)
+    MARKDOWN = "markdown"  # Convert to markdown
+    YAML = "yaml"  # Serialize to YAML (using yaml-rs)
+    HTML = "html"  # Convert to HTML elements (using Panel)
+    JINJA2 = "jinja2"  # Pass to Jinja2 template (using jinja2 templates)
+    JUPYTER = "jupyter"  # Render for Jupyter notebook
+    NOTEBOOK = "notebook"  # Render for Jupyter notebook
     TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)
     APPLICATION = "application"  # Wrap in app (Streamlit/React/Svelte/HTML+TS)
-    CHART = "chart"               # Generate chart visualization
+    CHART = "chart"  # Generate chart visualization
     CODE = "code"
-    MAP = "map"                   # Generate map visualization
-    IMAGE = "image"             # render the image as a base64 embed into HTML <img>
-    ECHARTS = "echarts"         # Generate ECharts visualization
-    TABLE = "table"             # Generate table visualization
+    MAP = "map"  # Generate map visualization
+    IMAGE = "image"  # render the image as a base64 embed into HTML <img>
+    ECHARTS = "echarts"  # Generate ECharts visualization
+    TABLE = "table"  # Generate table visualization
     CARD = "card"
     TELEGRAM = "telegram"
     MSTEAMS = "msteams"
@@ -60,12 +51,14 @@ class OutputMode(str, Enum):
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
     STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
-    STRUCTURED_MAP = "structured_map"      # Framework-agnostic map config (FEAT-221)
-    A2UI = "a2ui"                          # A2UI v1.0 declarative envelope (FEAT-273)
+    STRUCTURED_MAP = "structured_map"  # Framework-agnostic map config (FEAT-221)
+    A2UI = "a2ui"  # A2UI v1.0 declarative envelope (FEAT-273)
+
 
 @dataclass
 class StructuredOutputConfig:
     """Configuration for structured output parsing."""
+
     output_type: type
     format: OutputFormat = OutputFormat.JSON
     custom_parser: Optional[Callable[[str], Any]] = None
@@ -76,10 +69,10 @@ class StructuredOutputConfig:
         Supports both Pydantic models and dataclasses.
         """
         # Check if it's a Pydantic model
-        if hasattr(self.output_type, 'model_json_schema'):
+        if hasattr(self.output_type, "model_json_schema"):
             # Pydantic v2
             return self.output_type.model_json_schema()
-        elif hasattr(self.output_type, 'schema'):
+        elif hasattr(self.output_type, "schema"):
             # Pydantic v1
             return self.output_type.schema()
 
@@ -88,10 +81,7 @@ class StructuredOutputConfig:
             return self._dataclass_to_schema(self.output_type)
 
         else:
-            raise ValueError(
-                f"output_type must be a Pydantic model or dataclass, "
-                f"got {type(self.output_type)}"
-            )
+            raise ValueError(f"output_type must be a Pydantic model or dataclass, " f"got {type(self.output_type)}")
 
     def _dataclass_to_schema(self, dc: type) -> dict[str, Any]:
         """Convert a dataclass to JSON schema."""
@@ -113,12 +103,7 @@ class StructuredOutputConfig:
             if field.default == field.default_factory == MISSING:
                 required.append(field.name)
 
-        schema = {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "title": dc.__name__
-        }
+        schema = {"type": "object", "properties": properties, "required": required, "title": dc.__name__}
 
         # Add docstring as description if available
         if dc.__doc__:
@@ -142,10 +127,7 @@ class StructuredOutputConfig:
         # Handle List types
         if origin is list:
             item_type = get_args(py_type)[0] if get_args(py_type) else Any
-            return {
-                "type": "array",
-                "items": self._python_type_to_json_schema(item_type)
-            }
+            return {"type": "array", "items": self._python_type_to_json_schema(item_type)}
 
         # Handle Dict types
         if origin is dict:
@@ -184,12 +166,11 @@ Rules:
 
 class BoundingBox(BaseModel):
     """Represents a detected object with its location and details."""
+
     object_id: str = Field(..., description="Unique identifier for this detection")
     brand: str = Field(..., description="Product brand (Epson, HP, Canon, etc.)")
     model: Optional[str] = Field(None, description="Product model if identifiable")
-    product_type: str = Field(
-        ..., description="Type of product (printer, scanner, ink cartridge, etc.)"
-    )
+    product_type: str = Field(..., description="Type of product (printer, scanner, ink cartridge, etc.)")
     description: str = Field(..., description="Brief description of the product")
     confidence: float = Field(..., description="Confidence level (0.0 to 1.0)")
     # Simple bounding box as [x1, y1, x2, y2] normalized coordinates (0.0 to 1.0)
@@ -200,15 +181,13 @@ class BoundingBox(BaseModel):
 
 class ObjectDetectionResult(BaseModel):
     """A list of all prominent items detected in the image."""
-    analysis: str = Field(
-        ...,
-        description="A detailed text analysis of the image that answers the user's prompt."
-    )
+
+    analysis: str = Field(..., description="A detailed text analysis of the image that answers the user's prompt.")
     total_count: int = Field(..., description="Total number of products detected")
     detections: List[BoundingBox] = Field(
-        default_factory=list,
-        description="A list of bounding boxes for all prominent detected objects."
+        default_factory=list, description="A list of bounding boxes for all prominent detected objects."
     )
+
 
 class ImageGenerationPrompt(BaseModel):
     """Input schema for generating an image.
@@ -217,24 +196,45 @@ class ImageGenerationPrompt(BaseModel):
     (``generate_image``) and Imagen (``generate_images``) backends. Individual
     method kwargs always take precedence over the fields set here.
     """
+
     prompt: str = Field(..., description="The main text prompt describing the desired image.")
-    styles: Optional[List[str]] = Field(default_factory=list, description="Optional list of styles to apply (e.g., 'photorealistic', 'cinematic', 'anime').")
+    styles: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Optional list of styles to apply (e.g., 'photorealistic', 'cinematic', 'anime').",
+    )
     model: str = Field(description="The image generation model to use.")
-    negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image (Imagen only).")
+    negative_prompt: Optional[str] = Field(
+        None, description="A description of what to avoid in the image (Imagen only)."
+    )
     aspect_ratio: str = Field(default="1:1", description="The desired aspect ratio (e.g., '1:1', '16:9', '9:16').")
-    resolution: Optional[str] = Field(default="1K", description="The desired resolution / image size (e.g., '1K', '2K', '4K').")
-    auto_upscale: Optional[bool] = Field(default=False, description="Whether to automatically upscale the generated image.")
+    resolution: Optional[str] = Field(
+        default="1K", description="The desired resolution / image size (e.g., '1K', '2K', '4K')."
+    )
+    auto_upscale: Optional[bool] = Field(
+        default=False, description="Whether to automatically upscale the generated image."
+    )
     number_of_images: int = Field(default=1, ge=1, le=8, description="How many images to generate per request.")
-    person_generation: str = Field(default="allow_adult", description="Person generation policy: 'allow_all', 'allow_adult', or 'dont_allow' (Imagen only).")
-    safety_filter_level: str = Field(default="BLOCK_ONLY_HIGH", description="Safety filter threshold (e.g., 'BLOCK_ONLY_HIGH', 'BLOCK_MEDIUM_AND_ABOVE', 'BLOCK_LOW_AND_ABOVE').")
+    person_generation: str = Field(
+        default="allow_adult",
+        description="Person generation policy: 'allow_all', 'allow_adult', or 'dont_allow' (Imagen only).",
+    )
+    safety_filter_level: str = Field(
+        default="BLOCK_ONLY_HIGH",
+        description="Safety filter threshold (e.g., 'BLOCK_ONLY_HIGH', 'BLOCK_MEDIUM_AND_ABOVE', 'BLOCK_LOW_AND_ABOVE').",
+    )
     seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
     add_watermark: bool = Field(default=False, description="Whether to add a SynthID watermark (Imagen only).")
-    output_mime_type: str = Field(default="image/png", description="Output image MIME type (e.g., 'image/png', 'image/jpeg').")
-    service_tier: Optional[str] = Field(default=None, description="Optional service tier (e.g., 'flex'); applies to the Gemini backend.")
+    output_mime_type: str = Field(
+        default="image/png", description="Output image MIME type (e.g., 'image/png', 'image/jpeg')."
+    )
+    service_tier: Optional[str] = Field(
+        default=None, description="Optional service tier (e.g., 'flex'); applies to the Gemini backend."
+    )
 
 
 class SpeakerConfig(BaseModel):
     """Configuration for a single speaker in speech generation."""
+
     name: str = Field(..., description="The name of the speaker in the script (e.g., 'Joe', 'Narrator').")
     voice: str = Field(..., description="The pre-built voice name to use (e.g., 'Kore', 'Puck', 'Chitose').")
     # Gender is often inferred from the voice, but can be included for clarity
@@ -243,13 +243,13 @@ class SpeakerConfig(BaseModel):
 
 class SpeechGenerationPrompt(BaseModel):
     """Input schema for generating speech from text."""
+
     prompt: str = Field(
         ...,
-        description="The text to be converted to speech. For multiple speakers, use their names (e.g., 'Joe: Hello. Jane: Hi there.')."
+        description="The text to be converted to speech. For multiple speakers, use their names (e.g., 'Joe: Hello. Jane: Hi there.').",
     )
     speakers: List[SpeakerConfig] = Field(
-        ...,
-        description="A list of speaker configurations. Use one for a single voice, multiple for a conversation."
+        ..., description="A list of speaker configurations. Use one for a single voice, multiple for a conversation."
     )
     model: Optional[str] = Field(default=None, description="The text-to-speech model to use.")
     language: Optional[str] = Field("en-US", description="Language code for the conversation.")
@@ -257,59 +257,60 @@ class SpeechGenerationPrompt(BaseModel):
 
 class VideoGenerationPrompt(BaseModel):
     """Input schema for generating video content."""
+
     prompt: str = Field(..., description="The text prompt describing the desired video content.")
-    number_of_videos: int = Field(
-        default=1, description="The number of videos to generated per request."
-    )
+    number_of_videos: int = Field(default=1, description="The number of videos to generated per request.")
     model: str = Field(..., description="The video generation model to use.")
-    aspect_ratio: str = Field(
-        default="16:9", description="The desired aspect ratio (e.g., '16:9', '9:16')."
-    )
+    aspect_ratio: str = Field(default="16:9", description="The desired aspect ratio (e.g., '16:9', '9:16').")
     duration: Optional[int] = Field(None, description="Optional duration in seconds for the video.")
-    negative_prompt: Optional[str] = Field(
-        default='',
-        description="A description of what to avoid in the video."
-    )
+    negative_prompt: Optional[str] = Field(default="", description="A description of what to avoid in the video.")
     resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
-    smoothing: Optional[bool] = Field(default=False, description="Whether to apply frame rate smoothing to the generated video.")
+    smoothing: Optional[bool] = Field(
+        default=False, description="Whether to apply frame rate smoothing to the generated video."
+    )
     seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
     include_audio: bool = Field(default=True, description="Whether to include generated audio.")
 
+
 class SentimentAnalysis(BaseModel):
     """Structured sentiment analysis response."""
+
     sentiment: Literal["positive", "negative", "neutral", "mixed"] = Field(
         description="Overall sentiment classification"
     )
-    confidence_level: float = Field(
-        ge=0.0, le=1.0,
-        description="Confidence level as decimal between 0 and 1"
-    )
-    emotional_indicators: List[str] = Field(
-        description="List of words/phrases that indicate emotional content"
-    )
-    reason: str = Field(
-        description="Explanation of the sentiment analysis"
-    )
+    confidence_level: float = Field(ge=0.0, le=1.0, description="Confidence level as decimal between 0 and 1")
+    emotional_indicators: List[str] = Field(description="List of words/phrases that indicate emotional content")
+    reason: str = Field(description="Explanation of the sentiment analysis")
 
 
 class ProductReview(BaseModel):
     """Structured product review response."""
+
     product_id: str = Field(..., description="Unique identifier for the product being reviewed")
     product_name: str = Field(..., description="Name of the product being reviewed")
     review_text: str = Field(..., description="The text of the product review")
     rating: float = Field(..., description="Rating given to the product")
-    sentiment: Literal["positive", "negative", "neutral"] = Field(
-        ..., description="Sentiment of the review"
-    )
+    sentiment: Literal["positive", "negative", "neutral"] = Field(..., description="Sentiment of the review")
     key_features: list[str] = Field(..., description="Key features highlighted in the review")
 
 
 # ── FEAT-215: Structured Chart Output ────────────────────────────────────────
 
 ChartType = Literal[
-    "bar", "horizontalBar", "line", "area", "scatter",
-    "pie", "donut", "radar", "map",
-    "gauge", "funnel", "waterfall", "heatmap", "treemap",
+    "bar",
+    "horizontalBar",
+    "line",
+    "area",
+    "scatter",
+    "pie",
+    "donut",
+    "radar",
+    "map",
+    "gauge",
+    "funnel",
+    "waterfall",
+    "heatmap",
+    "treemap",
 ]
 """Supported chart types for StructuredChartConfig (FEAT-527 added gauge,
 funnel, waterfall, heatmap, treemap for A2UI/infographic parity)."""
@@ -350,38 +351,47 @@ class StructuredChartConfig(BaseModel):
     stacked: Optional[bool] = Field(default=None, description="Stack series")
     trendline: Optional[bool] = Field(default=None, description="Show trend line")
     split_series: Optional[bool] = Field(
-        default=None, alias="splitSeries",
+        default=None,
+        alias="splitSeries",
         description="Render each y series as a separate chart",
     )
     show_legend: Optional[bool] = Field(
-        default=None, alias="showLegend",
+        default=None,
+        alias="showLegend",
         description="Display chart legend",
     )
     x_axis_mode: Optional[XAxisMode] = Field(
-        default=None, alias="xAxisMode",
+        default=None,
+        alias="xAxisMode",
         description="Axis scale: 'category' or 'time'",
     )
     palette: Optional[List[str]] = Field(
-        default=None, description="Optional list of hex colour strings",
+        default=None,
+        description="Optional list of hex colour strings",
     )
     color_by_sign: Optional[bool] = Field(
-        default=None, alias="colorBySign",
+        default=None,
+        alias="colorBySign",
         description="Colour bars/points by positive/negative value",
     )
     negative_color: Optional[str] = Field(
-        default=None, alias="negativeColor",
+        default=None,
+        alias="negativeColor",
         description="Hex colour for negative values when colorBySign is True",
     )
     positive_color: Optional[str] = Field(
-        default=None, alias="positiveColor",
+        default=None,
+        alias="positiveColor",
         description="Hex colour for positive values when colorBySign is True",
     )
     x_axis_label: Optional[str] = Field(
-        default=None, alias="xAxisLabel",
+        default=None,
+        alias="xAxisLabel",
         description="Human-readable x-axis display label (overrides column name)",
     )
     y_axis_label: Optional[str] = Field(
-        default=None, alias="yAxisLabel",
+        default=None,
+        alias="yAxisLabel",
         description="Human-readable y-axis display label",
     )
     layout: Optional[Literal["full", "half"]] = Field(
@@ -393,7 +403,8 @@ class StructuredChartConfig(BaseModel):
         ),
     )
     map_name: Optional[str] = Field(
-        default=None, alias="mapName",
+        default=None,
+        alias="mapName",
         description="GeoJSON map name (frontend-validated, free-form; required for type='map')",
     )
     title: Optional[str] = Field(
@@ -459,17 +470,11 @@ class StructuredChartConfig(BaseModel):
         if rows is None:
             rows = v.get("values")
         if isinstance(cols, list) and isinstance(rows, list):
-            return [
-                dict(zip(cols, r)) if isinstance(r, (list, tuple)) else r
-                for r in rows
-            ]
+            return [dict(zip(cols, r)) if isinstance(r, (list, tuple)) else r for r in rows]
         # pandas default 'dict' orientation: {col: {row_idx: value}}
         if v and all(isinstance(col_vals, dict) for col_vals in v.values()):
             indices = list(next(iter(v.values())).keys())
-            return [
-                {col: col_vals.get(idx) for col, col_vals in v.items()}
-                for idx in indices
-            ]
+            return [{col: col_vals.get(idx) for col, col_vals in v.items()} for idx in indices]
         # A single row dict → wrap as one-row list
         return [v]
 
@@ -524,17 +529,12 @@ class TableColumn(BaseModel):
     name: str = Field(..., description="Column key (matches a key in data rows)")
     type: str = Field(
         ...,
-        description=(
-            "Storage type: string | integer | number | boolean"
-            " | date | datetime | time | duration | any"
-        ),
+        description=("Storage type: string | integer | number | boolean" " | date | datetime | time | duration | any"),
     )
     title: str = Field(..., description="Human-readable column label")
     format: Optional[str] = Field(
         default=None,
-        description=(
-            "Optional display hint: currency | percent | email | uri | enum | id | code"
-        ),
+        description=("Optional display hint: currency | percent | email | uri | enum | id | code"),
     )
 
 
@@ -559,14 +559,11 @@ class StructuredTableConfig(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    columns: List[TableColumn] = Field(
-        ..., description="Per-column contract (name / type / title / format)"
-    )
+    columns: List[TableColumn] = Field(..., description="Per-column contract (name / type / title / format)")
     data: List[dict] = Field(
         default_factory=list,
         description=(
-            "Flat data rows; INPUT-ONLY — excluded from ``output``, "
-            "routed to response.data by the renderer."
+            "Flat data rows; INPUT-ONLY — excluded from ``output``, " "routed to response.data by the renderer."
         ),
     )
     explanation: Optional[str] = Field(
@@ -601,9 +598,7 @@ class StructuredTableConfig(BaseModel):
             cols = set(self.data[0].keys())
             missing = [c.name for c in self.columns if c.name not in cols]
             if missing:
-                raise ValueError(
-                    f"column names not present in data rows: {missing}"
-                )
+                raise ValueError(f"column names not present in data rows: {missing}")
         return self
 
 
@@ -634,17 +629,12 @@ class MapColumn(BaseModel):
     name: str = Field(..., description="Column key (matches a key in data rows / feature.properties)")
     type: str = Field(
         ...,
-        description=(
-            "Storage type: string | integer | number | boolean"
-            " | date | datetime | time | duration | any"
-        ),
+        description=("Storage type: string | integer | number | boolean" " | date | datetime | time | duration | any"),
     )
     title: str = Field(..., description="Human-readable column label")
     format: Optional[str] = Field(
         default=None,
-        description=(
-            "Optional display hint: currency | percent | email | uri | enum | id | code"
-        ),
+        description=("Optional display hint: currency | percent | email | uri | enum | id | code"),
     )
 
 
@@ -673,9 +663,7 @@ class MapLayer(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     layer: str = Field(..., description="Leaflet layer id / GeoJSON source discriminator.")
-    columns: List[MapColumn] = Field(
-        ..., description="Per-column contract (name / type / title / format)"
-    )
+    columns: List[MapColumn] = Field(..., description="Per-column contract (name / type / title / format)")
     tooltip_template: Optional[str] = Field(
         default=None,
         alias="tooltipTemplate",
@@ -780,14 +768,11 @@ class StructuredMapConfig(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    layers: List[MapLayer] = Field(
-        ..., description="One MapLayer per dataset."
-    )
+    layers: List[MapLayer] = Field(..., description="One MapLayer per dataset.")
     data: List[dict] = Field(
         default_factory=list,
         description=(
-            "Flat tabular rows; INPUT-ONLY — excluded from ``output``, "
-            "routed to response.data by the renderer."
+            "Flat tabular rows; INPUT-ONLY — excluded from ``output``, " "routed to response.data by the renderer."
         ),
     )
     datasets: List[dict] = Field(
@@ -858,7 +843,5 @@ class StructuredMapConfig(BaseModel):
             for layer in self.layers:
                 missing = [c.name for c in layer.columns if c.name not in cols]
                 if missing:
-                    raise ValueError(
-                        f"column names not present in data rows: {missing}"
-                    )
+                    raise ValueError(f"column names not present in data rows: {missing}")
         return self

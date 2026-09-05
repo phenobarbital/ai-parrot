@@ -1,4 +1,5 @@
 """Unit tests for InfographicToolkit core (FEAT-197, TASK-1323)."""
+
 from __future__ import annotations
 
 import sys
@@ -25,6 +26,7 @@ sys.modules["parrot.models.infographic_templates"] = _rt
 sys.modules["parrot.storage.models"] = _rsm
 
 import parrot.tools.infographic_toolkit as _rtk
+
 sys.modules["parrot.tools.infographic_toolkit"] = _rtk
 
 from parrot.tools.infographic_toolkit import (  # noqa: E402
@@ -39,10 +41,10 @@ from parrot.models.infographic_templates import (
     infographic_registry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def fake_artifact_store():
@@ -59,9 +61,7 @@ def hero_cards_template():
     t = InfographicTemplate(
         name="_test_four_cards",
         description="four hero cards",
-        block_specs=[
-            BlockSpec(block_type=BlockType.HERO_CARD, min_items=4, max_items=4)
-        ],
+        block_specs=[BlockSpec(block_type=BlockType.HERO_CARD, min_items=4, max_items=4)],
     )
     infographic_registry.register(t)
     yield t
@@ -119,6 +119,7 @@ def toolkit(fake_artifact_store):
 # return_direct
 # ---------------------------------------------------------------------------
 
+
 class TestReturnDirect:
     def test_class_attr_is_true(self):
         assert InfographicToolkit.return_direct is True
@@ -131,6 +132,7 @@ class TestReturnDirect:
 # ---------------------------------------------------------------------------
 # emit_a2ui default (FEAT-527: dual-emit by default)
 # ---------------------------------------------------------------------------
+
 
 class TestEmitA2UIDefault:
     def test_toolkit_default_emits_a2ui(self, fake_artifact_store):
@@ -145,6 +147,7 @@ class TestEmitA2UIDefault:
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 class TestValidation:
     @pytest.mark.asyncio
@@ -166,7 +169,7 @@ class TestValidation:
                 template_name=hero_cards_template.name,
                 theme=None,
                 mode="deterministic",
-                blocks=[],           # missing required slot
+                blocks=[],  # missing required slot
                 data_variables=[],
             )
         assert ei.value.code == "SLOT_MISSING"
@@ -211,9 +214,7 @@ class TestValidation:
         assert ei.value.code == "EXTRA_BLOCKS"
 
     @pytest.mark.asyncio
-    async def test_block_schema_invalid_is_structured_not_a_raw_pydantic_error(
-        self, toolkit, chart_template
-    ):
+    async def test_block_schema_invalid_is_structured_not_a_raw_pydantic_error(self, toolkit, chart_template):
         """A wrong block field must surface as an actionable validation error.
 
         The pydantic ``ValidationError`` used to escape ``_validate_blocks``, so
@@ -239,9 +240,7 @@ class TestValidation:
         assert "infographic_build_block" in detail["hint"]
 
     @pytest.mark.asyncio
-    async def test_validate_blocks_tool_returns_the_structured_error(
-        self, toolkit, chart_template
-    ):
+    async def test_validate_blocks_tool_returns_the_structured_error(self, toolkit, chart_template):
         """``infographic_validate_blocks`` reports it as data, never as a raise."""
         result = await toolkit.validate_blocks(
             template_name=chart_template.name,
@@ -333,19 +332,16 @@ class TestValidation:
 # Render
 # ---------------------------------------------------------------------------
 
+
 class TestRender:
     @pytest.mark.asyncio
     async def test_returns_envelope(self, toolkit, hero_cards_template, fake_artifact_store):
-        toolkit._bot._get_repl_locals.return_value = {
-            "rev": pd.DataFrame([{"x": 1}])
-        }
+        toolkit._bot._get_repl_locals.return_value = {"rev": pd.DataFrame([{"x": 1}])}
         result = await toolkit.render(
             template_name=hero_cards_template.name,
             theme="dark",
             mode="deterministic",
-            blocks=[{"type": "hero_card", "cards": [
-                {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-            ]}],
+            blocks=[{"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}],
             data_variables=["rev"],
         )
         assert isinstance(result, InfographicRenderResult)
@@ -358,11 +354,16 @@ class TestRender:
 
     @pytest.mark.asyncio
     async def test_html_inline_set_for_small_html(
-        self, toolkit, hero_cards_template, fake_artifact_store, monkeypatch,
+        self,
+        toolkit,
+        hero_cards_template,
+        fake_artifact_store,
+        monkeypatch,
     ):
         """html_inline populated when len(html) < 50 000."""
         monkeypatch.setattr(
-            toolkit._renderer, "render_to_html",
+            toolkit._renderer,
+            "render_to_html",
             lambda *a, **kw: "<html>tiny</html>",
         )
         toolkit._bot._get_repl_locals.return_value = {"r": pd.DataFrame([{"x": 1}])}
@@ -370,9 +371,7 @@ class TestRender:
             template_name=hero_cards_template.name,
             theme=None,
             mode="deterministic",
-            blocks=[{"type": "hero_card", "cards": [
-                {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-            ]}],
+            blocks=[{"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}],
             data_variables=["r"],
         )
         assert result.html_inline is not None
@@ -380,11 +379,16 @@ class TestRender:
 
     @pytest.mark.asyncio
     async def test_html_inline_none_for_large_html(
-        self, toolkit, hero_cards_template, fake_artifact_store, monkeypatch,
+        self,
+        toolkit,
+        hero_cards_template,
+        fake_artifact_store,
+        monkeypatch,
     ):
         """html_inline is None when len(html) >= 50 000."""
         monkeypatch.setattr(
-            toolkit._renderer, "render_to_html",
+            toolkit._renderer,
+            "render_to_html",
             lambda *a, **kw: "X" * 60_000,
         )
         toolkit._bot._get_repl_locals.return_value = {"r": pd.DataFrame([{"x": 1}])}
@@ -392,25 +396,24 @@ class TestRender:
             template_name=hero_cards_template.name,
             theme=None,
             mode="deterministic",
-            blocks=[{"type": "hero_card", "cards": [
-                {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-            ]}],
+            blocks=[{"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}],
             data_variables=["r"],
         )
         assert result.html_inline is None
 
     @pytest.mark.asyncio
     async def test_save_artifact_called_once(
-        self, toolkit, hero_cards_template, fake_artifact_store,
+        self,
+        toolkit,
+        hero_cards_template,
+        fake_artifact_store,
     ):
         toolkit._bot._get_repl_locals.return_value = {"r": pd.DataFrame([{"x": 1}])}
         await toolkit.render(
             template_name=hero_cards_template.name,
             theme=None,
             mode="deterministic",
-            blocks=[{"type": "hero_card", "cards": [
-                {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-            ]}],
+            blocks=[{"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}],
             data_variables=["r"],
         )
         assert fake_artifact_store.save_artifact.call_count == 1
@@ -420,7 +423,10 @@ class TestRender:
 
     @pytest.mark.asyncio
     async def test_html_url_is_signed_public_route_with_scope(
-        self, toolkit, hero_cards_template, fake_artifact_store,
+        self,
+        toolkit,
+        hero_cards_template,
+        fake_artifact_store,
     ):
         """html_url targets the signed public HTML route, embedding the
         persist scope so partitioned stores can locate the artifact.  The
@@ -431,9 +437,7 @@ class TestRender:
             template_name=hero_cards_template.name,
             theme=None,
             mode="deterministic",
-            blocks=[{"type": "hero_card", "cards": [
-                {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-            ]}],
+            blocks=[{"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}],
             data_variables=["r"],
         )
         assert fake_artifact_store.get_public_url.call_count == 0
@@ -447,14 +451,15 @@ class TestRender:
 # blocks_variable — pass blocks by REPL variable name instead of inline JSON
 # ---------------------------------------------------------------------------
 
+
 class TestBlocksVariable:
-    _HERO = {"type": "hero_card", "cards": [
-        {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
-    ]}
+    _HERO = {"type": "hero_card", "cards": [{"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}]}
 
     @pytest.mark.asyncio
     async def test_render_resolves_blocks_from_repl(
-        self, toolkit, hero_cards_template,
+        self,
+        toolkit,
+        hero_cards_template,
     ):
         toolkit._bot._get_repl_locals.return_value = {
             "fp_blocks": [self._HERO],
@@ -471,7 +476,9 @@ class TestBlocksVariable:
 
     @pytest.mark.asyncio
     async def test_validate_blocks_resolves_from_repl(
-        self, toolkit, hero_cards_template,
+        self,
+        toolkit,
+        hero_cards_template,
     ):
         toolkit._bot._get_repl_locals.return_value = {"fp_blocks": [self._HERO]}
         out = await toolkit.validate_blocks(
@@ -482,7 +489,9 @@ class TestBlocksVariable:
 
     @pytest.mark.asyncio
     async def test_blocks_variable_takes_precedence_over_blocks(
-        self, toolkit, hero_cards_template,
+        self,
+        toolkit,
+        hero_cards_template,
     ):
         toolkit._bot._get_repl_locals.return_value = {"fp_blocks": [self._HERO]}
         # Inline blocks are intentionally wrong; the REPL variable wins.
@@ -534,11 +543,19 @@ class TestBlocksVariable:
     async def test_numpy_scalars_normalized(self, toolkit, hero_cards_template):
         """NumPy scalars inside REPL blocks coerce to native types."""
         import numpy as np
+
         toolkit._bot._get_repl_locals.return_value = {
-            "fp_blocks": [{"type": "hero_card", "cards": [
-                {"value": np.float64(1.5)}, {"value": np.int64(2)},
-                {"value": 3}, {"value": 4},
-            ]}],
+            "fp_blocks": [
+                {
+                    "type": "hero_card",
+                    "cards": [
+                        {"value": np.float64(1.5)},
+                        {"value": np.int64(2)},
+                        {"value": 3},
+                        {"value": 4},
+                    ],
+                }
+            ],
         }
         out = await toolkit.validate_blocks(
             template_name=hero_cards_template.name,
@@ -550,6 +567,7 @@ class TestBlocksVariable:
 # ---------------------------------------------------------------------------
 # render_template / render_data_template — HtmlDocument envelope (FEAT-527)
 # ---------------------------------------------------------------------------
+
 
 class TestRenderTemplateHtmlDocumentEnvelope:
     @pytest.fixture

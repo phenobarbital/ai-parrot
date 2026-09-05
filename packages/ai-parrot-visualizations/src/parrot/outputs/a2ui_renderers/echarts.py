@@ -309,27 +309,21 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 {
                     "name": col,
                     "type": "gauge",
-                    "data": [{"value": next((row.get(col) for row in rows if isinstance(row, dict)), None), "name": col}],
+                    "data": [
+                        {"value": next((row.get(col) for row in rows if isinstance(row, dict)), None), "name": col}
+                    ],
                 }
                 for col in y_cols
             ]
 
         if chart_type == "funnel":
             first_col = y_cols[0] if y_cols else None
-            data = [
-                {"value": row.get(first_col), "name": row.get(x)}
-                for row in rows
-                if isinstance(row, dict)
-            ]
+            data = [{"value": row.get(first_col), "name": row.get(x)} for row in rows if isinstance(row, dict)]
             return [{"name": first_col, "type": "funnel", "data": data}]
 
         if chart_type == "treemap":
             first_col = y_cols[0] if y_cols else None
-            data = [
-                {"name": row.get(x), "value": row.get(first_col)}
-                for row in rows
-                if isinstance(row, dict)
-            ]
+            data = [{"name": row.get(x), "value": row.get(first_col)} for row in rows if isinstance(row, dict)]
             return [{"name": first_col, "type": "treemap", "data": data}]
 
         if chart_type == "heatmap":

@@ -216,15 +216,18 @@ class TestNewChartTypesDegradation:
     (``ChartComponent.lower()``'s generic text summary), and each is
     additionally recorded in ``metadata['degraded']`` (never silent)."""
 
-    @pytest.mark.parametrize(
-        "chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"]
-    )
+    @pytest.mark.parametrize("chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"])
     async def test_unsupported_chart_type_recorded_as_degraded(self, chart_type):
         env = CreateSurface(
-            surfaceId="s", catalogId="c",
+            surfaceId="s",
+            catalogId="c",
             components=[
                 Component(
-                    id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                    id="root",
+                    component="Chart",
+                    type=chart_type,
+                    x="m",
+                    y=["v"],
                     data=[{"m": "a", "v": 1}],
                 )
             ],
@@ -241,10 +244,15 @@ class TestNewChartTypesDegradation:
     @pytest.mark.parametrize("chart_type", ["bar", "donut", "radar"])
     async def test_pre_existing_chart_types_not_recorded_as_degraded(self, chart_type):
         env = CreateSurface(
-            surfaceId="s", catalogId="c",
+            surfaceId="s",
+            catalogId="c",
             components=[
                 Component(
-                    id="root", component="Chart", type=chart_type, x="m", y=["v"],
+                    id="root",
+                    component="Chart",
+                    type=chart_type,
+                    x="m",
+                    y=["v"],
                     data=[{"m": "a", "v": 1}],
                 )
             ],
@@ -264,7 +272,8 @@ class TestHtmlDocumentDegradesToLink:
 
     async def test_htmldocument_degrades_to_link(self):
         env = CreateSurface(
-            surfaceId="s", catalogId="c",
+            surfaceId="s",
+            catalogId="c",
             components=[
                 Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
             ],
@@ -278,7 +287,8 @@ class TestHtmlDocumentDegradesToLink:
 
     async def test_htmldocument_inline_only_degrades_to_placeholder_text(self):
         env = CreateSurface(
-            surfaceId="s", catalogId="c",
+            surfaceId="s",
+            catalogId="c",
             components=[Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>")],
             dataModel={},
         )

@@ -3,6 +3,7 @@
 FEAT-527 amends FEAT-273 G7: the infographic-HTML lane is a permanent HTML
 sibling emission of the A2UI Infographic lane, not a deprecated path.
 """
+
 from __future__ import annotations
 
 import warnings

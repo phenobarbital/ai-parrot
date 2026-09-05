@@ -3,6 +3,7 @@
 Verifies the 5 new ``ChartType`` members validate on the config and that the
 new ``layout`` field round-trips through the model.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -10,9 +11,7 @@ import pytest
 from parrot.models.outputs import StructuredChartConfig
 
 
-@pytest.mark.parametrize(
-    "chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"]
-)
+@pytest.mark.parametrize("chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"])
 def test_new_chart_types_validate(chart_type):
     cfg = StructuredChartConfig(type=chart_type, x="month", y=["revenue"])
     assert cfg.type == chart_type

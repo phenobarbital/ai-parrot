@@ -13,6 +13,7 @@ Unit-level, no aiohttp server — same style as
 ``__new__`` and ``self.request`` is a minimal stub exposing ``.headers`` and
 ``.query`` (only what ``_format_infographic_response`` reads).
 """
+
 from __future__ import annotations
 
 import json
@@ -66,6 +67,7 @@ def _infographic_response(**overrides) -> SimpleNamespace:
 # _format_infographic_response — a2ui_envelope additive key
 # ---------------------------------------------------------------------------
 
+
 class TestInfographicEnvelopeIncludesA2UI:
     def test_a2ui_envelope_present_when_response_carries_one(self):
         handler = _handler()
@@ -79,8 +81,16 @@ class TestInfographicEnvelopeIncludesA2UI:
         assert body["a2ui_envelope"]["createSurface"]["surfaceId"] == "infographic-abc123"
         # Byte-identical body otherwise: every previously documented key intact.
         assert set(body) >= {
-            "input", "output", "response", "output_mode", "artifact_id",
-            "data", "metadata", "sources", "tool_calls", "a2ui_envelope",
+            "input",
+            "output",
+            "response",
+            "output_mode",
+            "artifact_id",
+            "data",
+            "metadata",
+            "sources",
+            "tool_calls",
+            "a2ui_envelope",
         }
 
     def test_a2ui_envelope_omitted_when_none(self):
@@ -107,6 +117,7 @@ class TestInfographicEnvelopeIncludesA2UI:
 # ---------------------------------------------------------------------------
 # OutputMode.A2UI early return — metadata + artifact_id additive keys
 # ---------------------------------------------------------------------------
+
 
 class TestA2UIReturnCarriesHtmlMetadata:
     def test_a2ui_return_includes_metadata_and_artifact_id(self):
@@ -159,7 +170,9 @@ class TestA2UIReturnCarriesHtmlMetadata:
         )
 
         result = handler._format_response(
-            response=response, format_kwargs={}, output_format="json",
+            response=response,
+            format_kwargs={},
+            output_format="json",
         )
 
         assert result.body["artifact_id"] is None
@@ -169,6 +182,7 @@ class TestA2UIReturnCarriesHtmlMetadata:
 # ---------------------------------------------------------------------------
 # Streaming gate (unchanged — regression guard)
 # ---------------------------------------------------------------------------
+
 
 class TestStreamingGateUnchangedForInfographic:
     def test_infographic_and_interactive_force_stream_off(self):

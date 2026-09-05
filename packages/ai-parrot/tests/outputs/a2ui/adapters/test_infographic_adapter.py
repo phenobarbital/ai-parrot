@@ -335,8 +335,14 @@ class TestChartPresentationFieldsForwarded:
         )
         props = _sections(envelope)[0]["components"][0]["properties"]
         for key in (
-            "positiveColor", "negativeColor", "layout",
-            "xAxisLabel", "yAxisLabel", "description", "palette", "trendline",
+            "positiveColor",
+            "negativeColor",
+            "layout",
+            "xAxisLabel",
+            "yAxisLabel",
+            "description",
+            "palette",
+            "trendline",
         ):
             assert key not in props
         assert props["colorBySign"] is False
@@ -482,17 +488,13 @@ class TestBlockTypeRemap:
         """FEAT-527: `columns` is presentation-only — metadata.extensions,
         never a visible prop."""
         envelope = infographic_response_to_envelope(
-            _response(
-                blocks=[{"type": "bullet_list", "items": ["one", "two"], "columns": 2}]
-            )
+            _response(blocks=[{"type": "bullet_list", "items": ["one", "two"], "columns": 2}])
         )
         node = _sections(envelope)[0]["components"][0]
         assert node["properties"]["metadata"] == {"extensions": {"parrot_columns": 2}}
 
     def test_bullet_list_omits_metadata_when_columns_absent(self):
-        envelope = infographic_response_to_envelope(
-            _response(blocks=[{"type": "bullet_list", "items": ["one"]}])
-        )
+        envelope = infographic_response_to_envelope(_response(blocks=[{"type": "bullet_list", "items": ["one"]}]))
         node = _sections(envelope)[0]["components"][0]
         assert "metadata" not in node["properties"]
 
@@ -502,8 +504,12 @@ class TestBlockTypeRemap:
             _response(
                 blocks=[
                     {
-                        "type": "hero_card", "label": "Revenue", "value": "$1.2M",
-                        "icon": "💰", "color": "#0a0", "comparison_period": "vs Q2",
+                        "type": "hero_card",
+                        "label": "Revenue",
+                        "value": "$1.2M",
+                        "icon": "💰",
+                        "color": "#0a0",
+                        "comparison_period": "vs Q2",
                     }
                 ]
             )
@@ -525,7 +531,8 @@ class TestBlockTypeRemap:
             _response(
                 blocks=[
                     {
-                        "type": "table", "style": "striped",
+                        "type": "table",
+                        "style": "striped",
                         "columns": [{"key": "k", "label": "K"}],
                         "rows": [["North", 10]],
                     }

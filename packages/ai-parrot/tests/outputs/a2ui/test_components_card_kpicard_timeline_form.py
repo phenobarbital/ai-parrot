@@ -116,11 +116,7 @@ class TestKPICardComponent:
         assert extensions["parrot_color"] == "#0a0"
         assert extensions["parrot_comparison_period"] == "vs Q2"
         # Never a new visible Text node for these.
-        text_roles = {
-            n.metadata.extensions.root.get("parrot_role")
-            for n in tree.child.children
-            if n.metadata
-        }
+        text_roles = {n.metadata.extensions.root.get("parrot_role") for n in tree.child.children if n.metadata}
         assert "icon" not in text_roles and "color" not in text_roles
 
     def test_kpicard_lower_omits_extensions_when_absent(self):

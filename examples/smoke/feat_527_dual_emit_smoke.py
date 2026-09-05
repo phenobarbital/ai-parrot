@@ -15,6 +15,7 @@ Usage:
 
 Exit code 0 on success, 1 on any assertion/validation failure.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -123,9 +124,7 @@ async def main() -> int:
     assert res2.html_url, "render_template(): html_url must be set"
     assert res2.a2ui_envelope, "render_template(): a2ui_envelope must be set (dual-emit)"
     root_component2 = _validated_surface("render_template()", res2.a2ui_envelope)
-    assert root_component2 == "HtmlDocument", (
-        f"render_template(): expected HtmlDocument root, got {root_component2}"
-    )
+    assert root_component2 == "HtmlDocument", f"render_template(): expected HtmlDocument root, got {root_component2}"
     print(f"[render_template()]  html_url={res2.html_url}")
     print(f"[render_template()]  a2ui root component = {root_component2!r}")
     print(f"[render_template()]  a2ui surfaceId       = {res2.a2ui_envelope['createSurface']['surfaceId']!r}")

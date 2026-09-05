@@ -98,7 +98,9 @@ class TestInfographicComponent:
     def test_half_layout_children_grouped_in_row(self):
         """FEAT-527: two consecutive layout:"half" children lower into one Row."""
         comp = Component(
-            id="root", component="Infographic", title="T",
+            id="root",
+            component="Infographic",
+            title="T",
             sections=[
                 {
                     "heading": "S",
@@ -106,15 +108,21 @@ class TestInfographicComponent:
                         {
                             "component": "Chart",
                             "properties": {
-                                "type": "bar", "x": "m", "y": ["v"],
-                                "layout": "half", "data": {"path": "/a"},
+                                "type": "bar",
+                                "x": "m",
+                                "y": ["v"],
+                                "layout": "half",
+                                "data": {"path": "/a"},
                             },
                         },
                         {
                             "component": "Chart",
                             "properties": {
-                                "type": "donut", "x": "m", "y": ["v"],
-                                "layout": "half", "data": {"path": "/b"},
+                                "type": "donut",
+                                "x": "m",
+                                "y": ["v"],
+                                "layout": "half",
+                                "data": {"path": "/b"},
                             },
                         },
                     ],
@@ -131,7 +139,9 @@ class TestInfographicComponent:
 
     def test_odd_trailing_half_layout_child_gets_a_single_child_row(self):
         comp = Component(
-            id="root", component="Infographic", title="T",
+            id="root",
+            component="Infographic",
+            title="T",
             sections=[
                 {
                     "heading": "S",
@@ -139,8 +149,11 @@ class TestInfographicComponent:
                         {
                             "component": "Chart",
                             "properties": {
-                                "type": "bar", "x": "m", "y": ["v"],
-                                "layout": "half", "data": {"path": "/a"},
+                                "type": "bar",
+                                "x": "m",
+                                "y": ["v"],
+                                "layout": "half",
+                                "data": {"path": "/a"},
                             },
                         },
                     ],
@@ -155,7 +168,9 @@ class TestInfographicComponent:
 
     def test_full_layout_child_stays_a_direct_column_child(self):
         comp = Component(
-            id="root", component="Infographic", title="T",
+            id="root",
+            component="Infographic",
+            title="T",
             sections=[
                 {
                     "heading": "S",
@@ -163,7 +178,9 @@ class TestInfographicComponent:
                         {
                             "component": "Chart",
                             "properties": {
-                                "type": "bar", "x": "m", "y": ["v"],
+                                "type": "bar",
+                                "x": "m",
+                                "y": ["v"],
                                 "data": {"path": "/a"},
                             },
                         },

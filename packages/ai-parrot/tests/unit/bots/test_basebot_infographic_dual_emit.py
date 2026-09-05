@@ -7,6 +7,7 @@ unit test, so the routing rule is asserted at the source level (same technique
 FEAT-273/470 A2UI-routing regression). ``_finalize_infographic_response`` itself
 IS a small, self-independent method, so it is exercised behaviourally.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -42,6 +43,7 @@ for m, mod in [
     sys.modules[m] = mod
 
 import parrot.tools.infographic_toolkit as _rtk
+
 sys.modules["parrot.tools.infographic_toolkit"] = _rtk
 
 from parrot.tools.infographic_toolkit import InfographicRenderResult  # noqa: E402

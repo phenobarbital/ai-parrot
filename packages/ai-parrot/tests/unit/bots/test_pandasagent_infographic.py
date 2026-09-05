@@ -3,6 +3,7 @@
 These tests exercise the `_extract_last_infographic_result` helper and the
 post-loop branch logic WITHOUT spinning up a full agent session.
 """
+
 from __future__ import annotations
 
 import sys
@@ -37,15 +38,16 @@ for m, mod in [
     sys.modules[m] = mod
 
 import parrot.tools.infographic_toolkit as _rtk
+
 sys.modules["parrot.tools.infographic_toolkit"] = _rtk
 
 from parrot.tools.infographic_toolkit import InfographicRenderResult  # noqa: E402
 from parrot.models.outputs import OutputMode  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Minimal ToolCall stub
 # ---------------------------------------------------------------------------
+
 
 class _ToolCall:
     def __init__(self, name: str, result=None):
@@ -57,6 +59,7 @@ class _ToolCall:
 # Tests for _extract_last_infographic_result
 # ---------------------------------------------------------------------------
 
+
 def _make_pandas_agent():
     """Create a minimal PandasAgent-like object with just the helper method."""
     # Import lazily to avoid pulling in all of data.py's dependencies.
@@ -64,6 +67,7 @@ def _make_pandas_agent():
     try:
         # Try importing the real method via a lightweight mock
         from parrot.bots.data import _get_infographic_result_class, PandasAgent
+
         return PandasAgent, _get_infographic_result_class
     except ImportError:
         return None, None
@@ -92,6 +96,7 @@ class TestExtractLastInfographicResult:
         Uses class NAME matching instead of isinstance to avoid cross-module
         class-identity issues when sys.modules is patched in multiple test files.
         """
+
         class _MinimalHelper:
             def _extract_last_infographic_result(self, tool_calls):
                 if not tool_calls:
@@ -266,6 +271,7 @@ class TestInfographicEnvelopeFields:
 # ---------------------------------------------------------------------------
 # A2UI routing in PandasAgent.ask (FEAT-273/470)
 # ---------------------------------------------------------------------------
+
 
 class TestPandasAgentRoutesA2UI:
     """``PandasAgent.ask`` overrides ``BaseBot``'s post-loop dispatch.
