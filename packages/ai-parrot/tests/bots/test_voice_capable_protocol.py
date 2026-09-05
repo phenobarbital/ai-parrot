@@ -16,18 +16,21 @@ runtime gate at ``bots/voice.py:273``
 from ``issubclass(Class, ...)`` to ``isinstance(Class(), ...)`` for that
 reason — no behavioral coverage is lost.
 """
+
 from parrot.clients.protocols import VoiceCapable
 
 
 class TestVoiceCapableProtocol:
     def test_gemini_satisfies_protocol(self):
         """GeminiLiveClient structurally satisfies VoiceCapable."""
-        from parrot.clients.live import GeminiLiveClient
+        from parrot.clients.google.live import GeminiLiveClient
+
         assert isinstance(GeminiLiveClient(), VoiceCapable)
 
     def test_nova_satisfies_protocol(self):
         """NovaClient (via NovaAudio mixin) satisfies VoiceCapable."""
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
+
         assert isinstance(NovaClient(), VoiceCapable)
 
     def test_plain_client_rejected(self):
@@ -41,19 +44,14 @@ class TestVoiceCapableProtocol:
         """
 
         class _PlainClient:
-            async def ask(self, *args, **kwargs):
-                ...
+            async def ask(self, *args, **kwargs): ...
 
-            async def ask_stream(self, *args, **kwargs):
-                ...
+            async def ask_stream(self, *args, **kwargs): ...
 
-            async def get_client(self):
-                ...
+            async def get_client(self): ...
 
-            async def invoke(self, *args, **kwargs):
-                ...
+            async def invoke(self, *args, **kwargs): ...
 
-            async def resume(self, *args, **kwargs):
-                ...
+            async def resume(self, *args, **kwargs): ...
 
         assert not isinstance(_PlainClient(), VoiceCapable)

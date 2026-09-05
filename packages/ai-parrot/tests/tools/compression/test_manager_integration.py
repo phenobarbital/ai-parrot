@@ -1,6 +1,7 @@
 """Unit tests for wiring `CompressionStage` into `ToolManager.execute_tool()`
 and the `AfterToolCallEvent` field extension (TASK-1952).
 """
+
 import inspect
 
 import pytest
@@ -22,9 +23,13 @@ def test_after_tool_call_event_new_fields_have_defaults():
     as every other `AfterToolCallEvent(...)` call site in this codebase
     (e.g. `abstract.py:738`, `test_registry.py`, `test_opentelemetry_subscriber.py`).
     """
-    evt = AfterToolCallEvent(trace_context=TraceContext.new_root(),
-                             tool_name="t", duration_ms=1.0,
-                             result_status="success", result_size_bytes=10)
+    evt = AfterToolCallEvent(
+        trace_context=TraceContext.new_root(),
+        tool_name="t",
+        duration_ms=1.0,
+        result_status="success",
+        result_size_bytes=10,
+    )
     assert evt.compression_codec == ""
     assert evt.compression_level == ""
     assert evt.result_size_bytes_original == 0
@@ -74,21 +79,16 @@ class TestStagePlacement:
     async def test_extraction_sees_original(self, tool_manager_with_compression):
         """Q1: hooks observe the ORIGINAL; the return value is compressed."""
         seen = []
-        tool_manager_with_compression.add_result_hook(
-            lambda name, result, meta: seen.append(result)
-        )
+        tool_manager_with_compression.add_result_hook(lambda name, result, meta: seen.append(result))
         out = await tool_manager_with_compression.execute_tool("bulky_tool", {})
-        assert seen and seen[0] is not out          # hook saw the pre-compression object
-        assert out != seen[0]                        # and the caller got the compressed one
-        assert seen[0] == BULKY_PAYLOAD               # hook's view is untouched
-        assert "b" not in out                         # null key elided (MINIMAL default)
+        assert seen and seen[0] is not out  # hook saw the pre-compression object
+        assert out != seen[0]  # and the caller got the compressed one
+        assert seen[0] == BULKY_PAYLOAD  # hook's view is untouched
+        assert "b" not in out  # null key elided (MINIMAL default)
 
     async def test_both_tool_routes(self, tool_manager_with_compression):
         """G1: identical treatment for AbstractTool and ToolkitTool."""
-        toolkit_names = [
-            name for name in tool_manager_with_compression._tools
-            if "bulky_toolkit_tool" in name
-        ]
+        toolkit_names = [name for name in tool_manager_with_compression._tools if "bulky_toolkit_tool" in name]
         assert toolkit_names, "toolkit tool not registered"
 
         out_abstract = await tool_manager_with_compression.execute_tool("bulky_tool", {})
@@ -98,8 +98,7 @@ class TestStagePlacement:
             assert "b" not in out
             assert out != BULKY_PAYLOAD
 
-    async def test_kill_switch_restores_behavior(self, tool_manager_with_compression,
-                                                 monkeypatch):
+    async def test_kill_switch_restores_behavior(self, tool_manager_with_compression, monkeypatch):
         monkeypatch.setenv("PARROT_COMPRESSION_DISABLED", "1")
         out = await tool_manager_with_compression.execute_tool("bulky_tool", {})
         assert out == BULKY_PAYLOAD
@@ -111,21 +110,26 @@ class TestStagePlacement:
         post-compression size; the original is in
         `result_size_bytes_original`."""
         captured_meta = []
-        tool_manager_with_compression.add_result_hook(
-            lambda name, result, meta: captured_meta.append(meta)
-        )
+        tool_manager_with_compression.add_result_hook(lambda name, result, meta: captured_meta.append(meta))
         await tool_manager_with_compression.execute_tool("bulky_tool", {})
 
         meta = captured_meta[0]
-        for key in ("_compressed", "compression_codec", "compression_level",
-                    "result_size_bytes_original", "result_size_bytes",
-                    "compression_duration_ms", "compression_teed"):
+        for key in (
+            "_compressed",
+            "compression_codec",
+            "compression_level",
+            "result_size_bytes_original",
+            "result_size_bytes",
+            "compression_duration_ms",
+            "compression_teed",
+        ):
             assert key in meta
         assert meta["compression_codec"] == "json_compact"
         assert meta["result_size_bytes"] <= meta["result_size_bytes_original"]
 
     async def test_result_metadata_receives_compression_fields_directly(
-        self, tool_manager_with_compression,
+        self,
+        tool_manager_with_compression,
     ):
         """Code-review fix: `meta = getattr(result, "metadata", {}) or {}`
         swapped in a NEW dict whenever `result.metadata` was falsy — which
@@ -158,10 +162,8 @@ class TestStagePlacement:
 class TestClone:
     def test_clone_does_not_share_metrics(self, tool_manager_with_compression):
         clone = tool_manager_with_compression.clone()
-        assert clone._compression_stage._registry is \
-            tool_manager_with_compression._compression_stage._registry
-        assert clone._compression_stage._router is not \
-            tool_manager_with_compression._compression_stage._router
+        assert clone._compression_stage._registry is tool_manager_with_compression._compression_stage._registry
+        assert clone._compression_stage._router is not tool_manager_with_compression._compression_stage._router
 
     def test_clone_docstring_mentions_compression_state(self):
         assert "compression" in ToolManager.clone.__doc__.lower()
@@ -176,9 +178,10 @@ def test_no_second_compression_call_site():
     """G1: compression logic exists in exactly ONE place (this stage's
     call site in `manager.py`). Non-Google clients must not grow their own
     tool-result truncation/compression logic."""
-    import parrot.clients.claude as claude_mod
-    import parrot.clients.groq as groq_mod
-    import parrot.clients.grok as grok_mod
+    import parrot.clients.anthropic.client as claude_mod
+    import parrot.clients.groq.client as groq_mod
+    import parrot.clients.grok.client as grok_mod
+
     for mod in (claude_mod, groq_mod, grok_mod):
         src = inspect.getsource(mod)
         assert "compression" not in src.lower()

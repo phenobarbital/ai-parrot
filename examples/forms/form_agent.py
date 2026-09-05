@@ -23,7 +23,7 @@ from parrot.forms import (
 )
 from parrot.forms.renderers.html5 import HTML5Renderer
 from parrot.forms.style import LayoutType
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class FormAgent(BasicAgent):
@@ -144,6 +144,7 @@ class FormAgent(BasicAgent):
 # Example usage
 # ---------------------------------------------------------------------------
 
+
 async def main():
     agent = FormAgent()
     await agent.configure()
@@ -193,9 +194,7 @@ async def main():
     bad_validation = await agent.validate_submission(form, bad_submission)
     if not bad_validation["is_valid"]:
         print(f"Errors: {bad_validation['errors']}")
-        error_html = await agent.render_with_errors(
-            form, bad_submission, bad_validation["errors"]
-        )
+        error_html = await agent.render_with_errors(form, bad_submission, bad_validation["errors"])
         print(f"\nRe-rendered HTML with errors ({len(error_html)} chars)")
 
     # 4. Refine the form with a follow-up prompt

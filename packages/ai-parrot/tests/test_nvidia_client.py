@@ -8,6 +8,7 @@ model enum values, and LLMFactory registration.
 
 No live Nvidia calls are made.
 """
+
 import asyncio
 import contextlib
 
@@ -16,15 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from navconfig import config as _navconfig
 
-from parrot.clients.nvidia import (
+from parrot.clients.nvidia import NvidiaClient, NvidiaModel
+from parrot.clients.nvidia.client import (
     FREE_TIER_RPM,
-    NvidiaClient,
     NvidiaRateLimitError,
     SlidingWindowRateLimiter,
 )
-from parrot.models.nvidia import FREE_TIER_MODELS, NvidiaModel
+from parrot.clients.nvidia.models import FREE_TIER_MODELS
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -52,9 +52,7 @@ def make_mock_completion():
     mock_choice.stop_reason = "stop"
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
-    mock_response.usage = MagicMock(
-        prompt_tokens=1, completion_tokens=1, total_tokens=2
-    )
+    mock_response.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
     mock_response.dict = MagicMock(return_value={})
     # AIMessageFactory.from_openai checks hasattr(response, "model_dump")
     # first (responses.py:492) — a bare MagicMock auto-vivifies that
@@ -137,9 +135,7 @@ async def mocked_sdk(target_client, recorder=None, side_effect=None):
     fake_sdk = MagicMock()
     fake_sdk.chat.completions.create = mock_create
 
-    with patch.object(
-        NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-    ):
+    with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
         await target_client.__aenter__()
         try:
             yield mock_create
@@ -152,7 +148,7 @@ def env_key(monkeypatch):
     """Patch navconfig.config.get and clear os.environ so NvidiaClient()
     (no api_key) picks up the fake key through config, not the shell env.
     """
-    from parrot.clients import nvidia as nvidia_mod
+    from parrot.clients.nvidia import client as nvidia_mod
 
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     monkeypatch.setattr(
@@ -389,9 +385,7 @@ class TestNvidiaSamplingParams:
         fake_sdk = MagicMock()
         fake_sdk.chat.completions.create = _capture
 
-        with patch.object(
-            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-        ):
+        with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
             async with client:
                 async for _ in client.ask_stream("hello", top_p=0.95, seed=42):
                     pass
@@ -416,9 +410,7 @@ class TestNvidiaSamplingParams:
         fake_sdk = MagicMock()
         fake_sdk.chat.completions.create = _capture
 
-        with patch.object(
-            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-        ):
+        with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
             async with client:
                 async for _ in client.ask_stream("hello", reasoning_budget=512):
                     pass
@@ -437,13 +429,9 @@ class TestNvidiaSamplingParams:
         fake_sdk = MagicMock()
         fake_sdk.chat.completions.create = mock_create
 
-        with patch.object(
-            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-        ):
+        with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
             async with client:
-                chunks = [
-                    chunk async for chunk in client.ask_stream("hello") if isinstance(chunk, str)
-                ]
+                chunks = [chunk async for chunk in client.ask_stream("hello") if isinstance(chunk, str)]
 
         assert chunks == ["a"]
 
@@ -561,14 +549,12 @@ class TestNvidiaFreeTierFlag:
 
     def test_free_tier_env_override(self, monkeypatch):
         """free_tier=None reads NVIDIA_FREE_TIER via config.getboolean."""
-        from parrot.clients import nvidia as nvidia_mod
+        from parrot.clients.nvidia import client as nvidia_mod
 
         monkeypatch.setattr(
             nvidia_mod.config,
             "getboolean",
-            lambda key, fallback=None: (
-                False if key == "NVIDIA_FREE_TIER" else fallback
-            ),
+            lambda key, fallback=None: (False if key == "NVIDIA_FREE_TIER" else fallback),
         )
         c = NvidiaClient(api_key="k")  # free_tier not passed → env consulted
         assert c.free_tier is False
@@ -576,7 +562,7 @@ class TestNvidiaFreeTierFlag:
 
     def test_explicit_flag_beats_env(self, monkeypatch):
         """An explicit free_tier argument is not overridden by the env var."""
-        from parrot.clients import nvidia as nvidia_mod
+        from parrot.clients.nvidia import client as nvidia_mod
 
         monkeypatch.setattr(
             nvidia_mod.config,
@@ -647,9 +633,7 @@ class TestNvidiaRateLimitIntegration:
     @pytest.mark.asyncio
     async def test_ask_raises_when_max_wait_exceeded(self):
         """With rate_limit_max_wait, a saturated window surfaces the error."""
-        c = NvidiaClient(
-            api_key="k", requests_per_minute=1, rate_limit_max_wait=0.05
-        )
+        c = NvidiaClient(api_key="k", requests_per_minute=1, rate_limit_max_wait=0.05)
 
         async with mocked_sdk(c):
             await c.ask("first")
@@ -720,13 +704,9 @@ class TestNvidiaRateLimitIntegration:
         fake_sdk = MagicMock()
         fake_sdk.chat.completions.create = mock_create
 
-        with patch.object(
-            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-        ):
+        with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
             async with client:
-                chunks = [
-                    c async for c in client.ask_stream("hello") if isinstance(c, str)
-                ]
+                chunks = [c async for c in client.ask_stream("hello") if isinstance(c, str)]
 
         assert chunks == ["chunk-a", "chunk-b"]
         assert client._rate_limiter.current_usage() == 1
@@ -739,13 +719,9 @@ class TestNvidiaRateLimitIntegration:
         fake_sdk = MagicMock()
         fake_sdk.chat.completions.create = mock_create
 
-        with patch.object(
-            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-        ):
+        with patch.object(NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
             async with c:
-                chunks = [
-                    chunk async for chunk in c.ask_stream("hello") if isinstance(chunk, str)
-                ]
+                chunks = [chunk async for chunk in c.ask_stream("hello") if isinstance(chunk, str)]
 
         assert chunks == ["x"]
         assert c._rate_limiter is None
@@ -769,9 +745,7 @@ class TestNvidiaModelEnum:
         "LLAMA_3_3_70B_INSTRUCT": "meta/llama-3.3-70b-instruct",
         "GPT_OSS_120B": "openai/gpt-oss-120b",
         "NEMOTRON_3_NANO_30B": "nvidia/nemotron-3-nano-30b-a3b",
-        "NEMOTRON_3_NANO_OMNI_30B_REASONING": (
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
-        ),
+        "NEMOTRON_3_NANO_OMNI_30B_REASONING": ("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"),
         "NEMOTRON_3_5_LIGHTNING_30B": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "KIMI_K3": "moonshotai/kimi-k3",
         "DEEPSEEK_V4_FLASH_0731": "deepseek-ai/deepseek-v4-flash-0731",
@@ -799,21 +773,19 @@ class TestNvidiaModelEnum:
         for member_name, expected_value in self.EXPECTED.items():
             member = NvidiaModel[member_name]
             assert member.value == expected_value, (
-                f"NvidiaModel.{member_name}.value expected {expected_value!r}, "
-                f"got {member.value!r}"
+                f"NvidiaModel.{member_name}.value expected {expected_value!r}, " f"got {member.value!r}"
             )
 
-    def test_nvidia_model_importable_from_parrot_models(self):
-        """NvidiaModel is re-exported from parrot.models (not just parrot.models.nvidia)."""
-        from parrot.models import NvidiaModel as NM
-        assert NM is NvidiaModel
+    def test_nvidia_model_left_parrot_models(self):
+        """FEAT-523 (TASK-2843): NvidiaModel left parrot.models — it now lives
+        exclusively at parrot.clients.nvidia (folder convention, spec AC-2)."""
+        with pytest.raises(ImportError):
+            from parrot.models import NvidiaModel as NM  # noqa: F401
 
     def test_enum_has_no_withdrawn_slugs(self):
         """No end-of-life slug may reappear in the enum."""
         live = {m.value for m in NvidiaModel}
-        assert not (live & self.WITHDRAWN), (
-            f"withdrawn slug(s) back in NvidiaModel: {sorted(live & self.WITHDRAWN)}"
-        )
+        assert not (live & self.WITHDRAWN), f"withdrawn slug(s) back in NvidiaModel: {sorted(live & self.WITHDRAWN)}"
 
     def test_enum_membership_is_exactly_expected(self):
         """The enum contains exactly the expected members — no extras, no aliases."""
@@ -855,9 +827,7 @@ class TestNvidiaModelEnum:
     def test_free_tier_models_are_all_enum_members(self):
         """Every free-tier slug is reachable as an enum member, not a bare string."""
         known = {member.value for member in NvidiaModel}
-        assert FREE_TIER_MODELS <= known, (
-            f"not in NvidiaModel: {sorted(FREE_TIER_MODELS - known)}"
-        )
+        assert FREE_TIER_MODELS <= known, f"not in NvidiaModel: {sorted(FREE_TIER_MODELS - known)}"
 
     def test_withdrawn_slugs_are_not_free_tier(self):
         """No slug that returns 410/404 upstream is advertised as free.
@@ -887,9 +857,18 @@ class TestNvidiaFactory:
     """Tests for LLMFactory registration of NvidiaClient."""
 
     def test_factory_registration(self):
-        """'nvidia' key is present in SUPPORTED_CLIENTS and maps to NvidiaClient."""
+        """'nvidia' key is present in SUPPORTED_CLIENTS and maps to NvidiaClient.
+
+        FEAT-523 (TASK-2853): "nvidia" is now discovered via a real
+        `parrot.clients` entry point (ai-parrot-client-nvidia) — the
+        registered value is the entry point's zero-arg loader, resolved
+        to the real class the same way LLMFactory.create() does.
+        """
         assert "nvidia" in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS["nvidia"] is NvidiaClient
+        registered = SUPPORTED_CLIENTS["nvidia"]
+        if callable(registered) and not isinstance(registered, type):
+            registered = registered()
+        assert registered is NvidiaClient
 
         # Factory creates the right client type with the right model
         c = LLMFactory.create(

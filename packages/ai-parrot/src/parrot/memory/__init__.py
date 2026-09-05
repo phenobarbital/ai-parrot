@@ -2,6 +2,20 @@ from typing import TYPE_CHECKING
 
 from .abstract import ConversationHistory, ConversationMemory, ConversationTurn
 from .agent import AgentMemory, AnswerMemory
+from .compaction import (
+    CompactionCommit,
+    CompactionResult,
+    ContextBudget,
+    Limit,
+    OmissionStore,
+    TokenCount,
+    TokenCounter,
+    ToolInvocation,
+    ToolStatus,
+    TurnState,
+    TurnView,
+    compact_history,
+)
 from .episodic import (
     EpisodicMemoryMixin,
     EpisodicMemoryStore,
@@ -10,6 +24,7 @@ from .episodic import (
 from .file import FileConversationMemory
 from .mem import InMemoryConversation
 from .redis import RedisConversation
+from .render import HistoryMessage, render_history
 from .unified import (
     ContextAssembler,
     LongTermMemoryMixin,
@@ -77,7 +92,10 @@ __all__ = [
     "AgentMemory",
     "AnswerMemory",
     "BrainStore",
+    "CompactionCommit",
+    "CompactionResult",
     "ContextAssembler",
+    "ContextBudget",
     "ConversationHistory",
     "ConversationMemory",
     "ConversationTurn",
@@ -91,12 +109,23 @@ __all__ = [
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
     "FileConversationMemory",
+    "HistoryMessage",
     "InMemoryConversation",
+    "Limit",
     "LongTermMemoryMixin",
     "MemoryConfig",
     "MemoryContext",
+    "OmissionStore",
     "RedisConversation",
+    "TokenCount",
+    "TokenCounter",
+    "ToolInvocation",
+    "ToolStatus",
+    "TurnState",
+    "TurnView",
     "UnifiedMemoryManager",
+    "compact_history",
+    "render_history",
     "load_state",
     "save_state",
 ]

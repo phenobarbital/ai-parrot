@@ -1,5 +1,6 @@
 """Image Understanding Loader using Google GenAI for analyzing images."""
-from typing import Union, List, Optional
+
+from typing import Union, List, Optional, TYPE_CHECKING
 from collections.abc import Callable
 import re
 import json
@@ -7,18 +8,22 @@ from pathlib import PurePath, Path
 from datetime import datetime
 from parrot.stores.models import Document
 from parrot.loaders.abstract import AbstractLoader
-from parrot.clients.google import GoogleGenAIClient
-from parrot.models.google import GoogleModel
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core/satellites must not
+    # import a provider client at module scope (AC-3); the real import is
+    # deferred to _get_google_client().
+    from parrot.clients.google import GoogleGenAIClient
 
 
 def split_text(text: str, max_length: int) -> List[str]:
     """Split text into chunks of a maximum length, ensuring not to break words."""
-    paragraphs = text.split('\n\n')
+    paragraphs = text.split("\n\n")
     chunks = []
     current_chunk = ""
     for paragraph in paragraphs:
         if len(paragraph) > max_length:
-            sentences = re.split(r'(?<=[.!?]) +', paragraph)
+            sentences = re.split(r"(?<=[.!?]) +", paragraph)
             for sentence in sentences:
                 if len(current_chunk) + len(sentence) + 1 > max_length:
                     chunks.append(current_chunk.strip())
@@ -45,35 +50,31 @@ def extract_sections_from_response(response_text: str) -> List[dict]:
 
     # Try to extract JSON from the response
     try:
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
         if json_match:
             json_data = json.loads(json_match.group())
-            if 'sections' in json_data:
-                return json_data['sections']
-            if 'elements' in json_data:
-                return json_data['elements']
+            if "sections" in json_data:
+                return json_data["sections"]
+            if "elements" in json_data:
+                return json_data["elements"]
     except json.JSONDecodeError:
         pass
 
     # Fallback: Parse text-based sections
-    section_pattern = r'(?:Section|Element|Part|Area)\s*(\d+)[:.]?\s*(.*?)(?=(?:Section|Element|Part|Area)\s*\d+|$)'
+    section_pattern = r"(?:Section|Element|Part|Area)\s*(\d+)[:.]?\s*(.*?)(?=(?:Section|Element|Part|Area)\s*\d+|$)"
     matches = re.findall(section_pattern, response_text, re.DOTALL | re.IGNORECASE)
 
     for i, (section_num, content) in enumerate(matches):
         section_data = {
-            'section_number': int(section_num) if section_num.isdigit() else i + 1,
-            'content': content.strip(),
-            'label': f"Section {section_num}" if section_num else f"Section {i + 1}"
+            "section_number": int(section_num) if section_num.isdigit() else i + 1,
+            "content": content.strip(),
+            "label": f"Section {section_num}" if section_num else f"Section {i + 1}",
         }
         sections.append(section_data)
 
     # If no sections found, create one section with all content
     if not sections:
-        sections.append({
-            'section_number': 1,
-            'content': response_text,
-            'label': 'Full Image'
-        })
+        sections.append({"section_number": 1, "content": response_text, "label": "Full Image"})
 
     return sections
 
@@ -84,7 +85,8 @@ class ImageUnderstandingLoader(AbstractLoader):
     Extracts descriptions, text, objects, and structured information from images.
     Uses the flash preview image model for analysis.
     """
-    extensions: List[str] = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.tif']
+
+    extensions: List[str] = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"]
 
     def __init__(
         self,
@@ -92,14 +94,14 @@ class ImageUnderstandingLoader(AbstractLoader):
         *,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
-        source_type: str = 'image_understanding',
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
+        source_type: str = "image_understanding",
+        model: str = "gemini-3.1-flash-image",
         temperature: float = 0.2,
         prompt: Optional[str] = None,
         custom_instructions: Optional[str] = None,
         language: str = "en",
         detect_objects: bool = False,
-        **kwargs
+        **kwargs,
     ):
         """Initialize the ImageUnderstandingLoader.
 
@@ -116,13 +118,7 @@ class ImageUnderstandingLoader(AbstractLoader):
             detect_objects: Whether to enable object detection.
             **kwargs: Additional keyword arguments.
         """
-        super().__init__(
-            source,
-            tokenizer=tokenizer,
-            text_splitter=text_splitter,
-            source_type=source_type,
-            **kwargs
-        )
+        super().__init__(source, tokenizer=tokenizer, text_splitter=text_splitter, source_type=source_type, **kwargs)
 
         self.model = model
         self.temperature = temperature
@@ -153,9 +149,13 @@ Image Analysis Instructions:
     6. If the image contains diagrams, charts, or infographics, extract the data and relationships.
 """
 
-    async def _get_google_client(self) -> GoogleGenAIClient:
+    async def _get_google_client(self) -> "GoogleGenAIClient":
         """Get or create Google GenAI client."""
         if self.google_client is None:
+            # FEAT-523 (TASK-2846): lazy import — core/satellites must not
+            # import a provider client at module scope (AC-3).
+            from parrot.clients.google import GoogleGenAIClient
+
             self.google_client = GoogleGenAIClient(model=self.model)
         return self.google_client
 
@@ -180,7 +180,7 @@ Image Analysis Instructions:
                     detect_objects=self.detect_objects,
                 )
 
-                return response.output if hasattr(response, 'output') else str(response)
+                return response.output if hasattr(response, "output") else str(response)
 
         except Exception as e:
             self.logger.error(f"Error analyzing image with AI: {e}")
@@ -207,7 +207,7 @@ Image Analysis Instructions:
 
         # Build base metadata via create_metadata for canonical shape.
         # Non-canonical fields (model_used, analysis_type) become top-level keys.
-        _model_used = str(self.model.value if hasattr(self.model, 'value') else self.model)
+        _model_used = str(self.model.value if hasattr(self.model, "value") else self.model)
         base_metadata = self.create_metadata(
             path,
             doctype="image_understanding",
@@ -225,8 +225,8 @@ Image Analysis Instructions:
             ai_response = await self._analyze_image_with_ai(path)
 
             # Save AI response to file
-            response_path = path.with_suffix('.ai_analysis.txt')
-            self.saving_file(response_path, ai_response.encode('utf-8'))
+            response_path = path.with_suffix(".ai_analysis.txt")
+            self.saving_file(response_path, ai_response.encode("utf-8"))
 
             # Extract sections from AI response
             sections = extract_sections_from_response(ai_response)
@@ -254,16 +254,10 @@ Image Analysis Instructions:
                         "chunk_number": i + 1,
                         "total_chunks": len(chunks),
                     }
-                    doc = Document(
-                        page_content=chunk,
-                        metadata=chunk_metadata
-                    )
+                    doc = Document(page_content=chunk, metadata=chunk_metadata)
                     documents.append(doc)
             else:
-                doc = Document(
-                    page_content=ai_response,
-                    metadata=main_doc_metadata
-                )
+                doc = Document(page_content=ai_response, metadata=main_doc_metadata)
                 documents.append(doc)
 
             # Create individual section documents
@@ -273,17 +267,14 @@ Image Analysis Instructions:
                     "type": "image_section",
                     "source": f"{path.name}: {section.get('label', 'Section')}",
                     "document_meta": {**base_metadata["document_meta"], "type": "image_section"},
-                    "section_number": section.get('section_number', 1),
-                    "label": section.get('label', ''),
+                    "section_number": section.get("section_number", 1),
+                    "label": section.get("label", ""),
                 }
 
-                section_content = section.get('content', '')
+                section_content = section.get("content", "")
 
                 if section_content.strip():
-                    section_doc = Document(
-                        page_content=section_content,
-                        metadata=section_metadata
-                    )
+                    section_doc = Document(page_content=section_content, metadata=section_metadata)
                     documents.append(section_doc)
 
             self.logger.info(f"Generated {len(documents)} documents from image analysis")
@@ -298,10 +289,7 @@ Image Analysis Instructions:
                 "error_timestamp": datetime.now().isoformat(),
             }
 
-            error_doc = Document(
-                page_content=f"Error analyzing image {path.name}: {str(e)}",
-                metadata=error_metadata
-            )
+            error_doc = Document(page_content=f"Error analyzing image {path.name}: {str(e)}", metadata=error_metadata)
             documents.append(error_doc)
 
         return documents

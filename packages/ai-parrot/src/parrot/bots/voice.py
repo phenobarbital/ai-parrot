@@ -4,6 +4,7 @@ VoiceBot - Bot implementation with voice interaction capabilities.
 Extends BaseBot to support voice input/output using native speech-to-speech
 models like Gemini Live API.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,17 +25,18 @@ from typing import (
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
-from ..clients.live import (
-    GeminiLiveClient,
-    LiveCompletionUsage,
-    LiveVoiceResponse,
-)
+from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
 from ..mcp import MCPEnabledMixin, MCPServerConfig
 from ..memory import ConversationTurn
+from ..observability.context import (
+    current_memory_key_id,
+    current_session_id,
+    current_user_id,
+)
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
 from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
@@ -107,6 +109,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             if response.usage:
                 print(f"Tokens: {response.usage.total_tokens}")
     """
+
     # NOTE: _prompt_builder is created per-instance in __init__ (not as a
     # class attribute) because configure() bakes instance identity ($name,
     # $role, $goal) into the builder.  A shared class-level object would
@@ -120,7 +123,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         llm: Union[str, Type[AbstractClient], AbstractClient, Callable, str] = None,
         tools: List[Union[str, AbstractTool, ToolDefinition]] = None,
         voice_config: Optional[VoiceConfig] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize VoiceBot.
@@ -137,15 +140,9 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         # _llm is inherited from AbstractBot.
         # prompt_builder is created per-instance to avoid the mutable
         # class-attribute pitfall (see note above).
-        if 'prompt_builder' not in kwargs:
-            kwargs['prompt_builder'] = PromptBuilder.voice()
-        super().__init__(
-            name=name,
-            llm=llm,
-            tools=tools,
-            system_prompt=system_prompt,
-            **kwargs
-        )
+        if "prompt_builder" not in kwargs:
+            kwargs["prompt_builder"] = PromptBuilder.voice()
+        super().__init__(name=name, llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
         self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
         # Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
         # never initializes the ``system_prompt`` property's backing
@@ -170,41 +167,34 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         # _resolve_llm_config() can forward them to the appropriate client.
         self._client_config = {
             # Gemini / VertexAI
-            'api_key': kwargs.get('api_key'),
-            'vertexai': kwargs.get('vertexai', False),
-            'project': kwargs.get('project'),
-            'location': kwargs.get('location'),
-            'credentials_file': kwargs.get('credentials_file'),
+            "api_key": kwargs.get("api_key"),
+            "vertexai": kwargs.get("vertexai", False),
+            "project": kwargs.get("project"),
+            "location": kwargs.get("location"),
+            "credentials_file": kwargs.get("credentials_file"),
             # Nova / Bedrock (FEAT-315 — previously missing, so NovaClient
             # never received explicit AWS credentials from VoiceBot and fell
             # back to the SDK's default chain, which could resolve to a
             # different identity than the one the caller intended).
-            'aws_access_key': kwargs.get('aws_access_key'),
-            'aws_secret_key': kwargs.get('aws_secret_key'),
-            'aws_id': kwargs.get('aws_id'),
-            'region': kwargs.get('region'),
-            'region_prefix': kwargs.get('region_prefix'),
+            "aws_access_key": kwargs.get("aws_access_key"),
+            "aws_secret_key": kwargs.get("aws_secret_key"),
+            "aws_id": kwargs.get("aws_id"),
+            "region": kwargs.get("region"),
+            "region_prefix": kwargs.get("region_prefix"),
         }
 
     def _default_voice_prompt(self) -> str:
         """Use for custom default voice prompt if needed."""
         return None
 
-    def _resolve_llm_config(
-        self,
-        llm=None,
-        model=None,
-        preset=None,
-        model_config=None,
-        **kwargs
-    ):
+    def _resolve_llm_config(self, llm=None, model=None, preset=None, model_config=None, **kwargs):
         """
         Resolve the voice-provider LLM configuration.
 
         VoiceBot is provider-aware via ``self.voice_config.provider``
         (FEAT-302, renamed FEAT-315): ``"google_live"`` (default) resolves
         to ``GeminiLiveClient``; ``"nova"`` (experimental) resolves to
-        :class:`~parrot.clients.nova.NovaClient` (unified Nova client —
+        :class:`~parrot.clients.amazon.nova.NovaClient` (unified Nova client —
         supersedes the now-deleted ``NovaSonicClient``). The provider
         selection is independent of whatever ``llm``/text-only provider
         string was passed to the bot — voice interactions always go
@@ -212,10 +202,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         """
         from ..clients.models import LLMConfig
 
-        provider = getattr(self.voice_config, 'provider', 'google_live')
+        provider = getattr(self.voice_config, "provider", "google_live")
 
-        if provider == 'nova':
-            from ..clients.nova import NovaClient
+        if provider == "nova":
+            from ..clients.amazon.nova import NovaClient
+
             # NovaClient's default model (nova-2-lite) is the TEXT model —
             # voice sessions need the Sonic model explicitly unless the
             # caller already configured one (spec §3 Module 6).
@@ -238,20 +229,21 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # through to the SDK default chain (which may resolve to an
             # identity without Bedrock access → AccessDeniedException).
             nova_config = dict(self._client_config)
-            if not nova_config.get('aws_access_key'):
+            if not nova_config.get("aws_access_key"):
                 from navconfig import config as _navconfig
-                nova_config['aws_access_key'] = _navconfig.get("AWS_NOVA_SONIC_KEY_ID")
-                if not nova_config.get('aws_secret_key'):
-                    nova_config['aws_secret_key'] = _navconfig.get("AWS_NOVA_SONIC_SECRET_KEY")
-                if not nova_config.get('region'):
-                    nova_config['region'] = _navconfig.get("AWS_NOVA_SONIC_REGION")
+
+                nova_config["aws_access_key"] = _navconfig.get("AWS_NOVA_SONIC_KEY_ID")
+                if not nova_config.get("aws_secret_key"):
+                    nova_config["aws_secret_key"] = _navconfig.get("AWS_NOVA_SONIC_SECRET_KEY")
+                if not nova_config.get("region"):
+                    nova_config["region"] = _navconfig.get("AWS_NOVA_SONIC_REGION")
 
             return LLMConfig(
-                provider='nova',
+                provider="nova",
                 client_class=NovaClient,
                 model=resolved_model,
-                temperature=kwargs.get('temperature', self.voice_config.temperature),
-                max_tokens=kwargs.get('max_tokens', self.voice_config.max_tokens),
+                temperature=kwargs.get("temperature", self.voice_config.temperature),
+                max_tokens=kwargs.get("max_tokens", self.voice_config.max_tokens),
                 # FEAT-418 (TASK-2173): no longer forces
                 # self.voice_config.voice_name (default "Puck", a Gemini
                 # voice) into Nova's constructor-level voice_id — that
@@ -262,33 +254,31 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 # which NovaAudio validates on every call (TASK-2169/2170).
                 # An explicit voice_id kwarg to _resolve_llm_config() still
                 # flows through via **kwargs below.
-                extra={
-                    **{k: v for k, v in nova_config.items() if v is not None},
-                    **kwargs
-                }
+                extra={**{k: v for k, v in nova_config.items() if v is not None}, **kwargs},
             )
 
         # Default (existing behavior, unchanged): GeminiLiveClient.
+        # FEAT-523: lazy import — core must not import a provider module
+        # at module scope (AC-3); "google" ships from the
+        # ai-parrot-client-google satellite.
+        from ..clients.google.live import GeminiLiveClient
+
         config = LLMConfig(
-            provider='gemini_live',
+            provider="gemini_live",
             client_class=GeminiLiveClient,
             model=model or self.voice_config.model,
-            temperature=kwargs.get('temperature', self.voice_config.temperature),
-            max_tokens=kwargs.get('max_tokens', self.voice_config.max_tokens),
+            temperature=kwargs.get("temperature", self.voice_config.temperature),
+            max_tokens=kwargs.get("max_tokens", self.voice_config.max_tokens),
             extra={
-                'voice_name': self.voice_config.voice_name,
-                'language': self.voice_config.language,
+                "voice_name": self.voice_config.voice_name,
+                "language": self.voice_config.language,
                 **{k: v for k, v in self._client_config.items() if v is not None},
-                **kwargs
-            }
+                **kwargs,
+            },
         )
         return config
 
-    def _create_llm_client(
-        self,
-        config,
-        conversation_memory=None
-    ) -> VoiceCapable:
+    def _create_llm_client(self, config) -> VoiceCapable:
         """
         Create the voice-provider client (GeminiLiveClient or, per FEAT-315,
         NovaClient) with voice-specific parameters.
@@ -309,32 +299,39 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             current_tools = list(self.tool_manager.get_all_tools())
         use_tools = bool(current_tools or (self.tool_manager and self.tool_manager.tool_count() > 0))
 
-        if config.provider == 'nova':
-            from ..clients.nova import NovaClient
+        if config.provider == "nova":
+            from ..clients.amazon.nova import NovaClient
+
             client = NovaClient(
                 model=config.model,
-                voice_id=config.extra.get('voice_id', 'matthew'),
+                voice_id=config.extra.get("voice_id", "matthew"),
                 tools=current_tools,
                 use_tools=use_tools,
                 tool_manager=self.tool_manager,
-                conversation_memory=conversation_memory,
-                **{k: v for k, v in config.extra.items() if k != 'voice_id'}
+                **{k: v for k, v in config.extra.items() if k != "voice_id"},
             )
         else:
             # Default (existing behavior, unchanged): GeminiLiveClient.
+            # FEAT-523: lazy import — core must not import a provider
+            # module at module scope (AC-3).
+            from ..clients.google.live import GeminiLiveClient
+
             client = GeminiLiveClient(
                 model=config.model,
-                voice_name=config.extra.get('voice_name', self.voice_config.voice_name),
-                language=config.extra.get('language', self.voice_config.language),
+                voice_name=config.extra.get("voice_name", self.voice_config.voice_name),
+                language=config.extra.get("language", self.voice_config.language),
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 # Tools from tool_manager
                 tools=current_tools,
                 use_tools=use_tools,
                 tool_manager=self.tool_manager,
-                conversation_memory=conversation_memory,
                 # Credentials and extra config (exclude already-passed args)
-                **{k: v for k, v in config.extra.items() if k not in ('voice_name', 'language', 'temperature', 'max_tokens')}
+                **{
+                    k: v
+                    for k, v in config.extra.items()
+                    if k not in ("voice_name", "language", "temperature", "max_tokens")
+                },
             )
 
         if not isinstance(client, VoiceCapable):
@@ -350,18 +347,14 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         Configure the bot.
         """
         # Default to Redis memory for VoiceBot if not specified
-        if not self.memory_type or self.memory_type == 'memory':
-            self.memory_type = 'redis'
-        url = getattr(self, 'url', None)
+        if not self.memory_type or self.memory_type == "memory":
+            self.memory_type = "redis"
+        url = getattr(self, "url", None)
         if url and app:
             self.setup_a2a(app, url)
         await super().configure(app)
 
-    async def ask_text(
-        self,
-        prompt: str,
-        **kwargs
-    ) -> str:
+    async def ask_text(self, prompt: str, **kwargs) -> str:
         """
         Text-based ask using GoogleGenAIClient (for non-voice operations).
 
@@ -377,14 +370,21 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         """
         from ..clients.factory import SUPPORTED_CLIENTS
 
-        GoogleGenAIClient = SUPPORTED_CLIENTS.get('google')
+        GoogleGenAIClient = SUPPORTED_CLIENTS.get("google")
         if not GoogleGenAIClient:
             raise ValueError("GoogleGenAIClient not available")
+        # FEAT-523 (TASK-2852): a provider registered via a real
+        # `parrot.clients` entry point (e.g. "google", extracted to
+        # ai-parrot-client-google) is stored as `ep.load` itself — a
+        # zero-arg callable, not the class directly. Resolve it the same
+        # way LLMFactory.create() does before instantiating.
+        if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+            GoogleGenAIClient = GoogleGenAIClient()
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(
-            model=kwargs.get('model', 'gemini-2.5-flash'),
-            temperature=kwargs.get('temperature', 0.3),
+            model=kwargs.get("model", "gemini-2.5-flash"),
+            temperature=kwargs.get("temperature", 0.3),
         )
 
         async with text_llm as client:
@@ -401,34 +401,28 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         definitions = []
 
         for tool in self._voice_tools:
-            if hasattr(tool, 'get_schema'):
+            if hasattr(tool, "get_schema"):
                 schema = tool.get_schema()
-            elif hasattr(tool, 'args_schema'):
+            elif hasattr(tool, "args_schema"):
                 schema = {
                     "name": tool.name,
                     "description": tool.description,
                     "parameters": (
-                        tool.args_schema.model_json_schema()
-                        if hasattr(tool.args_schema, 'model_json_schema')
-                        else {}
-                    )
+                        tool.args_schema.model_json_schema() if hasattr(tool.args_schema, "model_json_schema") else {}
+                    ),
                 }
             else:
                 schema = {
-                    "name": getattr(tool, 'name', 'unknown'),
-                    "description": getattr(tool, 'description', ''),
-                    "parameters": {"type": "object", "properties": {}}
+                    "name": getattr(tool, "name", "unknown"),
+                    "description": getattr(tool, "description", ""),
+                    "parameters": {"type": "object", "properties": {}},
                 }
 
             definitions.append(schema)
 
         return definitions
 
-    async def execute_tool(
-        self,
-        tool_name: str,
-        arguments: Dict[str, Any]
-    ) -> Any:
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Execute a tool by name.
 
@@ -440,8 +434,8 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             Execution result
         """
         for tool in self._voice_tools:
-            if getattr(tool, 'name', None) == tool_name:
-                if hasattr(tool, '_execute'):
+            if getattr(tool, "name", None) == tool_name:
+                if hasattr(tool, "_execute"):
                     return await tool._execute(**arguments)
                 elif callable(tool):
                     return await tool(**arguments)
@@ -474,14 +468,9 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         for config in configurations:
             try:
                 tools = await self.add_mcp_server(config)
-                self.logger.info(
-                    f"Added MCP server '{config.name}' with tools: {tools}"
-                )
+                self.logger.info(f"Added MCP server '{config.name}' with tools: {tools}")
             except Exception as e:
-                self.logger.error(
-                    f"Failed to add MCP server '{config.name}': {e}",
-                    exc_info=True
-                )
+                self.logger.error(f"Failed to add MCP server '{config.name}': {e}", exc_info=True)
 
     async def ask_stream(
         self,
@@ -489,7 +478,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         stt_only: bool = False,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
         Voice interaction stream.
@@ -520,6 +509,12 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
+
         try:
             # Handle different input types
             if isinstance(audio_input, bytes):
@@ -536,10 +531,10 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # Note: For voice, vector context is typically fetched via tools
             # since we don't have the question text upfront. Enable use_vectors
             # if you want to include a generic context from the vector store.
-            vector_metadata = {'activated_kbs': []}
-            initial_context = kwargs.get('initial_context', '')
-            use_vectors = kwargs.get('use_vectors', False)
-            ctx = kwargs.get('ctx', None)
+            vector_metadata = {"activated_kbs": []}
+            initial_context = kwargs.get("initial_context", "")
+            use_vectors = kwargs.get("use_vectors", False)
+            ctx = kwargs.get("ctx", None)
 
             # Get vector context (method handles use_vectors check internally)
             vector_context, vector_meta = await self._build_vector_context(
@@ -547,7 +542,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 use_vectors=use_vectors,
             )
             if vector_meta:
-                vector_metadata['vector'] = vector_meta
+                vector_metadata["vector"] = vector_meta
 
             # Get user-specific context
             user_context = await self._build_user_context(
@@ -562,34 +557,28 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 session_id=session_id,
                 ctx=ctx,
             )
-            if kb_meta.get('activated_kbs'):
-                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
             # Get conversation context if available
-            conversation_context = ""
-            if self.conversation_memory:
-                conversation_history = await self.get_conversation_history(
-                    user_id, session_id
-                )
-                if conversation_history:
-                    conversation_context = self.build_conversation_context(
-                        conversation_history
-                    )
+            # FEAT-524: no history render here. This path streams through
+            # client.stream_voice(), which maintains its own realtime Gemini Live
+            # session — spec §1 keeps provider-side conversation state out of
+            # scope. Transcripts are still persisted below via the single writer.
 
             # Create system prompt dynamically like BaseBot.ask()
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
-                **kwargs
+                **kwargs,
             )
 
             # Ensure LLM client is configured
             if self._llm is None:
                 config = self._resolve_llm_config()
-                self._llm = self._create_llm_client(config, self.conversation_memory)
+                self._llm = self._create_llm_client(config)
 
             # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
             # Memory tracking variables
@@ -611,9 +600,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # exactly: explicit kwargs win over the VoiceConfig-derived
             # default.
             option_field_names = {f.name for f in fields(VoiceStreamOptions)}
-            option_overrides = {
-                k: v for k, v in kwargs.items() if k in option_field_names
-            }
+            option_overrides = {k: v for k, v in kwargs.items() if k in option_field_names}
             options = self.voice_config.to_stream_options(**option_overrides)
 
             async with self._llm as client:
@@ -632,19 +619,20 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         if response.turn_id and response.turn_id != current_turn_id:
                             # Save previous turn if it exists and had content
                             if current_turn_id and (user_transcript or assistant_transcript):
+                                # FEAT-524: voice turns are built from transcripts
+                                # (there is no AIMessage), but they still go through
+                                # the single writer and carry memory_key_id.
                                 turn = ConversationTurn(
                                     turn_id=current_turn_id,
                                     user_id=user_id,
                                     user_message=user_transcript.strip(),
                                     assistant_response=assistant_transcript.strip(),
-                                    metadata={"timestamp": str(datetime.now())}
+                                    metadata={"timestamp": str(datetime.now())},
+                                    chatbot_id=self.memory_key_id,
                                 )
-                                await self.conversation_memory.add_turn(
-                                    user_id, session_id, turn, 
-                                    chatbot_id=str(self.chatbot_id)
-                                )
+                                await self.save_conversation_turn(user_id, session_id, turn)
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
-                            
+
                             # Reset for new turn
                             current_turn_id = response.turn_id
                             user_transcript = ""
@@ -668,7 +656,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                                 user_transcript += " " + response.text
                             elif response.role == "assistant":
                                 assistant_transcript += " " + response.text
-                    
+
                     yield response
 
                 # Save final turn after loop ends
@@ -678,28 +666,24 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         user_id=user_id,
                         user_message=user_transcript.strip(),
                         assistant_response=assistant_transcript.strip(),
-                        metadata={"timestamp": str(datetime.now())}
+                        metadata={"timestamp": str(datetime.now())},
+                        chatbot_id=self.memory_key_id,
                     )
-                    await self.conversation_memory.add_turn(
-                        user_id, session_id, turn,
-                        chatbot_id=str(self.chatbot_id)
-                    )
+                    await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 
         except Exception as e:
             self.logger.error(f"Error in voice stream: {e}")
             yield LiveVoiceResponse(
-                text=f"I'm sorry, I encountered an error: {str(e)}",
-                is_complete=True,
-                metadata={"error": str(e)}
+                text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def ask_voice(
-        self,
-        audio_input: bytes,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        **kwargs
+        self, audio_input: bytes, session_id: Optional[str] = None, user_id: Optional[str] = None, **kwargs
     ) -> LiveVoiceResponse:
         """
         Process voice input and return complete response.
@@ -722,10 +706,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         final_usage: Optional[LiveCompletionUsage] = None
 
         async for response in self.ask_stream(
-            audio_input=audio_input,
-            session_id=session_id,
-            user_id=user_id,
-            **kwargs
+            audio_input=audio_input, session_id=session_id, user_id=user_id, **kwargs
         ):
             if response.text:
                 full_text += response.text
@@ -744,15 +725,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             is_complete=True,
             tool_calls=tool_calls,
             usage=final_usage,
-            metadata=metadata
+            metadata=metadata,
         )
 
     async def ask(
-        self,
-        question: str,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        **kwargs
+        self, question: str, session_id: Optional[str] = None, user_id: Optional[str] = None, **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
         Send text and receive voice response.
@@ -771,68 +748,76 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
-        # Build context for system prompt
-        vector_metadata = {'activated_kbs': []}
-        ctx = kwargs.get('ctx', None)
+        # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
+        # read_omitted_content never observes a partially-scoped session.
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
 
-        # Get vector context (method handles use_vectors check internally)
-        vector_context, vector_meta = await self._build_vector_context(
-            question,
-            use_vectors=kwargs.get('use_vector_context', False),
-        )
-        if vector_meta:
-            vector_metadata['vector'] = vector_meta
+        try:
+            # Build context for system prompt
+            vector_metadata = {"activated_kbs": []}
+            ctx = kwargs.get("ctx", None)
 
-        # Get user-specific context
-        user_context = await self._build_user_context(
-            user_id=user_id,
-            session_id=session_id,
-        )
-
-        # Get knowledge base context
-        kb_context, kb_meta = await self._build_kb_context(
-            question,
-            user_id=user_id,
-            session_id=session_id,
-            ctx=ctx,
-        )
-        if kb_meta.get('activated_kbs'):
-            vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
-
-        # Get conversation context if available
-        conversation_context = ""
-        if self.conversation_memory:
-            conversation_history = await self.get_conversation_history(
-                user_id, session_id
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
+                question,
+                use_vectors=kwargs.get("use_vector_context", False),
             )
-            if conversation_history:
-                conversation_context = self.build_conversation_context(conversation_history)
+            if vector_meta:
+                vector_metadata["vector"] = vector_meta
 
-        # Create system prompt dynamically
-        system_prompt = await self.create_system_prompt(
-            kb_context=kb_context,
-            vector_context=vector_context,
-            conversation_context=conversation_context,
-            metadata=vector_metadata,
-            user_context=user_context,
-            **kwargs
-        )
-
-        # Ensure LLM client is configured
-        if self._llm is None:
-            config = self._resolve_llm_config()
-            self._llm = self._create_llm_client(config, self.conversation_memory)
-
-        # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
-        async with self._llm as client:
-            async for response in client.ask(
-                question=question,
-                system_prompt=system_prompt,
-                session_id=session_id,
+            # Get user-specific context
+            user_context = await self._build_user_context(
                 user_id=user_id,
-                **kwargs
-            ):
-                yield response
+                session_id=session_id,
+            )
+
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
+
+            # Get conversation context if available
+            rendered_history = []
+            if self.conversation_memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                # FEAT-524: history goes to the provider as alternating messages.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise. This
+                # method has no save site (no rendered prompt to pair for
+                # calibration), so the CompactionResult is discarded.
+                rendered_history, _compaction_result = await self.render_context_history(conversation_history)
+
+            # Create system prompt dynamically
+            system_prompt = await self.create_system_prompt(
+                kb_context=kb_context,
+                vector_context=vector_context,
+                metadata=vector_metadata,
+                user_context=user_context,
+                **kwargs,
+            )
+
+            # Ensure LLM client is configured
+            if self._llm is None:
+                config = self._resolve_llm_config()
+                self._llm = self._create_llm_client(config)
+
+            # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
+            async with self._llm as client:
+                async for response in client.ask(
+                    question=question, system_prompt=system_prompt, history=rendered_history, **kwargs
+                ):
+                    yield response
+        finally:
+            current_memory_key_id.reset(_memkey_token)
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
 
     async def close(self):
         """Close any resources if needed."""
@@ -844,9 +829,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         self._llm = None
         self.logger.info("VoiceBot closed")
 
+
 # =============================================================================
 # Factory function
 # =============================================================================
+
 
 def create_voice_bot(
     name: str = "Voice Assistant",
@@ -854,7 +841,7 @@ def create_voice_bot(
     voice_name: str = "Puck",
     language: str = "en-US",
     tools: Optional[List[Any]] = None,
-    **kwargs
+    **kwargs,
 ) -> VoiceBot:
     """
     Factory to create a configured VoiceBot.
@@ -873,7 +860,7 @@ def create_voice_bot(
     voice_config = VoiceConfig(
         voice_name=voice_name,
         language=language,
-        **{k: v for k, v in kwargs.items() if k in VoiceConfig.__dataclass_fields__}  # pylint: disable=E1101
+        **{k: v for k, v in kwargs.items() if k in VoiceConfig.__dataclass_fields__},  # pylint: disable=E1101
     )
 
     return VoiceBot(
@@ -881,7 +868,7 @@ def create_voice_bot(
         system_prompt=system_prompt,
         tools=tools,
         voice_config=voice_config,
-        **{k: v for k, v in kwargs.items() if k not in VoiceConfig.__dataclass_fields__}  # pylint: disable=E1101
+        **{k: v for k, v in kwargs.items() if k not in VoiceConfig.__dataclass_fields__},  # pylint: disable=E1101
     )
 
 
@@ -906,14 +893,9 @@ if __name__ == "__main__":
                     "description": self.description,
                     "parameters": {
                         "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query"
-                            }
-                        },
-                        "required": ["query"]
-                    }
+                        "properties": {"query": {"type": "string", "description": "Search query"}},
+                        "required": ["query"],
+                    },
                 }
 
             async def _execute(self, query: str):

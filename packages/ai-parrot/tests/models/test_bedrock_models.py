@@ -1,5 +1,5 @@
 """Unit tests for the Nova / multi-provider extensions to
-``parrot.models.bedrock_models`` (FEAT-302, TASK-1744).
+``parrot.clients.amazon.models`` (FEAT-302, TASK-1744).
 
 Complements the existing Claude-focused suite at
 ``packages/ai-parrot/tests/test_bedrock_models.py`` (TASK-1514) with
@@ -12,8 +12,9 @@ translation — ``au.``/``global.`` prefixes, ``minimax.``/``zai.``/
 inversion that keeps ``region_prefix`` from leaking onto prefix-less vendor
 models (the day-one bug, [R6]).
 """
+
 import pytest
-from parrot.models.bedrock_models import (
+from parrot.clients.amazon.models import (
     PUBLIC_TO_BEDROCK,
     REQUIRES_REGION_PREFIX,
     _is_bedrock_id,
@@ -85,12 +86,10 @@ class TestPrefixPolicy:
 
     def test_mapped_model_falls_back_to_map_default(self):
         assert "claude-opus-5" in REQUIRES_REGION_PREFIX
-        assert translate("claude-opus-5").startswith(
-            f"{REQUIRES_REGION_PREFIX['claude-opus-5']}."
-        )
+        assert translate("claude-opus-5").startswith(f"{REQUIRES_REGION_PREFIX['claude-opus-5']}.")
 
     def test_explicit_prefix_on_unmapped_model_warns(self, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             result = translate("minimax.minimax-m2.5", region_prefix="us")
         assert result == "minimax.minimax-m2.5"
         assert any("prefix" in r.message.lower() for r in caplog.records)
@@ -107,16 +106,14 @@ class TestPrefixPolicy:
             "global.anthropic.claude-fable-5",
         ],
     )
-    def test_explicit_prefix_on_already_prefixed_id_does_not_warn(
-        self, already_prefixed_id, caplog
-    ):
+    def test_explicit_prefix_on_already_prefixed_id_does_not_warn(self, already_prefixed_id, caplog):
         """Code-review fix: a model's OWN verified default id (already
         region-prefixed, e.g. NovaAdversarialReviewProfile/
         NovaMechanicalProfile's defaults) must not spam a false-positive
         'ignoring the prefix' warning just because a caller (e.g.
         NovaClient's own region_prefix="us" default) also happens to pass
         region_prefix="us" redundantly — the id is already fully resolved."""
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             result = translate(already_prefixed_id, region_prefix="us")
         assert result == already_prefixed_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
@@ -130,11 +127,16 @@ class TestPassThrough:
         already = f"{prefix}anthropic.claude-opus-5"
         assert translate(already) == already
 
-    @pytest.mark.parametrize("model_id", [
-        "minimax.minimax-m2.5", "zai.glm-5", "moonshotai.kimi-k2.5",
-    ])
+    @pytest.mark.parametrize(
+        "model_id",
+        [
+            "minimax.minimax-m2.5",
+            "zai.glm-5",
+            "moonshotai.kimi-k2.5",
+        ],
+    )
     def test_vendor_namespaces_no_warning(self, model_id, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate(model_id) == model_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
@@ -158,7 +160,7 @@ class TestNewMapEntries:
         assert "-v1:0" not in translate("claude-fable-5")
 
     def test_unknown_id_warns_and_passes_through(self, caplog):
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate("totally-made-up-model") == "totally-made-up-model"
         assert any(r.levelname == "WARNING" for r in caplog.records)
 
@@ -174,23 +176,17 @@ class TestUnprefixedIdRepair:
 
     def test_namespaced_public_id_is_resolved(self):
         """``anthropic.<public-id>`` gains its version suffix AND prefix."""
-        assert (
-            translate("anthropic.claude-haiku-4-5")
-            == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-        )
+        assert translate("anthropic.claude-haiku-4-5") == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     def test_namespaced_public_id_honours_explicit_prefix(self):
         assert (
-            translate("anthropic.claude-haiku-4-5", region_prefix="eu")
-            == "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+            translate("anthropic.claude-haiku-4-5", region_prefix="eu") == "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
         )
 
     def test_bare_base_id_gains_required_prefix(self):
         """A base ID whose model has no in-region access gets its prefix."""
         assert translate("anthropic.claude-opus-5") == "us.anthropic.claude-opus-5"
-        assert (
-            translate("anthropic.claude-fable-5") == "global.anthropic.claude-fable-5"
-        )
+        assert translate("anthropic.claude-fable-5") == "global.anthropic.claude-fable-5"
 
     def test_complete_base_id_still_passes_through(self):
         """A valid, prefix-free base ID must NOT be rewritten."""
@@ -218,11 +214,8 @@ class TestUnprefixedIdRepair:
 
     def test_no_version_suffix_is_ever_guessed(self, caplog):
         """An unknown model is passed through, never string-munged."""
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
-            assert (
-                translate("anthropic.claude-not-a-real-model")
-                == "anthropic.claude-not-a-real-model"
-            )
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
+            assert translate("anthropic.claude-not-a-real-model") == "anthropic.claude-not-a-real-model"
 
 
 class TestThirdPartyBedrockModels:
@@ -237,15 +230,15 @@ class TestThirdPartyBedrockModels:
     def test_llama4_maverick_is_geo_only(self):
         """No in-region access exists — the ``us.`` profile is mandatory."""
         assert REQUIRES_REGION_PREFIX["llama4-maverick-17b-instruct"] == "us"
-        assert (
-            translate("llama4-maverick-17b-instruct")
-            == "us.meta.llama4-maverick-17b-instruct-v1:0"
-        )
+        assert translate("llama4-maverick-17b-instruct") == "us.meta.llama4-maverick-17b-instruct-v1:0"
 
-    @pytest.mark.parametrize("spelling", [
-        "meta.llama4-maverick-17b-instruct",
-        "meta.llama4-maverick-17b-instruct-v1:0",
-    ])
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            "meta.llama4-maverick-17b-instruct",
+            "meta.llama4-maverick-17b-instruct-v1:0",
+        ],
+    )
     def test_llama4_namespaced_spellings_gain_the_prefix(self, spelling):
         """``meta.`` is prefixable, so a bare id must be repaired, not passed."""
         assert translate(spelling) == "us.meta.llama4-maverick-17b-instruct-v1:0"
@@ -256,9 +249,7 @@ class TestThirdPartyBedrockModels:
 
     def test_qwen3_coder_runtime_id(self):
         """The public id maps to the bedrock-runtime (Converse) id."""
-        assert (
-            translate("qwen3-coder-480b-a35b") == "qwen.qwen3-coder-480b-a35b-v1:0"
-        )
+        assert translate("qwen3-coder-480b-a35b") == "qwen.qwen3-coder-480b-a35b-v1:0"
 
     def test_qwen3_coder_is_never_prefixed(self):
         """In-region only — no geo/global profile, so no prefix is added."""
@@ -269,7 +260,7 @@ class TestThirdPartyBedrockModels:
     def test_qwen3_coder_mantle_id_passes_through_verbatim(self, caplog):
         """The Mantle id differs from the runtime id and must NOT be rewritten."""
         mantle_id = "qwen.qwen3-coder-480b-a35b-instruct"
-        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+        with caplog.at_level("WARNING", logger="parrot.clients.amazon.models"):
             assert translate(mantle_id) == mantle_id
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
@@ -289,9 +280,7 @@ class TestThirdPartyBedrockModels:
 
     def test_kimi_k25_is_never_prefixed(self):
         assert "kimi-k2.5" not in REQUIRES_REGION_PREFIX
-        assert translate("moonshotai.kimi-k2.5", region_prefix="us") == (
-            "moonshotai.kimi-k2.5"
-        )
+        assert translate("moonshotai.kimi-k2.5", region_prefix="us") == ("moonshotai.kimi-k2.5")
 
     def test_qwen_namespace_recognised_as_bedrock_shaped(self):
         assert _is_bedrock_id("qwen.qwen3-coder-480b-a35b-v1:0") is True

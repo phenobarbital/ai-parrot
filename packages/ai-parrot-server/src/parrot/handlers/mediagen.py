@@ -1,4 +1,5 @@
 """HTTP handler for Google Media Generation (Image and Video) via Google GenAI."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,9 +14,7 @@ from aiohttp import MultipartWriter, web
 from navigator.views import BaseView
 from datamodel.parsers.json import json_encoder
 
-from parrot.clients.google import GoogleGenAIClient
 from parrot.models import ImageGenerationPrompt, VideoGenerationPrompt
-from parrot.models.google import GoogleModel
 
 
 class MediaGen(BaseView):
@@ -78,17 +77,17 @@ class MediaGen(BaseView):
         batch = bool(data.get("batch", False))
         use_flex = bool(data.get("use_flex", False))
         download_mode = str(data.get("download_mode", "StreamResponse")).strip()
-        
+
         # Default model based on action
-        default_model = (
-            GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW.value
-            if action == "image"
-            else GoogleModel.VEO_3_1.value
-        )
+        default_model = "gemini-3.1-flash-image" if action == "image" else "veo-3.1-generate-preview"
         model = data.get("model") or default_model
 
         if action not in {"image", "video"}:
             return self.error("Unsupported action. Must be 'image' or 'video'.", status=400)
+
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.google import GoogleGenAIClient
 
         client = GoogleGenAIClient(model=model)
         try:
@@ -102,8 +101,8 @@ class MediaGen(BaseView):
                     self.logger.info(f"Generating image batch with {len(batch_requests)} items...")
                     results = await client.generate_image_batch(
                         batch_requests,
-                        use_flex=True, # Force use_flex=True as requested for batch image
-                        persist_results=True
+                        use_flex=True,  # Force use_flex=True as requested for batch image
+                        persist_results=True,
                     )
                     for r in results:
                         if isinstance(r, Exception):
@@ -145,14 +144,11 @@ class MediaGen(BaseView):
                             resolution=prompt_data.resolution,
                             auto_upscale=prompt_data.auto_upscale,
                             service_tier="flex" if use_flex else None,
-                            output_directory=image_output_dir
+                            output_directory=image_output_dir,
                         )
                     else:
                         self.logger.info(f"Routing image generation to Imagen generate_images() for: {model}")
-                        r = await client.generate_images(
-                            prompt=prompt_data,
-                            output_directory=Path(image_output_dir)
-                        )
+                        r = await client.generate_images(prompt=prompt_data, output_directory=Path(image_output_dir))
 
                     results_metadata.append(r.model_dump(mode="json"))
                     if r.images:
@@ -162,10 +158,7 @@ class MediaGen(BaseView):
                 if batch:
                     batch_requests = self._resolve_batch_requests(data)
                     self.logger.info(f"Generating video batch with {len(batch_requests)} items...")
-                    results = await client.generate_video_batch(
-                        batch_requests,
-                        persist_results=True
-                    )
+                    results = await client.generate_video_batch(batch_requests, persist_results=True)
                     for r in results:
                         if isinstance(r, Exception):
                             self.logger.error(f"Video batch item failed: {r}")
@@ -180,15 +173,15 @@ class MediaGen(BaseView):
                     prompt = data.get("prompt", "")
                     if not prompt:
                         return self.error("Missing required field: 'prompt'", status=400)
-                    
+
                     self.logger.info(f"Generating single video using model: {model}")
-                    
+
                     # Filter payload to only include fields accepted by VideoGenerationPrompt schema
                     model_fields = set(VideoGenerationPrompt.model_fields.keys())
                     filtered_inputs = {k: v for k, v in data.items() if k in model_fields}
                     filtered_inputs["prompt"] = prompt
                     filtered_inputs["model"] = model
-                    
+
                     prompt_data = VideoGenerationPrompt(**filtered_inputs)
                     r = await client.generate_videos(prompt=prompt_data)
                     results_metadata.append(r.model_dump(mode="json"))
@@ -198,10 +191,9 @@ class MediaGen(BaseView):
 
             # Resolve output downloads based on files found
             if not generated_files:
-                return self.json_response({
-                    "message": "Generation completed with no files returned.",
-                    "metadata": results_metadata
-                })
+                return self.json_response(
+                    {"message": "Generation completed with no files returned.", "metadata": results_metadata}
+                )
 
             # Multipart delivery: a JSON metadata part followed by one part per
             # file. Unlike the single-file and zip paths below, this preserves
@@ -209,9 +201,7 @@ class MediaGen(BaseView):
             # binaries — relevant for partially-failing batches.
             if download_mode == "Multipart":
                 mime_type = "image/png" if action == "image" else "video/mp4"
-                return await self._deliver_multipart(
-                    generated_files, results_metadata, mime_type
-                )
+                return await self._deliver_multipart(generated_files, results_metadata, mime_type)
 
             # If there's only one file, we return/stream it directly
             if len(generated_files) == 1:
@@ -231,36 +221,34 @@ class MediaGen(BaseView):
 
         except Exception as exc:
             self.logger.exception(f"Media generation failed: {exc}")
-            
+
             error_message = str(exc)
             error_code = 500
-            
+
             # Dynamic parsing for embedded JSON/Dict representations (e.g. {'code': 13, ...})
             if "{" in error_message and "}" in error_message:
                 try:
                     import re
+
                     match = re.search(r"\{.*?\}", error_message.replace("'", '"'))
                     if match:
                         from datamodel.parsers.json import json_decoder
+
                         err_dict = json_decoder(match.group(0))
                         if isinstance(err_dict, dict):
                             error_message = err_dict.get("message", error_message)
                             error_code = err_dict.get("code", error_code)
                 except Exception:
                     pass
-            
+
             # Direct attribute check for native google-genai ClientError/APIError
             if hasattr(exc, "code") and hasattr(exc, "message"):
                 error_message = getattr(exc, "message")
                 error_code = getattr(exc, "code")
-                
-            return self.json_response({
-                "error": {
-                    "message": error_message,
-                    "code": error_code,
-                    "details": str(exc)
-                }
-            }, status=500)
+
+            return self.json_response(
+                {"error": {"message": error_message, "code": error_code, "details": str(exc)}}, status=500
+            )
         finally:
             await client.close()
 
@@ -269,24 +257,19 @@ class MediaGen(BaseView):
         requests = data.get("requests")
         if isinstance(requests, list):
             return [dict(r) for r in requests]
-        
+
         prompts = data.get("prompts")
         if isinstance(prompts, list):
             return [{"prompt": str(p)} for p in prompts]
-        
+
         # Fallback to single prompt in batch mode
         prompt = data.get("prompt")
         if prompt:
             return [{"prompt": str(prompt)}]
-        
+
         return []
 
-    async def _deliver_file(
-        self,
-        file_path: Path,
-        content_type: str,
-        download_mode: str
-    ) -> web.Response:
+    async def _deliver_file(self, file_path: Path, content_type: str, download_mode: str) -> web.Response:
         """Deliver the generated file as either a web.FileResponse or a StreamResponse."""
         if not file_path.exists():
             return self.error(f"Generated file not found on disk: {file_path}", status=404)
@@ -297,8 +280,8 @@ class MediaGen(BaseView):
                 file_path,
                 headers={
                     "Content-Disposition": f'attachment; filename="{file_path.name}"',
-                    "Content-Type": content_type
-                }
+                    "Content-Type": content_type,
+                },
             )
 
         # StreamResponse (default)
@@ -342,13 +325,9 @@ class MediaGen(BaseView):
                 fh = f.open("rb")
                 handles.append(fh)
                 file_part = mpwriter.append(fh, {"Content-Type": content_type})
-                file_part.set_content_disposition(
-                    "attachment", name="file", filename=f.name
-                )
+                file_part.set_content_disposition("attachment", name="file", filename=f.name)
 
-        self.logger.info(
-            f"Delivering {len(handles)} file(s) + metadata via multipart/mixed"
-        )
+        self.logger.info(f"Delivering {len(handles)} file(s) + metadata via multipart/mixed")
         try:
             response = web.StreamResponse(status=200, headers=mpwriter.headers)
             await response.prepare(self.request)
@@ -363,10 +342,7 @@ class MediaGen(BaseView):
                     pass
 
     async def _stream_file(
-        self,
-        file_path: Path,
-        content_type: str,
-        chunk_size: int = 256 * 1024
+        self, file_path: Path, content_type: str, chunk_size: int = 256 * 1024
     ) -> web.StreamResponse:
         """Stream a file chunk-by-chunk using web.StreamResponse."""
         stream = web.StreamResponse(

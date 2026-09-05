@@ -23,14 +23,11 @@ import pandas as pd
 import aiohttp
 from navconfig import config
 from navconfig.logging import logging
-from ..memory import (
-    ConversationTurn,
-    ConversationHistory,
-    ConversationMemory,
-    InMemoryConversation,
-    FileConversationMemory,
-    RedisConversation,
-)
+
+# FEAT-524: clients are memory-less. Only the provider-neutral render TYPE is
+# imported, from ``parrot.memory.render`` — a leaf module that never pulls in a
+# storage backend, so no LLM client inherits a Redis/aiofiles dependency.
+from ..memory.render import HistoryMessage
 from ..tools.pythonrepl import PythonREPLTool
 from ..models import AIMessage, StructuredOutputConfig, OutputFormat
 from ..models.responses import InvokeResult
@@ -359,7 +356,6 @@ $backstory
 
     def __init__(
         self,
-        conversation_memory: Optional[ConversationMemory] = None,
         preset: Optional[str] = None,
         tools: Optional[List[Union[str, AbstractTool]]] = None,
         use_tools: bool = False,
@@ -379,15 +375,15 @@ $backstory
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS["default"])
             # define temp, top_k, top_p, max_tokens from selected preset:
-            self.temperature = preset_config.get('temperature', 0.4)
-            self.top_k = preset_config.get('top_k', 30)
-            self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens')
+            self.temperature = preset_config.get("temperature", 0.4)
+            self.top_k = preset_config.get("top_k", 30)
+            self.top_p = preset_config.get("top_p", 0.2)
+            self.max_tokens = preset_config.get("max_tokens")
         else:
             # define default values from preset default:
-            self.temperature = kwargs.get('temperature', 0)
-            self.top_k = kwargs.get('top_k', 30)
-            self.top_p = kwargs.get('top_p', 0.2)
+            self.temperature = kwargs.get("temperature", 0)
+            self.top_k = kwargs.get("top_k", 30)
+            self.top_p = kwargs.get("top_p", 0.2)
             # ``None`` means "not configured" — the per-client
             # _default_max_tokens / _invoke_max_tokens defaults take over. Do
             # NOT reintroduce a literal here: a framework-wide default assigned
@@ -398,12 +394,11 @@ $backstory
         # or via a preset) rather than left unset above. invoke() only honours
         # an explicit value, so that a client's _invoke_max_tokens default is
         # never shadowed by ask()'s generic one.
-        self._max_tokens_configured: bool = 'max_tokens' in kwargs or preset is not None
+        self._max_tokens_configured: bool = "max_tokens" in kwargs or preset is not None
         # Per-instance override for invoke()'s output-token budget specifically.
         # ``None`` means "fall back to an explicit self.max_tokens, then the
         # class default" (see _resolve_max_tokens).
-        self.invoke_max_tokens: Optional[int] = kwargs.get('invoke_max_tokens', None)
-        self.conversation_memory = conversation_memory or InMemoryConversation()
+        self.invoke_max_tokens: Optional[int] = kwargs.get("invoke_max_tokens", None)
         self.base_headers.update(kwargs.get("headers", {}))
         self.api_key = kwargs.get("api_key", None)
         self.version = kwargs.get("version", self.version)
@@ -498,8 +493,8 @@ $backstory
         """Translate CacheableSegments to provider-native cache hints.
 
         FEAT-181 — default no-op. Subclasses override for their provider:
-        - :class:`~parrot.clients.claude.AnthropicClient` — ``cache_control`` blocks.
-        - :class:`~parrot.clients.gpt.OpenAIClient` — automatic (pass-through).
+        - :class:`~parrot.clients.anthropic.AnthropicClient` — ``cache_control`` blocks.
+        - :class:`~parrot.clients.openai.OpenAIClient` — automatic (pass-through).
         - :class:`~parrot.clients.google.client.GoogleGenAIClient` — ``CachedContent``.
 
         Args:
@@ -1171,53 +1166,11 @@ $backstory
         """Set the program slug for the client."""
         self._program = program_slug
 
-    def _get_chatbot_key(self, chatbot_id: Optional[str] = None) -> Optional[str]:
-        """Resolve chatbot identifier for memory operations."""
-        key = chatbot_id or getattr(self, "chatbot_id", None)
-        return None if key is None else str(key)
-
-    async def start_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        chatbot_id: Optional[str] = None,
-    ) -> ConversationHistory:
-        """Start a new conversation session."""
-        return await self.conversation_memory.create_history(
-            user_id, session_id, metadata=metadata, chatbot_id=self._get_chatbot_key(chatbot_id)
-        )
-
-    async def get_conversation(
-        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
-    ) -> Optional[ConversationHistory]:
-        """Get an existing conversation session."""
-        if not self.conversation_memory:
-            return None
-        return await self.conversation_memory.get_history(
-            user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id)
-        )
-
-    async def clear_conversation(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
-        """Clear conversation history for a session."""
-        if not self.conversation_memory:
-            return False
-        await self.conversation_memory.clear_history(user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id))
-        return True
-
-    async def delete_conversation(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
-        """Delete conversation history entirely."""
-        if not self.conversation_memory:
-            return False
-        return await self.conversation_memory.delete_history(
-            user_id, session_id, chatbot_id=self._get_chatbot_key(chatbot_id)
-        )
-
-    async def list_user_conversations(self, user_id: str, chatbot_id: Optional[str] = None) -> List[str]:
-        """List all conversation sessions for a user."""
-        if not self.conversation_memory:
-            return []
-        return await self.conversation_memory.list_sessions(user_id, chatbot_id=self._get_chatbot_key(chatbot_id))
+    # NOTE (FEAT-524): _get_chatbot_key(), start_conversation(),
+    # get_conversation(), clear_conversation(), delete_conversation() and
+    # list_user_conversations() were removed here. Clients are memory-less:
+    # AbstractBot owns the ConversationHistory and hands each call an
+    # already-rendered ``history=`` list.
 
     def set_tools(self, tools: List[Union[str, AbstractTool]]) -> None:
         """Set complete list of tools, replacing existing."""
@@ -1588,6 +1541,75 @@ $backstory
 
         return [{"role": "user", "content": content}]
 
+    def _existing_files(self, files: Optional[List[Union[str, Path]]]) -> Optional[List[Union[str, Path]]]:
+        """Filter out attachments that do not exist on disk.
+
+        A missing attachment is logged and skipped rather than allowed to raise
+        from ``_encode_file()``'s ``open()``. Extracted verbatim from the
+        removed ``_prepare_conversation_context()`` so the behaviour survives
+        the FEAT-524 hard cut.
+
+        Args:
+            files: Candidate file paths, or ``None``.
+
+        Returns:
+            The subset that exists, or ``None`` when nothing is left.
+        """
+        if not files:
+            return None
+        safe_files: List[Union[str, Path]] = []
+        for file_path in files:
+            try:
+                if Path(file_path).exists():
+                    safe_files.append(file_path)
+                else:
+                    self.logger.error(f"Error processing file {file_path}: file does not exist")
+            except Exception as e:  # noqa: BLE001 - defensive: any Path() failure
+                self.logger.error(f"Error processing file {file_path}: {e}")
+        return safe_files or None
+
+    def _format_history(self, history: Sequence[HistoryMessage]) -> List[Dict[str, Any]]:
+        """Map rendered history onto this provider's message shape (FEAT-524).
+
+        The default emits the text-content-block form most providers accept.
+        Subclasses override this — and only this — where their shape differs
+        (Google's ``UserContent``/``ModelContent``, Bedrock Converse's
+        ``{"role", "content": [{"text": ...}]}``).
+
+        Args:
+            history: Provider-neutral messages from
+                :func:`parrot.memory.render_history`.
+
+        Returns:
+            Provider-shaped message dicts, in order.
+        """
+        return [{"role": message.role, "content": [{"type": "text", "text": message.content}]} for message in history]
+
+    def _build_messages(
+        self,
+        prompt: str,
+        files: Optional[List[Union[str, Path]]] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Compose the outgoing message list: history first, current turn last.
+
+        Replaces the removed ``_prepare_conversation_context()``. It composes
+        rather than re-implements: the current turn (and its file attachments)
+        is encoded exactly once, by ``_prepare_messages()`` — the FEAT-302
+        guarantee this method must not regress.
+
+        Args:
+            prompt: The current user prompt.
+            files: Optional attachments for the current turn.
+            history: Already-rendered conversation history, or ``None``.
+
+        Returns:
+            ``[*formatted_history, current_turn]``.
+        """
+        messages = self._format_history(history or ())
+        messages.append(self._prepare_messages(prompt, self._existing_files(files))[0])
+        return messages
+
     def _validate_response(self, response: Dict[str, Any]) -> bool:
         """Validate API response structure."""
         required_fields = ["id", "type", "role", "content", "model"]
@@ -1643,9 +1665,8 @@ $backstory
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
@@ -1664,9 +1685,10 @@ $backstory
             temperature: Sampling temperature for response generation
             files: Optional files to include in the request
             system_prompt: Optional system prompt to guide the model
+            history: Already-rendered conversation history from the owning bot
+                (FEAT-524). The client only formats it for its provider — it
+                never loads or persists history itself.
             structured_output: Optional structured output configuration
-            user_id: Optional user identifier for tracking
-            session_id: Optional session identifier for tracking
             tools: Optional tools to register for this call
             use_tools: Whether to use tools
             deep_research: If True, use deep research mode (provider-specific)
@@ -1684,8 +1706,7 @@ $backstory
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
@@ -1859,7 +1880,7 @@ $backstory
             return self._lightweight_model
         # Terminal fallback: clients that set neither (NvidiaClient and the
         # other OpenAIBaseClient subclasses) must not send ``model=None``.
-        return getattr(self, '_default_model', None)
+        return getattr(self, "_default_model", None)
 
     def _model_output_cap(self, model: Optional[str]) -> Optional[int]:
         """Return the provider's output-token cap for *model*, if one is known.
@@ -1950,11 +1971,7 @@ $backstory
         candidates = (
             max_tokens,
             getattr(self, "invoke_max_tokens", None) if for_invoke else None,
-            (
-                getattr(self, "max_tokens", None)
-                if getattr(self, "_max_tokens_configured", False)
-                else None
-            ),
+            (getattr(self, "max_tokens", None) if getattr(self, "_max_tokens_configured", False) else None),
             cap,
             self._invoke_max_tokens if for_invoke else None,
             self._default_max_tokens,
@@ -1965,9 +1982,7 @@ $backstory
                 continue
             resolved = int(candidate)
             if resolved <= 0:
-                raise ValueError(
-                    f"max_tokens must be a positive integer, got {resolved!r}"
-                )
+                raise ValueError(f"max_tokens must be a positive integer, got {resolved!r}")
             break
         if resolved is None:
             if for_invoke:  # pragma: no cover - _invoke/_default is always set
@@ -1978,7 +1993,9 @@ $backstory
         if cap is not None and resolved > cap:
             self.logger.debug(
                 "Clamping max_tokens %s -> %s for model %s (provider limit).",
-                resolved, cap, model,
+                resolved,
+                cap,
+                model,
             )
             return cap
         return resolved
@@ -2053,13 +2070,15 @@ $backstory
     #: Provider finish/stop reasons that mean the completion was cut off by the
     #: output-token limit. Compared after :meth:`_normalize_finish_reason`
     #: (lower-cased, enum-class prefix stripped).
-    TRUNCATED_FINISH_REASONS: FrozenSet[str] = frozenset({
-        "max_tokens",         # Anthropic Messages API, Bedrock Converse
-        "max_output_tokens",  # Google / OpenAI Responses (incomplete_details)
-        "length",             # OpenAI-compatible chat completions (OpenAI, Groq,
-                              #   Z.AI, vLLM, LocalLLM, HuggingFace, ...)
-        "reason_max_len",     # xAI Grok SDK (sample_pb2.FinishReason)
-    })
+    TRUNCATED_FINISH_REASONS: FrozenSet[str] = frozenset(
+        {
+            "max_tokens",  # Anthropic Messages API, Bedrock Converse
+            "max_output_tokens",  # Google / OpenAI Responses (incomplete_details)
+            "length",  # OpenAI-compatible chat completions (OpenAI, Groq,
+            #   Z.AI, vLLM, LocalLLM, HuggingFace, ...)
+            "reason_max_len",  # xAI Grok SDK (sample_pb2.FinishReason)
+        }
+    )
 
     @staticmethod
     def _normalize_finish_reason(finish_reason: Any) -> Optional[str]:
@@ -2265,146 +2284,6 @@ $backstory
         # Add final assistant response
         messages.append({"role": "assistant", "content": result["content"]})
         return result
-
-    async def _prepare_conversation_context(
-        self,
-        prompt: str,
-        files: Optional[List[Union[str, Path]]],
-        user_id: Optional[str],
-        session_id: Optional[str],
-        system_prompt: Optional[str],
-        stateless: bool = False,
-    ) -> tuple[List[Dict[str, Any]], Optional[ConversationHistory], Optional[str]]:
-        """Prepare conversation context and return messages, session, and system prompt.
-
-        Code-review fix (FEAT-302): this method previously built the
-        current-turn message *twice* (once via ``_prepare_messages()``
-        immediately after loading history, once more via a hand-rolled,
-        cruder ``{"type": "file", "file_path": ...}`` block appended at the
-        very end) and — when a conversation history was present — *also*
-        replayed every historical turn twice: once via
-        ``conversation_history.get_messages_for_api()`` and once more via an
-        inline per-turn loop building the same blocks with a different
-        content shape. The net result for any stateful call
-        (``user_id``/``session_id`` both set) was a message list ordered as
-        ``[history(v1), current(v1), history(v2, duplicate), current(v2,
-        duplicate)]`` — duplicated content *and* the current turn placed
-        before the historical replay instead of after it. Providers that
-        validate strict role alternation (e.g. AWS Bedrock's Converse API)
-        can reject this outright; providers that tolerate it still waste
-        tokens and confuse the model with out-of-order turns.
-
-        Fixed to build the message list exactly once, in the correct
-        order: ``[history..., current]``. File attachments are now encoded
-        exclusively via ``_prepare_messages()`` -> ``_encode_file()``
-        (base64 ``document`` blocks — richer than the removed duplicate's
-        placeholder ``{"type": "file", "file_path": ...}``, which most
-        providers never understood in the first place); the missing-file
-        existence check + logged skip from the removed block is preserved
-        here so a missing attachment still degrades gracefully instead of
-        raising.
-        """
-        messages = []
-        conversation_history = None
-
-        if user_id and session_id:
-            conversation_history = await self.conversation_memory.get_history(
-                user_id, session_id, chatbot_id=self._get_chatbot_key()
-            )
-            if not conversation_history:
-                conversation_history = await self.conversation_memory.create_history(
-                    user_id, session_id, chatbot_id=self._get_chatbot_key()
-                )
-
-        # Get recent conversation messages for context (historical turns
-        # only — the current turn is appended once, below, after this).
-        if conversation_history:
-            messages = conversation_history.get_messages_for_api()
-
-        # Build a system-prompt summary from history when the caller didn't
-        # supply one. This is the only remaining purpose of the
-        # ``not stateless`` branch; the message-building loop that used to
-        # live here duplicated ``get_messages_for_api()`` above and has been
-        # removed.
-        if conversation_history and not stateless:
-            self.logger.debug(f"Found {len(conversation_history.turns)} previous turns")
-            if not system_prompt and len(conversation_history.turns) > 0:
-                # Create a summary of the conversation context
-                recent_context = []
-                for turn in conversation_history.turns[-3:]:  # Last 3 turns for context
-                    recent_context.extend(
-                        (
-                            f"User: {turn.user_message}",
-                            f"Assistant: {turn.assistant_response}",
-                        )
-                    )
-
-                recent = "\n".join(recent_context)
-                system_prompt = (
-                    "You are a helpful AI assistant. You have access to the following conversation history:\n\n"
-                    f"{recent}"
-                    "\n\nUse this context to provide relevant and consistent responses. "
-                    "When users refer to previously mentioned information, acknowledge and use that context."
-                )
-                self.logger.debug("Created contextual system prompt from conversation history")
-
-        # Build and append the current-turn message exactly once. Filter out
-        # nonexistent files defensively (mirrors the removed duplicate
-        # block's behavior) so a missing attachment logs and is skipped
-        # rather than raising from _encode_file()'s open().
-        safe_files: Optional[List[Union[str, Path]]] = None
-        if files:
-            safe_files = []
-            for file_path in files:
-                try:
-                    path_obj = Path(file_path)
-                    if path_obj.exists():
-                        safe_files.append(file_path)
-                    else:
-                        self.logger.error(f"Error processing file {file_path}: file does not exist")
-                except Exception as e:
-                    self.logger.error(f"Error processing file {file_path}: {e}")
-            safe_files = safe_files or None
-
-        new_user_message = self._prepare_messages(prompt, safe_files)[0]
-        messages.append(new_user_message)
-
-        # self.logger.debug(f"Prepared {len(messages)} messages for conversation context")
-        return messages, conversation_history, system_prompt
-
-    async def _update_conversation_memory(
-        self,
-        user_id: Optional[str],
-        session_id: Optional[str],
-        conversation_history: Optional[ConversationHistory],
-        messages: List[Dict[str, Any]],
-        system_prompt: Optional[str],
-        turn_id: str,
-        original_prompt: str,
-        assistant_response: str,
-        tools_used: List[str] = None,
-    ) -> None:
-        """Update conversation memory with the latest turn."""
-        if not (user_id and session_id and conversation_history and self.conversation_memory):
-            return
-
-        # Create a new conversation turn
-        turn = ConversationTurn(
-            turn_id=turn_id,
-            user_id=user_id,
-            user_message=original_prompt,
-            assistant_response=assistant_response,
-            context_used=system_prompt,
-            tools_used=tools_used or [],
-            metadata={
-                "message_count": len(messages),
-                "has_system_prompt": bool(system_prompt),
-                "provider": getattr(self, "client_type", "unknown"),
-            },
-        )
-
-        # Add turn to conversation history
-        await self.conversation_memory.add_turn(user_id, session_id, turn, chatbot_id=self._get_chatbot_key())
 
     def _extract_json_from_response(self, text: str, output_type: type = None) -> str:
         """Extract JSON from LLM response, handling markdown code blocks,
@@ -2782,17 +2661,10 @@ $backstory
             self.logger.error(f"Error saving {mime_format} to {out_path}: {e}")
             return None
 
-    @staticmethod
-    def create_conversation_memory(memory_type: str = "memory", **kwargs) -> ConversationMemory:
-        """Factory method to create a conversation memory instance."""
-        if memory_type == "memory":
-            return InMemoryConversation()
-        elif memory_type == "redis":
-            return RedisConversation(**kwargs)
-        elif memory_type == "file":
-            return FileConversationMemory(**kwargs)
-        else:
-            raise ValueError(f"Unsupported memory type: {memory_type}")
+    # NOTE (FEAT-524): the ``create_conversation_memory()`` static factory was
+    # removed here — it had zero callers and was the last import binding this
+    # module to the storage backends. ``AbstractBot.get_conversation_memory()``
+    # is the bot-side equivalent and remains.
 
     async def _wait_with_backoff(self, retry_count: int, config: StreamingRetryConfig) -> None:
         """Wait with exponential backoff before retry."""

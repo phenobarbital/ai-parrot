@@ -1,0 +1,264 @@
+{
+  "feature_id": "FEAT-526",
+  "mode": "enrichment",
+  "summary_oneline": "Add MetaClient for Meta Model API (Muse Spark) over both Chat Completions and Responses API; live-verified against the repo's own key",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/meta.py",
+      "symbol": "MetaClient",
+      "role": "NEW - provider subclass of OpenAIBaseClient",
+      "evidence": [
+        "F005",
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/meta.py",
+      "symbol": "MetaModel",
+      "role": "NEW - model-id enum + tier metadata",
+      "evidence": [
+        "F003",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/factory.py",
+      "symbol": "SUPPORTED_CLIENTS",
+      "role": "register 'meta' + aliases",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/openai_base.py",
+      "symbol": "OpenAIBaseClient._chat_completion",
+      "lines": "639,643,979,983",
+      "role": "shared funnel - already emits Meta-legal tool_choice/max_tokens",
+      "evidence": [
+        "F005",
+        "F009",
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "_make_openai_strict_tool",
+      "lines": "1269-1293,1399",
+      "role": "strict-schema normalizer - conformant with Meta's subset",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "tests/clients/test_openai_compatible_defaults.py",
+      "symbol": "WIRE_SUBCLASSES",
+      "role": "roster to extend",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "tests/clients/test_openai_base_parity.py",
+      "symbol": "WIRE_SUBCLASSES",
+      "role": "roster to extend",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "examples/clients/smoke/smoke_meta.py",
+      "symbol": null,
+      "role": "NEW - credential-gated smoke script",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "_prepare_lazy_tools/_check_new_tools",
+      "lines": "1298-1338",
+      "role": "parrot's client-side lazy-tool path overlapping Meta tool_search",
+      "evidence": [
+        "F017"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "Meta Model API is real, live, and returns OpenAI-shaped error envelopes",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C2",
+      "claim": "The documented auth env var is MODEL_API_KEY, not the META_API_KEY the brief requests",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C3",
+      "claim": "OpenAIBaseClient is a purpose-built extension point with a documented 7-step recipe",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C4",
+      "claim": "Search grounding, tool search, custom tools and token counting are Responses-API-only",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C5",
+      "claim": "OpenAIBaseClient has no Responses API support; _is_responses_model() is False in the base",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C6",
+      "claim": "parrot's existing tool_choice='auto' emission is already Meta-legal",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C7",
+      "claim": "ToolFormat.OPENAI's strict:true output conforms to Meta's strict subset",
+      "evidence": [
+        "F010",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "Upgraded from medium: live 200 with strict:true on a conformant schema."
+    },
+    {
+      "id": "C8",
+      "claim": "muse-spark-1.3-contributor grants Meta permission to train on prompts and completions",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C9",
+      "claim": "Prompt caching requires zero implementation - it is automatic server-side",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C10",
+      "claim": "A Chat-Completions-only MetaClient is near-mechanical, ~200 lines, mirroring OpenRouterClient",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C11",
+      "claim": "logprobs returns HTTP 400 and reasoning_content is redacted to empty for external keys",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C12",
+      "claim": "An in-flight max_completion_tokens spec may interact with this work",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "low",
+      "reasoning": "The spec file is modified in the working tree by another session; its content was not read."
+    },
+    {
+      "id": "C13",
+      "claim": "Muse Spark spends most of its output budget on reasoning tokens",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C14",
+      "claim": "The 7 model ids are live-verified ground truth",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C15",
+      "claim": "Responses output is typed items not choices; output_text is SDK-only",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C16",
+      "claim": "Search-grounding annotations may return empty",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Protocol scope",
+      "user_answer": "all on this phase - both Chat Completions and Responses API",
+      "resolved": true
+    },
+    {
+      "id": "U2",
+      "question": "Live key + contributor tier acceptable?",
+      "user_answer": "live key in env/.env via navconfig; contributor only for synthetic e2e prompts",
+      "resolved": true,
+      "verified": "GET /v1/models -> 200, 7 models"
+    },
+    {
+      "id": "U3",
+      "question": "Muse Image / Voice / Messages in scope?",
+      "user_answer": "out of scope; enum members reserved only",
+      "resolved": true
+    },
+    {
+      "id": "D1",
+      "question": "Where should Responses-API support live?",
+      "resolved": true,
+      "recommendation": "MetaClient-local for this phase",
+      "user_answer": "accept recommendation - MetaClient-local"
+    },
+    {
+      "id": "D2",
+      "question": "Native tool_search vs parrot client-side search_tools?",
+      "resolved": true,
+      "recommendation": "opt-in MetaClient flag",
+      "user_answer": "map them together, at the end; Meta tool_search measured slower than parrot search",
+      "assumption": "unified search_tools surface dispatching to native tool_search, parrot path default on latency grounds; not independently reproduced"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the convention is documented and test-enforced; the only genuine fork (U1: protocol scope) is a scoping decision, not an architecture exploration."
+  },
+  "status": "accepted"
+}

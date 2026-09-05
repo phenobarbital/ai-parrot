@@ -1,4 +1,5 @@
 """Unit tests for GoogleGenAIClient Batch API and Flex Inference."""
+
 import asyncio
 import json
 import pytest
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 from datamodel.parsers.json import json_decoder, json_encoder
 from parrot.models.responses import AIMessage
 from parrot.models.basic import CompletionUsage
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 class TestData(BaseModel):
@@ -21,6 +22,7 @@ class TestData(BaseModel):
 def _make_client():
     """Create GoogleGenAIClient without network setup."""
     from parrot.clients.google.client import GoogleGenAIClient
+
     client = GoogleGenAIClient.__new__(GoogleGenAIClient)
     client.model = "gemini-2.5-flash"
     client._lightweight_model = "gemini-3-flash-lite"
@@ -34,6 +36,7 @@ def _make_client():
     client._tool_manager.get_tool_schemas.return_value = []
     client._tool_manager.tools = {}
     from datamodel.parsers.json import JSONContent
+
     client._json = JSONContent()
     return client
 
@@ -42,19 +45,19 @@ def _make_client():
 def mock_google_client():
     """GoogleGenAIClient with mocked SDK."""
     client = _make_client()
-    
+
     # Create mock SDK client
     sdk_client = MagicMock()
     sdk_client.aio = MagicMock()
     sdk_client.aio.batches = MagicMock()
     sdk_client.aio.files = MagicMock()
     sdk_client.aio.models = MagicMock()
-    
+
     # Redefine client property to return our mocked SDK client
     type(client).client = property(lambda self: sdk_client)
-    
+
     client._ensure_client = AsyncMock(return_value=sdk_client)
-    
+
     return client
 
 
@@ -68,11 +71,11 @@ class TestGoogleBatch:
             "temperature": 0.5,
             "max_tokens": 150,
             "system_prompt": "You are a helpful assistant",
-            "structured_output": TestData
+            "structured_output": TestData,
         }
-        
+
         payload = await mock_google_client._build_batch_request_payload(req)
-        
+
         assert payload["contents"] == [{"parts": [{"text": "Hello Gemini"}]}]
         assert payload["system_instruction"] == {"parts": [{"text": "You are a helpful assistant"}]}
         assert payload["generation_config"]["temperature"] == 0.5
@@ -84,21 +87,30 @@ class TestGoogleBatch:
         """Verify ask_batch with use_flex=True delegates to ask() concurrently."""
         mock_google_client.ask = AsyncMock()
         mock_google_client.ask.side_effect = [
-            AIMessage(input="test 1", output="response 1", model="gemini-2.5-flash", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)),
-            AIMessage(input="test 2", output="response 2", model="gemini-2.5-flash", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+            AIMessage(
+                input="test 1",
+                output="response 1",
+                model="gemini-2.5-flash",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
+            AIMessage(
+                input="test 2",
+                output="response 2",
+                model="gemini-2.5-flash",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
         ]
-        
-        requests = [
-            {"prompt": "test 1"},
-            {"prompt": "test 2"}
-        ]
-        
+
+        requests = [{"prompt": "test 1"}, {"prompt": "test 2"}]
+
         results = await mock_google_client.ask_batch(requests, use_flex=True)
-        
+
         assert len(results) == 2
         assert results[0].output == "response 1"
         assert results[1].output == "response 2"
-        
+
         # Verify ask was called with service_tier="flex"
         mock_google_client.ask.assert_any_call(prompt="test 1", service_tier="flex")
         mock_google_client.ask.assert_any_call(prompt="test 2", service_tier="flex")
@@ -106,28 +118,28 @@ class TestGoogleBatch:
     async def test_ask_batch_async_wait_for_completion(self, mock_google_client):
         """Verify async ask_batch flows completely from file upload to job polling and results parsing."""
         sdk_client = await mock_google_client._ensure_client()
-        
+
         # Setup mocks
         mock_file = SimpleNamespace(name="files/input-file")
         sdk_client.aio.files.upload = AsyncMock(return_value=mock_file)
-        
+
         mock_job = SimpleNamespace(
             name="batches/job-123",
             state="JOB_STATE_PENDING",
             dest=SimpleNamespace(file_name="files/output-file"),
-            error=None
+            error=None,
         )
         sdk_client.aio.batches.create = AsyncMock(return_value=mock_job)
-        
+
         # We'll simulate polling: pending -> succeeded
         mock_job_succeeded = SimpleNamespace(
             name="batches/job-123",
             state="JOB_STATE_SUCCEEDED",
             dest=SimpleNamespace(file_name="files/output-file"),
-            error=None
+            error=None,
         )
         sdk_client.aio.batches.get = AsyncMock(return_value=mock_job_succeeded)
-        
+
         # Mock download results
         # We need GenerateContentResponse structures serialized as JSON lines
         output_data = (
@@ -137,23 +149,20 @@ class TestGoogleBatch:
         sdk_client.aio.files.download = AsyncMock(return_value=output_data.encode("utf-8"))
         sdk_client.aio.files.delete = AsyncMock()
 
-        requests = [
-            {"prompt": "test 1"},
-            {"prompt": "test 2"}
-        ]
-        
+        requests = [{"prompt": "test 1"}, {"prompt": "test 2"}]
+
         results = await mock_google_client.ask_batch(requests, use_flex=False, poll_interval=1)
-        
+
         assert len(results) == 2
         assert results[0].output == "response 1"
         assert results[1].output == "response 2"
-        
+
         # Check files uploads & batch creation calls
         sdk_client.aio.files.upload.assert_called_once()
         sdk_client.aio.batches.create.assert_called_once()
         sdk_client.aio.batches.get.assert_called()
         sdk_client.aio.files.download.assert_called_once_with(file="files/output-file")
-        
+
         # Check files deletes (input and output)
         sdk_client.aio.files.delete.assert_any_call(name="files/input-file")
         sdk_client.aio.files.delete.assert_any_call(name="files/output-file")
@@ -161,22 +170,19 @@ class TestGoogleBatch:
     async def test_ask_batch_async_no_wait(self, mock_google_client):
         """Verify ask_batch returns job immediately when wait_for_completion=False."""
         sdk_client = await mock_google_client._ensure_client()
-        
+
         mock_file = SimpleNamespace(name="files/input-file")
         sdk_client.aio.files.upload = AsyncMock(return_value=mock_file)
-        
-        mock_job = SimpleNamespace(
-            name="batches/job-123",
-            state="JOB_STATE_PENDING"
-        )
+
+        mock_job = SimpleNamespace(name="batches/job-123", state="JOB_STATE_PENDING")
         sdk_client.aio.batches.create = AsyncMock(return_value=mock_job)
-        
+
         requests = [{"prompt": "test 1"}]
         job = await mock_google_client.ask_batch(requests, wait_for_completion=False)
-        
+
         assert job.name == "batches/job-123"
         assert job.state == "JOB_STATE_PENDING"
-        
+
         sdk_client.aio.files.upload.assert_called_once()
         sdk_client.aio.batches.create.assert_called_once()
         sdk_client.aio.batches.get.assert_not_called()
@@ -186,7 +192,7 @@ class TestGoogleBatch:
         sdk_client = await mock_google_client._ensure_client()
         mock_job = SimpleNamespace(name="batches/job-123")
         sdk_client.aio.batches.get = AsyncMock(return_value=mock_job)
-        
+
         job = await mock_google_client.get_batch_job("batches/job-123")
         assert job.name == "batches/job-123"
         sdk_client.aio.batches.get.assert_called_once_with(name="batches/job-123")
@@ -196,7 +202,7 @@ class TestGoogleBatch:
         sdk_client = await mock_google_client._ensure_client()
         mock_job = SimpleNamespace(name="batches/job-123", state="JOB_STATE_CANCELLED")
         sdk_client.aio.batches.cancel = AsyncMock(return_value=mock_job)
-        
+
         job = await mock_google_client.cancel_batch_job("batches/job-123")
         assert job.state == "JOB_STATE_CANCELLED"
         sdk_client.aio.batches.cancel.assert_called_once_with(name="batches/job-123")
@@ -204,13 +210,13 @@ class TestGoogleBatch:
     async def test_list_batch_jobs(self, mock_google_client):
         """Verify list_batch_jobs yields all batch jobs."""
         sdk_client = await mock_google_client._ensure_client()
-        
+
         async def mock_list():
             yield SimpleNamespace(name="batches/job-1")
             yield SimpleNamespace(name="batches/job-2")
-            
+
         sdk_client.aio.batches.list = mock_list
-        
+
         jobs = await mock_google_client.list_batch_jobs()
         assert len(jobs) == 2
         assert jobs[0].name == "batches/job-1"
@@ -220,13 +226,27 @@ class TestGoogleBatch:
         """Verify generate_image_batch executes generate_image concurrently."""
         mock_google_client.generate_image = AsyncMock()
         mock_google_client.generate_image.side_effect = [
-            AIMessage(input="prompt 1", output=None, response="ok", model="gemini-3.1-flash-image", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)),
-            AIMessage(input="prompt 2", output=None, response="ok", model="gemini-3.1-flash-image", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+            AIMessage(
+                input="prompt 1",
+                output=None,
+                response="ok",
+                model="gemini-3.1-flash-image",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
+            AIMessage(
+                input="prompt 2",
+                output=None,
+                response="ok",
+                model="gemini-3.1-flash-image",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
         ]
-        
+
         requests = [{"prompt": "prompt 1"}, {"prompt": "prompt 2"}]
         results = await mock_google_client.generate_image_batch(requests, use_flex=True)
-        
+
         assert len(results) == 2
         mock_google_client.generate_image.assert_any_call(prompt="prompt 1", service_tier="flex")
         mock_google_client.generate_image.assert_any_call(prompt="prompt 2", service_tier="flex")
@@ -235,13 +255,27 @@ class TestGoogleBatch:
         """Verify generate_video_batch executes video_generation concurrently."""
         mock_google_client.video_generation = AsyncMock()
         mock_google_client.video_generation.side_effect = [
-            AIMessage(input="prompt 1", output=None, response="ok", model="veo-3.1-generate-preview", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)),
-            AIMessage(input="prompt 2", output=None, response="ok", model="veo-3.1-generate-preview", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+            AIMessage(
+                input="prompt 1",
+                output=None,
+                response="ok",
+                model="veo-3.1-generate-preview",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
+            AIMessage(
+                input="prompt 2",
+                output=None,
+                response="ok",
+                model="veo-3.1-generate-preview",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            ),
         ]
-        
+
         requests = [{"prompt": "prompt 1"}, {"prompt": "prompt 2"}]
         results = await mock_google_client.generate_video_batch(requests)
-        
+
         assert len(results) == 2
         mock_google_client.video_generation.assert_any_call(prompt="prompt 1")
         mock_google_client.video_generation.assert_any_call(prompt="prompt 2")
@@ -264,7 +298,7 @@ class TestGoogleBatch:
                 usage=CompletionUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
                 images=[dummy_img],
                 files=[dummy_vid],
-                structured_output={"key": "value"}
+                structured_output={"key": "value"},
             )
         ]
 
@@ -272,18 +306,16 @@ class TestGoogleBatch:
         google_client = _make_client()
         google_client.persist_batch_results = mock_google_client.persist_batch_results
         google_client.logger = mock_google_client.logger
-        
+
         dest_dir = await google_client.persist_batch_results(
-            results,
-            batch_id="test_batch_123",
-            save_dir=tmp_path / "custom_batch_results"
+            results, batch_id="test_batch_123", save_dir=tmp_path / "custom_batch_results"
         )
 
         assert dest_dir.exists()
         assert dest_dir.joinpath("result_0_message.json").exists()
         assert dest_dir.joinpath("result_0_structured.json").exists()
         assert dest_dir.joinpath("result_0_response.txt").exists()
-        
+
         # Check files were copied with timestamps in their names
         copied_images = list(dest_dir.joinpath("images").glob("dummy_image_*.png"))
         copied_videos = list(dest_dir.joinpath("files").glob("dummy_video_*.mp4"))
@@ -299,42 +331,40 @@ class TestGoogleBatch:
     async def test_generate_image_auto_upscale(self, mock_google_client):
         """Verify generate_image executes auto_upscale when requested."""
         sdk_client = await mock_google_client._ensure_client()
-        
+
         # Mock generate_content response with an image part
         mock_part = MagicMock()
         mock_part.text = None
-        
+
         mock_image = MagicMock()
         mock_part.as_image.return_value = mock_image
-        del mock_part.image # prevent direct image attribute fallback
-        
+        del mock_part.image  # prevent direct image attribute fallback
+
         mock_response = MagicMock()
         mock_response.parts = [mock_part]
         sdk_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
-        
+
         # Mock upscale_image response
         mock_upscale_part = MagicMock()
         mock_upscaled_image = MagicMock()
         mock_upscale_part.image = mock_upscaled_image
-        
+
         mock_upscale_response = MagicMock()
         mock_upscale_response.generated_images = [mock_upscale_part]
         sdk_client.aio.models.upscale_image = AsyncMock(return_value=mock_upscale_response)
-        
+
         # Call generate_image with auto_upscale=True
         from parrot.clients.google.client import GoogleGenAIClient
+
         google_client = _make_client()
         google_client._ensure_client = mock_google_client._ensure_client
         google_client.get_client = AsyncMock(return_value=sdk_client)
-        
+
         # Patch client property
         type(google_client).client = property(lambda self: sdk_client)
-        
-        msg = await google_client.generate_image(
-            prompt="a cute parrot",
-            auto_upscale=True
-        )
-        
+
+        msg = await google_client.generate_image(prompt="a cute parrot", auto_upscale=True)
+
         # Assertions
         assert msg.output == mock_upscaled_image
         sdk_client.aio.models.generate_content.assert_called_once()
@@ -343,29 +373,27 @@ class TestGoogleBatch:
     async def test_generate_images_initializes_client(self, mock_google_client):
         """Verify generate_images calls _ensure_client before using SDK."""
         sdk_client = await mock_google_client._ensure_client()
-        
+
         # Mock generate_images response
         mock_img_part = MagicMock()
         mock_img_part.image = MagicMock()
         mock_img_response = MagicMock()
         mock_img_response.generated_images = [mock_img_part]
         sdk_client.aio.models.generate_images = AsyncMock(return_value=mock_img_response)
-        
+
         google_client = _make_client()
         google_client._ensure_client = mock_google_client._ensure_client
         google_client.get_client = AsyncMock(return_value=sdk_client)
-        
+
         # Patch client property
         type(google_client).client = property(lambda self: sdk_client)
-        
+
         from parrot.models import ImageGenerationPrompt
-        prompt_data = ImageGenerationPrompt(
-            prompt="renaissance parrot",
-            model="imagen-3.0-generate-002"
-        )
-        
+
+        prompt_data = ImageGenerationPrompt(prompt="renaissance parrot", model="imagen-3.0-generate-002")
+
         # Call generate_images
         msg = await google_client.generate_images(prompt=prompt_data)
-        
+
         assert msg is not None
         sdk_client.aio.models.generate_images.assert_called_once()

@@ -7,6 +7,54 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Breaking Changes
+
+#### FEAT-524: Conversation History Ownership — memory-less clients (0.29.0)
+
+`ConversationHistory` had two owners: `AbstractClient` and `AbstractBot` both
+read and both wrote it under the same key. Every stateful round persisted **two**
+turns and sent the history to the provider **twice** — once as replayed messages
+from the client, once as a text digest injected into the system prompt.
+`AbstractBot` is now the sole owner. Hard cut: no deprecation shims.
+
+Guide: `docs/memory/conversation-history-ownership.md`.
+Spec: `sdd/specs/conversation-history-ownership.spec.md`.
+
+**`AbstractClient` (base + all 19 concrete clients)**
+- `conversation_memory` constructor kwarg removed (and its `InMemoryConversation()`
+  default).
+- `user_id` / `session_id` removed from `ask()` and `ask_stream()`. Pass
+  `history: Sequence[HistoryMessage]` instead. Telemetry still resolves ids from
+  the `parrot.observability.context` ContextVars that `BaseBot` binds.
+- `stateless` removed from `ask()` / `ask_stream()` — a stateless call is one with
+  no `history`.
+- Removed: `start_conversation`, `get_conversation`, `clear_conversation`,
+  `delete_conversation`, `list_user_conversations`, `_get_chatbot_key`,
+  `_prepare_conversation_context`, `_update_conversation_memory`,
+  `create_conversation_memory`.
+- Added: `_format_history()` (the single per-provider override point),
+  `_build_messages()`, `_existing_files()`.
+
+**`parrot.memory`**
+- `ConversationHistory.get_messages_for_api()` removed → new pure
+  `parrot.memory.render_history()`, exported alongside `HistoryMessage`.
+- `ConversationTurn.chatbot_id` added (last field; legacy records deserialize to
+  `None`) plus the canonical `ConversationTurn.from_ai_message()` constructor.
+
+**`AbstractBot`**
+- `build_conversation_context()` removed, with the `conversation_context` kwarg on
+  `create_system_prompt()` / `_build_prompt()` and the `## Conversation Context:`
+  block. History never appears in a system prompt again.
+- `save_conversation_turn()` lost its `chatbot_id` parameter and is now the single
+  writer; it raises `ValueError` if `turn.chatbot_id != memory_key_id`.
+- `_create_llm_client()` lost its `conversation_memory` parameter.
+- New `memory_key_id` property: the explicit `chatbot_id` if configured, else
+  `self.name` (never the random per-process `uuid4()` default).
+
+**Storage key** — unified to `(chatbot, user, session)` on all three backends.
+Legacy un-segmented Redis/File histories are **re-keyed lazily on first read**;
+the legacy record is left in place for rollback. No offline migration job.
+
 ### Added
 
 #### FEAT-520: GraphIndex Postgres Backend — Bitemporal Plane + One-Pass Hybrid Retrieval

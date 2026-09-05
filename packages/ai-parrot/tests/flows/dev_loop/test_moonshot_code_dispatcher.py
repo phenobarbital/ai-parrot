@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 from unittest.mock import AsyncMock
 
-from parrot.clients import moonshot as moonshot_mod
+from parrot.clients.moonshot import client as moonshot_mod
 from parrot.flows.dev_loop import (
     DevelopmentOutput,
     DispatchExecutionError,
@@ -19,8 +19,7 @@ from parrot.flows.dev_loop import (
     MoonshotCodeDispatcher,
     ResearchOutput,
 )
-from parrot.models.moonshot import K_SERIES_MODELS, MoonshotModel
-
+from parrot.clients.moonshot.models import K_SERIES_MODELS, MoonshotModel
 
 # ---------------------------------------------------------------------------
 # Module 1 — registry / model constants
@@ -96,9 +95,7 @@ def test_moonshot_completion_args_legacy_model_keeps_temperature():
 
 def test_moonshot_thinking_warns_always_thinking_model(caplog):
     disp = _make_dispatcher()
-    profile = MoonshotCodeDispatchProfile(
-        model="kimi-k2.7-code", enable_thinking=False
-    )
+    profile = MoonshotCodeDispatchProfile(model="kimi-k2.7-code", enable_thinking=False)
     with caplog.at_level(logging.WARNING):
         args = disp._completion_args(profile, tools=[])
     assert args["thinking"] is False
@@ -113,9 +110,7 @@ def test_moonshot_client_factory_forwards_model_args():
             model_args={"temperature": 0.0, "max_tokens": 100},
         )
     except TypeError as exc:  # pragma: no cover - failure path
-        raise AssertionError(
-            f"default Moonshot client factory raised TypeError: {exc}"
-        ) from exc
+        raise AssertionError(f"default Moonshot client factory raised TypeError: {exc}") from exc
     except Exception:
         # Building a real MoonshotClient without MOONSHOT_API_KEY may raise —
         # this test only asserts the lambda signature accepts model_args=.
@@ -186,9 +181,7 @@ class _FakeMoonshotClient:
         **kwargs: Any,
     ) -> _Response:
         self.thinking_ctxs.append(moonshot_mod._thinking_ctx.get())
-        self.calls.append(
-            {"model": model, "messages": messages, "use_tools": use_tools, **kwargs}
-        )
+        self.calls.append({"model": model, "messages": messages, "use_tools": use_tools, **kwargs})
         if not self.responses:
             raise AssertionError("fake client exhausted")
         return _Response(self.responses.pop(0))
@@ -215,9 +208,7 @@ def brief(_patch_worktree_base) -> ResearchOutput:
     )
 
 
-def _dispatcher(
-    monkeypatch, moonshot_client: _FakeMoonshotClient
-) -> MoonshotCodeDispatcher:
+def _dispatcher(monkeypatch, moonshot_client: _FakeMoonshotClient) -> MoonshotCodeDispatcher:
     captured: dict[str, Any] = {}
 
     def _client_factory(*args: Any, **kwargs: Any) -> _FakeMoonshotClient:
@@ -304,9 +295,7 @@ async def test_moonshot_dispatch_runs_tool_loop_and_validates_final_output(
     assert "temperature" not in first_call
     assert "extra_body" not in first_call
     assert client.thinking_ctxs[0] == {"thinking": True, "reasoning_effort": "max"}
-    assert any(
-        tool["function"]["name"] == "final_output" for tool in first_call["tools"]
-    )
+    assert any(tool["function"]["name"] == "final_output" for tool in first_call["tools"])
 
     kinds = [event["kind"] for event in _published_events(dispatcher)]
     assert "dispatch.queued" in kinds
@@ -356,9 +345,7 @@ async def test_moonshot_invalid_final_tool_payload_raises_validation_error(
     brief,
     _patch_worktree_base,
 ):
-    client = _FakeMoonshotClient(
-        [_Message(tool_calls=[_ToolCall("call_1", "final_output", {"files_changed": []})])]
-    )
+    client = _FakeMoonshotClient([_Message(tool_calls=[_ToolCall("call_1", "final_output", {"files_changed": []})])])
     dispatcher = _dispatcher(monkeypatch, client)
 
     with pytest.raises(DispatchOutputValidationError):

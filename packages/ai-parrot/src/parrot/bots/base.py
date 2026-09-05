@@ -56,8 +56,10 @@ from parrot.core.events.lifecycle.events import (
 
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 # user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
+# current_memory_key_id (FEAT-525): scopes read_omitted_content's omission-store lookup
 from parrot.observability.context import (
     current_agent_name,
+    current_memory_key_id,
     current_session_id,
     current_user_id,
 )
@@ -112,7 +114,6 @@ class BaseBot(AbstractBot):
         vector_context: str = "",
         kb_context: str = "",
         user_context: str = "",
-        conversation_context: str = "",
         memory_context: str = "",
         vector_metadata: Optional[dict] = None,
     ) -> None:
@@ -149,7 +150,6 @@ class BaseBot(AbstractBot):
         #     len(vector_context or ""), search_results, len(sources),
         #     len(kb_context or ""),
         #     len(user_context or ""),
-        #     len(conversation_context or ""),
         #     len(memory_context or ""),
         # )
 
@@ -200,12 +200,21 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        # FEAT-525: default the ids HERE, before binding, so
+        # current_user_id/current_session_id/current_memory_key_id never
+        # observe a call that hasn't been scoped yet (binding-order hazard,
+        # spec §7). _conversation_body's own defaulting lines become no-ops
+        # once it receives already-defaulted ids.
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         # Token-based set/reset is nested-safe (inner agents restore outer value).
         # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
+        _memkey_token = current_memory_key_id.set(self.memory_key_id)
         try:
             return await self._conversation_body(
                 question=question,
@@ -229,6 +238,7 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
+            current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)
@@ -318,15 +328,24 @@ class BaseBot(AbstractBot):
         try:
             # Get conversation history using unified memory
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
+            compaction_result = None
 
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -402,7 +421,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 user_id=user_id,
@@ -417,7 +435,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 vector_metadata=vector_metadata,
             )
 
@@ -442,8 +459,7 @@ class BaseBot(AbstractBot):
                         "prompt": question,
                         "system_prompt": system_prompt,
                         "temperature": kwargs.get("temperature", None),
-                        "user_id": user_id,
-                        "session_id": session_id,
+                        "history": rendered_history,
                         "use_tools": use_tools,
                     }
 
@@ -468,8 +484,8 @@ class BaseBot(AbstractBot):
                         source_documents=vector_info.get("source_documents", []),
                     )
                     response.set_conversation_context_info(
-                        used=bool(conversation_context),
-                        context_length=len(conversation_context) if conversation_context else 0,
+                        used=bool(rendered_history),
+                        context_length=len(rendered_history),
                     )
 
                     # Set additional metadata
@@ -522,21 +538,20 @@ class BaseBot(AbstractBot):
 
                     # Save conversation turn
                     if use_conversation_history and memory:
-                        turn = ConversationTurn(
-                            turn_id=response.turn_id or str(uuid.uuid4()),
-                            user_id=user_id,
+                        turn = ConversationTurn.from_ai_message(
                             user_message=question,
-                            assistant_response=response.content,
+                            response=response,
+                            user_id=user_id,
+                            chatbot_id=self.memory_key_id,
                             context_used=vector_context if use_vector_context else None,
-                            tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                            metadata={
-                                "response_time": response.response_time,
-                                "model": response.model,
-                                "usage": response.usage,
-                                "finish_reason": response.finish_reason,
-                            },
                         )
-                        await memory.add_turn(user_id, session_id, turn)
+                        commit = None
+                        if compaction_result is not None:
+                            commit = self.build_compaction_commit(
+                                compaction_result,
+                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                            )
+                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
 
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
@@ -623,10 +638,11 @@ class BaseBot(AbstractBot):
             AIMessage: The response from the LLM
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -634,6 +650,11 @@ class BaseBot(AbstractBot):
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             turn_id = str(uuid.uuid4())
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             _trusted_source = kwargs.pop("_trusted_source", False)
 
             # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
@@ -676,20 +697,27 @@ class BaseBot(AbstractBot):
 
             # Get conversation history using unified memory
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
+            compaction_result = None
 
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Create system prompt (no vector context)
-            system_prompt = await self.create_system_prompt(
-                conversation_context=conversation_context, user_id=user_id, session_id=session_id, **kwargs
-            )
+            system_prompt = await self.create_system_prompt(user_id=user_id, session_id=session_id, **kwargs)
 
             # Configure LLM if needed
             llm = self.get_client()
@@ -702,8 +730,7 @@ class BaseBot(AbstractBot):
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get("temperature", None),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                 }
 
                 if "tool_type" in kwargs:
@@ -720,8 +747,8 @@ class BaseBot(AbstractBot):
 
                 # Set conversation context info
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 # Set additional metadata
@@ -740,21 +767,20 @@ class BaseBot(AbstractBot):
                 # Return the response
                 # Save conversation turn
                 if use_conversation_history and memory:
-                    turn = ConversationTurn(
-                        turn_id=response.turn_id or str(uuid.uuid4()),
-                        user_id=user_id,
+                    turn = ConversationTurn.from_ai_message(
                         user_message=question,
-                        assistant_response=response.content,
-                        context_used=None,  # invoke does not use vector context usually
-                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                        metadata={
-                            "response_time": response.response_time,
-                            "model": response.model,
-                            "usage": response.usage,
-                            "finish_reason": response.finish_reason,
-                        },
+                        response=response,
+                        user_id=user_id,
+                        chatbot_id=self.memory_key_id,
+                        context_used=None,  # invoke does not use vector context,
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    commit = None
+                    if compaction_result is not None:
+                        commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
@@ -774,8 +800,12 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
@@ -985,10 +1015,11 @@ class BaseBot(AbstractBot):
             AIMessage or formatted output based on output_mode
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
         # branch below reads both. Anything that raises earlier than their
         # original in-try assignment — the input guardrail pipeline, for one —
@@ -1016,6 +1047,11 @@ class BaseBot(AbstractBot):
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             turn_id = str(uuid.uuid4())
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             _trusted_source = kwargs.pop("_trusted_source", False)
 
             # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
@@ -1091,15 +1127,24 @@ class BaseBot(AbstractBot):
 
             # Get conversation history
             conversation_history = None
-            conversation_context = ""
+            rendered_history = []
+            compaction_result = None
             memory = memory or self.conversation_memory
 
             phase_started = time.perf_counter()
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
             self.logger.debug(
                 "[%s] ask timing: conversation_history_ms=%.1f",
                 self.name,
@@ -1218,7 +1263,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 memory_context=memory_context or None,
@@ -1240,7 +1284,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 memory_context=memory_context,
                 vector_metadata=vector_metadata,
             )
@@ -1282,8 +1325,7 @@ class BaseBot(AbstractBot):
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get("temperature", None),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": use_tools,
                 }
 
@@ -1332,21 +1374,20 @@ class BaseBot(AbstractBot):
                 # Save conversation turn
                 phase_started = time.perf_counter()
                 if use_conversation_history and memory:
-                    turn = ConversationTurn(
-                        turn_id=response.turn_id or str(uuid.uuid4()),
-                        user_id=user_id,
+                    turn = ConversationTurn.from_ai_message(
                         user_message=question,
-                        assistant_response=response.content,
+                        response=response,
+                        user_id=user_id,
+                        chatbot_id=self.memory_key_id,
                         context_used=vector_context if use_vector_context else None,
-                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                        metadata={
-                            "response_time": response.response_time,
-                            "model": response.model,
-                            "usage": response.usage,
-                            "finish_reason": response.finish_reason,
-                        },
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    commit = None
+                    if compaction_result is not None:
+                        commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
                     self.name,
@@ -1366,8 +1407,8 @@ class BaseBot(AbstractBot):
                 )
 
                 response.set_conversation_context_info(
-                    used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0,
+                    used=bool(rendered_history),
+                    context_length=len(rendered_history),
                 )
 
                 if return_sources and vector_info.get("source_documents"):
@@ -1590,8 +1631,12 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1617,10 +1662,11 @@ class BaseBot(AbstractBot):
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
-        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
-        _user_token = current_user_id.set(user_id)
-        _session_token = current_session_id.set(session_id)
+        # Pre-declared so `finally` below can safely no-op if an exception is
+        # raised before the ContextVars are bound (they are bound AFTER the
+        # id defaults, per the FEAT-525 binding-order fix, spec §7).
+        _user_token = _session_token = _memkey_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1630,6 +1676,11 @@ class BaseBot(AbstractBot):
             output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
+            # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
+            _user_token = current_user_id.set(user_id)
+            _session_token = current_session_id.set(session_id)
+            _memkey_token = current_memory_key_id.set(self.memory_key_id)
             # Maintain turn identifier generation for parity with ask()
             _turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
@@ -1683,14 +1734,23 @@ class BaseBot(AbstractBot):
 
             search_kwargs = search_kwargs or {}
 
-            conversation_context = ""
+            rendered_history = []
+            compaction_result = None
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
-                    user_id, session_id
+                conversation_history = await memory.get_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
+                ) or await memory.create_history(
+                    user_id, session_id, chatbot_id=self.memory_key_id
                 )  # noqa
-                conversation_context = self.build_conversation_context(conversation_history)
+                # FEAT-524: history reaches the provider exactly once, as
+                # alternating user/assistant messages — never as a system-prompt
+                # digest. `rendered_history` also feeds the AIMessage's
+                # conversation-context metadata below.
+                # FEAT-525: budgeted when a context_budget is active; byte
+                # identical to the FEAT-524 plain render otherwise.
+                rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
@@ -1738,7 +1798,6 @@ class BaseBot(AbstractBot):
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
-                conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs,
@@ -1751,7 +1810,6 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 kb_context=kb_context,
                 user_context=user_context,
-                conversation_context=conversation_context,
                 vector_metadata=vector_metadata,
             )
 
@@ -1773,8 +1831,7 @@ class BaseBot(AbstractBot):
                     "system_prompt": system_prompt,
                     "model": kwargs.get("model", self._llm_model),
                     "temperature": kwargs.get("temperature", 0),
-                    "user_id": user_id,
-                    "session_id": session_id,
+                    "history": rendered_history,
                     "use_tools": kwargs.get("use_tools", True),
                 }
 
@@ -1841,6 +1898,11 @@ class BaseBot(AbstractBot):
                 # Save conversation turn — also runs on partial/error so the
                 # accumulated text is not lost from memory.
                 if use_conversation_history and memory and full_response:
+                    # FEAT-524: single writer here too. `full_response` — the text
+                    # actually streamed to the caller — stays authoritative, which
+                    # is what preserves the partial-save-on-error behaviour: this
+                    # runs even when the stream died before an AIMessage sentinel
+                    # arrived (`ai_message` may still be None).
                     turn = ConversationTurn(
                         turn_id=_turn_id,
                         user_id=user_id,
@@ -1849,8 +1911,9 @@ class BaseBot(AbstractBot):
                         context_used=vector_context if use_vector_context else None,
                         tools_used=[],
                         metadata={"model": kwargs.get("model", self._llm_model)},
+                        chatbot_id=self.memory_key_id,
                     )
-                    await memory.add_turn(user_id, session_id, turn)
+                    await self.save_conversation_turn(user_id, session_id, turn)
 
                 if ai_message is None:
                     # Defensive fallback: client did not yield an AIMessage sentinel
@@ -1951,6 +2014,10 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
-            current_session_id.reset(_session_token)
-            current_user_id.reset(_user_token)
+            if _memkey_token is not None:
+                current_memory_key_id.reset(_memkey_token)
+            if _session_token is not None:
+                current_session_id.reset(_session_token)
+            if _user_token is not None:
+                current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228

@@ -10,10 +10,11 @@ OpenAI-only model id to a non-OpenAI endpoint.
 
 This module MUST NOT contain any OpenAI-specific model-id literal — that is
 OpenAI-the-provider knowledge and belongs exclusively in
-:mod:`parrot.clients.gpt`.
+:mod:`parrot.clients.openai`.
 
 See ``sdd/specs/openai-compatible-clients.spec.md`` (FEAT-438) §3 Module 1.
 """
+
 from __future__ import annotations
 
 import base64
@@ -24,7 +25,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Sequence
 from datamodel.parsers.json import json_decoder
 from tenacity import (
     AsyncRetrying,
@@ -44,12 +45,17 @@ from ..models import (
 from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
 from ..utils.http_logging import quiet_http_loggers
+from ..memory.render import HistoryMessage
+
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
 
 # The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
 # DEBUG. Quieted here — the base of EVERY OpenAI-protocol client — so Bedrock
 # Mantle, OpenRouter, Moonshot, Nvidia, vLLM and LocalLLM are covered, not
-# just parrot.clients.gpt. See parrot.utils.http_logging for the name split.
+# just parrot.clients.openai. See parrot.utils.http_logging for the name split.
 quiet_http_loggers()
 
 if TYPE_CHECKING:
@@ -62,7 +68,7 @@ class OpenAIBaseClient(AbstractClient):
     Subclasses that speak the OpenAI chat-completions wire protocol under a
     provider-specific label (Bedrock Mantle, OpenRouter, Moonshot, Nvidia,
     LocalLLM/vLLM, and — in Phase 2 — Groq/Zai via their native SDKs) should
-    inherit from this class instead of :class:`~parrot.clients.gpt.OpenAIClient`
+    inherit from this class instead of :class:`~parrot.clients.openai.OpenAIClient`
     directly, so they never inherit OpenAI-the-provider defaults (OpenAI-only
     model ids, Responses-API routing, Sora, etc.).
     """
@@ -129,8 +135,7 @@ class OpenAIBaseClient(AbstractClient):
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ImportError(
-                "OpenAIBaseClient requires the 'openai' SDK. "
-                "Install with: pip install ai-parrot[openai]"
+                "OpenAIBaseClient requires the 'openai' SDK. " "Install with: pip install ai-parrot[openai]"
             ) from exc
         return AsyncOpenAI(
             api_key=self.api_key,
@@ -142,7 +147,7 @@ class OpenAIBaseClient(AbstractClient):
         """Coerce *model* to ``str``. Identity — no deprecation logic.
 
         The base carries no knowledge of any provider's model catalog or
-        deprecation schedule; :class:`~parrot.clients.gpt.OpenAIClient`
+        deprecation schedule; :class:`~parrot.clients.openai.OpenAIClient`
         overrides this with OpenAI-specific alias/deprecation handling.
 
         Args:
@@ -170,9 +175,7 @@ class OpenAIBaseClient(AbstractClient):
         """
         resolved = model or self.model or self.default_model
         if not resolved:
-            raise ValueError(
-                f"no model configured for {self.__class__.__name__}"
-            )
+            raise ValueError(f"no model configured for {self.__class__.__name__}")
         return self._normalize_model(resolved)
 
     def _is_responses_model(self, model_str: str) -> bool:
@@ -180,7 +183,7 @@ class OpenAIBaseClient(AbstractClient):
 
         Always ``False`` in the base — Responses-API routing is
         OpenAI-the-provider behavior owned by
-        :class:`~parrot.clients.gpt.OpenAIClient`.
+        :class:`~parrot.clients.openai.OpenAIClient`.
 
         Args:
             model_str: The resolved model id.
@@ -311,7 +314,7 @@ class OpenAIBaseClient(AbstractClient):
         """Shared tool-calling loop for ``ask()``/``resume()`` (FEAT-438 Module 2).
 
         Replaces the two inline, duplicated while-loops that previously
-        lived in :class:`~parrot.clients.gpt.OpenAIClient`'s ``ask()``
+        lived in :class:`~parrot.clients.openai.OpenAIClient`'s ``ask()``
         (gpt.py:947-1143) and ``resume()`` (gpt.py:1190-1257): executes any
         pending tool calls on *result*, appends the assistant/tool messages,
         re-invokes *call_completion* for the next round, and repeats until
@@ -511,9 +514,7 @@ class OpenAIBaseClient(AbstractClient):
             if track_usage:
                 round_usage, round_raw_usage = self._extract_completion_usage(response)
                 if round_usage is not None:
-                    accumulated_usage = (
-                        round_usage if accumulated_usage is None else accumulated_usage + round_usage
-                    )
+                    accumulated_usage = round_usage if accumulated_usage is None else accumulated_usage + round_usage
 
             result = response.choices[0].message
 
@@ -527,9 +528,8 @@ class OpenAIBaseClient(AbstractClient):
         temperature: float | None = None,
         files: list[str | Path] | None = None,
         system_prompt: str | None = None,
+        history: Sequence[HistoryMessage] | None = None,
         structured_output: type | StructuredOutputConfig | None = None,
-        user_id: str | None = None,
-        session_id: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         use_tools: bool | None = None,
         lazy_loading: bool = False,
@@ -540,7 +540,7 @@ class OpenAIBaseClient(AbstractClient):
         ``OpenAIBaseClient`` subclass that speaks the plain OpenAI wire
         protocol. Subclasses needing Responses-API routing, deep-research
         dispatch, or other OpenAI-provider-only behavior override this
-        method (currently only :class:`~parrot.clients.gpt.OpenAIClient`,
+        method (currently only :class:`~parrot.clients.openai.OpenAIClient`,
         which reuses :meth:`_chat_completion`/:meth:`_run_tool_call_loop`
         from this base while keeping its own richer ``ask()``).
 
@@ -579,10 +579,7 @@ class OpenAIBaseClient(AbstractClient):
                 "for this model; override ask() to handle it."
             )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         _lc_tc = self._emit_before_call(
             client_name=self.client_name,
             model=model_str,
@@ -614,7 +611,10 @@ class OpenAIBaseClient(AbstractClient):
                 system_prompt = "\n\n".join(s.text for s in system_prompt)
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        messages.append({"role": "user", "content": prompt})
+        # FEAT-524: do NOT append the current turn here. _build_messages()
+        # already placed it last, after the rendered history; appending again
+        # sent the prompt twice and produced two consecutive `user` messages,
+        # which strict-alternation providers reject.
 
         output_config = self._get_structured_config(structured_output)
 
@@ -663,9 +663,7 @@ class OpenAIBaseClient(AbstractClient):
                 )
                 model_str = self._fallback_model
                 _used_fallback = True
-                response = await self._chat_completion(
-                    model=model_str, messages=messages, use_tools=_use_tools, **args
-                )
+                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
             else:
                 raise
         _round_duration_ms = (time.perf_counter() - _round_t0) * 1000
@@ -690,7 +688,7 @@ class OpenAIBaseClient(AbstractClient):
             model_str=model_str,
             use_tools=_use_tools,
             args=args,
-            session_id=session_id,
+            session_id=current_session_id.get(),
             lazy_loading=lazy_loading,
             active_tool_names=active_tool_names,
             track_usage=True,
@@ -720,21 +718,7 @@ class OpenAIBaseClient(AbstractClient):
             except Exception:  # noqa: BLE001 pylint: disable=broad-except
                 final_output = response_text
 
-        tools_used = [tc.name for tc in all_tool_calls]
-        assistant_response_text = (
-            result.content if isinstance(result.content, str) else self._json.dumps(result.content)
-        )
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt,
-            turn_id,
-            original_prompt,
-            assistant_response_text,
-            tools_used,
-        )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
         structured_payload = None
         if final_output is not None and not (isinstance(final_output, str) and final_output == response_text):
@@ -744,8 +728,8 @@ class OpenAIBaseClient(AbstractClient):
             response=response,
             input_text=original_prompt,
             model=model_str,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             structured_output=structured_payload,
         )
@@ -790,9 +774,7 @@ class OpenAIBaseClient(AbstractClient):
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or self.default_model)
 
-        messages.append(
-            {"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input}
-        )
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
         turn_id = str(uuid.uuid4())
 
@@ -850,9 +832,7 @@ class OpenAIBaseClient(AbstractClient):
         with open(file_path, "rb") as file:  # noqa: ASYNC230 — moved verbatim from gpt.py
             await self.client.files.create(file=file, purpose=purpose)
 
-    def _encode_image_for_openai(
-        self, image: Path | bytes | Image.Image, low_quality: bool = False
-    ) -> dict[str, Any]:
+    def _encode_image_for_openai(self, image: Path | bytes | Image.Image, low_quality: bool = False) -> dict[str, Any]:
         """Encode an image as an OpenAI-shaped ``image_url`` content block.
 
         Args:
@@ -870,9 +850,7 @@ class OpenAIBaseClient(AbstractClient):
         try:
             from PIL import Image
         except ImportError as exc:
-            raise ImportError(
-                "Image methods require Pillow. Install with: pip install Pillow"
-            ) from exc
+            raise ImportError("Image methods require Pillow. Install with: pip install Pillow") from exc
         if isinstance(image, Path):
             if not image.exists():
                 raise FileNotFoundError(f"Image file not found: {image}")
@@ -909,8 +887,7 @@ class OpenAIBaseClient(AbstractClient):
         temperature: float | None = None,
         files: list[str | Path] | None = None,
         system_prompt: str | None = None,
-        user_id: str | None = None,
-        session_id: str | None = None,
+        history: Sequence[HistoryMessage] | None = None,
         tools: list[dict[str, Any]] | None = None,
         use_tools: bool = True,
         structured_output: type | StructuredOutputConfig | None = None,
@@ -922,7 +899,7 @@ class OpenAIBaseClient(AbstractClient):
         Generic chat-completions streaming implementation shared by every
         ``OpenAIBaseClient`` subclass. Subclasses needing Responses-API
         routing or other OpenAI-provider-only streaming behavior override
-        this method (currently only :class:`~parrot.clients.gpt.OpenAIClient`).
+        this method (currently only :class:`~parrot.clients.openai.OpenAIClient`).
         Routes through :meth:`_chat_completion` with ``stream=True``
         (FEAT-438 G3 — the single completion funnel) instead of calling the
         SDK directly, so a subclass's funnel override applies to streaming
@@ -953,10 +930,7 @@ class OpenAIBaseClient(AbstractClient):
                 "streaming for this model; override ask_stream() to handle it."
             )
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
-
+        messages = self._build_messages(prompt, files, history)
         _lc_tc = self._emit_before_call(
             client_name=self.client_name,
             model=model_str,
@@ -1077,19 +1051,23 @@ class OpenAIBaseClient(AbstractClient):
                 tc_serialized = []
                 for idx in sorted(_tc_accum):
                     tc_info = _tc_accum[idx]
-                    tc_serialized.append({
-                        "id": tc_info["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc_info["name"],
-                            "arguments": tc_info["arguments"],
-                        },
-                    })
-                messages.append({
-                    "role": "assistant",
-                    "content": _round_content or None,
-                    "tool_calls": tc_serialized,
-                })
+                    tc_serialized.append(
+                        {
+                            "id": tc_info["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc_info["name"],
+                                "arguments": tc_info["arguments"],
+                            },
+                        }
+                    )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": _round_content or None,
+                        "tool_calls": tc_serialized,
+                    }
+                )
 
                 for idx in sorted(_tc_accum):
                     tc_info = _tc_accum[idx]
@@ -1107,28 +1085,32 @@ class OpenAIBaseClient(AbstractClient):
                         tool_result = await self._execute_tool(tc_info["name"], tool_args)
                         tc.result = tool_result
                         tc.execution_time = time.time() - start_time
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_info["id"],
-                            "name": tc_info["name"],
-                            "content": str(tool_result),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc_info["id"],
+                                "name": tc_info["name"],
+                                "content": str(tool_result),
+                            }
+                        )
                     except Exception as e:
                         from parrot.core.exceptions import HumanInteractionInterrupt
 
                         if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
+                            e.session_id = current_session_id.get()
                             e.messages = messages
                             e.tool_call_id = tc_info["id"]
                             e.agent_name = model_str
                             raise
                         tc.error = str(e)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_info["id"],
-                            "name": tc_info["name"],
-                            "content": str(e),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc_info["id"],
+                                "name": tc_info["name"],
+                                "content": str(e),
+                            }
+                        )
                     all_tool_calls.append(tc)
                 # Continue to next streaming round.
             else:
@@ -1142,7 +1124,6 @@ class OpenAIBaseClient(AbstractClient):
         else:
             usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
-        tools_used = [tc.name for tc in all_tool_calls]
         ai_message = AIMessage(
             input=prompt,
             output=assistant_content,
@@ -1150,8 +1131,8 @@ class OpenAIBaseClient(AbstractClient):
             model=model_str,
             provider=self.client_type,
             usage=usage,
-            user_id=user_id,
-            session_id=session_id,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
@@ -1166,18 +1147,8 @@ class OpenAIBaseClient(AbstractClient):
         )
         yield ai_message
 
-        if assistant_content:
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_session,
-                messages,
-                system_prompt,
-                turn_id,
-                prompt,
-                assistant_content,
-                tools_used,
-            )
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
+        # the single writer; the `if assistant_content:` guard went with it.
 
     async def invoke(
         self,
@@ -1215,7 +1186,7 @@ class OpenAIBaseClient(AbstractClient):
             temperature: Sampling temperature.
             use_tools: Whether to inject registered tools.
             tools: Additional tool definitions (unused — kept for interface
-                parity with :class:`~parrot.clients.gpt.OpenAIClient`).
+                parity with :class:`~parrot.clients.openai.OpenAIClient`).
 
         Returns:
             :class:`InvokeResult` with parsed output.
@@ -1253,9 +1224,7 @@ class OpenAIBaseClient(AbstractClient):
             if not self.client:
                 raise RuntimeError(f"{type(self).__name__} not initialised. Use async context manager.")
 
-            response = await self._chat_completion(
-                model=resolved_model, messages=messages, use_tools=True, **kwargs
-            )
+            response = await self._chat_completion(model=resolved_model, messages=messages, use_tools=True, **kwargs)
             raw_text = response.choices[0].message.content or ""
 
             output: Any = raw_text

@@ -259,3 +259,98 @@ def flex_frames() -> dict[str, pd.DataFrame]:
         "region_utilization": region_utilization,
         "rep_utilization": rep_utilization,
     }
+
+
+# ---------------------------------------------------------------------------
+# FEAT-525: BaseBot + stub client + InMemoryConversation, for context_budget /
+# save_conversation_turn / Stage-2 event tests (TASK-2830, TASK-2831).
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid  # noqa: E402
+from typing import Any as _Any, Dict as _Dict, Optional as _Optional  # noqa: E402
+
+from navigator_eventbus.lifecycle.base import LifecycleEvent  # noqa: E402
+
+from parrot.bots.base import BaseBot  # noqa: E402
+from parrot.clients.base import AbstractClient  # noqa: E402
+from parrot.models import AIMessage  # noqa: E402
+from parrot.models.responses import CompletionUsage  # noqa: E402
+
+
+class _BudgetStubClient(AbstractClient):
+    """Offline stub client returning a canned reply, no network I/O."""
+
+    client_type = "stub"
+    supported_models = ["stub"]
+
+    def __init__(self, reply: str = "ok", **kwargs: _Any) -> None:
+        kwargs.setdefault("model", "stub")
+        super().__init__(**kwargs)
+        self.reply = reply
+
+    async def get_client(self) -> "_BudgetStubClient":
+        return self
+
+    async def _ensure_client(self) -> "_BudgetStubClient":
+        return self
+
+    async def ask(self, prompt: str, model: _Optional[str] = None, **kwargs: _Any) -> AIMessage:
+        return AIMessage(
+            input=prompt,
+            output=self.reply,
+            model="stub",
+            provider="stub",
+            usage=CompletionUsage(),
+            turn_id=str(_uuid.uuid4()),
+        )
+
+    async def ask_stream(self, prompt: str, **kwargs: _Any):
+        yield self.reply
+
+    async def resume(self, session_id: str, user_input: str, state: _Dict[str, _Any]):
+        raise NotImplementedError
+
+    async def invoke(self, prompt: str, **kwargs: _Any):
+        raise NotImplementedError
+
+
+@pytest.fixture
+def make_bot():
+    """Factory fixture: a configured ``BaseBot`` + stub client + ``InMemoryConversation``.
+
+    Forwards every kwarg to the ``BaseBot`` constructor (e.g.
+    ``context_budget``, ``max_context_turns``); ``llm_model`` maps to the
+    constructor's ``model`` kwarg (``self._llm_model``). Runs the
+    *synchronous* ``configure_conversation_memory()`` directly — not the
+    full async ``configure()`` — so tests get a ready
+    ``conversation_memory`` (and, for a budgeted bot, the registered
+    recovery tool) without a KB/tool-registration round trip.
+    """
+
+    def _make(*, llm_model: str = "stub", **kwargs) -> BaseBot:
+        client = _BudgetStubClient()
+        name = kwargs.pop("name", "context-budget-probe")
+        bot = BaseBot(
+            name=name,
+            llm=client,
+            memory_type="memory",
+            injection_detection=False,
+            model=llm_model,
+            **kwargs,
+        )
+        bot.configure_conversation_memory()
+        return bot
+
+    return _make
+
+
+@pytest.fixture
+def event_recorder(bot):
+    """Subscribes to every lifecycle event emitted by the ``bot`` fixture, recording them in order."""
+    events: list = []
+
+    async def _record(event: LifecycleEvent) -> None:
+        events.append(event)
+
+    bot.events.subscribe(LifecycleEvent, _record)
+    return events

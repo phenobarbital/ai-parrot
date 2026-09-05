@@ -7,7 +7,7 @@ dispatcher: ``agents``, ``setting_sources``, ``extra_args``, and
 
 from __future__ import annotations
 
-from parrot.clients.claude_agent import ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 
 
 class TestExtendedRunOptions:
@@ -25,9 +25,7 @@ class TestExtendedRunOptions:
         assert opts.setting_sources == ["project", "user"]
 
     def test_extra_args_accepts_none_values(self):
-        opts = ClaudeAgentRunOptions(
-            extra_args={"verbose": None, "output-format": "json"}
-        )
+        opts = ClaudeAgentRunOptions(extra_args={"verbose": None, "output-format": "json"})
         assert opts.extra_args["verbose"] is None
         assert opts.extra_args["output-format"] == "json"
 
@@ -61,7 +59,7 @@ class TestBuildOptionsForwardsExtensions:
     """
 
     def test_build_options_forwards_agents_and_setting_sources(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured = {}
 
@@ -89,7 +87,7 @@ class TestBuildOptionsForwardsExtensions:
         }
 
     def test_build_options_omits_unset_extension_fields(self, monkeypatch):
-        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.anthropic import claude_agent as ca_module
 
         captured = {}
 

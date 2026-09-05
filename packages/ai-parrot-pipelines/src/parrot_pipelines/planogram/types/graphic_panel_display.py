@@ -8,6 +8,7 @@ verifying that the correct graphic zones are present in the correct
 positions, with the correct text content and (where applicable) the
 correct illumination state.
 """
+
 import asyncio
 import json
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,7 +16,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
-from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     BoundingBox,
@@ -139,7 +139,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -147,9 +147,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 break
             except Exception as exc:
                 if attempt < max_attempts - 1:
-                    self.logger.warning(
-                        f"Zone detection attempt {attempt + 1} failed: {exc}; retrying…"
-                    )
+                    self.logger.warning(f"Zone detection attempt {attempt + 1} failed: {exc}; retrying…")
                     await asyncio.sleep(10)
                 else:
                     raise
@@ -163,8 +161,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 iw_s, ih_s = image_small.size
                 for d in raw.get("detections", []):
                     b = d.get("bbox", {})
-                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0),
-                                             b.get("x2", 0), b.get("y2", 0))):
+                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0), b.get("x2", 0), b.get("y2", 0))):
                         b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw_s))
                         b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih_s))
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
@@ -212,13 +209,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         shelf_regions: List[ShelfRegion] = []
 
         # Sort zone detections top-to-bottom so positional mapping is stable.
-        sorted_zones = sorted(
-            zone_detections,
-            key=lambda d: (d.bbox.y1 + d.bbox.y2) / 2.0
-        )
+        sorted_zones = sorted(zone_detections, key=lambda d: (d.bbox.y1 + d.bbox.y2) / 2.0)
 
         # Pre-compute ROI pixel coords for detection_box conversion.
         from parrot.models.detections import DetectionBox as _DetectionBox
+
         iw, ih = img.size
         if roi is not None:
             roi_x1_px = roi.bbox.x1 * iw
@@ -252,43 +247,45 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 # Detect explicit label mismatch: when object_identification_prompt is
                 # used, the LLM returns a deliberate error label (e.g. "ERROR_LIGHT_IS_OFF")
                 # to signal a compliance violation — confidence must NOT be floored.
-                zone_label = (getattr(zone_det, 'label', None) or '').lower() if zone_det else ''
-                is_label_mismatch = zone_det is not None and 'error' in zone_label
+                zone_label = (getattr(zone_det, "label", None) or "").lower() if zone_det else ""
+                is_label_mismatch = zone_det is not None and "error" in zone_label
 
                 # If degenerate bbox AND no explicit mismatch: synthesise from shelf config
                 # so that _enrich_zone receives a meaningful crop instead of a 1-pixel area.
-                if zone_det is not None and not is_label_mismatch and (
-                    zone_det.bbox.x1 >= zone_det.bbox.x2
-                    or zone_det.bbox.y1 >= zone_det.bbox.y2
+                if (
+                    zone_det is not None
+                    and not is_label_mismatch
+                    and (zone_det.bbox.x1 >= zone_det.bbox.x2 or zone_det.bbox.y1 >= zone_det.bbox.y2)
                 ):
-                    y_start = float(getattr(shelf_cfg, 'y_start_ratio', 0.0) or 0.0)
-                    height = float(
-                        getattr(shelf_cfg, 'height_ratio', None)
-                        or (1.0 / max(len(shelves), 1))
-                    )
+                    y_start = float(getattr(shelf_cfg, "y_start_ratio", 0.0) or 0.0)
+                    height = float(getattr(shelf_cfg, "height_ratio", None) or (1.0 / max(len(shelves), 1)))
                     synthetic_bbox = BoundingBox(
-                        x1=0.0, y1=y_start,
-                        x2=1.0, y2=min(1.0, y_start + height),
+                        x1=0.0,
+                        y1=y_start,
+                        x2=1.0,
+                        y2=min(1.0, y_start + height),
                     )
                     zone_det = Detection(
-                        label=getattr(zone_det, 'label', prod_cfg.name),
+                        label=getattr(zone_det, "label", prod_cfg.name),
                         confidence=zone_det.confidence,
                         bbox=synthetic_bbox,
                         # Preserve content so illumination info from roi_detection_prompt
                         # (LIGHT_ON / LIGHT_OFF) survives the bbox replacement.
-                        content=getattr(zone_det, 'content', None),
+                        content=getattr(zone_det, "content", None),
                     )
                     self.logger.debug(
                         "Synthesised bbox for zone '%s' from shelf config "
                         "(degenerate LLM bbox): y=%.2f..%.2f content=%s",
-                        prod_cfg.name, y_start, y_start + height,
-                        getattr(zone_det, 'content', None),
+                        prod_cfg.name,
+                        y_start,
+                        y_start + height,
+                        getattr(zone_det, "content", None),
                     )
 
                 # Determine if this zone requires an illumination compliance check.
                 zone_has_illum = any(
                     f.lower().startswith(_ILLUMINATION_FEATURE_PREFIX)
-                    for f in (getattr(prod_cfg, 'visual_features', []) or [])
+                    for f in (getattr(prod_cfg, "visual_features", []) or [])
                 )
 
                 visual_features: List[str] = []
@@ -296,10 +293,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 if is_label_mismatch:
                     # Deliberate mismatch (e.g. ERROR_LIGHT_IS_OFF): record the
                     # violation and skip the enrichment LLM call entirely.
-                    visual_features = ['illumination_status: OFF']
+                    visual_features = ["illumination_status: OFF"]
                     self.logger.debug(
                         "Label mismatch for zone '%s': LLM returned '%s' — marking as not found",
-                        prod_cfg.name, zone_label,
+                        prod_cfg.name,
+                        zone_label,
                     )
                 elif zone_det is not None:
                     if zone_has_illum:
@@ -325,8 +323,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                             planogram_description=planogram_description,
                         )
                         non_illum = [
-                            f for f in enrich_features
-                            if not f.lower().startswith(_ILLUMINATION_FEATURE_PREFIX)
+                            f for f in enrich_features if not f.lower().startswith(_ILLUMINATION_FEATURE_PREFIX)
                         ]
                         visual_features = [roi_illumination] + non_illum
                     else:
@@ -347,8 +344,10 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                     bx2 = int(roi_x1_px + zone_det.bbox.x2 * roi_w_px)
                     by2 = int(roi_y1_px + zone_det.bbox.y2 * roi_h_px)
                     det_box = _DetectionBox(
-                        x1=max(0, bx1), y1=max(0, by1),
-                        x2=min(iw, bx2), y2=min(ih, by2),
+                        x1=max(0, bx1),
+                        y1=max(0, by1),
+                        x2=min(iw, bx2),
+                        y2=min(ih, by2),
                         confidence=zone_det.confidence,
                     )
 
@@ -363,7 +362,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
 
                 product = IdentifiedProduct(
                     product_model=prod_cfg.name,
-                    product_type=getattr(prod_cfg, 'product_type', 'graphic_zone') or 'graphic_zone',
+                    product_type=getattr(prod_cfg, "product_type", "graphic_zone") or "graphic_zone",
                     shelf_location=shelf_level,
                     confidence=prod_confidence,
                     brand=getattr(planogram_description, "brand", None),
@@ -375,7 +374,8 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             # Build a bbox that spans the zone detections for this shelf,
             # falling back to a full-image placeholder when none exist.
             shelf_det_boxes = [
-                p.detection_box for p in identified_products
+                p.detection_box
+                for p in identified_products
                 if p.shelf_location == shelf_level and p.detection_box is not None
             ]
             if shelf_det_boxes:
@@ -454,11 +454,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             zone_scores: List[float] = []
 
             for prod_idx, prod_cfg in enumerate(products_cfg):
-                detected = (
-                    products_on_shelf[prod_idx]
-                    if prod_idx < len(products_on_shelf)
-                    else None
-                )
+                detected = products_on_shelf[prod_idx] if prod_idx < len(products_on_shelf) else None
 
                 zone_found = detected is not None and detected.confidence > 0.0
 
@@ -474,19 +470,13 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 # Illumination check (configurable penalty)
                 # ----------------------------------------------------------
                 if zone_found and prod_cfg.visual_features:
-                    expected_illum = self._extract_illumination_state(
-                        prod_cfg.visual_features
-                    )
+                    expected_illum = self._extract_illumination_state(prod_cfg.visual_features)
                     if expected_illum is not None:
-                        detected_features = (
-                            detected.visual_features if detected else []
-                        ) or []
-                        detected_illum = self._extract_illumination_state(
-                            detected_features
-                        )
+                        detected_features = (detected.visual_features if detected else []) or []
+                        detected_illum = self._extract_illumination_state(detected_features)
                         if detected_illum is not None and detected_illum != expected_illum:
                             penalty = self._get_illumination_penalty(shelf_cfg)
-                            zone_score *= (1.0 - penalty)
+                            zone_score *= 1.0 - penalty
                             self.logger.debug(
                                 f"Illumination mismatch on zone '{prod_cfg.name}': "
                                 f"expected={expected_illum}, detected={detected_illum}, "
@@ -505,9 +495,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 text_score = 1.0
                 overall_text_ok = True
                 if zone_found and getattr(prod_cfg, "text_requirements", None):
-                    detected_features = (
-                        detected.visual_features if detected else []
-                    ) or []
+                    detected_features = (detected.visual_features if detected else []) or []
                     for text_req in prod_cfg.text_requirements:
                         result = TextMatcher.check_text_match(
                             required_text=text_req.required_text,
@@ -520,16 +508,12 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                         if not result.found and text_req.mandatory:
                             overall_text_ok = False
                     if text_results:
-                        text_score = sum(
-                            r.confidence for r in text_results if r.found
-                        ) / len(text_results)
+                        text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
                 zone_scores.append(zone_score)
 
             # Aggregate score across all zones in this shelf
-            combined_score = (
-                sum(zone_scores) / len(zone_scores) if zone_scores else 0.0
-            )
+            combined_score = sum(zone_scores) / len(zone_scores) if zone_scores else 0.0
             combined_score = min(1.0, max(0.0, combined_score))
 
             threshold = getattr(
@@ -591,13 +575,17 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         tag_hint = ", ".join(sorted({f"'{t}'" for t in tags if t}))
 
         image_small = self.pipeline._downscale_image(image, max_side=1024, quality=78)
-        prompt = partial_prompt.format(
-            brand=brand,
-            tag_hint=tag_hint,
-            image_size=image_small.size,
-        ) if partial_prompt else (
-            f"Find the complete endcap display boundary for a {brand} graphic panel. "
-            "Return a bounding box labeled 'endcap' that covers the full display."
+        prompt = (
+            partial_prompt.format(
+                brand=brand,
+                tag_hint=tag_hint,
+                image_size=image_small.size,
+            )
+            if partial_prompt
+            else (
+                f"Find the complete endcap display boundary for a {brand} graphic panel. "
+                "Return a bounding box labeled 'endcap' that covers the full display."
+            )
         )
 
         max_attempts = 2
@@ -608,7 +596,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -616,9 +604,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 break
             except Exception as exc:
                 if attempt < max_attempts - 1:
-                    self.logger.warning(
-                        f"ROI detection attempt {attempt + 1} failed: {exc}; retrying…"
-                    )
+                    self.logger.warning(f"ROI detection attempt {attempt + 1} failed: {exc}; retrying…")
                     await asyncio.sleep(10)
                 else:
                     raise
@@ -632,8 +618,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 iw, ih = image_small.size
                 for d in raw.get("detections", []):
                     b = d.get("bbox", {})
-                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0),
-                                             b.get("x2", 0), b.get("y2", 0))):
+                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0), b.get("x2", 0), b.get("y2", 0))):
                         b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw))
                         b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih))
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw))
@@ -689,7 +674,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             roi_crop = img.copy()
 
         roi_small = self.pipeline._downscale_image(roi_crop, max_side=800, quality=82)
-        brand = (getattr(planogram_description, 'brand', '') or '').strip()
+        brand = (getattr(planogram_description, "brand", "") or "").strip()
         brand_hint = f" {brand}" if brand else ""
 
         prompt = (
@@ -709,30 +694,22 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             "Answer with EXACTLY one word: LIGHT_ON or LIGHT_OFF"
         )
 
-        raw_answer = ''
+        raw_answer = ""
         try:
             async with self.pipeline.roi_client as client:
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     max_tokens=16,
                 )
-            raw_answer = (msg.output or '').strip().upper()
+            raw_answer = (msg.output or "").strip().upper()
         except Exception as exc:
-            self.logger.warning(
-                "Illumination ROI check failed: %s — defaulting to ON", exc
-            )
+            self.logger.warning("Illumination ROI check failed: %s — defaulting to ON", exc)
 
-        state = (
-            'illumination_status: OFF'
-            if 'LIGHT_OFF' in raw_answer
-            else 'illumination_status: ON'
-        )
-        self.logger.info(
-            "ROI illumination check → answer=%r  state=%s", raw_answer, state
-        )
+        state = "illumination_status: OFF" if "LIGHT_OFF" in raw_answer else "illumination_status: ON"
+        self.logger.info("ROI illumination check → answer=%r  state=%s", raw_answer, state)
         return state
 
     async def _enrich_zone(
@@ -792,14 +769,9 @@ class GraphicPanelDisplay(AbstractPlanogramType):
 
         # Exclude illumination_status from the hint — including it biases the LLM
         # toward confirming the EXPECTED state rather than detecting the ACTUAL state.
-        hint_features = [
-            f for f in expected_features
-            if not f.lower().startswith('illumination_status:')
-        ]
+        hint_features = [f for f in expected_features if not f.lower().startswith("illumination_status:")]
         features_hint = (
-            "Expected visual features: " + ", ".join(f"'{f}'" for f in hint_features)
-            if hint_features
-            else ""
+            "Expected visual features: " + ", ".join(f"'{f}'" for f in hint_features) if hint_features else ""
         )
         prompt = (
             f"This is the '{zone_name}' graphic zone of a {brand} endcap display. "
@@ -822,7 +794,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=zone_small,
                     prompt=prompt,
-                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    model="gemini-3.5-flash",
                     no_memory=True,
                     max_tokens=512,
                 )
@@ -831,18 +803,17 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             # msg.output may already be a parsed Python list when the client
             # deserialises the LLM's structured response before returning it.
             import re
+
             if isinstance(raw_output, list):
                 visual_features = [f for f in raw_output if isinstance(f, str)]
             else:
-                match = re.search(r'\[.*?\]', str(raw_output), re.DOTALL)
+                match = re.search(r"\[.*?\]", str(raw_output), re.DOTALL)
                 if match:
                     visual_features = json.loads(match.group(0))
                     if not isinstance(visual_features, list):
                         visual_features = []
         except Exception as exc:
-            self.logger.warning(
-                f"Zone enrichment failed for '{zone_name}': {exc}"
-            )
+            self.logger.warning(f"Zone enrichment failed for '{zone_name}': {exc}")
 
         return visual_features
 

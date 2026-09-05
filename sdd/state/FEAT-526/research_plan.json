@@ -1,0 +1,22 @@
+{
+  "feature_id": "FEAT-526",
+  "mode": "enrichment",
+  "budget_profile": "default",
+  "wiki_available": true,
+  "queries": [
+    {"id": "Q001", "type": "http", "intent": "Verify the Meta Model API endpoint actually exists before designing against it", "target": "https://api.meta.ai/v1/models", "priority": 1, "finding": "F001"},
+    {"id": "Q002", "type": "http", "intent": "Obtain machine-readable vendor docs (SPA blocks plain scraping)", "target": "https://dev.meta.ai/docs/llms.txt", "priority": 1, "finding": "F001"},
+    {"id": "Q003", "type": "http", "intent": "Resolve auth env var + key format", "target": "/docs/authentication.md, /docs/sdks.md", "priority": 1, "finding": "F002"},
+    {"id": "Q004", "type": "http", "intent": "Enumerate models, tiers, context windows", "target": "/docs/models.md", "priority": 1, "finding": "F003"},
+    {"id": "Q005", "type": "http", "intent": "Determine which protocol exposes which capability", "target": "/docs/protocols.md + 7 capability pages", "priority": 1, "finding": "F004"},
+    {"id": "Q006", "type": "wiki_query", "intent": "Locate the AbstractClient contract", "target": "AbstractClient base class LLM provider clients", "priority": 1, "finding": "F005"},
+    {"id": "Q007", "type": "wiki_query", "intent": "Find an OpenAI-compatible client precedent", "target": "OpenAI client chat completions base_url compatible provider", "priority": 1, "finding": "F005"},
+    {"id": "Q008", "type": "read", "intent": "Read the add-a-provider recipe", "target": "docs/clients/openai-compatible.md", "priority": 1, "finding": "F006"},
+    {"id": "Q009", "type": "read", "intent": "Read the closest concrete subclass", "target": "packages/ai-parrot/src/parrot/clients/openrouter.py", "priority": 2, "finding": "F007"},
+    {"id": "Q010", "type": "read", "intent": "Locate the factory registration point", "target": "packages/ai-parrot/src/parrot/clients/factory.py", "priority": 2, "finding": "F008"},
+    {"id": "Q011", "type": "grep", "intent": "Check tool_choice emissions against Meta's auto-only rule", "target": "tool_choice in clients/*.py", "priority": 1, "finding": "F009"},
+    {"id": "Q012", "type": "grep", "intent": "Check strict-mode emission vs Meta's strict subset", "target": "_make_openai_strict_tool, base.py:1269-1300,1388-1402", "priority": 1, "finding": "F010"},
+    {"id": "Q013", "type": "grep", "intent": "Confirm max_tokens vs max_completion_tokens on the funnel", "target": "openai_base.py", "priority": 2, "finding": "F011"},
+    {"id": "Q014", "type": "grep", "intent": "Enumerate test rosters and smoke scripts a new client must join", "target": "WIRE_SUBCLASSES, examples/clients/smoke/", "priority": 2, "finding": "F012"}
+  ]
+}

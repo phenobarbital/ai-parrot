@@ -2,13 +2,13 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 END = {"completionEnd": {}}
 
 
 def _make_client():
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         return NovaClient(model="nova-2-sonic", region="us-east-1")
 
 
@@ -40,11 +40,13 @@ async def _run(frames, send_event=None):
         yield b"\x00\x01" * 8
         yield None
 
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-         patch.object(client, "_open_stream", return_value=AsyncMock()), \
-         patch.object(client, "_send_event", new=capture), \
-         patch.object(client, "_iter_events", new=iter_events), \
-         patch.object(client, "_close_stream", new=close):
+    with (
+        patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+        patch.object(client, "_open_stream", return_value=AsyncMock()),
+        patch.object(client, "_send_event", new=capture),
+        patch.object(client, "_iter_events", new=iter_events),
+        patch.object(client, "_close_stream", new=close),
+    ):
         out = [r async for r in client.stream_voice(audio())]
     return out, calls
 
@@ -71,21 +73,20 @@ class TestGracefulShutdown:
         async def audio():
             yield None
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(client, "_open_stream", return_value=AsyncMock()), \
-             patch.object(client, "_send_event", new=capture), \
-             patch.object(client, "_iter_events", new=iter_events), \
-             patch.object(client, "_close_stream", new=AsyncMock()):
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(client, "_open_stream", return_value=AsyncMock()),
+            patch.object(client, "_send_event", new=capture),
+            patch.object(client, "_iter_events", new=iter_events),
+            patch.object(client, "_close_stream", new=AsyncMock()),
+        ):
             async for _ in client.stream_voice(audio()):
                 pass
 
-        prompt_start = next(e["event"]["promptStart"] for e in sent
-                            if "promptStart" in e.get("event", {}))
-        prompt_end = next(e["event"]["promptEnd"] for e in sent
-                          if "promptEnd" in e.get("event", {}))
+        prompt_start = next(e["event"]["promptStart"] for e in sent if "promptStart" in e.get("event", {}))
+        prompt_end = next(e["event"]["promptEnd"] for e in sent if "promptEnd" in e.get("event", {}))
         assert prompt_end["promptName"] == prompt_start["promptName"]
-        session_end = next(e["event"]["sessionEnd"] for e in sent
-                           if "sessionEnd" in e.get("event", {}))
+        session_end = next(e["event"]["sessionEnd"] for e in sent if "sessionEnd" in e.get("event", {}))
         assert session_end == {}
 
     @pytest.mark.asyncio
@@ -114,11 +115,13 @@ class TestGracefulShutdown:
         async def audio():
             yield None
 
-        with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-             patch.object(client, "_open_stream", return_value=AsyncMock()), \
-             patch.object(client, "_send_event", new=boom), \
-             patch.object(client, "_iter_events", new=failing_events), \
-             patch.object(client, "_close_stream", new=AsyncMock()):
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(client, "_open_stream", return_value=AsyncMock()),
+            patch.object(client, "_send_event", new=boom),
+            patch.object(client, "_iter_events", new=failing_events),
+            patch.object(client, "_close_stream", new=AsyncMock()),
+        ):
             out = [r async for r in client.stream_voice(audio())]
 
         assert "original turn failure" in out[-1].metadata["error"]

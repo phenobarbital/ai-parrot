@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from parrot.clients.factory import LLMFactory
 from parrot.clients.zai import ZaiClient
-from parrot.models import AIMessage, ZaiModel
+from parrot.models import AIMessage
+from parrot.clients.zai import ZaiModel
 from pydantic import BaseModel
 
 

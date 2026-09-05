@@ -31,6 +31,7 @@ Requirements:
     * ``ai-parrot[retrieval]`` or ``ai-parrot[embeddings]`` installed
       so the ``bm25s`` package is available for hybrid search.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,13 +43,12 @@ from pathlib import Path
 
 from parrot.bots.agent import BasicAgent
 from parrot.clients.google.client import GoogleGenAIClient
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 from parrot.knowledge.pageindex import (
     PageIndexLLMAdapter,
     PageIndexRetriever,
     PageIndexToolkit,
 )
-
 
 LOG = logging.getLogger("pageindex_compliance_agent")
 
@@ -103,6 +103,7 @@ Be precise: audit language matters. Quote short excerpts when useful.
 # Demo helpers
 # ---------------------------------------------------------------------------
 
+
 def _print_header(title: str) -> None:
     bar = "=" * 70
     print(f"\n{bar}\n  {title}\n{bar}")
@@ -113,10 +114,7 @@ def _print_search_results(results: list[dict]) -> None:
         print("  (no results)")
         return
     for r in results:
-        print(
-            f"  [{r['node_id']}] {r['title']!s:<60}  "
-            f"score={r['score']:.4f}  source={r['source']}"
-        )
+        print(f"  [{r['node_id']}] {r['title']!s:<60}  " f"score={r['score']:.4f}  source={r['source']}")
 
 
 async def ensure_tree(toolkit: PageIndexToolkit, pdf_path: Path) -> dict:
@@ -146,29 +144,38 @@ async def ensure_tree(toolkit: PageIndexToolkit, pdf_path: Path) -> dict:
 
 async def demo_search_variants(toolkit: PageIndexToolkit) -> None:
     """Compare BM25-only, LLM-only and hybrid hits side-by-side."""
-    query = (
-        "which AWS services help satisfy the SOC 2 Security trust services "
-        "criterion for logical access controls"
-    )
+    query = "which AWS services help satisfy the SOC 2 Security trust services " "criterion for logical access controls"
 
     _print_header(f"search — BM25 only — {query!r}")
     _print_search_results(
         await toolkit.search(
-            TREE_NAME, query, top_k=5, use_bm25=True, use_llm_walk=False,
+            TREE_NAME,
+            query,
+            top_k=5,
+            use_bm25=True,
+            use_llm_walk=False,
         )
     )
 
     _print_header(f"search — LLM tree-walk only — {query!r}")
     _print_search_results(
         await toolkit.search(
-            TREE_NAME, query, top_k=5, use_bm25=False, use_llm_walk=True,
+            TREE_NAME,
+            query,
+            top_k=5,
+            use_bm25=False,
+            use_llm_walk=True,
         )
     )
 
     _print_header(f"search — Hybrid (BM25 + LLM, RRF-fused) — {query!r}")
     _print_search_results(
         await toolkit.search(
-            TREE_NAME, query, top_k=5, use_bm25=True, use_llm_walk=True,
+            TREE_NAME,
+            query,
+            top_k=5,
+            use_bm25=True,
+            use_llm_walk=True,
         )
     )
 
@@ -210,7 +217,9 @@ async def demo_categories(toolkit: PageIndexToolkit) -> None:
         tagged_ids.append(nid)
         LOG.info(
             "tag_node(%s) -> categories=%s metadata=%s",
-            nid, result["categories"], result["metadata"],
+            nid,
+            result["categories"],
+            result["metadata"],
         )
 
     _print_header("search — categories filter")
@@ -224,7 +233,8 @@ async def demo_categories(toolkit: PageIndexToolkit) -> None:
     returned_ids = {r["node_id"] for r in results}
     LOG.info(
         "Returned %d result(s) — all in tagged set: %s",
-        len(results), returned_ids.issubset(set(tagged_ids)),
+        len(results),
+        returned_ids.issubset(set(tagged_ids)),
     )
 
 
@@ -259,7 +269,9 @@ async def demo_two_step_ingest(toolkit: PageIndexToolkit) -> None:
     )
     _print_header("insert_content — Two-Step Chain-of-Thought ingest")
     result = await toolkit.insert_content(
-        TREE_NAME, note, hint="Internal SOC 2 audit follow-ups from QSA readiness review",
+        TREE_NAME,
+        note,
+        hint="Internal SOC 2 audit follow-ups from QSA readiness review",
     )
     print(f"  new_node_ids: {result['new_node_ids']}")
     print(f"  title:        {result['title']}")
@@ -311,8 +323,7 @@ async def demo_raw_retriever(adapter: PageIndexLLMAdapter, tree: dict) -> None:
     )
     _print_header("PageIndexRetriever.search — direct LLM tree walk")
     result = await retriever.search(
-        "how should we structure evidence collection for the "
-        "confidentiality trust services criterion in AWS"
+        "how should we structure evidence collection for the " "confidentiality trust services criterion in AWS"
     )
     print(f"  thinking : {result.thinking[:240]}…")
     print(f"  node_ids : {result.node_list}")
@@ -350,6 +361,7 @@ async def demo_agent(toolkit: PageIndexToolkit) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
     if not pdf_path.is_file():
@@ -398,7 +410,8 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
         tree = await ensure_tree(toolkit, pdf_path)
         LOG.info(
             "Tree %r ready: %d top-level sections",
-            TREE_NAME, len(tree.get("structure", [])),
+            TREE_NAME,
+            len(tree.get("structure", [])),
         )
 
         _print_header("list_trees (after ingest)")
@@ -415,17 +428,18 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
         await demo_raw_retriever(adapter, tree)
 
         _print_header("Persisted tree summary")
-        print(json.dumps(
-            {
-                "doc_name": tree.get("doc_name"),
-                "top_level_sections": [
-                    {"node_id": n.get("node_id"), "title": n.get("title")}
-                    for n in tree.get("structure", [])
-                ],
-            },
-            indent=2,
-            ensure_ascii=False,
-        ))
+        print(
+            json.dumps(
+                {
+                    "doc_name": tree.get("doc_name"),
+                    "top_level_sections": [
+                        {"node_id": n.get("node_id"), "title": n.get("title")} for n in tree.get("structure", [])
+                    ],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
 
         if not skip_agent:
             await demo_agent(toolkit)
@@ -434,9 +448,7 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="PageIndex compliance-agent demo."
-    )
+    parser = argparse.ArgumentParser(description="PageIndex compliance-agent demo.")
     parser.add_argument(
         "pdf",
         nargs="?",
