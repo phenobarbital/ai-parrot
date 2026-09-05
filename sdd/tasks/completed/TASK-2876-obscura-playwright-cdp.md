@@ -76,7 +76,27 @@ Follow the lazy playwright.async_api.async_playwright import and current context
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-05
+**Notes**: Added `engine`/`cdp_endpoint_url`/`obscura_binary`/`obscura_port`/
+`obscura_stealth`/`obscura_allow_private_network` fields to
+`PlaywrightConfig` (validated in `__post_init__`, existing fields
+untouched). `PlaywrightDriver.start()` branches on
+`config.engine == "obscura"`: connects via
+`chromium.connect_over_cdp()`, reuses the endpoint's default
+context/page (`browser.contexts[0]`/`context.pages[0]`) when present,
+else creates a new context/page so every `AbstractDriver` method sees a
+valid `self._page`; ordinary launch/persistent-context branches are
+unchanged (untouched `else` path). `quit()` required no functional
+change — Playwright's own CDP semantics (`Browser.close()` "clears
+created contexts and disconnects" without touching the actual remote
+process, confirmed against the installed `playwright` package's
+docstring) already satisfy "does not terminate an externally managed
+browser"; added a doc comment making this explicit. Process ownership
+of the Obscura endpoint stays entirely with TASK-2875's
+`ObscuraProcessManager` — this driver never spawns or kills a process.
+9 new tests (3 config, 3 driver: connect-with-existing-context,
+derive-endpoint-and-create-context, quit-disconnect-only) plus all 107
+pre-existing scraping/driver tests pass (116 total); ruff clean.
+**Deviations from spec**: none — field names match the spec's proposed
+`PlaywrightConfig` dataclass exactly.
