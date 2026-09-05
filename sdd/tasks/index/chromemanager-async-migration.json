@@ -6,7 +6,7 @@
   "type": "hotfix",
   "base_branch": "main",
   "created_at": "2026-09-05T16:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-05T15:36:56+00:00",
   "tasks": [
     {
       "id": "HOTFIX-chromemanager-async-migration-1",
@@ -57,7 +57,7 @@
       "jira_issue_key": null,
       "feature": "chromemanager-async-migration",
       "spec": "sdd/specs/chromemanager-async-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -67,8 +67,9 @@
       "parallelism_notes": "Verifies the combined result of tasks 1-2; nothing to parallelise.",
       "assigned_to": null,
       "started_at": "2026-09-05T15:22:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-chromemanager-async-migration-3-verification-and-docs.md"
+      "completed_at": "2026-09-05T15:36:56+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-chromemanager-async-migration-3-verification-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
