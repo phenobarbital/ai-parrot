@@ -219,8 +219,47 @@ async def test_webagent_configure_does_not_launch_when_ensure_running_false():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (Fable 5.1), session 01XMWEzgtZh3NZ4gapoSbBxq
+**Date**: 2026-09-05
+**Notes**: Code commit `1691f7383` on `hotfix-chromemanager-async-migration`.
+`create_chrome_devtools_mcp_server()` is now a pure config builder (URL
+parsing and the `ChromeManager` launch block removed; docstring updated).
+New module-level `ensure_chrome_running(browser_url, headless=False)
+-> Optional[ChromeManager]` owns the loopback check (`_LOCAL_HOSTS`), the
+per-port `_chrome_managers` get-or-create, and `await manager.start()`;
+a Chrome that does not become ready is logged as a warning (spec §8
+warn-and-continue kept). `MCPEnabledMixin.add_chrome_devtools_mcp_server()`
+gained `ensure_running: bool = True` and awaits the helper before
+`add_mcp_server()` unless `auto_connect=True`. `shutdown()` awaits
+`manager.stop()`. `urlparse` hoisted to a module-level import. Only
+`ChromeManager` is imported from `.chrome`, so `tests/unit/test_mcp_validator.py`
+passes unmodified.
 
-**Deviations from spec**: none | describe if any
+Tests (logs in `artifacts/logs/chromemanager-async-migration/`, gitignored):
+- `tests/mcp/test_chrome_manager.py` (12 Module-1 + 8 new Module-2 tests) +
+  `tests/unit/test_mcp_validator.py` → **32 passed** (`task2-pytest-root.log`).
+- `packages/ai-parrot/tests/bots/test_chrome.py` → **57 passed, 5 failed**
+  (`task2-pytest-bots.log`). The 5 failures (`test_web_agent_*` constructor
+  tests) are **pre-existing in this worktree environment**: the identical 5
+  fail on the pristine base with `ImportError: cannot import name
+  'GoogleGenAIClient' from 'parrot.clients.google' (unknown location)` at
+  `bots/agent.py:106` — the shared venv resolves `parrot.clients.google` to a
+  stale directory in the main checkout. Verified by reverting this task's
+  diff and re-running (baseline: 56 passed, 5 failed; with task: 57 passed,
+  5 failed — the +1 is the new `ensure_running=False` test). Unrelated to
+  `integration.py`.
+- The two test trees cannot be collected in one pytest invocation
+  (`ImportPathMismatchError` on `tests.conftest`), and the package tree must
+  be run with `-c pytest.ini --rootdir=.` from the worktree root so the root
+  conftest's namespace fix applies (otherwise the uncompiled Cython
+  `parrot.utils.types` breaks collection). Task 3 should run them as two
+  commands.
+- `ruff check` on the two test files: clean. On `integration.py`: 3 findings
+  (F401 x2 unused `ToolPredicate`/`filter_tools` at line 38, F402 `config`
+  shadowed at line ~1866) — all **pre-existing on the base commit**
+  (verified with `git show HEAD:… | ruff check -`), none on lines this task
+  touched; left alone (out of scope).
+
+**Deviations from spec**: none in behaviour. Acceptance criterion "ruff
+check integration.py clean" is met for this task's lines only — the file
+carries 3 pre-existing findings that predate the hotfix (see Notes).
