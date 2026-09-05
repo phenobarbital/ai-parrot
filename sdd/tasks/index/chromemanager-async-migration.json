@@ -35,7 +35,7 @@
       "jira_issue_key": null,
       "feature": "chromemanager-async-migration",
       "spec": "sdd/specs/chromemanager-async-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,7 +44,7 @@
       "parallel": false,
       "parallelism_notes": "Awaits the coroutines introduced by task 1 and shares tests/mcp/test_chrome_manager.py with it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-05T15:16:28+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/HOTFIX-chromemanager-async-migration-2-pure-factory-async-ensure.md"
     },
