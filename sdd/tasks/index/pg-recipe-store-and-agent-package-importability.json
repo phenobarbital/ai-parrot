@@ -71,7 +71,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Joins both lanes. Tests only; no production change allowed — a needed change is a spec finding.",
       "assigned_to": null,
       "started_at": "2026-09-05T05:01:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2873-pg-store-and-foreign-host-integration.md"
+      "completed_at": "2026-09-05T05:33:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2873-pg-store-and-foreign-host-integration.md"
     },
     {
       "id": "TASK-2874",
