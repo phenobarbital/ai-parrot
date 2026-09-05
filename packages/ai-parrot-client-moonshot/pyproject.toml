@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-moonshot"
-version = "0.1.0"
+version = "0.2.0"
 description = "Moonshot AI (Kimi) LLM client for AI-Parrot (parrot.clients.moonshot)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot>=0.28.1",
+    "ai-parrot>=0.29.0",
     # No extra SDK: MoonshotClient extends OpenAIBaseClient (core) and
     # uses only tenacity (already a core ai-parrot base dependency).
 ]

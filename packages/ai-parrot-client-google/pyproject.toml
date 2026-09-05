@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-google"
-version = "0.1.0"
+version = "0.2.0"
 description = "Google GenAI (Gemini) LLM clients for AI-Parrot (parrot.clients.google)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot>=0.28.1",
+    "ai-parrot>=0.29.0",
     "google-genai>=2.18.1",
     # NOT declared here: google-api-python-client / google-cloud-texttospeech
     # / google-cloud-aiplatform — verified via grep that nothing under
