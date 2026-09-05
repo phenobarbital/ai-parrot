@@ -11,6 +11,7 @@ from .bots import (
 from .credentials import CredentialDocument, CredentialPayload, CredentialResponse
 from .notification_batches import NotificationBatchRecipient
 from .notification_templates import NotificationTemplate
+from .recipes import PgRecipeStore
 from .understanding import (
     UnderstandingRequest,
     UnderstandingResponse,
@@ -29,6 +30,7 @@ __all__ = [
     "FeedbackType",
     "NotificationBatchRecipient",
     "NotificationTemplate",
+    "PgRecipeStore",
     "PromptCategory",
     "PromptLibrary",
     "UnderstandingRequest",
