@@ -80,6 +80,10 @@ ACTION_NOT_ALLOWED_FOR_LLM = "ACTION_NOT_ALLOWED_FOR_LLM"
 #: structured component (Chart/DataTable/Map) instead of a ``{"path": ...}``
 #: data-model binding (FEAT-473 G8 gate — TOOL-origin surfaces are exempt).
 INLINE_DATA_NOT_ALLOWED_FOR_LLM = "INLINE_DATA_NOT_ALLOWED_FOR_LLM"
+#: An LLM-originated envelope carries a ``tool_only`` component (FEAT-527
+#: gate — e.g. ``HtmlDocument``; only deterministic tool producers may emit
+#: these, same mechanism as ``ACTION_NOT_ALLOWED_FOR_LLM``).
+TOOL_ONLY_NOT_ALLOWED_FOR_LLM = "TOOL_ONLY_NOT_ALLOWED_FOR_LLM"
 
 
 class ProducerOrigin(str, Enum):
@@ -234,6 +238,9 @@ class ComponentDefinition(BaseModel):
             under (``child``/``children`` of). ``None`` means unrestricted.
         allowed_children: If set, the type names allowed as this component's
             ``child``/``children``. ``None`` means unrestricted.
+        tool_only: Only deterministic tool producers may emit this
+            component; LLM-origin envelopes containing it fail validation
+            (FEAT-527, same D10b-style gate mechanism as ``requires_actions``).
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -246,6 +253,7 @@ class ComponentDefinition(BaseModel):
     is_primitive: bool = False
     allowed_parents: list[str] | None = None
     allowed_children: list[str] | None = None
+    tool_only: bool = False
 
 
 class FunctionDefinition(BaseModel):

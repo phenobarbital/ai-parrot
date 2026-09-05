@@ -208,3 +208,95 @@ class TestTASK2543:
         doc = art.content.decode()
         assert 'href="https://resume/x?token=t"' in doc
         assert art.deep_links[0].token_id == "t"
+
+
+class TestNewChartTypesDegradation:
+    """FEAT-527: gauge/funnel/waterfall/heatmap/treemap have no native visual
+    on this static renderer — the type caption still shows the original type
+    (``ChartComponent.lower()``'s generic text summary), and each is
+    additionally recorded in ``metadata['degraded']`` (never silent)."""
+
+    @pytest.mark.parametrize("chart_type", ["gauge", "funnel", "waterfall", "heatmap", "treemap"])
+    async def test_unsupported_chart_type_recorded_as_degraded(self, chart_type):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type=chart_type,
+                    x="m",
+                    y=["v"],
+                    data=[{"m": "a", "v": 1}],
+                )
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert f"Chart ({chart_type})" in doc  # caption prints the original type
+        assert any(chart_type in d.get("reason", "") for d in art.metadata["degraded"])
+        record = next(d for d in art.metadata["degraded"] if d["component"] == "Chart")
+        assert record["id"] == "root"
+
+    @pytest.mark.parametrize("chart_type", ["bar", "donut", "radar"])
+    async def test_pre_existing_chart_types_not_recorded_as_degraded(self, chart_type):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type=chart_type,
+                    x="m",
+                    y=["v"],
+                    data=[{"m": "a", "v": 1}],
+                )
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert f"Chart ({chart_type})" in doc
+        assert art.metadata.get("degraded", []) == []
+
+
+class TestHtmlDocumentDegradesToLink:
+    """FEAT-527: ssr-html can never embed HtmlDocument (static renderer) —
+    always a titled link (srcUrl) or placeholder text (inline html only),
+    always recorded."""
+
+    async def test_htmldocument_degrades_to_link(self):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
+            ],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert '<a href="https://x/infographic-a.html">Doc</a>' in doc
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+
+    async def test_htmldocument_inline_only_degrades_to_placeholder_text(self):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>")],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert "[HTML document: Doc]" in doc
+        assert "<a href=" not in doc
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+        # Never echoes the raw HTML.
+        assert "<p>hi</p>" not in doc

@@ -173,6 +173,20 @@ class TestRenderDataTemplate:
         await toolkit.render_data_template("tiny", {"x": 1})
         assert fake_artifact_store.save_artifact.call_count == 1
 
+    async def test_emits_htmldocument_envelope(self, toolkit):
+        # Code-review regression guard: this descriptor-less lane's
+        # HtmlDocument wiring previously only had a source-regex assertion
+        # (test_infographic_toolkit_a2ui_wiring.py), never an end-to-end
+        # call through the public method inspecting the real result —
+        # unlike render_template()'s sibling coverage
+        # (TestRenderTemplateHtmlDocumentEnvelope).
+        result = await toolkit.render_data_template("tiny", {"x": 1})
+        assert result.a2ui_envelope is not None
+        root = result.a2ui_envelope["createSurface"]["components"][0]
+        assert root["component"] == "HtmlDocument"
+        assert root["html"].startswith("<") and "srcUrl" not in root
+        assert result.a2ui_envelope["createSurface"]["surfaceId"] == result.artifact_id
+
     def test_init_signature_unchanged(self, fake_artifact_store):
         # Constructor still accepts only the documented keyword args.
         tk = InfographicToolkit(artifact_store=fake_artifact_store)

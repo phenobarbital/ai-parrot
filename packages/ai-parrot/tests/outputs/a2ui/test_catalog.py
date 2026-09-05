@@ -83,6 +83,28 @@ class TestComponentRegistration:
         assert d.schema_ == {"a": 1}
         assert d.model_dump(by_alias=True)["schema"] == {"a": 1}
 
+    def test_tool_only_default_false(self, cleanup_catalog):
+        """FEAT-527."""
+
+        @register_component("NotToolOnly")
+        class NotToolOnly:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        cleanup_catalog.append("NotToolOnly")
+        assert get_component("NotToolOnly").definition.tool_only is False
+
+    def test_tool_only_true_when_registered(self, cleanup_catalog):
+        """FEAT-527."""
+
+        @register_component("ToolOnly", tool_only=True)
+        class ToolOnly:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        cleanup_catalog.append("ToolOnly")
+        assert get_component("ToolOnly").definition.tool_only is True
+
 
 class TestEnvelopeValidation:
     def test_envelope_rejects_unknown_component(self):

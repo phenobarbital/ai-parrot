@@ -1,0 +1,34 @@
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Q1 Report"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_inline_html": true,
+            "parrot_role": "html_document",
+            "parrot_src_url": null
+          }
+        },
+        "text": "[HTML document: Q1 Report]"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-000",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "html-document"
+    }
+  }
+}

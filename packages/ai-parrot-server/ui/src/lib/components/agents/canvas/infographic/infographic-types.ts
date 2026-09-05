@@ -4,6 +4,8 @@
  * Mirrors the backend API contract (docs/infographic_handler_api.md, section 8).
  */
 
+import type { A2UIEnvelope } from '../a2ui/a2ui-types';
+
 // ─── Discriminated Union Types ────────────────────────────────────────────────
 
 export type InfographicBlockType =
@@ -241,7 +243,7 @@ export interface ThemeDetailResponse {
 // ─── Tab Data ─────────────────────────────────────────────────────────────────
 
 export interface InfographicTabData {
-  mode: "json" | "html";
+  mode: "json" | "html" | "a2ui";
   html?: string;
   /**
    * URL of a backend-rendered infographic artifact. When present (with
@@ -253,4 +255,10 @@ export interface InfographicTabData {
   query?: string;
   template?: string;
   theme?: string;
+  /**
+   * The A2UI v1.0 envelope (FEAT-527). Present when `mode === "a2ui"`; the
+   * canvas renders it via the `canvas/a2ui/` component set (behind
+   * `features.a2ui`) instead of the legacy `mode: "json"` block renderers.
+   */
+  envelope?: A2UIEnvelope;
 }

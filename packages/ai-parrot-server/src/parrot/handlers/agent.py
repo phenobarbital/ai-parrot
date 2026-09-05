@@ -2731,12 +2731,27 @@ class AgentTalk(BaseView):
         # forwarded verbatim (envelope-agnostic) — v1.0-ness is guaranteed upstream by
         # parrot.outputs.a2ui.emission.finalize_a2ui_response.
         if getattr(response, "output_mode", None) == OutputMode.A2UI:
+            # FEAT-527: dual-emit — when the A2UI surface originated from an
+            # infographic render, the HTML sibling artifact rides along in
+            # `metadata` so an HTML-only consumer can still iframe it.
+            a2ui_metadata = dict(getattr(response, "metadata", None) or {})
+            a2ui_metadata.update(
+                {
+                    "model": getattr(response, "model", None),
+                    "provider": getattr(response, "provider", None),
+                    "session_id": str(getattr(response, "session_id", "") or ""),
+                    "turn_id": str(getattr(response, "turn_id", "") or ""),
+                    "response_time": response_time_ms,
+                }
+            )
             return self.json_response(
                 {
                     "input": getattr(response, "input", None),
                     "output": response.response or "",
                     "output_mode": OutputMode.A2UI.value,
                     "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                    "artifact_id": getattr(response, "artifact_id", None),
+                    "metadata": a2ui_metadata,
                 }
             )
 
@@ -3077,7 +3092,8 @@ class AgentTalk(BaseView):
                 "template_name": "...",
                 "theme": "...",
                 ...
-            }
+            },
+            "a2ui_envelope": {"version": "v1.0", "createSurface": {...}}   # FEAT-527: additive, omitted when None
         }
         ```
         ``Accept: text/html`` or ``?format=html`` returns the raw HTML body.
@@ -3133,6 +3149,11 @@ class AgentTalk(BaseView):
             "sources": [],
             "tool_calls": [],
         }
+        # FEAT-527: dual-emit — additive key only, byte-identical body when no
+        # envelope was produced (G6).
+        _a2ui_envelope = getattr(response, "a2ui_envelope", None)
+        if _a2ui_envelope is not None:
+            obj_response["a2ui_envelope"] = _a2ui_envelope
         return web.json_response(
             obj_response,
             dumps=json_encoder,

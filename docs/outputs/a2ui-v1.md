@@ -188,6 +188,68 @@ For example, `PDFRenderer` inherits `SSRHTMLRenderer`'s primitive set minus
 `Video`/`AudioPlayer` (a rasterized PDF cannot play media — both degrade to a
 link).
 
+## Infographics: dual emission (FEAT-527)
+
+`InfographicToolkit` (`parrot.tools.infographic_toolkit`, ai-parrot core)
+defaults to `emit_a2ui=True`: every render — typed blocks (`render()`), the
+trusted Jinja lane (`render_template()`), and the data-splice lane
+(`render_data_template()`) — produces **both** the documented HTML artifact
+(`html_url`/`html_inline`) **and** a validated A2UI v1.0 envelope
+(`InfographicRenderResult.a2ui_envelope`). The HTML lane is a **permanent
+sibling emission**, not a deprecated path (amends FEAT-273 G7 — see
+`sdd/specs/a2ui-implementation.spec.md`).
+
+- **`AgentTalk` JSON contract**: an `output_mode: "infographic"` turn gains
+  one additive `a2ui_envelope` key (omitted when the build failed —
+  additive-lane policy, never breaks the HTML response); an
+  `output_mode: "a2ui"` turn gains `metadata.html_url`/`artifact_id`/
+  `template_name`/`theme` so an HTML-only consumer can still iframe the
+  sibling artifact.
+- **Typed blocks** (`render()`) lower to the `Infographic` composite
+  (KPICard/Chart/DataTable/… sections), same as before FEAT-527.
+- **The Jinja lane** (`render_template()`/descriptor-less
+  `render_data_template()`) no longer builds a synthetic title+summary
+  `Infographic` envelope. It wraps the rendered, trusted HTML as an opaque
+  `HtmlDocument` component instead — see below.
+- **Presentation parity** (FEAT-527 Module 2): the `Chart` schema accepts
+  `donut`/`radar` without collapsing them, plus 5 new types (`gauge`,
+  `funnel`, `waterfall`, `heatmap`, `treemap`); the adapter forwards
+  `colorBySign`/`positiveColor`/`negativeColor`/`palette`/`trendline`/
+  `layout`, table `style`, and hero-card `icon`/`color`/`comparisonPeriod`.
+  `Infographic.lower()` groups consecutive `layout:"half"` children into a
+  `Row`. ECharts renders the 5 new types natively; `interactive-html`/
+  `ssr-html` degrade them to `bar` with a recorded `degraded` entry (never
+  silent).
+
+### `HtmlDocument` — the opaque HTML surface
+
+A new Parrot catalog component, `tool_only=True` (same gate mechanism as
+`requires_actions`): an LLM-origin envelope containing it fails
+`validate_envelope`, since it carries **raw, trusted HTML** that must never
+be LLM-authorable.
+
+```python
+# parrot/outputs/a2ui/catalog/parrot/htmldocument.py
+{"title": str, "html": str | None, "srcUrl": str | None, "theme": str | None}
+# oneOf: exactly one of html/srcUrl. build_html_document(...) enforces the
+# XOR in Python and always emits with origin=ProducerOrigin.TOOL.
+```
+
+`HtmlDocumentComponent.lower()` never copies the raw HTML into the lowered
+Basic Catalog tree — it degrades to a titled placeholder
+(`metadata.extensions.parrot_role == "html_document"`, `parrot_src_url`,
+`parrot_inline_html`). Renderer handling:
+
+- **`interactive-html`**: intercepts `HtmlDocument` before lowering (its own
+  `html`/`srcUrl` props) and embeds it in a sandboxed
+  `<iframe sandbox="allow-scripts" srcdoc=…|src=…>` — never
+  `allow-same-origin`, so the embedded document cannot reach the host
+  DOM/storage.
+- **`ssr-html`/`pdf`/`adaptive_cards`**: cannot embed HTML statically —
+  degrade to a titled link (`<a href="{srcUrl}">{title}</a>`) when a
+  `srcUrl` exists, else the placeholder text; always recorded in
+  `metadata["degraded"]`.
+
 ## Adaptive Cards and the Teams submit flow
 
 `AdaptiveCardsRenderer` maps input primitives to **native** Adaptive Card

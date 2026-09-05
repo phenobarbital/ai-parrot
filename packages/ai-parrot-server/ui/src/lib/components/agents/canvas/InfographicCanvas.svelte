@@ -13,6 +13,12 @@
 	import type { InfographicTabData, InfographicData, InfographicBlock } from './infographic/infographic-types';
 	import { exportBlocksToHtml, collectChartImages } from './infographic/infographic-html-export';
 	import { FINANCIAL_VARIANCE_DEMO } from './infographic/demo-financial-variance';
+	// FEAT-527: A2UISurface reuses the SAME infographic block renderers
+	// (Chart/DataTable/Timeline) InfographicBlockCanvas above already pulls
+	// in statically — not a new heavy dependency — so it is imported the
+	// same way and gated in markup only (`{#if features.a2ui}`), never
+	// mounted/evaluated when the flag is off.
+	import A2UISurface from './a2ui/A2UISurface.svelte';
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let { data, agentId = '' }: { data: unknown; agentId?: string } = $props();
@@ -50,11 +56,27 @@
 		tabData?.mode === 'html' && typeof tabData.url === 'string' && tabData.url.length > 0
 	);
 	let hasJson = $derived(tabData?.mode === 'json' && tabData?.infographic != null);
-	let isEmpty = $derived(!isLoading && !hasHtml && !hasUrl && !hasJson);
+	// FEAT-527: an a2ui tab additionally carries url/html so the toolbar's
+	// Rendered/HTML toggle can still fall back to the iframe view.
+	// Code-review fix: `tabData?.envelope` (not `tabData.envelope`) — TS
+	// control-flow narrowing can't prove `tabData` non-null across the `&&`
+	// from an optional-chained left operand.
+	let hasA2ui = $derived(tabData?.mode === 'a2ui' && !!tabData?.envelope);
+	// Code-review fix: the previous ternary dropped the `url` fallback
+	// entirely whenever `tabData.html === ''` (rather than `undefined`) —
+	// an empty-but-present string short-circuited straight to `false`
+	// without ever checking `url`. OR the two conditions instead.
+	let a2uiHasHtmlFallback = $derived(
+		hasA2ui &&
+			((typeof tabData?.html === 'string' && tabData.html.length > 0) || !!tabData?.url),
+	);
+	let isEmpty = $derived(!isLoading && !hasHtml && !hasUrl && !hasJson && !hasA2ui);
 
 	// Mode toggle state for the HTML editor
 	let mode = $state<'edit' | 'preview'>('preview');
 	let editView = $state<'code' | 'visual'>('visual');
+	// FEAT-527: Rendered (A2UISurface) vs HTML (iframe) toggle for an a2ui tab.
+	let a2uiView = $state<'rendered' | 'html'>('rendered');
 
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let blockCanvasEl = $state<HTMLDivElement | null>(null);
@@ -100,6 +122,14 @@
 
 	function handleSave() {
 		if (!browser) return;
+		// FEAT-527: an a2ui tab has no local HTML export path — when there is
+		// no inline html sibling artifact, fall back to opening the signed
+		// backend-rendered url directly (the button is hidden entirely when
+		// neither is present, see `a2uiHasHtmlFallback`).
+		if (hasA2ui && typeof tabData?.html !== 'string') {
+			if (tabData?.url) window.open(tabData.url, '_blank', 'noopener,noreferrer');
+			return;
+		}
 		let html: string;
 		if (hasJson) {
 			html = buildExportHtml();
@@ -279,6 +309,78 @@
 				class="absolute w-0 h-0 border-0 overflow-hidden"
 				style="position:absolute;left:-9999px;"
 			></iframe>
+		</div>
+	{:else if hasA2ui}
+		<!-- FEAT-527: A2UI mode — Rendered (A2UISurface) / HTML (iframe) toggle. -->
+		<div class="relative h-full flex flex-col">
+			<div class="flex items-center px-2 py-1 gap-2 border-b border-border bg-muted/20 shrink-0">
+				<div class="flex items-center rounded-md border border-border overflow-hidden text-xs shrink-0">
+					<button
+						class="px-2.5 py-1 transition-colors {a2uiView === 'rendered'
+							? 'bg-primary text-primary-foreground'
+							: 'hover:bg-muted text-muted-foreground'}"
+						onclick={() => (a2uiView = 'rendered')}
+					>
+						Rendered
+					</button>
+					<button
+						class="px-2.5 py-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed {a2uiView ===
+						'html'
+							? 'bg-primary text-primary-foreground'
+							: 'hover:bg-muted text-muted-foreground'}"
+						onclick={() => (a2uiView = 'html')}
+						disabled={!a2uiHasHtmlFallback}
+						title={a2uiHasHtmlFallback ? '' : 'No HTML artifact available'}
+					>
+						HTML
+					</button>
+				</div>
+				<!-- FEAT-527: no A2UI->HTML export in the SPA — Save as HTML only
+				     works when an HTML sibling artifact (inline html or a signed
+				     url) exists on the tab; hidden otherwise (canvas-block-exporter
+				     operates on markdown-canvas blocks, not a2ui envelopes). -->
+				{#if a2uiHasHtmlFallback}
+					<button class="btn btn-ghost btn-xs btn-square" onclick={handleSave} title="Save as HTML">
+						<Icon icon="mdi:download" class="size-4" />
+					</button>
+				{/if}
+			</div>
+			<div class="flex-1 min-h-0 overflow-auto">
+				{#if a2uiView === 'rendered' && features.a2ui}
+					<!-- Code-review fix: `tabData?.envelope` — `hasA2ui` proves this
+					     at runtime, but TS can't narrow a derived boolean back to
+					     `tabData` itself. -->
+					<A2UISurface envelope={tabData?.envelope} />
+				{:else if typeof tabData?.html === 'string' && tabData.html.length > 0}
+					<!-- FEAT-527 code-review fix: srcdoc content must NOT carry
+					     allow-same-origin — combined with allow-scripts it would let
+					     the framed (agent/LLM-produced) HTML script inherit this
+					     page's own origin (srcdoc normally gets a null/opaque origin,
+					     which allow-same-origin defeats). Matches the safe pattern
+					     already used for the "Preview mode" srcdoc iframe below. -->
+					<iframe
+						bind:this={iframeEl}
+						srcdoc={tabData.html}
+						sandbox="allow-scripts allow-modals allow-popups"
+						title="Infographic"
+						class="w-full h-full border-0"
+						onload={handleIframeLoad}
+					></iframe>
+				{:else if tabData?.url}
+					<iframe
+						bind:this={iframeEl}
+						src={tabData.url}
+						sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
+						title="Infographic"
+						class="w-full h-full border-0"
+						onload={handleIframeLoad}
+					></iframe>
+				{:else}
+					<div class="p-4 text-sm text-muted-foreground italic">
+						A2UI rendering is disabled in this build.
+					</div>
+				{/if}
+			</div>
 		</div>
 	{:else if hasUrl}
 		<!-- URL mode: backend-rendered artifact loaded directly into an iframe -->

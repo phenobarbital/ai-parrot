@@ -28,4 +28,5 @@ export const features = Object.freeze({
   infographic: __AGENTCHAT_INFOGRAPHIC__,
   datasets: __AGENTCHAT_DATASETS__,
   richEditor: __AGENTCHAT_RICH_EDITOR__,
+  a2ui: __AGENTCHAT_A2UI__,
 });
