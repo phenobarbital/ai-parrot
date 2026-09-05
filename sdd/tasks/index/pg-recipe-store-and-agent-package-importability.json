@@ -33,7 +33,7 @@
       "feature_id": "FEAT-528",
       "feature": "pg-recipe-store-and-agent-package-importability",
       "spec": "sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -41,8 +41,8 @@
       "parallelism_notes": "Module 2 item 3. New loader in parrot.tools.infographic_recipes; independent of 2870. Must land before 2872, which calls it from flex_dashboard.py.",
       "assigned_to": null,
       "started_at": "2026-09-05T05:01:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2871-load-transformer-module.md"
+      "completed_at": "2026-09-05T05:14:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2871-load-transformer-module.md"
     },
     {
       "id": "TASK-2872",

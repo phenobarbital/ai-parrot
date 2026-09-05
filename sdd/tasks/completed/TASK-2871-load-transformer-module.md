@@ -164,8 +164,13 @@ def test_missing_path_raises(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-05
+**Notes**: `load_transformer_module` added to
+`packages/ai-parrot/src/parrot/tools/infographic_recipes/loader.py`,
+re-exported (and added to `__all__`) from the package's `__init__.py`.
+3 tests pass: package-aware load with a relative import + idempotent
+re-load, missing-path `FileNotFoundError`, and a bare-file (no
+`__init__.py`) load. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
