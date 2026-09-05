@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-529
 **Date**: 2026-09-05 (v0.2, same day as v0.1)
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 **Source brainstorm**: `sdd/proposals/a2ui-rich-visualizations.brainstorm.md` (umbrella, **revision 2**: Option D viz-core grammar catalog for charts + Option B's `Graph`/`Timeline`; this spec is its `a2ui-graph-component` capability and now also carries the **viz-core catalog shell**)
 **Source artifacts**: `sdd/proposals/assets/a2ui-viz-core/viz-core.catalog.json` (viz-core draft 0.1), `sdd/proposals/assets/a2ui-viz-core/viz-core.example.jsonl` (tracked copies; the user's working files under `artifacts/a2ui/` are gitignored)
