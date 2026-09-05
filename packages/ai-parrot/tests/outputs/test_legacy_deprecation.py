@@ -56,12 +56,21 @@ class TestLegacyDeprecationWarnings:
         ]
         assert a2ui_warnings == []
 
-    def test_infographic_html_path_only_warns(self):
-        # HTML path warns...
-        with pytest.warns(DeprecationWarning, match="A2UI"):
+    def test_infographic_html_path_emits_no_warning(self):
+        """FEAT-527 amends FEAT-273 G7: the infographic-HTML lane is a
+        permanent sibling emission of the A2UI Infographic lane, not a
+        deprecated path — the unconditional DeprecationWarning was removed.
+        The JSON path was already exempt (INFOGRAPHIC not in the
+        replacement table); now neither infographic path warns."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             with contextlib_suppress_import_error():
                 get_infographic_html_renderer()
-        # ...JSON path does not (INFOGRAPHIC not in the replacement table).
+        a2ui_warnings = [
+            w for w in caught
+            if issubclass(w.category, DeprecationWarning) and "A2UI" in str(w.message)
+        ]
+        assert a2ui_warnings == []
         assert OutputMode.INFOGRAPHIC not in _A2UI_REPLACEMENTS
 
     def test_infographic_html_missing_satellite_actionable_error(self, monkeypatch):

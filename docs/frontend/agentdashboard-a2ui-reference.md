@@ -454,7 +454,7 @@ The Parrot catalog adds **agent functions**: every tool on the agent's `ToolMana
 | `Slider` | `label`, `min` (default 0), **`max`**, **`value`**: DynamicNumber, `steps` (int ≥ 1) | | `Slider` |
 | `DateTimeInput` | **`value`**: DynamicString (ISO 8601), `enableDate`, `enableTime`, `min`, `max`, `label` | both flags default `false` | `AppDatePicker` / `Calendar` |
 
-### 5.2 Parrot presentation catalog — 9 composites (`catalog/parrot/*.py`)
+### 5.2 Parrot presentation catalog — 10 composites (`catalog/parrot/*.py`)
 
 All are display-only from the LLM's point of view (an LLM-origin envelope may never carry `action`, and may never inline rows — rows always arrive via a binding into `dataModel`). Each composite has a deterministic `lower()` to Basic primitives; the backend renderers **intercept** `Chart`, `DataTable`, `Infographic` (and FilterBar) before lowering and lower the rest. **Do the same**: render these natively, lower anything you do not support.
 
@@ -462,17 +462,17 @@ All are display-only from the LLM's point of view (an LLM-origin envelope may ne
 
 | Prop | Type | Notes |
 |---|---|---|
-| `type` | `bar, horizontalBar, line, area, scatter, pie, donut, radar, map` | Same enum as the frontend's `chart-contract.ts` `ChartType` |
+| `type` | `bar, horizontalBar, line, area, scatter, pie, donut, radar, map, gauge, funnel, waterfall, heatmap, treemap` | **FEAT-527**: `donut`/`radar` no longer collapse to `pie`/`line`; 5 new types added. ECharts renders all natively; `interactive-html`/`ssr-html` degrade the 5 new types to `bar` with a recorded `degraded` entry. Same enum as the frontend's `chart-contract.ts` `ChartType` |
 | `x` | string | category column |
 | `y` | string[] | one or more value columns (multi-series) |
 | `data` | `{"path": …}` | row set binding (structured outputs use `/rows`; recipes use `/<section>/series`) |
-| `title`, `description`, `stacked`, `splitSeries`, `trendline`, `showLegend`, `xAxisMode` (`category`\|`time`), `xAxisLabel`, `yAxisLabel`, `palette` (hex[]), `colorBySign`, `negativeColor`, `positiveColor`, `mapName`, `dataVariable` | | all optional |
+| `title`, `description`, `stacked`, `splitSeries`, `trendline`, `showLegend`, `xAxisMode` (`category`\|`time`), `xAxisLabel`, `yAxisLabel`, `palette` (hex[]), `colorBySign`, `negativeColor`, `positiveColor`, `mapName`, `dataVariable`, `layout` (`full`\|`half`, **FEAT-527**) | | all optional. `layout: "half"` marks the chart as half-width; `Infographic.lower()` groups consecutive `half` siblings into a `Row` |
 
 **There is no ECharts option on the wire.** `Chart` is the same declarative config the frontend already renders through `AppChart.svelte` (`AppChartConfig`) — map `Chart` props 1:1 onto `AppChartConfig` and feed it the bound rows. The lowered fallback is `Card{Column[Text title, Text "Chart (<type>)", axis texts, series list]}` with `parrot_series_data` preserving the binding.
 
 #### `DataTable` (`datatable.py`) — required `columns`
 
-`columns: [{name, type, title, format?}]` with `type ∈ string, integer, number, boolean, date, datetime, time, duration, any` and `format ∈ currency, percent, email, uri, enum, id, code`; `data: {"path": …}`; `totalRows`, `truncated` (rows are capped at 1000 in structured outputs — the full set is in the chat response `data`), `explanation`, `title`. Lowering produces the row-template pattern (header `Row` of `column-header` texts + a `Column` whose `children` is a `ChildTemplate` over the rows, cells binding column-relative). Render natively with `DataTable.svelte` (or a new shadcn data-table — none exists in the frontend yet). Mirror the FEAT-493 rich table: numeric alignment + `tabular-nums` for `integer`/`number`, `currency`/`percent` formatting, sticky header, "showing N of M" when `truncated`, and search + pagination only above 100 rows.
+`columns: [{name, type, title, format?}]` with `type ∈ string, integer, number, boolean, date, datetime, time, duration, any` and `format ∈ currency, percent, email, uri, enum, id, code`; `data: {"path": …}`; `totalRows`, `truncated` (rows are capped at 1000 in structured outputs — the full set is in the chat response `data`), `explanation`, `title`, `style` (**FEAT-527**: `default, striped, bordered, compact, comparison`, mirrors `TableStyle`; recorded as `parrot_style` in the row-body `metadata.extensions`, presentation-only). Lowering produces the row-template pattern (header `Row` of `column-header` texts + a `Column` whose `children` is a `ChildTemplate` over the rows, cells binding column-relative). Render natively with `DataTable.svelte` (or a new shadcn data-table — none exists in the frontend yet). Mirror the FEAT-493 rich table: numeric alignment + `tabular-nums` for `integer`/`number`, `currency`/`percent` formatting, sticky header, "showing N of M" when `truncated`, and search + pagination only above 100 rows.
 
 #### `Map` (`map.py`) — required `layers`
 
@@ -480,7 +480,7 @@ All are display-only from the LLM's point of view (an LLM-origin envelope may ne
 
 #### `KPICard` (`kpicard.py`) — required `label`, `value`
 
-`label`, `value` (number | string | binding), `unit`, `delta` (number | string | binding), `trend ∈ up, down, flat`. Lowering: `Card{Column[Text label, Text value(+parrot_unit), Text delta|trend(+parrot_trend)]}`, `parrot_variant: kpi`. On the un-lowered wire `value` is the raw number; on the lowered tree it is stringified. Map onto the existing `HeroCardBlock` / `InfographicHeroCardBlock` design (`{label, value, icon?, trend?, trend_value?}`).
+`label`, `value` (number | string | binding), `unit`, `delta` (number | string | binding), `trend ∈ up, down, flat`, `icon`, `color`, `comparisonPeriod` (**FEAT-527**). Lowering: `Card{Column[Text label, Text value(+parrot_unit), Text delta|trend(+parrot_trend)]}`, `parrot_variant: kpi`; `icon`/`color`/`comparisonPeriod` ride on the Card's own `metadata.extensions` (`parrot_icon`, `parrot_color`, `parrot_comparison_period`) — never new visible Text nodes. On the un-lowered wire `value` is the raw number; on the lowered tree it is stringified. Map onto the existing `HeroCardBlock` / `InfographicHeroCardBlock` design (`{label, value, icon?, trend?, trend_value?, comparison_period?, color?}`).
 
 #### `InfoCard` (`infocard.py`) — required `title`
 
@@ -506,6 +506,29 @@ Lowering: `Card{Column[Text title (parrot_role: title), Text subtitle?, Tabs | C
 
 Lowers to `Row{parrot_variant: "filter-bar"}` of `ChoicePicker`s (`id = "<bar-id>-f<i>"`, `variant = multipleSelection | mutuallyExclusive`, `value = [only option]` when exactly one option else `[]` meaning "all"), each tagged `parrot_role: "filter"` + `parrot_filter_column`. Display-only on the wire; the **client-side filtering contract** is in §7.4.
 
+#### `HtmlDocument` (`htmldocument.py`, **FEAT-527**) — required `title`; `tool_only`
+
+```json
+{"component": "HtmlDocument", "title": "Q3 Report", "html": "<html>…</html>"}
+// or, when too large to inline (>= 50 KB):
+{"component": "HtmlDocument", "title": "Q3 Report", "srcUrl": "https://.../infographic-abc123.html"}
+```
+
+`title` (required), exactly one of `html` (inline, trusted, already-rendered
+HTML) or `srcUrl` (signed artifact URL) via `oneOf`, optional `theme`.
+**`tool_only: true`** — the SAME gate mechanism as `requires_actions`: an
+LLM-origin envelope containing it fails `validate_envelope`. Only
+deterministic tool builders (`build_html_document()`) may emit it — it
+wraps the Jinja `render_template`/`render_data_template` lane's rendered
+HTML as an opaque A2UI surface (spec G5). Lowering never copies the raw
+`html` into the tree (`Card{Column[Text title, Text "[HTML document:
+<title>]" (parrot_role: html_document, parrot_src_url, parrot_inline_html)]}`)
+— only a renderer that can safely embed it reads the ORIGINAL component's
+`html`/`srcUrl` directly, pre-lowering. `interactive-html` embeds it in a
+sandboxed `<iframe sandbox="allow-scripts">` (never `allow-same-origin`);
+`ssr-html`/`pdf`/`adaptive_cards` degrade to a titled link (or an
+`Action.OpenUrl` for Adaptive Cards) and record a `degraded` entry.
+
 #### Forms — composed, not a component
 
 `build_form()` (`catalog/parrot/form.py`) emits a flat fragment: a root `Column` (id = prefix), title, one Basic input per field (`text→TextField shortText`, `textarea→longText`, `number→number`, `select→ChoicePicker`, `checkbox→CheckBox`, `date→DateTimeInput enableDate`), each binding `value: {"path": "/<prefix>/<name>"}` and, when required, `checks: [{condition: {call: "required", …}, message}]`, then a submit `Button` whose `action.event.context` maps field names to those bindings. Nothing special to implement: it is just primitives + one action.
@@ -516,7 +539,7 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 
 | id | interactive | actions | updates | output | supported components |
 |---|---|---|---|---|---|
-| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic` (+ FilterBar handled via lowering) |
+| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe) (+ FilterBar handled via lowering) |
 | `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic |
 | `pdf` | ✗ | ✗ | ✗ | `application/pdf` | SSR minus `Video`, `AudioPlayer` |
 | `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart` |
@@ -524,6 +547,22 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 | `adaptive_cards` | ✗ | ✓ | ✗ | Adaptive Cards | Text, Image, Row, Column, Card, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput, Button |
 
 The Svelte renderer will be the first one with `interactive: true, supports_actions: true, supports_updates: true, output: "live"`. Rule inherited from `renderers/degrade.py`: **never throw on an unsupported component** — render a visible notice `Text` (`"[<Component> not supported here: <reason>]"`, `parrot_role: notice`) that **keeps the original id** so references still resolve, and collect `{id, component, reason}` records (`degraded[]`) for telemetry.
+
+> **FEAT-527**: the bundled `ai-parrot-server/ui` SPA (NOT navigator-frontend-next
+> — that remains the primary A2UI consumer, unaffected by this feature) now
+> ships a minimal, display-only `Infographic` renderer of its own
+> (`canvas/a2ui/{A2UISurface,A2UIInfographic,A2UINode}.svelte`), behind the
+> `features.a2ui` build flag (`PUBLIC_AGENTCHAT_A2UI`, default `true`, same
+> `agentchatFlag()`/`__AGENTCHAT_A2UI__` pattern as every other AgentChat
+> flag — see `docs/admin-ui.md`). It covers `KPICard`/`Chart`/`DataTable`/
+> `InfoCard`/`Timeline`/`HtmlDocument` and the display Basic primitives by
+> reusing the existing infographic block renderers (`InfographicChartBlock`
+> et al.) — action-bearing/unknown components degrade to a placeholder, same
+> rule as above. A chat turn opens the infographic canvas in
+> `mode: "a2ui"` (Rendered view) when the flag is on and the envelope has an
+> `Infographic`/`Report` root; a toolbar toggle falls back to the existing
+> HTML iframe view. This is unrelated to (and does not replace)
+> navigator-frontend-next's own Svelte renderer referenced above.
 
 ---
 
@@ -534,7 +573,7 @@ The Svelte renderer will be the first one with `interactive: true, supports_acti
 | Kind | Produced by | Root component | Typical `surfaceId` | Rows |
 |---|---|---|---|---|
 | **Widget** | a structured-output turn (`structured_chart` / `_table` / `_map`, dual-emitted as A2UI) or a `KPICard` builder | `Chart`, `DataTable`, `Map`, `KPICard` | `structured_chart-<8hex>`, `chart`, `kpi` | `dataModel.rows` (cap 1000) or `dataModel.layers[i].features` |
-| **Infographic** | an LLM-authored `Infographic` surface (`InfographicToolkit`, producer loop with catalog validation and up to 3 attempts) | `Infographic` | `infographic-<12hex>` | `dataModel.charts.<id>`, `dataModel.tables.<id>` |
+| **Infographic** | an LLM-authored `Infographic` surface (`InfographicToolkit`, producer loop with catalog validation and up to 3 attempts). **FEAT-527**: `InfographicToolkit` dual-emits by default (`emit_a2ui=True`) — the envelope is now ALSO present on plain `output_mode: infographic` chat turns (as an additive `a2ui_envelope` key alongside the documented HTML response), not only on an explicit `output_mode: a2ui` request. | `Infographic` (or `HtmlDocument` for the Jinja `render_template` lane — an opaque, `tool_only` wrapper around trusted rendered HTML; see `docs/outputs/a2ui-v1.md`) | `infographic-<12hex>` | `dataModel.charts.<id>`, `dataModel.tables.<id>` |
 | **Dashboard** | a **recipe** (`InfographicRecipe`, deterministic: datasets → transforms → `LayoutSpec` → envelope), replayed by `RecipeRunner` or the `refresh_dashboard` agent function | `Infographic` (multi-section → `Tabs`) | `<recipe-name>-infographic` | `dataModel.<section>/…` as declared by the layout bindings |
 
 All three ride the **same `createSurface` message**. Persisting to the ui_surfaces plane is where the kind becomes explicit (`kind` in `PublishSurfaceRequest`).
@@ -907,6 +946,6 @@ Verified on `dev @ a1eca82b4`. Items marked **backend** need a backend fix; the 
 11. **Streaming is chunked, not SSE**, on the chat endpoint; the only SSE route is `GET /api/v1/agents/{agent_id}/a2ui`.
 12. **Surface-state concurrency is process-local** (`asyncio.Lock` per session inside `ConversationMemorySurfaceStore`); a multi-worker deployment can race the same session. Pending renderer calls expire after 900 s; surface state has no TTL.
 13. **`refresh_dashboard` is not registered by default** on `FlexDashboard` — the backend must call `agent.build_refresh_tool(pctx)` with a real `PermissionContext` (`RecipeRunner.run` fails open on a falsy one). Check `…/a2ui/capabilities`-adjacent function export before showing a "Refresh via agent" control; prefer the ui_surfaces `refresh` route.
-14. **Docs drift**: `docs/agent.md` documents a non-existent bare `POST /api/v1/agents/chat/` route, a `{success, content}` response shape that is dead code, and `mcp_servers` in the POST body (stripped; use `PATCH`); it never mentions `output_mode`, `a2ui`, streaming, or HITL. `docs/infographic_handler_api.md` points at `packages/ai-parrot/…/handlers/infographic.py` (the file is in `ai-parrot-server`) and omits the `/render` and `/render/jobs/{id}` routes. `sdd/specs/flex-agent-infographic-a2ui.spec.md` says datasets are registered with `add_dataset(query_slug=…)`; the code uses `add_query` (deliberately, to avoid eager fetches). `handlers/artifacts.py` documents the public route as `{artifact_id}.html`; the registered pattern is `{artifact_id_html}` with the suffix stripped in code.
+14. **Docs drift**: `docs/agent.md` documents a non-existent bare `POST /api/v1/agents/chat/` route, a `{success, content}` response shape that is dead code, and `mcp_servers` in the POST body (stripped; use `PATCH`); it never mentions `output_mode`, `a2ui`, streaming, or HITL. ~~`docs/infographic_handler_api.md` points at `packages/ai-parrot/…/handlers/infographic.py` (the file is in `ai-parrot-server`) and omits the `/render` and `/render/jobs/{id}` routes.~~ **Fixed by FEAT-527** — the path and both routes are now correct there. `sdd/specs/flex-agent-infographic-a2ui.spec.md` says datasets are registered with `add_dataset(query_slug=…)`; the code uses `add_query` (deliberately, to avoid eager fetches). `handlers/artifacts.py` documents the public route as `{artifact_id}.html`; the registered pattern is `{artifact_id_html}` with the suffix stripped in code.
 15. **No `docs/outputs/` page exists for FEAT-492** (surfaces); the spec and source are the only documentation besides this file.
 16. **`AGENTS.md` in the frontend is stale** (claims Flowbite, Playwright, `svelte-echarts`, Chart.js — none are dependencies); `CLAUDE.md` §"Chat System" and §"API Client Layer" are accurate. There is no shadcn `table`, `tabs`, `tooltip`, `dropdown-menu` or `scroll-area` directory yet — `AppTabs`, `AppTooltip`, `AppDropdown` (bits-ui wrappers) and `DataTable.svelte` / `SimpleTable` are the current substitutes.

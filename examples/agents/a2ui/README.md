@@ -40,7 +40,7 @@ Output lands in `artifacts/a2ui_dashboard/`:
 
 ## The eight steps
 
-1. **The agent** — `PandasAgent` + `InfographicToolkit(emit_a2ui=True)`.
+1. **The agent** — `PandasAgent` + `InfographicToolkit` (dual-emit by default, FEAT-527).
 2. **The contract** — the `dashboard` template's *positional* block contract.
 3. **The blocks** — six typed, semantic blocks built from a DataFrame.
 4. **The render** — one call, two surfaces: an HTML artifact **and** an envelope.
@@ -51,30 +51,45 @@ Output lands in `artifacts/a2ui_dashboard/`:
 
 ## What makes an agent emit A2UI
 
-Two things, and you need both:
+**FEAT-527 update**: `InfographicToolkit` now dual-emits by **default**
+(`emit_a2ui=True`) — every render produces an `a2ui_envelope` alongside the
+HTML artifact, whether or not the caller ever asks for `output_mode=a2ui`.
+The two things below still control the *primary* shape of the response,
+not whether an envelope is built at all:
 
 ```python
-# 1. the toolkit must be built with emit_a2ui=True — and passed in explicitly.
-#    InfographicAuthoringMixin will build one for you from artifact_store=,
-#    but that auto-built toolkit defaults to emit_a2ui=False.
-toolkit = InfographicToolkit(artifact_store=store, emit_a2ui=True)
+# 1. the toolkit dual-emits by default — no explicit emit_a2ui= needed.
+#    InfographicAuthoringMixin's auto-built toolkit (from artifact_store=)
+#    inherits the same default and emits too.
+toolkit = InfographicToolkit(artifact_store=store)
 agent = A2UIDashboardAgent(name="…", df=frames, infographic_toolkit=toolkit)
 
-# 2. the caller must ask in A2UI mode.
+# 2. output_mode decides which emission is PRIMARY, not whether one exists:
 response = await agent.ask(question, output_mode=OutputMode.A2UI)
-response.a2ui_envelope   # the declarative surface
+response.a2ui_envelope   # the declarative surface (primary here)
 response.output_mode     # OutputMode.A2UI
+response.metadata["html_url"]  # the HTML sibling artifact, riding along
+
+# ...the default (HTML-primary) mode ALSO carries the envelope now:
+response2 = await agent.ask(question)  # output_mode defaults to DEFAULT/INFOGRAPHIC
+response2.output_mode      # OutputMode.INFOGRAPHIC
+response2.a2ui_envelope    # additive — no longer requires output_mode=a2ui
 ```
 
-`BaseBot` spots the `InfographicRenderResult` among the turn's tool calls, sees
-it carries an `a2ui_envelope`, and hands it to `finalize_a2ui_response`
-(`parrot/outputs/a2ui/emission.py`), which bypasses the legacy `OutputFormatter`
-entirely. If the LLM answers in prose without rendering anything, the mode is
-downgraded to `DEFAULT` rather than dispatched to a renderer with nothing to
-render.
+`BaseBot`/`PandasAgent` spot the `InfographicRenderResult` among the turn's
+tool calls and apply the dual-emit routing rule (spec §2 Overview step 2):
+`output_mode=a2ui` → `finalize_a2ui_response` (`parrot/outputs/a2ui/emission.py`,
+bypasses the legacy `OutputFormatter` entirely) plus `metadata.html_url`; any
+other mode → the documented HTML envelope plus `response.a2ui_envelope`. If
+the LLM answers in prose without rendering anything, the mode is downgraded
+to `DEFAULT` rather than dispatched to a renderer with nothing to render.
 
 The A2UI lane is **additive**: if envelope construction fails, the toolkit logs
-it and returns `a2ui_envelope=None`, and you still get the HTML artifact.
+it and returns `a2ui_envelope=None`, and you still get the HTML artifact —
+regardless of which mode was requested.
+
+Pass `emit_a2ui=False` explicitly to opt back into HTML-only rendering (the
+pre-FEAT-527 default).
 
 ## The envelope is the wire
 
