@@ -32,8 +32,9 @@ revision: 2
 > pinned the upstream minimum to **v0.2.2 (render build)**. It also folds in
 > the Q&A decisions recorded in `synthesis.json` (commit `e4771cb80`) that the
 > original document never absorbed: Linux-only, ai-parrot-supervised process
-> with CLI start/stop, native Obscura MCP **required** for Codex/agents, and
-> PyO3 deferred.
+> with CLI start/stop, native Obscura MCP **required** and consumed directly by
+> Claude Code and Codex (ai-parrot is not a bridge), and PyO3 moved to a
+> follow-up.
 
 ---
 
@@ -47,7 +48,7 @@ The original request is preserved in `sdd/state/FEAT-528/source.md`.
 
 ## 1. Synthesis Summary
 
-The request is feasible through a staged, process-level integration. `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py` can gain a connect-over-CDP mode configured through `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py`, selected through the **three** driver-selection seams (`DriverConfig` → `DriverRegistry` / `DriverFactory`), while preserving `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py`. The existing `packages/ai-parrot/src/parrot/mcp/integration.py` and `packages/ai-parrot/src/parrot/bots/chrome.py` can be reused with an Obscura CDP endpoint **once browser-process ownership is made explicit** — today the factory silently launches Google Chrome on the configured port when nothing answers there, and the remote-discovery path (`/json/version`) hardcodes a loopback WebSocket URL upstream, so Obscura mode must connect by WebSocket endpoint rather than HTTP discovery. Obscura's native MCP server is **required** (user decision, Q&A U3) for Codex and agent UI-management use cases and is exposed as a first-class supervised capability alongside the CDP path; it creates a second browser tool and session contract that needs its own parity tests. Selenium remains ChromeDriver-based; the reviewed Obscura surface documents CDP and Playwright/Puppeteer, not W3C WebDriver, but `SeleniumSetup` already exposes a `debugger_address` attach option, so the "does ChromeDriver accept an Obscura endpoint" question is a cheap experiment in the compatibility matrix rather than a separate proposal. Native PyO3 embedding is **deferred** (Q&A U5) until the Playwright/CDP integration is battle-tested, because the upstream `Browser`/`Page` API pulls V8 through workspace path crates that build it from source and introduces Tokio, a single shared V8 isolate, and packaging constraints.
+The request is feasible through a staged, process-level integration. `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py` can gain a connect-over-CDP mode configured through `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py`, selected through the **three** driver-selection seams (`DriverConfig` → `DriverRegistry` / `DriverFactory`), while preserving `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py`. The existing `packages/ai-parrot/src/parrot/mcp/integration.py` and `packages/ai-parrot/src/parrot/bots/chrome.py` can be reused with an Obscura CDP endpoint **once browser-process ownership is made explicit** — today the factory silently launches Google Chrome on the configured port when nothing answers there, and the remote-discovery path (`/json/version`) hardcodes a loopback WebSocket URL upstream, so Obscura mode must connect by WebSocket endpoint rather than HTTP discovery. Obscura's native MCP server is **required** (user decision, Q&A U3) and is consumed **directly** by Claude Code (`.mcp.json`) and Codex (`.codex/config.toml`): the MCP host spawns `obscura mcp` over stdio and ai-parrot is not in that path — no toolkit wrapper, no bot hook, no re-exposure through ai-parrot's local-toolkit MCP server. ai-parrot's contribution is registration (the existing installer seams) and a smoke test of the 37 `browser_*` tools; an ai-parrot agent that wants the same tools attaches it as an ordinary external stdio `MCPServerConfig`. Selenium remains ChromeDriver-based; the reviewed Obscura surface documents CDP and Playwright/Puppeteer, not W3C WebDriver, but `SeleniumSetup` already exposes a `debugger_address` attach option, so the "does ChromeDriver accept an Obscura endpoint" question is a cheap experiment in the compatibility matrix rather than a separate proposal. Native PyO3 embedding is **deferred** (Q&A U5) until the Playwright/CDP integration is battle-tested, because the upstream `Browser`/`Page` API pulls V8 through workspace path crates that build it from source and introduces Tokio, a single shared V8 isolate, and packaging constraints.
 
 **Upstream target is v0.2.2 (released 2026-09-05), Linux, `render` build (Q&A U1).** ai-parrot supervises `obscura serve` and exposes CLI commands to start and stop it (Q&A U2). The v0.2.2 notes are the first to state that Playwright form filling and context setup complete end to end; earlier releases must not be accepted. The `-no-render` archive variants drop screenshots and PDF, which the `AbstractDriver` contract requires.
 
@@ -69,6 +70,7 @@ The request is feasible through a staged, process-level integration. `packages/a
 | 10 | `packages/ai-parrot-server/src/parrot/mcp/chrome.py` | `ChromeManager` | 9-131 | Managed local browser lifecycle; synchronous, uses `requests` (line 6, 29-31) and `time.sleep` (line 110), launches `google-chrome` when the port is silent (74-106) | F003 |
 | 11 | `docs/mcp-local-toolkits.md` | `mcp-toolkits.yaml` schema | 45-115 | Local MCP exposure and environment configuration | F004 |
 | 12 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py` | `_install_mcp` | 112-170 | Existing writer of `[mcp_servers.parrot-<name>]` tables into `.codex/config.toml` | F004 (rev. 2) |
+| 12b | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | `mcp_json_entry`, `toolkit_mcp_json_entry` | 63-65, 104-140 | Existing builders of `.mcp.json` stdio entries for Claude Code (FEAT-403) | F004 (rev. 2) |
 | 13 | `packages/navrules/pyproject.toml`, `packages/navrules/rust/Cargo.toml` | `tool.maturin`, `navrules_native` | 1-4, 40-44; 8-23 | PyO3/Maturin packaging precedent | F004 |
 | 14 | `packages/ai-parrot/src/parrot/yaml-rs/Cargo.toml`, `packages/ai-parrot/src/parrot/codec-rs/Cargo.toml` | core Rust crates | — | Additional in-core Rust extension precedent | F004 (rev. 2) |
 | 15 | `https://github.com/h4ckf0r0day/obscura` (README, v0.2.2) | CDP, Playwright, and MCP surfaces | README sections | Upstream process-level integration surface | F005, F007 |
@@ -87,7 +89,7 @@ The request is feasible through a staged, process-level integration. `packages/a
 - **CDP attachment and browser-process ownership are separate concerns, and the current factory conflates them.** `create_chrome_devtools_mcp_server` calls `ChromeManager.start()` for every local URL unless `auto_connect` is set; when nothing answers on the port it launches `google-chrome` there. With Obscura configured but not yet running, the agent would silently get Chrome. The Obscura process must be either externally managed, supervised by an explicit manager, or containerized — never implicitly replaced. *Evidence*: F003.
 - **Obscura does serve the HTTP control plane, so local discovery works.** `/json/version` and `/json/list` are implemented (server.rs 736-800), so `ChromeManager.is_chrome_running()` and `chrome-devtools-mcp --browser-url` succeed against a local `obscura serve`. *Evidence*: F005, F007.
 - **Remote or containerized Obscura cannot be reached through HTTP discovery.** `/json/version` advertises `ws://127.0.0.1:<port>/devtools/browser` regardless of `--host`, so any HTTP-discovery client (the `--browser-url` flag, Puppeteer `browserURL`) will dial loopback. Obscura mode must connect by WebSocket endpoint: Python Playwright `connect_over_cdp("ws://…")` and `chrome-devtools-mcp --ws-endpoint`. The factory currently emits only `--browser-url`. *Evidence*: F003, F007.
-- Direct Obscura MCP can be launched as an external stdio server, but its `browser_*` tools and state semantics require their own parity and lifecycle tests. *Evidence*: F003, F007.
+- Direct Obscura MCP is spawned by the MCP host (Claude Code, Codex) over stdio; ai-parrot does not supervise or proxy it. Process supervision applies only to `obscura serve` for the CDP driver path. *Evidence*: F003, F007.
 - Selenium's CDP commands operate through an established WebDriver/ChromeDriver session. `SeleniumSetup(debugger_address=…)` already exists, so whether ChromeDriver accepts Obscura's endpoint is a one-config experiment; a WebDriver bridge is only needed if that experiment fails. *Evidence*: F009.
 - PyO3 precedent (navrules, plus the in-core `yaml-rs` and `codec-rs` crates) does not remove the cost of embedding V8. A native spike must measure build time, artifact size, platform coverage, event-loop ownership, and V8 concurrency behaviour (pages share one V8 isolate upstream). *Evidence*: F004, F008.
 - Obscura's renderer is independent and evolving; CSS, Web API, service workers, media, compositor, and font behaviour can differ from Chromium. PDFs are raster-backed (not searchable). *Evidence*: F005.
@@ -104,9 +106,9 @@ Recent history includes local toolkit MCP support and scraping model/driver chan
 ### What's New
 
 - Obscura CDP endpoint configuration and lifecycle support for the Playwright-backed scraping/browsing path, selectable through `DriverConfig`, `DriverRegistry` and `DriverFactory`.
-- An explicit, async browser-process manager (aiohttp probe + `asyncio` subprocess) that supervises `obscura serve` (default) and `obscura mcp`, plus CLI commands to start/stop/status the supervised process. An externally managed `ws://` endpoint remains a supported configuration; Obscura mode never falls back to launching Chrome.
+- An explicit, async browser-process manager (aiohttp probe + `asyncio` subprocess) that supervises `obscura serve` for the CDP driver path, plus CLI commands to start/stop/status the supervised process. An externally managed `ws://` endpoint remains a supported configuration; Obscura mode never falls back to launching Chrome.
 - `--ws-endpoint` support in the Chrome DevTools MCP factory and `ChromeConfig`, used by Obscura mode unconditionally.
-- A **required** native Obscura MCP server integration: `create_obscura_mcp_server()` (`MCPServerConfig`, stdio, supervised), an `add_obscura_mcp_server()` bot hook, and Codex registration via the existing `.codex/config.toml` installer.
+- **Direct Obscura MCP registration for coding agents**: an `obscura` entry for Claude Code's `.mcp.json` (via the `claude_code/assets.py` entry builders) and a `[mcp_servers.obscura]` table for Codex (via the `codex/installer.py` marker-block upsert), both pointing at the `obscura mcp` binary with `--allow-private-network` and stealth/proxy flags as configured. No ai-parrot wrapper, hook, or proxy.
 - A compatibility test matrix whose acceptance bar is **the feature surface the Playwright driver already supports** (Q&A U4), plus the `no-render`/`render` distinction and the Selenium `debugger_address` experiment.
 - (Deferred) A PyO3 feasibility spike for the upstream `obscura` Rust crate — follow-up work, not part of this feature.
 
@@ -115,7 +117,7 @@ Recent history includes local toolkit MCP support and scraping model/driver chan
 - `PlaywrightConfig` and `PlaywrightDriver.start` gain an explicit connect-over-CDP mode (`cdp_endpoint: ws://…`) while retaining launch mode; launch-only fields are rejected in connect mode. *Evidence*: F002, F005.
 - `DriverConfig.driver_type` gains `"obscura"` (or an `engine` field), threaded through `DriverRegistry` and `DriverFactory` without changing `AbstractDriver` callers. *Evidence*: F002.
 - `create_chrome_devtools_mcp_server` / `ChromeConfig` gain `ws_endpoint`, and process ownership becomes explicit: the factory never launches a browser unless asked to. *Evidence*: F003, F007.
-- Native Obscura MCP registration uses the existing external stdio MCP configuration pattern and the Codex installer, and validates tool/session parity against the 37 `browser_*` tools. *Evidence*: F003, F004, F007.
+- The Claude Code and Codex installers gain an Obscura section that writes the direct `obscura mcp` entry; a smoke test drives `tools/list` and a navigate/snapshot round-trip against the 37 `browser_*` tools. ai-parrot agents needing the same tools use a plain external stdio `MCPServerConfig` — nothing new to build. *Evidence*: F003, F004, F007.
 - Selenium remains backed by ChromeDriver in the first milestone. The compatibility matrix includes the `SeleniumSetup(debugger_address="127.0.0.1:9222")` experiment against `obscura serve` v0.2.2; its result decides whether a WebDriver bridge proposal is ever needed. *Evidence*: F009.
 
 ### What's Untouched (Non-Goals)
@@ -123,7 +125,7 @@ Recent history includes local toolkit MCP support and scraping model/driver chan
 - Replacing Selenium's Chrome backend in the first milestone.
 - Making Obscura the default browser engine before compatibility tests pass.
 - Embedding the full Obscura engine into Python as part of the CDP integration.
-- Reimplementing Obscura's MCP tool schema inside ai-parrot.
+- Reimplementing, wrapping, or proxying Obscura's MCP tool schema inside ai-parrot — including re-exposing it through `.parrot/mcp-toolkits.yaml` or a bot-level `add_obscura_mcp_server()` hook. Claude Code and Codex talk to `obscura mcp` directly.
 - Supporting Obscura releases older than v0.2.2, `no-render` builds, or non-Linux hosts in the first milestone.
 - Native PyO3 embedding (deferred to follow-up work).
 
@@ -140,7 +142,7 @@ Recent history includes local toolkit MCP support and scraping model/driver chan
 - CDP method or context gaps can break Playwright flows; mitigate with driver contract tests and upstream CDP parity cases. *Evidence*: F005, F006, F007.
 - Silent engine substitution: without explicit ownership the current factory starts Chrome where Obscura was expected. Mitigate by making Obscura mode fail fast when the endpoint is unreachable. *Evidence*: F003.
 - HTTP discovery dials loopback for remote Obscura; mitigate by always using `ws://` endpoints in Obscura mode. *Evidence*: F007.
-- Native Obscura MCP and Chrome DevTools MCP diverge in tool names, snapshots, outputs, and session behaviour; `WebAgent` prompts and any tool-name assumptions must be reviewed when the Obscura server is attached. *Evidence*: F003, F007.
+- Native Obscura MCP and Chrome DevTools MCP diverge in tool names, snapshots, outputs, and session behaviour; since coding agents use Obscura MCP directly, `WebAgent` is unaffected, but any ai-parrot agent that attaches both servers must not assume shared tool names. *Evidence*: F003, F007.
 - Obscura may not support Selenium because Selenium requires WebDriver semantics; do not claim Selenium support until the `debugger_address` experiment passes end to end. *Evidence*: F009.
 - Native PyO3 builds may be slow, large, platform-sensitive, and unsafe across event-loop or V8 thread boundaries; gate it behind a spike. *Evidence*: F008.
 - Private-network access is restricted by default upstream, so local test fixtures and deployment configuration need an explicit policy. *Evidence*: F005.
@@ -168,12 +170,12 @@ Distribution: **8 high**, **2 medium**, **0 low**. Overall confidence stays **me
 ### Resolved
 
 - [x] **Should Selenium be treated as a direct Obscura integration?** — *Resolved*: no, not without a WebDriver-to-CDP bridge or upstream WebDriver support; the `debugger_address` experiment is included in the compatibility matrix to settle it empirically. *Resolves*: C8.
-- [x] **Which path should lead the integration?** — *Resolved*: CDP through the existing Playwright seam is the driver path; the native Obscura MCP server is a required, parallel deliverable for Codex and agents (Q&A U3). *Resolves*: C5, C6.
+- [x] **Which path should lead the integration?** — *Resolved*: CDP through the existing Playwright seam is the driver path; the native Obscura MCP server is a required, parallel deliverable consumed directly by Claude Code and Codex, with ai-parrot only handling registration (Q&A U3). *Resolves*: C5, C6.
 - [x] **Which Obscura release and build variant?** — *Resolved*: **v0.2.2 or later, `render` build (with or without `stealth`)**. Earlier releases and `no-render` variants are rejected. *Resolves*: C5, C9.
 - [x] **How does Obscura reach Codex?** — *Resolved*: via the existing `.codex/config.toml` installer in `parrot/knowledge/wiki/codex/installer.py`, as one more `[mcp_servers.parrot-obscura]` table. *Resolves*: C4.
 
 - [x] **Should ai-parrot supervise `obscura serve`, or require an externally managed endpoint?** — *Resolved (user, Q&A U2)*: ai-parrot supervises the process and exposes CLI commands to start and stop it. An external `ws://` endpoint stays configurable. *Resolves*: C2, C3.
-- [x] **Is the native Obscura MCP server required, or is Chrome DevTools MCP over Obscura CDP enough?** — *Resolved (user, Q&A U3)*: the native server is required for Codex and agent UI-management; the CDP path remains required for the Playwright driver. *Resolves*: C5, C6.
+- [x] **Is the native Obscura MCP server required, or is Chrome DevTools MCP over Obscura CDP enough?** — *Resolved (user, Q&A U3, clarified rev. 2)*: the native server is required and is used **directly** from Claude Code and Codex without ai-parrot as a bridge; the CDP path remains required for the Playwright driver. *Resolves*: C5, C6.
 - [x] **What defines compatibility acceptance?** — *Resolved (user, Q&A U4)*: the feature surface already supported by the Playwright driver. *Resolves*: C9.
 - [x] **PyO3 spike gates?** — *Resolved (user, Q&A U5)*: no numbers now; defer native embedding to follow-up work. *Resolves*: C7.
 - [x] **Platforms?** — *Resolved (user, Q&A U1)*: Linux only for the first milestone; Windows has no v0.2.2 artifact anyway. *Resolves*: C9.
@@ -185,7 +187,7 @@ Distribution: **8 high**, **2 medium**, **0 low**. Overall confidence stays **me
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec obscura-new-browser-headless`** — specify the Linux Obscura v0.2.2 (render) integration: async process supervision with CLI start/stop, the Playwright connect-over-CDP mode, `--ws-endpoint` support, the three-seam engine selection, the required native Obscura MCP server (agents + Codex), and the Playwright-parity compatibility matrix including the Selenium `debugger_address` experiment. Keep Selenium ChromeDriver-based and defer PyO3 embedding to follow-up work.
+**`/sdd-spec obscura-new-browser-headless`** — specify the Linux Obscura v0.2.2 (render) integration: async process supervision with CLI start/stop, the Playwright connect-over-CDP mode, `--ws-endpoint` support, the three-seam engine selection, direct `obscura mcp` registration for Claude Code and Codex (no ai-parrot bridge), and the Playwright-parity compatibility matrix including the Selenium `debugger_address` experiment. Keep Selenium ChromeDriver-based and defer PyO3 embedding to follow-up work.
 
 ### Alternatives
 
