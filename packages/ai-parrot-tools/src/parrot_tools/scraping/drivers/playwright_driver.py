@@ -35,22 +35,49 @@ class PlaywrightDriver(AbstractDriver):
         self._context: Any = None
         self._page: Any = None
         self._responses: List[Dict[str, Any]] = []
+        # Whether `self._context` was created by this driver (`new_context()`
+        # / `launch_persistent_context()`) as opposed to reused from an
+        # existing CDP-connected browser's default context. `quit()` only
+        # closes contexts it owns — closing a *reused* Obscura context
+        # would tear down state a supervised process's other clients may
+        # still depend on.
+        self._owns_context: bool = False
 
     # ── Lifecycle ────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Launch browser and create a default context + page.
 
-        When ``config.user_data_dir`` is set, a *persistent context* is
-        launched over that profile directory instead of a fresh browser +
-        incognito context, so the page sees the profile's cookies, saved
-        sessions and credential store (``config.channel="chrome"`` opens
-        a real installed Google Chrome for real Chrome profiles).
+        When ``config.engine == "obscura"``, no browser is launched.
+        Instead, Playwright connects to a supervised Obscura CDP endpoint
+        via ``chromium.connect_over_cdp()`` (Obscura speaks CDP) and reuses
+        its default context/page if one already exists, falling back to
+        creating a new context/page otherwise. Process ownership of the
+        Obscura endpoint stays with
+        ``parrot.mcp.obscura.ObscuraProcessManager`` — this driver never
+        starts or stops that process.
+
+        Otherwise (``config.engine == "playwright"``, the default),
+        behavior is unchanged: when ``config.user_data_dir`` is set, a
+        *persistent context* is launched over that profile directory
+        instead of a fresh browser + incognito context, so the page sees
+        the profile's cookies, saved sessions and credential store
+        (``config.channel="chrome"`` opens a real installed Google Chrome
+        for real Chrome profiles).
         """
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
         browser_launcher = getattr(self._playwright, self.config.browser_type)
+
+        if self.config.engine == "obscura":
+            await self._start_obscura_cdp(browser_launcher)
+            self.logger.info(
+                "PlaywrightDriver connected to Obscura over CDP: endpoint=%s",
+                self._cdp_endpoint(),
+            )
+            return
+
         launch_kwargs: Dict[str, Any] = {
             "headless": self.config.headless,
             "slow_mo": self.config.slow_mo,
@@ -71,6 +98,7 @@ class PlaywrightDriver(AbstractDriver):
                 **launch_kwargs,
                 **context_kwargs,
             )
+            self._owns_context = True
             self._context.set_default_timeout(self.config.timeout * 1000)
             # Persistent contexts open with an initial page.
             pages = self._context.pages
@@ -80,6 +108,7 @@ class PlaywrightDriver(AbstractDriver):
 
             context_kwargs = self._build_context_kwargs()
             self._context = await self._browser.new_context(**context_kwargs)
+            self._owns_context = True
             self._context.set_default_timeout(self.config.timeout * 1000)
 
             self._page = await self._context.new_page()
@@ -91,10 +120,24 @@ class PlaywrightDriver(AbstractDriver):
         )
 
     async def quit(self) -> None:
-        """Close browser and release resources."""
-        if self._context:
+        """Close browser and release resources.
+
+        Only Playwright-owned resources are closed here. ``self._context``
+        is closed only when this driver created it
+        (``self._owns_context``) — a *reused* Obscura default context
+        (``config.engine == "obscura"`` connecting to an endpoint that
+        already had one) is left open, since closing it would tear down
+        state a supervised process's other clients may still depend on.
+        In ``config.engine == "obscura"`` (CDP) mode, ``Browser.close()``
+        disconnects Playwright's client — per Playwright's own CDP
+        semantics it does **not** terminate the remote browser process,
+        so the externally supervised Obscura process is left running for
+        ``parrot.mcp.obscura.ObscuraProcessManager`` to manage.
+        """
+        if self._context and self._owns_context:
             await self._context.close()
-            self._context = None
+        self._context = None
+        self._owns_context = False
         if self._browser:
             await self._browser.close()
             self._browser = None
@@ -129,9 +172,7 @@ class PlaywrightDriver(AbstractDriver):
         sel = self._resolve_selector(selector)
         await self._page.locator(sel).click(timeout=timeout * 1000)
 
-    async def fill(
-        self, selector: str, value: str, timeout: int = 10
-    ) -> None:
+    async def fill(self, selector: str, value: str, timeout: int = 10) -> None:
         """Fill input matching *selector* with *value*."""
         sel = self._resolve_selector(selector)
         await self._page.locator(sel).fill(value, timeout=timeout * 1000)
@@ -182,22 +223,14 @@ class PlaywrightDriver(AbstractDriver):
     async def get_text(self, selector: str, timeout: int = 10) -> str:
         """Return the inner text of the first matching element."""
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).inner_text(
-            timeout=timeout * 1000
-        )
+        return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
 
-    async def get_attribute(
-        self, selector: str, attribute: str, timeout: int = 10
-    ) -> Optional[str]:
+    async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the matching element."""
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).get_attribute(
-            attribute, timeout=timeout * 1000
-        )
+        return await self._page.locator(sel).get_attribute(attribute, timeout=timeout * 1000)
 
-    async def get_all_texts(
-        self, selector: str, timeout: int = 10
-    ) -> List[str]:
+    async def get_all_texts(self, selector: str, timeout: int = 10) -> List[str]:
         """Return inner text of every matching element."""
         sel = self._resolve_selector(selector)
         locator = self._page.locator(sel)
@@ -205,32 +238,22 @@ class PlaywrightDriver(AbstractDriver):
         elements = await locator.all()
         return [await el.inner_text() for el in elements]
 
-    async def screenshot(
-        self, path: str, full_page: bool = False
-    ) -> bytes:
+    async def screenshot(self, path: str, full_page: bool = False) -> bytes:
         """Take a screenshot and save to *path*."""
         return await self._page.screenshot(path=path, full_page=full_page)
 
     # ── Waiting ──────────────────────────────────────────────────
 
-    async def wait_for_selector(
-        self, selector: str, timeout: int = 10, state: str = "visible"
-    ) -> None:
+    async def wait_for_selector(self, selector: str, timeout: int = 10, state: str = "visible") -> None:
         """Wait for *selector* to reach *state*."""
         sel = self._resolve_selector(selector)
-        await self._page.wait_for_selector(
-            sel, timeout=timeout * 1000, state=state
-        )
+        await self._page.wait_for_selector(sel, timeout=timeout * 1000, state=state)
 
     async def wait_for_navigation(self, timeout: int = 30) -> None:
         """Wait for a navigation event to complete."""
-        await self._page.wait_for_load_state(
-            "domcontentloaded", timeout=timeout * 1000
-        )
+        await self._page.wait_for_load_state("domcontentloaded", timeout=timeout * 1000)
 
-    async def wait_for_load_state(
-        self, state: str = "load", timeout: int = 30
-    ) -> None:
+    async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
         """Wait until the page reaches the given load *state*."""
         await self._page.wait_for_load_state(state, timeout=timeout * 1000)
 
@@ -261,9 +284,7 @@ class PlaywrightDriver(AbstractDriver):
         """
         await self._page.route("**/*", handler)
 
-    async def intercept_by_resource_type(
-        self, resource_types: List[str], action: str = "abort"
-    ) -> None:
+    async def intercept_by_resource_type(self, resource_types: List[str], action: str = "abort") -> None:
         """Block or modify requests by resource type.
 
         Args:
@@ -281,9 +302,7 @@ class PlaywrightDriver(AbstractDriver):
 
         await self._page.route("**/*", _handler)
 
-    async def mock_route(
-        self, url_pattern: str, handler: Callable
-    ) -> None:
+    async def mock_route(self, url_pattern: str, handler: Callable) -> None:
         """Mock network requests matching *url_pattern*.
 
         Args:
@@ -319,8 +338,7 @@ class PlaywrightDriver(AbstractDriver):
         """
         if self.config.browser_type != "chromium":
             raise ValueError(
-                "PDF export requires browser_type='chromium'. "
-                f"Current browser_type is '{self.config.browser_type}'."
+                "PDF export requires browser_type='chromium'. " f"Current browser_type is '{self.config.browser_type}'."
             )
         return await self._page.pdf(path=path)
 
@@ -335,9 +353,7 @@ class PlaywrightDriver(AbstractDriver):
         Trace files can be viewed with:
         ``npx playwright show-trace trace.zip``
         """
-        await self._context.tracing.start(
-            name=name, screenshots=screenshots, snapshots=snapshots
-        )
+        await self._context.tracing.start(name=name, screenshots=screenshots, snapshots=snapshots)
 
     async def stop_tracing(self, path: str) -> None:
         """Stop tracing and save the trace archive to *path*."""
@@ -374,6 +390,49 @@ class PlaywrightDriver(AbstractDriver):
         return list(self._responses)
 
     # ── Internal Helpers ─────────────────────────────────────────
+
+    def _cdp_endpoint(self) -> str:
+        """Resolve the Obscura CDP endpoint URL from the config.
+
+        Returns:
+            ``config.cdp_endpoint_url`` if set, otherwise
+            ``http://127.0.0.1:{config.obscura_port}``.
+        """
+        return self.config.cdp_endpoint_url or (f"http://127.0.0.1:{self.config.obscura_port}")
+
+    async def _start_obscura_cdp(self, browser_launcher: Any) -> None:
+        """Connect to a supervised Obscura endpoint over CDP.
+
+        Reuses the endpoint's default context/page when one already
+        exists (the common case for a supervised Obscura process),
+        falling back to creating a new context/page so every
+        ``AbstractDriver`` method sees a valid ``self._page``. Only a
+        newly-created context is recorded as owned
+        (``self._owns_context``) — ``quit()`` must never close a reused
+        context, which may belong to other clients of the supervised
+        process.
+
+        Args:
+            browser_launcher: The Chromium ``BrowserType`` from the
+                started Playwright instance.
+        """
+        endpoint = self._cdp_endpoint()
+        self._browser = await browser_launcher.connect_over_cdp(endpoint)
+
+        if self._browser.contexts:
+            self._context = self._browser.contexts[0]
+            self._owns_context = False
+        else:
+            context_kwargs = self._build_context_kwargs()
+            context_kwargs.pop("storage_state", None)
+            self._context = await self._browser.new_context(**context_kwargs)
+            self._owns_context = True
+        self._context.set_default_timeout(self.config.timeout * 1000)
+
+        if self._context.pages:
+            self._page = self._context.pages[0]
+        else:
+            self._page = await self._context.new_page()
 
     def _resolve_selector(self, selector: str) -> str:
         """Auto-detect and prefix XPath selectors for Playwright.

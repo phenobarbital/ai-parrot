@@ -4,12 +4,11 @@ All Playwright API calls are mocked — no real browser is required.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from parrot.tools.scraping.drivers.playwright_driver import PlaywrightDriver
 from parrot.tools.scraping.drivers.playwright_config import PlaywrightConfig
 from parrot.tools.scraping.drivers.abstract import AbstractDriver
-
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -57,6 +56,7 @@ def started_driver(driver, mock_page, mock_context):
     """PlaywrightDriver with mocked internals (simulates started state)."""
     driver._page = mock_page
     driver._context = mock_context
+    driver._owns_context = True  # normal launch mode always creates its own context
     driver._browser = AsyncMock()
     driver._playwright = AsyncMock()
     return driver
@@ -91,10 +91,7 @@ class TestResolveSelector:
         assert driver._resolve_selector("#main") == "#main"
 
     def test_xpath_double_slash(self, driver):
-        assert (
-            driver._resolve_selector("//div[@id='main']")
-            == "xpath=//div[@id='main']"
-        )
+        assert driver._resolve_selector("//div[@id='main']") == "xpath=//div[@id='main']"
 
     def test_xpath_dot_slash(self, driver):
         assert driver._resolve_selector("./div") == "xpath=./div"
@@ -141,17 +138,13 @@ class TestBuildContextKwargs:
         assert kwargs["ignore_https_errors"] is True
 
     def test_extra_http_headers(self):
-        config = PlaywrightConfig(
-            extra_http_headers={"X-Custom": "value"}
-        )
+        config = PlaywrightConfig(extra_http_headers={"X-Custom": "value"})
         d = PlaywrightDriver(config)
         kwargs = d._build_context_kwargs()
         assert kwargs["extra_http_headers"]["X-Custom"] == "value"
 
     def test_http_credentials(self):
-        config = PlaywrightConfig(
-            http_credentials={"username": "u", "password": "p"}
-        )
+        config = PlaywrightConfig(http_credentials={"username": "u", "password": "p"})
         d = PlaywrightDriver(config)
         kwargs = d._build_context_kwargs()
         assert kwargs["http_credentials"]["username"] == "u"
@@ -191,16 +184,12 @@ class TestNavigation:
     @pytest.mark.asyncio
     async def test_navigate_timeout_conversion(self, started_driver):
         await started_driver.navigate("https://example.com", timeout=5)
-        started_driver._page.goto.assert_called_once_with(
-            "https://example.com", timeout=5000
-        )
+        started_driver._page.goto.assert_called_once_with("https://example.com", timeout=5000)
 
     @pytest.mark.asyncio
     async def test_navigate_default_timeout(self, started_driver):
         await started_driver.navigate("https://example.com")
-        started_driver._page.goto.assert_called_once_with(
-            "https://example.com", timeout=30000
-        )
+        started_driver._page.goto.assert_called_once_with("https://example.com", timeout=30000)
 
     @pytest.mark.asyncio
     async def test_go_back(self, started_driver):
@@ -231,17 +220,13 @@ class TestDOMInteraction:
     @pytest.mark.asyncio
     async def test_click_xpath(self, started_driver):
         await started_driver.click("//button[@id='go']")
-        started_driver._page.locator.assert_called_with(
-            "xpath=//button[@id='go']"
-        )
+        started_driver._page.locator.assert_called_with("xpath=//button[@id='go']")
 
     @pytest.mark.asyncio
     async def test_fill(self, started_driver, mock_locator):
         await started_driver.fill("#email", "test@example.com", timeout=3)
         started_driver._page.locator.assert_called_with("#email")
-        mock_locator.fill.assert_called_once_with(
-            "test@example.com", timeout=3000
-        )
+        mock_locator.fill.assert_called_once_with("test@example.com", timeout=3000)
 
     @pytest.mark.asyncio
     async def test_select_option(self, started_driver, mock_locator):
@@ -284,9 +269,7 @@ class TestContentExtraction:
         mock_locator.get_attribute.return_value = "https://link.com"
         result = await started_driver.get_attribute("a", "href")
         started_driver._page.locator.assert_called_with("a")
-        mock_locator.get_attribute.assert_called_once_with(
-            "href", timeout=10000
-        )
+        mock_locator.get_attribute.assert_called_once_with("href", timeout=10000)
         assert result == "https://link.com"
 
     @pytest.mark.asyncio
@@ -294,9 +277,7 @@ class TestContentExtraction:
         started_driver._page.screenshot.return_value = b"\x89PNG"
         result = await started_driver.screenshot("/tmp/shot.png", full_page=True)
         assert result == b"\x89PNG"
-        started_driver._page.screenshot.assert_called_once_with(
-            path="/tmp/shot.png", full_page=True
-        )
+        started_driver._page.screenshot.assert_called_once_with(path="/tmp/shot.png", full_page=True)
 
 
 # ── Waiting ──────────────────────────────────────────────────────
@@ -306,32 +287,22 @@ class TestWaiting:
     @pytest.mark.asyncio
     async def test_wait_for_selector(self, started_driver):
         await started_driver.wait_for_selector(".loaded", timeout=5)
-        started_driver._page.wait_for_selector.assert_called_once_with(
-            ".loaded", timeout=5000, state="visible"
-        )
+        started_driver._page.wait_for_selector.assert_called_once_with(".loaded", timeout=5000, state="visible")
 
     @pytest.mark.asyncio
     async def test_wait_for_selector_hidden(self, started_driver):
-        await started_driver.wait_for_selector(
-            ".spinner", timeout=10, state="hidden"
-        )
-        started_driver._page.wait_for_selector.assert_called_once_with(
-            ".spinner", timeout=10000, state="hidden"
-        )
+        await started_driver.wait_for_selector(".spinner", timeout=10, state="hidden")
+        started_driver._page.wait_for_selector.assert_called_once_with(".spinner", timeout=10000, state="hidden")
 
     @pytest.mark.asyncio
     async def test_wait_for_navigation(self, started_driver):
         await started_driver.wait_for_navigation(timeout=15)
-        started_driver._page.wait_for_load_state.assert_called_once_with(
-            "domcontentloaded", timeout=15000
-        )
+        started_driver._page.wait_for_load_state.assert_called_once_with("domcontentloaded", timeout=15000)
 
     @pytest.mark.asyncio
     async def test_wait_for_load_state(self, started_driver):
         await started_driver.wait_for_load_state("networkidle", timeout=20)
-        started_driver._page.wait_for_load_state.assert_called_once_with(
-            "networkidle", timeout=20000
-        )
+        started_driver._page.wait_for_load_state.assert_called_once_with("networkidle", timeout=20000)
 
 
 # ── Scripts ──────────────────────────────────────────────────────
@@ -374,9 +345,7 @@ class TestInterceptRequests:
 class TestInterceptByResourceType:
     @pytest.mark.asyncio
     async def test_registers_route(self, started_driver):
-        await started_driver.intercept_by_resource_type(
-            ["image", "stylesheet"]
-        )
+        await started_driver.intercept_by_resource_type(["image", "stylesheet"])
         started_driver._page.route.assert_called_once()
         args = started_driver._page.route.call_args
         assert args[0][0] == "**/*"
@@ -387,9 +356,7 @@ class TestMockRoute:
     async def test_registers_pattern_handler(self, started_driver):
         handler = AsyncMock()
         await started_driver.mock_route("**/api/data", handler)
-        started_driver._page.route.assert_called_once_with(
-            "**/api/data", handler
-        )
+        started_driver._page.route.assert_called_once_with("**/api/data", handler)
 
 
 class TestSavePdf:
@@ -420,28 +387,20 @@ class TestSavePdf:
 class TestTracing:
     @pytest.mark.asyncio
     async def test_start_tracing(self, started_driver):
-        await started_driver.start_tracing(
-            name="test", screenshots=True, snapshots=False
-        )
-        started_driver._context.tracing.start.assert_called_once_with(
-            name="test", screenshots=True, snapshots=False
-        )
+        await started_driver.start_tracing(name="test", screenshots=True, snapshots=False)
+        started_driver._context.tracing.start.assert_called_once_with(name="test", screenshots=True, snapshots=False)
 
     @pytest.mark.asyncio
     async def test_stop_tracing(self, started_driver):
         await started_driver.stop_tracing("/tmp/trace.zip")
-        started_driver._context.tracing.stop.assert_called_once_with(
-            path="/tmp/trace.zip"
-        )
+        started_driver._context.tracing.stop.assert_called_once_with(path="/tmp/trace.zip")
 
 
 class TestSaveStorageState:
     @pytest.mark.asyncio
     async def test_calls_context(self, started_driver):
         await started_driver.save_storage_state("/tmp/state.json")
-        started_driver._context.storage_state.assert_called_once_with(
-            path="/tmp/state.json"
-        )
+        started_driver._context.storage_state.assert_called_once_with(path="/tmp/state.json")
 
 
 class TestNewPage:
@@ -457,9 +416,7 @@ class TestNewPage:
 class TestGetNetworkResponses:
     @pytest.mark.asyncio
     async def test_returns_captured_responses(self, started_driver):
-        started_driver._responses = [
-            {"url": "https://api.com/data", "status": 200, "body": "ok"}
-        ]
+        started_driver._responses = [{"url": "https://api.com/data", "status": 200, "body": "ok"}]
         result = await started_driver.get_network_responses()
         assert len(result) == 1
         assert result[0]["url"] == "https://api.com/data"
@@ -495,6 +452,170 @@ class TestQuit:
     async def test_quit_when_not_started(self, driver):
         """Quit gracefully when no resources were initialized."""
         await driver.quit()  # Should not raise
+
+
+# ── Obscura CDP Mode (FEAT-530, TASK-2876) ──────────────────────
+
+
+class TestObscuraCDPMode:
+    """Connect-over-CDP mode connects to a supervised Obscura endpoint.
+
+    All Playwright API calls are mocked; process supervision itself is
+    `parrot.mcp.obscura.ObscuraProcessManager`'s job (TASK-2875), not
+    this driver's.
+    """
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_connects_over_cdp(self):
+        """Reuses the CDP endpoint's default context/page when present."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_page.url = "about:blank"
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(engine="obscura", cdp_endpoint_url="http://127.0.0.1:9333")
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9333")
+        assert driver._browser is mock_browser
+        assert driver._context is mock_context
+        assert driver._page is mock_page
+        assert driver.current_url == "about:blank"
+        mock_context.set_default_timeout.assert_called_once_with(config.timeout * 1000)
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_cdp_derives_endpoint_from_obscura_port(self):
+        """Without an explicit cdp_endpoint_url, the endpoint is derived
+        from obscura_port on 127.0.0.1, and a context/page are created
+        when the CDP endpoint has none yet."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+
+        mock_browser.contexts = []
+        mock_context.pages = []
+        mock_context.set_default_timeout = MagicMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(engine="obscura", obscura_port=9222)
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9222")
+        mock_browser.new_context.assert_called_once()
+        mock_context.new_page.assert_called_once()
+        assert driver._page is mock_page
+        assert driver._owns_context is True  # created, not reused
+
+        # A driver-created context IS closed on quit() (only a *reused*
+        # one is skipped — see test_playwright_driver_quit_does_not_close_
+        # external_browser_unless_owned below).
+        await driver.quit()
+        mock_context.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_playwright_driver_quit_does_not_close_external_browser_unless_owned(
+        self,
+    ):
+        """quit() never closes a *reused* CDP context/page (this driver
+        did not create it — closing it would tear down state a
+        supervised process's other clients may still depend on), and
+        only ever invokes Playwright's own close()/stop() on resources
+        it owns — which, per Playwright's CDP semantics, disconnect
+        rather than terminate the remote browser process. The driver
+        never holds (and so never kills) a separate process handle for
+        a supervised Obscura instance; that ownership stays with
+        `parrot.mcp.obscura.ObscuraProcessManager`."""
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        config = PlaywrightConfig(engine="obscura")
+        driver = PlaywrightDriver(config)
+
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        assert driver._owns_context is False  # reused, not created
+
+        context = driver._context
+        browser = driver._browser
+        playwright = driver._playwright
+
+        await driver.quit()
+
+        context.close.assert_not_called()
+        browser.close.assert_called_once()
+        playwright.stop.assert_called_once()
+        assert driver._page is None
+        assert driver._context is None
+        assert driver._browser is None
+        assert driver._playwright is None
+
+
+class TestObscuraModeSharesAbstractDriverSurface:
+    """FEAT-530 (TASK-2880): final driver behavior checks — every
+    `AbstractDriver` method operates purely against `self._page`/
+    `self._context`, so once `start()` has connected over CDP, no
+    Obscura-specific branching exists anywhere else in the class (spec
+    AC: "AbstractDriver callers and existing scraping plans require no
+    Obscura-specific branching")."""
+
+    @pytest.fixture
+    def obscura_driver(self, mock_page, mock_context):
+        driver = PlaywrightDriver(PlaywrightConfig(engine="obscura"))
+        driver._page = mock_page
+        driver._context = mock_context
+        driver._browser = AsyncMock()
+        driver._playwright = AsyncMock()
+        return driver
+
+    @pytest.mark.asyncio
+    async def test_navigate_click_fill_delegate_to_page(self, obscura_driver, mock_page, mock_locator):
+        await obscura_driver.navigate("http://127.0.0.1/login")
+        mock_page.goto.assert_called_once()
+
+        await obscura_driver.click("#submit")
+        mock_locator.click.assert_called_once()
+
+        await obscura_driver.fill("#username", "obscura-user")
+        mock_locator.fill.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_text_and_screenshot_delegate_to_page(self, obscura_driver, mock_page):
+        await obscura_driver.get_text("body")
+        mock_page.locator.assert_called()
+
+        await obscura_driver.screenshot("/tmp/obscura.png")
+        mock_page.screenshot.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_delegates_to_page(self, obscura_driver, mock_page):
+        await obscura_driver.evaluate("1 + 1")
+        mock_page.evaluate.assert_called_once_with("1 + 1")
 
 
 # ── Lazy Import ──────────────────────────────────────────────────

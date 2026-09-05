@@ -282,6 +282,14 @@ class WebScrapingToolkit(AbstractToolkit):
         custom_user_agent: Override user agent.
         plans_dir: Root directory for plan storage.
         llm_client: LLM client with ``async complete(prompt) -> str``.
+        cdp_endpoint_url: Explicit Obscura CDP endpoint (FEAT-530). Only
+            used when ``driver_type="obscura"``.
+        obscura_binary: Path to (or ``PATH``-resolvable name of) the
+            Obscura binary. Only used when ``driver_type="obscura"``.
+        obscura_port: CDP port of the supervised Obscura process.
+        obscura_stealth: Obscura stealth-mode flag.
+        obscura_allow_private_network: Obscura
+            ``--allow-private-network`` flag.
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
@@ -289,7 +297,7 @@ class WebScrapingToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        driver_type: Literal["selenium", "playwright"] = "selenium",
+        driver_type: Literal["selenium", "playwright", "obscura"] = "selenium",
         browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome",
         headless: bool = True,
         session_based: bool = False,
@@ -304,6 +312,11 @@ class WebScrapingToolkit(AbstractToolkit):
         custom_user_agent: str | None = None,
         plans_dir: str | Path | None = None,
         llm_client: Any | None = None,
+        cdp_endpoint_url: str | None = None,
+        obscura_binary: str | None = None,
+        obscura_port: int = 9222,
+        obscura_stealth: bool = False,
+        obscura_allow_private_network: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -321,6 +334,11 @@ class WebScrapingToolkit(AbstractToolkit):
             overlay_housekeeping=overlay_housekeeping,
             disable_images=disable_images,
             custom_user_agent=custom_user_agent,
+            cdp_endpoint_url=cdp_endpoint_url,
+            obscura_binary=obscura_binary,
+            obscura_port=obscura_port,
+            obscura_stealth=obscura_stealth,
+            obscura_allow_private_network=obscura_allow_private_network,
         )
         self._session_based = session_based
         self._session_driver: AbstractDriver | None = None
