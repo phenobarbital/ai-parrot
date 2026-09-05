@@ -89,7 +89,16 @@ class BedrockMantleClient(OpenAIBaseClient):
     provider_keys: tuple[str, ...] = ("bedrock-mantle", "mantle")
     models: type[Enum] = AmazonModel
     _default_model: str = "openai.gpt-oss-120b"
-    _fallback_model: str = "google.gemma-4-26b-a4b"
+    # No verified Mantle-servable fallback model exists yet. This used to be
+    # "google.gemma-4-26b-a4b", but a live probe (2026-09-05) got back
+    # ``400 validation_error: model 'google.gemma-4-26b-a4b' isn't supported
+    # on this route`` — the id is not valid on Mantle's chat-completions
+    # route at all (possibly Converse-only, like Llama4 Maverick). Left
+    # ``None`` (disables the capacity-error fallback path in
+    # AbstractClient._should_use_fallback()) rather than shipping a fallback
+    # that would 400 on every retry; set this once a working Mantle-native
+    # fallback id is confirmed live.
+    _fallback_model: str | None = None
 
     def __init__(
         self,

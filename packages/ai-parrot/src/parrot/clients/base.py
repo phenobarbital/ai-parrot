@@ -288,8 +288,10 @@ class AbstractClient(EventEmitterMixin, ABC):
     _invoke_max_tokens: Optional[int] = None
 
     # Fallback model for capacity errors — subclasses set their own default
-    # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K,
-    # BedrockMantleClient "google.gemma-4-26b-a4b"). FEAT-438 G5: declared
+    # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K).
+    # BedrockMantleClient deliberately leaves this ``None`` — its only
+    # candidate fallback, "google.gemma-4-26b-a4b", 400s as unsupported on
+    # Mantle's chat-completions route (see nova/mantle.py). FEAT-438 G5: declared
     # here (not just assigned in __init__) so a subclass's class-level
     # value is visible even when __init__ does not create an instance
     # attribute (no explicit `fallback_model=` kwarg was passed).

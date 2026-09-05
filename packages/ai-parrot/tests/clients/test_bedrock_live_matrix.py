@@ -242,7 +242,10 @@ async def test_bedrock_converse_model_live(model):
 
 MANTLE_MODELS = [
     "openai.gpt-oss-120b",  # BedrockMantleClient._default_model
-    "google.gemma-4-26b-a4b",  # BedrockMantleClient._fallback_model
+    # NOT "google.gemma-4-26b-a4b": confirmed live (2026-09-05) to 400 with
+    # "isn't supported on this route" — not a valid id on Mantle's
+    # chat-completions route at all. BedrockMantleClient._fallback_model
+    # was dropped to None over this finding; see nova/mantle.py.
     "anthropic.claude-sonnet-4-5-20250929-v1:0",
     "anthropic.claude-haiku-4-5-20251001-v1:0",
     "minimax.minimax-m2.5",

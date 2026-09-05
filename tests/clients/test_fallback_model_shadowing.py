@@ -63,7 +63,16 @@ def test_no_class_level_default_falls_through_to_none():
 
 
 def test_mantle_no_longer_needs_workaround():
+    """BedrockMantleClient no longer declares a truthy ``_fallback_model``
+    (its only candidate, "google.gemma-4-26b-a4b", 400s as unsupported on
+    Mantle's chat-completions route — found live 2026-09-05, see
+    nova/mantle.py). This still guards the FEAT-438 G5 fix: without it,
+    __init__'s old unconditional ``kwargs.get('fallback_model', None)``
+    would be indistinguishable from the declared class-level default here
+    since both are ``None`` — real discriminating coverage (a truthy
+    class-level default surviving unshadowed) lives in
+    test_class_attr_survives_without_kwarg above."""
     from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 
     c = BedrockMantleClient(api_key="k")
-    assert c._fallback_model == "google.gemma-4-26b-a4b"
+    assert c._fallback_model is None

@@ -116,7 +116,7 @@ agent = Agent(llm="bedrock-mantle:openai.gpt-oss-120b")
 |---|---|
 | `client_type` / `client_name` | `"bedrock-mantle"` |
 | `_default_model` | `"openai.gpt-oss-120b"` |
-| `_fallback_model` | `"google.gemma-4-26b-a4b"` (used for capacity-error retries) |
+| `_fallback_model` | `None` — no verified Mantle-servable fallback yet; `"google.gemma-4-26b-a4b"` was tried and 400s as unsupported on this route (confirmed live 2026-09-05). The capacity-error retry path is inactive for this client until a working fallback id is confirmed. |
 
 Model ids follow the `<vendor>.<model>` shape (e.g. `openai.gpt-oss-120b`,
 `anthropic.claude-mythos-preview`) and are passed through as plain

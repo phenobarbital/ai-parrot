@@ -74,8 +74,13 @@ class TestBedrockMantleClient:
         _fallback_model attribute when fallback_model= is explicitly
         passed, so this class's class-level _fallback_model is visible
         without any per-subclass workaround (the former
-        kwargs.setdefault("fallback_model", ...) guard was removed)."""
-        assert mantle_client._fallback_model == "google.gemma-4-26b-a4b"
+        kwargs.setdefault("fallback_model", ...) guard was removed).
+
+        The class-level value is ``None`` (no verified Mantle-servable
+        fallback exists — "google.gemma-4-26b-a4b" 400s as unsupported on
+        this route, found live 2026-09-05) — still a value this test must
+        see survive unshadowed, just not a truthy one."""
+        assert mantle_client._fallback_model is None
 
     def test_explicit_base_url_wins(self):
         c = BedrockMantleClient(api_key="k", base_url="https://custom.example/v1")
