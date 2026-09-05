@@ -5,6 +5,7 @@ Provides a plugin-style ``DriverRegistry`` for registering driver factories
 and an async context manager ``driver_context()`` that handles session-based
 (persistent) and per-operation (fresh) driver modes.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,10 +68,7 @@ class DriverRegistry:
             ValueError: If the driver type is not registered.
         """
         if driver_type not in cls._factories:
-            raise ValueError(
-                f"Unknown driver type: {driver_type!r}. "
-                f"Registered: {list(cls._factories.keys())}"
-            )
+            raise ValueError(f"Unknown driver type: {driver_type!r}. " f"Registered: {list(cls._factories.keys())}")
         return cls._factories[driver_type]
 
     @classmethod
@@ -192,9 +190,7 @@ class _PlaywrightSetup:
             mobile=self._config.mobile,
             device_name=self._config.mobile_device,
             extra_http_headers=(
-                {"User-Agent": self._config.custom_user_agent}
-                if self._config.custom_user_agent
-                else None
+                {"User-Agent": self._config.custom_user_agent} if self._config.custom_user_agent else None
             ),
             user_data_dir=self._config.user_data_dir,
             channel=self._config.browser_channel,

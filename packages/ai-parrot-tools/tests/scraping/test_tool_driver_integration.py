@@ -9,7 +9,6 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from parrot.tools.scraping.drivers.abstract import AbstractDriver
 
-
 # ── Default Driver ───────────────────────────────────────────────
 
 

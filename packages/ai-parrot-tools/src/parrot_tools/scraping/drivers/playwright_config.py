@@ -108,20 +108,12 @@ class PlaywrightConfig:
                 f"Must be one of: {', '.join(sorted(_VALID_BROWSER_TYPES))}"
             )
         if self.engine not in _VALID_ENGINES:
-            raise ValueError(
-                f"Invalid engine '{self.engine}'. "
-                f"Must be one of: {', '.join(sorted(_VALID_ENGINES))}"
-            )
+            raise ValueError(f"Invalid engine '{self.engine}'. " f"Must be one of: {', '.join(sorted(_VALID_ENGINES))}")
         if not (0 < self.obscura_port < 65536):
-            raise ValueError(
-                f"obscura_port out of range: {self.obscura_port}"
-            )
+            raise ValueError(f"obscura_port out of range: {self.obscura_port}")
         if self.engine == "obscura" and self.browser_type != "chromium":
             # Obscura only speaks CDP as a Chromium-compatible engine.
             # DriverFactory/DriverRegistry already force this — this is
             # a defense-in-depth check for direct PlaywrightConfig
             # construction that bypasses both.
-            raise ValueError(
-                "engine='obscura' requires browser_type='chromium' "
-                f"(got {self.browser_type!r})"
-            )
+            raise ValueError("engine='obscura' requires browser_type='chromium' " f"(got {self.browser_type!r})")

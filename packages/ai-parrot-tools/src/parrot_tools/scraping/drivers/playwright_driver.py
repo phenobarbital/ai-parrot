@@ -172,9 +172,7 @@ class PlaywrightDriver(AbstractDriver):
         sel = self._resolve_selector(selector)
         await self._page.locator(sel).click(timeout=timeout * 1000)
 
-    async def fill(
-        self, selector: str, value: str, timeout: int = 10
-    ) -> None:
+    async def fill(self, selector: str, value: str, timeout: int = 10) -> None:
         """Fill input matching *selector* with *value*."""
         sel = self._resolve_selector(selector)
         await self._page.locator(sel).fill(value, timeout=timeout * 1000)
@@ -225,22 +223,14 @@ class PlaywrightDriver(AbstractDriver):
     async def get_text(self, selector: str, timeout: int = 10) -> str:
         """Return the inner text of the first matching element."""
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).inner_text(
-            timeout=timeout * 1000
-        )
+        return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
 
-    async def get_attribute(
-        self, selector: str, attribute: str, timeout: int = 10
-    ) -> Optional[str]:
+    async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the matching element."""
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).get_attribute(
-            attribute, timeout=timeout * 1000
-        )
+        return await self._page.locator(sel).get_attribute(attribute, timeout=timeout * 1000)
 
-    async def get_all_texts(
-        self, selector: str, timeout: int = 10
-    ) -> List[str]:
+    async def get_all_texts(self, selector: str, timeout: int = 10) -> List[str]:
         """Return inner text of every matching element."""
         sel = self._resolve_selector(selector)
         locator = self._page.locator(sel)
@@ -248,32 +238,22 @@ class PlaywrightDriver(AbstractDriver):
         elements = await locator.all()
         return [await el.inner_text() for el in elements]
 
-    async def screenshot(
-        self, path: str, full_page: bool = False
-    ) -> bytes:
+    async def screenshot(self, path: str, full_page: bool = False) -> bytes:
         """Take a screenshot and save to *path*."""
         return await self._page.screenshot(path=path, full_page=full_page)
 
     # ── Waiting ──────────────────────────────────────────────────
 
-    async def wait_for_selector(
-        self, selector: str, timeout: int = 10, state: str = "visible"
-    ) -> None:
+    async def wait_for_selector(self, selector: str, timeout: int = 10, state: str = "visible") -> None:
         """Wait for *selector* to reach *state*."""
         sel = self._resolve_selector(selector)
-        await self._page.wait_for_selector(
-            sel, timeout=timeout * 1000, state=state
-        )
+        await self._page.wait_for_selector(sel, timeout=timeout * 1000, state=state)
 
     async def wait_for_navigation(self, timeout: int = 30) -> None:
         """Wait for a navigation event to complete."""
-        await self._page.wait_for_load_state(
-            "domcontentloaded", timeout=timeout * 1000
-        )
+        await self._page.wait_for_load_state("domcontentloaded", timeout=timeout * 1000)
 
-    async def wait_for_load_state(
-        self, state: str = "load", timeout: int = 30
-    ) -> None:
+    async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
         """Wait until the page reaches the given load *state*."""
         await self._page.wait_for_load_state(state, timeout=timeout * 1000)
 
@@ -304,9 +284,7 @@ class PlaywrightDriver(AbstractDriver):
         """
         await self._page.route("**/*", handler)
 
-    async def intercept_by_resource_type(
-        self, resource_types: List[str], action: str = "abort"
-    ) -> None:
+    async def intercept_by_resource_type(self, resource_types: List[str], action: str = "abort") -> None:
         """Block or modify requests by resource type.
 
         Args:
@@ -324,9 +302,7 @@ class PlaywrightDriver(AbstractDriver):
 
         await self._page.route("**/*", _handler)
 
-    async def mock_route(
-        self, url_pattern: str, handler: Callable
-    ) -> None:
+    async def mock_route(self, url_pattern: str, handler: Callable) -> None:
         """Mock network requests matching *url_pattern*.
 
         Args:
@@ -362,8 +338,7 @@ class PlaywrightDriver(AbstractDriver):
         """
         if self.config.browser_type != "chromium":
             raise ValueError(
-                "PDF export requires browser_type='chromium'. "
-                f"Current browser_type is '{self.config.browser_type}'."
+                "PDF export requires browser_type='chromium'. " f"Current browser_type is '{self.config.browser_type}'."
             )
         return await self._page.pdf(path=path)
 
@@ -378,9 +353,7 @@ class PlaywrightDriver(AbstractDriver):
         Trace files can be viewed with:
         ``npx playwright show-trace trace.zip``
         """
-        await self._context.tracing.start(
-            name=name, screenshots=screenshots, snapshots=snapshots
-        )
+        await self._context.tracing.start(name=name, screenshots=screenshots, snapshots=snapshots)
 
     async def stop_tracing(self, path: str) -> None:
         """Stop tracing and save the trace archive to *path*."""
@@ -425,9 +398,7 @@ class PlaywrightDriver(AbstractDriver):
             ``config.cdp_endpoint_url`` if set, otherwise
             ``http://127.0.0.1:{config.obscura_port}``.
         """
-        return self.config.cdp_endpoint_url or (
-            f"http://127.0.0.1:{self.config.obscura_port}"
-        )
+        return self.config.cdp_endpoint_url or (f"http://127.0.0.1:{self.config.obscura_port}")
 
     async def _start_obscura_cdp(self, browser_launcher: Any) -> None:
         """Connect to a supervised Obscura endpoint over CDP.

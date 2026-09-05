@@ -12,11 +12,12 @@ from .context import ReadonlyContext
 from ..tools.abstract import AbstractTool, ToolResult
 from .oauth import (
     InMemoryTokenStore,  # noqa: F401 — public re-export for backward compat
-    RedisTokenStore,     # noqa: F401 — public re-export for backward compat
-    TokenStore,          # noqa: F401 — public re-export for backward compat
-    VaultTokenStore,     # noqa: F401 — public re-export for backward compat
+    RedisTokenStore,  # noqa: F401 — public re-export for backward compat
+    TokenStore,  # noqa: F401 — public re-export for backward compat
+    VaultTokenStore,  # noqa: F401 — public re-export for backward compat
 )
 from .oauth2_config import MCPOAuth2Config, get_mcp_oauth2_preset
+
 # NOTE: register_mcp_oauth2_provider is imported locally inside factory functions
 # (create_oauth_mcp_server, create_netsuite_mcp_server) to avoid a circular
 # import: integration → mcp_provider → oauth2_config → mcp.__init__ → integration.
@@ -30,13 +31,13 @@ from .transports.unix import UnixMCPSession
 from .transports.http import HttpMCPSession
 from .transports.websocket import WebSocketMCPSession
 from .transports.sse import SseMCPSession
+
 # QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic), so
 # its symbols are resolved lazily — see parrot.mcp._quic. Importing them here
 # would make every other transport unusable on a bare install.
 from ._quic import quic_attr
 from .chrome import ChromeManager
 from .filtering import ToolPredicate, filter_tools
-
 
 logging.getLogger("MCPClient.chrome-devtools").setLevel(logging.INFO)
 logging.getLogger("MCPClient").setLevel(logging.INFO)
@@ -52,10 +53,10 @@ class MCPToolProxy(AbstractTool):
     def __init__(
         self,
         mcp_tool_def: Dict[str, Any],
-        mcp_client: 'MCPClient',
+        mcp_client: "MCPClient",
         server_name: str,
         require_confirmation: Union[bool, Callable[[str, Dict], bool]] = False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
 
@@ -65,8 +66,8 @@ class MCPToolProxy(AbstractTool):
         self.require_confirmation = require_confirmation
 
         self.name = f"mcp_{server_name}_{mcp_tool_def['name']}"
-        self.description = mcp_tool_def.get('description', f"MCP tool: {mcp_tool_def['name']}")
-        self.input_schema = mcp_tool_def.get('inputSchema', {})
+        self.description = mcp_tool_def.get("description", f"MCP tool: {mcp_tool_def['name']}")
+        self.input_schema = mcp_tool_def.get("inputSchema", {})
         self._patch_missing_required()
         self._patch_missing_items(self.input_schema)
         self._patch_alphavantage_tools()
@@ -78,26 +79,36 @@ class MCPToolProxy(AbstractTool):
         Many MCP servers (like chrome-devtools) fail to specify required fields,
         causing LLMs to treat all arguments as optional.
         """
-        if 'parameters' in self.input_schema:
-            target = self.input_schema['parameters']
+        if "parameters" in self.input_schema:
+            target = self.input_schema["parameters"]
         else:
             target = self.input_schema
 
-        if target.get('type') == 'object' and 'required' not in target:
-            properties = target.get('properties', {})
+        if target.get("type") == "object" and "required" not in target:
+            properties = target.get("properties", {})
             required = []
 
             # List of keys that are almost always required if present
             likely_required = {
-                'url', 'selector', 'query', 'code', 'script',
-                'expression', 'type', 'id', 'nodeId', 'method',
-                'params', 'name', 'text'
+                "url",
+                "selector",
+                "query",
+                "code",
+                "script",
+                "expression",
+                "type",
+                "id",
+                "nodeId",
+                "method",
+                "params",
+                "name",
+                "text",
             }
 
             required.extend(key for key in properties if key in likely_required)
 
             if required:
-                target['required'] = required
+                target["required"] = required
 
     def _patch_missing_items(self, schema: Dict[str, Any]):
         """
@@ -108,64 +119,64 @@ class MCPToolProxy(AbstractTool):
             return
 
         # If type is array, ensure items exists
-        if schema.get('type') == 'array' and 'items' not in schema:
+        if schema.get("type") == "array" and "items" not in schema:
             # Default to string items if unknown
-            schema['items'] = {'type': 'string'}
+            schema["items"] = {"type": "string"}
 
         # Recurse into properties
-        if 'properties' in schema:
-            for prop in schema['properties'].values():
+        if "properties" in schema:
+            for prop in schema["properties"].values():
                 self._patch_missing_items(prop)
 
         # Recurse into items if it exists and is a dict (nested arrays)
-        if 'items' in schema and isinstance(schema['items'], dict):
-            self._patch_missing_items(schema['items'])
+        if "items" in schema and isinstance(schema["items"], dict):
+            self._patch_missing_items(schema["items"])
 
     def _patch_alphavantage_tools(self):
         """
         Special handling for AlphaVantage wrapper tools to inject Enums.
         """
         # Only apply to 'alphavantage' server (normalized name)
-        if 'alphavantage' not in self.server_name.lower():
+        if "alphavantage" not in self.server_name.lower():
             return
-            
-        tool_name = self.mcp_tool_def.get('name', '')
-        
+
+        tool_name = self.mcp_tool_def.get("name", "")
+
         # Only patch TOOL_CALL wrapper
-        if tool_name == 'TOOL_CALL':
+        if tool_name == "TOOL_CALL":
             try:
                 # Late import to avoid circular dependency
                 from ..finance.enums import AlphaVantageFunctions
-                
+
                 # Get the schema properties
                 input_schema = self.input_schema or {}
-                props = input_schema.get('properties', {})
-                
+                props = input_schema.get("properties", {})
+
                 # Find the parameter that likely takes the function name
                 # Usually it's 'function', 'name', or 'tool'
                 target_param = None
-                for candidate in ['function', 'name', 'tool', 'tool_name']:
+                for candidate in ["function", "name", "tool", "tool_name"]:
                     if candidate in props:
                         target_param = candidate
                         break
-                
+
                 if target_param:
                     # Inject the Enum values
                     enum_values = [e.value for e in AlphaVantageFunctions]
-                    props[target_param]['enum'] = enum_values
-                    props[target_param]['type'] = 'string'
-                    
+                    props[target_param]["enum"] = enum_values
+                    props[target_param]["type"] = "string"
+
                     # Update description to guide the LLM
-                    current_desc = props[target_param].get('description', '')
+                    current_desc = props[target_param].get("description", "")
                     new_desc = (
                         f"{current_desc} "
                         f"Must be one of the valid AlphaVantage function names. "
                         f"See AlphaVantageFunctions enum for full list."
                     ).strip()
-                    props[target_param]['description'] = new_desc
-                    
+                    props[target_param]["description"] = new_desc
+
                     self.logger.info(f"Patched AlphaVantage TOOL_CALL schema with {len(enum_values)} enum values")
-                    
+
             except ImportError:
                 self.logger.warning("Could not import AlphaVantageFunctions enum for patching")
             except Exception as e:
@@ -191,7 +202,7 @@ class MCPToolProxy(AbstractTool):
             return self.require_confirmation
         elif callable(self.require_confirmation):
             # Call predicate function
-            result = self.require_confirmation(self.mcp_tool_def['name'], args)
+            result = self.require_confirmation(self.mcp_tool_def["name"], args)
             # Handle both sync and async callables
             return await result if asyncio.iscoroutine(result) else result
         return False
@@ -206,28 +217,22 @@ class MCPToolProxy(AbstractTool):
             ToolResult with execution status and output
         """
         # Extract context if provided
-        context: Optional['ReadonlyContext'] = kwargs.pop('_readonly_context', None)
+        context: Optional["ReadonlyContext"] = kwargs.pop("_readonly_context", None)
         # Strip injected context keys (user_id, session_id, etc.) that the
         # base client merges from _tool_context — MCP servers only accept
         # the parameters declared in their input schema.
-        schema_props = (self.input_schema.get('properties') or {}).keys()
+        schema_props = (self.input_schema.get("properties") or {}).keys()
         if schema_props:
             kwargs = {k: v for k, v in kwargs.items() if k in schema_props}
         try:
             if await self._should_require_confirmation(kwargs):
-                self.logger.info(
-                    f"Tool {self.name} requires confirmation with args: {kwargs}"
-                )
+                self.logger.info(f"Tool {self.name} requires confirmation with args: {kwargs}")
                 # For now, we'll skip confirmation but log it
 
             # Get headers (including dynamic ones from context)
             headers = await self.mcp_client.config.get_headers(context)
 
-            result = await self.mcp_client.call_tool(
-                self.mcp_tool_def['name'],
-                kwargs,
-                headers=headers
-            )
+            result = await self.mcp_client.call_tool(self.mcp_tool_def["name"], kwargs, headers=headers)
 
             result_text = self._extract_result_text(result)
 
@@ -236,13 +241,13 @@ class MCPToolProxy(AbstractTool):
                 result=result_text,
                 metadata={
                     "server": self.server_name,
-                    "tool": self.mcp_tool_def['name'],
+                    "tool": self.mcp_tool_def["name"],
                     "transport": self.mcp_client.config.transport,
                     "mcp_response_type": type(result).__name__,
                     "user_id": context.user_id if context else None,
                     "organization_id": context.organization_id if context else None,
                     "request_id": context.conversation_id if context else None,
-                }
+                },
             )
 
         except Exception as e:
@@ -253,40 +258,40 @@ class MCPToolProxy(AbstractTool):
                 error=str(e),
                 metadata={
                     "server": self.server_name,
-                    "tool": self.mcp_tool_def['name'],
+                    "tool": self.mcp_tool_def["name"],
                     "user_id": context.user_id if context else None,
-                }
+                },
             )
 
     def _extract_result_text(self, result) -> str:
         """Extract text content from MCP response."""
-        if hasattr(result, 'content') and result.content:
+        if hasattr(result, "content") and result.content:
             content_parts = []
             for item in result.content:
                 # For dynamically created classes, attributes are on the class, not instance
                 # type('X', (), dict)() puts dict items as class attributes
-                item_attrs = {k: v for k, v in type(item).__dict__.items() if not k.startswith('_')}
+                item_attrs = {k: v for k, v in type(item).__dict__.items() if not k.startswith("_")}
                 self.logger.debug(f"ContentItem attributes: {list(item_attrs.keys())}")
 
                 # Handle images (base64 blob)
-                blob = item_attrs.get('data') or item_attrs.get('blob')
-                mime_type = item_attrs.get('mimeType')
+                blob = item_attrs.get("data") or item_attrs.get("blob")
+                mime_type = item_attrs.get("mimeType")
 
-                if blob and mime_type and mime_type.startswith('image/'):
+                if blob and mime_type and mime_type.startswith("image/"):
                     try:
                         # Generate safe filename
-                        ext = mime_type.split('/')[-1] if '/' in mime_type else 'bin'
+                        ext = mime_type.split("/")[-1] if "/" in mime_type else "bin"
                         filename = f"genmedia_{uuid.uuid4()}.{ext}"
 
                         # Ensure directory exists
-                        save_dir = BASE_DIR.joinpath('static', 'generated')
+                        save_dir = BASE_DIR.joinpath("static", "generated")
                         save_dir.mkdir(parents=True, exist_ok=True)
 
                         filepath = save_dir.joinpath(filename)
 
                         # Decode and save
                         img_data = base64.b64decode(blob)
-                        with open(filepath, 'wb') as f:
+                        with open(filepath, "wb") as f:
                             f.write(img_data)
 
                         content_parts.append(f"Image generated and saved to: {filepath}")
@@ -296,10 +301,10 @@ class MCPToolProxy(AbstractTool):
                         self.logger.error(f"Failed to save generated image: {e}")
                         content_parts.append(f"Error saving image: {str(e)}")
 
-                if hasattr(item, 'text'):
+                if hasattr(item, "text"):
                     content_parts.append(item.text)
                 elif isinstance(item, dict):
-                    content_parts.append(item.get('text', str(item)))
+                    content_parts.append(item.get("text", str(item)))
                 else:
                     content_parts.append(str(item))
             return "\n".join(content_parts) if content_parts else str(result)
@@ -310,21 +315,13 @@ class MCPToolProxy(AbstractTool):
         Override to return the MCP tool schema directly.
         MCP provides the full schema in inputSchema, which corresponds to the 'parameters' field.
         """
-        return {
-            "name": self.name,
-            "description": self.description,
-            "parameters": self.input_schema
-        }
+        return {"name": self.name, "description": self.description, "parameters": self.input_schema}
 
 
 class MCPClient:
     """Complete MCP client with stdio and HTTP transport support."""
 
-    def __init__(
-        self,
-        config: MCPServerConfig,
-        tool_name_prefix: Optional[str] = None
-    ):
+    def __init__(self, config: MCPServerConfig, tool_name_prefix: Optional[str] = None):
         self.tool_name_prefix = tool_name_prefix or config.tool_name_prefix or f"mcp_{config.name}"
         self.config = config
         self.logger = logging.getLogger(f"MCPClient.{config.name}")
@@ -348,10 +345,7 @@ class MCPClient:
         elif self.config.command:
             return "stdio"
         else:
-            raise ValueError(
-                "Cannot auto-detect transport. "
-                "Please specify socket_path, url, or command."
-            )
+            raise ValueError("Cannot auto-detect transport. " "Please specify socket_path, url, or command.")
 
     async def connect(self):
         """Connect to MCP server using appropriate transport."""
@@ -376,9 +370,7 @@ class MCPClient:
                 quic_session_cls = quic_attr("QuicMCPSession")
                 self._session = quic_session_cls(self.config, self.logger)
             else:
-                raise ValueError(
-                    f"Unsupported transport: {transport}"
-                )
+                raise ValueError(f"Unsupported transport: {transport}")
 
             await self._session.connect()
             self._available_tools = await self._session.list_tools()
@@ -394,12 +386,7 @@ class MCPClient:
             await self.disconnect()
             raise
 
-    async def call_tool(
-        self,
-        tool_name: str,
-        arguments: Dict[str, Any],
-        headers: Optional[Dict[str, str]] = None
-    ):
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any], headers: Optional[Dict[str, str]] = None):
         """Call an MCP tool.
 
         Rate-limit responses (``-32429``) are retried with the server-suggested
@@ -421,22 +408,24 @@ class MCPClient:
             try:
                 return await self._session.call_tool(tool_name, arguments)
             except MCPRateLimitError as exc:
-                delay = (
-                    exc.retry_after
-                    if exc.retry_after is not None
-                    else base_delay * (2 ** attempt)
-                )
+                delay = exc.retry_after if exc.retry_after is not None else base_delay * (2**attempt)
                 if attempt >= max_retries or delay > max_wait:
                     self.logger.warning(
-                        "Rate limit on tool '%s'; not retrying "
-                        "(attempt %d/%d, suggested wait %.1fs, cap %.1fs): %s",
-                        tool_name, attempt + 1, max_retries + 1,
-                        delay, max_wait, exc,
+                        "Rate limit on tool '%s'; not retrying " "(attempt %d/%d, suggested wait %.1fs, cap %.1fs): %s",
+                        tool_name,
+                        attempt + 1,
+                        max_retries + 1,
+                        delay,
+                        max_wait,
+                        exc,
                     )
                     raise
                 self.logger.info(
                     "Rate limited on tool '%s'; backing off %.1fs before retry %d/%d",
-                    tool_name, delay, attempt + 1, max_retries,
+                    tool_name,
+                    delay,
+                    attempt + 1,
+                    max_retries,
                 )
                 await asyncio.sleep(delay)
                 attempt += 1
@@ -449,17 +438,14 @@ class MCPClient:
         tools = []
         for tool in self._available_tools:
             tool_dict = {
-                'name': getattr(tool, 'name', 'unknown'),
-                'description': getattr(tool, 'description', ''),
-                'inputSchema': getattr(tool, 'inputSchema', {})
+                "name": getattr(tool, "name", "unknown"),
+                "description": getattr(tool, "description", ""),
+                "inputSchema": getattr(tool, "inputSchema", {}),
             }
             tools.append(tool_dict)
         return tools
 
-    def get_tools_for_context(
-        self,
-        context: Optional['ReadonlyContext'] = None
-    ) -> List[Dict[str, Any]]:
+    def get_tools_for_context(self, context: Optional["ReadonlyContext"] = None) -> List[Dict[str, Any]]:
         """Get tools, filtered by context.
 
         If a context is provided, tools will be filtered based on the
@@ -487,10 +473,7 @@ class MCPClient:
 
         return [t for t in all_tools if self._can_access(t, context)]
 
-    async def get_tools(
-        self,
-        context: Optional['ReadonlyContext'] = None
-    ) -> List[MCPToolProxy]:
+    async def get_tools(self, context: Optional["ReadonlyContext"] = None) -> List[MCPToolProxy]:
         """Get tools filtered by configuration and context.
 
         Filtering precedence:
@@ -524,9 +507,7 @@ class MCPClient:
         return available
 
     def _filter_tools(
-        self,
-        tools: List[Dict[str, Any]],
-        context: Optional['ReadonlyContext'] = None
+        self, tools: List[Dict[str, Any]], context: Optional["ReadonlyContext"] = None
     ) -> List[Dict[str, Any]]:
         """Apply dynamic tool_filter predicate.
 
@@ -540,7 +521,7 @@ class MCPClient:
         if isinstance(self.config.tool_filter, list):
             # Simple allowlist of tool names
             tool_names = self.config.tool_filter
-            return [t for t in tools if t['name'] in tool_names]
+            return [t for t in tools if t["name"] in tool_names]
 
         elif callable(self.config.tool_filter):
             # Dynamic predicate function
@@ -558,10 +539,7 @@ class MCPClient:
 
         return tools
 
-    def _filter_tools_legacy(
-        self,
-        tools: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _filter_tools_legacy(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Apply legacy allowed_tools/blocked_tools filtering.
 
         Args:
@@ -570,7 +548,7 @@ class MCPClient:
         Returns:
             Filtered tool definitions
         """
-        tool_names = [t['name'] for t in tools]
+        tool_names = [t["name"] for t in tools]
 
         # Apply allowed_tools filter
         if self.config.allowed_tools:
@@ -580,24 +558,16 @@ class MCPClient:
         if self.config.blocked_tools:
             tool_names = [n for n in tool_names if n not in self.config.blocked_tools]
 
-        return [t for t in tools if t['name'] in tool_names]
+        return [t for t in tools if t["name"] in tool_names]
 
     def _create_temp_tool_for_filtering(self, tool_dict: Dict[str, Any]) -> MCPToolProxy:
         """Create temporary MCPToolProxy for predicate evaluation.
 
         This creates a minimal tool object just for the predicate to examine.
         """
-        return MCPToolProxy(
-            mcp_tool_def=tool_dict,
-            mcp_client=self,
-            server_name=self.config.name
-        )
+        return MCPToolProxy(mcp_tool_def=tool_dict, mcp_client=self, server_name=self.config.name)
 
-    def _is_tool_selected(
-        self,
-        tool: MCPToolProxy,
-        context: Optional['ReadonlyContext'] = None
-    ) -> bool:
+    def _is_tool_selected(self, tool: MCPToolProxy, context: Optional["ReadonlyContext"] = None) -> bool:
         """Check if a tool should be available.
 
         This is a helper for use in MCPToolManager.
@@ -612,20 +582,20 @@ class MCPClient:
         # If tool_filter is configured, use it
         if self.config.tool_filter:
             if isinstance(self.config.tool_filter, list):
-                return tool.mcp_tool_def['name'] in self.config.tool_filter
+                return tool.mcp_tool_def["name"] in self.config.tool_filter
             elif callable(self.config.tool_filter):
                 return self.config.tool_filter(tool, context)
 
         # Fallback to legacy filters
-        if self.config.allowed_tools and tool.mcp_tool_def['name'] not in self.config.allowed_tools:
+        if self.config.allowed_tools and tool.mcp_tool_def["name"] not in self.config.allowed_tools:
             return False
 
-        if self.config.blocked_tools and tool.mcp_tool_def['name'] in self.config.blocked_tools:
+        if self.config.blocked_tools and tool.mcp_tool_def["name"] in self.config.blocked_tools:
             return False
 
         return True
 
-    def _can_access(self, tool: Dict[str, Any], context: 'ReadonlyContext') -> bool:
+    def _can_access(self, tool: Dict[str, Any], context: "ReadonlyContext") -> bool:
         """Check if context has access to tool based on scopes/roles.
 
         Tool metadata may include:
@@ -642,11 +612,11 @@ class MCPClient:
             True if the context has access to the tool
         """
         # Check tool metadata for required scopes
-        input_schema = tool.get('inputSchema', {})
-        metadata = input_schema.get('metadata', {})
+        input_schema = tool.get("inputSchema", {})
+        metadata = input_schema.get("metadata", {})
 
-        required_scopes = metadata.get('requiredScopes', [])
-        required_roles = metadata.get('requiredRoles', [])
+        required_scopes = metadata.get("requiredScopes", [])
+        required_roles = metadata.get("requiredRoles", [])
 
         # If no requirements specified, allow access
         if not required_scopes and not required_roles:
@@ -689,27 +659,16 @@ class MCPClient:
         await self.disconnect()
 
 
-
-
 # Convenience functions for different server types
 def create_local_mcp_server(
-    name: str,
-    script_path: Union[str, Path],
-    interpreter: str = "python",
-    **kwargs
+    name: str, script_path: Union[str, Path], interpreter: str = "python", **kwargs
 ) -> MCPServerConfig:
     """Create configuration for local stdio MCP server."""
     script_path = Path(script_path)
     if not script_path.exists():
         raise FileNotFoundError(f"MCP server script not found: {script_path}")
 
-    return MCPServerConfig(
-        name=name,
-        command=interpreter,
-        args=[str(script_path)],
-        transport="stdio",
-        **kwargs
-    )
+    return MCPServerConfig(name=name, command=interpreter, args=[str(script_path)], transport="stdio", **kwargs)
 
 
 def create_http_mcp_server(
@@ -718,7 +677,7 @@ def create_http_mcp_server(
     auth_type: Optional[str] = None,
     auth_config: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
-    **kwargs
+    **kwargs,
 ) -> MCPServerConfig:
     """Create configuration for HTTP MCP server."""
     return MCPServerConfig(
@@ -728,8 +687,9 @@ def create_http_mcp_server(
         auth_type=auth_type,
         auth_config=auth_config or {},
         headers=headers or {},
-        **kwargs
+        **kwargs,
     )
+
 
 def create_oauth_mcp_server(
     *,
@@ -789,6 +749,7 @@ def create_oauth_mcp_server(
     )
     # Register the provider so it can be discovered (local import avoids circular dep)
     from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
+
     register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 
@@ -798,16 +759,10 @@ def create_oauth_mcp_server(
 # ---------------------------------------------------------------------------
 
 NETSUITE_MCP_URL = (
-    "https://{account_id}.suitetalk.api.netsuite.com"
-    "/services/mcp/v1/suiteapp/com.netsuite.mcpstandardtools"
+    "https://{account_id}.suitetalk.api.netsuite.com" "/services/mcp/v1/suiteapp/com.netsuite.mcpstandardtools"
 )
-NETSUITE_AUTH_URL = (
-    "https://{account_id}.app.netsuite.com/app/login/oauth2/authorize.nl"
-)
-NETSUITE_TOKEN_URL = (
-    "https://{account_id}.suitetalk.api.netsuite.com"
-    "/services/rest/auth/oauth2/v1/token"
-)
+NETSUITE_AUTH_URL = "https://{account_id}.app.netsuite.com/app/login/oauth2/authorize.nl"
+NETSUITE_TOKEN_URL = "https://{account_id}.suitetalk.api.netsuite.com" "/services/rest/auth/oauth2/v1/token"
 NETSUITE_SCOPES = ["mcp"]
 
 
@@ -878,6 +833,7 @@ def create_netsuite_mcp_server(
     )
     # Register the provider so it can be discovered (local import avoids circular dep)
     from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
+
     register_mcp_oauth2_provider(server_name=name, config=oauth2)
     return cfg
 
@@ -953,11 +909,7 @@ def create_netsuite_m2m_mcp_server(
     return cfg
 
 
-def create_unix_mcp_server(
-    name: str,
-    socket_path: str,
-    **kwargs
-) -> MCPServerConfig:
+def create_unix_mcp_server(name: str, socket_path: str, **kwargs) -> MCPServerConfig:
     """Create a Unix socket MCP server configuration.
 
     Args:
@@ -976,12 +928,7 @@ def create_unix_mcp_server(
         >>> async with MCPClient(config) as client:
         ...     tools = await client.list_tools()
     """
-    return MCPServerConfig(
-        name=name,
-        transport="unix",
-        socket_path=socket_path,
-        **kwargs
-    )
+    return MCPServerConfig(name=name, transport="unix", socket_path=socket_path, **kwargs)
 
 
 def create_websocket_mcp_server(
@@ -990,7 +937,7 @@ def create_websocket_mcp_server(
     auth_type: Optional[str] = None,
     auth_config: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
-    **kwargs
+    **kwargs,
 ) -> MCPServerConfig:
     """Create a WebSocket MCP server configuration.
 
@@ -1022,17 +969,12 @@ def create_websocket_mcp_server(
         auth_type=auth_type,
         auth_config=auth_config or {},
         headers=headers or {},
-        **kwargs
+        **kwargs,
     )
 
 
 def create_api_key_mcp_server(
-    name: str,
-    url: str,
-    api_key: str,
-    header_name: str = "X-API-Key",
-    use_bearer_prefix: bool = False,
-    **kwargs
+    name: str, url: str, api_key: str, header_name: str = "X-API-Key", use_bearer_prefix: bool = False, **kwargs
 ) -> MCPServerConfig:
     """Create configuration for API key authenticated MCP server.
 
@@ -1051,20 +993,13 @@ def create_api_key_mcp_server(
         name=name,
         url=url,
         auth_type="api_key",
-        auth_config={
-            "api_key": api_key,
-            "header_name": header_name,
-            "use_bearer_prefix": use_bearer_prefix
-        },
-        **kwargs
+        auth_config={"api_key": api_key, "header_name": header_name, "use_bearer_prefix": use_bearer_prefix},
+        **kwargs,
     )
 
 
 def create_fireflies_mcp_server(
-    *,
-    api_key: Optional[str] = None,
-    api_base: str = "https://api.fireflies.ai/mcp",
-    **kwargs
+    *, api_key: Optional[str] = None, api_base: str = "https://api.fireflies.ai/mcp", **kwargs
 ) -> MCPServerConfig:
     """Create configuration for Fireflies MCP server using stdio transport.
 
@@ -1086,20 +1021,15 @@ def create_fireflies_mcp_server(
     Raises:
         ValueError: When no API key is available from argument or environment.
     """
-    api_key = api_key or config.get('FIREFLIES_API_KEY')
+    api_key = api_key or config.get("FIREFLIES_API_KEY")
     if not api_key:
         raise ValueError("FIREFLIES_API_KEY is required")
     return MCPServerConfig(
         name="fireflies",
         command="npx",
-        args=[
-            "mcp-remote",
-            api_base,
-            "--header",
-            f"Authorization: Bearer {api_key}"
-        ],
+        args=["mcp-remote", api_base, "--header", f"Authorization: Bearer {api_key}"],
         transport="stdio",
-        **kwargs
+        **kwargs,
     )
 
 
@@ -1114,7 +1044,7 @@ def create_chrome_devtools_mcp_server(
     isolated: bool = False,
     no_usage_statistics: bool = True,
     auto_connect: bool = False,
-    **kwargs
+    **kwargs,
 ) -> MCPServerConfig:
     """Create configuration for Chrome DevTools MCP server.
 
@@ -1160,13 +1090,7 @@ def create_chrome_devtools_mcp_server(
     if auto_connect:
         args.append("--auto-connect")
 
-    return MCPServerConfig(
-        name=name,
-        command="npx",
-        args=args,
-        transport="stdio",
-        **kwargs
-    )
+    return MCPServerConfig(name=name, command="npx", args=args, transport="stdio", **kwargs)
 
 
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
@@ -1216,8 +1140,7 @@ async def ensure_chrome_running(
 
     if not await manager.start(headless=headless):
         logging.getLogger("MCPEnabledMixin").warning(
-            "Chrome on port %s did not become ready; the DevTools MCP "
-            "connection may fail",
+            "Chrome on port %s did not become ready; the DevTools MCP " "connection may fail",
             port,
         )
     return manager
@@ -1274,20 +1197,10 @@ def create_obscura_mcp_server(
     if allow_private_network:
         args.append("--allow-private-network")
 
-    return MCPServerConfig(
-        name=name,
-        command=command,
-        args=args,
-        env=env,
-        transport="stdio",
-        **kwargs
-    )
+    return MCPServerConfig(name=name, command=command, args=args, env=env, transport="stdio", **kwargs)
 
 
-def create_google_maps_mcp_server(
-    name: str = "google-maps",
-    **kwargs
-) -> MCPServerConfig:
+def create_google_maps_mcp_server(name: str = "google-maps", **kwargs) -> MCPServerConfig:
     """Create configuration for Google Maps MCP server.
 
     This MCP server connects to Google Maps Platform.
@@ -1301,23 +1214,12 @@ def create_google_maps_mcp_server(
         MCPServerConfig configured for Google Maps
     """
     return MCPServerConfig(
-        name=name,
-        command="npx",
-        args=[
-            "-y",
-            "@googlemaps/code-assist-mcp@latest"
-        ],
-        transport="stdio",
-        **kwargs
+        name=name, command="npx", args=["-y", "@googlemaps/code-assist-mcp@latest"], transport="stdio", **kwargs
     )
 
 
 def create_perplexity_mcp_server(
-    api_key: str,
-    *,
-    name: str = "perplexity",
-    timeout_ms: int = 600000,
-    **kwargs
+    api_key: str, *, name: str = "perplexity", timeout_ms: int = 600000, **kwargs
 ) -> MCPServerConfig:
     """Create configuration for Perplexity MCP server.
 
@@ -1352,16 +1254,12 @@ def create_perplexity_mcp_server(
             "PERPLEXITY_TIMEOUT_MS": str(timeout_ms),
         },
         startup_delay=3.0,  # npx needs time to fetch/start
-        **kwargs
+        **kwargs,
     )
 
+
 def create_quic_mcp_server(
-    name: str,
-    host: str,
-    port: int,
-    cert_path: Optional[str] = None,
-    serialization: str = "msgpack",
-    **kwargs
+    name: str, host: str, port: int, cert_path: Optional[str] = None, serialization: str = "msgpack", **kwargs
 ) -> MCPServerConfig:
     """Create configuration for QUIC MCP server.
 
@@ -1388,46 +1286,36 @@ def create_quic_mcp_server(
         serialization=quic_fmt,
         # Default efficient settings
         enable_0rtt=True,
-        enable_webtransport=True
+        enable_webtransport=True,
     )
 
-    return MCPServerConfig(
-        name=name,
-        transport="quic",
-        quic_config=quic_conf,
-        **kwargs
-    )
+    return MCPServerConfig(name=name, transport="quic", quic_config=quic_conf, **kwargs)
+
 
 def create_alphavantage_mcp_server(
-    api_key: Optional[str] = None,
-    name: str = "alphavantage",
-    **kwargs
+    api_key: Optional[str] = None, name: str = "alphavantage", **kwargs
 ) -> MCPServerConfig:
     """Create configuration for AlphaVantage MCP server.
-    
+
     Args:
         api_key: AlphaVantage API key (defaults to ALPHAVANTAGE_API_KEY env var)
         name: Server name
         **kwargs: Additional MCPServerConfig parameters
-    
+
     Returns:
         MCPServerConfig for AlphaVantage
     """
-    api_key = api_key or config.get('ALPHAVANTAGE_API_KEY')
+    api_key = api_key or config.get("ALPHAVANTAGE_API_KEY")
     if not api_key:
         raise ValueError("ALPHAVANTAGE_API_KEY is required")
-        
+
     url = f"https://mcp.alphavantage.co/mcp?apikey={api_key}"
-    
+
     # AlphaVantage uses streamable HTTP (not SSE), allow override
-    transport = kwargs.pop('transport', 'http')
-    
-    return MCPServerConfig(
-        name=name,
-        url=url,
-        transport=transport,
-        **kwargs
-    )
+    transport = kwargs.pop("transport", "http")
+
+    return MCPServerConfig(name=name, url=url, transport=transport, **kwargs)
+
 
 # Extension for BaseAgent
 class MCPEnabledMixin:
@@ -1442,11 +1330,7 @@ class MCPEnabledMixin:
         return await self.tool_manager.add_mcp_server(config)
 
     async def add_local_mcp_server(
-        self,
-        name: str,
-        script_path: Union[str, Path],
-        interpreter: str = "python",
-        **kwargs
+        self, name: str, script_path: Union[str, Path], interpreter: str = "python", **kwargs
     ) -> List[str]:
         """Add a local stdio MCP server."""
         config = create_local_mcp_server(name, script_path, interpreter, **kwargs)
@@ -1459,19 +1343,14 @@ class MCPEnabledMixin:
         auth_type: Optional[str] = None,
         auth_config: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """Add an HTTP MCP server."""
         config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
         return await self.add_mcp_server(config)
 
     async def add_api_key_mcp_server(
-        self,
-        name: str,
-        url: str,
-        api_key: str,
-        header_name: str = "X-API-Key",
-        **kwargs
+        self, name: str, url: str, api_key: str, header_name: str = "X-API-Key", **kwargs
     ) -> List[str]:
         """Add an MCP server with API key auth."""
         config = create_api_key_mcp_server(name, url, api_key, header_name, **kwargs)
@@ -1489,7 +1368,7 @@ class MCPEnabledMixin:
         token_url: Optional[str] = None,
         scopes: Optional[List[str]] = None,
         client_secret: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """Add an MCP server with OAuth2 authorization code support.
 
@@ -1522,25 +1401,16 @@ class MCPEnabledMixin:
             auth_url=auth_url,
             token_url=token_url,
             scopes=scopes,
-            **kwargs
+            **kwargs,
         )
         return await self.add_mcp_server(config)
 
-    async def add_perplexity_mcp_server(
-        self,
-        api_key: str,
-        name: str = "perplexity",
-        **kwargs
-    ) -> List[str]:
+    async def add_perplexity_mcp_server(self, api_key: str, name: str = "perplexity", **kwargs) -> List[str]:
         """Add a Perplexity MCP server capability."""
         config = create_perplexity_mcp_server(api_key, name=name, **kwargs)
         return await self.add_mcp_server(config)
 
-    async def add_fireflies_mcp_server(
-        self,
-        api_key: Optional[str] = None,
-        **kwargs
-    ) -> List[str]:
+    async def add_fireflies_mcp_server(self, api_key: Optional[str] = None, **kwargs) -> List[str]:
         """Add Fireflies.ai MCP server capability.
 
         The API key is resolved with the following precedence:
@@ -1578,7 +1448,7 @@ class MCPEnabledMixin:
         no_usage_statistics: bool = True,
         auto_connect: bool = False,
         ensure_running: bool = True,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """Add Chrome DevTools MCP server capability.
 
@@ -1616,7 +1486,7 @@ class MCPEnabledMixin:
             isolated=isolated,
             no_usage_statistics=no_usage_statistics,
             auto_connect=auto_connect,
-            **kwargs
+            **kwargs,
         )
         return await self.add_mcp_server(config)
 
@@ -1628,7 +1498,7 @@ class MCPEnabledMixin:
         stealth: bool = False,
         allow_private_network: bool = False,
         env: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """Add the native Obscura MCP server capability.
 
@@ -1657,15 +1527,11 @@ class MCPEnabledMixin:
             stealth=stealth,
             allow_private_network=allow_private_network,
             env=env,
-            **kwargs
+            **kwargs,
         )
         return await self.add_mcp_server(config)
 
-    async def add_google_maps_mcp_server(
-        self,
-        name: str = "google-maps",
-        **kwargs
-    ) -> List[str]:
+    async def add_google_maps_mcp_server(self, name: str = "google-maps", **kwargs) -> List[str]:
         """Add Google Maps MCP server capability.
 
         Args:
@@ -1675,19 +1541,11 @@ class MCPEnabledMixin:
         Returns:
             List of registered tool names
         """
-        config = create_google_maps_mcp_server(
-            name=name,
-            **kwargs
-        )
+        config = create_google_maps_mcp_server(name=name, **kwargs)
         return await self.add_mcp_server(config)
 
     async def add_quic_mcp_server(
-        self,
-        name: str,
-        host: str,
-        port: int,
-        cert_path: Optional[str] = None,
-        **kwargs
+        self, name: str, host: str, port: int, cert_path: Optional[str] = None, **kwargs
     ) -> List[str]:
         """Add a QUIC/HTTP3 MCP server connection."""
         config = create_quic_mcp_server(name, host, port, cert_path, **kwargs)
@@ -1700,7 +1558,7 @@ class MCPEnabledMixin:
         auth_type: Optional[str] = None,
         auth_config: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         """Add a WebSocket MCP server connection.
 
@@ -1723,9 +1581,7 @@ class MCPEnabledMixin:
             ...     auth_config={"token": "my-token"}
             ... )
         """
-        config = create_websocket_mcp_server(
-            name, url, auth_type, auth_config, headers, **kwargs
-        )
+        config = create_websocket_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
         return await self.add_mcp_server(config)
 
     async def remove_mcp_server(self, server_name: str):
@@ -1797,18 +1653,15 @@ class MCPEnabledMixin:
         return self.tool_manager.get_openai_mcp_definitions(server_names)
 
     async def add_alphavantage_mcp_server(
-        self,
-        api_key: Optional[str] = None,
-        name: str = "alphavantage",
-        **kwargs
+        self, api_key: Optional[str] = None, name: str = "alphavantage", **kwargs
     ) -> List[str]:
         """Add AlphaVantage MCP server capability.
-        
+
         Args:
             api_key: AlphaVantage API key
             name: Server name (default: "alphavantage")
             **kwargs: Additional MCPServerConfig parameters
-        
+
         Returns:
             List of registered tool names
         """
@@ -1895,10 +1748,7 @@ class MCPEnabledMixin:
             await cfg._ensure_oauth_token()
         return await self.add_mcp_server(cfg)
 
-    async def add_genmedia_mcp_servers(
-        self,
-        **kwargs
-    ) -> Dict[str, List[str]]:
+    async def add_genmedia_mcp_servers(self, **kwargs) -> Dict[str, List[str]]:
         """
         Add all Google GenMedia MCP servers.
 
@@ -1910,20 +1760,13 @@ class MCPEnabledMixin:
         - mcp-lyria-go
         - mcp-veo-go
         """
-        project_id = config.get('PROJECT_ID')
-        location = config.get('LOCATION', 'us-central1')
+        project_id = config.get("PROJECT_ID")
+        location = config.get("LOCATION", "us-central1")
 
         if not project_id:
             self.logger.warning("PROJECT_ID not found in config. GenMedia servers might fail.")
 
-        servers = [
-            "mcp-avtool-go",
-            "mcp-chirp3-go",
-            "mcp-gemini-go",
-            "mcp-imagen-go",
-            "mcp-lyria-go",
-            "mcp-veo-go"
-        ]
+        servers = ["mcp-avtool-go", "mcp-chirp3-go", "mcp-gemini-go", "mcp-imagen-go", "mcp-lyria-go", "mcp-veo-go"]
 
         results = {}
 
@@ -1941,16 +1784,14 @@ class MCPEnabledMixin:
                     env={
                         "MCP_SERVER_REQUEST_TIMEOUT": "55000",
                         "PROJECT_ID": project_id,  # Will be filtered if None by StdioMCPSession
-                        "LOCATION": location
-                    }
+                        "LOCATION": location,
+                    },
                 )
 
                 tools = await self.add_mcp_server(server_config)
                 results[name] = tools
             except Exception as e:
-                self.logger.error(
-                    f"Failed to add GenMedia server {server_bin}: {e}"
-                )
+                self.logger.error(f"Failed to add GenMedia server {server_bin}: {e}")
                 results[name] = []
 
         return results
@@ -1969,19 +1810,14 @@ class MCPEnabledMixin:
             try:
                 tools = await self.add_mcp_server(config)
                 # Check for logger, fallback to print if not available
-                if hasattr(self, 'logger'):
-                    self.logger.info(
-                        f"Added MCP server '{config.name}' with tools: {tools}"
-                    )
+                if hasattr(self, "logger"):
+                    self.logger.info(f"Added MCP server '{config.name}' with tools: {tools}")
             except Exception as e:
-                if hasattr(self, 'logger'):
-                    self.logger.error(
-                        f"Failed to add MCP server '{config.name}': {e}",
-                        exc_info=True
-                    )
+                if hasattr(self, "logger"):
+                    self.logger.error(f"Failed to add MCP server '{config.name}': {e}", exc_info=True)
 
     async def shutdown(self, **kwargs):
-        if hasattr(self, 'tool_manager') and hasattr(self.tool_manager, 'disconnect_all_mcp'):
+        if hasattr(self, "tool_manager") and hasattr(self.tool_manager, "disconnect_all_mcp"):
             await self.tool_manager.disconnect_all_mcp()
 
         # Stop any Chrome instances we started
@@ -1989,12 +1825,10 @@ class MCPEnabledMixin:
             try:
                 await manager.stop()
             except Exception as e:
-                logging.getLogger(
-                    "MCPEnabledMixin"
-                ).warning(f"Failed to stop Chrome on port {port}: {e}")
+                logging.getLogger("MCPEnabledMixin").warning(f"Failed to stop Chrome on port {port}: {e}")
         _chrome_managers.clear()
 
-        if hasattr(super(), 'shutdown'):
+        if hasattr(super(), "shutdown"):
             await super().shutdown(**kwargs)
 
 
@@ -2038,9 +1872,7 @@ async def validate_mcp_http(config: "MCPServerConfig") -> None:
     except MCPValidationError:
         raise
     except Exception as exc:
-        raise MCPValidationError(
-            f"MCP handshake failed for {getattr(config, 'url', config)!r}: {exc}"
-        ) from exc
+        raise MCPValidationError(f"MCP handshake failed for {getattr(config, 'url', config)!r}: {exc}") from exc
     finally:
         with contextlib.suppress(Exception):
             await client.disconnect()

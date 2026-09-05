@@ -115,9 +115,7 @@ async def real_obscura_driver(unused_tcp_port):
         pytest.skip(f"Real Obscura process failed to start: {exc}")
         return
 
-    driver = PlaywrightDriver(
-        PlaywrightConfig(engine="obscura", cdp_endpoint_url=endpoint)
-    )
+    driver = PlaywrightDriver(PlaywrightConfig(engine="obscura", cdp_endpoint_url=endpoint))
     try:
         await driver.start()
     except Exception as exc:  # noqa: BLE001 — any connection failure means "skip", not "fail"
@@ -422,9 +420,7 @@ class TestObscuraScrapingPlanDriverParity:
     but against the Obscura-backed driver — a driver-level parity
     comparison for the representative scraping-plan action set."""
 
-    async def test_obscura_scraping_plan_driver_parity(
-        self, local_fixture_site, fake_broker, real_obscura_driver
-    ):
+    async def test_obscura_scraping_plan_driver_parity(self, local_fixture_site, fake_broker, real_obscura_driver):
         resolver = _credential_resolver_from_broker(fake_broker, "test-user-id")
         plan = ScrapingPlan(
             url=str(local_fixture_site.make_url("/")),
@@ -436,9 +432,7 @@ class TestObscuraScrapingPlanDriverParity:
             selectors=[{"name": "welcome", "selector": "body", "extract_type": "text"}],
         )
 
-        result = await execute_plan_steps(
-            real_obscura_driver, plan=plan, credential_resolver=resolver
-        )
+        result = await execute_plan_steps(real_obscura_driver, plan=plan, credential_resolver=resolver)
 
         assert result.success, result.error_message
         assert f"Welcome, {TEST_USERNAME}" in result.extracted_data.get("welcome", "")
@@ -462,16 +456,12 @@ class TestObscuraBrowsingToolkitCatalogFlow:
     follow-up task.
     """
 
-    async def test_obscura_browsing_toolkit_catalog_flow(
-        self, local_fixture_site, real_obscura_driver, tmp_path
-    ):
+    async def test_obscura_browsing_toolkit_catalog_flow(self, local_fixture_site, real_obscura_driver, tmp_path):
         toolkit = WebBrowsingToolkit(catalog_dir=str(tmp_path / "catalog"))
         toolkit._session_driver = real_obscura_driver
         toolkit._session_based = True
 
-        await toolkit.register_site(
-            base_url=str(local_fixture_site.make_url("/")), name="acme-books"
-        )
+        await toolkit.register_site(base_url=str(local_fixture_site.make_url("/")), name="acme-books")
         await toolkit.save_site_action(
             site="acme-books",
             name="login",

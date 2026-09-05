@@ -17,7 +17,7 @@ from .parrot_server import ParrotMCPServer, TransportConfig
 
 
 @click.group(invoke_without_command=True)
-@click.option('--config', type=click.Path(exists=True), help='Path to YAML configuration file')
+@click.option("--config", type=click.Path(exists=True), help="Path to YAML configuration file")
 @click.pass_context
 def mcp(ctx, config):
     """MCP server commands."""
@@ -25,6 +25,7 @@ def mcp(ctx, config):
         if config:
             # Run server from config
             from .wrapper import load_server_from_config
+
             try:
                 server = load_server_from_config(config)
                 # SimpleMCPServer.run() is blocking and handles the loop internally for http/sse
@@ -38,22 +39,14 @@ def mcp(ctx, config):
 
 
 @mcp.command()
-@click.argument('config_file', type=click.Path(exists=True))
+@click.argument("config_file", type=click.Path(exists=True))
 @click.option(
-    '--transport', type=click.Choice(['stdio', 'unix', 'http']), default=None,
-        help='Override transport from config')
-@click.option(
-    '--socket', type=str, default=None,
-            help='Unix socket path (for unix transport)')
-@click.option(
-    '--port', type=int, default=None,
-            help='Port (for http transport)')
-@click.option(
-    '--log-level', type=str, default='INFO',
-            help='Logging level')
-def serve(
-    config_file: str, transport: Optional[str], socket: Optional[str],
-        port: Optional[int], log_level: str):
+    "--transport", type=click.Choice(["stdio", "unix", "http"]), default=None, help="Override transport from config"
+)
+@click.option("--socket", type=str, default=None, help="Unix socket path (for unix transport)")
+@click.option("--port", type=int, default=None, help="Port (for http transport)")
+@click.option("--log-level", type=str, default="INFO", help="Logging level")
+def serve(config_file: str, transport: Optional[str], socket: Optional[str], port: Optional[int], log_level: str):
     """
     Start an MCP server from a Python config file or YAML.
 
@@ -78,9 +71,9 @@ def serve(
     """
     config_path = Path(config_file)
 
-    if config_path.suffix in {'.yaml', '.yml'}:
+    if config_path.suffix in {".yaml", ".yml"}:
         mcp_server = _load_from_yaml(config_path)
-    elif config_path.suffix == '.py':
+    elif config_path.suffix == ".py":
         mcp_server = _load_from_python(config_path)
     else:
         click.echo(f"Error: Unsupported config file type: {config_path.suffix}", err=True)
@@ -89,9 +82,7 @@ def serve(
     # Override settings from CLI
     if transport:
         # Need to update transport config
-        mcp_server.transport_configs = {
-            transport: _create_transport_config(transport, socket, port)
-        }
+        mcp_server.transport_configs = {transport: _create_transport_config(transport, socket, port)}
 
     # Set log level
     logging.getLogger().setLevel(log_level)
@@ -100,18 +91,16 @@ def serve(
     asyncio.run(_run_standalone_server(mcp_server))
 
 
-def _load_from_python(config_path: Path) -> 'ParrotMCPServer':
+def _load_from_python(config_path: Path) -> "ParrotMCPServer":
     """Load ParrotMCPServer from Python file."""
-
 
     spec = importlib.util.spec_from_file_location("mcp_config", config_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    if not hasattr(module, 'mcp'):
+    if not hasattr(module, "mcp"):
         raise ValueError(
-            f"Config file {config_path} must define 'mcp' variable "
-            "containing a ParrotMCPServer instance"
+            f"Config file {config_path} must define 'mcp' variable " "containing a ParrotMCPServer instance"
         )
 
     return module.mcp
@@ -123,20 +112,17 @@ def _load_from_yaml(config_path: Path) -> ParrotMCPServer:
         config = yaml.safe_load(f)
 
     # Parse tools from YAML
-    tools_config = {
-        tool_entry['class']: tool_entry['module']
-        for tool_entry in config.get('tools', [])
-    }
+    tools_config = {tool_entry["class"]: tool_entry["module"] for tool_entry in config.get("tools", [])}
 
     # Parse transports
-    transports = config.get('transport', 'stdio')
+    transports = config.get("transport", "stdio")
 
     return ParrotMCPServer(
-        name=config.get('name', 'ai-parrot-mcp'),
-        description=config.get('description', 'AI-Parrot MCP Server'),
+        name=config.get("name", "ai-parrot-mcp"),
+        description=config.get("description", "AI-Parrot MCP Server"),
         transports=transports,
         tools=tools_config,
-        **config.get('server_config', {})
+        **config.get("server_config", {}),
     )
 
 
@@ -175,7 +161,7 @@ async def _run_standalone_server(mcp_server: ParrotMCPServer):
         transport=transport_config.transport,
         host=transport_config.host,
         port=transport_config.port,
-        socket_path=transport_config.socket_path if hasattr(transport_config, 'socket_path') else None,
+        socket_path=transport_config.socket_path if hasattr(transport_config, "socket_path") else None,
         log_level=mcp_server.log_level,
     )
 
@@ -213,45 +199,71 @@ def obscura_group():
 
 @obscura_group.command("start")
 @click.option(
-    "--binary", "binary_path", required=True,
+    "--binary",
+    "binary_path",
+    required=True,
     help="Path to (or PATH-resolvable name of) the Obscura binary.",
 )
 @click.option("--host", default="127.0.0.1", show_default=True, help="CDP bind host.")
 @click.option("--port", default=9222, show_default=True, type=int, help="CDP port.")
 @click.option(
-    "--stealth", is_flag=True, default=False,
+    "--stealth",
+    is_flag=True,
+    default=False,
     help="Enable Obscura's stealth mode.",
 )
 @click.option(
-    "--allow-private-network", is_flag=True, default=False,
+    "--allow-private-network",
+    is_flag=True,
+    default=False,
     help=(
         "Enable --allow-private-network. Required for local fixtures; "
         "do not enable by default in general deployments."
     ),
 )
 @click.option(
-    "--attach-only", is_flag=True, default=False,
+    "--attach-only",
+    is_flag=True,
+    default=False,
     help="Adopt an already-running endpoint instead of spawning a new process.",
 )
 @click.option(
-    "--startup-timeout", default=10.0, show_default=True, type=float,
+    "--startup-timeout",
+    default=10.0,
+    show_default=True,
+    type=float,
     help="Seconds to wait for the CDP endpoint to become ready.",
 )
 def obscura_start(
-    binary_path, host, port, stealth, allow_private_network, attach_only,
+    binary_path,
+    host,
+    port,
+    stealth,
+    allow_private_network,
+    attach_only,
     startup_timeout,
 ):
     """Start (or adopt) the supervised Obscura process."""
     asyncio.run(
         _obscura_start(
-            binary_path, host, port, stealth, allow_private_network,
-            attach_only, startup_timeout,
+            binary_path,
+            host,
+            port,
+            stealth,
+            allow_private_network,
+            attach_only,
+            startup_timeout,
         )
     )
 
 
 async def _obscura_start(
-    binary_path, host, port, stealth, allow_private_network, attach_only,
+    binary_path,
+    host,
+    port,
+    stealth,
+    allow_private_network,
+    attach_only,
     startup_timeout,
 ):
     from .obscura import (
@@ -285,7 +297,10 @@ async def _obscura_start(
 
 @obscura_group.command("stop")
 @click.option(
-    "--port", default=9222, show_default=True, type=int,
+    "--port",
+    default=9222,
+    show_default=True,
+    type=int,
     help="CDP port of the supervised process to stop.",
 )
 def obscura_stop(port):
@@ -324,8 +339,7 @@ async def _obscura_stop(port):
     pid = read_pid_file(pid_file)
     if pid is None:
         click.echo(
-            f"No supervised Obscura process found for port {port} "
-            f"(no PID file at {pid_file}).",
+            f"No supervised Obscura process found for port {port} " f"(no PID file at {pid_file}).",
             err=True,
         )
         sys.exit(1)
@@ -411,7 +425,10 @@ async def _obscura_status(host, port):
     # only reports what's currently observable (CDP readiness + any
     # known PID file), regardless of who started it.
     config = ObscuraProcessConfig(
-        binary_path="obscura", host=host, port=port, attach_only=True,
+        binary_path="obscura",
+        host=host,
+        port=port,
+        attach_only=True,
     )
     manager = ObscuraProcessManager(config)
     status = await manager.status()
@@ -421,17 +438,24 @@ async def _obscura_status(host, port):
 
 @obscura_group.command("mcp-config")
 @click.option(
-    "--binary", "binary_path", default=None,
+    "--binary",
+    "binary_path",
+    default=None,
     help="Path to (or PATH-resolvable name of) the Obscura binary.",
 )
 @click.option("--name", default="obscura", show_default=True, help="MCP server name.")
 @click.option(
-    "--port", default=9222, show_default=True, type=int,
+    "--port",
+    default=9222,
+    show_default=True,
+    type=int,
     help="CDP port Obscura's native MCP mode should use internally.",
 )
 @click.option("--stealth", is_flag=True, default=False, help="Enable Obscura's stealth mode.")
 @click.option(
-    "--allow-private-network", is_flag=True, default=False,
+    "--allow-private-network",
+    is_flag=True,
+    default=False,
     help="Enable --allow-private-network.",
 )
 def obscura_mcp_config(binary_path, name, port, stealth, allow_private_network):

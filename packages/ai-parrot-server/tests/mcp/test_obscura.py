@@ -4,6 +4,7 @@ All tests mock process spawning (`asyncio.create_subprocess_exec`) and CDP
 readiness (`ObscuraProcessManager.is_running`) — no real Obscura binary or
 network access is required.
 """
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -51,11 +52,13 @@ async def test_obscura_manager_start_waits_for_cdp():
     process = _make_process()
     readiness = [False, False, True]
 
-    with patch("parrot.mcp.obscura.Path.is_file", return_value=True), patch(
-        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=process),
-    ) as create_mock, patch.object(
-        ObscuraProcessManager, "is_running", new=AsyncMock(side_effect=readiness)
+    with (
+        patch("parrot.mcp.obscura.Path.is_file", return_value=True),
+        patch(
+            "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ) as create_mock,
+        patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(side_effect=readiness)),
     ):
         endpoint = await manager.start()
 
@@ -88,9 +91,7 @@ async def test_obscura_manager_stop_only_terminates_owned_process():
     assert manager._owns_process is False
 
     # Case 3: attach_only adoption never sets ownership, so stop() no-ops.
-    attach_config = ObscuraProcessConfig(
-        binary_path="/usr/local/bin/obscura", attach_only=True
-    )
+    attach_config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura", attach_only=True)
     attach_manager = ObscuraProcessManager(attach_config)
     with patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=True)):
         endpoint = await attach_manager.start()
@@ -133,17 +134,17 @@ async def test_obscura_manager_start_failure():
             await missing_manager.start()
 
     # Readiness timeout — process spawns but the CDP endpoint never responds.
-    timeout_config = ObscuraProcessConfig(
-        binary_path="/usr/local/bin/obscura", startup_timeout=0.3
-    )
+    timeout_config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura", startup_timeout=0.3)
     timeout_manager = ObscuraProcessManager(timeout_config)
     process = _make_process()
 
-    with patch("parrot.mcp.obscura.Path.is_file", return_value=True), patch(
-        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=process),
-    ), patch.object(
-        ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)
+    with (
+        patch("parrot.mcp.obscura.Path.is_file", return_value=True),
+        patch(
+            "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ),
+        patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)),
     ):
         with pytest.raises(RuntimeError, match="Timed out"):
             await timeout_manager.start()
@@ -156,9 +157,7 @@ async def test_obscura_manager_start_reports_early_crash_with_stderr():
     """Code-review fix: a fast-crashing binary must be diagnosed
     immediately (with captured stderr) rather than silently waiting out
     the full startup_timeout for a generic 'Timed out' error."""
-    config = ObscuraProcessConfig(
-        binary_path="/usr/local/bin/obscura", startup_timeout=10.0
-    )
+    config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura", startup_timeout=10.0)
     manager = ObscuraProcessManager(config)
 
     process = _make_process()
@@ -166,11 +165,13 @@ async def test_obscura_manager_start_reports_early_crash_with_stderr():
     process.stderr = AsyncMock()
     process.stderr.read = AsyncMock(return_value=b"obscura: fatal: missing license\n")
 
-    with patch("parrot.mcp.obscura.Path.is_file", return_value=True), patch(
-        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=process),
-    ), patch.object(
-        ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)
+    with (
+        patch("parrot.mcp.obscura.Path.is_file", return_value=True),
+        patch(
+            "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ),
+        patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)),
     ):
         with pytest.raises(RuntimeError, match="exited early") as exc_info:
             await manager.start()
@@ -185,10 +186,13 @@ async def test_obscura_manager_attach_only_without_running_endpoint_raises():
     config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura", attach_only=True)
     manager = ObscuraProcessManager(config)
 
-    with patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)), patch(
-        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
-        new=AsyncMock(),
-    ) as create_mock:
+    with (
+        patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=False)),
+        patch(
+            "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+            new=AsyncMock(),
+        ) as create_mock,
+    ):
         with pytest.raises(RuntimeError, match="attach_only"):
             await manager.start()
 
@@ -205,10 +209,13 @@ async def test_obscura_manager_refuses_to_adopt_unowned_foreign_endpoint():
     config = ObscuraProcessConfig(binary_path="/usr/local/bin/obscura")
     manager = ObscuraProcessManager(config)
 
-    with patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=True)), patch(
-        "parrot.mcp.obscura.asyncio.create_subprocess_exec",
-        new=AsyncMock(),
-    ) as create_mock:
+    with (
+        patch.object(ObscuraProcessManager, "is_running", new=AsyncMock(return_value=True)),
+        patch(
+            "parrot.mcp.obscura.asyncio.create_subprocess_exec",
+            new=AsyncMock(),
+        ) as create_mock,
+    ):
         with pytest.raises(RuntimeError, match="did not start it"):
             await manager.start()
 

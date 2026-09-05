@@ -13,6 +13,7 @@ Covers:
       alongside Chrome DevTools MCP (opt-in via `ObscuraMCPConfig`),
       never instead of it.
 """
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,7 +22,6 @@ import pytest
 from parrot.bots.agent import BasicAgent
 from parrot.bots.chrome import ChromeConfig, ObscuraMCPConfig, WebAgent
 from parrot.mcp.integration import create_obscura_mcp_server
-
 
 # ── Config Factory ───────────────────────────────────────────────
 
@@ -109,20 +109,17 @@ async def test_obscura_native_mcp_stdio_interop():
     the JSON-RPC channel')."""
     from parrot.mcp.transports.stdio import StdioMCPSession
 
-    init_response = json.dumps(
-        {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}
-    ).encode() + b"\n"
-    tools_response = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "tools": [
-                    {"name": "navigate", "description": "Navigate to a URL"}
-                ]
-            },
-        }
-    ).encode() + b"\n"
+    init_response = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}).encode() + b"\n"
+    tools_response = (
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {"tools": [{"name": "navigate", "description": "Navigate to a URL"}]},
+            }
+        ).encode()
+        + b"\n"
+    )
 
     process = _fake_process(
         [
@@ -163,27 +160,27 @@ async def test_obscura_native_mcp_stdio_call_tool_interop():
     Tests table (`test_obscura_native_mcp_stdio_interop`) requires."""
     from parrot.mcp.transports.stdio import StdioMCPSession
 
-    init_response = json.dumps(
-        {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}
-    ).encode() + b"\n"
-    tools_response = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "tools": [
-                    {"name": "navigate", "description": "Navigate to a URL"}
-                ]
-            },
-        }
-    ).encode() + b"\n"
-    call_response = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "result": {"content": [{"type": "text", "text": "navigated"}]},
-        }
-    ).encode() + b"\n"
+    init_response = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}).encode() + b"\n"
+    tools_response = (
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {"tools": [{"name": "navigate", "description": "Navigate to a URL"}]},
+            }
+        ).encode()
+        + b"\n"
+    )
+    call_response = (
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {"content": [{"type": "text", "text": "navigated"}]},
+            }
+        ).encode()
+        + b"\n"
+    )
 
     process = _fake_process([init_response, tools_response, call_response])
 
@@ -213,17 +210,13 @@ class TestObscuraWebAgentConfiguration:
         self.name = name
 
     def test_default_no_obscura_config(self):
-        with patch.object(
-            BasicAgent, "__init__", self._stub_basic_agent_init
-        ):
+        with patch.object(BasicAgent, "__init__", self._stub_basic_agent_init):
             agent = WebAgent(name="test-agent")
         assert agent.obscura_config is None
 
     def test_custom_obscura_config(self):
         config = ObscuraMCPConfig(port=9333, stealth=True)
-        with patch.object(
-            BasicAgent, "__init__", self._stub_basic_agent_init
-        ):
+        with patch.object(BasicAgent, "__init__", self._stub_basic_agent_init):
             agent = WebAgent(name="test-agent", obscura_config=config)
         assert agent.obscura_config.port == 9333
         assert agent.obscura_config.stealth is True
@@ -232,21 +225,17 @@ class TestObscuraWebAgentConfiguration:
     async def test_obscura_webagent_configuration(self):
         """Agent receives native Obscura MCP tools while Chrome
         DevTools MCP configuration remains available/unaffected."""
-        with patch.object(BasicAgent, "__init__", return_value=None), \
-             patch.object(BasicAgent, "configure", new_callable=AsyncMock):
+        with (
+            patch.object(BasicAgent, "__init__", return_value=None),
+            patch.object(BasicAgent, "configure", new_callable=AsyncMock),
+        ):
             agent = WebAgent.__new__(WebAgent)
             agent.name = "WebAgent"
             agent.chrome_config = ChromeConfig(headless=True, port=9333)
-            agent.obscura_config = ObscuraMCPConfig(
-                binary_path="/usr/local/bin/obscura", port=9222, stealth=True
-            )
+            agent.obscura_config = ObscuraMCPConfig(binary_path="/usr/local/bin/obscura", port=9222, stealth=True)
             agent.logger = MagicMock()
-            agent.add_chrome_devtools_mcp_server = AsyncMock(
-                return_value=["click", "fill"]
-            )
-            agent.add_obscura_mcp_server = AsyncMock(
-                return_value=["navigate", "screenshot"]
-            )
+            agent.add_chrome_devtools_mcp_server = AsyncMock(return_value=["click", "fill"])
+            agent.add_obscura_mcp_server = AsyncMock(return_value=["navigate", "screenshot"])
 
             await agent.configure()
 
@@ -263,8 +252,10 @@ class TestObscuraWebAgentConfiguration:
     async def test_obscura_not_registered_when_unconfigured(self):
         """Chrome DevTools MCP defaults remain unchanged when
         `obscura_config` is not set (opt-in only)."""
-        with patch.object(BasicAgent, "__init__", return_value=None), \
-             patch.object(BasicAgent, "configure", new_callable=AsyncMock):
+        with (
+            patch.object(BasicAgent, "__init__", return_value=None),
+            patch.object(BasicAgent, "configure", new_callable=AsyncMock),
+        ):
             agent = WebAgent.__new__(WebAgent)
             agent.name = "WebAgent"
             agent.chrome_config = ChromeConfig()

@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 from parrot.tools.scraping.driver_factory import DriverFactory
 from parrot.tools.scraping.drivers.abstract import AbstractDriver
 
-
 # ── Factory Create ───────────────────────────────────────────────
 
 
@@ -19,9 +18,7 @@ class TestDriverFactoryCreate:
     def test_default_creates_selenium(self, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
         driver = DriverFactory.create()
-        mock_cls.assert_called_once_with(
-            browser="chrome", headless=True, auto_install=True, mobile=False
-        )
+        mock_cls.assert_called_once_with(browser="chrome", headless=True, auto_install=True, mobile=False)
         assert isinstance(driver, AbstractDriver)
 
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
@@ -31,12 +28,8 @@ class TestDriverFactoryCreate:
         mock_cls.assert_called_once()
         assert isinstance(driver, AbstractDriver)
 
-    @patch(
-        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
-    )
-    @patch(
-        "parrot.tools.scraping.drivers.playwright_config.PlaywrightConfig"
-    )
+    @patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
+    @patch("parrot.tools.scraping.drivers.playwright_config.PlaywrightConfig")
     def test_playwright_driver_type(self, mock_config, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
         driver = DriverFactory.create({"driver_type": "playwright"})
@@ -53,9 +46,7 @@ class TestDriverFactoryCreate:
 
 
 class TestDriverFactoryObscura:
-    @patch(
-        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
-    )
+    @patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
     def test_factory_creates_obscura_playwright_driver(self, mock_cls):
         """driver_type='obscura' returns PlaywrightDriver with CDP settings."""
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
@@ -81,9 +72,7 @@ class TestDriverFactoryObscura:
         assert pw_config.obscura_allow_private_network is True
         assert isinstance(driver, AbstractDriver)
 
-    @patch(
-        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
-    )
+    @patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
     def test_obscura_ignores_browser_field_forces_chromium(self, mock_cls):
         """`browser` is irrelevant for Obscura — it always connects over
         Chromium CDP and must never silently fall back to Chrome/Chromium
@@ -96,12 +85,8 @@ class TestDriverFactoryObscura:
         assert pw_config.engine == "obscura"
 
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
-    @patch(
-        "parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver"
-    )
-    def test_factory_preserves_selenium_and_playwright_launch_modes(
-        self, mock_pw_cls, mock_selenium_cls
-    ):
+    @patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
+    def test_factory_preserves_selenium_and_playwright_launch_modes(self, mock_pw_cls, mock_selenium_cls):
         """Adding 'obscura' does not change selenium/playwright dispatch."""
         mock_selenium_cls.return_value = MagicMock(spec=AbstractDriver)
         selenium_driver = DriverFactory.create({"driver_type": "selenium"})
@@ -153,17 +138,13 @@ class TestDriverFactoryWithDict:
     def test_dict_config_selenium(self, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
         DriverFactory.create({"browser": "firefox", "headless": False})
-        mock_cls.assert_called_once_with(
-            browser="firefox", headless=False, auto_install=True, mobile=False
-        )
+        mock_cls.assert_called_once_with(browser="firefox", headless=False, auto_install=True, mobile=False)
 
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
     def test_dict_config_auto_install(self, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
         DriverFactory.create({"auto_install": False})
-        mock_cls.assert_called_once_with(
-            browser="chrome", headless=True, auto_install=False, mobile=False
-        )
+        mock_cls.assert_called_once_with(browser="chrome", headless=True, auto_install=False, mobile=False)
 
 
 # ── Pydantic / Dataclass Config ─────────────────────────────────

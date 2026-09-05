@@ -4,6 +4,7 @@ All process lifecycle is mocked at `ObscuraProcessManager`/the PID-file
 adapter functions (both `parrot.mcp.obscura`) — no real Obscura binary or
 subprocess is spawned.
 """
+
 import json
 import signal
 from pathlib import Path
@@ -34,9 +35,10 @@ def test_obscura_cli_lifecycle():
         self.process = fake_process
         return "http://127.0.0.1:9222"
 
-    with patch(
-        "parrot.mcp.obscura.ObscuraProcessManager.start", new=_fake_start
-    ), patch("parrot.mcp.obscura.write_pid_file") as write_mock:
+    with (
+        patch("parrot.mcp.obscura.ObscuraProcessManager.start", new=_fake_start),
+        patch("parrot.mcp.obscura.write_pid_file") as write_mock,
+    ):
         result = _invoke("start", "--binary", "/usr/local/bin/obscura")
 
     assert result.exit_code == 0, result.output
@@ -46,11 +48,13 @@ def test_obscura_cli_lifecycle():
     assert written_pid == 4242
 
     # stop() — a separate CLI invocation reads the PID file back.
-    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
-         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
-         patch("parrot.mcp.cli.os.kill") as kill_mock, \
-         patch("parrot.mcp.cli._wait_for_pid_exit", new=AsyncMock(return_value=True)), \
-         patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
+    with (
+        patch("parrot.mcp.obscura.read_pid_file", return_value=4242),
+        patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True),
+        patch("parrot.mcp.cli.os.kill") as kill_mock,
+        patch("parrot.mcp.cli._wait_for_pid_exit", new=AsyncMock(return_value=True)),
+        patch("parrot.mcp.obscura.remove_pid_file") as remove_mock,
+    ):
         result = _invoke("stop", "--port", "9222")
 
     assert result.exit_code == 0, result.output
@@ -64,14 +68,16 @@ def test_obscura_cli_lifecycle():
 def test_obscura_stop_escalates_to_sigkill_when_sigterm_ignored():
     """If the process is still alive after SIGTERM, stop() escalates to
     SIGKILL — mirroring ObscuraProcessManager.stop()'s own policy."""
-    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
-         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
-         patch("parrot.mcp.cli.os.kill") as kill_mock, \
-         patch(
-             "parrot.mcp.cli._wait_for_pid_exit",
-             new=AsyncMock(side_effect=[False, True]),
-         ), \
-         patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
+    with (
+        patch("parrot.mcp.obscura.read_pid_file", return_value=4242),
+        patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True),
+        patch("parrot.mcp.cli.os.kill") as kill_mock,
+        patch(
+            "parrot.mcp.cli._wait_for_pid_exit",
+            new=AsyncMock(side_effect=[False, True]),
+        ),
+        patch("parrot.mcp.obscura.remove_pid_file") as remove_mock,
+    ):
         result = _invoke("stop", "--port", "9222")
 
     assert result.exit_code == 0, result.output
@@ -85,10 +91,13 @@ def test_obscura_cli_reports_start_failure():
     """A manager failure (missing binary / readiness timeout) is
     reported as an actionable, non-zero-exit CLI error — never silently
     swallowed, and never falls back to Chrome/Selenium."""
-    with patch(
-        "parrot.mcp.obscura.ObscuraProcessManager.start",
-        new=AsyncMock(side_effect=RuntimeError("Obscura binary not found: 'obscura'")),
-    ), patch("parrot.mcp.obscura.write_pid_file") as write_mock:
+    with (
+        patch(
+            "parrot.mcp.obscura.ObscuraProcessManager.start",
+            new=AsyncMock(side_effect=RuntimeError("Obscura binary not found: 'obscura'")),
+        ),
+        patch("parrot.mcp.obscura.write_pid_file") as write_mock,
+    ):
         result = _invoke("start", "--binary", "obscura")
 
     assert result.exit_code != 0
@@ -113,17 +122,23 @@ def test_obscura_start_passes_flags_into_config():
         def config(self):
             return captured["config"]
 
-    with patch("parrot.mcp.obscura.ObscuraProcessManager", _RecordingManager), \
-         patch("parrot.mcp.obscura.write_pid_file"):
+    with (
+        patch("parrot.mcp.obscura.ObscuraProcessManager", _RecordingManager),
+        patch("parrot.mcp.obscura.write_pid_file"),
+    ):
         result = _invoke(
             "start",
-            "--binary", "/usr/local/bin/obscura",
-            "--host", "0.0.0.0",
-            "--port", "9333",
+            "--binary",
+            "/usr/local/bin/obscura",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "9333",
             "--stealth",
             "--allow-private-network",
             "--attach-only",
-            "--startup-timeout", "5.5",
+            "--startup-timeout",
+            "5.5",
         )
 
     assert result.exit_code == 0, result.output
@@ -149,10 +164,12 @@ def test_obscura_stop_no_pid_file_reports_error():
 
 
 def test_obscura_stop_process_already_gone_is_not_fatal():
-    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
-         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True), \
-         patch("parrot.mcp.cli.os.kill", side_effect=ProcessLookupError()), \
-         patch("parrot.mcp.obscura.remove_pid_file") as remove_mock:
+    with (
+        patch("parrot.mcp.obscura.read_pid_file", return_value=4242),
+        patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=True),
+        patch("parrot.mcp.cli.os.kill", side_effect=ProcessLookupError()),
+        patch("parrot.mcp.obscura.remove_pid_file") as remove_mock,
+    ):
         result = _invoke("stop", "--port", "9222")
 
     assert result.exit_code == 0, result.output
@@ -163,9 +180,11 @@ def test_obscura_stop_process_already_gone_is_not_fatal():
 def test_obscura_stop_refuses_pid_that_does_not_look_like_obscura():
     """A stale or reused PID file must never result in signaling an
     unrelated process — `os.kill` must not even be called."""
-    with patch("parrot.mcp.obscura.read_pid_file", return_value=4242), \
-         patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=False), \
-         patch("parrot.mcp.cli.os.kill") as kill_mock:
+    with (
+        patch("parrot.mcp.obscura.read_pid_file", return_value=4242),
+        patch("parrot.mcp.cli._pid_looks_like_obscura", return_value=False),
+        patch("parrot.mcp.cli.os.kill") as kill_mock,
+    ):
         result = _invoke("stop", "--port", "9222")
 
     assert result.exit_code != 0
@@ -178,9 +197,7 @@ def test_pid_looks_like_obscura_true_for_matching_cmdline(tmp_path, monkeypatch)
 
     fake_proc = tmp_path / "proc"
     fake_proc.mkdir()
-    (fake_proc / "cmdline").write_bytes(
-        b"/usr/local/bin/obscura\x00serve\x00--port\x009222\x00"
-    )
+    (fake_proc / "cmdline").write_bytes(b"/usr/local/bin/obscura\x00serve\x00--port\x009222\x00")
     monkeypatch.setattr(
         "parrot.mcp.cli.Path",
         lambda p: fake_proc / "cmdline" if p == "/proc/4242/cmdline" else Path(p),
@@ -198,9 +215,7 @@ def test_pid_looks_like_obscura_false_when_unreadable():
 async def test_wait_for_pid_exit_true_once_process_lookup_error():
     from parrot.mcp.cli import _wait_for_pid_exit
 
-    with patch(
-        "parrot.mcp.cli.os.kill", side_effect=[None, ProcessLookupError()]
-    ):
+    with patch("parrot.mcp.cli.os.kill", side_effect=[None, ProcessLookupError()]):
         result = await _wait_for_pid_exit(4242, timeout=1.0)
 
     assert result is True
@@ -226,10 +241,13 @@ def test_obscura_status_reports_json():
         "port": 9222,
         "endpoint": "http://127.0.0.1:9222",
     }
-    with patch(
-        "parrot.mcp.obscura.ObscuraProcessManager.status",
-        new=AsyncMock(return_value=dict(fake_status)),
-    ), patch("parrot.mcp.obscura.read_pid_file", return_value=4242):
+    with (
+        patch(
+            "parrot.mcp.obscura.ObscuraProcessManager.status",
+            new=AsyncMock(return_value=dict(fake_status)),
+        ),
+        patch("parrot.mcp.obscura.read_pid_file", return_value=4242),
+    ):
         result = _invoke("status", "--port", "9222")
 
     assert result.exit_code == 0, result.output
@@ -241,12 +259,16 @@ def test_obscura_status_reports_json():
 
 def test_obscura_status_never_spawns_a_process():
     """Status is attach_only — it must never call start()/spawn."""
-    with patch(
-        "parrot.mcp.obscura.ObscuraProcessManager.status",
-        new=AsyncMock(return_value={"running": False}),
-    ), patch("parrot.mcp.obscura.read_pid_file", return_value=None), patch(
-        "parrot.mcp.obscura.ObscuraProcessManager.start",
-    ) as start_mock:
+    with (
+        patch(
+            "parrot.mcp.obscura.ObscuraProcessManager.status",
+            new=AsyncMock(return_value={"running": False}),
+        ),
+        patch("parrot.mcp.obscura.read_pid_file", return_value=None),
+        patch(
+            "parrot.mcp.obscura.ObscuraProcessManager.start",
+        ) as start_mock,
+    ):
         result = _invoke("status", "--port", "9222")
 
     assert result.exit_code == 0, result.output
@@ -258,7 +280,11 @@ def test_obscura_status_never_spawns_a_process():
 
 def test_obscura_mcp_config_prints_stdio_command():
     result = _invoke(
-        "mcp-config", "--binary", "/usr/local/bin/obscura", "--port", "9333",
+        "mcp-config",
+        "--binary",
+        "/usr/local/bin/obscura",
+        "--port",
+        "9333",
         "--stealth",
     )
 

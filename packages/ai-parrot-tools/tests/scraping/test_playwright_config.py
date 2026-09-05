@@ -77,21 +77,15 @@ class TestPlaywrightConfigCustomValues:
         assert config.timezone == "Europe/Madrid"
 
     def test_custom_geolocation(self):
-        config = PlaywrightConfig(
-            geolocation={"latitude": 40.7, "longitude": -74.0}
-        )
+        config = PlaywrightConfig(geolocation={"latitude": 40.7, "longitude": -74.0})
         assert config.geolocation["latitude"] == 40.7
 
     def test_custom_http_credentials(self):
-        config = PlaywrightConfig(
-            http_credentials={"username": "user", "password": "pass"}
-        )
+        config = PlaywrightConfig(http_credentials={"username": "user", "password": "pass"})
         assert config.http_credentials["username"] == "user"
 
     def test_custom_extra_http_headers(self):
-        config = PlaywrightConfig(
-            extra_http_headers={"X-Custom": "value"}
-        )
+        config = PlaywrightConfig(extra_http_headers={"X-Custom": "value"})
         assert config.extra_http_headers["X-Custom"] == "value"
 
     def test_recording_paths(self):

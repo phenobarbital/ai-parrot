@@ -234,22 +234,16 @@ class QAReport(BaseModel):
                 },
             )
             if finding.status == "fail":
-                failure = ET.SubElement(
-                    testcase, "failure", {"message": finding.detail}
-                )
+                failure = ET.SubElement(testcase, "failure", {"message": finding.detail})
                 failure.text = self._junit_detail_body(finding)
             elif finding.status == "error":
-                error = ET.SubElement(
-                    testcase, "error", {"message": finding.detail}
-                )
+                error = ET.SubElement(testcase, "error", {"message": finding.detail})
                 error.text = self._junit_detail_body(finding)
             elif finding.status == "skip":
                 ET.SubElement(testcase, "skipped", {"message": finding.detail})
             # "pass" -> no child element
 
-        return ET.tostring(
-            testsuites, encoding="unicode", xml_declaration=True
-        )
+        return ET.tostring(testsuites, encoding="unicode", xml_declaration=True)
 
     @staticmethod
     def _junit_detail_body(finding: "QAFinding") -> str:
@@ -356,8 +350,7 @@ class WebAgent(BasicAgent):
         await super().configure(app)
         config = self.chrome_config
         await self.add_chrome_devtools_mcp_server(
-            browser_url=config.browser_url
-            or f"http://127.0.0.1:{config.port}",
+            browser_url=config.browser_url or f"http://127.0.0.1:{config.port}",
             headless=config.headless,
             user_data_dir=config.user_data_dir,
             channel=config.channel,
@@ -438,9 +431,7 @@ class WebAgent(BasicAgent):
                     # network error) must not abort the whole suite (see
                     # spec Motivation: "a single network glitch... causing
                     # false negatives").
-                    self.logger.exception(
-                        "QA test case %r raised an unexpected error", case.name
-                    )
+                    self.logger.exception("QA test case %r raised an unexpected error", case.name)
                     finding = QAFinding(
                         test_name=case.name,
                         status="error",
@@ -452,10 +443,7 @@ class WebAgent(BasicAgent):
             findings.append(finding)
 
         report = QAReport(
-            summary=(
-                f"{sum(1 for f in findings if f.status == 'pass')}/"
-                f"{len(findings)} passed"
-            ),
+            summary=(f"{sum(1 for f in findings if f.status == 'pass')}/" f"{len(findings)} passed"),
             url=base_url,
             findings=findings,
             total=len(findings),
@@ -470,9 +458,7 @@ class WebAgent(BasicAgent):
             response=report.summary,
             model="",
             provider="",
-            usage=CompletionUsage(
-                prompt_tokens=0, completion_tokens=0, total_tokens=0
-            ),
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
         )
 
     async def _execute_single_test(
@@ -513,8 +499,7 @@ class WebAgent(BasicAgent):
                 "text_contains",
             ):
                 prompt += (
-                    f"For '{assertion.check}' on '{assertion.target}': "
-                    f"wait up to {assertion.wait_timeout_ms}ms.\n"
+                    f"For '{assertion.check}' on '{assertion.target}': " f"wait up to {assertion.wait_timeout_ms}ms.\n"
                 )
         prompt += f"\nTest case:\n{case.model_dump_json(indent=2)}"
 

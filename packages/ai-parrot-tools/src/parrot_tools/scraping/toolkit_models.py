@@ -4,6 +4,7 @@ Toolkit data models for WebScrapingToolkit.
 Provides DriverConfig (browser configuration), PlanSummary (slim registry
 projection), and PlanSaveResult (plan save operation result).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -52,9 +53,7 @@ class DriverConfig(BaseModel):
     """
 
     driver_type: Literal["selenium", "playwright", "obscura"] = "selenium"
-    browser: Literal[
-        "chrome", "firefox", "edge", "safari", "undetected", "webkit"
-    ] = "chrome"
+    browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome"
     headless: bool = True
     mobile: bool = False
     mobile_device: Optional[str] = None

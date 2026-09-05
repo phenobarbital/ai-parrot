@@ -9,6 +9,7 @@ existing scraping plans require no Obscura-specific branching" did not
 actually hold for this dispatch path. All Playwright API calls are
 mocked — no real Obscura process is spawned.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.tools.scraping.driver_context import DriverRegistry, _ObscuraSetup

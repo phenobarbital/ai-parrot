@@ -146,14 +146,11 @@ class DriverFactory:
                 obscura_binary=config.get("obscura_binary"),
                 obscura_port=config.get("obscura_port", 9222),
                 obscura_stealth=config.get("obscura_stealth", False),
-                obscura_allow_private_network=config.get(
-                    "obscura_allow_private_network", False
-                ),
+                obscura_allow_private_network=config.get("obscura_allow_private_network", False),
             )
             logger.info(
                 "Creating PlaywrightDriver in Obscura CDP mode (endpoint=%s)",
-                pw_config.cdp_endpoint_url
-                or f"http://127.0.0.1:{pw_config.obscura_port}",
+                pw_config.cdp_endpoint_url or f"http://127.0.0.1:{pw_config.obscura_port}",
             )
             return PlaywrightDriver(pw_config)
 
@@ -167,9 +164,7 @@ class DriverFactory:
                 selenium_options["user_data_dir"] = config["user_data_dir"]
             if config.get("profile_directory"):
                 selenium_options["profile_directory"] = config["profile_directory"]
-            extra_kwargs: Dict[str, Any] = (
-                {"options": selenium_options} if selenium_options else {}
-            )
+            extra_kwargs: Dict[str, Any] = {"options": selenium_options} if selenium_options else {}
 
             logger.info("Creating SeleniumDriver (browser=%s)", browser)
             return SeleniumDriver(
@@ -181,8 +176,7 @@ class DriverFactory:
             )
 
         raise ValueError(
-            f"Unknown driver_type: {driver_type!r}. "
-            "Supported values: 'selenium', 'playwright', 'obscura'."
+            f"Unknown driver_type: {driver_type!r}. " "Supported values: 'selenium', 'playwright', 'obscura'."
         )
 
     @staticmethod
@@ -203,6 +197,5 @@ class DriverFactory:
         if browser_lower in _BROWSER_TO_PLAYWRIGHT:
             return _BROWSER_TO_PLAYWRIGHT[browser_lower]
         raise ValueError(
-            f"Unknown browser: {browser!r}. "
-            f"Supported: {', '.join(sorted(_BROWSER_TO_PLAYWRIGHT.keys()))}"
+            f"Unknown browser: {browser!r}. " f"Supported: {', '.join(sorted(_BROWSER_TO_PLAYWRIGHT.keys()))}"
         )

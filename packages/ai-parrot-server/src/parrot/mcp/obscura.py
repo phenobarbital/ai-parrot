@@ -13,6 +13,7 @@ never successfully launched) is never terminated by `stop()`.
 
 See `sdd/specs/obscura-new-browser-headless.spec.md` (FEAT-530), Module 1.
 """
+
 import asyncio
 import logging
 import shutil
@@ -56,9 +57,7 @@ class ObscuraProcessConfig:
         if not self.binary_path:
             raise ValueError("ObscuraProcessConfig.binary_path must be set")
         if not (0 < self.port < 65536):
-            raise ValueError(
-                f"ObscuraProcessConfig.port out of range: {self.port}"
-            )
+            raise ValueError(f"ObscuraProcessConfig.port out of range: {self.port}")
 
 
 class ObscuraProcessManager:
@@ -170,16 +169,12 @@ class ObscuraProcessManager:
         """
         if await self.is_running():
             if self.config.attach_only:
-                self.logger.info(
-                    "Adopting externally running Obscura on %s", self.endpoint
-                )
+                self.logger.info("Adopting externally running Obscura on %s", self.endpoint)
                 return self.endpoint
             if self._owns_process:
                 # Idempotent re-start() on a manager that already owns
                 # this process — not a foreign endpoint.
-                self.logger.info(
-                    "Obscura is already running on %s", self.endpoint
-                )
+                self.logger.info("Obscura is already running on %s", self.endpoint)
                 return self.endpoint
             raise RuntimeError(
                 f"A CDP endpoint is already responding at {self.endpoint} "
@@ -191,15 +186,12 @@ class ObscuraProcessManager:
 
         if self.config.attach_only:
             raise RuntimeError(
-                "Obscura attach_only mode is configured but no CDP endpoint "
-                f"is responding at {self.endpoint}"
+                "Obscura attach_only mode is configured but no CDP endpoint " f"is responding at {self.endpoint}"
             )
 
         resolved = self._resolve_binary()
         if not resolved:
-            raise RuntimeError(
-                f"Obscura binary not found: {self.config.binary_path!r}"
-            )
+            raise RuntimeError(f"Obscura binary not found: {self.config.binary_path!r}")
 
         cmd = self._build_command(resolved)
         self.logger.info("Starting Obscura: %s", " ".join(cmd))
@@ -240,14 +232,11 @@ class ObscuraProcessManager:
                 self.logger.info("Obscura ready on %s", self.endpoint)
                 return self.endpoint
 
-        self.logger.error(
-            "Timeout waiting for Obscura CDP endpoint at %s", self.endpoint
-        )
+        self.logger.error("Timeout waiting for Obscura CDP endpoint at %s", self.endpoint)
         # Clean up the process we just spawned — it never became ready.
         await self.stop()
         raise RuntimeError(
-            f"Timed out after {self.config.startup_timeout}s waiting for "
-            f"Obscura CDP endpoint at {self.endpoint}"
+            f"Timed out after {self.config.startup_timeout}s waiting for " f"Obscura CDP endpoint at {self.endpoint}"
         )
 
     async def _read_stderr_snippet(self, max_bytes: int = 2048) -> str:
@@ -262,9 +251,7 @@ class ObscuraProcessManager:
         if self.process is None or self.process.stderr is None:
             return ""
         try:
-            data = await asyncio.wait_for(
-                self.process.stderr.read(max_bytes), timeout=1.0
-            )
+            data = await asyncio.wait_for(self.process.stderr.read(max_bytes), timeout=1.0)
         except (asyncio.TimeoutError, OSError):
             return ""
         return data.decode("utf-8", errors="replace").strip()
@@ -278,10 +265,7 @@ class ObscuraProcessManager:
         in time, sends `kill()`. Always resets ownership state when done.
         """
         if not self._owns_process or self.process is None:
-            self.logger.debug(
-                "stop() called but Obscura process is not owned by this "
-                "manager; leaving it running"
-            )
+            self.logger.debug("stop() called but Obscura process is not owned by this " "manager; leaving it running")
             return
 
         self.logger.info("Stopping Obscura process...")
