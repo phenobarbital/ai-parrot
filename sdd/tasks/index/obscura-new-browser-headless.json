@@ -1,0 +1,18 @@
+{
+  "feature": "obscura-new-browser-headless",
+  "feature_id": "FEAT-530",
+  "spec": "sdd/specs/obscura-new-browser-headless.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-05T00:00:00Z",
+  "completed_at": null,
+  "parallelism_notes": "TASK-2875 is foundational. TASK-2876 depends on it; TASK-2877 depends on TASK-2876. TASK-2878 and TASK-2879 can run in parallel after TASK-2875. TASK-2880 waits for all implementation seams and owns cross-surface compatibility validation and documentation.",
+  "tasks": [
+    {"id": "TASK-2875", "slug": "obscura-process-manager", "title": "Implement supervised Obscura process management", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "L", "depends_on": [], "parallel": true, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2875-obscura-process-manager.md"},
+    {"id": "TASK-2876", "slug": "obscura-playwright-cdp", "title": "Add Obscura CDP mode to PlaywrightDriver", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "L", "depends_on": ["TASK-2875"], "parallel": false, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2876-obscura-playwright-cdp.md"},
+    {"id": "TASK-2877", "slug": "obscura-driver-selection", "title": "Select Obscura through the existing driver factory", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "M", "depends_on": ["TASK-2876"], "parallel": false, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2877-obscura-driver-selection.md"},
+    {"id": "TASK-2878", "slug": "obscura-native-mcp", "title": "Register the native Obscura MCP server", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "M", "depends_on": ["TASK-2875"], "parallel": true, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2878-obscura-native-mcp.md"},
+    {"id": "TASK-2879", "slug": "obscura-cli-lifecycle", "title": "Add Obscura lifecycle CLI commands", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "M", "depends_on": ["TASK-2875"], "parallel": true, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2879-obscura-cli-lifecycle.md"},
+    {"id": "TASK-2880", "slug": "obscura-compatibility-validation", "title": "Validate Obscura Playwright and MCP compatibility", "feature_id": "FEAT-530", "feature": "obscura-new-browser-headless", "status": "pending", "priority": "high", "effort": "L", "depends_on": ["TASK-2875", "TASK-2876", "TASK-2877", "TASK-2878", "TASK-2879"], "parallel": false, "assigned_to": null, "assigned_at": null, "started_at": null, "completed_at": null, "file": "sdd/tasks/active/TASK-2880-obscura-compatibility-validation.md"}
+  ]
+}
