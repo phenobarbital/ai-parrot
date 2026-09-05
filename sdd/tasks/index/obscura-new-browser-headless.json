@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-05T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-05T16:40:09+00:00",
   "parallelism_notes": "TASK-2875 is foundational. TASK-2876 depends on it; TASK-2877 depends on TASK-2876. TASK-2878 and TASK-2879 can run in parallel after TASK-2875. TASK-2880 waits for all implementation seams and owns cross-surface compatibility validation and documentation.",
   "tasks": [
     {
@@ -107,7 +107,7 @@
       "title": "Validate Obscura Playwright and MCP compatibility",
       "feature_id": "FEAT-530",
       "feature": "obscura-new-browser-headless",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,8 +121,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-05T15:59:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2880-obscura-compatibility-validation.md"
+      "completed_at": "2026-09-05T16:40:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2880-obscura-compatibility-validation.md"
     }
   ]
 }
