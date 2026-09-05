@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     # No extra SDK: MoonshotClient extends OpenAIBaseClient (core) and
     # uses only tenacity (already a core ai-parrot base dependency).
 ]

@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     # The `openai` SDK itself is a base `ai-parrot` dependency (FEAT-523/
     # TASK-2854 core-extras cleanup — OpenAIBaseClient, which stays in
     # core, is subclassed by seven satellites including this one), so

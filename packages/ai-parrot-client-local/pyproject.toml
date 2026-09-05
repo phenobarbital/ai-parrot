@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     # No extra SDK: LocalLLMClient extends OpenAIBaseClient (core) and
     # talks to any OpenAI-compatible local server (Ollama, llama.cpp, ...)
     # over the base_url it's given — nothing else to declare.

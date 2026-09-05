@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
     "claude-agent-sdk>=0.1.68",
     # NOT declared here: `ai-parrot-client-amazon` — AnthropicClient's

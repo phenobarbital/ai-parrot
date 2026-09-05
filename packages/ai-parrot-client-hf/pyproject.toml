@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     "transformers>=4.48.0,<5.0",
     # NOT declared here: `torch` (imported lazily inside methods, same
     # undeclared/install-separately pattern as gemma4) or

@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     # vLLMClient subclasses LocalLLMClient (parrot.clients.local) directly
     # -- this is a real, unconditional import (`from ..local import
     # LocalLLMClient`), not a lazy/optional one, so the satellite

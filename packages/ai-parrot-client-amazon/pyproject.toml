@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot",
+    "ai-parrot>=0.28.1",
     "aioboto3>=13.2.0",
     # NOT declared here: `aws_sdk_bedrock_runtime` (Pre-Alpha, ==0.7.0,
     # Python>=3.12) — NovaClient's voice/audio path imports it lazily
