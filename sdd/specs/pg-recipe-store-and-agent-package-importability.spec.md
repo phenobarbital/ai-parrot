@@ -14,7 +14,8 @@ base_branch: dev
 **Status**: approved (Juan, 2026-09-04 — all section 8 questions resolved; agent relocation left open for Jesús)
 **Target version**: not chosen by this spec. Work is based on `dev` and lands by PR; whoever cuts the release decides the number (Juan, 2026-09-04).
 **Reserved via**: `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label pg-recipe-store-and-agent-package-importability` → `FEAT-528` (commit `0a27686cd`). The allocator returned 528, not the ledger's cached 527, because `infographic-a2ui-migration` had already claimed 527 on `origin/dev`.
-**Downstream consumer**: FieldSync `FEAT-559` — `fieldsync/sdd/proposals/fieldsync-a2ui-surfaces-plane.brainstorm.md`. That feature mounts parrot's `ui_surfaces` REST lane in `fieldsync-api` and is blocked on both modules below.
+**Downstream consumer**: FieldSync `FEAT-559` — `fieldsync/sdd/specs/fieldsync-a2ui-surfaces-plane.spec.md`. That feature mounts parrot's `ui_surfaces` and recipe REST lanes in `fieldsync-api` under its tenant-in-URL grammar and consumes both modules below **by contract, not by schedule** (Juan, 2026-09-04: FieldSync Modules 1–3 proceed now; its Modules 4–5 integrate when this lands). It imports `from parrot.handlers.models.recipes import PgRecipeStore` and `from parrot.tools.infographic_recipes import load_transformer_module` — those two paths are this spec's public contract and must not move.
+**Tasks**: TASK-2870..TASK-2874 (`sdd/tasks/index/pg-recipe-store-and-agent-package-importability.json`, decomposed 2026-09-05).
 
 ---
 
@@ -354,7 +355,8 @@ ModuleNotFoundError: No module named 'agents.flex_dashboard'
 - ~~A relational recipe store~~ — `DBRecipeStore` is Redis; its docstring says so explicitly.
 - ~~`navigator.infographic_recipes`~~ — the table does not exist in any database. `navigator.ui_surfaces` and `navigator.ui_surface_shares` do not either, as of 2026-09-04; whichever store runs `ensure_schema()` first creates its own.
 - ~~A host-callable transformer loader~~ — no `load_transformer_module`, no plugin/entry-point mechanism for transformers. Registration is purely an import side effect today.
-- ~~A `setup_a2ui(app, ...)` or `setup_ui_surfaces(app, ...)`~~ — `handlers/a2ui.py` and `handlers/ui_surfaces.py` expose no module-level mount function. Out of scope here, noted because the downstream consumer works around it with five `add_view` calls.
+- ~~A `setup_a2ui(app, ...)` or `setup_ui_surfaces(app, ...)`~~ — `handlers/a2ui.py` and `handlers/ui_surfaces.py` expose no module-level mount function. Out of scope here, noted because the downstream consumer works around it with eight `add_view` calls (five surfaces + three recipes) under `ProgrammeScopedView` subclasses.
+- ~~Recipe params reaching querysource in flex's recipe~~ — `RecipeRunner._fetch_frames` forwards only `DataSourceSpec.conditions`/`sql` (`runner.py:467-469`) and `publish_recipe` builds `DataSourceSpec(dataset, alias, sql)` with no conditions (`infographic_authoring.py:400-406`); flex declares none, so its replay fetches unfiltered. Recorded 2026-09-05 so TASK-2873/2874 state it; not changed by this feature.
 - ~~Any tenancy column on `ui_surfaces`~~ — the plane is `user_id`-scoped only.
 - ~~A schema/table-name override on `PgUISurfaceStore`~~ — it hardcodes `navigator`. `PgRecipeStore` takes a `schema` keyword so a host is not forced into the same assumption; this is a deliberate, small divergence from the template.
 
