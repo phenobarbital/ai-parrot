@@ -238,10 +238,53 @@ async def test_stop_terminates_then_kills(manager, fake_proc):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-05
+**Notes**: Rewrote `ChromeManager` in place exactly per spec §3 Module 1:
+removed `requests`/`socket`/`subprocess`/`time` imports, added
+`asyncio`/`shutil`/`aiohttp`/`warnings`; `is_running()` uses
+`aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=1.0))` against
+`/json/version`, catching `(aiohttp.ClientError, asyncio.TimeoutError,
+OSError)`; `is_chrome_running()` is now a coroutine that emits
+`DeprecationWarning(stacklevel=2)` and delegates to `is_running()`;
+`start(headless=True, timeout=10.0)` discovers the binary once via
+`shutil.which` over the same candidate list, falls back to
+`"google-chrome"` with a warning, spawns with
+`asyncio.create_subprocess_exec(..., start_new_session=True)`, and polls
+`is_running()` every 0.5s against a `loop.time()` deadline; never raises
+(broad `except Exception` returns `False`, same contract as before);
+`stop()` awaits `asyncio.wait_for(process.wait(), 5)`, kills on
+`asyncio.TimeoutError`, and always resets `self.process = None`. Deleted
+`is_port_open()` and the module-level `shutil_which()` and the dead
+`chrome_bins`/`chrome_bin` block. `integration.py` was NOT touched (task 2
+scope).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Created `tests/mcp/test_chrome_manager.py` with the 8 tests from the task's
+Test Specification verbatim, plus 4 extra tests for coverage the spec's
+acceptance criteria call for but the scaffold didn't enumerate explicitly
+(`is_chrome_running` deprecation warning + delegation, binary-not-found
+fallback to `"google-chrome"`, spawn-exception → `False`, `stop()` no-op
+when `process` is `None`) — 12 tests total, all passing.
 
-**Deviations from spec**: none | describe if any
+Real test results observed (see
+`artifacts/logs/chromemanager-async-migration/task1-pytest.log`):
+- `pytest tests/mcp/test_chrome_manager.py -v` → **12 passed in 1.37s**
+- `pytest tests/unit/test_mcp_validator.py -q` → **12 passed in 0.30s**
+- `ruff check packages/ai-parrot-server/src/parrot/mcp/chrome.py` → **All checks passed!**
+- Coroutine check (`ChromeManager.start/stop/is_running/is_chrome_running`
+  all `inspect.iscoroutinefunction() == True`) → **OK**, run with
+  `PYTHONPATH=packages/ai-parrot-server/src` explicitly prepended — the
+  shared venv's editable install for `ai-parrot-server` resolves
+  `parrot.mcp.chrome` to the main-repo checkout
+  (`/home/jesuslara/proyectos/ai-parrot/packages/...`) rather than this
+  worktree when invoked as a bare `python -c` with no test-collection
+  conftest in play; the repo's own root `conftest.py` documents and
+  corrects exactly this precedence for the `pytest` invocations above, so
+  both pytest runs picked up the worktree's rewritten file correctly
+  without any workaround.
+
+**Deviations from spec**: none in the implementation. Added 4 extra unit
+tests beyond the task's minimal scaffold (noted above) to directly cover
+acceptance criteria (deprecation warning, binary-fallback logging,
+never-raise contract, stop() no-op) that the scaffold didn't test but the
+Acceptance Criteria section requires.

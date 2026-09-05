@@ -113,8 +113,55 @@ live check script is throwaway (keep it under `artifacts/logs/.../live_check.py`
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (Fable 5.1), session 01XMWEzgtZh3NZ4gapoSbBxq
+**Date**: 2026-09-05
+**Notes**: Docs/changelog commit `c1efdf71e`. Evidence under
+`artifacts/logs/chromemanager-async-migration/` (gitignored, kept in the
+worktree):
 
-**Deviations from spec**: none | describe if any
+| Evidence | File | Result |
+|---|---|---|
+| Task test targets, root tree (`tests/mcp/test_chrome_manager.py` + `tests/unit/test_mcp_validator.py`) | `task2-pytest-root.log` | 32 passed |
+| Task test targets, package tree (`packages/ai-parrot/tests/bots/test_chrome.py`, run with `-c pytest.ini --rootdir=.`) | `task2-pytest-bots.log` | 57 passed, 5 failed (pre-existing, see below) |
+| Wider suite `tests/mcp tests/unit` (`--continue-on-collection-errors`) | `task3-suite-root.log` | 839 passed, 102 failed, 57 errors, 8 skipped |
+| Wider suite `packages/ai-parrot/tests/bots` | `task3-suite-bots.log` | 1388 passed, 112 failed, 9 errors, 9 skipped |
+| ruff + `import requests` grep + validator-unmodified check | `task3-ruff-grep.log` | grep empty; `test_mcp_validator.py` identical to `origin/main`; ruff: `chrome.py` clean, `integration.py` 3 findings **identical on `origin/main`** (F401 x2 line 38, F402), none on hotfix lines |
+| Live check against real headless Chrome (`/usr/bin/google-chrome`) | `task3-live-check.log`, `live_check.py` | **OK** — helper path: Chrome ready in 0.84 s, 50 ms ticker fired 10x during startup (loop not blocked), `GET /json/version` → 200, Chrome gone after `stop()` |
+
+**Wider-suite failures are environmental and pre-date this hotfix.** Every
+failure/error reason in both wide runs is one of: `ImportError: cannot import
+name 'GoogleGenAIClient' from 'parrot.clients.google'`, `ModuleNotFoundError`
+for `parrot.clients.{google.client,openai,anthropic,groq,grok,local}`,
+`MockBot._prompt_caching` / `BotManager._build_prompt_builder` attribute
+drift, `await self.post_configure()` on a MagicMock, or `PostgresToolkit` dsn
+signature — i.e. the shared editable venv resolving `parrot.clients.*` to a
+main-checkout (`dev`) layout that differs from this `origin/main` worktree.
+No failing test references `mcp/integration.py`, `mcp/chrome.py`,
+`ensure_chrome_running`, `test_chrome_manager.py` or `test_mcp_validator.py`.
+The 5 failures in `test_chrome.py` are the `test_web_agent_*` constructor
+tests and fail identically on the pristine base (verified in task 2 by
+reverting the diff: baseline 56 passed / 5 failed, with the hotfix 57 / 5).
+
+**Live check caveat**: `WebAgent()` cannot be constructed from a plain
+`python` process in this worktree (`ModuleNotFoundError: parrot.utils.types` —
+the Cython extension is compiled only in the main checkout; pytest works
+because the root `conftest.py` extends the namespace). The script therefore
+fell back to the `ensure_chrome_running()` helper — which is exactly the code
+this hotfix changed — and exercised real `start()`, the aiohttp probe and
+`stop()`. `WebAgent.configure()` itself is unchanged apart from the awaited
+hook, so this covers the behaviour under test.
+
+**Docs**: `docs/web-agent.md` (architecture diagram, factory-is-pure note,
+quick-start comment, `auto_connect` row, "Attaching to your own Chrome"
+paragraph, `ensure_running=False` example), `docs/web-navigator-agent.md`
+(comparison-table row), `CHANGELOG.md` (new `### Fixed` entry under
+Unreleased).
+
+**Deviations from spec**: the spec §5 line "Full suite unaffected:
+`pytest tests/mcp tests/unit packages/ai-parrot/tests/bots -q`" cannot be run
+as one command (the two trees both define `tests.conftest` →
+`ImportPathMismatchError`) and is not green in this environment for reasons
+unrelated to the hotfix (above). Recorded as two runs with failure
+classification instead of a green summary. ruff on `integration.py` is not
+clean because of 3 pre-existing findings outside the hotfix lines; left
+untouched (out of scope).

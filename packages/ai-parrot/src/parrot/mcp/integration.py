@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, List, Any, Optional, Union, Callable
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 import asyncio
 from navconfig import BASE_DIR, config
 from .context import ReadonlyContext
@@ -1120,6 +1121,11 @@ def create_chrome_devtools_mcp_server(
     This MCP server connects to a Chrome instance running with known remote debugging port.
     It automatically installs the chrome-devtools-mcp package using npx.
 
+    This factory is a pure config builder: it does **not** start Chrome.
+    To start (or reuse) a managed local Chrome behind ``browser_url``, use
+    :func:`ensure_chrome_running` or
+    ``MCPEnabledMixin.add_chrome_devtools_mcp_server(ensure_running=True)``.
+
     Args:
         browser_url: URL where Chrome is listening for devtools protocol.
         name: Server name.
@@ -1136,35 +1142,6 @@ def create_chrome_devtools_mcp_server(
     Returns:
         MCPServerConfig configured for Chrome DevTools.
     """
-    # Parse port from browser_url or default to 9222
-    port = 9222
-    is_local = False
-    try:
-        from urllib.parse import urlparse
-        parsed = urlparse(browser_url)
-        if parsed.port:
-            port = parsed.port
-
-        # Check if host is local
-        hostname = parsed.hostname or "localhost"
-        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
-            is_local = True
-
-    except Exception:
-        # Fallback to assuming local if parsing fails (unlikely for valid URL)
-        is_local = True
-
-    # Ensure Chrome is running ONLY if we are connecting locally and not
-    # relying on chrome-devtools-mcp's own auto-connect behavior.
-    if is_local and not auto_connect:
-        # Reuse existing manager or create new one
-        if port not in _chrome_managers:
-            chrome_manager = ChromeManager(port=port)
-            _chrome_managers[port] = chrome_manager
-        else:
-            chrome_manager = _chrome_managers[port]
-        chrome_manager.start(headless=headless)
-
     args = ["-y", "chrome-devtools-mcp@latest", f"--browser-url={browser_url}"]
     if headless:
         args.append("--headless")
@@ -1190,6 +1167,60 @@ def create_chrome_devtools_mcp_server(
         transport="stdio",
         **kwargs
     )
+
+
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+
+
+async def ensure_chrome_running(
+    browser_url: str,
+    headless: bool = False,
+) -> Optional[ChromeManager]:
+    """Start (or reuse) the managed local Chrome behind ``browser_url``.
+
+    Only loopback hosts are managed. For a remote ``browser_url`` the caller
+    is expected to run the browser itself and ``None`` is returned without
+    touching the registry. Managers are cached per port in
+    ``_chrome_managers`` so repeated calls reuse the same process and
+    ``MCPEnabledMixin.shutdown()`` can stop it.
+
+    A Chrome that fails to become ready is logged as a warning, not raised:
+    the MCP connection that follows will surface the failure.
+
+    Args:
+        browser_url: URL where Chrome is (or should be) listening for the
+            DevTools protocol, e.g. ``http://127.0.0.1:9222``.
+        headless: Launch Chrome without a visible window when it has to be
+            started.
+
+    Returns:
+        The ``ChromeManager`` for the port, or ``None`` when the host is not
+        local.
+    """
+    port = 9222
+    is_local = True
+    try:
+        parsed = urlparse(browser_url)
+        port = parsed.port or 9222
+        is_local = (parsed.hostname or "localhost") in _LOCAL_HOSTS
+    except Exception:  # noqa: BLE001 - unparseable URL: assume local, as before
+        is_local = True
+
+    if not is_local:
+        return None
+
+    manager = _chrome_managers.get(port)
+    if manager is None:
+        manager = ChromeManager(port=port)
+        _chrome_managers[port] = manager
+
+    if not await manager.start(headless=headless):
+        logging.getLogger("MCPEnabledMixin").warning(
+            "Chrome on port %s did not become ready; the DevTools MCP "
+            "connection may fail",
+            port,
+        )
+    return manager
 
 
 def create_google_maps_mcp_server(
@@ -1485,6 +1516,7 @@ class MCPEnabledMixin:
         isolated: bool = False,
         no_usage_statistics: bool = True,
         auto_connect: bool = False,
+        ensure_running: bool = True,
         **kwargs
     ) -> List[str]:
         """Add Chrome DevTools MCP server capability.
@@ -1500,11 +1532,18 @@ class MCPEnabledMixin:
             isolated: Use temporary profile.
             no_usage_statistics: Opt out of Google telemetry.
             auto_connect: Auto-connect to local Chrome (144+).
+            ensure_running: Start (or reuse) a managed local Chrome behind
+                ``browser_url`` before connecting, via
+                :func:`ensure_chrome_running`. Only applies to loopback
+                hosts and is skipped when ``auto_connect`` is set. Pass
+                ``False`` when the browser is managed externally.
             **kwargs: Additional MCPServerConfig parameters.
 
         Returns:
             List of registered tool names.
         """
+        if ensure_running and not auto_connect:
+            await ensure_chrome_running(browser_url, headless=headless)
         config = create_chrome_devtools_mcp_server(
             browser_url=browser_url,
             name=name,
@@ -1846,7 +1885,7 @@ class MCPEnabledMixin:
         # Stop any Chrome instances we started
         for port, manager in list(_chrome_managers.items()):
             try:
-                manager.stop()
+                await manager.stop()
             except Exception as e:
                 logging.getLogger(
                     "MCPEnabledMixin"

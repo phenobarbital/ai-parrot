@@ -7,6 +7,33 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+#### Hotfix `chromemanager-async-migration`: async `ChromeManager` (requests → aiohttp)
+
+`ChromeManager` (`parrot.mcp.chrome`, ai-parrot-server) probed and launched
+Chrome with `requests`, `subprocess` and `time.sleep`, and was reached from the
+async `add_chrome_devtools_mcp_server()` hook — so `WebAgent.configure()` could
+block the event loop for 10+ seconds while Chrome came up.
+Spec: `sdd/specs/chromemanager-async-migration.spec.md`.
+
+- `ChromeManager.is_running()`, `start(headless=True, timeout=10.0)` and
+  `stop()` are now coroutines (aiohttp probe of `/json/version`,
+  `asyncio.create_subprocess_exec`, `asyncio.sleep`/`wait_for`). The
+  `requests` import is gone. `is_chrome_running()` remains as a deprecated
+  coroutine alias of `is_running()`; `is_port_open()` was removed.
+- `create_chrome_devtools_mcp_server()` no longer launches Chrome as a side
+  effect — it is a pure `MCPServerConfig` builder. Callers that built a
+  config and called `add_mcp_server()` themselves must now call the new
+  `ensure_chrome_running(browser_url, headless=False)` coroutine (or use the
+  mixin hook).
+- `MCPEnabledMixin.add_chrome_devtools_mcp_server()` gained
+  `ensure_running: bool = True`: it awaits `ensure_chrome_running()` before
+  connecting (skipped when `auto_connect=True`). `WebAgent` behaviour is
+  unchanged. `MCPEnabledMixin.shutdown()` now awaits `ChromeManager.stop()`.
+- The `WebAgent` unit tests no longer spawn a real Chrome when calling the
+  factory with default arguments.
+
 ---
 
 ## [0.29.0] — 2026-09-05 — PEP 420 LLM-client satellites, memory-less clients
