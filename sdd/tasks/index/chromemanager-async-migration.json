@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-05T14:56:27+00:00",
       "completed_at": "2026-09-05T14:58:42+00:00",
-      "file": "sdd/tasks/completed/HOTFIX-chromemanager-async-migration-1-async-chrome-manager.md"
+      "file": "sdd/tasks/completed/HOTFIX-chromemanager-async-migration-1-async-chrome-manager.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-chromemanager-async-migration-2",
