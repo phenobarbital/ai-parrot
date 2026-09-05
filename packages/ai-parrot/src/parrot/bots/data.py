@@ -9,7 +9,6 @@ import ast
 import asyncio
 import inspect
 import json
-import os
 import re
 import uuid
 import contextlib
@@ -39,6 +38,7 @@ from ..observability.context import (
     current_user_id,
 )
 from ..conf import STATIC_DIR
+from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
 from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
@@ -576,17 +576,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
-    _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
     def _get_default_tools(self, tools: list = None, use_tools: bool = True) -> List[AbstractTool]:
         """Return Agent-specific tools."""
-        if not self._SAFE_ID.match(self.agent_id):
-            raise ValueError(f"Unsafe agent_id for path construction: {self.agent_id!r}")
-        report_dir = STATIC_DIR.joinpath(self.agent_id, "documents").resolve()
-        # Security: verify resolved path stays within STATIC_DIR
-        _static_base = Path(STATIC_DIR).resolve()
-        if not str(report_dir).startswith(str(_static_base) + os.sep):
-            raise ValueError(f"Path traversal detected for agent_id: {self.agent_id!r}")
+        # ``agent_id`` can arrive straight from an HTTP payload, so it is
+        # validated and checked for containment under STATIC_DIR *before* it
+        # touches the filesystem (see parrot.utils.paths.secure_path).
+        report_dir = secure_path(STATIC_DIR, self.agent_id, "documents", name="agent_id")
         report_dir.mkdir(parents=True, exist_ok=True)
         if not tools:
             tools = []
