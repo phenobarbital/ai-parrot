@@ -14,7 +14,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2921-lyria-music-models-and-nlp-heuristics.md"
+      "file": "sdd/tasks/active/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
+      "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
       "id": "TASK-2922",
@@ -32,7 +33,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2922-lyria-audio-extraction-and-wav-framing.md"
+      "file": "sdd/tasks/active/TASK-2922-lyria-audio-extraction-and-wav-framing.md",
+      "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
       "id": "TASK-2923",
@@ -50,7 +52,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +64,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2923-lyria-toolkit-implementation.md"
+      "file": "sdd/tasks/active/TASK-2923-lyria-toolkit-implementation.md",
+      "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
       "id": "TASK-2924",
@@ -71,7 +74,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2924-lyria-toolkit-discovery-and-exports.md"
+      "file": "sdd/tasks/active/TASK-2924-lyria-toolkit-discovery-and-exports.md",
+      "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
       "id": "TASK-2925",
@@ -91,7 +95,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2925-lyria-toolkit-unit-and-integration-tests.md"
+      "file": "sdd/tasks/active/TASK-2925-lyria-toolkit-unit-and-integration-tests.md",
+      "started_at": "2026-09-06T03:44:57+00:00"
     }
   ]
-}\n
+}
