@@ -185,3 +185,9 @@ member-granular anchors — a deliberate simplification given
 
 **No deviations from file scope**: only the two files listed in the
 task's Files to Create/Modify table were touched.
+
+**Post-completion correction**: while implementing TASK-2903 and reading
+`store.py`'s `replace_source_slice` closely, found edge tuples emitted
+here were ordered `(src, rel, dst)` instead of the store's actual
+`(src, dst, rel)` convention. Fixed in both `render.py` and
+`test_render.py` in a follow-up commit; all 64 roblox tests still pass.
