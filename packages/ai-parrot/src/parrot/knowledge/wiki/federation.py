@@ -17,7 +17,12 @@ Three rules shape the design:
   never migrates, mutates, or even creates a sidecar next to it — SQLite
   namespaces are opened with ``read_only=True``.
 * **Local ids stay unprefixed.** Only foreign pages are qualified
-  ``<ns>::<id>``; the underlying stores never see the prefix.
+  ``<ns>::<id>``; the underlying stores never see the prefix. One narrow
+  exception (FEAT-532 §8): a **locally-owned edge's destination** may be
+  a foreign-qualified id, stored verbatim — a local page is allowed to
+  *reference* a foreign one (e.g. Luau code referencing the Roblox API
+  plane). The edge's *source* must still be local, and every other write
+  path (pages, deletes, embeddings) is unaffected.
 * **A broken namespace is a note, not a failure.** An unbuilt plane or
   an unreachable server is recorded as a :class:`NamespaceSkip` and the
   remaining namespaces still answer.
@@ -34,8 +39,6 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel
-
 from parrot.knowledge.wiki import store as wiki_store
 from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
 from parrot.knowledge.wiki.project import (
@@ -47,12 +50,8 @@ from parrot.knowledge.wiki.project import (
     resolve_arango_params,
     resolve_entry_base,
 )
-from parrot.knowledge.wiki.store import (
-    BaseWikiStore,
-    SQLiteWikiStore,
-    WikiPageRecord,
-    create_wiki_store,
-)
+from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiPageRecord, create_wiki_store
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -986,11 +985,50 @@ class FederatedWikiStore(BaseWikiStore):
             return page
         return page.model_copy(update={"concept_id": concept_id, "node_id": node_id})
 
+    def _assert_local_or_foreign_destination(self, page_id: str) -> str:
+        """Validate an edge **destination**: local, or a syntactically
+        qualified foreign reference (FEAT-532 §8 real federation support).
+
+        This is the one narrow exception to "writes touch the local
+        plane only" — and it is scoped to edge destinations exclusively.
+        Sources, pages, deletes and embedding writes all still go
+        through the strict :meth:`_assert_local`, which continues to
+        reject any qualified id outright. A foreign namespace need not
+        be resolvable/online for this to succeed (spec: "Do not require
+        the foreign plane to be online to retain an already-known
+        reference") — this is a pure string check, no namespace lookup.
+
+        Args:
+            page_id: The edge's destination id, qualified or not.
+
+        Returns:
+            The id stripped of *this* namespace's own prefix when it
+            addresses the local plane (unchanged behavior), or an
+            unchanged foreign-qualified id — stored verbatim in the
+            local plane rather than rejected.
+        """
+        namespace, local_id = split_namespaced_id(page_id)
+        if namespace is None:
+            return page_id
+        if self._qualify_local and namespace == self.local_name:
+            return local_id
+        return page_id  # foreign destination: store the qualified id verbatim
+
     def _strip_edge(self, edge: tuple) -> tuple:
-        """Validate an edge's endpoints and strip this namespace's prefix."""
+        """Validate an edge's endpoints and strip this namespace's prefix.
+
+        The source (``edge[0]``) must always address the local plane —
+        unchanged, strict :meth:`_assert_local`. The destination
+        (``edge[1]``) may additionally be a syntactically qualified
+        foreign reference, which is preserved verbatim rather than
+        rejected (see :meth:`_assert_local_or_foreign_destination`).
+        Foreign *source* ids, and every non-edge write path (pages,
+        deletes, embeddings), remain fully forbidden — this exception is
+        deliberately narrow to references, not a general relaxation.
+        """
         stripped = (
             self._assert_local(str(edge[0])),
-            self._assert_local(str(edge[1])),
+            self._assert_local_or_foreign_destination(str(edge[1])),
             *edge[2:],
         )
         return stripped
@@ -1000,7 +1038,15 @@ class FederatedWikiStore(BaseWikiStore):
         return await self._local.upsert_pages([self._strip_page(page) for page in pages])
 
     async def add_edges(self, edges: list[tuple]) -> int:
-        """Write edges into the local plane (no cross-namespace edges)."""
+        """Write edges into the local plane.
+
+        The source of every edge must be local; the destination may
+        additionally be a syntactically qualified foreign reference
+        (FEAT-532 §8) — see :meth:`_strip_edge`. The whole batch is
+        validated (the list comprehension below) before
+        ``self._local.add_edges`` is ever called, so one forbidden edge
+        in a batch leaves nothing written, not a partial insert.
+        """
         return await self._local.add_edges([self._strip_edge(edge) for edge in edges])
 
     async def replace_source_slice(
@@ -1009,7 +1055,14 @@ class FederatedWikiStore(BaseWikiStore):
         pages: list[WikiPageRecord],
         edges: list[tuple[str, str, str]] | None = None,
     ) -> dict[str, Any]:
-        """Replace one source's slice of the local plane."""
+        """Replace one source's slice of the local plane.
+
+        Same edge-destination exception as :meth:`add_edges` — the
+        source-owned slice's outgoing ``references``/``extends`` edges
+        may target a foreign-qualified id. Validated in full (both
+        pages and edges) before the local plane's own atomic replace
+        runs.
+        """
         return await self._local.replace_source_slice(
             source_id,
             [self._strip_page(page) for page in pages],
