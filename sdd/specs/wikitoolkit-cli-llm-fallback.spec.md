@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-531
 **Date**: 2026-09-06
 **Author**: jesuslarag@gmail.com (proposal + spec via Claude Code)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 
 ---
