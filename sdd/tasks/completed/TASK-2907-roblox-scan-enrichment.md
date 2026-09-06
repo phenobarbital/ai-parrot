@@ -166,6 +166,24 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_scan_enrichment.py -q` → 6 passed.
+- Full regression: `tests/knowledge/wiki/roblox/ tests/knowledge/wiki/test_repo_scan.py tests/knowledge/wiki/languages/` → 429 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2907-roblox-scan-enrichment.log`.
+
+**Delivered**: `repo_scan.py`'s additive `FileSlice.external_edges` field
+(the only change to that file — `scan_repository()` itself is
+untouched) and `roblox/enrichment.py`'s `enrich_repo_scan()`, a pure
+post-processing pass over an already-built `RepoScan`. Returns a new
+scan plus one `RobloxFileEnrichment` per Luau file (never dropped, even
+when it carries only diagnostics), with a `dependency_digest` combining
+mapping digest + catalog generation id + renderer schema version +
+namespace — persistence and re-enrichment triggering are explicitly
+TASK-2909's job, per this task's own context note.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
