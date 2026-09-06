@@ -114,8 +114,7 @@ _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: Operator-facing explanation per ``inspect_checkpoint()`` reason code.
 _RESUME_REASON_HELP: dict[str, str] = {
     "recovery_disabled": (
-        "this server was started without checkpoint recovery wiring "
-        "(dev_loop_flow_kwargs), so no run can be resumed"
+        "this server was started without checkpoint recovery wiring " "(dev_loop_flow_kwargs), so no run can be resumed"
     ),
     "unsupported_brief": "this brief kind cannot be resumed by the dev-flow topology",
     "no_checkpoint": (
@@ -390,8 +389,7 @@ def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = Tr
         "partner_backends": [b.id for b in llm_catalog.backends_for_role("research_partner")],
         # FEAT-494: Add research_primary_models for ideation seat
         "research_primary_models": (
-            list(llm_catalog.get_backend("claude-code").models)
-            if llm_catalog.get_backend("claude-code") else []
+            list(llm_catalog.get_backend("claude-code").models) if llm_catalog.get_backend("claude-code") else []
         ),
     }
 
@@ -662,8 +660,7 @@ async def handle_run(request: web.Request) -> web.Response:
         if run_id in request.app["flow_tasks"]:
             return web.json_response(
                 {
-                    "error": f"run_id {run_id!r} is still in flight on this server — "
-                    "stop it before resuming it.",
+                    "error": f"run_id {run_id!r} is still in flight on this server — " "stop it before resuming it.",
                     "reason": "already_running",
                 },
                 status=409,

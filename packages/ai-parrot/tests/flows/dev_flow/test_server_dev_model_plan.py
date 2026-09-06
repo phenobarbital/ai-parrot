@@ -328,9 +328,7 @@ class TestRunEndpoint:
         """Spec §4: a differing research_primary builds THIS run with it —
         the response echoes it back, with no server restart."""
         client = await make_client()
-        resp = await client.post(
-            "/api/flow/run", json=_nl_form(research_primary="claude-sonnet-5")
-        )
+        resp = await client.post("/api/flow/run", json=_nl_form(research_primary="claude-sonnet-5"))
         body = await resp.json()
         assert body["model_plan"]["research_primary"] == "claude-sonnet-5"
 
