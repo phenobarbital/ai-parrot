@@ -86,6 +86,19 @@ def _echo_card(card: Any) -> None:
         click.echo(f"  topics  : {', '.join(card.topics)}")
     if card.summary:
         click.echo(f"  summary : {card.summary}")
+    classification = " · ".join(
+        str(part)
+        for part in (
+            card.genre if getattr(card, "genre", "other") != "other" else None,
+            ", ".join(card.traditions) if getattr(card, "traditions", None) else None,
+            card.period if getattr(card, "period", None) else None,
+        )
+        if part
+    )
+    if classification:
+        click.echo(f"  class   : {classification}")
+    if getattr(card, "community_label", None):
+        click.echo(f"  community: {card.community_label}")
 
 
 @click.group(name="bookstore")

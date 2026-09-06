@@ -10,9 +10,9 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, get_args
 
-from .models import CardDraft, TocEntry
+from .models import CardDraft, Genre, TocEntry
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _MAX_SLUG_LEN = 64
@@ -38,6 +38,11 @@ Rules:
 - `topics`: 5-10 short research topics a reader would search this book for.
 - `summary`: ONE paragraph — what the book covers and which questions it
   can answer. Write it as guidance for choosing between books.
+- `genre`: one of {genres}.
+- `traditions`: 2-5 schools, traditions or movements this work belongs to
+  (e.g. "estoicismo", "confucianismo", "siglo de oro"); empty if unclear.
+- `period`: a short period label (e.g. "Imperio romano", "1600s"); null
+  if unknown.
 """
 
 
@@ -178,6 +183,7 @@ async def generate_card_fields(
         doc_description=doc_description or "(none)",
         toc_digest=toc_digest or "(no table of contents)",
         samples="\n\n---\n\n".join(capped) or "(no samples)",
+        genres=", ".join(get_args(Genre)),
     )
     draft = await adapter.ask_structured(prompt, CardDraft)
     if isinstance(draft, CardDraft):

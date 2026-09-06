@@ -69,6 +69,22 @@ async def test_get_card_omits_bulky_fields(toolkit, bookstore, book_md):
 
 
 @pytest.mark.asyncio
+async def test_get_card_and_briefs_include_classification(toolkit, bookstore, book_md):
+    card, _ = await bookstore.add_book(book_md)
+    full = await toolkit.get_card(card.book_id)
+    assert full["genre"] == "essay"
+    assert full["traditions"] == ["estoicismo"]
+    assert full["period"] == "Imperio romano"
+
+    search_results = await toolkit.catalog_search("async python")
+    assert search_results[0]["genre"] == "essay"
+    assert search_results[0]["traditions"] == ["estoicismo"]
+
+    listed = await toolkit.list_books()
+    assert listed[0]["genre"] == "essay"
+
+
+@pytest.mark.asyncio
 async def test_funnel_toc_search_read(toolkit, bookstore, book_md):
     card, _ = await bookstore.add_book(book_md)
     toc = await toolkit.get_toc(card.book_id)

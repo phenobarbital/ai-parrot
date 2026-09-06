@@ -153,3 +153,27 @@ def test_list_requires_existing_library(tmp_path, monkeypatch):
     result = CliRunner().invoke(bookstore_cli.bookstore, ["list"])
     assert result.exit_code != 0
     assert "No library found" in result.output
+
+
+def test_show_prints_classification(capsys):
+    from parrot.knowledge.bookstore.models import BookCard
+
+    card = BookCard(
+        book_id="meditations",
+        title="Meditations",
+        tree_name="meditations",
+        source_path="/books/meditations.pdf",
+        source_sha256="a" * 64,
+        source_format="pdf",
+        added_at="2026-09-06T00:00:00+00:00",
+        genre="essay",
+        traditions=["estoicismo"],
+        period="Imperio romano",
+        community_label="Virtue ethics",
+    )
+    bookstore_cli._echo_card(card)
+    out = capsys.readouterr().out
+    assert "essay" in out
+    assert "estoicismo" in out
+    assert "Imperio romano" in out
+    assert "Virtue ethics" in out

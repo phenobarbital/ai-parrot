@@ -491,6 +491,9 @@ class Bookstore:
             chapter_count=sum(1 for e in toc_entries if e.depth == 1),
             added_at=datetime.now(timezone.utc).isoformat(),
             card_origin=card_origin,  # type: ignore[arg-type]
+            genre=draft.genre,  # type: ignore[arg-type]
+            traditions=draft.traditions,
+            period=draft.period,
         )
         catalog.upsert(card)
         return card, status
@@ -696,6 +699,12 @@ class Bookstore:
                 "toc_digest": toc_digest,
                 "toc": toc_entries,
                 "card_origin": "llm" if self.has_llm else "fallback",
+                "genre": draft.genre or card.genre,
+                "traditions": draft.traditions or card.traditions,
+                "period": draft.period or card.period,
+                # community_id/community_label are intentionally absent
+                # here — they are not carding outputs and must survive
+                # a refresh untouched (Bookstore.relate_books owns them).
             }
         )
         self._catalog(loc.scope).upsert(updated)

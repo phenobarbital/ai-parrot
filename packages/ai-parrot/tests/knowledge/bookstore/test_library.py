@@ -341,3 +341,57 @@ async def test_null_adapter_ask_with_finish_info_raises_cleanly():
         await adapter.ask_structured("anything", object)
     with pytest.raises(RuntimeError, match="No LLM configured"):
         await adapter.ask_with_finish_info("anything")
+
+
+# ---------------------------------------------------------------------------
+# FEAT-533 — classification at carding
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_add_book_persists_classification(store, book_md):
+    card, _ = await store.add_book(book_md)
+    # Re-fetch: CatalogStore.upsert() slug-normalises traditions in the
+    # DB, not on the in-memory `card` object add_book() returns.
+    persisted = store.get_card(card.book_id)
+    assert persisted.genre == "essay"
+    assert persisted.traditions == ["estoicismo"]
+    assert persisted.period == "Imperio romano"
+
+
+@pytest.mark.asyncio
+async def test_add_book_no_llm_classification_defaults(store_no_llm, book_md):
+    card, _ = await store_no_llm.add_book(book_md)
+    assert card.genre == "other"
+    assert card.traditions == []
+    assert card.period is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_card_carries_classification_and_keeps_community(store, book_md):
+    card, _ = await store.add_book(book_md)
+    catalog = store._catalog("project")
+    stamped = card.model_copy(
+        update={"community_id": "c1", "community_label": "Virtue ethics"}
+    )
+    catalog.upsert(stamped)
+    await store.refresh_card(card.book_id)
+    # Re-fetch: CatalogStore.upsert() slug-normalises traditions in the
+    # DB, not on the in-memory object refresh_card() returns.
+    persisted = store.get_card(card.book_id)
+    assert persisted.genre == "essay"
+    assert persisted.traditions == ["estoicismo"]
+    assert persisted.period == "Imperio romano"
+    assert persisted.community_id == "c1"
+    assert persisted.community_label == "Virtue ethics"
+
+
+def test_card_prompt_requests_classification():
+    """Not in TASK-2914's own file list (a spec gap — no test_carding.py
+    exists and it isn't listed here either) but required by its Test
+    Specification; placed in this already-in-scope file rather than an
+    out-of-scope one (test_models.py, which happens to hold the other
+    carding.py tests)."""
+    from parrot.knowledge.bookstore.carding import _CARD_PROMPT
+
+    assert "genre" in _CARD_PROMPT and "traditions" in _CARD_PROMPT

@@ -89,6 +89,9 @@ def make_adapter() -> MagicMock:
                 language="en",
                 topics=["async python", "vector search"],
                 summary="A synthetic handbook used by the tests.",
+                genre="essay",
+                traditions=["Estoicismo"],
+                period="Imperio romano",
             )
         return IngestedMarkdown(
             title="Synthetic Handbook",
