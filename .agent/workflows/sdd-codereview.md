@@ -1,143 +1,163 @@
 ---
-description: Run a code-review analysis over a completed SDD task
+description: Code review a completed SDD task against acceptance criteria, code quality, security, and adversarial cross-checks.
 ---
 
-# /sdd-codereview — Code Review a Completed Task
+# /sdd-codereview — Code Review a Completed SDD Task
 
-Perform a structured code review over the implementation produced by a completed SDD task.
-Reads the task file from `sdd/tasks/completed/`, loads every referenced file, and applies the
-code-reviewer analysis checklist. Produces a summary report with severity-tagged findings.
+Reads the task file from `sdd/tasks/completed/`, loads every referenced file, applies the
+`code-reviewer` rule, and runs an adversarial cross-check (`codex`) before
+producing a structured review report.
 
-## Guardrails
-- Do NOT modify any source files — this workflow is **read-only analysis**.
-- Do NOT re-open or change the status of a completed task.
-- Review only the files listed in the task's "Files to Create / Modify" table.
-- If the task references a spec, read it for full acceptance context.
-
-## Input
-The user provides a task identifier or filename after the command:
+## Usage
 ```
+/sdd-codereview sdd/tasks/completed/TASK-001-music-generation-model.md
 /sdd-codereview TASK-001
-/sdd-codereview TASK-002-lyria-music-handler
-/sdd-codereview tasks/completed/TASK-001-music-generation-model.md
+/sdd-codereview music-generation-model
 ```
-Accept a full ID (`TASK-NNN`), a slug, or a relative/absolute path.
+
 If nothing is provided, list the files in `sdd/tasks/completed/` and ask the user to pick one.
 
 ## Steps
 
-### 1. Resolve the Completed Task
-1. If the user gave a path, read it directly.
+### 1. Resolve the Task File
+1. If the user passes a full path, use it directly.
 2. Otherwise, scan `sdd/tasks/completed/` for a filename matching `TASK-<NNN>*` or `*<slug>*`.
-3. If no match is found, list available completed tasks and ask the user to choose.
+3. If still ambiguous, list matches and ask.
 
-### 2. Parse the Task File
-Extract from the task markdown:
-- **Title** and **Feature**
-- **Spec path** (for context)
-- **Scope** section — what was implemented
-- **Files to Create / Modify** table — the file list to review
-- **Implementation Notes** — patterns and constraints the code should follow
-- **Acceptance Criteria** — checklist to verify
-- **Test Specification** — expected test coverage
-- **Completion Note** — any deviations noted by the implementing agent
+### 2. Load Context
+Read the task file and extract:
+- **Spec file** path → read it.
+- **Files created/modified** (from "Scope" or "Files" section) → read each one.
+- **Acceptance criteria** → used to validate correctness.
+- **Completion Note** → understand what was actually done.
 
-### 3. Load Referenced Sources
-1. Read every file listed in the "Files to Create / Modify" table.
-2. If a **spec file** is referenced, read it for requirement context.
-3. If code references other codebase files (e.g., base classes, patterns), load those too.
+### 3. Apply Code Review Criteria
 
-### 4. Run Code Review Analysis
-Apply the code-reviewer rule (`.agent/rules/code-reviewer.md`) checklist across all loaded files.
-Evaluate each dimension:
+Evaluate the implementation across these dimensions:
 
-| # | Dimension | Focus |
-|---|-----------|-------|
-| 1 | **Correctness** | Logic bugs, edge cases, error handling, type safety |
-| 2 | **Security** | Input validation/sanitization, SQL/NoSQL injection, XSS/CSRF, hardcoded secrets/credentials, data exposure, dependency vulnerabilities |
-| 3 | **Performance** | N+1 queries, unnecessary loops/iterations, caching, pagination, memory leaks, algorithmic complexity |
-| 4 | **Code Quality** | DRY (no duplicate code), naming, readability, formatting, unnecessary complexity |
-| 5 | **Architecture** | SOLID principles, pattern adherence, modularity, proper abstraction level |
-| 6 | **Testing** | Coverage, edge-case tests, test quality, meaningful assertions |
-| 7 | **Documentation** | Docstrings, self-documenting code, public API docs |
-| 8 | **Logic & Hallucinations** | Chain of thought (verifiable logic path), edge cases (empty states, timeouts, partial failures), phantom APIs/imports, fabricated patterns, signature consistency |
+#### Correctness & Logic
+- Does the code satisfy the task's acceptance criteria?
+- Are there edge cases or error paths not handled?
+- Verify the chain of thought: are assumptions documented and verifiable?
 
-For each finding, use severity tags:
-- 🔴 **Critical** — must fix before production
-- 🟠 **Important** — should fix, impacts maintainability or correctness
-- 🟡 **Suggestion** — nice-to-have improvement
-- 💡 **Nitpick** — style or preference
+#### Code Quality
+- **DRY**: Is there duplicated logic that should be extracted?
+- **SOLID**: Does the code respect single responsibility, open/closed, etc.?
+- **Abstraction level**: Are abstractions appropriate, or over/under-engineered?
 
-### 5. Verify Acceptance Criteria
-Cross-check the task's acceptance criteria against the actual implementation:
-- Mark each criterion as ✅ met or ❌ not met.
-- If the task included test specifications, verify corresponding tests exist and are meaningful.
+#### Performance
+- Any N+1 query patterns or unnecessary loops?
+- Blocking I/O in async contexts?
+- Obvious algorithmic inefficiencies?
 
-### 6. Produce the Review Report
-Output a structured report in this format:
+#### Security
+- Input validation and sanitisation present?
+- SQL/NoSQL injection risks?
+- XSS/CSRF exposure (if applicable)?
+- Hardcoded secrets or credentials?
 
+#### Documentation
+- Public APIs and classes have docstrings?
+- Complex logic has inline comments?
+- Type hints applied consistently?
+
+#### Testing
+- Do the tests cover the acceptance criteria?
+- Are edge cases and failure modes tested?
+- Test quality: meaningful assertions vs. trivial checks?
+
+### 4. Run Adversarial Cross-Check
+
+Use an external CLI agent or an independent subagent as a second-opinion reviewer.
+When available, use **`codex` (OpenAI)** or a dedicated read-only subagent.
+
+Rules:
+- Never feed the reviewer your reasoning, draft review, justification, or
+  preferred conclusion. Give it only the requirement/task context, the diff or
+  commit, and the neutral review question.
+- Run the reviewer in the background. Each call is an independent session and may
+  take 30 seconds to 2 minutes; do not call it per edit or from hooks.
+- Treat reviewer output as advisory. For each substantive finding, decide:
+  `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
+- Never silently concede to the reviewer and never silently drop a finding.
+- Verify the reviewer's evidence: if it cites a test run, a file or a
+  symbol, spot-check that it exists. An unverifiable claim is not a
+  finding — report the review as unusable rather than as a pass.
+
+Detection:
+```bash
+if command -v codex &>/dev/null; then REVIEWER="codex"
+fi
 ```
-📝 Code Review: TASK-<NNN> — <title>
-   Feature: <feature>
-   Spec: <spec path>
-   Files reviewed: <count>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+codex commands:
+```bash
+# If reviewing current uncommitted work
+codex exec review --uncommitted
+
+# If reviewing a task branch against the integration branch
+codex exec review --base dev
+
+# If reviewing a specific task commit
+codex exec review --commit <sha>
+
+# If a design opinion or cross-check is needed
+codex exec --sandbox read-only -o artifacts/reviews/<task>-codex.txt \
+  "<neutral brief with task, acceptance criteria, changed files, and question>"
+
+# Follow-up in the same Codex session
+codex exec resume --last "<neutral follow-up question>"
+```
+
+For a parallel perspective, invoke one Claude review agent and one background
+reviewer session (`codex`) with the same neutral brief, then synthesize
+agreements and disagreements in the final report.
+
+### 5. Produce the Review Report
+Output a structured markdown report:
+
+```markdown
+# Code Review: TASK-<NNN> — <title>
+
+**Spec**: sdd/specs/<feature>.spec.md
+**Reviewed files**: <list>
+**Overall verdict**: ✅ Approved | ⚠ Approved with notes | ❌ Needs changes
+
+---
 
 ## Summary
-<1-3 sentence overall assessment>
+<2–3 sentence overall assessment>
 
 ## Findings
 
-### <file path>
+### 🔴 Critical (must fix before merge)
+- **[file:line]** <description of issue>
 
-<severity> <issue title>
-  Location: line <N>
-  Issue: <description>
-  Suggestion: <recommendation>
+### 🟡 Major (should fix)
+- **[file:line]** <description>
 
-  ```python
-  # suggested fix (if applicable)
-  ```
+### 🟢 Minor / Suggestions
+- **[file:line]** <description>
 
-### <next file>
-...
+## Acceptance Criteria Check
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| <criterion> | ✅ / ❌ | <notes> |
 
-## Acceptance Criteria Verification
+## Adversarial Cross-Check
+| Finding | Disposition | Reason |
+|---------|-------------|--------|
+| <Reviewer or Claude subagent finding> | CONFIRM / REJECT / ESCALATE | <why> |
 
-- ✅ <criterion 1>
-- ✅ <criterion 2>
-- ❌ <criterion N> — <reason>
-
-## Scorecard
-
-| Dimension            | Rating | Notes |
-|----------------------|--------|-------|
-| Correctness          | ⭐⭐⭐⭐⭐ |       |
-| Security             | ⭐⭐⭐⭐   |       |
-| Performance          | ⭐⭐⭐⭐⭐ |       |
-| Code Quality         | ⭐⭐⭐⭐   |       |
-| Architecture         | ⭐⭐⭐⭐⭐ |       |
-| Testing              | ⭐⭐⭐     |       |
-| Documentation        | ⭐⭐⭐⭐   |       |
-| Logic & Hallucinations | ⭐⭐⭐⭐ |       |
-
-Overall: <X>/5
-
-## Recommendations
-1. <top priority action>
-2. <second priority action>
-...
+## Positive Highlights
+- <what was done well>
 ```
 
-### 7. Save the Report (Optional)
-If the user requests it, save the report to:
-```
-docs/reviews/TASK-<NNN>-review.md
-```
+### 6. Save the Report (Optional)
+If the user confirms, save the report to:
+`sdd/reviews/TASK-<NNN>-review.md`
 
 ## Reference
-- Code-reviewer rule: `.agent/rules/code-reviewer.md`
 - Completed tasks: `sdd/tasks/completed/`
-- Task index: `sdd/tasks/.index.json`
+- Per-spec task index: `sdd/tasks/index/<feature-slug>.json`
 - SDD methodology: `sdd/WORKFLOW.md`

@@ -11,12 +11,7 @@ from click.testing import CliRunner
 from parrot.cli import cli
 from parrot.knowledge.bookstore.catalog import CatalogStore
 from parrot.knowledge.wiki.google import assets
-from parrot.knowledge.wiki.google.bookstore import (
-    SKILL_PATH,
-    bookstore_status,
-    install_bookstore,
-    uninstall_bookstore,
-)
+from parrot.knowledge.wiki.google.bookstore import SKILL_PATH, bookstore_status, install_bookstore, uninstall_bookstore
 from parrot.knowledge.wiki.google.bookstore_assets import BOOKSTORE_SKILL
 
 

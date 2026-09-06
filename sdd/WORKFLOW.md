@@ -1,13 +1,10 @@
-# AI-Parrot SDD Workflow for Claude Code
+# AI-Parrot SDD Workflow
 
 ## Overview
 
-This document defines the **Spec-Driven Development (SDD)** methodology for AI-Parrot, optimized for Claude Code and Antigravity with multi-agent task distribution.
+This document defines the **Spec-Driven Development (SDD)** methodology for AI-Parrot, unified across Claude Code, Codex, and Google Gemini via Antigravity CLI (`agy`) with multi-agent task distribution.
 
-The key idea: specifications are the Single Source of Truth (SSOT). Claude Code agents
-consume spec documents and produce **Task Artifacts** — discrete, self-contained files
-in `tasks/active/` that can be independently picked up and executed by any Claude Code
-agent in parallel.
+The key idea: specifications are the Single Source of Truth (SSOT). Agents across all supported platforms consume spec documents and produce **Task Artifacts** — discrete, self-contained files in `sdd/tasks/active/` that can be independently picked up and executed by agents in parallel.
 
 ---
 
@@ -354,18 +351,26 @@ are not in `tasks/completed/`.
 
 ## Commands Reference
 
-These commands are available as both Claude Code commands (`.claude/commands/`) and
-Antigravity workflows (`.agent/workflows/`):
+The SDD workflow is unified across all three developer platforms:
+- **Claude Code**: Slash commands in `.claude/commands/sdd-*.md`
+- **Codex**: Repository skills in `.agents/skills/sdd-*` (invoked as `$sdd-*`) and agent `.codex/agents/sdd-worker.toml`
+- **Antigravity CLI (Google Gemini)**: Slash command workflows in `.agent/workflows/sdd-*.md` (invoked as `/sdd-*`), skills in `.agents/skills/sdd-*`, and subagents in `.agents/agents/`
 
-| Command | Description |
-|---|---|
-| /sdd-fromjira | Bootstrap an SDD Brainstorm from a Jira ticket |
-| /sdd-tojira | Export an SDD Specification to a Jira Story |
-| `/sdd-proposal` | Propose and discuss a feature idea before building a spec |
-| `/sdd-spec` | Scaffold a new Feature Specification |
-| `/sdd-task <spec.md>` | Decompose a spec into Task Artifacts |
-| `/sdd-status` | Show task index status summary |
-| `/sdd-next` | Suggest next unblocked tasks to assign |
+| Command | Skill | Description |
+|---|---|---|
+| `/sdd-proposal` | `sdd-proposal` | Research a Jira issue, inline request, or notes file before writing a spec |
+| `/sdd-brainstorm` | `sdd-brainstorm` | Explore a feature idea, compare options, and write a brainstorm document |
+| `/sdd-spec` | `sdd-spec` | Scaffold a formal Feature Specification from exploration or direct request |
+| `/sdd-task <spec.md>` | `sdd-task` | Decompose an approved spec into atomic task files and a per-spec index |
+| `/sdd-start <task>` | `sdd-start` | Implement and close one task inside the feature worktree |
+| `/sdd-done <feat>` | `sdd-done` | Verify, push, open or describe PR, and clean up the worktree |
+| `/sdd-codereview <task>` | `sdd-codereview` | Code review a completed task with adversarial cross-checks |
+| `/sdd-explain <target>` | `sdd-explain` | Code-grounded architectural map or deep implementation trace |
+| `/sdd-status` | `sdd-status` | Show task index status board across all per-spec indexes |
+| `/sdd-next` | `sdd-next` | Suggest next unblocked tasks to assign |
+| `/sdd-fromjira` | `sdd-fromjira` | Bootstrap an SDD brainstorm from a Jira ticket |
+| `/sdd-tojira` | `sdd-tojira` | Export an SDD specification to a Jira Story and subtasks |
+| `/sdd-insight` | `sdd-insight` | Analyze collaboration transcripts and repo-level SDD process adherence |
 
 ---
 

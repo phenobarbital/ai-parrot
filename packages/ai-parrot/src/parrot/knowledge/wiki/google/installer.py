@@ -9,17 +9,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.google import assets
-from parrot.knowledge.wiki.google.bookstore import (
-    bookstore_status,
-    install_bookstore,
-    uninstall_bookstore,
-)
-from parrot.knowledge.wiki.project import (
-    WikiProjectConfig,
-    config_path,
-    load_effective_config,
-    save_project_config,
-)
+from parrot.knowledge.wiki.google.bookstore import bookstore_status, install_bookstore, uninstall_bookstore
+from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
 
 logger = logging.getLogger(__name__)
 
@@ -358,9 +349,7 @@ def integration_status(
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),
-        "gemini_md_section": (
-            gemini_path.exists() and assets.AGENTS_BEGIN in gemini_path.read_text(encoding="utf-8")
-        ),
+        "gemini_md_section": (gemini_path.exists() and assets.AGENTS_BEGIN in gemini_path.read_text(encoding="utf-8")),
         "skill": (root / assets.SKILL_PATH).exists() or (root / assets.ALT_SKILL_PATH).exists(),
         "mcp": mcp_installed,
         "plugin": plugin_installed,

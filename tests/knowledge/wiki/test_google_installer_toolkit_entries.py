@@ -5,10 +5,7 @@ from pathlib import Path
 
 import pytest
 from parrot.knowledge.wiki.google import assets
-from parrot.knowledge.wiki.google.installer import (
-    _install_mcp,
-    uninstall_google_integration,
-)
+from parrot.knowledge.wiki.google.installer import _install_mcp, uninstall_google_integration
 
 
 @pytest.fixture
@@ -92,14 +89,16 @@ def test_disabled_section_table_removed_on_rerun(tmp_root_with_config: Path, mcp
 def test_foreign_colliding_toolkit_preserved(tmp_root_with_config: Path, mcp_config_path: Path, capsys):
     root = tmp_root_with_config
     mcp_config_path.write_text(
-        json.dumps({
-            "mcpServers": {
-                "parrot-stub": {
-                    "command": "foreign_parrot",
-                    "args": ["foreign_arg"],
+        json.dumps(
+            {
+                "mcpServers": {
+                    "parrot-stub": {
+                        "command": "foreign_parrot",
+                        "args": ["foreign_arg"],
+                    }
                 }
             }
-        }),
+        ),
         encoding="utf-8",
     )
 

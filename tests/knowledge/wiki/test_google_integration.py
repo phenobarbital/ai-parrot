@@ -66,14 +66,16 @@ def test_install_writes_mcp_skill_instructions_and_plugin(repo: Path, mcp_config
 
 def test_install_is_idempotent_and_preserves_unrelated_config(repo: Path, mcp_config_path: Path) -> None:
     mcp_config_path.write_text(
-        json.dumps({
-            "mcpServers": {
-                "foreign-server": {
-                    "command": "foreign-cmd",
-                    "args": ["--serve"],
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foreign-server": {
+                        "command": "foreign-cmd",
+                        "args": ["--serve"],
+                    }
                 }
             }
-        }),
+        ),
         encoding="utf-8",
     )
 
@@ -103,13 +105,15 @@ def test_invalid_mcp_config_aborts_without_overwriting(repo: Path, mcp_config_pa
 def test_uninstall_removes_only_managed_assets(repo: Path, mcp_config_path: Path) -> None:
     (repo / "GEMINI.md").write_text("# User instructions\n", encoding="utf-8")
     mcp_config_path.write_text(
-        json.dumps({
-            "mcpServers": {
-                "foreign-server": {
-                    "command": "foreign-cmd",
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foreign-server": {
+                        "command": "foreign-cmd",
+                    }
                 }
             }
-        }),
+        ),
         encoding="utf-8",
     )
 

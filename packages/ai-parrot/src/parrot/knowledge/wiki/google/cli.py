@@ -12,11 +12,7 @@ from parrot.knowledge.wiki.google.installer import (
     integration_status,
     uninstall_google_integration,
 )
-from parrot.knowledge.wiki.project import (
-    WikiConfigError,
-    find_project_root,
-    load_effective_config,
-)
+from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_effective_config
 
 path_option = click.option(
     "--path",
@@ -34,9 +30,7 @@ def _resolve_root(path: Optional[str]) -> Path:
         return root
     found = find_project_root()
     if found is None:
-        raise click.ClickException(
-            "No repository found upwards from here — run inside a git repo or pass --path."
-        )
+        raise click.ClickException("No repository found upwards from here — run inside a git repo or pass --path.")
     return found
 
 
