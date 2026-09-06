@@ -297,10 +297,11 @@ leiden = [
 ]
 
 # Full wiki stack: graph indexing + accurate tree-sitter language grammars
-# + Leiden community detection. One-shot install for `wikitoolkit build`.
+# + Leiden community detection and PDF/DOCX/EPUB/MOBI ingestion.
+# One-shot install for `wikitoolkit build` and `wikitoolkit ingest`.
 wiki = [
     "ai-parrot[graphindex,wiki-languages,wiki-structural,leiden]",
-    "pymupdf>=1.27",
+    "ai-parrot-loaders[documents]>=0.4.1",
 ]
 
 # Bookstore — personal indexed book library (`bookstore` CLI + MCP server).
@@ -860,6 +861,7 @@ Funding = "https://paypal.me/phenobarbital"
 # distribution — resolve them from the workspace, same pattern as every
 # other satellite package's own [tool.uv.sources] entry for `ai-parrot`.
 [tool.uv.sources]
+ai-parrot-loaders = { workspace = true }
 ai-parrot-client-openai = { workspace = true }
 ai-parrot-client-meta = { workspace = true }
 ai-parrot-client-anthropic = { workspace = true }

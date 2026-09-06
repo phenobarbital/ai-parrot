@@ -79,6 +79,13 @@ ebook = [
     "markdownify>=1.2.2",
     "mobi>=0.4.1,<0.5",
 ]
+# Document ingestion used by wiki and other knowledge pipelines, without OCR.
+documents = [
+    "ai-parrot-loaders[ebook]",
+    "python-docx==1.1.2",
+    "pymupdf>=1.27",
+    "pymupdf4llm>=0.0.27",
+]
 video = ["moviepy==2.2.1", "ffmpeg==1.4"]
 document = ["mammoth>=1.11.0"]
 scraping = [
@@ -118,7 +125,7 @@ ml-heavy = [
     "opencv-python==4.10.0.84",
 ]
 
-all = ["ai-parrot-loaders[youtube,audio,pdf,images,web,ebook,video,document,scraping,ml,ml-heavy]"]
+all = ["ai-parrot-loaders[youtube,audio,pdf,images,web,ebook,documents,video,document,scraping,ml,ml-heavy]"]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

@@ -29,9 +29,19 @@ pip install ai-parrot-loaders[all]
 | `audio` | Audio transcription (WhisperX, pyannote) |
 | `web` | HTML/web page loading |
 | `ebook` | Structured EPUB and MOBI e-book loading |
+| `documents` | PDF, DOCX, EPUB, and MOBI ingestion without OCR dependencies |
 | `video` | Video processing (MoviePy, FFmpeg) |
 
 ## Supported Formats
+
+`uv pip install 'ai-parrot[wiki]'` automatically installs
+`ai-parrot-loaders[documents]` and the parsing dependencies for PDF, DOCX, EPUB,
+and MOBI. To use those loaders independently, install
+`uv pip install 'ai-parrot-loaders[documents]'`.
+
+The `documents` extra uses the native PDF and DOCX loaders plus the `ebook`
+extra. The existing `document` extra is separate and supplies Mammoth for
+document conversion; `pdf` includes the broader OCR stack.
 
 | Loader | Format | Description |
 |--------|--------|-------------|

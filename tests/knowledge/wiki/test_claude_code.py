@@ -62,7 +62,7 @@ class TestStructuralPermissionRules:
 class TestInstaller:
     def test_fresh_install_writes_all_artifacts(self, repo):
         actions = install_claude_integration(repo)
-        assert len(actions) == 7
+        assert len(actions) == 8
 
         assert (repo / ".parrot" / "wiki.json").exists()
         claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")

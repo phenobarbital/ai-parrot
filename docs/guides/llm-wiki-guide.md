@@ -81,6 +81,16 @@ default build path.
 
 ## Quick Start
 
+Install the wiki stack and its PDF, DOCX, EPUB, and MOBI loaders together:
+
+```bash
+uv pip install 'ai-parrot[wiki]'
+```
+
+The `wiki` extra includes `ai-parrot-loaders[documents]` and the required parser
+dependencies. No separate loader installation is needed for these four formats.
+OCR, audio/video, and other specialized loader extras remain opt-in.
+
 ```bash
 # 1. Build the knowledge graph from the current repo (offline, no LLM)
 wikitoolkit build
@@ -779,7 +789,7 @@ MCP server exposes a `vault_ingest` tool that rebuilds the vault plane:
 
 ### Supervised Ingestion (wikitoolkit ingest)
 
-For ingesting document corpora (PDF, DOCX, PPTX, XLSX, HTML, EPUB, Markdown,
+For ingesting document corpora (PDF, DOCX, PPTX, XLSX, HTML, EPUB, MOBI, Markdown,
 plain text) with editorial control:
 
 ```bash
