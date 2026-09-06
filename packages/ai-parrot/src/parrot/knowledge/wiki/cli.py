@@ -3749,9 +3749,7 @@ def ingest(
     try:
         light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
     except Exception as exc:
-        raise click.ClickException(
-            f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
-        ) from exc
+        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
     # PageIndexToolkit builds its OWN internal lightweight adapter as
