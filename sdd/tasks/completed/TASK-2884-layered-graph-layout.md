@@ -89,3 +89,27 @@ force-directed server layout.
 1. Verify TASK-2882 model aliases and validation behavior first.
 2. Keep the implementation synchronous, deterministic, and dependency-light.
 3. Do not add renderer-specific colors, dimensions, or library options to GraphSpec.
+
+### Completion Note
+
+Implemented as specified: `compute_positions(spec, *, rank_sep=80.0,
+node_sep=40.0) -> LayoutResult`. Cycle breaking is an iterative (no
+recursion — avoids stack-depth limits on a 200-node fixture), stable,
+3-colour DFS feedback-arc-set over the edges in input order; rank
+assignment is a single topological-order pass over the resulting acyclic
+edge set (via `networkx.topological_sort`, the only networkx usage);
+crossing reduction is 4 barycentre sweeps; coordinates scale integer
+rank/slot indices by `rank_sep`/`node_sep` only at the very end.
+`TB`/`LR` share the exact same coordinate computation with axes swapped
+(satisfies "LR == transposed TB" literally); `BT`/`RL` additionally mirror
+the rank axis in a second pass once `max_rank` is known. Group boxes are
+the padded min/max of member positions; `GraphTooLargeError` subclasses
+`CatalogValidationError` (same pattern as `MermaidCodecError`, TASK-2883).
+
+10 tests in `test_layout.py`: the six named in the Test Specification plus
+isolated-node, at-cap (`MAX_STATIC_NODES` exactly, must NOT raise), and an
+explicit BT/RL axis-mirroring check.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui -q` → 706
+passed (696 pre-existing + 10 new), 1 skipped; `ruff check` clean on all
+three touched/created files.
