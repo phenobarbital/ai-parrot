@@ -14,8 +14,34 @@ import itertools
 import logging
 from typing import Any, Optional
 
+from parrot.knowledge.graphindex.assemble import GraphAssembler
+from parrot.knowledge.graphindex.communities import (
+    Community,
+    CommunitiesResult,
+    derive_community_label,
+    detect_communities,
+)
+from parrot.knowledge.graphindex.inter_community import (
+    InterCommunityGraph,
+    compute_inter_community_graph,
+)
+from parrot.knowledge.graphindex.schema import (
+    EdgeKind,
+    NodeKind,
+    Provenance,
+    UniversalEdge,
+    UniversalNode,
+)
+
 from .carding import slugify
-from .models import REL_WEIGHTS, BookCard, BookRelation, RelationDraft
+from .models import (
+    REL_WEIGHTS,
+    BookCard,
+    BookCommunity,
+    BookRelation,
+    CommunityLabelDraft,
+    RelationDraft,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -405,6 +431,244 @@ def llm_relations_from_draft(
                 origin="llm",
                 confidence=judgement.confidence,
                 rationale=judgement.rationale,
+                computed_at=now,
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — communities via graphindex (spec §2 Overview step 3, goal G4)
+# ---------------------------------------------------------------------------
+
+
+def build_book_graph(
+    cards: list[BookCard], relations: list[BookRelation]
+) -> tuple[GraphAssembler, list[UniversalNode]]:
+    """Adapt the book catalog + graph into graphindex's node/edge schema.
+
+    One :class:`UniversalNode` per card (``node_id=book_id``,
+    ``kind=DOCUMENT``); one :class:`UniversalEdge` per relation except
+    ``same_community`` (which is *derived from* clustering, not an
+    input to it). LLM edges get ``provenance=INFERRED`` + their
+    confidence; every other origin gets ``EXTRACTED`` with no
+    confidence (``UniversalEdge``'s validator requires exactly that).
+    Every edge carries ``domain_tags["weight"]`` so FEAT-533 Module 0's
+    payload-weight contract shapes the partition.
+
+    Args:
+        cards: The book universe to build nodes for (typically the
+            full merged, visible card list).
+        relations: Edges to adapt (typically
+            ``merged_relations(...)`` minus ``same_community``).
+
+    Returns:
+        The populated :class:`GraphAssembler` plus its node list (the
+        node list is what :func:`~parrot.knowledge.graphindex.communities.detect_communities`
+        needs alongside the assembler's ``.graph``).
+    """
+    nodes = [
+        UniversalNode(
+            node_id=card.book_id,
+            kind=NodeKind.DOCUMENT,
+            title=card.title,
+            source_uri=card.source_path,
+            summary=card.summary or None,
+            domain_tags={
+                "genre": card.genre,
+                "traditions": card.traditions,
+                "scope": card.scope,
+                "book_id": card.book_id,
+            },
+        )
+        for card in cards
+    ]
+    edges: list[UniversalEdge] = []
+    for relation in relations:
+        if relation.rel == "same_community":
+            continue
+        inferred = relation.origin == "llm"
+        edges.append(
+            UniversalEdge(
+                source_id=relation.src_book_id,
+                target_id=relation.dst_book_id,
+                kind=EdgeKind.REFERENCES,
+                provenance=Provenance.INFERRED if inferred else Provenance.EXTRACTED,
+                confidence=relation.confidence if inferred else None,
+                domain_tags={
+                    "rel": relation.rel,
+                    "origin": relation.origin,
+                    "weight": relation.weight,
+                },
+            )
+        )
+    assembler = GraphAssembler(tenant_id="bookstore")
+    assembler.add_nodes(nodes)
+    assembler.add_edges(edges)
+    return assembler, nodes
+
+
+def detect_book_communities(
+    cards: list[BookCard],
+    relations: list[BookRelation],
+    *,
+    resolution: float = 1.0,
+    seed: int = 42,
+    algorithm: str = "leiden",
+) -> tuple[CommunitiesResult, InterCommunityGraph, GraphAssembler]:
+    """Build the book graph and detect communities over it.
+
+    Args:
+        cards: See :func:`build_book_graph`.
+        relations: See :func:`build_book_graph`.
+        resolution: Forwarded to
+            :func:`~parrot.knowledge.graphindex.communities.detect_communities`.
+        seed: Forwarded, for deterministic partitions across runs.
+        algorithm: ``"leiden"`` (default, Louvain fallback when
+            ``leidenalg``/``python-igraph`` aren't importable) or
+            ``"louvain"``.
+
+    Returns:
+        ``(result, inter_community_graph, assembler)`` — the assembler
+        is returned too since callers (labelling) need the raw graph
+        alongside the partition.
+    """
+    assembler, nodes = build_book_graph(cards, relations)
+    result = detect_communities(
+        assembler.graph,
+        nodes,
+        resolution=resolution,
+        seed=seed,
+        algorithm=algorithm,
+        write_back_to_nodes=False,
+    )
+    inter = compute_inter_community_graph(assembler.graph, result)
+    return result, inter, assembler
+
+
+_LABEL_PROMPT = """You are a librarian labelling a cluster of related books in a personal
+library. Given the member books below, produce a short label and a
+one-sentence description of what unites them.
+
+Member books:
+{member_briefs}
+
+Rules:
+- `label`: 6 words or fewer, evocative of the shared theme/tradition.
+- `description`: one sentence explaining what unites these books.
+"""
+
+
+async def label_community(
+    adapter: Any,
+    community: Community,
+    cards_by_id: dict[str, BookCard],
+) -> CommunityLabelDraft:
+    """One structured LLM call producing a label for one community.
+
+    Args:
+        adapter: Any object exposing
+            ``async ask_structured(prompt, schema) -> CommunityLabelDraft | dict``.
+        community: The community to label.
+        cards_by_id: Every visible card, keyed by ``book_id``.
+
+    Returns:
+        The LLM-filled :class:`CommunityLabelDraft`.
+    """
+    members = [
+        cards_by_id[node_id]
+        for node_id in community.member_node_ids[:10]
+        if node_id in cards_by_id
+    ]
+    lines = [
+        f"- title={card.title} | authors={', '.join(card.authors) or '(unknown)'} | "
+        f"traditions={', '.join(card.traditions) or '(none)'} | "
+        f"topics={', '.join(card.topics) or '(none)'}"
+        for card in members
+    ]
+    prompt = _LABEL_PROMPT.format(member_briefs="\n".join(lines) or "(no members)")
+    draft = await adapter.ask_structured(prompt, CommunityLabelDraft)
+    if not isinstance(draft, CommunityLabelDraft):
+        draft = CommunityLabelDraft.model_validate(draft)
+    return draft
+
+
+def fallback_label(
+    community: Community, cards_by_id: dict[str, BookCard]
+) -> tuple[str, str]:
+    """Deterministic label when no LLM is available or labelling failed.
+
+    Args:
+        community: The community to label.
+        cards_by_id: Every visible card, keyed by ``book_id``.
+
+    Returns:
+        ``(label, label_origin)`` — ``derive_community_label(top_titles)``
+        when it finds something salient (``"derived"``); otherwise (no
+        salient keyword, or a singleton community) the centroid
+        member's title (``"title"``).
+    """
+    if community.size == 1:
+        card = cards_by_id.get(community.centroid_node_id)
+        title = card.title if card is not None else community.centroid_node_id
+        return title, "title"
+    label = derive_community_label(community.top_titles)
+    if label:
+        return label, "derived"
+    card = cards_by_id.get(community.centroid_node_id)
+    title = card.title if card is not None else community.centroid_node_id
+    return title, "title"
+
+
+def communities_from_result(
+    result: CommunitiesResult,
+    inter: InterCommunityGraph,
+    labels: dict[str, tuple[str, str, str]],
+    cards_by_id: dict[str, BookCard],
+    *,
+    now: str,
+) -> list[BookCommunity]:
+    """Turn a partition + inter-community graph into persistable rows.
+
+    Args:
+        result: The detected partition.
+        inter: The inter-community meta-graph (for ``inter_relations``).
+        labels: ``community_id -> (label, description, label_origin)``,
+            typically built from :func:`label_community`/
+            :func:`fallback_label` results.
+        cards_by_id: Unused directly here (kept for a stable, symmetric
+            signature with the other Stage 3 functions and to let
+            future callers derive labels lazily); present per the
+            Codebase Contract.
+        now: ISO-8601 timestamp stamped on every produced row.
+
+    Returns:
+        One :class:`BookCommunity` per community in ``result``.
+    """
+    del cards_by_id  # see docstring — not needed once `labels` is built
+    inter_by_community: dict[str, list[dict]] = {}
+    for relation in inter.relations:
+        row = relation.model_dump()
+        inter_by_community.setdefault(relation.source_community_id, []).append(row)
+        inter_by_community.setdefault(relation.target_community_id, []).append(row)
+
+    out: list[BookCommunity] = []
+    for community in result.communities:
+        label, description, label_origin = labels.get(
+            community.community_id, (community.label or community.centroid_node_id, "", "derived")
+        )
+        out.append(
+            BookCommunity(
+                community_id=community.community_id,
+                label=label,
+                label_origin=label_origin,  # type: ignore[arg-type]
+                description=description,
+                algorithm=result.algorithm,  # type: ignore[arg-type]
+                size=community.size,
+                cohesion=community.cohesion,
+                centroid_book_id=community.centroid_node_id,
+                member_book_ids=community.member_node_ids,
+                inter_relations=inter_by_community.get(community.community_id, []),
                 computed_at=now,
             )
         )

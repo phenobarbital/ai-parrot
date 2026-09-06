@@ -269,15 +269,32 @@ def add_folder(
 
 @bookstore.command("list")
 @click.option("--json", "as_json", is_flag=True, help="JSON output.")
-def list_cmd(as_json: bool) -> None:
+@click.option(
+    "--by-community", is_flag=True, help="Group books by their community."
+)
+def list_cmd(as_json: bool, by_community: bool) -> None:
     """List every book in the library."""
     store = _open_bookstore(require_exists=True, use_llm=False)
     cards = store.list_books()
+    if by_community:
+        cards = sorted(
+            cards,
+            key=lambda c: (c.community_label or "￿", c.title.lower()),
+        )
     if as_json:
         click.echo(json.dumps([c.model_dump(mode="json") for c in cards], indent=2))
         return
     if not cards:
         click.echo("Library is empty — `bookstore add <file>` to start.")
+        return
+    if by_community:
+        _unset = object()
+        current_label: Any = _unset
+        for card in cards:
+            if card.community_label != current_label:
+                current_label = card.community_label
+                click.echo(f"\n=== {current_label or '(no community)'} ===")
+            _echo_card(card)
         return
     for card in cards:
         _echo_card(card)
@@ -468,6 +485,26 @@ def relate(
             click.echo(f"  {book_id}: {error}")
     for note in summary.notes:
         click.echo(f"note: {note}")
+
+
+@bookstore.command("communities")
+@click.option("--json", "as_json", is_flag=True, help="JSON output.")
+def communities_cmd(as_json: bool) -> None:
+    """List every detected community (run `bookstore relate` first)."""
+    store = _open_bookstore(require_exists=True, use_llm=False)
+    result = store.communities()
+    if as_json:
+        click.echo(json.dumps([c.model_dump(mode="json") for c in result], indent=2))
+        return
+    if not result:
+        click.echo("No communities yet — run `bookstore relate --all` first.")
+        return
+    click.echo(f"{'id':<18}{'label':<30}{'algorithm':<12}{'size':<6}cohesion")
+    for community in result:
+        click.echo(
+            f"{community.community_id:<18}{community.label[:28]:<30}"
+            f"{community.algorithm:<12}{community.size:<6}{community.cohesion:.2f}"
+        )
 
 
 @bookstore.command("remove")

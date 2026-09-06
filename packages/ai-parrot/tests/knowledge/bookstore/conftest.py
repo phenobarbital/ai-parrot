@@ -14,7 +14,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.knowledge.bookstore.models import CardDraft, RelationDraft, RelationJudgement
+from parrot.knowledge.bookstore.models import (
+    CardDraft,
+    CommunityLabelDraft,
+    RelationDraft,
+    RelationJudgement,
+)
 from parrot.knowledge.pageindex.ingest import IngestedMarkdown
 
 #: Pre-FEAT-533 literals (verbatim, frozen here on purpose — the live
@@ -117,6 +122,11 @@ def make_adapter() -> MagicMock:
                     )
                 )
             return RelationDraft(judgements=judgements)
+        if schema is CommunityLabelDraft:
+            return CommunityLabelDraft(
+                label="Test Community",
+                description="A synthetic community label used by the tests.",
+            )
         return IngestedMarkdown(
             title="Synthetic Handbook",
             summary="A short summary.",

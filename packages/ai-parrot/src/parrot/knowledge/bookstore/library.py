@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import itertools
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,13 +35,17 @@ from .carding import (
     slugify,
     unique_slug,
 )
-from .catalog import CatalogStore, merged_cards, merged_relations, merged_search
+from .catalog import CatalogStore, merged_cards, merged_communities, merged_relations, merged_search
 from .config import LibraryLocation
-from .models import BookCard, BookRelation, CardDraft, RelateSummary
+from .models import REL_WEIGHTS, BookCard, BookCommunity, BookRelation, CardDraft, RelateSummary
 from .relations import (
     candidate_pairs,
+    communities_from_result,
+    detect_book_communities,
     deterministic_relations,
+    fallback_label,
     judge_relations,
+    label_community,
     llm_relations_from_draft,
 )
 
@@ -610,21 +615,125 @@ class Bookstore:
                         summary.failed[book_id] = str(exc)
 
         if communities:
-            await self._relate_stage3(resolution)
-            summary.notes.append("communities: not available")
+            await self._relate_stage3(resolution, summary)
 
         return summary
 
-    async def _relate_stage3(self, resolution: float) -> None:
-        """Stage 3 (community detection) hook — no-op until TASK-2917.
+    async def _relate_stage3(self, resolution: float, summary: RelateSummary) -> None:
+        """Stage 3: detect communities, label them, and persist (spec §3 Module 3).
 
-        TODO(TASK-2917): build the book graph via
-        ``relations.build_book_graph``, run
-        ``relations.detect_book_communities``, label communities, and
-        persist via ``CatalogStore.upsert_communities`` /
-        ``set_card_community``.
+        Always runs over the FULL merged+visible graph (community
+        membership is global, never per-target) — ``resolution`` is
+        the only tunable exposed through :meth:`relate_books`. Never
+        raises: detection/labelling failures are caught and recorded
+        as a note on ``summary``, leaving the previous partition (if
+        any) untouched.
         """
-        return None
+        visible_cards = self.list_books()
+        if len(visible_cards) < 3:
+            summary.notes.append("communities: skipped (<3 books)")
+            return
+        visible_ids = {card.book_id for card in visible_cards}
+        relations = [
+            relation
+            for relation in merged_relations(self._stores(), visible_ids)
+            if relation.rel != "same_community"
+        ]
+
+        try:
+            result, inter, _assembler = detect_book_communities(
+                visible_cards, relations, resolution=resolution,
+            )
+        except Exception as exc:  # noqa: BLE001 — never abort the batch
+            logger.warning("relate: Stage 3 detection failed: %s", exc)
+            summary.notes.append(f"communities: failed ({exc})")
+            return
+
+        cards_by_id = {card.book_id: card for card in visible_cards}
+        now = datetime.now(timezone.utc).isoformat()
+        labels: dict[str, tuple[str, str, str]] = {}
+        for community in result.communities:
+            try:
+                if self.has_llm:
+                    draft = await label_community(self.adapter, community, cards_by_id)
+                    labels[community.community_id] = (
+                        draft.label, draft.description, "llm",
+                    )
+                else:
+                    label, origin = fallback_label(community, cards_by_id)
+                    labels[community.community_id] = (label, "", origin)
+            except Exception as exc:  # noqa: BLE001 — never abort the batch
+                logger.warning(
+                    "relate: labelling failed for community %r: %s",
+                    community.community_id, exc,
+                )
+                label, origin = fallback_label(community, cards_by_id)
+                labels[community.community_id] = (label, "", origin)
+
+        book_communities = communities_from_result(
+            result, inter, labels, cards_by_id, now=now,
+        )
+        self._communities_store().upsert_communities(book_communities)
+
+        # same_community edges are rewritten from scratch every run —
+        # membership (and therefore community_id) changes across runs.
+        for _scope, store in self._stores():
+            store.delete_relations(origin="community")
+
+        same_community_weight = REL_WEIGHTS["same_community"]
+        by_scope_edges: dict[str, list[BookRelation]] = {}
+        for community in result.communities:
+            for a, b in itertools.combinations(sorted(community.member_node_ids), 2):
+                _card_a, loc = self.resolve_book(a)
+                by_scope_edges.setdefault(loc.scope, []).append(
+                    BookRelation(
+                        src_book_id=a, dst_book_id=b, rel="same_community",
+                        weight=same_community_weight, origin="community",
+                        computed_at=now,
+                    )
+                )
+        for scope, edges in by_scope_edges.items():
+            self._catalog(scope).upsert_relations(edges)
+
+        node_to_community = result.node_to_community
+        for card in visible_cards:
+            community_id = node_to_community.get(card.book_id)
+            label = labels[community_id][0] if community_id is not None else None
+            loc_scope = self.resolve_book(card.book_id)[1].scope
+            self._catalog(loc_scope).set_card_community(
+                card.book_id, community_id, label,
+            )
+
+        summary.communities = len(result.communities)
+        summary.notes.append(
+            f"communities: {result.algorithm} ({len(result.communities)})"
+        )
+
+    def _communities_store(self) -> CatalogStore:
+        """The scope DB that receives the ``communities`` table this run.
+
+        One merged-graph partition, stored once — project DB when a
+        project scope exists, else global (spec §2 step 3).
+        """
+        for loc in self.locations:
+            if loc.scope == "project":
+                return self._catalog("project")
+        return self._catalog(self.locations[0].scope)
+
+    def communities(self) -> list[BookCommunity]:
+        """All communities from the merged graph (read-only, SQL-only)."""
+        return merged_communities(self._stores())
+
+    def get_community(self, community_id: str) -> BookCommunity:
+        """One community by id.
+
+        Raises:
+            BookstoreError: When ``community_id`` is unknown.
+        """
+        for community in self.communities():
+            if community.community_id == community_id:
+                return community
+        raise BookstoreError(f"Unknown community {community_id!r}")
 
     # ------------------------------------------------------------------
     # Ingestion surface (CLI-only)

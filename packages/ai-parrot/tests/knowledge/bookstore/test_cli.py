@@ -246,6 +246,49 @@ def test_relate_cli_all_prints_summary(tmp_path, monkeypatch):
     assert "LLM skipped" in result.output
 
 
+def test_communities_cli_table_and_json(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id, author in (("a", "X"), ("b", "X"), ("c", "Y")):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=book_id,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+                authors=[author],
+            )
+        )
+
+    relate_result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["relate", "--all", "--no-llm"]
+    )
+    assert relate_result.exit_code == 0, relate_result.output
+
+    table = CliRunner().invoke(bookstore_cli.bookstore, ["communities"])
+    assert table.exit_code == 0, table.output
+    assert "leiden" in table.output or "louvain" in table.output
+
+    json_result = CliRunner().invoke(bookstore_cli.bookstore, ["communities", "--json"])
+    assert json_result.exit_code == 0, json_result.output
+    payload = jsonlib.loads(json_result.output)
+    assert len(payload) >= 1
+    assert "community_id" in payload[0]
+
+
 def test_show_prints_classification(capsys):
     from parrot.knowledge.bookstore.models import BookCard
 
