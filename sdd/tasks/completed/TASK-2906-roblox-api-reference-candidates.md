@@ -157,6 +157,36 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_reference_candidates.py -q` → 11 passed.
+- Full roblox regression: `tests/knowledge/wiki/roblox/` → 96 passed.
+- `ruff check --target-version py311` on both owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2906-roblox-api-reference-candidates.log`.
+
+**Delivered**: `roblox/references.py` with `extract_api_reference_candidates()`
+covering service calls, type annotations, and known-root chained access
+(every nesting level independently), all gated by
+`languages/luau_guard`'s byte-size/timeout guards (reused, not
+reimplemented) and the active `RobloxApiCatalog`.
+
+**Design decisions on record**:
+- Shadow detection is **file-wide, not point-of-use lexical scope**: any
+  local declaration/parameter named `game`/`workspace` anywhere in the
+  file suppresses that root's candidates for the entire file. True
+  per-block scope tracking was judged out of scope (would edge toward
+  the excluded "expression type inference"); this is a documented,
+  conservative (false-negative-leaning) simplification.
+- `recognized_root` for a `TYPE_ANNOTATION` candidate is the placeholder
+  string `"type-annotation"` (the model requires a non-empty value but
+  there is no DataModel root for a type-annotation position).
+- No grammar / oversized source / guard failure all degrade to `([],
+  [diagnostic])` rather than falling back to a heuristic extractor —
+  deliberate: a heuristic-only pass cannot verify shadowing/lexical
+  context reliably, and a false-positive API reference is worse than no
+  reference at all for this task's purpose.
+
+**No deviations from file scope**: only the two files listed in the
+task's Files to Create/Modify table were touched.
