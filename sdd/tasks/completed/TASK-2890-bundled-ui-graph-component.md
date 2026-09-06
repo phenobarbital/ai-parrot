@@ -90,3 +90,40 @@ dependencies, Graph schema changes, or editing user-moved positions.
 1. Verify existing Svelte component props and ECharts wrapper API before coding.
 2. Keep existing dispatch branches and feature flag intact.
 3. Run the UI Vitest suite and avoid adding a graph library.
+
+### Completion Note
+
+Implemented as specified. `A2UIGraph.svelte` uses a Svelte 5 `<script
+module>` block to export `buildGraphOption`/`hasCompletePositions`/
+`STATE_TO_STATUS` as plain, directly-importable functions — tested in
+`A2UIGraph.test.ts` with ZERO rendering/canvas involved, exactly the two
+named behaviors (positions -> `layout:"none"`, missing/incomplete
+positions -> `"circular"`) plus selection/group coverage.
+
+**Token mapping deviation (documented, not a divergence from spec
+intent)**: this app's own theme schema (`src/lib/styles/themes/
+_schema.css`) has NO `--accent-green`/`--accent-amber`/`--accent-red`/
+`--neutral-muted` tokens — those are server-side `DesignSystem` names only.
+Mapped the SAME five status roles to this app's own EXISTING shadcn/
+Tailwind tokens instead (`--chart-2`/`--chart-3`/`--destructive`/
+`--primary`/`--muted-foreground`), resolved to a concrete colour at render
+time via the identical `getComputedStyle` probe pattern already
+established by `AppChart.svelte` (Canvas rendering cannot resolve `var()`).
+
+**Catalog resolution gap (documented, out of this task's file list)**:
+`A2UISurface.svelte` — the true root dispatcher — is NOT in this task's
+Files table and was not modified. It does not yet pass its own surface
+`catalogId` down as `surfaceCatalogId`, so today only a Graph carrying its
+OWN explicit `catalogId` (which `build_graph`/the LLM producer always set,
+per spec) resolves correctly from the true root; the `surfaceCatalogId`
+prop and its resolution precedence are fully implemented and tested at the
+`A2UINode`/nested-descriptor level (both the `descriptor.catalogId` and
+`A2UISurface`'s `properties.catalogId` nesting shapes are handled). Wiring
+`A2UISurface.svelte`'s own default through is a small, obvious follow-up.
+
+Verification: `pnpm install` (fresh, no lockfile changes) then `vitest run`
+→ 294 passed across 45 files (the full UI suite, not just the new tests) —
+`A2UIGraph.test.ts` (5), `A2UINode.test.ts` (18, 15 pre-existing + 3 new).
+`svelte-check` shows 22 pre-existing errors in UNRELATED files (AppChart.svelte,
+AgentChat.svelte, TabsAI.svelte, slider.svelte, ...) and ZERO in any file
+this task touched or created.
