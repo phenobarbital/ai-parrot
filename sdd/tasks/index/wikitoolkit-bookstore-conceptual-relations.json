@@ -134,7 +134,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Edits toolkit.py, library.py (search), mcp_server.py, three skill mirrors. Shares library.py/cli.py with TASK-2919 — keep sequential; wiki/google/bookstore_assets.py is under edit by another feature, rebase first.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2918-bookstore-relation-tools-and-skill.md"
+      "completed_at": "2026-09-06T04:45:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2918-bookstore-relation-tools-and-skill.md"
     },
     {
       "id": "TASK-2919",

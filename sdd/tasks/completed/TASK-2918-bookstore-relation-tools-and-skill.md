@@ -195,10 +195,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: `BookstoreToolkit`: `related_books`/`communities`/`get_community`
+tools added (10 total, `EXPECTED_TOOLS` updated); `search`'s
+`expand_related` forwards to `Bookstore.search`, which now has a new
+`_expand_with_related` helper (widens the pre-`[:max_books]` shortlist,
+no LLM). `mcp_server.py` docstring updated ("seven"→"ten" + degradation
+matrix). Skill funnel step 1b + citation rule mirrored verbatim in all
+three files; `test_skill_text.py` compares the exact strings (not a
+loose "contains funnel" check) across all three so any future drift
+fails loudly.
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 123 passed,
+same 3 pre-existing unrelated failures as prior tasks. `ruff check`
+clean on every file this task touched.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. Two small, deliberately
+out-of-scope observations, left untouched:
+1. `packages/ai-parrot/src/parrot/knowledge/bookstore/__init__.py`'s
+   module docstring still says "seven `bookstore_*` tools" — this task
+   only lists `mcp_server.py`'s docstring for the count update, and
+   the mismatch is purely cosmetic (no test asserts on it).
+2. `.agents/skills/bookstore/SKILL.md` (note: `.agents`, plural) is a
+   *different* directory from the task's listed `.agent/skills/bookstore/
+   SKILL.md` (singular) — distinct file, different size/content, not
+   in this task's file list. Left untouched; flagging in case it turns
+   out to be a fourth mirror that should also carry the funnel/citation
+   text in a future task.
