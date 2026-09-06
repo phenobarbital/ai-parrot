@@ -6,22 +6,44 @@
 	// HtmlDocument/the Basic primitives are rendered inline here.
 	import { resolveProps } from './a2ui-binding';
 	import { toChartBlockData } from './a2ui-chart-adapter';
-	import type { SectionDescriptor } from './a2ui-types';
+	import { VIZ_CORE_CATALOG_ID, type SectionDescriptor } from './a2ui-types';
+	import type { GraphProperties } from './A2UIGraph.svelte';
 	import type { TableBlockData, TimelineBlockData } from '../infographic/infographic-types';
 	import InfographicChartBlock from '../infographic/blocks/InfographicChartBlock.svelte';
 	import InfographicTableBlock from '../infographic/blocks/InfographicTableBlock.svelte';
 	import InfographicTimelineBlock from '../infographic/blocks/InfographicTimelineBlock.svelte';
 	import InfographicHeroCardBlock from '../infographic/blocks/InfographicHeroCardBlock.svelte';
+	import A2UIGraph from './A2UIGraph.svelte';
 	import A2UINode from './A2UINode.svelte';
 
 	let {
 		descriptor,
-		dataModel
-	}: { descriptor: SectionDescriptor; dataModel: Record<string, unknown> } = $props();
+		dataModel,
+		surfaceCatalogId
+	}: {
+		descriptor: SectionDescriptor;
+		dataModel: Record<string, unknown>;
+		/** The owning surface's default `catalogId` (FEAT-529 Module 0/7 v1.0
+		 * resolution rule: a component's OWN `catalogId` wins, else this).
+		 * Optional — omitted call sites simply never resolve to a non-default
+		 * catalog, same as before this prop existed. */
+		surfaceCatalogId?: string;
+	} = $props();
 
 	let component = $derived(descriptor.component);
 	let properties = $derived(descriptor.properties ?? {});
 	let resolved = $derived(resolveProps(properties, dataModel));
+
+	// FEAT-529: a nested authored descriptor carries its OWN `catalogId`
+	// (`{"component": "Graph", "catalogId": VIZ_CORE, "properties": {...}}`);
+	// `A2UISurface.svelte`'s root-dispatch shape instead nests the whole
+	// wire `Component` (which may carry its own `catalogId`) as `properties`
+	// — check both so either call shape resolves correctly.
+	let componentCatalogId = $derived(
+		descriptor.catalogId ?? (properties as { catalogId?: string }).catalogId,
+	);
+	let resolvedCatalogId = $derived(componentCatalogId ?? surfaceCatalogId);
+	let isVizCoreGraph = $derived(component === 'Graph' && resolvedCatalogId === VIZ_CORE_CATALOG_ID);
 
 	// -- DataTable: columns are {name, title?, ...}; resolved rows are
 	// objects keyed by column name — reshape into TableBlockData's
@@ -88,6 +110,13 @@
 		{#if resolved.body}<p class="text-sm text-foreground">{resolved.body}</p>{/if}
 		{#if resolved.footer}<p class="text-xs text-muted-foreground mt-2">{resolved.footer}</p>{/if}
 	</div>
+{:else if isVizCoreGraph}
+	<!-- FEAT-529: dispatched ONLY when this Graph resolves (own catalogId,
+	     else the surface default) to viz-core — a bare "Graph" on a
+	     Parrot-default surface falls through to the unsupported placeholder
+	     below, same as any other unknown component (spec: no $ref from
+	     viz-core to Basic/Parrot). -->
+	<A2UIGraph properties={resolved as unknown as GraphProperties} {dataModel} />
 {:else if component === 'HtmlDocument'}
 	<section class="a2ui-html-document">
 		{#if resolved.title}<h3 class="text-sm font-semibold mb-1">{resolved.title}</h3>{/if}
@@ -127,7 +156,7 @@
 {:else if component === 'List' || component === 'Row' || component === 'Column'}
 	<div class={component === 'Row' ? 'flex flex-row gap-3' : 'flex flex-col gap-2'}>
 		{#each childDescriptors as child, i (i)}
-			<A2UINode descriptor={child} {dataModel} />
+			<A2UINode descriptor={child} {dataModel} {surfaceCatalogId} />
 		{/each}
 	</div>
 {:else if component === 'Tabs'}
@@ -135,7 +164,7 @@
 		{#each tabsData as tab, i (i)}
 			<div>
 				{#if tab.title}<h4 class="text-xs font-semibold text-muted-foreground mb-1">{tab.title}</h4>{/if}
-				<A2UINode descriptor={tab.child} {dataModel} />
+				<A2UINode descriptor={tab.child} {dataModel} {surfaceCatalogId} />
 			</div>
 		{/each}
 	</div>

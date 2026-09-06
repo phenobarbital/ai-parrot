@@ -20,6 +20,7 @@ const { features } = vi.hoisted(() => ({
 vi.mock('$lib/features', () => ({ features }));
 
 import A2UINode from './A2UINode.svelte';
+import { VIZ_CORE_CATALOG_ID } from './a2ui-types';
 
 describe('A2UINode', () => {
   it('DataTable resolves bound rows into positional cells', () => {
@@ -166,5 +167,52 @@ describe('A2UINode', () => {
     expect(screen.getByText('Revenue')).toBeInTheDocument();
     expect(screen.getByText('By month')).toBeInTheDocument();
     expect(screen.getByText(/chart feature disabled/i)).toBeInTheDocument();
+  });
+
+  // FEAT-529: catalog-aware Graph dispatch.
+  it('dispatches viz-core Graph via its own catalogId', () => {
+    render(A2UINode, {
+      descriptor: {
+        component: 'Graph',
+        catalogId: VIZ_CORE_CATALOG_ID,
+        properties: {
+          nodes: [{ id: 'a' }, { id: 'b' }],
+          edges: [{ from: 'a', to: 'b' }],
+          accessibleDescription: 'Tiny graph',
+        },
+      },
+      dataModel: {},
+    });
+    expect(screen.getByRole('img', { name: 'Tiny graph' })).toBeInTheDocument();
+    expect(screen.queryByText(/not supported/i)).not.toBeInTheDocument();
+  });
+
+  it('dispatches viz-core Graph via the surface default catalogId', () => {
+    render(A2UINode, {
+      descriptor: {
+        component: 'Graph',
+        properties: {
+          nodes: [{ id: 'a' }, { id: 'b' }],
+          edges: [{ from: 'a', to: 'b' }],
+          accessibleDescription: 'Surface-scoped graph',
+        },
+      },
+      dataModel: {},
+      surfaceCatalogId: VIZ_CORE_CATALOG_ID,
+    });
+    expect(screen.getByRole('img', { name: 'Surface-scoped graph' })).toBeInTheDocument();
+  });
+
+  it('rejects a bare Graph on a Parrot-default surface (unsupported placeholder)', () => {
+    render(A2UINode, {
+      descriptor: {
+        component: 'Graph',
+        properties: { nodes: [{ id: 'a' }, { id: 'b' }], edges: [{ from: 'a', to: 'b' }] },
+      },
+      dataModel: {},
+      // No surfaceCatalogId override — resolves to nothing (undefined !==
+      // VIZ_CORE_CATALOG_ID), same as a Parrot-default surface.
+    });
+    expect(screen.getByText(/not supported/i)).toBeInTheDocument();
   });
 });

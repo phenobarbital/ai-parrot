@@ -44,6 +44,11 @@ export interface WireComponent {
  * adapter's own authored-descriptor shape. */
 export interface SectionDescriptor {
   component: string;
+  /** This descriptor's own catalog id (e.g. `VIZ_CORE_CATALOG_ID` for a
+   * `Graph`), overriding the surface default — the authored nested-
+   * descriptor form is `{"component": "Graph", "catalogId": VIZ_CORE, ...}`
+   * (FEAT-529 Module 0/7). */
+  catalogId?: string;
   properties?: Record<string, unknown>;
 }
 
