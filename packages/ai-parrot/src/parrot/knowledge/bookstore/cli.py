@@ -1,7 +1,10 @@
 """``bookstore`` CLI — manage the personal indexed library.
 
-Subcommands: ``add`` / ``list`` / ``show`` / ``search`` / ``toc`` /
-``card`` / ``remove`` / ``mcp``. Heavy parrot imports are deferred into
+Subcommands: ``add`` / ``add-folder`` / ``list`` / ``show`` / ``search`` /
+``toc`` / ``card`` / ``related`` / ``relate`` / ``communities`` /
+``export-wiki`` / ``remove`` / ``mcp`` / ``locations`` (FEAT-533 adds
+``related``/``relate``/``communities``/``export-wiki`` — see
+``docs/bookstore-graph.md``). Heavy parrot imports are deferred into
 command bodies (the ``wiki/cli.py`` discipline) so ``bookstore --help``
 stays fast and the ``mcp`` path keeps stdout clean.
 """
@@ -11,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -568,9 +570,10 @@ def remove(book_id: str, yes: bool) -> None:
 def mcp() -> None:
     """Start the bookstore as a local MCP stdio server.
 
-    Exposes the seven read-only bookstore_* tools (catalog search, ToC,
-    in-book hybrid search, section read, cross-book search) over
-    JSON-RPC on stdin/stdout for Claude Code and other MCP clients.
+    Exposes the ten read-only bookstore_* tools (catalog search, ToC,
+    in-book hybrid search, section read, cross-book search, related
+    books, communities) over JSON-RPC on stdin/stdout for Claude Code
+    and other MCP clients.
     """
     from .mcp_server import main as mcp_main
 

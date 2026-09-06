@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Optional, get_args
+from typing import Any, get_args
 
 from .models import CardDraft, Genre, TocEntry
 

@@ -12,9 +12,12 @@ Data lives per scope under ``<scope>/.parrot/library/``:
 - ``trees/`` — the :class:`~parrot.knowledge.pageindex.toolkit.PageIndexToolkit`
   storage dir (``<slug>.json`` lean trees + ``<slug>/*.md`` sidecars).
 
-Agent surface: :class:`BookstoreToolkit` (read-only, seven ``bookstore_*``
-tools). Management surface: the ``bookstore`` CLI (``add`` / ``list`` /
-``show`` / ``search`` / ``toc`` / ``remove`` / ``mcp``).
+Agent surface: :class:`BookstoreToolkit` (read-only, ten ``bookstore_*``
+tools — FEAT-533 adds ``related_books``/``communities``/
+``get_community``). Management surface: the ``bookstore`` CLI
+(``add`` / ``add-folder`` / ``list`` / ``show`` / ``search`` / ``toc`` /
+``related`` / ``relate`` / ``communities`` / ``export-wiki`` /
+``remove`` / ``mcp``).
 
 Imports here are deliberately light — no ``parrot.mcp`` / navconfig
 chains at module import time (stdout purity for the MCP server).
