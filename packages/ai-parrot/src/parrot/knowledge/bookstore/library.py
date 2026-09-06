@@ -36,7 +36,13 @@ from .carding import (
 )
 from .catalog import CatalogStore, merged_cards, merged_relations, merged_search
 from .config import LibraryLocation
-from .models import BookCard, BookRelation, CardDraft
+from .models import BookCard, BookRelation, CardDraft, RelateSummary
+from .relations import (
+    candidate_pairs,
+    deterministic_relations,
+    judge_relations,
+    llm_relations_from_draft,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -497,6 +503,129 @@ class Bookstore:
         results.sort(key=lambda item: (item["hop"], -item["weight"]))
         return results[:top_k]
 
+    async def relate_books(
+        self,
+        book_ids: Optional[list[str]] = None,
+        *,
+        use_llm: bool = True,
+        communities: bool = True,
+        communities_only: bool = False,
+        force: bool = False,
+        resolution: float = 1.0,
+    ) -> RelateSummary:
+        """Compute and persist relations for ``book_ids`` (or every visible book).
+
+        Runs Stage 1 (deterministic, always — unless ``communities_only``),
+        Stage 2 (LLM conceptual relations, when ``use_llm and self.has_llm
+        and not communities_only``), and Stage 3 (communities — a hook
+        only in this task; see :meth:`_relate_stage3`, wired by TASK-2917).
+
+        Args:
+            book_ids: Explicit target book ids (validated via
+                :meth:`resolve_book`), or ``None`` for every visible book.
+            use_llm: Whether Stage 2 may run at all (still gated by
+                :attr:`has_llm`).
+            communities: Whether Stage 3 runs.
+            communities_only: Skip Stage 1/2 entirely and only run
+                Stage 3 (used by :meth:`add_folder`'s end-of-batch pass).
+            force: Re-judge candidate pairs already logged in
+                ``relation_judgements`` instead of skipping them.
+            resolution: Forwarded to Stage 3's community detection.
+
+        Returns:
+            A :class:`RelateSummary` describing what ran.
+
+        Raises:
+            BookstoreError: An explicit ``book_ids`` entry is unknown.
+        """
+        all_cards = self.list_books()
+        cards_by_id = {card.book_id: card for card in all_cards}
+
+        if book_ids is None:
+            targets = [card.book_id for card in all_cards]
+        else:
+            for book_id in book_ids:
+                self.resolve_book(book_id)  # raises BookstoreError if unknown
+            targets = list(book_ids)
+
+        summary = RelateSummary(targets=targets)
+
+        if not communities_only:
+            now = datetime.now(timezone.utc).isoformat()
+            det = deterministic_relations(all_cards, now=now)
+            target_set = set(targets)
+            touching_targets = [
+                relation
+                for relation in det
+                if relation.src_book_id in target_set
+                or relation.dst_book_id in target_set
+            ]
+            if touching_targets:
+                self._write_deterministic(touching_targets)
+            summary.deterministic_edges = len(touching_targets)
+
+            if not use_llm or not self.has_llm:
+                summary.skipped_llm_reason = (
+                    "no LLM configured" if not self.has_llm else "--no-llm"
+                )
+            else:
+                for book_id in targets:
+                    card = cards_by_id.get(book_id)
+                    if card is None:
+                        continue
+                    try:
+                        store = self._relations_store_for(book_id)
+                        judged = set() if force else store.judged_pairs(book_id)
+                        fts_hits = self.catalog_search(
+                            card.summary or " ".join(card.topics), top_k=8
+                        )
+                        candidates = candidate_pairs(
+                            card, all_cards, det, fts_hits, judged,
+                        )
+                        if not candidates:
+                            continue
+                        model_name = getattr(self.adapter, "model", "") or ""
+                        draft = await judge_relations(
+                            self.adapter, card, candidates, model_name=model_name,
+                        )
+                        summary.llm_prompts += 1
+                        store.record_judgements(
+                            book_id, draft.judgements, model=model_name,
+                        )
+                        # Replace only the pairs re-judged this run, so
+                        # edges judged earlier from the *other* book's
+                        # perspective survive (spec §7 asymmetry rule).
+                        for judgement in draft.judgements:
+                            store.delete_relation_pair(
+                                book_id, judgement.dst_book_id, origin="llm",
+                            )
+                        rels = llm_relations_from_draft(card, draft, now=now)
+                        if rels:
+                            store.upsert_relations(rels)
+                        summary.llm_edges += len(rels)
+                    except Exception as exc:  # noqa: BLE001 — never abort the batch
+                        logger.warning(
+                            "relate: Stage 2 failed for %r: %s", book_id, exc
+                        )
+                        summary.failed[book_id] = str(exc)
+
+        if communities:
+            await self._relate_stage3(resolution)
+            summary.notes.append("communities: not available")
+
+        return summary
+
+    async def _relate_stage3(self, resolution: float) -> None:
+        """Stage 3 (community detection) hook — no-op until TASK-2917.
+
+        TODO(TASK-2917): build the book graph via
+        ``relations.build_book_graph``, run
+        ``relations.detect_book_communities``, label communities, and
+        persist via ``CatalogStore.upsert_communities`` /
+        ``set_card_community``.
+        """
+        return None
+
     # ------------------------------------------------------------------
     # Ingestion surface (CLI-only)
     # ------------------------------------------------------------------
@@ -508,6 +637,8 @@ class Bookstore:
         authors: Optional[list[str]] = None,
         topics: Optional[list[str]] = None,
         force: bool = False,
+        *,
+        relate: bool = False,
     ) -> tuple[BookCard, str]:
         """Index a book file and catalog its ficha.
 
@@ -519,6 +650,10 @@ class Bookstore:
             topics: Override the carded topics.
             force: Re-index even when the same file (by sha256) is
                 already catalogued.
+            relate: When ``True``, run :meth:`relate_books` for just
+                this book (Stages 1-2 only, no communities) right after
+                cataloguing it. ``False`` by default (G3: plain ``add``
+                must never call the relation LLM).
 
         Returns:
             ``(card, status)`` where status is ``"added"``, ``"updated"``
@@ -656,6 +791,8 @@ class Bookstore:
             period=draft.period,
         )
         catalog.upsert(card)
+        if relate:
+            await self.relate_books([card.book_id], communities=False)
         return card, status
 
     async def _draft_card(
@@ -783,6 +920,8 @@ class Bookstore:
         scope: str = "project",
         recursive: bool = False,
         force: bool = False,
+        *,
+        relate: bool = False,
     ) -> dict[str, Any]:
         """Index every supported file in a folder, one book per file.
 
@@ -796,6 +935,14 @@ class Bookstore:
             scope: Target library (``"project"`` or ``"global"``).
             recursive: Also ingest files in subdirectories.
             force: Re-index files already catalogued (by sha256).
+            relate: When ``True``, each new book is related right after
+                its own ingest (Stage 1-2 only, per file — same as
+                ``add_book(relate=True)``); once the whole folder is
+                processed, one Stage-3-only
+                ``relate_books(None, communities_only=True)`` pass runs
+                if at least one file was added/updated — communities
+                are computed once over the whole merged library, never
+                per file.
 
         Returns:
             ``{"folder", "results": [{file, status, book_id?, error?}],
@@ -804,19 +951,24 @@ class Bookstore:
         """
         supported, ignored = self.iter_folder_files(folder, recursive=recursive)
         results: list[dict[str, Any]] = []
+        any_succeeded = False
         for path in supported:
             try:
                 card, status = await self.add_book(
-                    path, scope=scope, force=force
+                    path, scope=scope, force=force, relate=relate
                 )
                 results.append(
                     {"file": str(path), "status": status, "book_id": card.book_id}
                 )
+                if status in ("added", "updated"):
+                    any_succeeded = True
             except Exception as exc:  # noqa: BLE001 — keep the loop alive
                 logger.warning("Failed to ingest %s: %s", path, exc)
                 results.append(
                     {"file": str(path), "status": "failed", "error": str(exc)}
                 )
+        if relate and any_succeeded:
+            await self.relate_books(None, communities_only=True)
         return {
             "folder": str(Path(folder).expanduser().resolve()),
             "results": results,

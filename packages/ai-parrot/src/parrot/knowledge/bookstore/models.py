@@ -330,34 +330,41 @@ class RelateSummary(BaseModel):
     """Outcome of one :meth:`Bookstore.relate_books` batch run.
 
     Note:
-        The spec (§3 Module 2) describes this as "``RelateSummary`` with
-        ``related``/``failed``/``skipped`` per book" but does not give
-        its full field list in §2's Data Models block. This shape is
-        this task's best-effort completion of that gap — TASK-2916
-        (the ``relate_books`` orchestrator) is the actual consumer and
-        may need additional fields as Stage 2/3 land; flagged here per
-        the Codebase Contract for future re-verification rather than
-        silently guessed at without a note.
+        TASK-2913 first defined this model but the spec (§3 Module 2)
+        only describes it in prose ("``RelateSummary`` with
+        ``related``/``failed``/``skipped`` per book") without a field
+        list in §2's Data Models block, so that first pass used
+        placeholder field names and explicitly flagged them for
+        re-verification by the actual consumer. TASK-2916 (the
+        ``relate_books`` orchestrator) is that consumer and specifies
+        the field list below in its own Codebase Contract — this shape
+        supersedes the TASK-2913 placeholder.
 
     Args:
-        related: Book ids that gained at least one relation edge, or
-            were otherwise successfully processed.
-        failed: Book ids whose Stage 2 (LLM) judgement raised;
-            Stage 1 deterministic edges for these books are still
-            written.
-        skipped: Book ids skipped entirely (e.g. every candidate pair
-            already judged and ``force=False``, or no candidates).
-        llm_used: Whether Stage 2 (LLM conceptual relations) actually
-            ran this call.
-        communities_computed: Whether Stage 3 (communities) ran.
-        notes: Free-form status notes for degraded runs (e.g. "LLM
-            skipped: no adapter configured", "communities skipped:
-            fewer than 3 visible cards").
+        targets: Book ids this run computed relations for (explicit
+            ids, or every visible book when ``relate_books`` was
+            called with ``book_ids=None``).
+        deterministic_edges: Stage 1 edges written touching a target.
+        llm_prompts: Number of Stage 2 ``ask_structured`` calls made
+            (at most one per target book).
+        llm_edges: Stage 2 edges written (``rel != "none"`` and
+            ``confidence >= floor``).
+        skipped_llm_reason: Why Stage 2 did not run at all this call
+            (e.g. "no LLM configured", ``--no-llm``); ``None`` when it
+            ran (even if it judged zero candidates for every target).
+        failed: ``{book_id: error message}`` for targets whose Stage 2
+            judgement raised — their Stage 1 edges are still written.
+        communities: Number of communities computed this run, or
+            ``None`` when Stage 3 did not run (``communities=False``
+            or not yet implemented — see ``_relate_stage3``).
+        notes: Free-form status notes for degraded/partial runs.
     """
 
-    related: list[str] = Field(default_factory=list)
-    failed: list[str] = Field(default_factory=list)
-    skipped: list[str] = Field(default_factory=list)
-    llm_used: bool = False
-    communities_computed: bool = False
+    targets: list[str] = Field(default_factory=list)
+    deterministic_edges: int = 0
+    llm_prompts: int = 0
+    llm_edges: int = 0
+    skipped_llm_reason: Optional[str] = None
+    failed: dict[str, str] = Field(default_factory=dict)
+    communities: Optional[int] = None
     notes: list[str] = Field(default_factory=list)

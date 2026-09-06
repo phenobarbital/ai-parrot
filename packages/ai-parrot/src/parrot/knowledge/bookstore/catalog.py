@@ -556,6 +556,47 @@ class CatalogStore:
             conn.commit()
             return cursor.rowcount
 
+    def delete_relation_pair(
+        self, src_book_id: str, dst_book_id: str, *, origin: Optional[str] = None
+    ) -> int:
+        """Delete edge(s) between exactly this pair, in whichever direction stored.
+
+        Added for TASK-2916 (Stage 2 orchestration): symmetric relations
+        are canonicalised ``src < dst`` on write, so the caller judging
+        one book against a candidate must be able to replace "its" row
+        regardless of which id ended up as ``src_book_id`` in storage —
+        without touching any *other* pair (spec §7: an edge judged
+        earlier from the *other* book's perspective must survive). Not
+        expressible with :meth:`delete_relations`, whose ``book_id``
+        filter matches either endpoint against every OTHER edge too.
+
+        Args:
+            src_book_id: One endpoint.
+            dst_book_id: The other endpoint.
+            origin: Optional origin filter (e.g. ``"llm"``).
+
+        Returns:
+            Number of rows deleted (0 or 1 for symmetric rels; up to 2
+            if both directions happen to hold distinct ``rel`` values,
+            e.g. a directed ``influenced_by`` plus a symmetric one).
+        """
+        clauses = [
+            "((src_book_id = :a AND dst_book_id = :b) OR "
+            "(src_book_id = :b AND dst_book_id = :a))"
+        ]
+        params: dict[str, str] = {"a": src_book_id, "b": dst_book_id}
+        if origin is not None:
+            clauses.append("origin = :origin")
+            params["origin"] = origin
+        with self._connection() as conn:
+            self._ensure_schema(conn)
+            cursor = conn.execute(
+                f"DELETE FROM book_relations WHERE {' AND '.join(clauses)}",
+                params,
+            )
+            conn.commit()
+            return cursor.rowcount
+
     def list_relations(
         self, book_id: str, rel: Optional[str] = None
     ) -> list[BookRelation]:

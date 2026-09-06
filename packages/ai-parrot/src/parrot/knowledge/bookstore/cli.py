@@ -117,6 +117,9 @@ def bookstore() -> None:
 @click.option("--force", is_flag=True, help="Re-index even if already added.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM carding/summaries.")
 @click.option(
+    "--relate", is_flag=True, help="Compute relations for this book after adding it."
+)
+@click.option(
     "--llm",
     default=None,
     help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
@@ -129,6 +132,7 @@ def add(
     topics: tuple[str, ...],
     force: bool,
     no_llm: bool,
+    relate: bool,
     llm: Optional[str],
 ) -> None:
     """Index FILE (pdf/md/txt/epub/mobi/docx) and catalog its ficha."""
@@ -153,6 +157,7 @@ def add(
                 authors=list(authors) or None,
                 topics=list(topics) or None,
                 force=force,
+                relate=relate,
             )
         )
     except BookstoreError as exc:
@@ -170,6 +175,11 @@ def add(
 @click.option("--force", is_flag=True, help="Re-index files already added.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM carding/summaries.")
 @click.option(
+    "--relate",
+    is_flag=True,
+    help="Relate each new book, then compute communities once at the end.",
+)
+@click.option(
     "--llm",
     default=None,
     help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
@@ -183,6 +193,7 @@ def add_folder(
     global_scope: bool,
     force: bool,
     no_llm: bool,
+    relate: bool,
     llm: Optional[str],
     dry_run: bool,
 ) -> None:
@@ -224,20 +235,25 @@ def add_folder(
     async def _run() -> list[dict]:
         results: list[dict] = []
         total = len(supported)
+        any_succeeded = False
         for i, path in enumerate(supported, start=1):
             try:
                 card, status = await store.add_book(
-                    path, scope=scope, force=force
+                    path, scope=scope, force=force, relate=relate
                 )
                 results.append(
                     {"file": str(path), "status": status, "book_id": card.book_id}
                 )
+                if status in ("added", "updated"):
+                    any_succeeded = True
                 click.echo(f"[{i}/{total}] {status}: {card.book_id}")
             except Exception as exc:  # noqa: BLE001 — keep the loop alive
                 results.append(
                     {"file": str(path), "status": "failed", "error": str(exc)}
                 )
                 click.echo(f"[{i}/{total}] FAILED: {path} — {exc}")
+        if relate and any_succeeded:
+            await store.relate_books(None, communities_only=True)
         return results
 
     results = asyncio.run(_run())
@@ -395,6 +411,63 @@ def related(book_id: str, rel: Optional[str], depth: int, as_json: bool) -> None
             f"{item['weight']:<8.2f}"
             f"{'' if confidence is None else f'{confidence:.2f}'}"
         )
+
+
+@bookstore.command("relate")
+@click.argument("book_ids", nargs=-1)
+@click.option("--all", "relate_all", is_flag=True, help="Relate every visible book.")
+@click.option("--no-llm", is_flag=True, help="Deterministic relations only (Stage 1).")
+@click.option(
+    "--communities-only", is_flag=True, help="Skip Stages 1-2, only compute communities."
+)
+@click.option("--force", is_flag=True, help="Re-judge pairs already logged.")
+@click.option(
+    "--resolution", default=1.0, type=float, help="Community detection resolution."
+)
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' for Stage 2 (default: $PARROT_BOOKSTORE_LLM).",
+)
+def relate(
+    book_ids: tuple[str, ...],
+    relate_all: bool,
+    no_llm: bool,
+    communities_only: bool,
+    force: bool,
+    resolution: float,
+    llm: Optional[str],
+) -> None:
+    """Compute deterministic + LLM relations for BOOK_IDS (or --all)."""
+    from .library import BookstoreError
+
+    if not relate_all and not book_ids:
+        raise click.ClickException("Pass --all or at least one BOOK_ID")
+
+    store = _open_bookstore(llm_spec=llm, require_exists=True, use_llm=not no_llm)
+    try:
+        summary = asyncio.run(
+            store.relate_books(
+                None if relate_all else list(book_ids),
+                use_llm=not no_llm,
+                communities_only=communities_only,
+                force=force,
+                resolution=resolution,
+            )
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"targets: {len(summary.targets)}")
+    click.echo(f"deterministic edges: {summary.deterministic_edges}")
+    click.echo(f"LLM prompts: {summary.llm_prompts}  LLM edges: {summary.llm_edges}")
+    if summary.skipped_llm_reason:
+        click.echo(f"LLM skipped: {summary.skipped_llm_reason}")
+    if summary.failed:
+        click.echo(f"failed: {len(summary.failed)}")
+        for book_id, error in summary.failed.items():
+            click.echo(f"  {book_id}: {error}")
+    for note in summary.notes:
+        click.echo(f"note: {note}")
 
 
 @bookstore.command("remove")

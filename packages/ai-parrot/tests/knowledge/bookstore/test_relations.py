@@ -1,4 +1,4 @@
-"""Tests for Stage 1 deterministic relations + the related_books read path."""
+"""Tests for Stage 1/2 relations + the related_books read path."""
 
 from __future__ import annotations
 
@@ -6,8 +6,18 @@ import pytest
 
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import Bookstore
-from parrot.knowledge.bookstore.models import BookCard, BookRelation, RelationJudgement
-from parrot.knowledge.bookstore.relations import _author_key, deterministic_relations
+from parrot.knowledge.bookstore.models import (
+    BookCard,
+    BookRelation,
+    RelationDraft,
+    RelationJudgement,
+)
+from parrot.knowledge.bookstore.relations import (
+    _author_key,
+    candidate_pairs,
+    deterministic_relations,
+    llm_relations_from_draft,
+)
 
 _NOW = "2026-09-06T00:00:00+00:00"
 
@@ -138,6 +148,11 @@ def store(locations) -> Bookstore:
     return Bookstore(locations)
 
 
+@pytest.fixture
+def store_llm(locations, fake_adapter) -> Bookstore:
+    return Bookstore(locations, adapter=fake_adapter)
+
+
 @pytest.mark.asyncio
 async def test_related_books_depth2_and_filters(store):
     project = store._catalog("project")
@@ -238,3 +253,168 @@ async def test_remove_book_cascades_relations_and_judgements(store):
     assert project.list_relations("a") == []
     assert global_.list_relations("a") == []
     assert global_.judged_pairs("b") == set()
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — LLM conceptual relations
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_pairs_prefilter_and_cap():
+    card = _card("src")
+    others = [_card(f"n{i}") for i in range(10)]
+    det = [
+        BookRelation(
+            src_book_id="src", dst_book_id="n0", rel="same_author",
+            origin="deterministic", weight=0.9, computed_at=_NOW,
+        ),
+        BookRelation(
+            src_book_id="n1", dst_book_id="src", rel="same_genre",
+            origin="deterministic", weight=0.3, computed_at=_NOW,
+        ),
+    ]
+    fts_hits = [others[0], others[2], others[3]]  # n0 duplicate must be deduped
+    cands = candidate_pairs(card, [card] + others, det, fts_hits, judged=set(), cap=8)
+    ids = [c.book_id for c in cands]
+    # Deterministic neighbours first, by weight descending.
+    assert ids[:2] == ["n0", "n1"]
+    assert "n2" in ids and "n3" in ids
+    assert card.book_id not in ids
+    assert len(cands) <= 8
+
+    filtered = candidate_pairs(card, [card] + others, det, fts_hits, judged={"n0"}, cap=8)
+    assert "n0" not in [c.book_id for c in filtered]
+
+
+def test_llm_relations_from_draft_floor_and_none():
+    card = _card("src")
+    draft = RelationDraft(
+        judgements=[
+            RelationJudgement(dst_book_id="a", rel="parallels", confidence=0.6),
+            RelationJudgement(dst_book_id="b", rel="parallels", confidence=0.4),
+            RelationJudgement(dst_book_id="c", rel="none", confidence=0.9),
+        ]
+    )
+    rels = llm_relations_from_draft(card, draft, now=_NOW)
+    assert [r.dst_book_id for r in rels] == ["a"]
+    assert rels[0].origin == "llm"
+    assert rels[0].confidence == 0.6
+
+
+@pytest.mark.asyncio
+async def test_llm_relations_from_draft_drops_unknown_ids():
+    """Named per the task's Test Specification, but exercises
+    ``judge_relations`` (not ``llm_relations_from_draft``) — that is
+    where hallucinated candidate ids are actually filtered."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot.knowledge.bookstore.relations import judge_relations
+
+    card = _card("src")
+    candidates = [_card("a"), _card("b")]
+    adapter = MagicMock()
+    adapter.ask_structured = AsyncMock(
+        return_value=RelationDraft(
+            judgements=[
+                RelationJudgement(dst_book_id="a", rel="parallels", confidence=0.7),
+                RelationJudgement(dst_book_id="ghost", rel="parallels", confidence=0.9),
+            ]
+        )
+    )
+    draft = await judge_relations(adapter, card, candidates)
+    assert [j.dst_book_id for j in draft.judgements] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_judge_relations_one_prompt_per_book(store_llm, fake_adapter):
+    project = store_llm._catalog("project")
+    for card in (
+        _card("a", topics=["x"]), _card("b", topics=["x"]), _card("c", topics=["x"]),
+    ):
+        project.upsert(card)
+    fake_adapter.ask_structured.reset_mock()
+
+    summary = await store_llm.relate_books(["a"], communities=False)
+
+    assert summary.llm_prompts == 1
+    assert fake_adapter.ask_structured.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_relate_skips_judged_pairs_unless_force(store_llm, fake_adapter):
+    project = store_llm._catalog("project")
+    for card in (_card("a", topics=["x"]), _card("b", topics=["x"])):
+        project.upsert(card)
+
+    first = await store_llm.relate_books(["a"], communities=False)
+    assert first.llm_prompts == 1
+
+    fake_adapter.ask_structured.reset_mock()
+    second = await store_llm.relate_books(["a"], communities=False)
+    assert second.llm_prompts == 0
+    fake_adapter.ask_structured.assert_not_awaited()
+
+    third = await store_llm.relate_books(["a"], communities=False, force=True)
+    assert third.llm_prompts == 1
+
+
+@pytest.mark.asyncio
+async def test_relate_no_llm_runs_stage1_only(store):
+    project = store._catalog("project")
+    for card in (
+        _card("a", authors=["Same Author"]), _card("b", authors=["Same Author"]),
+    ):
+        project.upsert(card)
+
+    summary = await store.relate_books(["a"], communities=False)
+
+    assert summary.deterministic_edges >= 1
+    assert summary.llm_prompts == 0
+    assert summary.skipped_llm_reason == "no LLM configured"
+
+
+@pytest.mark.asyncio
+async def test_relate_llm_failure_keeps_deterministic(store_llm, fake_adapter):
+    project = store_llm._catalog("project")
+    for card in (
+        _card("a", authors=["Same Author"], topics=["x"]),
+        _card("b", authors=["Same Author"], topics=["x"]),
+    ):
+        project.upsert(card)
+    fake_adapter.ask_structured.side_effect = RuntimeError("boom")
+
+    summary = await store_llm.relate_books(["a"], communities=False)
+
+    assert "a" in summary.failed
+    assert summary.deterministic_edges >= 1
+    assert project.list_relations("a")  # same_author edge survives
+
+
+@pytest.mark.asyncio
+async def test_add_relate_flag_scopes_to_new_book(store_llm, tmp_path):
+    from .conftest import SAMPLE_MARKDOWN
+
+    project = store_llm._catalog("project")
+    project.upsert(_card("existing", topics=["async python"]))
+
+    book_md = tmp_path / "new-book.md"
+    book_md.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    card, _status = await store_llm.add_book(book_md, relate=True)
+
+    assert project.judged_pairs(card.book_id) == {"existing"}
+    assert project.judged_pairs("existing") == set()
+
+
+@pytest.mark.asyncio
+async def test_add_without_relate_makes_no_relation_prompt(store_llm, fake_adapter, tmp_path):
+    from .conftest import SAMPLE_MARKDOWN
+
+    book_md = tmp_path / "plain-book.md"
+    book_md.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    fake_adapter.ask_structured.reset_mock()
+
+    card, _status = await store_llm.add_book(book_md)
+
+    assert store_llm._catalog("project").judged_pairs(card.book_id) == set()
+    for call in fake_adapter.ask_structured.await_args_list:
+        assert call.args[1] is not RelationDraft

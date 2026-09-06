@@ -11,10 +11,13 @@ and cross-scope routing (see ``Bookstore._write_deterministic``).
 from __future__ import annotations
 
 import itertools
-from typing import Optional
+import logging
+from typing import Any, Optional
 
 from .carding import slugify
-from .models import REL_WEIGHTS, BookCard, BookRelation
+from .models import REL_WEIGHTS, BookCard, BookRelation, RelationDraft
+
+logger = logging.getLogger(__name__)
 
 #: ``slugify`` collapses non-Latin titles/names with no ASCII
 #: decomposition to this fallback (carding.py — ``slugify`` docstring).
@@ -203,4 +206,206 @@ def deterministic_relations(
                     rationale=f"language={a.language}",
                 )
             )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — LLM conceptual relations (spec §2 Overview step 3, goal G3)
+# ---------------------------------------------------------------------------
+
+_RELATION_PROMPT = """You are a librarian mapping conceptual relations between books in a
+personal library. Given the SOURCE book below and a list of CANDIDATE
+books, judge whether the source book relates to each candidate through
+one of these conceptual relations:
+
+- `influenced_by`: the source book was influenced by the candidate.
+  Directed FROM the source book TO the candidate.
+- `responds_to`: the source book responds to, critiques, or engages
+  with the candidate. Directed FROM the source book TO the candidate.
+- `parallels`: the two books explore similar ideas/themes
+  independently (symmetric — direction does not matter).
+- `contrasts_with`: the two books present opposing views on a related
+  subject (symmetric — direction does not matter).
+- `none`: no meaningful conceptual relation between the two books.
+
+SOURCE book:
+{source_brief}
+
+CANDIDATE books — judge EVERY one below, using its `book_id` verbatim
+in your answer:
+{candidate_briefs}
+
+Rules:
+- Return exactly one judgement per candidate listed above.
+- `influenced_by`/`responds_to` are directed FROM the source book.
+- `confidence`: 0.0-1.0, how sure you are of the judgement.
+- `rationale`: one sentence explaining the judgement.
+- When unsure or the relation is weak, use `rel="none"` rather than
+  guessing.
+"""
+
+
+def candidate_pairs(
+    card: BookCard,
+    cards: list[BookCard],
+    det_relations: list[BookRelation],
+    fts_hits: list[BookCard],
+    judged: set[str],
+    cap: int = 8,
+) -> list[BookCard]:
+    """Pre-filter Stage 2 candidates for one source book.
+
+    Union of Stage 1 (deterministic) neighbours and FTS search hits,
+    minus ``card`` itself and anything already in ``judged`` — stable
+    order (deterministic neighbours first, by edge weight descending,
+    then FTS hits in their given order), capped at ``cap``.
+
+    Args:
+        card: The source book Stage 2 will judge candidates for.
+        cards: The full visible card universe (to resolve neighbour
+            ids from ``det_relations`` back into ``BookCard``s).
+        det_relations: Stage 1 edges (typically the full
+            ``deterministic_relations()`` output) — only those
+            touching ``card`` contribute neighbours.
+        fts_hits: ``Bookstore.catalog_search(...)`` results for
+            ``card``'s summary/topics.
+        judged: Book ids already judged as a candidate for ``card``
+            (``CatalogStore.judged_pairs(card.book_id)``); skipped
+            unless the caller passes an empty set (``--force``).
+        cap: Maximum candidates returned.
+
+    Returns:
+        Up to ``cap`` candidate cards, never including ``card`` itself.
+    """
+    cards_by_id = {c.book_id: c for c in cards}
+
+    det_neighbors: list[tuple[float, str]] = []
+    for relation in det_relations:
+        if relation.src_book_id == card.book_id:
+            det_neighbors.append((relation.weight, relation.dst_book_id))
+        elif relation.dst_book_id == card.book_id:
+            det_neighbors.append((relation.weight, relation.src_book_id))
+    det_neighbors.sort(key=lambda item: -item[0])
+
+    ordered_ids: list[str] = []
+    seen: set[str] = set()
+    for _weight, other_id in det_neighbors:
+        if other_id not in seen:
+            seen.add(other_id)
+            ordered_ids.append(other_id)
+    for hit in fts_hits:
+        if hit.book_id not in seen:
+            seen.add(hit.book_id)
+            ordered_ids.append(hit.book_id)
+
+    result: list[BookCard] = []
+    for other_id in ordered_ids:
+        if other_id == card.book_id or other_id in judged:
+            continue
+        other_card = cards_by_id.get(other_id)
+        if other_card is None:
+            continue
+        result.append(other_card)
+        if len(result) >= cap:
+            break
+    return result
+
+
+def _brief_line(card: BookCard) -> str:
+    """One candidate/source line for the Stage 2 prompt."""
+    return (
+        f"- book_id={card.book_id} | title={card.title} | "
+        f"authors={', '.join(card.authors) or '(unknown)'} | "
+        f"topics={', '.join(card.topics) or '(none)'} | "
+        f"summary={card.summary or '(none)'}"
+    )
+
+
+async def judge_relations(
+    adapter: Any,
+    card: BookCard,
+    candidates: list[BookCard],
+    *,
+    model_name: str = "",
+) -> RelationDraft:
+    """One structured LLM call judging every candidate for ``card``.
+
+    Exactly one ``ask_structured`` call per source book — never one
+    call per candidate pair (bounded LLM cost, goal G3).
+
+    Args:
+        adapter: Any object exposing
+            ``async ask_structured(prompt, schema) -> RelationDraft | dict``
+            (e.g. :class:`~parrot.knowledge.pageindex.llm_adapter.PageIndexLLMAdapter`).
+        card: The source book.
+        candidates: Pre-filtered candidates (:func:`candidate_pairs`).
+        model_name: Model identifier, logged only (the caller records
+            it against ``relation_judgements`` separately).
+
+    Returns:
+        A :class:`RelationDraft` containing only judgements whose
+        ``dst_book_id`` matches a candidate — any hallucinated id the
+        model returns is silently dropped.
+    """
+    logger.debug(
+        "Stage 2: judging %d candidate(s) for %r (model=%s)",
+        len(candidates), card.book_id, model_name or "?",
+    )
+    prompt = _RELATION_PROMPT.format(
+        source_brief=_brief_line(card),
+        candidate_briefs="\n".join(_brief_line(c) for c in candidates) or "(none)",
+    )
+    draft = await adapter.ask_structured(prompt, RelationDraft)
+    if not isinstance(draft, RelationDraft):
+        draft = RelationDraft.model_validate(draft)
+    valid_ids = {c.book_id for c in candidates}
+    judgements = [j for j in draft.judgements if j.dst_book_id in valid_ids]
+    return RelationDraft(judgements=judgements)
+
+
+def llm_relations_from_draft(
+    card: BookCard,
+    draft: RelationDraft,
+    *,
+    now: str,
+    floor: float = 0.5,
+) -> list[BookRelation]:
+    """Turn a judged :class:`RelationDraft` into persistable edges.
+
+    Every judgement is expected to already be logged via
+    ``CatalogStore.record_judgements`` by the caller, regardless of
+    outcome — this function only decides which judgements *also*
+    become a ``book_relations`` row: ``rel != "none"`` and
+    ``confidence >= floor``.
+
+    Args:
+        card: The source book the judgements were requested for.
+        draft: Judgements to convert (already filtered to known
+            candidate ids by :func:`judge_relations`).
+        now: ISO-8601 timestamp stamped on every produced edge.
+        floor: Minimum confidence to produce an edge.
+
+    Returns:
+        ``origin="llm"`` edges directed from ``card`` to each judged
+        candidate (symmetric relations are canonicalised on write by
+        ``CatalogStore.upsert_relations``, not here).
+    """
+    out: list[BookRelation] = []
+    for judgement in draft.judgements:
+        if judgement.rel == "none" or judgement.confidence < floor:
+            continue
+        if judgement.dst_book_id == card.book_id:
+            continue  # defensive — BookRelation rejects self-pairs
+        out.append(
+            BookRelation(
+                src_book_id=card.book_id,
+                dst_book_id=judgement.dst_book_id,
+                rel=judgement.rel,  # type: ignore[arg-type]
+                weight=REL_WEIGHTS[judgement.rel],
+                origin="llm",
+                confidence=judgement.confidence,
+                rationale=judgement.rationale,
+                computed_at=now,
+            )
+        )
     return out

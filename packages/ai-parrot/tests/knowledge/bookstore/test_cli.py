@@ -203,6 +203,49 @@ def test_related_cli_table_and_json(tmp_path, monkeypatch):
     assert payload[0]["rel"] == "same_author"
 
 
+def test_relate_cli_requires_target(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["relate"])
+    assert result.exit_code != 0
+    assert "--all" in result.output
+
+
+def test_relate_cli_all_prints_summary(tmp_path, monkeypatch):
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id in ("a", "b"):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=book_id,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+                authors=["Same Author"],
+            )
+        )
+
+    result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["relate", "--all", "--no-llm"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "targets: 2" in result.output
+    assert "deterministic edges: 1" in result.output
+    assert "LLM skipped" in result.output
+
+
 def test_show_prints_classification(capsys):
     from parrot.knowledge.bookstore.models import BookCard
 

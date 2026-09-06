@@ -8,12 +8,13 @@ stub so ingestion works offline.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.knowledge.bookstore.models import CardDraft
+from parrot.knowledge.bookstore.models import CardDraft, RelationDraft, RelationJudgement
 from parrot.knowledge.pageindex.ingest import IngestedMarkdown
 
 #: Pre-FEAT-533 literals (verbatim, frozen here on purpose — the live
@@ -93,6 +94,29 @@ def make_adapter() -> MagicMock:
                 traditions=["Estoicismo"],
                 period="Imperio romano",
             )
+        if schema is RelationDraft:
+            # Deterministic, order-based judgements over whatever
+            # candidate ids the prompt actually listed (parsed rather
+            # than hardcoded, so tests control the candidates via the
+            # catalog/graph, not this fixture).
+            candidates_section = prompt.split("CANDIDATE books", 1)[-1]
+            ids = re.findall(r"book_id=(\S+)", candidates_section)
+            judgements = []
+            if len(ids) >= 1:
+                judgements.append(
+                    RelationJudgement(
+                        dst_book_id=ids[0], rel="parallels", confidence=0.7,
+                        rationale="Explores a similar theme independently.",
+                    )
+                )
+            if len(ids) >= 2:
+                judgements.append(
+                    RelationJudgement(
+                        dst_book_id=ids[1], rel="none", confidence=0.9,
+                        rationale="No meaningful conceptual relation.",
+                    )
+                )
+            return RelationDraft(judgements=judgements)
         return IngestedMarkdown(
             title="Synthetic Handbook",
             summary="A short summary.",
