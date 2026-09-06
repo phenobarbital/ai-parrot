@@ -299,7 +299,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -309,8 +309,8 @@
       "parallelism_notes": "Final dependent deliverable; no independent sibling work remains. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:24:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2910-roblox-end-to-end-validation.md"
+      "completed_at": "2026-09-06T05:30:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2910-roblox-end-to-end-validation.md"
     },
     {
       "id": "TASK-2911",
