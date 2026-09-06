@@ -102,3 +102,47 @@ builders/adapters, native renderers, UI, or docs.
 1. Verify TASK-2881, TASK-2882, and TASK-2883 contracts before implementation.
 2. Keep schema derivation as the source of truth; only merge the explicit Action property.
 3. Do not modify legacy Parrot Chart/KPICard definitions.
+
+### Completion Note
+
+Implemented as specified. `catalog/viz_core/graph.py` derives `GRAPH_SCHEMA`
+from `GraphSpec` via the existing `derive_schema` (Chart's exact pattern)
+and merges in `action` as a `$ref` to the vendored `common_types.json#/
+$defs/Action` post-derivation — no other hand-edits. `@register_component
+("Graph", catalog_id=VIZ_CORE_CATALOG_ID)` registers with default
+`requires_actions=False`/`tool_only=False`/`allowed_parents=None`, so the
+existing `ACTION_NOT_ALLOWED_FOR_LLM` gate handles TOOL-vs-LLM action
+rejection with no new code.
+
+`catalog/viz_core/__init__.py`'s bottom-of-file `from parrot.outputs.
+a2ui.catalog.viz_core import graph` closes a genuine (if intentional)
+circular-import shape — `graph.py` imports `VIZ_CORE_CATALOG_ID` back from
+its own parent package — safe ONLY because the constant is already bound
+by the time that import line executes (same discipline as `catalog/
+parrot/__init__.py`'s registration imports).
+
+`lower()` reconstructs a real `GraphSpec` (with `data` stripped, since an
+unresolved binding descriptor like `{"path": ...}` cannot validate against
+`GraphSpec.data`'s literal shape) rather than reading each field off the
+raw `props` dict the way `Chart`'s `lower()` does — this buys the mermaid
+source and node/edge counts a genuine re-validation pass (dangling edges,
+etc.) that `GRAPH_SCHEMA`'s JSON-Schema alone can't express, at the cost
+of one deliberate, documented deviation from the literal "copy the Chart
+pattern" instruction.
+
+**Test fixture note**: the two action-gate tests build their surface with
+`catalogId="https://parrot.dev/catalogs/v1"` (Parrot default, so the
+`Column` root resolves via the Basic `$ref`), while `Graph` itself
+carries its own explicit `catalogId=VIZ_CORE_CATALOG_ID` — a bare
+viz-core surface can't host a `Column` root (viz-core doesn't `$ref`
+Basic, spec §2 Overview), so this is the only valid shape for that test,
+matching spec §7's own "surface default vs component catalog" guidance.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui
+packages/ai-parrot-visualizations/tests -q -k a2ui` → 718 + 218 passed (36
+new across both files), 1 skipped; `ruff check` clean on all
+touched/created files. The FEAT-527-era catalog-diff guard test
+(`test_semantic_classes.py::test_no_catalog_file_modified`) already
+allowed this task's new `catalog/viz_core/graph.py` and `golden/
+graph_lowered.json` via the `"viz_core" in c"` branch added in TASK-2881
+— no further change needed there.
