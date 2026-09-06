@@ -34,7 +34,7 @@
       "feature_id": "FEAT-529",
       "feature": "a2ui-graph-component",
       "spec": "sdd/specs/a2ui-graph-component.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2882-graph-vocabulary-models.md"
+      "completed_at": "2026-09-06T01:35:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2882-graph-vocabulary-models.md"
     },
     {
       "id": "TASK-2883",

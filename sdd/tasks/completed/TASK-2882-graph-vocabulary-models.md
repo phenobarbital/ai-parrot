@@ -90,3 +90,32 @@ specified in the feature spec sections 2 and 3.
 1. Verify the Pydantic version and current catalog validation exception before coding.
 2. Keep this package independent of parrot.bots and renderer packages.
 3. Do not add schema or catalog side effects to model imports.
+
+### Completion Note
+
+Implemented as specified: `GraphNode`/`GraphEdge`/`GraphGroup`/`Position`/
+`GraphLayout`/`GraphSelection`/`GraphSpec` in `graph/models.py`, all
+`extra="forbid"`, `GraphEdge`/`GraphLayout`/`GraphSpec` with
+`populate_by_name=True` for their camelCase aliases (`from`,
+`accessibleDescription`, `rankSep`, `nodeSep`). A single `@model_validator
+(mode="after")` on `GraphSpec` enforces unique node ids, edge-endpoint
+existence, group-membership invariants, `kind="dag"` acyclicity (DFS
+3-colour cycle check via a private `_has_cycle()` helper — cycles stay
+legal for every other `kind`), and `layout.engine="manual"` positions
+completeness. 15 tests in `test_models.py`, including the five named in
+the Test Specification plus group-invariant, alias/extra-forbid, and a
+mechanical no-colour/font/pixel field-name guard (a model-level pre-echo
+of the spec's later schema-level `test_graph_schema_has_no_colour_
+vocabulary`).
+
+Deliberately did NOT export `GraphTooLargeError` from `graph/__init__.py`
+despite the task's Scope bullet mentioning "the graph-size exception" —
+the Codebase Contract's own "Does NOT Exist" list states it doesn't exist
+yet, and it belongs to `graph/layout.py` (Module 4 / TASK-2884, not yet
+implemented at this point in the sequence). `graph/__init__.py` exports
+only what `models.py` defines here; TASK-2883/2884 are expected to extend
+it once `mermaid.py`/`layout.py` land.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui -q` → 678
+passed (663 pre-existing + 15 new), 1 skipped; `ruff check` clean on all
+three touched/created files.
