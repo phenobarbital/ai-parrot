@@ -129,19 +129,20 @@ def test_edges_have_existing_targets():
     dump = build_normalized_dump(_DUMP, _CLASS_DOCS)
     rendered = render_generation(dump, generation_id="gen-1", schema_version=1)
 
-    extends_edges = [e for e in rendered.edges if e[1] == "extends"]
-    assert ("class/Players", "extends", "class/Instance") in extends_edges
+    # Edge tuples are (src, dst, rel) — the store's actual convention.
+    extends_edges = [e for e in rendered.edges if e[2] == "extends"]
+    assert ("class/Players", "class/Instance", "extends") in extends_edges
     # Workspace's superclass is not in this generation -> no extends edge at all.
     assert not any(e[0] == "class/Workspace" for e in extends_edges)
 
-    references_edges = [e for e in rendered.edges if e[1] == "references"]
+    references_edges = [e for e in rendered.edges if e[2] == "references"]
     # Players references Instance (PlayerAdded param) and Material (enum property).
-    assert ("class/Players", "references", "class/Instance") in references_edges
-    assert ("class/Players", "references", "enum/Material") in references_edges
+    assert ("class/Players", "class/Instance", "references") in references_edges
+    assert ("class/Players", "enum/Material", "references") in references_edges
     # Never a reference to something absent from this generation.
     assert all(
         target in {"class/Instance", "class/Players", "class/Workspace", "enum/Material"}
-        for _src, _rel, target in rendered.edges
+        for _src, target, _rel in rendered.edges
     )
 
 

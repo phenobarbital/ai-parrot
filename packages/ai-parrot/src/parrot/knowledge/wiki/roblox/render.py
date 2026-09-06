@@ -271,8 +271,11 @@ class RenderedGeneration:
 
     Attributes:
         pages: Sorted (by ``concept_id``) class/enum pages.
-        edges: Sorted ``(source_concept_id, rel, target_concept_id)``
-            tuples — ``rel`` is ``"extends"`` or ``"references"``.
+        edges: Sorted ``(source_concept_id, target_concept_id, rel)``
+            tuples — the store's actual ``(src, dst, rel)`` convention
+            (verified against ``store.py``'s ``add_edges``/
+            ``replace_source_slice``, e.g. ``SELECT src, dst, rel FROM
+            edges``); ``rel`` is ``"extends"`` or ``"references"``.
         catalog: The generation's :class:`RobloxApiCatalog`.
         class_count: Number of class pages rendered.
         enum_count: Number of enum pages rendered.
@@ -431,12 +434,12 @@ def render_generation(dump: NormalizedApiDump, *, generation_id: str, schema_ver
             missing_doc_classes.append(cls.name)
 
         if cls.superclass is not None and cls.superclass in class_names:
-            edges.append((concept_id, "extends", class_page_id(cls.superclass)))
+            edges.append((concept_id, class_page_id(cls.superclass), "extends"))
 
         for ref_name in _class_and_enum_references(cls, class_names, enum_names):
             target = class_page_id(ref_name) if ref_name in class_names else enum_page_id(ref_name)
             if target != concept_id:
-                edges.append((concept_id, "references", target))
+                edges.append((concept_id, target, "references"))
 
     for enum in enums:
         concept_id = enum_page_id(enum.name)
