@@ -96,6 +96,22 @@ async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_add_book_pdf_requires_llm(store_no_llm, tmp_path):
+    """PDF ToC detection/structuring always needs an LLM (FEAT-531 bug).
+
+    Ingest must fail fast with a clear ``BookstoreError`` — not deep
+    inside the PageIndex builder with ``'_NullAdapter' object has no
+    attribute 'ask_with_finish_info'`` (an AttributeError, not a
+    BookstoreError, so it used to bypass the CLI's clean-error handling
+    and crash with a full traceback).
+    """
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    with pytest.raises(BookstoreError, match="LLM"):
+        await store_no_llm.add_book(pdf)
+
+
+@pytest.mark.asyncio
 async def test_add_book_unsupported_format(store, tmp_path):
     bad = tmp_path / "book.pptx"
     bad.write_text("x", encoding="utf-8")
@@ -310,3 +326,18 @@ async def test_global_scope_ingest_and_resolution(store, book_md, locations):
 def test_bookstore_requires_locations():
     with pytest.raises(BookstoreError):
         Bookstore([])
+
+
+@pytest.mark.asyncio
+async def test_null_adapter_ask_with_finish_info_raises_cleanly():
+    """Defense in depth: any unguarded LLM-required path must fail with a
+    clean RuntimeError, not an AttributeError, if it ever reaches the
+    null adapter (mirrors ``ask_structured``'s existing contract)."""
+    from parrot.knowledge.bookstore.library import _NullAdapter
+
+    adapter = _NullAdapter()
+    assert await adapter.ask("anything") == ""
+    with pytest.raises(RuntimeError, match="No LLM configured"):
+        await adapter.ask_structured("anything", object)
+    with pytest.raises(RuntimeError, match="No LLM configured"):
+        await adapter.ask_with_finish_info("anything")

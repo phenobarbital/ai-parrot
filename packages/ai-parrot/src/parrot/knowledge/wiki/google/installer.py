@@ -285,7 +285,7 @@ def uninstall_google_integration(
             actions.append(f"{skill_path} — removed")
 
     # 4. MCP servers in mcp_config.json
-    target_mcp = mcp_path or assets.default_mcp_config_path()
+    target_mcp = mcp_config_path or assets.default_mcp_config_path()
     if target_mcp.exists():
         try:
             mcp_data = _load_mcp_config(target_mcp)

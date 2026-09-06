@@ -8,11 +8,7 @@ from typing import Any, Optional
 
 from parrot.knowledge.bookstore.config import resolve_locations
 
-from .assets import (
-    ALT_SKILL_PATH,
-    bookstore_mcp_entry,
-    default_mcp_config_path,
-)
+from . import assets
 from .bookstore_assets import BOOKSTORE_SKILL
 
 SKILL_PATH = Path(".agents/skills/bookstore/SKILL.md")
@@ -49,7 +45,7 @@ def _save_mcp_json(path: Path, data: dict[str, Any]) -> None:
 def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
     """Install Bookstore PageIndex MCP and skill when an indexed library exists."""
     root = root.resolve()
-    target_mcp = mcp_path or default_mcp_config_path()
+    target_mcp = mcp_path or assets.default_mcp_config_path()
     actions: list[str] = []
 
     mcp_data = _load_mcp_json(target_mcp)
@@ -64,7 +60,7 @@ def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
             actions.append(f"{target_mcp} — bookstore MCP removed (no library found)")
         return actions
 
-    desired_entry = bookstore_mcp_entry(root)
+    desired_entry = assets.bookstore_mcp_entry(root)
     existing = servers.get("bookstore")
 
     if existing is not None and not _is_managed_bookstore_entry(existing):
@@ -100,7 +96,7 @@ def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
 def uninstall_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
     """Remove managed Bookstore MCP entry and unmodified packaged skill."""
     root = root.resolve()
-    target_mcp = mcp_path or default_mcp_config_path()
+    target_mcp = mcp_path or assets.default_mcp_config_path()
     actions: list[str] = []
 
     if target_mcp.exists():
@@ -123,7 +119,7 @@ def uninstall_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str
 def bookstore_status(root: Path, mcp_path: Optional[Path] = None) -> dict[str, bool]:
     """Report configured Bookstore server and discoverable skill."""
     root = root.resolve()
-    target_mcp = mcp_path or default_mcp_config_path()
+    target_mcp = mcp_path or assets.default_mcp_config_path()
     mcp_present = False
     if target_mcp.exists():
         try:
