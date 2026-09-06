@@ -148,6 +148,26 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_acquire.py -q` → 15 passed.
+- Full roblox regression: `tests/knowledge/wiki/roblox/` → 46 passed.
+- `ruff check --target-version py311` on both owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2900-roblox-api-acquisition.log`.
+
+**Delivered**: `roblox/acquire.py` with `resolve_studio_version`,
+`resolve_creator_docs_commit`, `fetch_api_dump`,
+`fetch_creator_docs_tarball`, `extract_class_docs` (in-memory tarfile
+reading, symlink/hardlink/path-traversal rejection, per-member and
+total-member-count bounds), and the orchestrating
+`acquire_roblox_api_payloads()` (identity-first, reuse-skip on unchanged
+Studio version + creator-docs commit). Tests use a hand-rolled
+URL-routing fake `aiohttp.ClientSession` (extending the existing
+`test_documents.py` double pattern, no `aioresponses` dependency added)
+and assert exact request counts (4 on a full acquisition, 2 on a
+reuse-hit).
+
+**No deviations from scope**: only the two files listed in the task's
+Files to Create/Modify table were touched.
