@@ -165,6 +165,33 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_reference_routing.py -q` → 7 passed.
+- Broader regression: `tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/test_context.py tests/knowledge/wiki/roblox/ tests/knowledge/wiki/test_namespaces_e2e.py tests/knowledge/wiki/test_project_namespaces.py` → 192 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2904-federation-reference-routing.log`.
+
+**Delivered**: `context.py`'s `qualify_id()` fix (any already-qualified id
+is a no-op, closing the double-prefix hole the spec's blast-radius review
+predicted). `federation.py`'s `neighbors()` outgoing hydration
+(`_hydrate_foreign_neighbors`) and incoming local-reference routing
+(`_local_incoming_references`, via a live `local.neighbors(qualified_seed,
+direction="in")` query — no persisted inverse index), plus `origin_local`
+threaded through `__init__`/`scoped()` so a single-namespace-scoped
+instance retains read access to the true local plane.
+
+**Bug found and fixed while implementing this task**: my first pass
+gated the incoming-reference lookup on `handle is not None`, which is
+`None` inside a `scoped(single-namespace)` instance answering its own
+unqualified seed (that instance's `_route` treats it as "local" to
+itself). Fixed by gating on `namespace is not None` instead (which
+correctly reads via `_local_prefix` in the scoped case) and by deriving
+the qualified seed for the incoming lookup via `qualify_id(namespace,
+local_id)` rather than trusting the caller's raw argument shape. Caught
+by `test_rel_direction_and_scope`'s scoped-read assertion before commit.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
