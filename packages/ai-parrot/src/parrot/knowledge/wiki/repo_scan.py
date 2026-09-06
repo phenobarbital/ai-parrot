@@ -34,22 +34,11 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
-from pydantic import BaseModel, Field
-
-from parrot.knowledge.wiki.languages import (
-    all_scanners,
-    scanned_suffixes,
-    scanner_for,
-    set_scan_root,
-)
+from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for, set_scan_root
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
-from parrot.knowledge.wiki.symbols import (
-    SymbolRecord,
-    SymbolRef,
-    sym_concept_id,
-    symbol_to_page_fields,
-)
+from parrot.knowledge.wiki.symbols import SymbolRecord, SymbolRef, sym_concept_id, symbol_to_page_fields
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +81,8 @@ CODE_SUFFIXES: frozenset[str] = frozenset(
         ".sql",
         ".sh",
         ".bash",
+        ".lua",
+        ".luau",
     }
 )
 

@@ -1,11 +1,8 @@
 """Tests for the language-scanner suffix registry."""
 
-from parrot.knowledge.wiki.languages import (
-    all_scanners,
-    scanned_suffixes,
-    scanner_for,
-)
+from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for
 from parrot.knowledge.wiki.languages.javascript import JavaScriptScanner
+from parrot.knowledge.wiki.languages.luau import LuauScanner
 
 
 def test_scanner_for_unknown_suffix_returns_none():
@@ -36,3 +33,19 @@ def test_registry_claims_svelte():
     """
     assert isinstance(scanner_for(".svelte"), JavaScriptScanner)
     assert ".svelte" in scanned_suffixes()
+
+
+def test_registry_claims_lua_and_luau():
+    """Default discovery and explicit scanner lookup agree (FEAT-532 TASK-2899).
+
+    Both suffixes route to the same registered `LuauScanner` instance —
+    `scanner_for()` (explicit lookup) and `scanned_suffixes()` (default
+    discovery) must never disagree about which suffixes are claimed.
+    """
+    lua_scanner = scanner_for(".lua")
+    luau_scanner = scanner_for(".luau")
+    assert isinstance(lua_scanner, LuauScanner)
+    assert isinstance(luau_scanner, LuauScanner)
+    assert lua_scanner is luau_scanner
+    assert {".lua", ".luau"} <= scanned_suffixes()
+    assert isinstance(all_scanners()["luau"], LuauScanner)
