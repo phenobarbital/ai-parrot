@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T00:09:29+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-06T02:50:32+00:00",
   "parallelism_notes": "TASK-2881 is the foundational catalog-shell task and must land first. TASK-2882 can proceed after the shell; TASK-2883 and TASK-2884 are parallel pure graph tasks after TASK-2882. TASK-2885 depends on the shell, models, and codec. TASK-2886 depends on the composite and layout. TASK-2887 is the shared renderer contract; TASK-2888 and TASK-2889 can run in parallel after it. TASK-2890 can run after the composite and in parallel with renderer tasks. TASK-2891 waits for all implementation lanes and owns final docs/conformance.",
   "tasks": [
     {
@@ -231,7 +231,7 @@
       "feature_id": "FEAT-529",
       "feature": "a2ui-graph-component",
       "spec": "sdd/specs/a2ui-graph-component.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -245,8 +245,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2891-a2ui-graph-docs-conformance.md"
+      "completed_at": "2026-09-06T02:50:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2891-a2ui-graph-docs-conformance.md"
     }
   ]
 }
