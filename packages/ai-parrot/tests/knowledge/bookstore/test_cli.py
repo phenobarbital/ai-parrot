@@ -41,9 +41,7 @@ def test_add_outside_repo_gives_clear_error(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_LIBRARY_DIR, raising=False)
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(lone))
-    result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add", str(book), "--no-llm"]
-    )
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add", str(book), "--no-llm"])
     assert result.exit_code != 0
     assert "--global" in result.output
 
@@ -75,9 +73,7 @@ def test_add_anchors_relative_path_to_invocation_cwd(tmp_path, monkeypatch):
         return real_open(*args, **kwargs)
 
     monkeypatch.setattr(bookstore_cli, "_open_bookstore", _chdir_then_open)
-    result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add", "b.md", "--no-llm"]
-    )
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add", "b.md", "--no-llm"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "lib" / "trees" / "b.json").is_file()
 
@@ -102,9 +98,7 @@ def test_add_folder_dry_run_changes_nothing(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
-    result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add-folder", str(root), "--dry-run"]
-    )
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "Would index 2 file(s)" in result.output
     assert "cover.png" in result.output
@@ -116,32 +110,24 @@ def test_add_folder_ingests_all_supported_files(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
-    result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"]
-    )
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"])
     assert result.exit_code == 0, result.output
     assert "added: 2" in result.output
     assert (tmp_path / "lib" / "trees" / "one.json").is_file()
     assert (tmp_path / "lib" / "trees" / "two.json").is_file()
     # Re-run: sha dedupe skips everything.
-    rerun = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"]
-    )
+    rerun = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"])
     assert rerun.exit_code == 0, rerun.output
     assert "skipped: 2" in rerun.output
 
 
-def test_add_folder_relative_path_anchors_to_invocation_cwd(
-    tmp_path, monkeypatch
-):
+def test_add_folder_relative_path_anchors_to_invocation_cwd(tmp_path, monkeypatch):
     root = _books_folder(tmp_path)
     monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
     monkeypatch.chdir(tmp_path)
-    result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["add-folder", "books", "--no-llm"]
-    )
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", "books", "--no-llm"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "lib" / "trees" / "one.json").is_file()
 
@@ -170,9 +156,7 @@ def test_bookstore_cli_degrades_without_any_config_or_cli(tmp_path, monkeypatch)
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
     with patch("shutil.which", return_value=None):
-        result = CliRunner().invoke(
-            bookstore_cli.bookstore, ["add-folder", str(root)]
-        )
+        result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root)])
     assert result.exit_code == 0, result.output
     assert "added: 2" in result.output
     assert (tmp_path / "lib" / "trees" / "one.json").is_file()

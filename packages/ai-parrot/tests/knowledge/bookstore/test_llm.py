@@ -18,8 +18,13 @@ def test_uses_detection_when_unset(monkeypatch):
         "parrot.clients.detection.detect_coding_agent_llm",
         return_value="claude-code:claude-haiku-4-5-20251001",
     ):
-        with patch("parrot.clients.factory.LLMFactory.create") as mock_create, \
-             patch("parrot.clients.factory.LLMFactory.parse_llm_string", return_value=("claude-code", "claude-haiku-4-5-20251001")):
+        with (
+            patch("parrot.clients.factory.LLMFactory.create") as mock_create,
+            patch(
+                "parrot.clients.factory.LLMFactory.parse_llm_string",
+                return_value=("claude-code", "claude-haiku-4-5-20251001"),
+            ),
+        ):
             adapter, light, client = _llm.resolve_adapter()
     assert adapter is not None
 
@@ -35,8 +40,10 @@ def test_respects_opt_out(monkeypatch, caplog):
 def test_explicit_config_wins(monkeypatch):
     monkeypatch.setenv("PARROT_BOOKSTORE_LLM", "anthropic:claude-sonnet-5")
     with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
-        with patch("parrot.clients.factory.LLMFactory.create"), \
-             patch("parrot.clients.factory.LLMFactory.parse_llm_string", return_value=("anthropic", "claude-sonnet-5")):
+        with (
+            patch("parrot.clients.factory.LLMFactory.create"),
+            patch("parrot.clients.factory.LLMFactory.parse_llm_string", return_value=("anthropic", "claude-sonnet-5")),
+        ):
             _llm.resolve_adapter()
     mock_detect.assert_not_called()
 

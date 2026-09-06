@@ -4,6 +4,7 @@ Never imports a provider SDK, never spawns a subprocess, never makes a
 network call — only entry-point discovery (``LLMFactory.list_providers()``)
 and ``shutil.which()`` on the CLI binary.
 """
+
 from __future__ import annotations
 
 import shutil

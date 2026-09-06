@@ -7,6 +7,7 @@ GraphIndex pipeline, so a regression in the wiki-page → UniversalNode
 adaptation or the `compute_inter_community_graph()` wiring would be
 caught here.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,9 +26,7 @@ def _strip_log_lines(output: str) -> str:
     command's own `click.echo` output (this repo's loggers prefix every
     line with an ANSI colour escape — plain `click.echo` output never
     does)."""
-    return "\n".join(
-        line for line in output.splitlines() if not line.startswith("\x1b[")
-    )
+    return "\n".join(line for line in output.splitlines() if not line.startswith("\x1b["))
 
 
 @pytest.fixture
@@ -38,19 +37,14 @@ def built_wiki(tmp_path: Path) -> Path:
     natural community boundary) plus a README, matching the default
     ``--graph-kinds=module,document,overview``.
     """
-    (tmp_path / "a.py").write_text(
-        '"""Module A."""\n\n\ndef foo():\n    return 1\n'
-    )
+    (tmp_path / "a.py").write_text('"""Module A."""\n\n\ndef foo():\n    return 1\n')
     (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "b.py").write_text(
-        '"""Module B."""\nfrom a import foo\n\n\ndef bar():\n    return foo() + 1\n'
-    )
-    (tmp_path / "README.md").write_text(
-        "# Sample\n\nThis is a sample repo for testing.\n"
-    )
+    (tmp_path / "pkg" / "b.py").write_text('"""Module B."""\nfrom a import foo\n\n\ndef bar():\n    return foo() + 1\n')
+    (tmp_path / "README.md").write_text("# Sample\n\nThis is a sample repo for testing.\n")
     runner = CliRunner()
     result = runner.invoke(
-        wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+        wiki,
+        ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
     )
     assert result.exit_code == 0, result.output
     return tmp_path
@@ -68,7 +62,8 @@ class TestCommunitiesCommand:
     def test_json_output_is_valid_communities_result(self, built_wiki):
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--json"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--json"],
         )
         assert result.exit_code == 0
         data = json.loads(_strip_log_lines(result.output))
@@ -95,14 +90,18 @@ class TestCommunitiesCommand:
         (tmp_path / "b.md").write_text("# B\n\nDoc B content.\n")
         runner = CliRunner()
         build = runner.invoke(
-            wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+            wiki,
+            ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
         )
         assert build.exit_code == 0, build.output
         result = runner.invoke(
             wiki,
             [
-                "communities", "--path", str(tmp_path),
-                "--graph-kinds", "document",
+                "communities",
+                "--path",
+                str(tmp_path),
+                "--graph-kinds",
+                "document",
             ],
         )
         assert result.exit_code == 0
@@ -116,8 +115,11 @@ class TestCommunitiesCommand:
         result = runner.invoke(
             wiki,
             [
-                "communities", "--path", str(built_wiki),
-                "--graph-kinds", "nonexistent-category",
+                "communities",
+                "--path",
+                str(built_wiki),
+                "--graph-kinds",
+                "nonexistent-category",
             ],
         )
         assert result.exit_code == 0
@@ -132,7 +134,8 @@ class TestCommunitiesInterFlag:
         not silence)."""
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--inter"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--inter"],
         )
         assert result.exit_code == 0
         output = _strip_log_lines(result.output)
@@ -145,7 +148,8 @@ class TestCommunitiesInterFlag:
         with a coupling ratio."""
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--inter"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--inter"],
         )
         output = _strip_log_lines(result.output)
         assert "coupling:" in output
@@ -170,11 +174,13 @@ class TestCommunitiesInterFlag:
         (tmp_path / "solo.py").write_text("def only():\n    return 1\n")
         runner = CliRunner()
         build = runner.invoke(
-            wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+            wiki,
+            ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
         )
         assert build.exit_code == 0, build.output
         result = runner.invoke(
-            wiki, ["communities", "--path", str(tmp_path), "--inter"],
+            wiki,
+            ["communities", "--path", str(tmp_path), "--inter"],
         )
         assert result.exit_code == 0
         output = _strip_log_lines(result.output)
@@ -193,12 +199,15 @@ class TestExtractIntoGraphDetectionFallback:
     """FEAT-531 TASK-2894 Part A — ``_extract_into_graph``'s WIKI_EXTRACT_LLM fallback."""
 
     def test_uses_detection_when_unset(self, capsys):
-        with patch(
-            "parrot.clients.detection.detect_coding_agent_llm",
-            return_value="claude-code:claude-haiku-4-5-20251001",
-        ), patch(
-            "parrot.clients.factory.LLMFactory.create",
-            side_effect=RuntimeError("stop-after-detection"),
+        with (
+            patch(
+                "parrot.clients.detection.detect_coding_agent_llm",
+                return_value="claude-code:claude-haiku-4-5-20251001",
+            ),
+            patch(
+                "parrot.clients.factory.LLMFactory.create",
+                side_effect=RuntimeError("stop-after-detection"),
+            ),
         ):
             result = wiki_cli._extract_into_graph(
                 root=Path("/tmp/does-not-exist"),
@@ -234,9 +243,12 @@ class TestExtractIntoGraphDetectionFallback:
 
     def test_explicit_config_wins(self, monkeypatch):
         monkeypatch.setenv("WIKI_EXTRACT_LLM", "anthropic:claude-sonnet-5")
-        with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect, patch(
-            "parrot.clients.factory.LLMFactory.create",
-            side_effect=RuntimeError("stop-after-config-read"),
+        with (
+            patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect,
+            patch(
+                "parrot.clients.factory.LLMFactory.create",
+                side_effect=RuntimeError("stop-after-config-read"),
+            ),
         ):
             wiki_cli._extract_into_graph(
                 root=Path("/tmp/does-not-exist"),
@@ -272,7 +284,9 @@ class TestIngestModelResolutionDetectionFallback:
             raise RuntimeError("stop-after-resolution")
 
         with patch.object(
-            wiki_cli, "_build_triage_adapters", side_effect=_fake_build_triage_adapters,
+            wiki_cli,
+            "_build_triage_adapters",
+            side_effect=_fake_build_triage_adapters,
         ):
             runner = CliRunner()
             runner.invoke(
