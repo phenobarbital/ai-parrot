@@ -1,6 +1,6 @@
 """Bookstore MCP server entry point (``bookstore mcp``).
 
-Wires the seven read-only ``bookstore_*`` tools into a core
+Wires the ten read-only ``bookstore_*`` tools into a core
 :class:`~parrot.mcp.local_server.StdioMCPServer` so Claude Code (and any
 MCP client) can research the personal indexed library with first-class
 tools — same pattern and stdout-purity discipline as
@@ -13,7 +13,9 @@ Degradation matrix:
 - No LLM, ``bm25s`` installed: ``search_book``/``search`` run BM25-only.
 - No LLM, no ``bm25s``: those two tools error explanatorily, while
   ``catalog_search`` / ``list_books`` / ``get_card`` / ``get_toc`` /
-  ``read_section`` (the core funnel) keep working fully.
+  ``read_section`` / ``related_books`` / ``communities`` /
+  ``get_community`` (the core funnel plus the FEAT-533 graph tools,
+  all SQL-only) keep working fully.
 """
 
 from __future__ import annotations

@@ -43,3 +43,16 @@ def test_server_description_with_llm(seeded_locations, fake_adapter, capsys):
     server = create_bookstore_mcp_server(seeded_locations, adapter=fake_adapter)
     assert "no LLM configured" not in server.config.description
     assert capsys.readouterr().out == ""
+
+
+def test_mcp_tools_list_has_ten_tools(seeded_locations):
+    server = create_bookstore_mcp_server(seeded_locations)
+    assert len(server.tools) == 10
+    assert all(name.startswith("bookstore_") for name in server.tools)
+
+
+def test_mcp_server_does_not_import_wiki(seeded_locations):
+    import sys
+
+    create_bookstore_mcp_server(seeded_locations)
+    assert "parrot.knowledge.wiki" not in sys.modules

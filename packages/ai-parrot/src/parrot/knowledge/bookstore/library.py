@@ -305,12 +305,36 @@ class Bookstore:
             "content": body or "",
         }
 
+    def _expand_with_related(self, cards: list[BookCard]) -> list[BookCard]:
+        """Widen ``cards`` with depth-1 related books (no LLM call).
+
+        Pure SQL via :meth:`related_books` (already ordered strongest
+        edge first); already-shortlisted books and neighbours reached
+        from several shortlisted books are deduped. The caller applies
+        ``max_books`` afterwards — this never decides how many books
+        end up searched, only which ones are eligible.
+        """
+        seen = {card.book_id for card in cards}
+        cards_by_id = {card.book_id: card for card in self.list_books()}
+        expanded = list(cards)
+        for card in cards:
+            for item in self.related_books(card.book_id, depth=1):
+                neighbor_id = item["book"]["book_id"]
+                if neighbor_id in seen:
+                    continue
+                seen.add(neighbor_id)
+                neighbor_card = cards_by_id.get(neighbor_id)
+                if neighbor_card is not None:
+                    expanded.append(neighbor_card)
+        return expanded
+
     async def search(
         self,
         query: str,
         book_ids: Optional[list[str]] = None,
         max_books: int = 3,
         top_k: int = 5,
+        expand_related: bool = False,
     ) -> dict[str, Any]:
         """Cross-book research search.
 
@@ -325,6 +349,11 @@ class Bookstore:
             max_books: Cap on books searched (keep small — each book
                 may cost an LLM call).
             top_k: Per-book result cap in the BM25 path.
+            expand_related: When ``True``, widen the shortlist with
+                depth-1 related books (:meth:`related_books`, no extra
+                LLM call) before applying ``max_books`` — the cap still
+                applies afterwards, so this can only narrow *which*
+                books are searched, never how many.
 
         Returns:
             ``{"query", "books": [{book_id, title, scope, results|context}]}``.
@@ -337,6 +366,8 @@ class Bookstore:
                 # Thin cards (e.g. fallback carding) may miss lexically;
                 # for a small library, searching every book beats "empty".
                 cards = self.list_books()
+        if expand_related:
+            cards = self._expand_with_related(cards)
         cards = cards[:max_books]
         if not cards:
             return {"query": query, "books": [], "status": "empty"}
