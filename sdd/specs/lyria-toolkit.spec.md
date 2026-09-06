@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-534
 **Date**: 2026-09-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 
 ---
