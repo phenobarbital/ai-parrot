@@ -29,7 +29,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import jsonschema
@@ -76,6 +76,7 @@ __all__ = [
     "FunctionDefinition",
     "ProducerOrigin",
     "RegisteredComponent",
+    "catalog_header_instructions",
     "catalog_instructions",
     "get_component",
     "get_function",
@@ -91,8 +92,10 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-#: Global component allowlist, keyed by component name.
-_CATALOG: dict[str, RegisteredComponent] = {}
+#: Global component allowlist, keyed by ``(catalog_id, name)`` (FEAT-529 Module 0 —
+#: was bare-name keyed; rekeyed so a second catalog may register the same name,
+#: e.g. a future viz-core ``Chart`` alongside the Parrot ``Chart``).
+_CATALOG: dict[tuple[str, str], RegisteredComponent] = {}
 
 #: Global function allowlist, keyed by function name.
 _FUNCTIONS: dict[str, FunctionDefinition] = {}
@@ -142,6 +145,13 @@ def register_component(
     Raises:
         ComponentContractError: If the decorated class lacks a callable ``lower()``
             and is not registered with ``is_primitive=True``.
+        CatalogError: If ``(catalog_id, name)`` is already registered to a
+            DIFFERENT class (FEAT-529 Module 0 — the SAME name in a
+            DIFFERENT catalog is allowed and does not raise; re-registering
+            the identical ``(catalog_id, name, cls)`` triple is a no-op,
+            preserving the Basic Catalog's idempotent re-registration
+            pattern, e.g. ``basic_components()`` calling
+            ``_register_primitives()`` on every invocation).
     """
 
     def decorator(cls: type) -> type:
@@ -152,6 +162,13 @@ def register_component(
                 "implement a callable lower(self, component, data_model) -> BasicTree "
                 "(spec G4 — lowering is enforced, not conventional), unless "
                 "registered with is_primitive=True."
+            )
+        key = (catalog_id, name)
+        existing = _CATALOG.get(key)
+        if existing is not None and existing.component_cls is not cls:
+            raise CatalogError(
+                f"Component {name!r} is already registered under catalog {catalog_id!r} "
+                f"(by {existing.component_cls.__name__!r})."
             )
         definition = ComponentDefinition(
             name=name,
@@ -164,32 +181,84 @@ def register_component(
             allowed_children=allowed_children,
             tool_only=tool_only,
         )
-        _CATALOG[name] = RegisteredComponent(definition=definition, component_cls=cls)
+        _CATALOG[key] = RegisteredComponent(definition=definition, component_cls=cls)
         # Attach for convenient access from instances / renderers.
         cls.definition = definition  # type: ignore[attr-defined]
-        logger.debug("Registered A2UI catalog component %r (%s)", name, cls.__name__)
+        logger.debug("Registered A2UI catalog component %r under catalog %r (%s)", name, catalog_id, cls.__name__)
         return cls
 
     return decorator
 
 
-def unregister_component(name: str) -> None:
-    """Remove a component from the catalog (primarily for test isolation)."""
-    _CATALOG.pop(name, None)
+def unregister_component(name: str, catalog_id: str = DEFAULT_CATALOG_ID) -> None:
+    """Remove a component from the catalog (primarily for test isolation).
+
+    Args:
+        name: The component name.
+        catalog_id: The catalog it was registered under. Defaults to the
+            Parrot catalog (matches :func:`register_component`'s default),
+            so existing bare ``unregister_component(name)`` call sites keep
+            working unchanged.
+    """
+    _CATALOG.pop((catalog_id, name), None)
 
 
-def get_component(name: str) -> RegisteredComponent:
+def get_component(name: str, catalog_id: str | None = None) -> RegisteredComponent:
     """Return the registered component for ``name``.
 
+    Args:
+        name: The component name.
+        catalog_id: When given, an exact ``(catalog_id, name)`` lookup. When
+            omitted (the default — every pre-FEAT-529 call site), resolves
+            to the unique catalog registering ``name``; if more than one
+            catalog does, raises :class:`CatalogError` naming the candidates
+            (FEAT-529 Module 0 — no name is ambiguous today; the
+            ``a2ui-viz-core-charts`` sibling spec is expected to introduce
+            the first one, at which point its call sites must pass
+            ``catalog_id`` explicitly).
+
     Raises:
-        KeyError: If ``name`` is not registered.
+        KeyError: If ``name`` is not registered under ``catalog_id`` (when
+            given), or not registered under ANY catalog (when omitted).
+        CatalogError: If ``catalog_id`` is omitted and ``name`` is registered
+            under more than one catalog.
     """
-    return _CATALOG[name]
+    if catalog_id is not None:
+        try:
+            return _CATALOG[(catalog_id, name)]
+        except KeyError as exc:
+            raise KeyError(f"No component {name!r} registered under catalog {catalog_id!r}.") from exc
+
+    matches = [(cid, entry) for (cid, nm), entry in _CATALOG.items() if nm == name]
+    if not matches:
+        raise KeyError(name)
+    if len(matches) > 1:
+        candidates = sorted(cid for cid, _ in matches)
+        error = CatalogError(
+            f"Component name {name!r} is ambiguous: registered under multiple "
+            f"catalogs {candidates}. Pass catalog_id= explicitly."
+        )
+        # Set post-construction (not a `CatalogError.__init__` kwarg — that
+        # class is shared, untouched, base-catalog machinery, spec §7 out of
+        # scope for this task) so callers can inspect the candidate ids
+        # without parsing the message.
+        error.candidates = candidates
+        raise error
+    return matches[0][1]
 
 
-def list_components() -> list[ComponentDefinition]:
-    """Return the definitions of all registered components (name-sorted)."""
-    return [entry.definition for _, entry in sorted(_CATALOG.items())]
+def list_components(catalog_id: str | None = None) -> list[ComponentDefinition]:
+    """Return the definitions of registered components (name-sorted).
+
+    Args:
+        catalog_id: When given, only components registered under this
+            catalog. ``None`` (default) returns every registered component
+            across every catalog (today's behavior, preserved).
+    """
+    entries = _CATALOG.values()
+    if catalog_id is not None:
+        entries = [entry for entry in entries if entry.definition.catalog_id == catalog_id]
+    return [entry.definition for entry in sorted(entries, key=lambda e: (e.definition.name, e.definition.catalog_id))]
 
 
 def register_function(definition: FunctionDefinition) -> None:
@@ -216,18 +285,58 @@ def list_functions() -> list[FunctionDefinition]:
     return [d for _, d in sorted(_FUNCTIONS.items())]
 
 
-def catalog_instructions() -> str:
-    """Aggregate every component's embedded ``instructions`` for the LLM producer.
+def catalog_header_instructions(catalog_id: str) -> str | None:
+    """Return ``catalog_id``'s own header-level instructions block, if any.
+
+    Unlike a component's per-name ``instructions`` (folded into
+    :func:`catalog_instructions` as ``"<name>: <instructions>"`` lines), a
+    catalog HEADER is guidance that applies to the whole catalog regardless
+    of which (or how many) of its components are registered — e.g. the
+    viz-core catalog's nine guideline rules (FEAT-529 Module 0). The Parrot
+    and Basic catalogs have no header today.
+
+    Args:
+        catalog_id: The catalog id.
 
     Returns:
-        A newline-joined block of ``<name>: <instructions>`` lines, name-sorted.
+        The header text, or ``None`` if that catalog declares no header.
+    """
+    from parrot.outputs.a2ui.catalog import viz_core  # local: see _component_exists note
+
+    if catalog_id == viz_core.VIZ_CORE_CATALOG_ID:
+        return viz_core.VIZ_CORE_INSTRUCTIONS
+    return None
+
+
+def catalog_instructions(catalog_ids: Sequence[str] | None = None) -> str:
+    """Aggregate registered components' embedded ``instructions`` for the LLM producer.
+
+    Args:
+        catalog_ids: When given, scopes the aggregate to only these catalogs:
+            each catalog's own header block (:func:`catalog_header_instructions`,
+            if any) followed by ``"<name>: <instructions>"`` lines for
+            components registered under one of these ids. ``None`` (default)
+            aggregates every registered catalog (today's behavior), prefixed
+            by the header of every catalog that declares one.
+
+    Returns:
+        A newline-joined instructions block.
     """
     # NOTE (bug fix, TASK-2535): a prior `.rstrip(": ")` here would silently
     # eat a legitimate trailing colon/space from an instructions string that
     # happened to end that way — `list_components()` is already filtered to
     # `d.instructions` truthy, so no stripping is needed at all.
-    lines = [f"{d.name}: {d.instructions}" for d in list_components() if d.instructions]
-    return "\n".join(lines)
+    if catalog_ids is None:
+        defs = list_components()
+        header_ids = sorted({d.catalog_id for d in defs})
+    else:
+        catalog_id_set = set(catalog_ids)
+        defs = [d for d in list_components() if d.catalog_id in catalog_id_set]
+        header_ids = list(catalog_ids)
+
+    headers = [h for h in (catalog_header_instructions(cid) for cid in header_ids) if h]
+    lines = [f"{d.name}: {d.instructions}" for d in defs if d.instructions]
+    return "\n".join([*headers, *lines])
 
 
 def resolve_catalog(component_catalog_id: str | None, surface_catalog_id: str | None) -> str:
@@ -288,10 +397,8 @@ def _component_exists(name: str, resolved_catalog_id: str) -> bool:
     if resolved_catalog_id == DEFAULT_CATALOG_ID:
         if name in _basic_component_names():
             return True
-        entry = _CATALOG.get(name)
-        return entry is not None and entry.definition.catalog_id == DEFAULT_CATALOG_ID
-    entry = _CATALOG.get(name)
-    return entry is not None and entry.definition.catalog_id == resolved_catalog_id
+        return (DEFAULT_CATALOG_ID, name) in _CATALOG
+    return (resolved_catalog_id, name) in _CATALOG
 
 
 #: Serializes access to :func:`_unicode_aware_jsonschema`'s module-global patch
@@ -446,6 +553,12 @@ def validate_envelope(
     issues: list[dict[str, Any]] = []
     unknown_components: list[str] = []
     action_components: list[str] = []
+    #: component id -> its resolved catalog id (FEAT-529 Module 0 — populated
+    #: below as each component's catalog is resolved, so the keyed registry
+    #: lookups later in this function use the SAME resolution instead of a
+    #: bare-name `_CATALOG.get`, which would silently pick whichever catalog
+    #: happened to insert last once names may collide across catalogs).
+    resolved_catalog_by_id: dict[str, str] = {}
 
     if "root" not in ids:
         issues.append(
@@ -477,11 +590,14 @@ def validate_envelope(
                     }
                 )
 
+        resolved_catalog_id: str | None
         try:
             resolved_catalog_id = resolve_catalog(comp.catalog_id, effective_surface_catalog_id)
         except CatalogValidationError as exc:
+            resolved_catalog_id = None
             issues.append({"code": exc.code, "message": str(exc), "path": comp.id})
         else:
+            resolved_catalog_by_id[comp.id] = resolved_catalog_id
             if not _component_exists(comp.component, resolved_catalog_id):
                 unknown_components.append(comp.component)
                 issues.append(
@@ -495,7 +611,10 @@ def validate_envelope(
                     }
                 )
 
-        entry_for_gate = _CATALOG.get(comp.component)
+        # Keyed lookup (FEAT-529 Module 0): resolve against the SAME catalog id
+        # just computed above, not a bare-name `_CATALOG.get` — a name may now
+        # be registered under more than one catalog.
+        entry_for_gate = _CATALOG.get((resolved_catalog_id, comp.component)) if resolved_catalog_id else None
         is_action_bearing = comp.action is not None or (
             entry_for_gate is not None and entry_for_gate.definition.requires_actions
         )
@@ -562,7 +681,8 @@ def validate_envelope(
 
     by_id = {c.id: c for c in components}
     for comp in components:
-        entry = _CATALOG.get(comp.component)
+        resolved = resolved_catalog_by_id.get(comp.id)
+        entry = _CATALOG.get((resolved, comp.component)) if resolved else None
         allowed_children = entry.definition.allowed_children if entry else None
         for child_id in _child_ids(comp):
             child_comp = by_id.get(child_id)
@@ -579,7 +699,8 @@ def validate_envelope(
                         "path": comp.id,
                     }
                 )
-            child_entry = _CATALOG.get(child_comp.component)
+            child_resolved = resolved_catalog_by_id.get(child_comp.id)
+            child_entry = _CATALOG.get((child_resolved, child_comp.component)) if child_resolved else None
             allowed_parents = child_entry.definition.allowed_parents if child_entry else None
             if allowed_parents is not None and comp.component not in allowed_parents:
                 issues.append(

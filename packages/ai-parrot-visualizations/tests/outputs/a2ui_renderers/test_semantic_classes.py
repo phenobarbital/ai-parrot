@@ -208,12 +208,22 @@ class TestGoldensUntouched:
             "catalog/base.py",
             "catalog/__init__.py",
         )
+        # FEAT-529 Module 0 (TASK-2881): the viz-core catalog SHELL —
+        # spec-sanctioned, additive-only changes that rekey `_CATALOG` by
+        # `(catalog_id, name)` and scope export/instructions per catalog.
+        # No existing `lower()` is touched; no existing golden changes.
+        _FEAT_529_VIZ_CORE_SHELL_FILES = (
+            "catalog/__init__.py",
+            "catalog/export.py",
+        )
         assert all(
             "filterbar" in c
             or "htmldocument" in c
+            or "viz_core" in c
             or c.endswith("catalog/parrot/__init__.py")
             or c.endswith(_FEAT_527_FROZEN_LOWER_FILES)
             or c.endswith(_FEAT_527_TOOL_ONLY_GATE_FILES)
+            or c.endswith(_FEAT_529_VIZ_CORE_SHELL_FILES)
             for c in changed
         ), changed
 

@@ -14,12 +14,25 @@ export interface Binding {
   path: string;
 }
 
+/** The viz-core catalog id (FEAT-529 Module 0) — a component whose resolved
+ * `catalogId` (own `catalogId`, else the surface default) equals this value
+ * is a viz-core component (e.g. `Graph`), dispatched by its own
+ * catalog-aware branch in `A2UINode.svelte`, never the legacy bare-name
+ * chain. Mirrors the backend's
+ * `parrot.outputs.a2ui.catalog.viz_core.VIZ_CORE_CATALOG_ID`. */
+export const VIZ_CORE_CATALOG_ID = "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json";
+
 /** A flat, wire-shaped A2UI component — props live top-level (v1.0), never
  * nested under a "properties" key. `child`/`children` reference OTHER
  * component ids in the same flat list. */
 export interface WireComponent {
   id: string;
   component: string;
+  /** This component's own catalog id, overriding the surface's default
+   * (FEAT-529 Module 0). Already reachable via the index signature below;
+   * declared explicitly so catalog-aware dispatch doesn't read an
+   * untyped prop. */
+  catalogId?: string;
   child?: string;
   children?: string[] | { componentId: string; path: string };
   metadata?: { extensions?: Record<string, unknown> };
