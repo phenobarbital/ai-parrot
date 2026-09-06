@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+import wave
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union
 
@@ -40,7 +42,11 @@ class LyriaToolkit(AbstractToolkit):
     """
 
     tool_prefix: str = "lyria"
-    auto_open: bool = False
+    #: FEAT-391: eagerly resolve (or lazily construct) the client on first
+    #: tool call via _open(), so ToolManager.cleanup_toolkits() can release
+    #: it through _close() on bot shutdown. Without this, _opened never
+    #: flips to True and _close() is unreachable via the automatic path.
+    auto_open: bool = True
 
     def __init__(
         self,
@@ -94,12 +100,24 @@ class LyriaToolkit(AbstractToolkit):
         try:
             from parrot.clients.google.client import GoogleGenAIClient
 
-            self._client = GoogleGenAIClient(model=self.model)
+            # Batch mode (Vertex AI lyria-002) requires vertexai=True; stream
+            # mode (Gemini Live lyria-realtime-exp) does not use Vertex AI.
+            self._client = GoogleGenAIClient(model=self.model, vertexai=(self.mode == "batch"))
             return self._client
         except ImportError as exc:
             raise RuntimeError(
                 "GoogleGenAIClient is not available. Ensure ai-parrot-client-google is installed: " f"{exc}"
             ) from exc
+
+    async def _open(self) -> None:
+        """Eagerly resolve (or lazily construct) the client on first tool call.
+
+        FEAT-391: with ``auto_open = True``, this is invoked at most once by
+        ``_ensure_open()`` before the first tool call, which flips
+        ``_opened`` to True so ``ToolManager.cleanup_toolkits()`` can later
+        release the client via :meth:`_close`.
+        """
+        await self._get_client()
 
     async def _close(self) -> None:
         """Release the client if it was created (owned) by this toolkit."""
@@ -153,7 +171,12 @@ class LyriaToolkit(AbstractToolkit):
             seed=seed,
         )
 
-        client = await self._get_client()
+        try:
+            client = await self._get_client()
+        except RuntimeError as exc:
+            self.logger.error(f"Lyria client unavailable: {exc}")
+            return {"status": "error", "error": str(exc), "parameters": params.model_dump()}
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
         file_id = uuid.uuid4().hex[:10]
         out_path = self.output_dir / f"lyria_{file_id}.wav"
@@ -264,12 +287,22 @@ class LyriaToolkit(AbstractToolkit):
 
             raw_file = files[0]
             saved_file = await async_slice_wav_file(raw_file, out_path, params.duration_seconds)
+
+            # Read back the ACTUAL written duration/sample_rate/channels
+            # rather than trusting the request: the source batch WAV can be
+            # shorter than the requested duration_seconds (readframes()
+            # silently returns fewer frames when the source runs out), so
+            # reporting the requested value would misreport the real file.
+            actual_rate, actual_channels, actual_duration = await asyncio.to_thread(
+                self._read_wav_metadata, saved_file
+            )
+
             return LyriaMusicResult(
                 status="success",
                 file_path=str(saved_file),
-                duration_seconds=float(params.duration_seconds),
-                sample_rate=DEFAULT_SAMPLE_RATE,
-                channels=DEFAULT_CHANNELS,
+                duration_seconds=round(actual_duration, 2),
+                sample_rate=actual_rate,
+                channels=actual_channels,
                 format="wav",
                 size_bytes=saved_file.stat().st_size,
                 parameters=params,
@@ -277,6 +310,28 @@ class LyriaToolkit(AbstractToolkit):
         except Exception as exc:
             self.logger.error(f"Lyria batch generation failed: {exc}", exc_info=True)
             return {"status": "error", "error": str(exc), "parameters": params.model_dump()}
+
+    @staticmethod
+    def _read_wav_metadata(path: Path) -> tuple[int, int, float]:
+        """Read (sample_rate, channels, duration_seconds) back from a WAV file.
+
+        Blocking helper — always invoke via ``asyncio.to_thread`` from async
+        code.
+
+        Args:
+            path: Path to a WAV file written by `audio_utils.save_pcm_to_wav`
+                or `audio_utils.slice_wav_file`.
+
+        Returns:
+            Tuple of `(sample_rate, channels, duration_seconds)` reflecting
+            what was actually written to disk.
+        """
+        with wave.open(str(path), "rb") as wf:
+            rate = wf.getframerate()
+            channels = wf.getnchannels()
+            frames = wf.getnframes()
+        duration = (frames / rate) if rate else 0.0
+        return rate, channels, duration
 
     async def list_genres_and_moods(self) -> Dict[str, Any]:
         """Return the catalog of genres and moods supported by Google Lyria.
