@@ -72,7 +72,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Creates relations.py and edits library.py/cli.py; TASK-2914 touches the same two files, so run after it in the same worktree (order 2914 → 2915 preferred, either works).",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2915-bookstore-deterministic-relations.md"
+      "completed_at": "2026-09-06T04:15:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2915-bookstore-deterministic-relations.md"
     },
     {
       "id": "TASK-2916",

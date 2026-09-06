@@ -195,10 +195,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: New `relations.py`: `_author_key`/`_author_keys` (skips the
+`slugify` fallback `"book"` and slugs <3 chars), `_jaccard`,
+`_same_era`, `deterministic_relations` (six rels, `REL_WEIGHTS`-driven
+except `shares_topic` which uses the live Jaccard score). `same_genre`
+explicitly excludes the `"other"` default to avoid flooding an
+unclassified library with noise edges (judgment call, documented in
+the function's own docstring).
+`Bookstore` gained `_visible_ids`, `_relations_store_for` (cross-scope
+routing via `resolve_book`), `_write_deterministic` (idempotent
+per-book-touched rewrite), and `related_books` (SQL-only depth-1/2
+walk; module-level `_other_endpoint`/`_relation_brief` helpers do the
+walk math). `remove_book` now cascades `delete_relations`/
+`delete_judgements` across every scope store. CLI `related` command
+added (table + `--json`).
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 94 passed,
+same 3 pre-existing unrelated failures as TASK-2913/2914. `ruff check`
+clean on every file this task touched (the 1 remaining `F401` on
+`cli.py`'s unused `sys` import is the same pre-existing issue noted in
+TASK-2914, still untouched).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.
