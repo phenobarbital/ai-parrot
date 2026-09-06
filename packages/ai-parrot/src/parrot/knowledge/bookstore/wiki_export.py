@@ -251,7 +251,14 @@ def register_namespace(
         return save_global_registry(registry)
 
     config = load_project_config(git_root)
-    store_value = str(Path(store_dir).resolve().relative_to(Path(git_root).resolve()))
+    try:
+        store_value = str(Path(store_dir).resolve().relative_to(Path(git_root).resolve()))
+    except ValueError as exc:
+        raise BookstoreError(
+            f"{store_dir} is outside the project git root ({git_root}) — "
+            "project-scope namespace entries must store a path relative "
+            "to it. Pass --global to register an absolute path instead."
+        ) from exc
     existing = config.namespaces.get(name)
     if existing is not None:
         if existing.store != store_value:

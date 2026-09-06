@@ -380,6 +380,24 @@ async def test_refresh_card_carries_classification_and_keeps_community(store, bo
     assert persisted.community_label == "Virtue ethics"
 
 
+@pytest.mark.asyncio
+async def test_refresh_card_no_llm_preserves_existing_genre(store_no_llm, book_md):
+    """Regression (code review, FEAT-533): CardDraft.genre defaults to
+    the non-empty sentinel "other" (unlike traditions=[]/period=None,
+    which are already falsy), so the old `draft.genre or card.genre`
+    pattern always picked draft.genre — silently downgrading a
+    previously-classified card back to "other" on every no-LLM/fallback
+    refresh."""
+    card, _ = await store_no_llm.add_book(book_md)
+    catalog = store_no_llm._catalog("project")
+    stamped = card.model_copy(update={"genre": "essay"})
+    catalog.upsert(stamped)
+
+    await store_no_llm.refresh_card(card.book_id)
+
+    assert store_no_llm.get_card(card.book_id).genre == "essay"
+
+
 def test_card_prompt_requests_classification():
     """Not in TASK-2914's own file list (a spec gap — no test_carding.py
     exists and it isn't listed here either) but required by its Test

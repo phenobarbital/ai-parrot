@@ -222,3 +222,21 @@ async def test_export_wiki_without_wiki_package(store_with_relations, monkeypatc
 
     # Catalog untouched by the failed export.
     assert store_with_relations._catalog("project").list_cards()
+
+
+@pytest.mark.asyncio
+async def test_export_wiki_out_outside_git_root_raises_clean_error(git_root, monkeypatch, tmp_path):
+    """Regression (code review, FEAT-533): register_namespace's bare
+    Path.relative_to(git_root) call raised an uncaught ValueError (raw
+    traceback) instead of a BookstoreError/ClickException when --out
+    pointed outside the repo."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    locations = [LibraryLocation(scope="project", root=git_root / ".parrot" / "library")]
+    bookstore = Bookstore(locations)
+    catalog = bookstore._catalog("project")
+    for card in (_card("a"), _card("b"), _card("c")):
+        catalog.upsert(card)
+
+    outside_dir = tmp_path / "outside-the-repo"
+    with pytest.raises(BookstoreError, match="outside the project git root"):
+        await bookstore.export_wiki(outside_dir, scope="project", register=True)

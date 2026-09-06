@@ -282,3 +282,55 @@ async def test_community_id_stable_for_same_membership(store):
 def test_get_community_unknown_raises(store):
     with pytest.raises(BookstoreError):
         store.get_community("does-not-exist")
+
+
+@pytest.mark.asyncio
+async def test_remove_book_invalidates_stale_communities(store):
+    """Regression (code review, FEAT-533): remove_book must not leave a
+    community partition that still lists a deleted book id — community
+    ids are membership hashes, so removing a member invalidates every
+    affected community at once; there is no way to "repair" it without
+    re-running Stage 3."""
+    project = store._catalog("project")
+    for card in (
+        _card("a", authors=["Author X"]),
+        _card("b", authors=["Author X"]),
+        _card("c", authors=["Author Y"]),
+    ):
+        project.upsert(card)
+
+    await store.relate_books(None, use_llm=False)
+    assert store.communities()
+
+    await store.remove_book("a")
+
+    for community in store.communities():
+        assert "a" not in community.member_book_ids
+    remaining = {c.book_id for c in store.list_books()}
+    for community in store.communities():
+        assert set(community.member_book_ids) <= remaining
+
+
+@pytest.mark.asyncio
+async def test_stage3_under_three_books_clears_prior_partition(store):
+    """Regression (code review, FEAT-533): once the library drops below
+    the 3-book Stage 3 threshold, the previous partition must be
+    invalidated, not left describing books that may no longer exist."""
+    project = store._catalog("project")
+    for card in (
+        _card("a", authors=["Author X"]),
+        _card("b", authors=["Author X"]),
+        _card("c", authors=["Author Y"]),
+    ):
+        project.upsert(card)
+    await store.relate_books(None, use_llm=False)
+    assert store.communities()
+
+    project.remove("c")
+    summary = await store.relate_books(None, use_llm=False)
+
+    assert summary.communities is None
+    assert store.communities() == []
+    for card in store.list_books():
+        assert card.community_id is None
+        assert card.community_label is None

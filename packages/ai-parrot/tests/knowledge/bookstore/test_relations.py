@@ -451,3 +451,26 @@ async def test_add_without_relate_makes_no_relation_prompt(store_llm, fake_adapt
     assert store_llm._catalog("project").judged_pairs(card.book_id) == set()
     for call in fake_adapter.ask_structured.await_args_list:
         assert call.args[1] is not RelationDraft
+
+
+@pytest.mark.asyncio
+async def test_relate_drops_deterministic_edge_when_no_longer_matching(store):
+    """Regression (code review, FEAT-533): a re-run that recomputes ZERO
+    matching deterministic edges for a target must still drop that
+    target's stale edges — the old ``relate_books`` code only called
+    ``_write_deterministic`` when the new edge list was non-empty, so a
+    same_author edge survived forever once the shared author was
+    removed."""
+    project = store._catalog("project")
+    project.upsert(_card("a", authors=["Same Author"]))
+    project.upsert(_card("b", authors=["Same Author"]))
+
+    await store.relate_books(["a"], communities=False)
+    assert project.list_relations("a", rel="same_author")
+
+    # "a" no longer shares an author with anything.
+    project.upsert(_card("a", authors=["Different Author"]))
+    summary = await store.relate_books(["a"], communities=False)
+
+    assert summary.deterministic_edges == 0
+    assert project.list_relations("a", rel="same_author") == []

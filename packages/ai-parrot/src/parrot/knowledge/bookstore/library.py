@@ -414,34 +414,53 @@ class Bookstore:
         _card, loc = self.resolve_book(book_id)
         return self._catalog(loc.scope)
 
-    def _write_deterministic(self, relations: list[BookRelation]) -> None:
-        """Persist deterministic edges, replacing prior ones for their targets.
+    def _write_deterministic(
+        self, relations: list[BookRelation], target_ids: Optional[set[str]] = None
+    ) -> None:
+        """Persist deterministic edges, replacing prior ones for every target.
 
-        Groups edges by the scope DB that owns their ``src`` (cross-scope
-        rule), and — per scope — first deletes every existing
-        ``origin="deterministic"`` edge touching a book that appears
-        (as either endpoint) in ``relations`` for that scope, then
-        inserts the new set. This makes re-running Stage 1 idempotent:
-        an edge that no longer holds (e.g. a book's topics changed) is
-        dropped rather than left stale.
+        First deletes every existing ``origin="deterministic"`` edge
+        touching a book in ``target_ids``, from **every** scope store
+        (an edge touching a target may have been physically stored in
+        either partner's scope, depending on which side owns the
+        cross-scope/canonical `src`, and that can change run to run as
+        neighbours come and go) — then writes the new ``relations``,
+        grouped by the scope DB that owns each edge's ``src``.
+
+        Deleting by ``target_ids`` rather than only the ids that happen
+        to appear in ``relations`` is what makes a re-run idempotent
+        when recomputation yields **zero** matching edges for a target
+        (e.g. a book's authors/topics changed such that it no longer
+        shares anything with its old neighbours): an empty ``relations``
+        list still correctly drops that target's now-stale edges,
+        instead of leaving them behind forever.
 
         Args:
             relations: Edges to persist, typically the output of
-                :func:`~parrot.knowledge.bookstore.relations.deterministic_relations`.
+                :func:`~parrot.knowledge.bookstore.relations.deterministic_relations`,
+                already filtered to those touching a target.
+            target_ids: Every book id this write is authoritative for.
+                Defaults to the ids appearing in ``relations`` (the
+                pre-existing, narrower behaviour) when omitted — callers
+                recomputing Stage 1 for an explicit set of books should
+                always pass it explicitly.
         """
+        if target_ids is None:
+            target_ids = {
+                book_id
+                for relation in relations
+                for book_id in (relation.src_book_id, relation.dst_book_id)
+            }
+        for book_id in target_ids:
+            for _scope, store in self._stores():
+                store.delete_relations(book_id=book_id, origin="deterministic")
+
         by_scope: dict[str, list[BookRelation]] = {}
         for relation in relations:
             _card, loc = self.resolve_book(relation.src_book_id)
             by_scope.setdefault(loc.scope, []).append(relation)
         for scope, scoped_relations in by_scope.items():
-            store = self._catalog(scope)
-            touched: set[str] = set()
-            for relation in scoped_relations:
-                touched.add(relation.src_book_id)
-                touched.add(relation.dst_book_id)
-            for book_id in touched:
-                store.delete_relations(book_id=book_id, origin="deterministic")
-            store.upsert_relations(scoped_relations)
+            self._catalog(scope).upsert_relations(scoped_relations)
 
     def related_books(
         self,
@@ -576,8 +595,12 @@ class Bookstore:
             touching_targets = [
                 relation for relation in det if relation.src_book_id in target_set or relation.dst_book_id in target_set
             ]
-            if touching_targets:
-                self._write_deterministic(touching_targets)
+            # Always call _write_deterministic (never guard on
+            # touching_targets being non-empty) — a target whose
+            # metadata change means it no longer shares anything with
+            # its old neighbours must still have its stale edges
+            # dropped; see _write_deterministic's own docstring.
+            self._write_deterministic(touching_targets, target_set)
             summary.deterministic_edges = len(touching_targets)
 
             if not use_llm or not self.has_llm:
@@ -647,6 +670,12 @@ class Bookstore:
         """
         visible_cards = self.list_books()
         if len(visible_cards) < 3:
+            # The library has genuinely shrunk below the threshold — the
+            # previous partition (if any) describes membership that no
+            # longer exists, so it is invalidated rather than left
+            # stale (unlike the detection-failure path below, which
+            # preserves a still-possibly-valid prior partition).
+            self._clear_communities()
             summary.notes.append("communities: skipped (<3 books)")
             return
         visible_ids = {card.book_id for card in visible_cards}
@@ -745,6 +774,23 @@ class Bookstore:
             if loc.scope == "project":
                 return self._catalog("project")
         return self._catalog(self.locations[0].scope)
+
+    def _clear_communities(self) -> None:
+        """Invalidate the persisted community partition and every card's stamp.
+
+        Community membership is a property of the *whole* merged graph
+        — removing a book (or the library falling under Stage 3's
+        3-book threshold) invalidates every existing community's
+        membership at once, so there is no way to "repair" the old
+        partition in place. Clearing it here — rather than leaving
+        stale rows/labels behind until the next successful ``relate``
+        — keeps :meth:`communities`/:meth:`get_community` from ever
+        reporting a book that no longer exists.
+        """
+        for _scope, store in self._stores():
+            store.upsert_communities([])
+        for card in self.list_books():
+            self._catalog(card.scope).set_card_community(card.book_id, None, None)
 
     def communities(self) -> list[BookCommunity]:
         """All communities from the merged graph (read-only, SQL-only)."""
@@ -1182,6 +1228,14 @@ class Bookstore:
         scope owning an edge's ``src`` — spec §7 cross-scope rule), so
         the relation/judgement cascade runs across every store, not
         just the book's own scope.
+
+        Any persisted community partition is also invalidated (spec §7:
+        community ids are membership hashes, so removing a member
+        changes every affected community's identity at once — there is
+        no way to "repair" the old partition in place). The next
+        successful ``relate_books(communities=True)`` recomputes it;
+        until then, ``communities()``/``get_community()`` correctly
+        report nothing rather than a book that no longer exists.
         """
         card, loc = self.resolve_book(book_id)
         toolkit = self._toolkit(loc.scope)
@@ -1192,7 +1246,10 @@ class Bookstore:
         for _scope, store in self._stores():
             store.delete_relations(book_id=book_id)
             store.delete_judgements(book_id)
-        return self._catalog(loc.scope).remove(book_id)
+        removed = self._catalog(loc.scope).remove(book_id)
+        if removed:
+            self._clear_communities()
+        return removed
 
     async def refresh_card(self, book_id: str) -> BookCard:
         """Re-run carding on an existing tree (e.g. after enabling an LLM)."""
@@ -1218,7 +1275,14 @@ class Bookstore:
                 "toc_digest": toc_digest,
                 "toc": toc_entries,
                 "card_origin": "llm" if self.has_llm else "fallback",
-                "genre": draft.genre or card.genre,
+                # draft.genre defaults to the non-empty sentinel "other"
+                # (unlike traditions=[]/period=None, which are already
+                # falsy) — "draft.genre or card.genre" would therefore
+                # ALWAYS pick draft.genre and silently downgrade a
+                # previously-classified card back to "other" on every
+                # no-LLM/fallback refresh. Only override when the draft
+                # actually classified something.
+                "genre": draft.genre if draft.genre != "other" else card.genre,
                 "traditions": draft.traditions or card.traditions,
                 "period": draft.period or card.period,
                 # community_id/community_label are intentionally absent

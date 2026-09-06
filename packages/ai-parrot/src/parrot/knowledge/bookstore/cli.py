@@ -496,12 +496,17 @@ def export_wiki(out_dir: Optional[str], global_scope: bool, no_register: bool) -
     """Project the book graph into a wikitoolkit plane (CLI-only)."""
     from .library import BookstoreError
 
+    # Anchor a relative --out to the invocation directory NOW — the
+    # heavy imports below chdir() the process (see _INVOCATION_CWD),
+    # same guard as `add`/`add-folder`'s FILE/FOLDER arguments.
+    resolved_out = (Path(_INVOCATION_CWD) / out_dir).resolve() if out_dir else None
+
     scope = "global" if global_scope else "project"
     store = _open_bookstore(require_exists=True, use_llm=False, scope_needed=scope)
     try:
         result = asyncio.run(
             store.export_wiki(
-                Path(out_dir) if out_dir else None,
+                resolved_out,
                 scope=scope,
                 register=not no_register,
             )
