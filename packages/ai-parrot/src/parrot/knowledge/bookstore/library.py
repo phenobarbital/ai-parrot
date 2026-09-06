@@ -63,9 +63,13 @@ class _NullAdapter:
     construction time (``model``, ``client``). ``ask()`` degrades to an
     empty answer so LLM-optional ingest passes (per-node summaries in
     ``md_to_tree``) simply produce no summaries instead of failing the
-    whole import; ``ask_structured()`` raises because its callers
-    (two-step text ingest, carding) cannot proceed without a model —
-    :class:`Bookstore` guards those paths up front.
+    whole import; ``ask_structured()``/``ask_with_finish_info()`` raise
+    because their callers (two-step text ingest, PDF TOC detection/
+    structuring, carding) cannot proceed without a model —
+    :class:`Bookstore` guards those paths up front. The raise (rather
+    than silently degrading, as ``ask()`` does) is deliberate: any call
+    that reaches here bypassed that guard, so it should fail loudly
+    instead of behaving as an unrelated `AttributeError`.
     """
 
     model: Optional[str] = None
@@ -75,6 +79,9 @@ class _NullAdapter:
         return ""
 
     async def ask_structured(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("No LLM configured for the bookstore")
+
+    async def ask_with_finish_info(self, *args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("No LLM configured for the bookstore")
 
 
@@ -358,8 +365,9 @@ class Bookstore:
             or ``"skipped"`` (sha match without ``force``).
 
         Raises:
-            BookstoreError: Unsupported format, missing file, ``.txt``
-                without an LLM, or EPUB without ``ai-parrot-loaders``.
+            BookstoreError: Unsupported format, missing file, ``.pdf``
+                or ``.txt`` without an LLM, or EPUB without
+                ``ai-parrot-loaders``.
         """
         path = Path(file_path).expanduser().resolve()
         if not path.is_file():
@@ -392,6 +400,12 @@ class Bookstore:
         doc_description = ""
         try:
             if fmt == "pdf":
+                if not self.has_llm:
+                    raise BookstoreError(
+                        "PDF ingest needs an LLM to detect and structure "
+                        "the table of contents — configure one (--llm) "
+                        "or convert to markdown/text first"
+                    )
                 result = await toolkit.import_pdf(
                     tree_name=slug,
                     pdf_path=str(path),
