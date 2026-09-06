@@ -366,6 +366,37 @@ def card_cmd(book_id: str, refresh: bool, llm: Optional[str]) -> None:
     _echo_card(card)
 
 
+@bookstore.command("related")
+@click.argument("book_id")
+@click.option("--rel", default=None, help="Filter to one relation kind.")
+@click.option("--depth", default=1, type=int, help="Hops to walk (1 or 2).")
+@click.option("--json", "as_json", is_flag=True, help="JSON output.")
+def related(book_id: str, rel: Optional[str], depth: int, as_json: bool) -> None:
+    """List books related to BOOK_ID (deterministic/LLM/community edges)."""
+    from .library import BookstoreError
+
+    store = _open_bookstore(require_exists=True, use_llm=False)
+    try:
+        results = store.related_books(book_id, rel=rel, depth=depth)
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if as_json:
+        click.echo(json.dumps(results, indent=2, default=str))
+        return
+    if not results:
+        click.echo("No related books found.")
+        return
+    click.echo(f"{'rel':<16}{'book':<20}{'title':<30}{'origin':<14}{'weight':<8}confidence")
+    for item in results:
+        confidence = item["confidence"]
+        click.echo(
+            f"{item['rel']:<16}{item['book']['book_id']:<20}"
+            f"{item['book']['title'][:28]:<30}{item['origin']:<14}"
+            f"{item['weight']:<8.2f}"
+            f"{'' if confidence is None else f'{confidence:.2f}'}"
+        )
+
+
 @bookstore.command("remove")
 @click.argument("book_id")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")

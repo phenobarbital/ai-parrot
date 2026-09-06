@@ -34,9 +34,9 @@ from .carding import (
     slugify,
     unique_slug,
 )
-from .catalog import CatalogStore, merged_cards, merged_search
+from .catalog import CatalogStore, merged_cards, merged_relations, merged_search
 from .config import LibraryLocation
-from .models import BookCard, CardDraft
+from .models import BookCard, BookRelation, CardDraft
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,40 @@ _FORMAT_BY_SUFFIX = {
     # .doc (legacy binary) is deliberately absent: python-docx can't read it.
     ".docx": "docx",
 }
+
+
+def _other_endpoint(relation: BookRelation, anchor: str) -> Optional[str]:
+    """The endpoint of ``relation`` that isn't ``anchor``, or ``None``.
+
+    Returns ``None`` when ``anchor`` is neither endpoint — the relation
+    simply doesn't touch it (e.g. while walking hop-2 candidates).
+    """
+    if relation.src_book_id == anchor:
+        return relation.dst_book_id
+    if relation.dst_book_id == anchor:
+        return relation.src_book_id
+    return None
+
+
+def _relation_brief(
+    other_id: str,
+    hop: int,
+    relation: BookRelation,
+    via: Optional[str],
+    cards_by_id: dict[str, BookCard],
+) -> dict[str, Any]:
+    """One :meth:`Bookstore.related_books` result row."""
+    card = cards_by_id.get(other_id)
+    return {
+        "book": card.brief() if card is not None else {"book_id": other_id},
+        "rel": relation.rel,
+        "origin": relation.origin,
+        "weight": relation.weight,
+        "confidence": relation.confidence,
+        "rationale": relation.rationale,
+        "hop": hop,
+        "via": via,
+    }
 
 
 class BookstoreError(RuntimeError):
@@ -336,6 +370,132 @@ class Bookstore:
                     }
                 )
         return {"query": query, "books": books}
+
+    # ------------------------------------------------------------------
+    # Relations (Stage 1 deterministic + read path — FEAT-533)
+    # ------------------------------------------------------------------
+    def _visible_ids(self) -> set[str]:
+        """Book ids visible to the caller across every scope."""
+        return {card.book_id for card in self.list_books()}
+
+    def _relations_store_for(self, book_id: str) -> CatalogStore:
+        """The scope DB that should own edges whose ``src`` is ``book_id``.
+
+        Cross-scope storage rule (spec §7): an edge lives in the DB of
+        the scope that owns its ``src`` book.
+        """
+        _card, loc = self.resolve_book(book_id)
+        return self._catalog(loc.scope)
+
+    def _write_deterministic(self, relations: list[BookRelation]) -> None:
+        """Persist deterministic edges, replacing prior ones for their targets.
+
+        Groups edges by the scope DB that owns their ``src`` (cross-scope
+        rule), and — per scope — first deletes every existing
+        ``origin="deterministic"`` edge touching a book that appears
+        (as either endpoint) in ``relations`` for that scope, then
+        inserts the new set. This makes re-running Stage 1 idempotent:
+        an edge that no longer holds (e.g. a book's topics changed) is
+        dropped rather than left stale.
+
+        Args:
+            relations: Edges to persist, typically the output of
+                :func:`~parrot.knowledge.bookstore.relations.deterministic_relations`.
+        """
+        by_scope: dict[str, list[BookRelation]] = {}
+        for relation in relations:
+            _card, loc = self.resolve_book(relation.src_book_id)
+            by_scope.setdefault(loc.scope, []).append(relation)
+        for scope, scoped_relations in by_scope.items():
+            store = self._catalog(scope)
+            touched: set[str] = set()
+            for relation in scoped_relations:
+                touched.add(relation.src_book_id)
+                touched.add(relation.dst_book_id)
+            for book_id in touched:
+                store.delete_relations(book_id=book_id, origin="deterministic")
+            store.upsert_relations(scoped_relations)
+
+    def related_books(
+        self,
+        book_id: str,
+        rel: Optional[str] = None,
+        depth: int = 1,
+        top_k: int = 10,
+        min_confidence: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Walk the book graph outward from ``book_id`` (SQL-only, no LLM).
+
+        Backs both the CLI ``bookstore related`` command and the
+        ``bookstore_related_books`` MCP tool — synchronous and
+        side-effect-free by design.
+
+        Args:
+            book_id: Origin book.
+            rel: Optional relation kind filter.
+            depth: Hops to walk from ``book_id`` — clamped to 1 or 2.
+            top_k: Maximum results returned.
+            min_confidence: Drop LLM edges below this confidence
+                (deterministic/community edges have no confidence and
+                are never filtered by this).
+
+        Returns:
+            Dicts ``{book, rel, origin, weight, confidence, rationale,
+            hop, via}`` — ``book`` is the neighbour's :meth:`BookCard.brief`,
+            ``via`` is the hop-1 book that led to a hop-2 result (``None``
+            for hop-1). Ordered by hop ascending, then weight descending.
+            When several edges reach the same book, the strongest
+            (smallest hop, then largest weight) wins.
+
+        Raises:
+            BookstoreError: When ``book_id`` is unknown.
+        """
+        self.resolve_book(book_id)
+        depth = max(1, min(depth, 2))
+        visible = self._visible_ids()
+        relations = merged_relations(self._stores(), visible)
+        cards_by_id = {card.book_id: card for card in self.list_books()}
+
+        def _matches(relation: BookRelation) -> bool:
+            if rel is not None and relation.rel != rel:
+                return False
+            if relation.confidence is not None and relation.confidence < min_confidence:
+                return False
+            return True
+
+        filtered = [r for r in relations if _matches(r)]
+
+        best: dict[str, tuple[int, BookRelation, Optional[str]]] = {}
+
+        def _consider(other_id: str, hop: int, relation: BookRelation, via: Optional[str]) -> None:
+            if other_id == book_id or other_id not in cards_by_id:
+                return
+            current = best.get(other_id)
+            if current is None or hop < current[0] or (
+                hop == current[0] and relation.weight > current[1].weight
+            ):
+                best[other_id] = (hop, relation, via)
+
+        hop1_neighbors: set[str] = set()
+        for relation in filtered:
+            other = _other_endpoint(relation, book_id)
+            if other is not None:
+                hop1_neighbors.add(other)
+                _consider(other, 1, relation, None)
+
+        if depth == 2:
+            for anchor in hop1_neighbors:
+                for relation in filtered:
+                    other = _other_endpoint(relation, anchor)
+                    if other is not None:
+                        _consider(other, 2, relation, anchor)
+
+        results = [
+            _relation_brief(other_id, hop, relation, via, cards_by_id)
+            for other_id, (hop, relation, via) in best.items()
+        ]
+        results.sort(key=lambda item: (item["hop"], -item["weight"]))
+        return results[:top_k]
 
     # ------------------------------------------------------------------
     # Ingestion surface (CLI-only)
@@ -664,7 +824,13 @@ class Bookstore:
         }
 
     async def remove_book(self, book_id: str) -> bool:
-        """Remove a book — catalog row plus its PageIndex tree."""
+        """Remove a book — catalog row, PageIndex tree, and graph edges.
+
+        Edges touching ``book_id`` may live in either scope's DB (the
+        scope owning an edge's ``src`` — spec §7 cross-scope rule), so
+        the relation/judgement cascade runs across every store, not
+        just the book's own scope.
+        """
         card, loc = self.resolve_book(book_id)
         toolkit = self._toolkit(loc.scope)
         try:
@@ -673,6 +839,9 @@ class Bookstore:
             logger.warning(
                 "Tree %r missing while removing book %r", card.tree_name, book_id
             )
+        for _scope, store in self._stores():
+            store.delete_relations(book_id=book_id)
+            store.delete_judgements(book_id)
         return self._catalog(loc.scope).remove(book_id)
 
     async def refresh_card(self, book_id: str) -> BookCard:

@@ -155,6 +155,54 @@ def test_list_requires_existing_library(tmp_path, monkeypatch):
     assert "No library found" in result.output
 
 
+def test_related_cli_table_and_json(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard, BookRelation
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id, title in (("a", "Book A"), ("b", "Book B")):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=title,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+            )
+        )
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id="a", dst_book_id="b", rel="same_author",
+                origin="deterministic", weight=0.9, computed_at=now,
+            )
+        ]
+    )
+
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["related", "a"])
+    assert result.exit_code == 0, result.output
+    assert "same_author" in result.output
+    assert "Book B" in result.output
+
+    json_result = CliRunner().invoke(
+        bookstore_cli.bookstore, ["related", "a", "--json"]
+    )
+    assert json_result.exit_code == 0, json_result.output
+    payload = jsonlib.loads(json_result.output)
+    assert payload[0]["book"]["book_id"] == "b"
+    assert payload[0]["rel"] == "same_author"
+
+
 def test_show_prints_classification(capsys):
     from parrot.knowledge.bookstore.models import BookCard
 
