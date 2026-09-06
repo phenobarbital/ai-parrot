@@ -281,25 +281,44 @@ class GraphSpec(BaseModel):
         return self
 
     def _has_cycle(self) -> bool:
-        """Whether the (directed) edge graph contains a cycle (DFS, 3-colour)."""
+        """Whether the (directed) edge graph contains a cycle.
+
+        Iterative 3-colour DFS with an explicit stack (mirrors
+        ``graph/layout.py``'s ``_break_cycles``) — deliberately NOT recursive
+        Python-call-stack DFS, so an adversarially large or long-chained
+        ``dag`` candidate raises the intended ``ValidationError`` via the
+        caller's ``kind == "dag"`` check rather than crashing the process
+        with an unhandled ``RecursionError``.
+        """
         adjacency: dict[str, list[str]] = {}
         for edge in self.edges:
             adjacency.setdefault(edge.from_, []).append(edge.to)
 
-        visiting: set[str] = set()
-        visited: set[str] = set()
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: dict[str, int] = {node.id: WHITE for node in self.nodes}
 
-        def _walk(node_id: str) -> bool:
-            if node_id in visiting:
-                return True
-            if node_id in visited:
-                return False
-            visiting.add(node_id)
-            for neighbor in adjacency.get(node_id, ()):
-                if _walk(neighbor):
-                    return True
-            visiting.discard(node_id)
-            visited.add(node_id)
-            return False
+        for start in color:
+            if color[start] != WHITE:
+                continue
+            stack: list[tuple[str, int]] = [(start, 0)]
+            color[start] = GRAY
+            while stack:
+                node_id, child_index = stack[-1]
+                neighbours = adjacency.get(node_id, [])
+                if child_index < len(neighbours):
+                    stack[-1] = (node_id, child_index + 1)
+                    neighbour = neighbours[child_index]
+                    if neighbour not in color:
+                        # Dangling edge target — already rejected earlier in
+                        # _validate_graph; defensively skip rather than KeyError.
+                        continue
+                    if color[neighbour] == WHITE:
+                        color[neighbour] = GRAY
+                        stack.append((neighbour, 0))
+                    elif color[neighbour] == GRAY:
+                        return True
+                else:
+                    color[node_id] = BLACK
+                    stack.pop()
 
-        return any(node.id not in visited and _walk(node.id) for node in self.nodes)
+        return False

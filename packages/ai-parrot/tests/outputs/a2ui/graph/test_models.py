@@ -50,6 +50,28 @@ class TestGraphSpecDagRejectsCycle:
     def test_graphspec_dag_accepts_acyclic(self):
         _spec(kind="dag")  # a -> b only, must not raise
 
+    def test_graphspec_dag_large_acyclic_chain_does_not_recurse(self):
+        """Regression: ``_has_cycle`` must be iterative, not recursive.
+
+        A long (but genuinely acyclic) chain used to blow Python's call
+        stack (``RecursionError``) instead of validating cleanly, because
+        the original ``_has_cycle`` DFS recursed once per edge. Found by
+        adversarial code review during FEAT-529.
+        """
+        n = 3000
+        nodes = [GraphNode(id=f"n{i}") for i in range(n)]
+        edges = [GraphEdge(**{"from": f"n{i}", "to": f"n{i + 1}"}) for i in range(n - 1)]
+        GraphSpec(kind="dag", nodes=nodes, edges=edges)  # must not raise RecursionError
+
+    def test_graphspec_dag_large_cyclic_chain_raises_validation_error(self):
+        """The same large-graph path still raises a clean ``ValidationError``
+        (not ``RecursionError``) when a cycle genuinely exists."""
+        n = 3000
+        nodes = [GraphNode(id=f"n{i}") for i in range(n)]
+        edges = [GraphEdge(**{"from": f"n{i}", "to": f"n{(i + 1) % n}"}) for i in range(n)]
+        with pytest.raises(ValidationError, match="acyclic"):
+            GraphSpec(kind="dag", nodes=nodes, edges=edges)
+
 
 class TestGraphSpecManualRequiresPositions:
     def test_graphspec_manual_requires_positions(self):
