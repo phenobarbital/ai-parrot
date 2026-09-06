@@ -113,7 +113,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Needs TASK-2912 merged (payload weights) and the relate orchestrator; replaces the _relate_stage3 stub. Sequential.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2917-bookstore-communities.md"
+      "completed_at": "2026-09-06T04:36:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2917-bookstore-communities.md"
     },
     {
       "id": "TASK-2918",

@@ -222,10 +222,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: `relations.py` Stage 3: `build_book_graph`, `detect_book_communities`
+(`(CommunitiesResult, InterCommunityGraph, GraphAssembler)`),
+`_LABEL_PROMPT`/`label_community`, `fallback_label` (singleton →
+title, else `derive_community_label` → title fallback),
+`communities_from_result` (attaches `InterCommunityRelation.model_dump()`
+rows per community). `Bookstore._relate_stage3` replaces the TASK-2916
+stub: <3 visible cards → skip note; per-community try/except around
+labelling (LLM → fallback on any error); `_communities_store()` picks
+project-else-global; `communities`-origin edges rewritten from scratch
+across every scope store; `set_card_community` per card's own scope.
+`communities()`/`get_community()` added (`merged_communities`,
+`BookstoreError` on unknown id). CLI: `communities [--json]`,
+`list --by-community` (grouped, sorted by label). `conftest.py` gained
+a `CommunityLabelDraft` branch.
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 116 passed,
+same 3 pre-existing unrelated failures. `pytest packages/ai-parrot/
+tests/knowledge/graphindex/test_communities.py -q` → 62 passed
+(confirms Module 0 payload weights are exercised correctly by the real
+bookstore graph, not just synthetic fixtures). `ruff check` clean on
+every file this task touched (the 1 remaining `F401` on `cli.py`'s
+`sys` import is the same pre-existing issue noted in TASK-2914/2915/2916).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. (Test authoring note: initial drafts of
+two Stage 3 tests used single-character author names ("X"/"Y") which
+`relations._author_key`'s `<3`-char filter — by design, from
+TASK-2915 — correctly treats as untrustworthy, silently producing 3
+singleton communities instead of the intended 2-community fixture;
+fixed to "Author X"/"Author Y" before finalizing. Not a code bug, a
+test-fixture mistake caught by the intended guard.)
