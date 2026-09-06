@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T03:37:33.253639+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-06T05:09:08+00:00",
   "isolation": "per-spec",
   "parallelism_notes": "Per-spec worktree, sequential M0→M5. Only TASK-2912 (graphindex) is file-disjoint and may run in a separate worktree; all bookstore tasks share models.py/catalog.py/library.py/cli.py.",
   "tasks": [
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Closes the feature: integration tests over the public surfaces, docs, legacy spec update. Sequential last.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2920-bookstore-graph-integration-tests-and-docs.md"
+      "completed_at": "2026-09-06T05:08:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2920-bookstore-graph-integration-tests-and-docs.md"
     }
   ]
 }
