@@ -161,6 +161,69 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed-by**: sdd-worker (Claude Sonnet 5) · **Date**: 2026-09-06
+
+**What was implemented**:
+
+1. `docs/guides/llm-wiki-guide.md` — added a ToC entry and a full
+   "## Roblox and Luau Support" section: Setup (the `wiki-languages`
+   extra, `uv sync --extra wiki-languages`), Scanning Luau Code
+   (`.lua`/`.luau` discovery, comment/string-safe `require()` resolution,
+   `script.Parent` and `game.Service.Path` chains), Acquiring the Roblox
+   API Plane (`wikitoolkit ingest roblox-api --refresh`, offline reuse on
+   subsequent runs, generation retention, manual namespace registration),
+   Checking Roblox API Status (`wikitoolkit status`, offline-only —
+   no network calls outside `--refresh`), Code-to-API References (the
+   three recognized reference shapes: service calls, type annotations,
+   known-root chained access; false-positive/no-fabrication policy), and
+   Known Limitations (Roblox) (no `sym:` plane, no type inference,
+   file-wide coarse shadow suppression, partial-upsert mapping
+   completeness caveats, no TTL/auto-refresh).
+
+2. `.github/workflows/ci.yml` — extended `test-wiki-extras`:
+   - a grammar-presence gate that imports `tree_sitter_luau`, builds a
+     `Language`, and parses a trivial snippet with a `Parser` — fails the
+     job before any test runs if the grammar is missing/broken;
+   - a "no Luau/Roblox test silently skipped" gate that runs the focused
+     suite with `-rs`-style skip reporting and fails the job if the
+     Luau/Roblox tests report as skipped despite the grammar being
+     installed;
+   - a `timeout 120 uv run python scripts/benchmarks/luau_parser_limits.py
+     --deadline-seconds 5.0` step (coreutils `timeout`, no new pytest
+     plugin) proving the TASK-2896 pathological-input benchmark cannot
+     hang the job;
+   - an `actions/upload-artifact@v4` step publishing the Luau-focused
+     test log and the benchmark JSON report.
+   - a new job `test-wiki-luau-fallback` that installs `wiki-structural`
+     only (NOT `wiki-languages`), asserts `import tree_sitter_luau` fails
+     (proving genuine absence, not an accidental transitive install), and
+     runs `test_luau.py` + `tests/knowledge/wiki/roblox/` to prove the
+     bounded heuristic fallback path works standalone.
+
+**Verification performed** (log: `artifacts/logs/task-2911-roblox-docs-ci.log`):
+- `.github/workflows/ci.yml` validated as well-formed YAML
+  (`python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`).
+- The grammar-presence check (import + `Language(...)` + `Parser().parse(...)`)
+  run locally against the installed `tree-sitter-luau==1.2.0` — passed.
+- 157 focused Luau/Roblox tests
+  (`tests/knowledge/wiki/languages/test_luau.py`,
+  `tests/knowledge/wiki/roblox/`) run with `-v`, zero skips, zero
+  failures.
+- The benchmark script run under `timeout 120` locally; completed in
+  ~0.5s (well under the 120s CI cap and the internal 5.0s deadline),
+  confirming the wrapped invocation cannot hang the job.
+- Full manual CLI smoke test of every documented command
+  (`build`, `ns add`, `related`, `page`, `status`,
+  `ingest roblox-api` with and without `--refresh`) against a
+  hand-authored fixture (`sourcemap.json` + `src/Main.luau` calling
+  `game:GetService("Players")`) plus a fake published Roblox API
+  generation (`gen-docs-smoke`, one `class/Players` page) — every
+  command's real output matched what is now documented in the guide.
+
+**Deviations / judgment calls**: none from the approved scope. Only the
+two owned files (`docs/guides/llm-wiki-guide.md`,
+`.github/workflows/ci.yml`) were modified, per the Codebase Contract's
+"Existing Owned Files" list.
+
+**Feature-level note**: this is the 16th and final task of FEAT-532. All
+tasks TASK-2896 through TASK-2911 are now `done`.

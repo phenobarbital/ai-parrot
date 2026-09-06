@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T02:40:52.524476+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-06T05:41:30+00:00",
   "isolation": "mixed",
   "parallelism_notes": "Independent parser/models/federation roots, then scanner/API/federation tracks; serialize all shared runtime files. Final section 8 decisions supersede stale proposal text. TASK-2896 measurement review gates mapping/scanner. Shared per-spec state updates must be coordinated.",
   "tasks": [
@@ -319,7 +319,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -329,8 +329,8 @@
       "parallelism_notes": "Final dependent deliverable; no independent sibling work remains. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:24:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2911-roblox-docs-ci.md"
+      "completed_at": "2026-09-06T05:41:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2911-roblox-docs-ci.md"
     }
   ]
 }
