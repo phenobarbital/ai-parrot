@@ -117,3 +117,58 @@ renderers, UI rendering, or feature documentation.
 2. Run the catalog test suite after the registry rekey.
 3. Keep this task as the first implementation commit in the feature.
 4. Do not register Graph in this task.
+
+### Completion Note
+
+Implemented as specified. `_CATALOG` is now keyed by `(catalog_id, name)`;
+`register_component` allows idempotent re-registration of the SAME class
+under an existing `(catalog_id, name)` pair (needed by the Basic Catalog's
+existing `_register_primitives()` idempotency pattern) but raises
+`CatalogError` for a genuinely different class claiming the same pair.
+`get_component(name, catalog_id=None)` resolves uniquely or raises
+`CatalogError` with `.candidates` (set post-construction — `CatalogError`
+itself, in `catalog/base.py`, was intentionally left untouched; it is not
+in this task's file list). `list_components`, `catalog_instructions`
+(+ new `catalog_header_instructions`), `_component_exists`, and
+`export_catalog_definition`/`write_catalog_definition` are all catalog-id
+scoped now. `validate_envelope`'s action/tool-only gate and
+allowed-parent/child checks resolve each component's catalog once and
+reuse it (a `resolved_catalog_by_id` map) instead of a bare-name
+`_CATALOG.get`. The producer scopes its system-prompt instructions to
+`catalog=` when given (unscoped/aggregate when omitted — unchanged
+default). Added `catalog/viz_core/__init__.py` (`VIZ_CORE_CATALOG_ID`,
+`VIZ_CORE_INSTRUCTIONS`, verified byte-for-byte against the vendored
+draft) and its vendored `spec/catalog.json`; no component registered here
+(Module 2/TASK-2885 owns `Graph`). Added the satellite's
+`_intercept.py` (`resolve_component_catalog`, `intercepts`). Extended
+`a2ui-types.ts` with an explicit `catalogId` field and the
+`VIZ_CORE_CATALOG_ID` constant.
+
+**One file outside the task's table was touched to keep an existing
+acceptance criterion ("Existing A2UI catalog and validation tests remain
+green") true**: `packages/ai-parrot-visualizations/tests/outputs/
+a2ui_renderers/test_semantic_classes.py::TestGoldensUntouched::
+test_no_catalog_file_modified` is a FEAT-527-era diff guard that
+allowlists specific historical file touches under `catalog/`; it does not
+anticipate ANY future catalog work, and unconditionally failed against
+this task's mandated `catalog/__init__.py`/`catalog/export.py` edits and
+new `catalog/viz_core/` files. Extended its allowlist with an explicit,
+commented FEAT-529 Module 0 entry, following the file's own established
+per-feature-block convention.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui
+packages/ai-parrot-visualizations/tests -q` → 948 passed, 1 skipped;
+`ruff check` clean on every touched Python file. Frontend `a2ui-types.ts`
+change is additive-only (new const + one explicit interface field
+already covered by the existing index signature) — no `npm test` run
+needed to validate it (no runtime logic added), deferred to a task that
+touches `.svelte`/`.test.ts` files.
+
+**Worktree note**: this worktree's `packages/ai-parrot/src/parrot/utils/
+types.cpython-312-x86_64-linux-gnu.so` and `.../parsers/toml.cpython-312-
+x86_64-linux-gnu.so` were copied from the main checkout's `.venv`-matching
+build (gitignored, not committed) purely to run the test suite locally —
+the editable install resolves `parrot.*`/`parrot_*` to the MAIN repo
+checkout by default, so a `PYTHONPATH` prefix of this worktree's `packages/
+*/src` dirs was used ahead of site-packages for every test run in this
+task, to exercise the worktree's own source instead of the main repo's.
