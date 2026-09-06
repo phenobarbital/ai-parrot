@@ -52,7 +52,7 @@
       "feature_id": "FEAT-531",
       "feature": "wikitoolkit-cli-llm-fallback",
       "spec": "sdd/specs/wikitoolkit-cli-llm-fallback.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Touches only packages/ai-parrot/src/parrot/knowledge/wiki/cli.py and its test file — disjoint from TASK-2893's bookstore/_llm.py changes. Safe to run in a separate worktree concurrently with TASK-2893 once TASK-2892 is complete.",
       "assigned_to": null,
       "started_at": "2026-09-06T02:05:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2894-wikitoolkit-fallback.md"
+      "completed_at": "2026-09-06T02:17:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2894-wikitoolkit-fallback.md"
     },
     {
       "id": "TASK-2895",

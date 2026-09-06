@@ -305,11 +305,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_017szabNhV61kLcqqqh7gZQF)
+**Date**: 2026-09-06
+**Notes**: Implemented Part A (`_extract_into_graph`'s `WIKI_EXTRACT_LLM` fallback)
+and Part B (the `ingest` command's `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL`
+pre-resolution, both-unset-only fallback) exactly per the Implementation
+Notes patterns. Fourth-call-site verification grep
+(`grep -n 'LLMFactory.create\|_env_setting("WIKI' packages/ai-parrot/src/parrot/knowledge/wiki/cli.py`)
+was run: confirms only two `LLMFactory.create` call sites in the whole file
+(line 2734 inside `_extract_into_graph`, already covered by Part A; and
+inside `_build_triage_adapters`, fed by the already-covered Part B
+pre-resolution) — **no fourth `WIKI_*` LLM-resolution call site exists**.
+Added 8 new unit tests appended to `test_cli.py` (not restructuring
+existing tests): 4 for Part A (calling `_extract_into_graph` directly,
+patching `LLMFactory.create` to fail-fast after detection so no real
+adapter/extractor construction is needed) and 4 for Part B (invoking the
+`ingest` command via `CliRunner` against the existing `built_wiki` fixture,
+monkeypatching the already-designed `_build_triage_adapters` test seam —
+its own docstring calls it "a narrow, deliberately monkeypatchable seam" —
+to capture the resolved `(lightweight_model, model)` pair and abort before
+any real LLM/pipeline work). All 26 tests in `test_cli.py` pass (9
+pre-existing FEAT-401 tests + 8 new + reran TASK-2892/2893 suites
+alongside for the full spec acceptance command — 26/26 green). `ruff
+check` on the modified file surfaces exactly one error, `F821 Undefined
+name Optional` at line 427 inside `_open_sources` — confirmed pre-existing
+(same error reproduces against the committed HEAD copy of this file before
+any of this task's edits, on a function this task never touches); left
+unfixed per no-scope-creep.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered. State
-explicitly whether a fourth `WIKI_*` LLM-resolution call site was found.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
