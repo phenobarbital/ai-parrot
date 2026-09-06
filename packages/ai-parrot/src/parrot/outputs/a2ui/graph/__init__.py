@@ -1,14 +1,14 @@
 """``parrot.outputs.a2ui.graph`` — the ``Graph`` viz-core composite's core vocabulary.
 
 Pure, synchronous modules shared by every renderer and the catalog layer
-(FEAT-529): :mod:`.models` (the Pydantic ``GraphSpec`` family — this
-package's only module so far). ``.mermaid`` (the mermaid codec, Module 3)
-and ``.layout`` (the layered layout, Module 4) add their own exports here
-once they land.
+(FEAT-529): :mod:`.models` (the Pydantic ``GraphSpec`` family) and
+:mod:`.mermaid` (the mermaid codec, Module 3). ``.layout`` (the layered
+layout, Module 4) adds its own exports here once it lands.
 """
 
 from __future__ import annotations
 
+from .mermaid import MermaidCodecError, from_mermaid, to_mermaid
 from .models import (
     Direction,
     EdgeKind,
@@ -37,8 +37,11 @@ __all__ = [
     "GraphSelection",
     "GraphSpec",
     "LayoutEngine",
+    "MermaidCodecError",
     "NodeShape",
     "NodeState",
     "Position",
     "VizSize",
+    "from_mermaid",
+    "to_mermaid",
 ]

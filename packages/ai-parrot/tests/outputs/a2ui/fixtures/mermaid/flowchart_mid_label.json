@@ -1,0 +1,11 @@
+{
+  "kind": "flowchart",
+  "direction": "TB",
+  "nodes": [
+    {"id": "n1", "label": "Start"},
+    {"id": "n2", "label": "Finish"}
+  ],
+  "edges": [
+    {"from": "n1", "to": "n2", "label": "go", "kind": "solid"}
+  ]
+}

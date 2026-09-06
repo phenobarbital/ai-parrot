@@ -1,0 +1,7 @@
+%% Fixture: mid-label edge syntax ("-- text -->"), parse-only (FEAT-529 TASK-2883).
+%% to_mermaid() always emits the pipe form ("-->|text|"); this fixture exists
+%% to prove from_mermaid() also accepts the alternate syntax on import.
+flowchart TB
+n1[Start]
+n2[Finish]
+n1 -- go --> n2
