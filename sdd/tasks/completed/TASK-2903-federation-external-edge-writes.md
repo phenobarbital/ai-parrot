@@ -162,6 +162,35 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/roblox/test_federation_writes.py -q` → 47 passed.
+- Broader regression: `tests/knowledge/wiki/roblox/ tests/knowledge/wiki/test_namespaces_e2e.py tests/knowledge/wiki/test_project_namespaces.py` → 106 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2903-federation-external-edge-writes.log`.
+
+**Delivered**: `federation.py`'s new `_assert_local_or_foreign_destination`
+(used only by `_strip_edge`'s destination endpoint) plus updated
+docstrings on `add_edges`/`replace_source_slice` and the module-level
+"Three rules" note. `test_qualified_id_is_refused` revised exactly as
+scoped (its foreign-edge-destination assertion flipped to the new
+allowed case, page/delete/embedding assertions preserved verbatim, plus
+one new assertion confirming a foreign *source* is still refused).
+`test_scoped_write_still_rejects_another_namespace` untouched, per the
+task's explicit note that it tests page writes, not edge destinations.
+New `tests/knowledge/wiki/roblox/test_federation_writes.py` (7 tests)
+covers storage fidelity, offline-foreign-plane tolerance, continued
+source/page/delete/embedding prohibitions, `replace_source_slice`
+removing an obsolete outgoing external edge on re-ingest, and batch
+atomicity for both `add_edges` and `replace_source_slice`.
+
+**Bug found and fixed while re-reading `store.py` for this task**:
+TASK-2901's `render.py` emitted edge tuples as `(src, rel, dst)` instead
+of the store's actual `(src, dst, rel)` convention — corrected in a
+separate commit before starting this task's own changes (all 64 roblox
+tests still passed after the fix).
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
