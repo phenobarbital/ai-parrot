@@ -1834,6 +1834,15 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     if namespaces is not None:
         payload["namespaces"] = namespaces
         payload["skipped"] = ns_skipped or []
+    # FEAT-532 TASK-2908: the federated Roblox API plane's stored
+    # download timestamp + recorded Studio/creator-docs versions — a
+    # pure local-manifest read (`get_roblox_status()`), never an API/CDN
+    # probe. Machine-wide (parrot_home()-scoped), so this is included
+    # regardless of which project/namespace `status` is otherwise
+    # reporting on.
+    from parrot.knowledge.wiki.roblox.ingest import get_roblox_status
+
+    payload["roblox_api"] = get_roblox_status()
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
@@ -1871,6 +1880,16 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+    roblox_api = payload.get("roblox_api")
+    if roblox_api is None:
+        click.echo("\nRoblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.")
+    else:
+        click.echo(
+            f"\nRoblox API : Studio {roblox_api['studio_version']}, "
+            f"creator-docs {roblox_api['creator_docs_commit'][:12]}, "
+            f"downloaded {roblox_api['downloaded_at']} "
+            f"({roblox_api['class_count']} classes, {roblox_api['enum_count']} enums)"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -3543,6 +3562,115 @@ def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) 
     Console().print(table)
 
 
+#: Document-ingest option defaults, keyed by the same parameter names
+#: ``ingest()`` receives them as. Used only to detect an EXPLICITLY
+#: passed, and therefore incompatible, document-ingest flag alongside
+#: the reserved ``SOURCE=roblox-api`` — a caller's untouched Click
+#: default is never treated as a conflict (FEAT-532 TASK-2908).
+_ROBLOX_API_INCOMPATIBLE_FLAG_DEFAULTS: dict[str, Any] = {
+    "charter_opt": None,
+    "dry_run": False,
+    "review_opt": None,
+    "interactive_flag": False,
+    "auto_flag": False,
+    "extract_flag": False,
+    "lightweight_model_opt": None,
+    "model_opt": None,
+    "audit_rate": 0.1,
+    "manifest_opt": None,
+    "recursive": True,
+    "fetch_timeout": 30.0,
+}
+
+#: CLI flag spelling for each of the parameters above, for a readable
+#: UsageError — not derivable by naive suffix-stripping (e.g. ``recursive``
+#: defaults ``True``, so its EXPLICIT/conflicting form is ``--no-recursive``).
+_ROBLOX_API_INCOMPATIBLE_FLAG_NAMES: dict[str, str] = {
+    "charter_opt": "--charter",
+    "dry_run": "--dry-run",
+    "review_opt": "--review",
+    "interactive_flag": "--interactive",
+    "auto_flag": "--auto",
+    "extract_flag": "--extract",
+    "lightweight_model_opt": "--lightweight-model",
+    "model_opt": "--model",
+    "audit_rate": "--audit-rate",
+    "manifest_opt": "--manifest",
+    "recursive": "--no-recursive",
+    "fetch_timeout": "--fetch-timeout",
+}
+
+
+def _dispatch_roblox_api_ingest(
+    *,
+    refresh: bool,
+    charter_opt: str | None,
+    dry_run: bool,
+    review_opt: Path | None,
+    interactive_flag: bool,
+    auto_flag: bool,
+    extract_flag: bool,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    audit_rate: float,
+    manifest_opt: Path | None,
+    recursive: bool,
+    fetch_timeout: float,
+) -> None:
+    """Dispatch ``wikitoolkit ingest roblox-api [--refresh]`` (FEAT-532 TASK-2908).
+
+    Called from ``ingest()`` before any document-mode validation or
+    LLM/document import — this function's own imports are the first
+    roblox-specific imports on this path. Rejects only an EXPLICITLY
+    passed (non-default) document-ingest flag; an untouched Click
+    default is never a conflict.
+
+    Without ``--refresh``, this makes zero network requests: it reads
+    the last published generation, or raises a
+    :class:`click.ClickException` naming the exact ``--refresh`` command
+    to run (spec §8: "First acquisition therefore requires --refresh").
+    """
+    from parrot.knowledge.wiki.roblox.ingest import RobloxApiNotIngestedError, ingest_roblox_api
+
+    observed = {
+        "charter_opt": charter_opt,
+        "dry_run": dry_run,
+        "review_opt": review_opt,
+        "interactive_flag": interactive_flag,
+        "auto_flag": auto_flag,
+        "extract_flag": extract_flag,
+        "lightweight_model_opt": lightweight_model_opt,
+        "model_opt": model_opt,
+        "audit_rate": audit_rate,
+        "manifest_opt": manifest_opt,
+        "recursive": recursive,
+        "fetch_timeout": fetch_timeout,
+    }
+    conflicts = [
+        _ROBLOX_API_INCOMPATIBLE_FLAG_NAMES[name]
+        for name, value in observed.items()
+        if value != _ROBLOX_API_INCOMPATIBLE_FLAG_DEFAULTS[name]
+    ]
+    if conflicts:
+        raise click.UsageError(
+            "SOURCE 'roblox-api' does not use document-ingest options; " f"remove: {', '.join(sorted(conflicts))}"
+        )
+
+    try:
+        result = _run(ingest_roblox_api(refresh=refresh))
+    except RobloxApiNotIngestedError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Roblox API plane : {result.generation_dir}")
+    click.echo(f"Studio version   : {result.manifest.studio_version}")
+    click.echo(f"creator-docs SHA : {result.manifest.creator_docs_commit}")
+    click.echo(f"Downloaded at    : {result.manifest.downloaded_at}")
+    click.echo(f"Classes / Enums  : {result.manifest.class_count} / {result.manifest.enum_count}")
+    click.echo(f"Reused / Published: {result.reused} / {result.published}")
+    for diagnostic in result.diagnostics:
+        click.echo(f"  {diagnostic}")
+
+
 @wiki.command()
 @click.argument("source")
 @path_option
@@ -3623,6 +3751,19 @@ def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) 
     show_default=True,
     help="Timeout (seconds) for a URL SOURCE fetch.",
 )
+@click.option(
+    "--refresh",
+    "refresh_flag",
+    is_flag=True,
+    help=(
+        "Only meaningful for the reserved SOURCE 'roblox-api': fetch the "
+        "current Studio API dump + creator-docs and (re)publish the "
+        "federated Roblox API plane. This is the ONLY thing that ever "
+        "makes network requests for that plane — without --refresh, "
+        "'roblox-api' is a pure offline read of the last published "
+        "generation. Ignored for every other SOURCE."
+    ),
+)
 def ingest(
     source: str,
     path_: str | None,
@@ -3638,6 +3779,7 @@ def ingest(
     manifest_opt: Path | None,
     recursive: bool,
     fetch_timeout: float,
+    refresh_flag: bool,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
@@ -3660,7 +3802,32 @@ def ingest(
     --review PATH  Apply decisions from a hand-edited manifest.
     --interactive  Prompt per-document (before any async work starts).
     --auto         Thresholds decide; flags a stratified audit sample.
+
+    \b
+    SOURCE 'roblox-api' (FEAT-532) is reserved: it dispatches to the
+    federated Roblox API plane instead of document ingestion, entirely
+    before any document-mode validation or LLM import below. A literal
+    local path spelled './roblox-api' is unaffected — bare 'roblox-api'
+    is the only form this dispatch claims.
     """
+    if source == "roblox-api":
+        _dispatch_roblox_api_ingest(
+            refresh=refresh_flag,
+            charter_opt=charter_opt,
+            dry_run=dry_run,
+            review_opt=review_opt,
+            interactive_flag=interactive_flag,
+            auto_flag=auto_flag,
+            extract_flag=extract_flag,
+            lightweight_model_opt=lightweight_model_opt,
+            model_opt=model_opt,
+            audit_rate=audit_rate,
+            manifest_opt=manifest_opt,
+            recursive=recursive,
+            fetch_timeout=fetch_timeout,
+        )
+        return
+
     from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
     from parrot.knowledge.wiki.charter import (
