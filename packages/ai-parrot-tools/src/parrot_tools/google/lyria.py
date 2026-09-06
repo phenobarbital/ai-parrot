@@ -93,12 +93,12 @@ class LyriaToolkit(AbstractToolkit):
             return self._client
         try:
             from parrot.clients.google.client import GoogleGenAIClient
+
             self._client = GoogleGenAIClient(model=self.model)
             return self._client
         except ImportError as exc:
             raise RuntimeError(
-                "GoogleGenAIClient is not available. Ensure ai-parrot-client-google is installed: "
-                f"{exc}"
+                "GoogleGenAIClient is not available. Ensure ai-parrot-client-google is installed: " f"{exc}"
             ) from exc
 
     async def _close(self) -> None:

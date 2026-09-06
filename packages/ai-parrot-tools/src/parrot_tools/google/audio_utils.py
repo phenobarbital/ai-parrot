@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Union
 import wave
 
-
 #: Lyria RealTime audio stream parameters
 DEFAULT_SAMPLE_RATE = 48000  # 48 kHz
 DEFAULT_CHANNELS = 2  # Stereo

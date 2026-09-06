@@ -143,10 +143,7 @@ def parse_natural_music_request(text: str, default_duration: int = 10) -> LyriaM
         bpm = max(60, min(200, val))
     elif any(w in lower for w in ["slow tempo", "slow", "largo", "adagio", "relaxed pace"]):
         bpm = 70
-    elif any(
-        w in lower
-        for w in ["fast tempo", "fast", "allegro", "presto", "high tempo", "upbeat", "energetic"]
-    ):
+    elif any(w in lower for w in ["fast tempo", "fast", "allegro", "presto", "high tempo", "upbeat", "energetic"]):
         bpm = 130
     elif any(w in lower for w in ["medium tempo", "moderate tempo", "moderato", "mid tempo"]):
         bpm = 95
