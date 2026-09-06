@@ -465,8 +465,8 @@ creates a spec only; it does not dispatch implementation agents or worktrees.
 ## 8. Open Questions
 
 All owner decisions from the 2026-09-06 review round are recorded below.
-One question remains open pending an owner pick; every other choice is
-settled and binding on its dependent module.
+Every question is settled and binding on its dependent module; no open
+questions remain.
 
 ### Settled by the owner
 
@@ -519,27 +519,41 @@ settled and binding on its dependent module.
       tipos inferidos: solo `game:GetService("X")` literal, anotaciones de tipo
       explícitas y accesos encadenados sobre raíces conocidas.
 
-### Open — pending owner pick
+### Settled by the owner (continued)
 
-- [ ] **Adquisición de creator-docs**: la propuesta previamente aceptada (625
-      peticiones a `raw.githubusercontent` con ≤8 concurrentes, timeout de 30 s
-      y ≤2 reintentos) queda cuestionada por medición posterior:
+- [x] **Adquisición de creator-docs** — *Owner: Jesus Lara*: **tarball fijado por
+      SHA**. Medición que motivó el cambio frente a la propuesta previamente
+      aceptada (625 peticiones raw con ≤8 concurrentes):
 
       | Enfoque | Descarga | Tiempo | Peticiones | Requiere |
       |---|---|---|---|---|
-      | Tarball fijado por SHA | 4,78 MB | 1,04 s | 1 | solo `aiohttp` |
+      | **Tarball fijado por SHA** | **4,78 MB** | **1,04 s** | **1** | solo `aiohttp` |
       | 625 fetches raw | 5,6 MB | ~8 s @8 conc. | 625 | `aiohttp` + reintentos + caché por fichero |
       | Sparse-checkout blobless | 3,2 MB en `.git` | ~5,0 s | — | binario `git` |
 
-      El tarball completo comprimido resulta **más pequeño** que las 625 piezas
-      sueltas (los YAML comprimen ~4:1) y elimina toda la maquinaria de
-      concurrencia, reintentos y caché por fichero. Sparse-checkout baja menos
-      bytes pero exige el binario `git` — la misma clase de dependencia externa
-      que el diseño ya rechazó para `rojo`. Verificado: fijar por SHA funciona
-      (`codeload.github.com/Roblox/creator-docs/tar.gz/<sha>` → 200, 625 YAML).
-      **Recomendación: tarball fijado por SHA.** Se conservan en cualquier caso
-      el commit fijado y el filtrado a las clases nombradas en el dump (aplicado
-      tras extraer). — *Owner: Jesus Lara*
+      El tarball comprimido resulta **más pequeño** que las 625 piezas sueltas
+      (los YAML comprimen ~4:1). Sparse-checkout baja menos bytes pero exige el
+      binario `git`, la misma clase de dependencia externa que el diseño ya
+      rechazó para `rojo`.
+
+      **Flujo definido** (verificado de punta a punta):
+
+      1. `GET https://api.github.com/repos/Roblox/creator-docs/commits/main`
+         → SHA del commit. Única llamada a la API de GitHub; su único propósito
+         es fijar la versión. Sin autenticación.
+      2. `GET https://codeload.github.com/Roblox/creator-docs/tar.gz/<sha>`
+         → 4,78 MB. `codeload` no es la API, así que no consume su cuota de
+         60 req/h. Sin autenticación, sin binario `git`.
+      3. Extracción **en memoria** con `tarfile` sobre un `io.BytesIO`,
+         filtrando `*/content/en-us/reference/engine/classes/*.yaml`:
+         625 clases en 0,33 s, **cero escrituras a disco**.
+      4. Filtrado a las clases nombradas en el API dump (aplicado tras extraer)
+         y parseo YAML.
+
+      Total: **2 peticiones, ~1,4 s**. Desaparecen la concurrencia acotada, los
+      reintentos, el backoff y la caché por fichero: no hay 625 fallos parciales
+      posibles cuando solo hay una descarga. El SHA resuelto se registra como
+      procedencia del plano y es lo que `--refresh` compara.
 
 ### Blast radius — cross-namespace federation support (medido)
 
@@ -575,3 +589,4 @@ Roblox y que en el plano local hay que construir aparte.
 |---|---|---|---|
 | 0.1 | 2026-09-06 | Jesus Lara | Initial FEAT-532 draft from authoritative brainstorm; verified scanner/federation/CLI contracts; pending owner decisions retained |
 | 0.2 | 2026-09-06 | Jesus Lara | Owner review round resolved 13 of 14 open questions: real federation support for cross-namespace edges (blast radius measured), combined size+error-density+timeout guard with measurement first, no auto-invalidation (status reports download time only), chained instance accesses IN v1, next release without number. creator-docs acquisition reopened: measurement shows a SHA-pinned tarball (4.78 MB / 1.04 s / 1 request) beats the previously accepted 625-request fetch |
+| 0.3 | 2026-09-06 | Jesus Lara | Last open question closed: creator-docs acquired as a SHA-pinned codeload tarball, extracted in memory (2 requests, ~1.4 s, 0 disk writes), replacing the 625-request fetch and its concurrency/retry/cache machinery. Spec has no open questions |
