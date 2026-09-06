@@ -546,6 +546,7 @@ def install_claude_integration(
     config: Optional[WikiProjectConfig] = None,
     git_hook: bool = True,
     gitignore: bool = True,
+    bookstore: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -554,6 +555,8 @@ def install_claude_integration(
         config: Wiki project config; loaded/created when omitted.
         git_hook: Install the git post-commit auto-upsert hook.
         gitignore: Add ``.parrot/`` to .gitignore.
+        bookstore: Install the Bookstore MCP server and skill when an
+            indexed library exists (no indexing performed).
 
     Returns:
         Human-readable list of actions performed.
@@ -585,6 +588,10 @@ def install_claude_integration(
         actions.append(_install_git_hook(root))
     if gitignore:
         actions.append(_install_gitignore(root))
+    if bookstore:
+        from .bookstore import install_bookstore
+
+        actions.extend(install_bookstore(root))
     return actions
 
 
@@ -602,6 +609,10 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     """
     root = root.resolve()
     actions: list[str] = []
+
+    from .bookstore import uninstall_bookstore
+
+    actions.extend(uninstall_bookstore(root))
 
     claude_md = root / "CLAUDE.md"
     if claude_md.exists():
@@ -755,7 +766,10 @@ def integration_status(root: Path) -> dict[str, Any]:
         if isinstance(mcp_data, dict):
             mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
 
+    from .bookstore import bookstore_status
+
     return {
+        **bookstore_status(root),
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),

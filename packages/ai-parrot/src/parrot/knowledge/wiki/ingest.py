@@ -400,7 +400,12 @@ class WikiIngestOrchestrator:
             frontmatter = render_frontmatter(acquired.metadata, provenance)
 
         try:
-            pi_result = await self._create_wiki_pages(content, tree_name, hint=hint)
+            if acquired.ebook_sections:
+                pi_result = await self._pi.insert_ebook(
+                    tree_name=tree_name, sections=acquired.ebook_sections
+                )
+            else:
+                pi_result = await self._create_wiki_pages(content, tree_name, hint=hint)
             # PageIndexToolkit.insert_content() contract:
             # {"tree_name", "new_node_ids", "title", "summary"}
             inserted_ids = pi_result.get("new_node_ids") or []

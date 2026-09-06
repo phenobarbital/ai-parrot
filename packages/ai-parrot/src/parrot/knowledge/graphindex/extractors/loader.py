@@ -39,6 +39,7 @@ from parrot.stores.models import Document
 
 if TYPE_CHECKING:
     from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+    from parrot.loaders.ebook import EbookSection
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ HIERARCHICAL_LOADERS: set[str] = {
     "MarkdownLoader",
     "DOCXLoader",
     "EpubLoader",
+    "MobiLoader",
     "DocxLoader",
     "PdfLoader",
     "PlainTextLoader",
@@ -193,10 +195,49 @@ class LoaderExtractor:
             logger.debug("Loader returned no documents for %s", source)
             return [], []
 
+        from parrot.loaders.ebook import ebook_sections
+
+        if sections := ebook_sections(documents):
+            return await self._extract_ebook(sections, source)
+
         if self._is_hierarchical(loader):
             return await self._extract_hierarchical(documents, source)
         else:
             return self._extract_flat(documents, source)
+
+    async def _extract_ebook(
+        self, sections: list[EbookSection], source_uri: str
+    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+        """Keep ebook parent relationships rather than rebuilding from headings."""
+        from parrot.knowledge.pageindex.ebook import ebook_tree
+
+        tree_name = _make_node_id(source_uri, "__root__")
+        if self.toolkit is not None:
+            if tree_name in await self.toolkit.list_trees():
+                await self.toolkit.delete_tree(tree_name)
+            await self.toolkit.create_tree(tree_name, doc_name=source_uri)
+            await self.toolkit.insert_ebook(
+                tree_name, [section.model_dump() for section in sections]
+            )
+            tree = await self.toolkit.get_tree(tree_name)
+        else:
+            tree = ebook_tree(sections)
+        root = UniversalNode(
+            node_id=tree_name, kind=NodeKind.DOCUMENT, title=source_uri,
+            source_uri=source_uri, domain_tags={"hierarchical": True},
+        )
+        nodes: list[UniversalNode] = [root]
+        edges: list[UniversalEdge] = []
+        self._walk_persisted_tree(
+            tree["structure"], source_uri, tree_name, tree_name, nodes, edges
+        )
+        if self.toolkit is None:
+            for node in nodes:
+                node.content_ref = None
+                node.domain_tags.pop("pageindex_tree_id", None)
+        else:
+            root.domain_tags["pageindex_tree_id"] = tree_name
+        return nodes, edges
 
     def _is_hierarchical(self, loader: object) -> bool:
         """Detect if loader produces hierarchical content.

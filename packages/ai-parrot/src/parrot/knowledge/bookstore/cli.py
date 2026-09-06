@@ -118,7 +118,7 @@ def add(
     no_llm: bool,
     llm: Optional[str],
 ) -> None:
-    """Index FILE (pdf/md/txt/epub) and catalog its ficha."""
+    """Index FILE (pdf/md/txt/epub/mobi/docx) and catalog its ficha."""
     # Anchor a relative FILE to the invocation directory NOW — the heavy
     # imports below chdir() the process (see _INVOCATION_CWD).
     file = str((Path(_INVOCATION_CWD) / file).resolve())
@@ -173,7 +173,7 @@ def add_folder(
     llm: Optional[str],
     dry_run: bool,
 ) -> None:
-    """Index every supported file (pdf/md/txt/epub/docx) in FOLDER.
+    """Index every supported file (pdf/md/txt/epub/mobi/docx) in FOLDER.
 
     Files are processed sequentially; a failing file is reported and the
     loop continues with the next one.
@@ -191,7 +191,7 @@ def add_folder(
     except BookstoreError as exc:
         raise click.ClickException(str(exc)) from exc
     if not supported:
-        click.echo("No ingestable files found (pdf/md/txt/epub/docx).")
+        click.echo("No ingestable files found (pdf/md/txt/epub/mobi/docx).")
         return
     if dry_run:
         click.echo(f"Would index {len(supported)} file(s):")

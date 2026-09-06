@@ -46,6 +46,7 @@ _FORMAT_BY_SUFFIX = {
     ".markdown": "md",
     ".txt": "txt",
     ".epub": "epub",
+    ".mobi": "mobi",
     # .doc (legacy binary) is deliberately absent: python-docx can't read it.
     ".docx": "docx",
 }
@@ -344,7 +345,7 @@ class Bookstore:
         """Index a book file and catalog its ficha.
 
         Args:
-            file_path: Source ``.pdf`` / ``.md`` / ``.txt`` / ``.epub``.
+            file_path: Source PDF, Markdown, text, EPUB, MOBI, or DOCX book.
             scope: Target library (``"project"`` or ``"global"``).
             title: Override the carded title (also seeds the slug).
             authors: Override the carded authors.
@@ -425,12 +426,11 @@ class Bookstore:
                     markdown=markdown,
                     doc_name=title or path.stem,
                 )
-            else:  # epub
-                markdown = await self._epub_to_markdown(path)
-                await toolkit.insert_markdown(
+            else:  # ebook
+                sections = await self._ebook_sections(path)
+                await toolkit.insert_ebook(
                     tree_name=slug,
-                    markdown=markdown,
-                    doc_name=title or path.stem,
+                    sections=sections,
                 )
         except Exception:
             # Never leave a half-imported tree behind an errored add.
@@ -531,36 +531,41 @@ class Bookstore:
         return markdown
 
     async def _epub_to_markdown(self, path: Path) -> str:
-        """Convert an EPUB to one markdown document via parrot_loaders.
+        """Render EPUB sections as Markdown for callers needing a text export."""
+        from parrot.loaders.ebook import EbookSection, ebook_markdown
 
-        Lazy import — ``ai-parrot-loaders`` is a separate distribution
-        and core must not hard-depend on it.
-        """
+        sections = await self._ebook_sections(path)
+        return ebook_markdown([EbookSection.model_validate(section) for section in sections])
+
+    async def _ebook_sections(self, path: Path) -> list[dict[str, Any]]:
+        """Load the source ebook hierarchy without a Markdown round trip."""
+        from parrot.loaders.ebook import ebook_sections
+
         try:
-            from parrot_loaders.epubloader import EpubLoader
+            if path.suffix.lower() == ".mobi":
+                from parrot_loaders.mobiloader import MobiLoader as Loader
+            else:
+                from parrot_loaders.epubloader import EpubLoader as Loader
+
+            loader = Loader(
+                str(path),
+                as_markdown=True,
+                per_chapter=True,
+                include_toc_document=False,
+            )
         except ImportError as exc:
             raise BookstoreError(
-                "EPUB support requires the ai-parrot-loaders package "
-                "(pip install ai-parrot-loaders)"
+                "EPUB/MOBI support requires the ai-parrot-loaders package "
+                "with its ebook extra (uv pip install 'ai-parrot-loaders[ebook]')"
             ) from exc
-        loader = EpubLoader(
-            str(path),
-            as_markdown=True,
-            per_chapter=True,
-            include_toc_document=False,
-        )
-        documents = await loader.load(split_documents=False)
-        documents.sort(
-            key=lambda d: d.metadata.get("section_order") or 0
-        )
-        parts: list[str] = []
-        for doc in documents:
-            chapter_title = doc.metadata.get("section_title") or "Chapter"
-            parts.append(f"## {chapter_title}\n\n{doc.page_content}")
-        if not parts:
+        try:
+            documents = await loader._load(path)
+        except Exception as exc:
+            raise BookstoreError(f"Could not load ebook {path.name}: {exc}") from exc
+        sections = ebook_sections(documents)
+        if not sections:
             raise BookstoreError(f"No readable chapters found in {path.name}")
-        book_title = path.stem.replace("_", " ").replace("-", " ").title()
-        return f"# {book_title}\n\n" + "\n\n".join(parts)
+        return [section.model_dump() for section in sections]
 
     @staticmethod
     def iter_folder_files(

@@ -28,7 +28,7 @@ pip install ai-parrot-loaders[all]
 | `youtube` | YouTube transcript and video download |
 | `audio` | Audio transcription (WhisperX, pyannote) |
 | `web` | HTML/web page loading |
-| `ebook` | EPUB e-book loading |
+| `ebook` | Structured EPUB and MOBI e-book loading |
 | `video` | Video processing (MoviePy, FFmpeg) |
 
 ## Supported Formats
@@ -46,6 +46,7 @@ pip install ai-parrot-loaders[all]
 | `PDFTablesLoader` | `.pdf` | PDF table extraction |
 | `PowerPointLoader` | `.pptx` | PowerPoint presentations |
 | `EpubLoader` | `.epub` | EPUB e-books |
+| `MobiLoader` | `.mobi` | MOBI/KF8 e-books via KindleUnpack |
 | `WebLoader` | URL | Web pages |
 | `YoutubeLoader` | URL | YouTube video transcripts |
 | `VimeoLoader` | URL | Vimeo video transcripts |
@@ -55,6 +56,66 @@ pip install ai-parrot-loaders[all]
 | `DocumentConverterLoader` | multiple | Auto-detect format and convert |
 
 ## Quick Start
+
+### Structured EPUB and MOBI books
+
+Install the optional ebook dependencies:
+
+```bash
+uv pip install 'ai-parrot-loaders[ebook]'
+```
+
+This includes `ebooklib`, `beautifulsoup4`, `markdownify`, and `mobi` (KindleUnpack).
+
+```python
+from parrot_loaders.epubloader import EpubLoader
+from parrot_loaders.mobiloader import MobiLoader
+from parrot.loaders.ebook import ebook_sections
+
+documents = await EpubLoader("book.epub").load()
+sections = ebook_sections(documents)
+await pageindex.insert_ebook("my-book", [section.model_dump() for section in sections])
+
+# Same output contract and loader options for MOBI:
+mobi_documents = await MobiLoader("book.mobi").load()
+```
+
+Create the PageIndex tree before inserting. Bookstore, GraphIndex and wiki
+ingestion select this structural path automatically for EPUB and MOBI documents.
+
+```bash
+bookstore add book.mobi --no-llm
+```
+
+MOBI support handles unencrypted MOBI7 HTML/NCX and KF8 EPUB output. MOBI7 uses
+NCX navigation when present, then explicit nested HTML navigation, then HTML
+heading structure. If the source has no hierarchy, the loader cannot recover
+one that was never encoded. Invalid/encrypted books and PDF-only Print Replica
+output raise `MobiLoaderError`. Decoding runs off the event loop with serialized
+backend calls, and temporary files are removed on both success and failure.
+Section provenance always refers to the original `.mobi` source.
+
+Each document contains one section's body and an `ebook_section` metadata record:
+`section_id`, `parent_id`, `title`, `href` (including fragments), `depth`,
+`toc_order`, `reading_order`, `source_uri`, `target_found`, and `origin`.
+`per_chapter=False` returns one readable book document with complete records in
+`ebook_sections`. `include_toc_document=True` adds a nested navigation document.
+
+Navigation parents and short TOC sections are retained even when they have no
+body. Missing targets remain in the index with `target_found=False`. When a
+document has no TOC entries, HTML headings supply its fallback structure.
+Reading order follows the spine, while TOC order is recorded separately.
+Repeated targets retain distinct navigation identities; their body is stored
+once, on the last entry for that target, rather than duplicated.
+
+**Compatibility:** `load()` defaults to `split_documents=False` for ebooks.
+Explicit chunking remains available for vector-store callers. Section bodies no
+longer carry synthetic `Section:`/`Title:` prefixes or duplicate chapter headings;
+titles and relationships are metadata. Use `ebook_markdown(sections)` for a
+readable Markdown export. The structural PageIndex path preserves all navigation
+levels and does not merge short nodes or infer parents from Markdown headings.
+
+### Other documents
 
 ```python
 from parrot_loaders.factory import get_loader_class

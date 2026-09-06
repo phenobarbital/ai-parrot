@@ -29,6 +29,7 @@ LOADER_MAPPING = {
     '.json': ('markdown', 'MarkdownLoader'),
     '.xml': ('markdown', 'MarkdownLoader'),
     '.epub': ('epubloader', 'EpubLoader'),
+    '.mobi': ('mobiloader', 'MobiLoader'),
     '.mp3': ('audio', 'AudioLoader'),
     '.wav': ('audio', 'AudioLoader'),
     '.avi': ('videounderstanding', 'VideoUnderstandingLoader'),
@@ -67,6 +68,10 @@ def get_loader_class(extension: str):
         # Get the class
         return getattr(module, class_name)
     except (ImportError, AttributeError) as e:
+        if extension in {'.epub', '.mobi'}:
+            raise ImportError(
+                f"Cannot load {extension}; install ai-parrot-loaders[ebook]"
+            ) from e
         # Fallback to MarkdownLoader
         print(f"Error loading loader for {extension}: {e}")
         from .markdown import MarkdownLoader

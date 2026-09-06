@@ -73,7 +73,12 @@ images = [
     "easyocr==1.7.2"
 ]
 web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
-ebook = ["ebooklib>=0.19"]
+ebook = [
+    "ebooklib>=0.19",
+    "beautifulsoup4>=4.12",
+    "markdownify>=1.2.2",
+    "mobi>=0.4.1,<0.5",
+]
 video = ["moviepy==2.2.1", "ffmpeg==1.4"]
 document = ["mammoth>=1.11.0"]
 scraping = [

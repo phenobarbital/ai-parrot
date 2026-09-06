@@ -727,6 +727,36 @@ class PageIndexToolkit(AbstractToolkit):
         self._persist(tree_name)
         return {"tree_name": tree_name, "new_node_ids": new_ids}
 
+    async def insert_ebook(
+        self,
+        tree_name: str,
+        sections: list[dict[str, Any]],
+        parent_node_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Persist source ebook sections with their exact TOC relationships.
+
+        Unlike Markdown ingestion this does not infer parents from headings,
+        thin small nodes, or rewrite source content through an LLM.
+        """
+        from parrot.loaders.ebook import EbookSection
+        from .ebook import ebook_tree
+
+        records = [EbookSection.model_validate(section) for section in sections]
+        subtree = ebook_tree(records)
+        tree = self._load_tree(tree_name)
+        node_markdown = _pop_node_field(subtree, "text")
+        original_id_to_node = _capture_node_id_object_map(subtree)
+        splice_subtree(tree, subtree, parent_node_id=parent_node_id)
+        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
+        await self._run_t3_classification(tree, original_id_to_node)
+        self._persist(tree_name)
+        return {
+            "tree_name": tree_name,
+            "new_node_ids": [node["node_id"] for node in original_id_to_node.values()],
+            "title": records[0].title if records else "",
+            "summary": "",
+        }
+
     async def insert_content(
         self,
         tree_name: str,

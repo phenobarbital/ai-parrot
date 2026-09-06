@@ -1,322 +1,376 @@
-from typing import List, Optional, Union, Tuple, Dict
-from pathlib import PurePath
-from collections.abc import Callable
-from parrot.stores.models import Document
-from parrot.loaders.abstract import AbstractLoader
+"""EPUB ingestion preserving navigation identities and section relationships."""
 
-# Optional deps: install via
-# pip install ebooklib beautifulsoup4 markdownify
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import posixpath
+from collections.abc import Callable
+from pathlib import Path, PurePath
+from typing import Any
+from urllib.parse import unquote, urlsplit
+
+from parrot.loaders.abstract import AbstractLoader
+from parrot.loaders.ebook import EbookSection, ebook_markdown
+from parrot.stores.models import Document
+
 try:
-    from ebooklib import epub
+    from ebooklib import ITEM_DOCUMENT, epub
+
     EBOOKLIB_AVAILABLE = True
-    try:
-        ITEM_DOCUMENT = epub.ITEM_DOCUMENT
-    except AttributeError:
-        try:
-            from ebooklib.epub import ITEM_DOCUMENT
-        except ImportError:
-            ITEM_DOCUMENT = 9  # Known constant value
-except Exception:
+except ImportError:
     EBOOKLIB_AVAILABLE = False
 
 try:
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup, NavigableString, Tag
+
     BS4_AVAILABLE = True
-except Exception:
+except ImportError:
     BS4_AVAILABLE = False
 
 try:
     from markdownify import MarkdownConverter
+
     MD_AVAILABLE = True
-except Exception:
+except ImportError:
     MD_AVAILABLE = False
 
 
+def normalize_href(href: str) -> str:
+    """Normalize local navigation paths without discarding fragment identity."""
+    parsed = urlsplit(href)
+    if parsed.scheme or parsed.netloc:
+        return href
+    path = posixpath.normpath(unquote(parsed.path)) if parsed.path else ""
+    fragment = unquote(parsed.fragment)
+    return path + (f"#{fragment}" if fragment else "")
+
+
+def section_id(href: str, position: str) -> str:
+    """Disambiguate repeated targets using their stable navigation position."""
+    return hashlib.sha256(f"{position}:{href}".encode()).hexdigest()[:20]
+
+
 class EpubLoader(AbstractLoader):
-    """
-    EPUB loader that extracts clean Markdown (or plain text) from chapters/sections.
+    """Read EPUB spine content and preserve the full nested source TOC.
 
-    Features:
-    - Per-chapter documents with titles from TOC/HTML
-    - Optional full-book document (merged)
-    - Clean Markdown conversion (lists, headers, links)
-    - Skips non-document items (css, images, fonts)
-    - Configurable minimum content length
+    Per-chapter output means one document per structural section, including
+    fragment targets and contentless parents. ebook_section metadata carries
+    the authoritative hierarchy. Full-book output carries ebook_sections.
     """
 
-    extensions: List[str] = ['.epub']
+    extensions: list[str] = [".epub"]
 
     def __init__(
         self,
-        source: Optional[Union[str, PurePath, List[PurePath]]] = None,
+        source: str | PurePath | list[PurePath] | None = None,
         *,
-        tokenizer: Union[str, Callable] = None,
-        text_splitter: Union[str, Callable] = None,
-        source_type: str = 'file',
-
-        # Output controls
-        as_markdown: bool = True,          # emit markdown instead of plain text
-        per_chapter: bool = True,          # True => one Document per chapter; False => single full-book doc
-        include_toc_document: bool = False,# optional separate TOC document
-        min_section_length: int = 50,      # drop tiny/empty sections
-
-        # Markdown conversion tuning
-        heading_style: str = "ATX",        # for markdownify; "ATX" => # Heading
+        tokenizer: str | Callable | None = None,
+        text_splitter: str | Callable | None = None,
+        source_type: str = "file",
+        as_markdown: bool = True,
+        per_chapter: bool = True,
+        include_toc_document: bool = False,
+        min_section_length: int = 0,
+        heading_style: str = "ATX",
         strip_whitespace: bool = True,
-
-        **kwargs
-    ):
+        **kwargs: Any,
+    ) -> None:
+        missing = []
+        if not EBOOKLIB_AVAILABLE:
+            missing.append("ebooklib")
+        if not BS4_AVAILABLE:
+            missing.append("beautifulsoup4")
+        if as_markdown and not MD_AVAILABLE:
+            missing.append("markdownify")
+        if missing:
+            raise ImportError(f"EpubLoader requires {', '.join(missing)}")
         super().__init__(
             source,
             tokenizer=tokenizer,
             text_splitter=text_splitter,
             source_type=source_type,
-            **kwargs
+            **kwargs,
         )
-        self.doctype = 'epub'
-        self._source_type = 'ebook'
-
-        # Options
+        self.doctype = "epub"
+        self._source_type = "ebook"
         self.as_markdown = as_markdown
         self.per_chapter = per_chapter
         self.include_toc_document = include_toc_document
-        self.min_section_length = int(min_section_length)
-        self.strip_whitespace = bool(strip_whitespace)
+        self.min_section_length = max(0, int(min_section_length))
         self.heading_style = heading_style
-
-        # sanity checks
-        if not EBOOKLIB_AVAILABLE or not BS4_AVAILABLE:
-            missing = []
-            if not EBOOKLIB_AVAILABLE:
-                missing.append("ebooklib")
-            if not BS4_AVAILABLE:
-                missing.append("beautifulsoup4")
-            raise ImportError(
-                f"EpubLoader requires {', '.join(missing)}. "
-                f"Install with: pip install ebooklib beautifulsoup4"
-            )
+        self.strip_whitespace = strip_whitespace
 
     def _html_to_markdown(self, html: str) -> str:
-        """Convert XHTML chapter html to Markdown (fallback to plain text)."""
+        """Convert content without silently falling back from Markdown to text."""
         soup = BeautifulSoup(html, "html.parser")
-
-        # remove scripts/styles
         for bad in soup(["script", "style", "noscript"]):
             bad.decompose()
-
-        if MD_AVAILABLE and self.as_markdown:
-            md = MarkdownConverter(
-                heading_style=self.heading_style,
-                strip=['style', 'script', 'noscript']
-            ).convert_soup(soup)
-            return self._clean(md)
-
-        # plain text fallback
-        text = soup.get_text("\n", strip=True)
-        return self._clean(text)
-
-    def _clean(self, text: str) -> str:
-        if not text:
-            return ""
+        if self.as_markdown:
+            text = MarkdownConverter(heading_style=self.heading_style).convert_soup(soup)
+        else:
+            text = soup.get_text("\n", strip=True)
         if self.strip_whitespace:
-            # Normalize multiple blank lines; trim trailing spaces
-            lines = [ln.rstrip() for ln in text.splitlines()]
-            # Collapse >2 blank lines to just one
-            cleaned = []
-            blank = 0
-            for ln in lines:
-                if ln.strip():
-                    blank = 0
-                    cleaned.append(ln)
-                else:
-                    blank += 1
-                    if blank <= 1:
-                        cleaned.append("")
-            text = "\n".join(cleaned)
-        return text.strip()
+            text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
+        return text
 
-    def _flatten_toc(self, toc) -> List[Tuple[str, str]]:
-        """
-        Flatten ebooklib TOC into a list of (href, title) entries.
-        toc entries are like: Link(title, href) or nested lists/tuples.
-        """
-        flat = []
+    def _toc_sections(self, toc: Any) -> list[EbookSection]:
+        """Walk EbookLib's (parent, children) pairs without flattening parents."""
+        sections: list[EbookSection] = []
 
-        def _walk(node):
-            if isinstance(node, (list, tuple)):
-                for child in node:
-                    _walk(child)
-            else:
-                # epub.Link or epub.Section
-                try:
-                    href = getattr(node, "href", None)
-                    title = getattr(node, "title", None)
-                    if href and title:
-                        flat.append((href.split("#", 1)[0], str(title)))
-                except Exception:
-                    pass
-
-        _walk(toc)
-        return flat
-
-    def _toc_title_lookup(self, book: "epub.EpubBook") -> Dict[str, str]:
-        """
-        Build a mapping from href→title using TOC (best effort).
-        Keys are hrefs without fragments; values are strings.
-        """
-        try:
-            flat = self._flatten_toc(book.toc or [])
-            # Normalize: keep last title if duplicates
-            return {href: title for href, title in flat}
-        except Exception:
-            return {}
-
-    def _iter_document_items(self, book: "epub.EpubBook"):
-        """
-        Yield (order_idx, item) for spine items that are HTML documents.
-        """
-        id_to_item = {it.get_id(): it for it in book.get_items()}
-        order = 0
-        for entry in (book.spine or []):
-            if isinstance(entry, tuple) and entry and isinstance(entry[0], str):
-                idref = entry[0]
-                item = id_to_item.get(idref)
-                if item is None:
+        def walk(entries: Any, parent: EbookSection | None, prefix: str) -> None:
+            for index, entry in enumerate(entries):
+                position = f"{prefix}.{index}"
+                children: Any = []
+                if isinstance(entry, tuple) and len(entry) == 2:
+                    entry, children = entry
+                if isinstance(entry, (tuple, list)):
+                    walk(entry, parent, position)
                     continue
-                if item.get_type() == ITEM_DOCUMENT:
-                    yield order, item
-                    order += 1
-
-        if order == 0:
-            for i, item in enumerate(book.get_items_of_type(ITEM_DOCUMENT)):
-                yield i, item
-
-    def _derive_title_from_html(self, html: str) -> Optional[str]:
-        soup = BeautifulSoup(html, "html.parser")
-        # Try <title>
-        if soup.title and soup.title.string:
-            t = soup.title.string.strip()
-            if t:
-                return t
-        # Try first heading
-        for tag in ["h1", "h2", "h3"]:
-            h = soup.find(tag)
-            if h and h.get_text(strip=True):
-                return h.get_text(strip=True)
-        return None
-
-    async def _load(self, path: PurePath, **kwargs) -> List[Document]:
-        """
-        Load an EPUB file into Parrot Documents.
-
-        Returns:
-            - Per-chapter Documents (default), or
-            - Single full-book Document if per_chapter=False
-        """
-        self.logger.info(f"Loading EPUB file: {path}")
-
-        docs: List[Document] = []
-        try:
-            book = epub.read_epub(str(path))
-        except Exception as e:
-            self.logger.error(f"Failed to open EPUB {path}: {e}")
-            return docs
-
-        # Extract dc:language from EPUB metadata when available.
-        epub_language: Optional[str] = None
-        try:
-            dc_lang = book.get_metadata('DC', 'language')
-            if dc_lang:
-                epub_language = dc_lang[0][0]
-        except Exception:
-            pass
-        _language = epub_language or self.language
-
-        toc_map = self._toc_title_lookup(book)
-
-        # Optionally create a separate TOC document
-        if self.include_toc_document and toc_map:
-            toc_lines = ["# Table of Contents"]
-            for href, title in toc_map.items():
-                toc_lines.append(f"- {title} (Link: {href})")
-            toc_content = "\n".join(toc_lines)
-            toc_meta = self.create_metadata(
-                path=path,
-                doctype="epub",
-                source_type="epub_toc",
-                language=_language,
-                content_type="toc",
-                entries=len(toc_map),
-            )
-            docs.append(self.create_document(toc_content, path, toc_meta))
-
-        # Collect per-chapter or full text
-        all_sections = []
-        for order_idx, item in self._iter_document_items(book):
-            try:
-                html = item.get_content().decode("utf-8", errors="ignore")
-            except Exception:
-                continue
-
-            content = self._html_to_markdown(html)
-
-            if len(content) < self.min_section_length:
-                # skip boilerplate/empty stubs
-                continue
-
-            # Derive title from TOC → HTML <title> → filename
-            href = getattr(item, "file_name", "") or ""
-            title = toc_map.get(href) or self._derive_title_from_html(html) or PurePath(href).name or f"Section {order_idx+1}"
-
-            # Track for full-book option
-            all_sections.append((order_idx, title, content, href))
-
-            # Per-chapter Document
-            if self.per_chapter:
-                section_meta = self.create_metadata(
-                    path=path,
-                    doctype="epub",
-                    source_type="epub_section",
-                    language=_language,
-                    title=title or None,
-                    section_order=order_idx + 1,
-                    section_title=title,
+                href = normalize_href(getattr(entry, "href", "") or getattr(entry, "file_name", "") or "")
+                section = EbookSection(
+                    section_id=section_id(href, position),
+                    title=str(getattr(entry, "title", "") or "Section"),
                     href=href,
+                    parent_id=parent.section_id if parent else None,
+                    depth=parent.depth + 1 if parent else 1,
+                    toc_order=len(sections),
+                )
+                sections.append(section)
+                if children:
+                    walk(children, section, position)
+
+        walk(toc or [], None, "toc")
+        return sections
+
+    def _iter_document_items(self, book: Any) -> list[Any]:
+        """Read spine items once, including appendices but excluding navigation."""
+        items = {item.get_id(): item for item in book.get_items()}
+        result: list[Any] = []
+        seen: set[str] = set()
+        for entry in book.spine or []:
+            identifier = entry[0] if isinstance(entry, tuple) else entry
+            item = items.get(identifier)
+            if (
+                item is not None
+                and identifier not in seen
+                and item.get_type() == ITEM_DOCUMENT
+                and not isinstance(item, epub.EpubNav)
+            ):
+                result.append(item)
+                seen.add(identifier)
+        if not result:
+            result = [item for item in book.get_items_of_type(ITEM_DOCUMENT) if not isinstance(item, epub.EpubNav)]
+        return result
+
+    def _partition_item(self, href: str, html: str, sections: list[EbookSection], order: int) -> int:
+        """Partition a DOM at anchors, preserving wrappers around fragments."""
+        soup = BeautifulSoup(html, "html.parser")
+        for bad in soup(["script", "style", "noscript"]):
+            bad.decompose()
+        body = soup.body or soup
+        matching = [s for s in sections if s.href.split("#", 1)[0] == href]
+        file_entries = [s for s in matching if "#" not in s.href]
+        current = file_entries[-1] if file_entries else None
+        for section in file_entries:
+            section.target_found = True
+            section.reading_order = order
+        triggers: dict[int, list[EbookSection]] = {}
+        for section in matching:
+            if "#" not in section.href:
+                continue
+            fragment = section.href.split("#", 1)[1]
+            target = body.find(id=fragment) or body.find("a", attrs={"name": fragment})
+            if target is not None:
+                triggers.setdefault(id(target), []).append(section)
+
+        fallback: EbookSection | None = None
+        if current is None:
+            title_tag = soup.title or body.find(["h1", "h2", "h3"])
+            fallback = EbookSection(
+                section_id=section_id(href, "spine"),
+                title=title_tag.get_text(" ", strip=True) if title_tag else Path(href).stem,
+                href=href,
+                toc_order=len(sections),
+                origin="spine",
+                target_found=True,
+            )
+            current = fallback
+
+        if not matching:
+            stack: list[tuple[int, EbookSection]] = []
+            for index, heading in enumerate(body.find_all([f"h{i}" for i in range(1, 7)])):
+                level = int(heading.name[1])
+                while stack and stack[-1][0] >= level:
+                    stack.pop()
+                parent = stack[-1][1] if stack else None
+                anchor = heading.get("id") or f"heading-{index + 1}"
+                section = EbookSection(
+                    section_id=section_id(f"{href}#{anchor}", "heading"),
+                    title=heading.get_text(" ", strip=True) or "Section",
+                    href=f"{href}#{anchor}",
+                    parent_id=parent.section_id if parent else None,
+                    depth=parent.depth + 1 if parent else 1,
+                    toc_order=len(sections),
+                    origin="heading",
+                )
+                sections.append(section)
+                triggers[id(heading)] = [section]
+                stack.append((level, section))
+
+        fragments: dict[str, list[str]] = {}
+        encountered: set[str] = set()
+
+        def activate(section: EbookSection) -> None:
+            nonlocal order, current
+            current = section
+            section.target_found = True
+            if section.section_id not in encountered:
+                section.reading_order = order
+                order += 1
+                encountered.add(section.section_id)
+
+        activate(current)
+
+        def partition(node: Any) -> dict[str, str]:
+            if id(node) in triggers:
+                for section in triggers[id(node)]:
+                    activate(section)
+            assert current is not None
+            if isinstance(node, NavigableString):
+                return {current.section_id: str(node.output_ready())}
+            if not isinstance(node, Tag):
+                return {}
+            grouped: dict[str, list[str]] = {}
+            for child in node.children:
+                for key, text in partition(child).items():
+                    grouped.setdefault(key, []).append(text)
+            if not grouped:
+                grouped[current.section_id] = []
+            result: dict[str, str] = {}
+            for key, children in grouped.items():
+                wrapper = soup.new_tag(node.name, attrs=dict(node.attrs))
+                inner = BeautifulSoup("".join(children), "html.parser")
+                for child in list(inner.contents):
+                    wrapper.append(child.extract())
+                result[key] = str(wrapper)
+            return result
+
+        for child in body.children:
+            for key, html_part in partition(child).items():
+                fragments.setdefault(key, []).append(html_part)
+        if fallback is not None:
+            fallback_html = "".join(fragments.get(fallback.section_id, []))
+            if BeautifulSoup(fallback_html, "html.parser").get_text(strip=True):
+                fallback.toc_order = len(sections)
+                sections.append(fallback)
+        by_id = {s.section_id: s for s in sections}
+        for key, parts in fragments.items():
+            if key not in by_id:
+                continue
+            section = by_id[key]
+            fragment_soup = BeautifulSoup("".join(parts), "html.parser")
+            first_heading = fragment_soup.find([f"h{i}" for i in range(1, 7)])
+            if first_heading and first_heading.get_text(" ", strip=True) == section.title:
+                first_heading.decompose()
+            headings = fragment_soup.find_all([f"h{i}" for i in range(1, 7)])
+            if headings:
+                lowest = min(int(h.name[1]) for h in headings)
+                for heading in headings:
+                    heading.name = f"h{min(6, section.depth + 1 + int(heading.name[1]) - lowest)}"
+            section.content = self._html_to_markdown(str(fragment_soup))
+        return order
+
+    def _read_sections(self, path: Path) -> tuple[list[EbookSection], str | None, str]:
+        """Decode the EPUB off the event loop and resolve structural records."""
+        book = epub.read_epub(str(path))
+        sections = self._toc_sections(book.toc)
+        order = 0
+        for item in self._iter_document_items(book):
+            order = self._partition_item(
+                normalize_href(item.file_name),
+                item.get_content().decode("utf-8", errors="replace"),
+                sections,
+                order,
+            )
+        for section in sections:
+            section.source_uri = str(path)
+            if not section.target_found:
+                section.reading_order = order
+                order += 1
+        language = book.get_metadata("DC", "language")
+        titles = book.get_metadata("DC", "title")
+        return (
+            sections,
+            language[0][0] if language else self.language,
+            titles[0][0] if titles else path.stem,
+        )
+
+    def _documents(self, path: Path, sections: list[EbookSection], language: str | None, title: str) -> list[Document]:
+        """Render the same section contract for EPUB and decoded MOBI books."""
+        documents: list[Document] = []
+        parent_ids = {s.parent_id for s in sections}
+        sections = [
+            s
+            for s in sections
+            if s.origin == "toc" or s.section_id in parent_ids or len(s.content) >= self.min_section_length
+        ]
+        if self.include_toc_document:
+            toc = "\n".join(
+                f"{'  ' * (s.depth - 1)}- [{s.title}]({s.href})" for s in sorted(sections, key=lambda s: s.toc_order)
+            )
+            metadata = self.create_metadata(
+                path=path,
+                doctype=self.doctype,
+                source_type=f"{self.doctype}_toc",
+                language=language,
+                title=title,
+                content_type="toc",
+                toc=[s.model_dump(exclude={"content"}) for s in sections],
+            )
+            documents.append(self.create_document(f"# Table of Contents\n\n{toc}", path, metadata))
+        if self.per_chapter:
+            for section in sorted(sections, key=lambda s: s.reading_order):
+                metadata = self.create_metadata(
+                    path=path,
+                    doctype=self.doctype,
+                    source_type=f"{self.doctype}_section",
+                    language=language,
+                    title=section.title,
+                    section_order=section.reading_order + 1,
+                    section_title=section.title,
+                    href=section.href,
                     content_type="chapter",
                     output_format="markdown" if self.as_markdown else "text",
-                    min_section_length=self.min_section_length,
+                    ebook_section=section.model_dump(exclude={"content"}),
                 )
-
-                # Prepend semantic position markers only (filename/type/source
-                # already live in `metadata`; do NOT prepend them to page_content)
-                context = [
-                    f"Section: {order_idx + 1}",
-                    f"Title: {title}",
-                ]
-                full_content = "\n".join(context) + "\n======\n\n" + content
-
-                docs.append(self.create_document(full_content, path, section_meta))
-
-        if not all_sections:
-            self.logger.warning(f"No textual sections extracted from {path}")
-            return docs
-
-        # Full-book Document (if requested)
-        if not self.per_chapter:
-            merged = []
-            for order_idx, title, content, href in all_sections:
-                merged.append(f"# {title}\n\n{content}\n")
-            book_text = "\n\n".join(merged).strip()
-
-            full_meta = self.create_metadata(
+                documents.append(self.create_document(section.content, path, metadata))
+        else:
+            metadata = self.create_metadata(
                 path=path,
-                doctype="epub",
-                source_type="epub_full",
-                language=_language,
-                sections=len(all_sections),
+                doctype=self.doctype,
+                source_type=f"{self.doctype}_full",
+                language=language,
+                title=title,
                 content_type="full_document",
+                sections=len(sections),
+                ebook_sections=[s.model_dump() for s in sections],
                 output_format="markdown" if self.as_markdown else "text",
             )
-            docs.append(self.create_document(book_text, path, full_meta))
+            documents.append(self.create_document(ebook_markdown(sections), path, metadata))
+        return documents
 
-        return docs
+    async def _load(self, path: PurePath | str, **kwargs: Any) -> list[Document]:
+        """Load a book without discarding short sections or navigation parents."""
+        source = Path(path)
+        sections, language, title = await asyncio.to_thread(self._read_sections, source)
+        return self._documents(source, sections, language, title)
+
+    async def load(
+        self,
+        source: str | PurePath | list[PurePath] | None = None,
+        split_documents: bool = False,
+        **kwargs: Any,
+    ) -> list[Document]:
+        """Preserve structural records by default; chunking is explicitly opt-in."""
+        return await super().load(source, split_documents=split_documents, **kwargs)
