@@ -225,10 +225,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-09-02
+**Notes**: Implemented 3 new test methods in TestConfigPayload class in test_server_dev_model_plan.py and 3 new test functions in test_catalog.py as specified. All tests follow the exact patterns described in the implementation notes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Follow-up verification (2026-09-07)**: Compiled the worktree's missing
+Cython extensions (`parrot.utils.types`, `parrot.utils.parsers.toml` — a
+worktree environment gap, not a code issue) and re-ran both suites:
+`pytest packages/ai-parrot/tests/flows/dev_flow/test_server_dev_model_plan.py
+packages/ai-parrot/tests/flows/dev_loop/test_catalog.py -v` → 53 passed, 0
+failed, including all 6 new tests from this task.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -208,6 +208,12 @@ When you pick up this task:
 2. Added "research_primary" to the claude-code roles tuple
 3. Added "research_primary" key to the roles dictionary in catalog_payload()
 
-The changes were verified to be present in the file. Testing was limited due to environment setup issues, but the code compiles and imports correctly.
+The changes were verified to be present in the file.
+
+**Follow-up verification (2026-09-07)**: `pytest packages/ai-parrot/tests/flows/dev_loop/test_catalog.py -v`
+now passes (7 tests, including the new `research_primary`/Fable assertions
+from TASK-2719) after compiling the worktree's missing Cython extensions
+(`parrot.utils.types`, `parrot.utils.parsers.toml`) — an environment issue
+unrelated to this task's code.
 
 **Deviations from spec**: none
