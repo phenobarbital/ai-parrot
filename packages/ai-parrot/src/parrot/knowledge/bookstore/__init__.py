@@ -21,12 +21,36 @@ chains at module import time (stdout purity for the MCP server).
 """
 
 from .config import LibraryLocation, resolve_locations
-from .models import BookCard, CardDraft, TocEntry
+from .models import (
+    REL_WEIGHTS,
+    SYMMETRIC_RELS,
+    BookCard,
+    BookCommunity,
+    BookRelation,
+    CardDraft,
+    CommunityLabelDraft,
+    Genre,
+    RelateSummary,
+    RelationDraft,
+    RelationJudgement,
+    RelationKind,
+    TocEntry,
+)
 
 __all__ = (
+    "REL_WEIGHTS",
+    "SYMMETRIC_RELS",
     "BookCard",
+    "BookCommunity",
+    "BookRelation",
     "CardDraft",
+    "CommunityLabelDraft",
+    "Genre",
     "LibraryLocation",
+    "RelateSummary",
+    "RelationDraft",
+    "RelationJudgement",
+    "RelationKind",
     "TocEntry",
     "resolve_locations",
 )
