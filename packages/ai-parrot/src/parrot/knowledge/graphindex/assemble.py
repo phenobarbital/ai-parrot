@@ -82,19 +82,24 @@ class GraphAssembler:
 
         Returns:
             The rustworkx edge index, or ``None`` if the edge was skipped.
+
+        Note:
+            When ``edge.domain_tags`` carries a numeric ``"weight"`` key,
+            it is copied into the edge payload as ``payload["weight"]``
+            (coerced to ``float``). This is the contract community
+            detection (:mod:`parrot.knowledge.graphindex.communities`)
+            reads from when no ``signal_config`` is supplied. Non-numeric
+            or absent weights leave the payload unchanged (no ``"weight"``
+            key), preserving the default weight of ``1.0`` downstream.
         """
         src_idx = self._node_index_map.get(edge.source_id)
         tgt_idx = self._node_index_map.get(edge.target_id)
 
         if src_idx is None:
-            logger.warning(
-                "Edge source '%s' not found in graph — skipping edge", edge.source_id
-            )
+            logger.warning("Edge source '%s' not found in graph — skipping edge", edge.source_id)
             return None
         if tgt_idx is None:
-            logger.warning(
-                "Edge target '%s' not found in graph — skipping edge", edge.target_id
-            )
+            logger.warning("Edge target '%s' not found in graph — skipping edge", edge.target_id)
             return None
 
         payload = {
@@ -104,6 +109,9 @@ class GraphAssembler:
             "provenance": edge.provenance.value,
             "confidence": edge.confidence,
         }
+        raw_weight = edge.domain_tags.get("weight") if edge.domain_tags else None
+        if isinstance(raw_weight, (int, float)) and not isinstance(raw_weight, bool):
+            payload["weight"] = float(raw_weight)
 
         edge_key = (edge.source_id, edge.target_id, edge.kind.value)
         idx = self.graph.add_edge(src_idx, tgt_idx, payload)
@@ -150,9 +158,7 @@ class GraphAssembler:
             return None
         return self.graph[idx]
 
-    def get_neighbors(
-        self, node_id: str, direction: str = "outgoing"
-    ) -> list[dict]:
+    def get_neighbors(self, node_id: str, direction: str = "outgoing") -> list[dict]:
         """Get neighboring node payloads.
 
         Args:
@@ -185,9 +191,7 @@ class GraphAssembler:
                 result.append(self.graph[i])
         return result
 
-    def get_edges_for_node(
-        self, node_id: str, direction: str = "both"
-    ) -> list[dict]:
+    def get_edges_for_node(self, node_id: str, direction: str = "both") -> list[dict]:
         """Get edge payloads connected to a node.
 
         Args:

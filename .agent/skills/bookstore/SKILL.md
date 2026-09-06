@@ -15,7 +15,7 @@ allowed-tools: Bash(bookstore:*)
 The bookstore is a personal library of books indexed as PageIndex
 chapter trees, each with a catalog card ("ficha"): title, authors,
 topics, a librarian summary, and a table of contents with page ranges.
-Seven read-only MCP tools expose it. **Never** read a book wholesale —
+Ten read-only MCP tools expose it. **Never** read a book wholesale —
 follow the funnel below; it is cheap-to-expensive by design.
 
 ## The research funnel (mandatory order)
@@ -24,6 +24,12 @@ follow the funnel below; it is cheap-to-expensive by design.
    search over the fichas answers "which book covers X?" with zero LLM
    cost. Pick 1–3 candidate books from the results. Use
    `bookstore_list_books()` only when you need the full inventory.
+1b. **Expand by relations** — before opening any book, call
+    `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`
+    hit to find the author's other works, sibling works of the same
+    tradition/era, or conceptually adjacent works. For thematic or
+    comparative questions ("what schools of thought does this library
+    cover?"), call `bookstore_communities()` instead.
 2. **`bookstore_get_toc(book_id)`** — orient inside a chosen book: the
    chapter tree with `node_id`s and page ranges. `bookstore_get_card`
    adds the summary/topics when you need to compare candidates.
@@ -44,6 +50,10 @@ page data comes from `bookstore_get_toc` / `bookstore_read_section`
 (`start_page` / `end_page`). Markdown-only books have no page numbers —
 cite book + section instead.
 
+When a relation drives a claim, cite its origin: "the library links
+these as parallels (LLM-inferred, 0.7)" vs "same author
+(deterministic)".
+
 ## Degraded modes
 
 - **No LLM configured** (server description says "lexical search
@@ -53,7 +63,8 @@ cite book + section instead.
 - **MCP server not connected**: the same operations exist as CLI
   commands via Bash — `bookstore search "<query>" --catalog-only`,
   `bookstore toc <book_id>`, `bookstore search "<query>" --book <id>`,
-  `bookstore show <book_id>`.
+  `bookstore show <book_id>`, `bookstore related <book_id>`,
+  `bookstore communities`.
 
 ## Managing the library (CLI only — not exposed over MCP)
 
@@ -66,6 +77,7 @@ bookstore add notes.md --no-llm           # deterministic carding
 bookstore add-folder ./libros --recursive # bulk: every pdf/md/txt/epub/docx
 bookstore add-folder ./libros --dry-run   # preview what would be indexed
 bookstore card <book_id> --refresh        # re-card after enabling an LLM
+bookstore relate --all                    # compute relations + communities
 bookstore remove <book_id>
 bookstore locations                       # show resolved library dirs
 ```

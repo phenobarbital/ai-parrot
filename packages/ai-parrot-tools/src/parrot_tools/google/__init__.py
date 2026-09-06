@@ -8,6 +8,7 @@ from .tools import (
 )
 from .places import GoogleBusinessTool
 from .base import GoogleBaseTool
+from .lyria import LyriaToolkit
 
 __all__ = (
     "GoogleSearchTool",
@@ -17,4 +18,6 @@ __all__ = (
     "GoogleReviewsTool",
     "GoogleTrafficTool",
     "GoogleBusinessTool",
+    "GoogleBaseTool",
+    "LyriaToolkit",
 )

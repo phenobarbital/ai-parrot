@@ -101,7 +101,7 @@ class TestPrefixPolicy:
             # migrated off us.anthropic.* — those need a per-account Bedrock
             # Anthropic use-case form; native Nova ids do not).
             "us.amazon.nova-2-lite-v1:0",
-            "us.anthropic.claude-opus-5",
+            "global.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
         ],
@@ -152,8 +152,9 @@ class TestNewMapEntries:
 
     def test_opus5_default_prefix_applied(self):
         # No explicit region_prefix -> REQUIRES_REGION_PREFIX default kicks
-        # in ("us" for Opus 5), and the suffix-less base id is preserved.
-        assert translate("claude-opus-5") == "us.anthropic.claude-opus-5"
+        # in ("global" for Opus 5 — no regional inference profile exists),
+        # and the suffix-less base id is preserved.
+        assert translate("claude-opus-5") == "global.anthropic.claude-opus-5"
 
     def test_fable5_default_prefix_applied(self):
         assert translate("claude-fable-5") == "global.anthropic.claude-fable-5"
@@ -185,7 +186,7 @@ class TestUnprefixedIdRepair:
 
     def test_bare_base_id_gains_required_prefix(self):
         """A base ID whose model has no in-region access gets its prefix."""
-        assert translate("anthropic.claude-opus-5") == "us.anthropic.claude-opus-5"
+        assert translate("anthropic.claude-opus-5") == "global.anthropic.claude-opus-5"
         assert translate("anthropic.claude-fable-5") == "global.anthropic.claude-fable-5"
 
     def test_complete_base_id_still_passes_through(self):
@@ -195,7 +196,7 @@ class TestUnprefixedIdRepair:
 
     def test_already_prefixed_id_untouched(self):
         for bid in (
-            "us.anthropic.claude-opus-5",
+            "global.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
         ):

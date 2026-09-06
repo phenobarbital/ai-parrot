@@ -13,7 +13,6 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from parrot.tools.scraping.drivers.abstract import AbstractDriver
 from parrot.tools.scraping.driver_factory import DriverFactory
 
-
 # ── Factory Lifecycle: Selenium ──────────────────────────────────
 
 
@@ -33,9 +32,7 @@ class TestFactoryLifecycleSelenium:
         mock_setup_cls.return_value = mock_instance
 
         driver = DriverFactory.create({"driver_type": "selenium"})
-        with patch(
-            "parrot.tools.scraping.driver.SeleniumSetup", mock_setup_cls
-        ):
+        with patch("parrot.tools.scraping.driver.SeleniumSetup", mock_setup_cls):
             await driver.start()
         assert driver._driver is not None
         assert driver.current_url is not None
@@ -68,9 +65,7 @@ class TestFactoryLifecyclePlaywright:
         mock_context.new_page.return_value = mock_page
 
         driver = DriverFactory.create({"driver_type": "playwright"})
-        with patch(
-            "playwright.async_api.async_playwright"
-        ) as mock_apw:
+        with patch("playwright.async_api.async_playwright") as mock_apw:
             mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
             await driver.start()
 
@@ -89,43 +84,115 @@ class TestFactoryLifecyclePlaywright:
         playwright.stop.assert_called_once()
 
 
+# ── Factory Lifecycle: Obscura (FEAT-530, TASK-2880) ─────────────
+
+
+class TestFactoryLifecycleObscura:
+    """Full lifecycle through the whole seam: DriverFactory.create()
+    -> PlaywrightDriver.start() connect-over-CDP -> use -> quit(),
+    end to end with only Playwright's own API mocked (no real Obscura
+    process — that seam is TASK-2875's ObscuraProcessManager, already
+    covered by its own unit tests)."""
+
+    def test_factory_returns_abstract_driver(self):
+        driver = DriverFactory.create({"driver_type": "obscura"})
+        assert isinstance(driver, AbstractDriver)
+        assert driver.config.engine == "obscura"
+        assert driver.config.browser_type == "chromium"
+
+    @pytest.mark.asyncio
+    async def test_start_and_quit(self):
+        mock_pw = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
+        mock_page = AsyncMock()
+        mock_page.url = "http://127.0.0.1:9222/"
+
+        mock_browser.contexts = [mock_context]
+        mock_context.pages = [mock_page]
+        mock_context.set_default_timeout = MagicMock()
+        mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        driver = DriverFactory.create({"driver_type": "obscura", "cdp_endpoint_url": "http://127.0.0.1:9222"})
+        with patch("playwright.async_api.async_playwright") as mock_apw:
+            mock_apw.return_value.start = AsyncMock(return_value=mock_pw)
+            await driver.start()
+
+        mock_pw.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9222")
+        assert driver._page is not None
+        assert driver.current_url == "http://127.0.0.1:9222/"
+
+        context = driver._context
+        browser = driver._browser
+        playwright = driver._playwright
+
+        await driver.quit()
+        assert driver._page is None
+        # Reused (not driver-created) context is never closed — only
+        # Playwright's own CDP-connection close semantics apply
+        # (disconnect, not terminate) — see PlaywrightDriver.quit()'s
+        # docstring.
+        context.close.assert_not_called()
+        browser.close.assert_called_once()
+        playwright.stop.assert_called_once()
+
+
 # ── Driver Swap Transparency ────────────────────────────────────
 
 
 class TestDriverSwapTransparency:
     """Both drivers expose the same AbstractDriver interface."""
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_are_abstract_driver(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         assert isinstance(driver, AbstractDriver)
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_all_abstract_methods(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         for method_name in [
-            "start", "quit", "navigate", "go_back", "go_forward", "reload",
-            "click", "fill", "select_option", "hover", "press_key",
-            "get_page_source", "get_text", "get_attribute", "get_all_texts",
-            "screenshot", "wait_for_selector", "wait_for_navigation",
-            "wait_for_load_state", "execute_script", "evaluate",
+            "start",
+            "quit",
+            "navigate",
+            "go_back",
+            "go_forward",
+            "reload",
+            "click",
+            "fill",
+            "select_option",
+            "hover",
+            "press_key",
+            "get_page_source",
+            "get_text",
+            "get_attribute",
+            "get_all_texts",
+            "screenshot",
+            "wait_for_selector",
+            "wait_for_navigation",
+            "wait_for_load_state",
+            "execute_script",
+            "evaluate",
         ]:
             assert hasattr(driver, method_name), f"Missing method: {method_name}"
             assert callable(getattr(driver, method_name))
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_current_url_property(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         # current_url is a property on the class (may raise before start())
-        assert isinstance(type(driver).__dict__.get("current_url"), property) or \
-            hasattr(driver, "current_url")
+        assert isinstance(type(driver).__dict__.get("current_url"), property) or hasattr(driver, "current_url")
 
-    @pytest.mark.parametrize("driver_type", ["selenium", "playwright"])
+    @pytest.mark.parametrize("driver_type", ["selenium", "playwright", "obscura"])
     def test_both_have_extended_capabilities(self, driver_type):
         driver = DriverFactory.create({"driver_type": driver_type})
         for method_name in [
-            "intercept_requests", "record_har", "save_pdf",
-            "start_tracing", "stop_tracing", "mock_route",
+            "intercept_requests",
+            "record_har",
+            "save_pdf",
+            "start_tracing",
+            "stop_tracing",
+            "mock_route",
         ]:
             assert hasattr(driver, method_name)
 
@@ -170,9 +237,7 @@ class TestBackwardCompatibility:
         from parrot.tools.scraping.tool import WebScrapingTool
 
         mock_factory.create.return_value = MagicMock(spec=AbstractDriver)
-        WebScrapingTool(
-            driver_config={"slow_mo": 200, "viewport": {"width": 800, "height": 600}}
-        )
+        WebScrapingTool(driver_config={"slow_mo": 200, "viewport": {"width": 800, "height": 600}})
         call_config = mock_factory.create.call_args[0][0]
         assert call_config["slow_mo"] == 200
         assert call_config["viewport"] == {"width": 800, "height": 600}
@@ -192,10 +257,16 @@ class TestPublicExports:
             SeleniumDriver,
             PlaywrightConfig,
         )
-        assert all([
-            DriverFactory, AbstractDriver, PlaywrightDriver,
-            SeleniumDriver, PlaywrightConfig,
-        ])
+
+        assert all(
+            [
+                DriverFactory,
+                AbstractDriver,
+                PlaywrightDriver,
+                SeleniumDriver,
+                PlaywrightConfig,
+            ]
+        )
 
     def test_drivers_subpackage_exports(self):
         from parrot.tools.scraping.drivers import (
@@ -204,6 +275,7 @@ class TestPublicExports:
             PlaywrightDriver,
             SeleniumDriver,
         )
+
         assert all([AbstractDriver, PlaywrightConfig, PlaywrightDriver, SeleniumDriver])
 
     def test_individual_module_imports(self):
@@ -212,16 +284,26 @@ class TestPublicExports:
         from parrot.tools.scraping.drivers.playwright_config import PlaywrightConfig
         from parrot.tools.scraping.drivers.selenium_driver import SeleniumDriver
         from parrot.tools.scraping.driver_factory import DriverFactory
-        assert all([
-            AbstractDriver, PlaywrightDriver, PlaywrightConfig,
-            SeleniumDriver, DriverFactory,
-        ])
+
+        assert all(
+            [
+                AbstractDriver,
+                PlaywrightDriver,
+                PlaywrightConfig,
+                SeleniumDriver,
+                DriverFactory,
+            ]
+        )
 
     def test_scraping_package_all_includes_drivers(self):
         import parrot.tools.scraping as pkg
+
         for name in [
-            "DriverFactory", "AbstractDriver", "PlaywrightDriver",
-            "SeleniumDriver", "PlaywrightConfig",
+            "DriverFactory",
+            "AbstractDriver",
+            "PlaywrightDriver",
+            "SeleniumDriver",
+            "PlaywrightConfig",
         ]:
             assert name in pkg.__all__, f"{name} not in __all__"
 
@@ -254,31 +336,39 @@ class TestConfigRoundTrip:
 
     def test_browser_mapping_in_config(self):
         """Edge maps to chromium in PlaywrightConfig."""
-        driver = DriverFactory.create({
-            "driver_type": "playwright",
-            "browser": "edge",
-        })
+        driver = DriverFactory.create(
+            {
+                "driver_type": "playwright",
+                "browser": "edge",
+            }
+        )
         assert driver.config.browser_type == "chromium"
 
     def test_safari_maps_to_webkit(self):
-        driver = DriverFactory.create({
-            "driver_type": "playwright",
-            "browser": "safari",
-        })
+        driver = DriverFactory.create(
+            {
+                "driver_type": "playwright",
+                "browser": "safari",
+            }
+        )
         assert driver.config.browser_type == "webkit"
 
     def test_viewport_passthrough(self):
-        driver = DriverFactory.create({
-            "driver_type": "playwright",
-            "viewport": {"width": 1024, "height": 768},
-        })
+        driver = DriverFactory.create(
+            {
+                "driver_type": "playwright",
+                "viewport": {"width": 1024, "height": 768},
+            }
+        )
         assert driver.config.viewport == {"width": 1024, "height": 768}
 
     def test_selenium_config_preserved(self):
-        driver = DriverFactory.create({
-            "driver_type": "selenium",
-            "browser": "firefox",
-            "headless": False,
-        })
+        driver = DriverFactory.create(
+            {
+                "driver_type": "selenium",
+                "browser": "firefox",
+                "headless": False,
+            }
+        )
         assert driver._browser_name == "firefox"
         assert driver._headless is False

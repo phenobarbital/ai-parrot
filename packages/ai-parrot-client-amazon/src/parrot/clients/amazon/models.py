@@ -72,8 +72,8 @@ _PREFIXABLE_NAMESPACES: tuple[str, ...] = ("anthropic.", "amazon.", "meta.")
 # only governs (a) the default-when-omitted case and (b) whether an explicit
 # prefix on an already-Bedrock-shaped/vendor id is honoured or warned away.
 REQUIRES_REGION_PREFIX: dict[str, str] = {
-    "claude-opus-5": "us",  # no in-region access in us-west-2/us-east-2
-    "claude-sonnet-5": "us",  # same tier as Opus 5
+    "claude-opus-5": "global",  # no regional inference profile — global only
+    "claude-sonnet-5": "global",  # same tier as Opus 5
     "claude-fable-5": "global",  # geo IDs not published; global only
     "claude-fable-5-1": "global",  # same tier as Fable 5
     "claude-haiku-4-5": "us",  # geo access only via "us."

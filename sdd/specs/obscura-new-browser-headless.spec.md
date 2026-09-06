@@ -9,7 +9,7 @@ base_branch: dev
 **Related proposal**: FEAT-528 — `sdd/proposals/obscura-new-browser-headless.proposal.md`
 **Date**: 2026-09-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next development release
 
 ---

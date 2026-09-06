@@ -77,21 +77,15 @@ class TestPlaywrightConfigCustomValues:
         assert config.timezone == "Europe/Madrid"
 
     def test_custom_geolocation(self):
-        config = PlaywrightConfig(
-            geolocation={"latitude": 40.7, "longitude": -74.0}
-        )
+        config = PlaywrightConfig(geolocation={"latitude": 40.7, "longitude": -74.0})
         assert config.geolocation["latitude"] == 40.7
 
     def test_custom_http_credentials(self):
-        config = PlaywrightConfig(
-            http_credentials={"username": "user", "password": "pass"}
-        )
+        config = PlaywrightConfig(http_credentials={"username": "user", "password": "pass"})
         assert config.http_credentials["username"] == "user"
 
     def test_custom_extra_http_headers(self):
-        config = PlaywrightConfig(
-            extra_http_headers={"X-Custom": "value"}
-        )
+        config = PlaywrightConfig(extra_http_headers={"X-Custom": "value"})
         assert config.extra_http_headers["X-Custom"] == "value"
 
     def test_recording_paths(self):
@@ -150,3 +144,88 @@ class TestPlaywrightConfigImports:
         )
 
         assert PC is not None
+
+
+class TestPlaywrightConfigObscuraMode:
+    """FEAT-530 (TASK-2876): Obscura/CDP connection settings."""
+
+    def test_playwright_config_obscura_mode(self):
+        """Obscura mode preserves existing fields and carries CDP settings."""
+        config = PlaywrightConfig(
+            engine="obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            obscura_binary="/usr/local/bin/obscura",
+            obscura_port=9333,
+            obscura_stealth=True,
+            obscura_allow_private_network=True,
+        )
+
+        assert config.engine == "obscura"
+        assert config.cdp_endpoint_url == "http://127.0.0.1:9333"
+        assert config.obscura_binary == "/usr/local/bin/obscura"
+        assert config.obscura_port == 9333
+        assert config.obscura_stealth is True
+        assert config.obscura_allow_private_network is True
+        # Existing fields remain supported and unaffected.
+        assert config.browser_type == "chromium"
+        assert config.headless is True
+
+    def test_default_engine_is_playwright(self):
+        config = PlaywrightConfig()
+        assert config.engine == "playwright"
+        assert config.cdp_endpoint_url is None
+        assert config.obscura_binary is None
+        assert config.obscura_port == 9222
+        assert config.obscura_stealth is False
+        assert config.obscura_allow_private_network is False
+
+    def test_invalid_engine_raises(self):
+        with pytest.raises(ValueError, match="Invalid engine"):
+            PlaywrightConfig(engine="selenium")
+
+    def test_invalid_obscura_port_raises(self):
+        with pytest.raises(ValueError, match="obscura_port"):
+            PlaywrightConfig(obscura_port=0)
+
+
+class TestPlaywrightConfigObscuraCompatibility:
+    """FEAT-530 (TASK-2880): final compatibility configuration checks —
+    Obscura settings must coexist with every other Playwright field
+    with no cross-field validation surprises (spec AC: "AbstractDriver
+    callers and existing scraping plans require no Obscura-specific
+    branching")."""
+
+    def test_obscura_mode_coexists_with_context_and_persistence_fields(self):
+        config = PlaywrightConfig(
+            engine="obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            viewport={"width": 1280, "height": 720},
+            locale="en-US",
+            timezone="America/New_York",
+            proxy={"server": "http://proxy:8080"},
+            ignore_https_errors=True,
+            storage_state="/tmp/auth.json",
+            user_data_dir="/tmp/profile",
+        )
+
+        assert config.engine == "obscura"
+        assert config.viewport == {"width": 1280, "height": 720}
+        assert config.storage_state == "/tmp/auth.json"
+        assert config.user_data_dir == "/tmp/profile"
+
+    def test_obscura_mode_is_orthogonal_to_browser_type_validation(self):
+        """`engine="obscura"` is compatible with the only browser_type
+        it is ever used with — `"chromium"`."""
+        config = PlaywrightConfig(engine="obscura", browser_type="chromium")
+        assert config.engine == "obscura"
+        assert config.browser_type == "chromium"
+
+    def test_obscura_mode_rejects_non_chromium_browser_type(self):
+        """Code-review fix: Obscura only speaks CDP as a
+        Chromium-compatible engine — DriverFactory/DriverRegistry
+        already force `browser_type='chromium'`, but a caller
+        constructing PlaywrightConfig directly (bypassing both) must
+        not be able to silently combine `engine='obscura'` with e.g.
+        `browser_type='firefox'`."""
+        with pytest.raises(ValueError, match="requires browser_type='chromium'"):
+            PlaywrightConfig(engine="obscura", browser_type="firefox")

@@ -82,6 +82,15 @@ custom MCP settings to persist.
 Without an LLM, in-book and cross-book search require `bm25s`. Catalog search,
 cards, inventory, tables of contents, and section reads work without it.
 
+## Book relations and communities
+
+Beyond the catalog, Bookstore also maintains a typed graph over the
+books (same author, shared topics/tradition/era, LLM-judged conceptual
+relations, and detected communities), plus a one-way `export-wiki`
+projection into a wikitoolkit plane. See `docs/bookstore-graph.md` for
+the relation types, the `relate` cost model, the three additional
+`bookstore_*` tools, and the CLI reference.
+
 ## Troubleshooting
 
 - **No library found:** inspect `parrot bookstore locations`, index a book, or

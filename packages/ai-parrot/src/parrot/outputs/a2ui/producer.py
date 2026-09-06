@@ -175,9 +175,17 @@ def _ensure_catalogs_registered() -> None:
     bodies). Calling this before :func:`catalog_instructions` guarantees the
     system prompt covers BOTH catalogs regardless of what else has run first in
     the process (spec Module 9: "instructions básico + parrot").
+
+    Also imports ``catalog.viz_core`` (FEAT-529 Module 0) — a no-op today
+    (that package registers no component yet), kept alongside so a future
+    ``catalog=VIZ_CORE_CATALOG_ID`` caller's header instructions
+    (:func:`~parrot.outputs.a2ui.catalog.catalog_header_instructions`) are
+    available regardless of import order, same reasoning as the two lines
+    above.
     """
     import parrot.outputs.a2ui.catalog.basic
     import parrot.outputs.a2ui.catalog.parrot  # noqa: F401
+    import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401
 
 
 async def generate_envelope(
@@ -199,7 +207,11 @@ async def generate_envelope(
             ``surface_catalog_id`` (v1.0 catalog resolution, spec §2 G2). When
             omitted, resolution falls back to each component's own
             ``catalogId`` (the structured-output ``CreateSurface`` the LLM
-            returns normally carries its own ``catalogId`` already).
+            returns normally carries its own ``catalogId`` already). ALSO
+            scopes the system prompt's catalog instructions (FEAT-529
+            Module 0): when given, only that catalog's components/header are
+            listed; when omitted, every registered catalog is (today's
+            behavior, unchanged).
         max_attempts: Total ``ask()`` attempts (default from SPK-3: 3).
         model: Model id forwarded to ``client.ask``.
         system_prompt: Optional base system prompt; the catalog instructions are appended.
@@ -208,7 +220,7 @@ async def generate_envelope(
         A :class:`ProducerResult` — either a validated envelope or a plain-text degradation.
     """
     _ensure_catalogs_registered()
-    instructions = catalog_instructions()
+    instructions = catalog_instructions(catalog_ids=[catalog] if catalog else None)
     system = (
         (system_prompt + "\n\n" if system_prompt else "")
         + "You produce ONLY an A2UI v1.0 createSurface envelope for the requested "

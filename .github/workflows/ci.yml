@@ -174,8 +174,115 @@ jobs:
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env
 
+      # FEAT-532: this job installs `wiki-languages`, which now includes
+      # `tree-sitter-luau` — verify the grammar actually imports AND
+      # parses BEFORE running any test, as a hard, standalone gate. Every
+      # Luau/Roblox test that needs the grammar is written with a
+      # `pytestmark = pytest.mark.skipif(get_parser("luau") is None, ...)`
+      # guard, which is correct for a machine where the extra is genuinely
+      # absent — but would let a BROKEN wheel install silently skip every
+      # one of those tests right here, in the one job meant to exercise
+      # them for real, and still report green. Failing fast here means a
+      # later "0 passed, N skipped" in this job is never mistaken for success.
+      - name: Verify Luau grammar imports and parses (FEAT-532)
+        run: |
+          uv run python -c "
+          from tree_sitter import Language, Parser
+          import tree_sitter_luau
+          lang = Language(tree_sitter_luau.language())
+          parser = Parser(lang)
+          tree = parser.parse(b'return 1')
+          assert tree is not None and tree.root_node is not None
+          print('tree-sitter-luau import/parse OK')
+          "
+
       - name: Run wiki tests with both extras installed
         run: uv run pytest tests/knowledge/wiki/ -q --tb=short --continue-on-collection-errors
+
+      # FEAT-532: the broad sweep above uses `--continue-on-collection-errors`
+      # and pytest's default summary doesn't fail the job on skips — so
+      # re-run the Luau/Roblox-specific suites in isolation and fail
+      # explicitly if anything skipped. With the grammar-presence gate
+      # above already green, a skip here can only mean a regression in
+      # this job's own setup, never "the extra was never really installed".
+      - name: Confirm no Luau/Roblox tests were skipped (grammar is present)
+        run: |
+          uv run pytest tests/knowledge/wiki/languages/test_luau.py \
+            tests/knowledge/wiki/languages/test_treesitter.py \
+            tests/knowledge/wiki/languages/test_registry.py \
+            tests/knowledge/wiki/roblox/ \
+            -v --tb=short 2>&1 | tee /tmp/luau-focused-tests.log
+          if grep -q "SKIPPED" /tmp/luau-focused-tests.log; then
+            echo "::error::Luau/Roblox test(s) were skipped even though tree-sitter-luau is installed and verified above."
+            exit 1
+          fi
+
+      # FEAT-532 TASK-2896: the measured resource-policy benchmark is run
+      # here too, wrapped in an EXTERNAL `timeout` (not a new pytest
+      # plugin — this job already has `timeout` from coreutils) so a
+      # genuine parser regression that reintroduces a hang cannot block
+      # this job indefinitely; it fails after 120s instead.
+      - name: Run bounded Luau parser resource benchmark (FEAT-532 TASK-2896)
+        run: |
+          mkdir -p artifacts/logs
+          timeout 120 uv run python scripts/benchmarks/luau_parser_limits.py \
+            --deadline-seconds 5.0 \
+            --out artifacts/logs/ci-luau-parser-limits.json
+
+      - name: Upload Luau CI logs (FEAT-532)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luau-ci-logs
+          path: |
+            /tmp/luau-focused-tests.log
+            artifacts/logs/ci-luau-parser-limits.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # FEAT-532: `test-wiki-extras` above proves the Luau grammar path works
+  # end to end; this job proves the COMPLEMENT — the bounded heuristic
+  # fallback still works correctly even when OTHER wiki extras (here,
+  # `wiki-structural`/ast-grep) ARE installed, so a partial-extras
+  # environment degrades on Luau specifically, not everywhere at once.
+  test-wiki-luau-fallback:
+    name: "Test Luau bounded heuristic fallback (wiki-languages absent)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # Deliberately NO `--extra wiki-languages` — tree-sitter-luau (and
+      # every other grammar wheel) stays absent, while `wiki-structural`
+      # IS installed, matching "even when other extras are installed".
+      - name: Sync core package with wiki-structural only
+        run: uv sync --package ai-parrot --extra wiki-structural
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Verify Luau grammar is genuinely absent
+        run: |
+          if uv run python -c "import tree_sitter_luau" 2>/dev/null; then
+            echo "::error::tree_sitter_luau imported but this job must not have it installed."
+            exit 1
+          fi
+          echo "tree_sitter_luau absent, as expected."
+
+      - name: Run Luau/Roblox tests on the bounded heuristic path
+        run: |
+          uv run pytest tests/knowledge/wiki/languages/test_luau.py \
+            tests/knowledge/wiki/roblox/ \
+            -q --tb=short --continue-on-collection-errors
 
   test-navrules:
     name: "Test navrules (rust=${{ matrix.rust }})"

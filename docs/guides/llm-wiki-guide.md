@@ -36,6 +36,13 @@
   - [Registering a Namespace](#registering-a-namespace)
   - [Querying Across Namespaces](#querying-across-namespaces)
   - [How Federation Works](#how-federation-works)
+- [Roblox and Luau Support](#roblox-and-luau-support)
+  - [Setup](#setup)
+  - [Scanning Luau Code](#scanning-luau-code)
+  - [Acquiring the Roblox API Plane](#acquiring-the-roblox-api-plane)
+  - [Checking Roblox API Status](#checking-roblox-api-status)
+  - [Code-to-API References](#code-to-api-references)
+  - [Known Limitations (Roblox)](#known-limitations-roblox)
 - [Obsidian Vaults as Wiki Sources](#obsidian-vaults-as-wiki-sources)
 - [Document Ingestion](#document-ingestion)
   - [Supervised Ingestion (wikitoolkit ingest)](#supervised-ingestion-wikitoolkit-ingest)
@@ -80,6 +87,16 @@ default build path.
 ---
 
 ## Quick Start
+
+Install the wiki stack and its PDF, DOCX, EPUB, and MOBI loaders together:
+
+```bash
+uv pip install 'ai-parrot[wiki]'
+```
+
+The `wiki` extra includes `ai-parrot-loaders[documents]` and the required parser
+dependencies. No separate loader installation is needed for these four formats.
+OCR, audio/video, and other specialized loader extras remain opt-in.
 
 ```bash
 # 1. Build the knowledge graph from the current repo (offline, no LLM)
@@ -722,6 +739,165 @@ Namespace name rules: `^[A-Za-z0-9][A-Za-z0-9_.:-]*$`, no `::`, not `all` or
 
 ---
 
+## Roblox and Luau Support
+
+FEAT-532 adds first-class Luau/Roblox coverage on top of everything above:
+`.lua`/`.luau` files scan and index like any other language, and an
+independently-generated, **federated** Roblox API plane (one page per
+official engine class/enum) links to your code via `references` edges —
+without ever mixing platform docs into your project's own local search corpus.
+
+Two entirely separate planes, two separate lifecycles:
+
+- **Your code** (`.lua`/`.luau` files) — scanned by `wikitoolkit build` like
+  every other language, offline, no network, every time.
+- **The Roblox API** (one page per class/enum from the official dump +
+  creator-docs) — acquired **only** on an explicit `--refresh`, published as
+  an immutable, versioned generation, and queried as a federated namespace
+  (default name `roblox`).
+
+### Setup
+
+The Luau grammar is optional, matching every other tree-sitter language in
+this guide — install it via the `wiki-languages` extra:
+
+```bash
+uv pip install "ai-parrot[wiki-languages]"
+# or, from the workspace root:
+uv sync --package ai-parrot --extra wiki-languages
+```
+
+Without it, `.lua`/`.luau` files still get a bounded, regex-based heuristic
+outline (functions, colon methods, type annotations, `require(...)`
+specifiers) — never a hard failure, and never a `sym:` structural page (Luau
+has no structural symbol plane in this release; see
+[Known Limitations](#known-limitations-roblox)).
+
+### Scanning Luau Code
+
+`.lua` and `.luau` are discovered by default — no extra CLI flag needed:
+
+```bash
+wikitoolkit build --path /path/to/your/roblox-project
+```
+
+`require()` calls resolve through, in order: `sourcemap.json` (a Rojo
+sourcemap, preferred), then `default.project.json` (a static Rojo project
+file, only when the sourcemap is absent or invalid — never both blended),
+then a relative-string fallback (`require("./Sibling")`), which works
+regardless of mapping mode. A resolved DataModel instance path (e.g.
+`game.ServerScriptService.Main`) and its Roblox `className` are rendered
+into the file's own page body — never a separate/renamed identity, the
+page is still addressed as `file:src/Main.luau`.
+
+### Acquiring the Roblox API Plane
+
+The API plane is never fetched implicitly — `wikitoolkit build` never makes
+a network request for it. The first acquisition (and every refresh
+afterwards) is explicit:
+
+```bash
+# First use: fetch the current Studio API dump + creator-docs, publish
+# a new generation. This is the ONLY command that ever touches the network
+# for this plane.
+wikitoolkit ingest roblox-api --refresh
+
+# Every subsequent call, with no --refresh: a pure offline read of the
+# last published generation. Zero network requests.
+wikitoolkit ingest roblox-api
+```
+
+A `--refresh` compares the resolved Studio version, the creator-docs commit,
+and the renderer's own schema version against the currently active
+generation: unchanged on all three means the existing generation is reused
+outright (no re-render, no re-publish); a change in any of them rebuilds and
+atomically republishes a brand-new, immutable generation. Older generations
+are retained on disk for any reader still using them — there is no automatic
+garbage collection.
+
+After a successful `--refresh`, register the plane as a namespace exactly
+like any other (see
+[Registering a Namespace](#registering-a-namespace)) — `ingest roblox-api`
+never registers it for you, and never silently replaces an existing
+`roblox` declaration:
+
+```bash
+wikitoolkit ns add roblox --store ~/.parrot/roblox/current --backend sqlite --global
+```
+
+`~/.parrot/roblox/current` is a stable path (an atomically re-pointed
+symlink) — it always resolves to whichever generation is currently active,
+so this registration never needs updating across future refreshes.
+
+### Checking Roblox API Status
+
+`wikitoolkit status` includes the Roblox plane's recorded download
+timestamp and Studio/creator-docs versions — a pure local-manifest read,
+never a network probe of any kind:
+
+```bash
+wikitoolkit status --path /path/to/your/roblox-project
+# ...
+# Roblox API : Studio 0.123.0.456789, creator-docs 1a2b3c4d5e6f,
+#              downloaded 2026-09-06T00:00:00+00:00 (625 classes, 120 enums)
+```
+
+Before any `--refresh` has ever run, this line instead reads:
+
+```
+Roblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.
+```
+
+### Code-to-API References
+
+Once the `roblox` namespace is registered, three code shapes resolve to a
+qualified `references` edge on your Luau file's page:
+
+- Literal service lookups: `game:GetService("Players")`
+- Explicit API type annotations: `local p: Player`, `function f(p: Player)`
+- Chained instance access on the known, unshadowed `game`/`workspace`
+  roots, at every level of the chain: `workspace.Terrain`,
+  `game.Workspace.Terrain`
+
+```bash
+wikitoolkit related file:src/Main.luau --path /path/to/your/roblox-project
+# → roblox::class/Players (references)
+
+wikitoolkit page roblox::class/Players --path /path/to/your/roblox-project
+```
+
+A candidate that doesn't resolve to a real class/enum in the active
+generation is never guessed into a fabricated page — it's silently dropped
+(logged as a diagnostic), not a build failure. Removing an API use, or
+deleting the file entirely, removes the corresponding edge on the next
+build — never a dangling reference.
+
+### Known Limitations (Roblox)
+
+- No Luau `sym:` structural symbol plane — `outline()` always returns empty
+  `symbols`/`refs` in every mode (ast-grep cannot register the Luau grammar
+  from the current wheel).
+- No expression type inference — only the three literal shapes above ever
+  produce a reference; a value passed through a variable or a function
+  return is never traced.
+- Chained-access recognition (`workspace.Terrain`) intentionally accepts a
+  false-positive tradeoff for coverage — a local variable that happens to
+  shadow `game`/`workspace` anywhere in the same file suppresses reference
+  detection for that root **file-wide**, not just at the shadowed
+  call site (a deliberate, documented simplification, not true per-block
+  lexical scoping).
+- The DataModel mapping for a **partial** `wikitoolkit upsert` (as opposed
+  to a full `build`) is resolved from the currently-scanned files plus
+  every file already known to the source manifest from a previous full
+  build — a project that has *never* had a full `build` and is only ever
+  touched via partial `upsert` will see an incomplete mapping until its
+  next full build.
+- `wikitoolkit ingest roblox-api` never runs a background refresh and has
+  no TTL — an out-of-date generation stays active until the next explicit
+  `--refresh`.
+
+---
+
 ## Obsidian Vaults as Wiki Sources
 
 Obsidian vaults are first-class wiki sources. The vault scanner
@@ -779,7 +955,7 @@ MCP server exposes a `vault_ingest` tool that rebuilds the vault plane:
 
 ### Supervised Ingestion (wikitoolkit ingest)
 
-For ingesting document corpora (PDF, DOCX, PPTX, XLSX, HTML, EPUB, Markdown,
+For ingesting document corpora (PDF, DOCX, PPTX, XLSX, HTML, EPUB, MOBI, Markdown,
 plain text) with editorial control:
 
 ```bash
@@ -1328,9 +1504,10 @@ wikitoolkit sync obsidian --prune
 | `WIKI_ENV` | *(none)* | Active wiki environment override — `WIKI_ENV` > `ENV` > `"local"` (FEAT-461) |
 | `WIKI_STORE` | *(none)* | Override: read a pre-built store directly |
 | `WIKI_STORE_BACKEND` | `sqlite` | Backend for `WIKI_STORE` (also honoured by `build`, FEAT-461) |
-| `WIKI_MODEL` | *(none)* | LLM for `ingest` stage-2 and page generation |
-| `WIKI_LIGHTWEIGHT_MODEL` | *(none)* | LLM for `ingest` stage-1 triage |
-| `WIKI_EXTRACT_LLM` | *(none)* | LLM for `remember --extract` entity extraction |
+| `WIKI_MODEL` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `ingest` stage-2 and page generation |
+| `WIKI_LIGHTWEIGHT_MODEL` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `ingest` stage-1 triage |
+| `WIKI_EXTRACT_LLM` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `remember --extract` entity extraction |
+| `PARROT_NO_AUTO_LLM` | *(none)* | Set to disable coding-agent CLI auto-detection for `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL`/`WIKI_EXTRACT_LLM` and `PARROT_BOOKSTORE_LLM` |
 | `CLAUDE_AGENT_ID` | *(none)* | Identity for `remember`/`note`/`link` attribution |
 | `PARROT_AGENT_ID` | *(none)* | Fallback identity for attribution |
 | `ARANGODB_HOST` | `127.0.0.1` | ArangoDB host (prefix configurable) |
@@ -1338,6 +1515,14 @@ wikitoolkit sync obsidian --prune
 | `ARANGODB_PROTOCOL` | `http` | ArangoDB protocol |
 | `ARANGODB_USERNAME` | `root` | ArangoDB username |
 | `ARANGODB_PASSWORD` | *(empty)* | ArangoDB password |
+
+When `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL` (together) or `WIKI_EXTRACT_LLM` are left
+unset, wikitoolkit auto-detects an available coding-agent CLI session — a Claude Code
+CLI session is preferred, falling back to Codex — and defaults to it, printing a visible
+message naming the auto-selected model and which env var to set to override it. This
+also applies to `bookstore`'s `PARROT_BOOKSTORE_LLM`. Set `PARROT_NO_AUTO_LLM=1` to
+disable this auto-detection entirely and restore the previous strict degraded
+(BM25/catalog-only) behavior when no LLM is explicitly configured.
 
 ---
 

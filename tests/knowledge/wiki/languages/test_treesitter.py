@@ -44,6 +44,7 @@ def clear_parser_cache():
     grammar availability without clearing it makes later tests pass or
     fail depending on collection order.
     """
+
     def _clear() -> None:
         for name in list(treesitter._PARSER_CACHE):
             treesitter._PARSER_CACHE.pop(name, None)
@@ -94,9 +95,7 @@ def _real_capsule():
         ("php", "tree_sitter_php"),
     ],
 )
-def test_build_parser_uses_language_variant(
-    language, module_name, clear_parser_cache
-):
+def test_build_parser_uses_language_variant(language, module_name, clear_parser_cache):
     """Multi-grammar wheels expose ``language_<name>()``, not ``language()``.
 
     These two returned ``None`` before TASK-2019 even with the extra
@@ -107,8 +106,7 @@ def test_build_parser_uses_language_variant(
         pytest.skip(f"{module_name} not installed")
     parser = get_parser(language)
     assert parser is not None, (
-        f"{language} grammar failed to load — {module_name} exposes a "
-        "named variant, not language()"
+        f"{language} grammar failed to load — {module_name} exposes a " "named variant, not language()"
     )
 
 
@@ -117,15 +115,27 @@ def test_build_parser_uses_language_variant(
     [
         ("javascript", "tree_sitter_javascript"),
         ("rust", "tree_sitter_rust"),
+        ("luau", "tree_sitter_luau"),
     ],
 )
-def test_build_parser_single_grammar_wheel_unregressed(
-    language, module_name, clear_parser_cache
-):
-    """Single-grammar wheels keep resolving through plain ``language()``."""
+def test_build_parser_single_grammar_wheel_unregressed(language, module_name, clear_parser_cache):
+    """Single-grammar wheels keep resolving through plain ``language()``.
+
+    ``tree_sitter_luau`` (FEAT-532 TASK-2899) exposes a plain
+    ``language()`` like ``tree_sitter_javascript``/``tree_sitter_rust`` —
+    verified against 1.2.0, not a named ``language_luau()`` variant (spec
+    §"Does NOT Exist": "Do not assume ``tree_sitter_luau.language_luau()``").
+    """
     if not _wheel_installed(module_name):
         pytest.skip(f"{module_name} not installed")
     assert get_parser(language) is not None
+
+
+def test_luau_grammar_missing_falls_back_gracefully(monkeypatch, clear_parser_cache):
+    """Missing/broken Luau grammar degrades to ``None``, never raises
+    (FEAT-532 TASK-2899's "forced heuristic" path depends on this)."""
+    monkeypatch.setitem(treesitter._GRAMMAR_MODULES, "luau", "no_such_luau_module_xyz")
+    assert get_parser("luau") is None
 
 
 def test_build_parser_prefers_plain_language(monkeypatch, clear_parser_cache):
@@ -142,21 +152,15 @@ def test_build_parser_prefers_plain_language(monkeypatch, clear_parser_cache):
         calls.append("language_typescript")
         return _real_capsule()
 
-    stand_in = SimpleNamespace(
-        language=_language, language_typescript=_language_typescript
-    )
+    stand_in = SimpleNamespace(language=_language, language_typescript=_language_typescript)
     monkeypatch.setitem(sys.modules, "fake_grammar_both", stand_in)
-    monkeypatch.setitem(
-        treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_both"
-    )
+    monkeypatch.setitem(treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_both")
 
     assert get_parser("typescript") is not None
     assert calls == ["language"], "language() must be tried first"
 
 
-def test_build_parser_falls_back_to_named_variant(
-    monkeypatch, clear_parser_cache
-):
+def test_build_parser_falls_back_to_named_variant(monkeypatch, clear_parser_cache):
     """With no ``language()``, the named variant is used."""
     if not _wheel_installed("tree_sitter_javascript"):
         pytest.skip("tree_sitter_javascript not installed")
@@ -168,9 +172,7 @@ def test_build_parser_falls_back_to_named_variant(
 
     stand_in = SimpleNamespace(language_typescript=_language_typescript)
     monkeypatch.setitem(sys.modules, "fake_grammar_named", stand_in)
-    monkeypatch.setitem(
-        treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_named"
-    )
+    monkeypatch.setitem(treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_named")
 
     assert get_parser("typescript") is not None
     assert calls == ["language_typescript"]
@@ -187,26 +189,18 @@ def test_build_parser_skips_failing_candidate(monkeypatch, clear_parser_cache):
     def _language_typescript():
         return _real_capsule()
 
-    stand_in = SimpleNamespace(
-        language=_language, language_typescript=_language_typescript
-    )
+    stand_in = SimpleNamespace(language=_language, language_typescript=_language_typescript)
     monkeypatch.setitem(sys.modules, "fake_grammar_broken", stand_in)
-    monkeypatch.setitem(
-        treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_broken"
-    )
+    monkeypatch.setitem(treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_broken")
 
     assert get_parser("typescript") is not None
 
 
-def test_build_parser_no_usable_callable_returns_none(
-    monkeypatch, clear_parser_cache
-):
+def test_build_parser_no_usable_callable_returns_none(monkeypatch, clear_parser_cache):
     """A module exposing no known callable degrades to None, never raises."""
     stand_in = SimpleNamespace(some_other_symbol=lambda: None)
     monkeypatch.setitem(sys.modules, "fake_grammar_empty", stand_in)
-    monkeypatch.setitem(
-        treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_empty"
-    )
+    monkeypatch.setitem(treesitter._GRAMMAR_MODULES, "typescript", "fake_grammar_empty")
 
     assert get_parser("typescript") is None
 

@@ -40,19 +40,14 @@ async def _build_plane(
     """Create and populate a SQLite plane at ``storage_dir``."""
     store = SQLiteWikiStore(storage_dir / "wiki.db")
     await store.upsert_pages(
-        [
-            WikiPageRecord(concept_id=cid, title=title, summary=body, body=body)
-            for cid, title, body in pages
-        ]
+        [WikiPageRecord(concept_id=cid, title=title, summary=body, body=body) for cid, title, body in pages]
     )
     if edges:
         await store.add_edges(list(edges))
     return store
 
 
-def _handle(
-    name: str, store: SQLiteWikiStore, storage_dir: Path, weight: float = 1.0
-) -> NamespaceHandle:
+def _handle(name: str, store: SQLiteWikiStore, storage_dir: Path, weight: float = 1.0) -> NamespaceHandle:
     return NamespaceHandle(
         name=name,
         store=store,
@@ -118,14 +113,9 @@ class TestSearchMerge:
         """Per-namespace min-max keeps a tiny corpus from outranking a big one."""
         local = await _build_plane(
             tmp_path / "big",
-            [
-                (f"file:big{i}.py", f"big{i}", f"alpha token{i} " * (i + 1))
-                for i in range(40)
-            ],
+            [(f"file:big{i}.py", f"big{i}", f"alpha token{i} " * (i + 1)) for i in range(40)],
         )
-        await _build_plane(
-            tmp_path / "small", [("file:small.py", "small", "alpha")]
-        )
+        await _build_plane(tmp_path / "small", [("file:small.py", "small", "alpha")])
         small = SQLiteWikiStore(tmp_path / "small" / "wiki.db", read_only=True)
         fed = FederatedWikiStore(
             local=local,
@@ -138,12 +128,8 @@ class TestSearchMerge:
         assert max(r["score"] for r in rows if r["namespace"] == "small") == 1.0
 
     async def test_weight_is_applied(self, tmp_path: Path):
-        local = await _build_plane(
-            tmp_path / "local", [("file:a.py", "a", "alpha local")]
-        )
-        await _build_plane(
-            tmp_path / "other", [("file:b.py", "b", "alpha other")]
-        )
+        local = await _build_plane(tmp_path / "local", [("file:a.py", "a", "alpha local")])
+        await _build_plane(tmp_path / "other", [("file:b.py", "b", "alpha other")])
         other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
         fed = FederatedWikiStore(
             local=local,
@@ -161,9 +147,7 @@ class TestSearchMerge:
     async def test_namespace_failure_is_skipped(self, fed: FederatedWikiStore):
         broken = AsyncMock()
         broken.search_fts.side_effect = RuntimeError("boom")
-        fed.namespaces["broken"] = _handle(
-            "broken", broken, Path("/nonexistent")
-        )
+        fed.namespaces["broken"] = _handle("broken", broken, Path("/nonexistent"))
         rows = await fed.search_fts("alpha", limit=10)
         assert rows  # the healthy namespaces still answered
         assert [s.name for s in fed.last_skipped] == ["broken"]
@@ -220,9 +204,7 @@ class TestScoped:
         assert rows
         assert all("::" not in row["concept_id"] for row in rows)
 
-    async def test_single_namespace_keeps_qualified_ids(
-        self, fed: FederatedWikiStore
-    ):
+    async def test_single_namespace_keeps_qualified_ids(self, fed: FederatedWikiStore):
         scoped = fed.scoped("other")
         rows = await scoped.search_fts("alpha", limit=10)
         assert rows
@@ -245,9 +227,7 @@ class TestWrites:
     """Writes land on the local plane; foreign ids are refused."""
 
     async def test_writes_are_local(self, fed: FederatedWikiStore):
-        await fed.upsert_pages(
-            [WikiPageRecord(concept_id="file:new.md", title="new")]
-        )
+        await fed.upsert_pages([WikiPageRecord(concept_id="file:new.md", title="new")])
         assert await fed.get_page("file:new.md") is not None
         assert await fed.namespaces["other"].store.get_page("file:new.md") is None
 
@@ -255,25 +235,29 @@ class TestWrites:
         with pytest.raises(ValueError, match="requires --ns other"):
             await fed.delete_page("other::file:README.md")
         with pytest.raises(ValueError):
-            await fed.upsert_pages(
-                [WikiPageRecord(concept_id="other::file:x", title="x")]
-            )
-        with pytest.raises(ValueError):
-            await fed.add_edges([("file:a.py", "other::file:b.py", "references")])
+            await fed.upsert_pages([WikiPageRecord(concept_id="other::file:x", title="x")])
+        # FEAT-532 §8: a locally-owned edge's DESTINATION may now be a
+        # syntactically qualified foreign reference — this is the one
+        # narrow exception to "writes touch the local plane only", and
+        # it is exercised for real in
+        # tests/knowledge/wiki/roblox/test_federation_writes.py. The
+        # source must still always be local (asserted right below) and
+        # every other write path above/below remains fully forbidden.
+        await fed.add_edges([("file:a.py", "other::file:b.py", "references")])
+        stored = await fed._local.dump_edges()
+        assert any(
+            e["src"] == "file:a.py" and e["dst"] == "other::file:b.py" and e["rel"] == "references" for e in stored
+        )
+        with pytest.raises(ValueError, match="requires --ns other"):
+            await fed.add_edges([("other::file:a.py", "file:b.py", "references")])
         with pytest.raises(ValueError):
             await fed.upsert_embedding("other::file:x", [0.1])
 
-    async def test_scoped_namespace_write_targets_that_plane(
-        self, fed: FederatedWikiStore, tmp_path: Path
-    ):
+    async def test_scoped_namespace_write_targets_that_plane(self, fed: FederatedWikiStore, tmp_path: Path):
         """``scoped(name)`` accepts its own qualified ids on write paths."""
         writable = SQLiteWikiStore(tmp_path / "other" / "wiki.db")
-        scoped = FederatedWikiStore(
-            local=writable, local_name="other", qualify_local=True
-        )
-        await scoped.upsert_pages(
-            [WikiPageRecord(concept_id="file:written.md", title="w")]
-        )
+        scoped = FederatedWikiStore(local=writable, local_name="other", qualify_local=True)
+        await scoped.upsert_pages([WikiPageRecord(concept_id="file:written.md", title="w")])
         assert await scoped.get_page("other::file:written.md") is not None
 
 
@@ -295,9 +279,7 @@ class TestStats:
         assert block["read_only"] is True
 
     async def test_stats_reports_resolve_time_skips(self, fed: FederatedWikiStore):
-        fed.skipped.append(
-            NamespaceSkip(name="ghost", reason="unbuilt", detail="no plane")
-        )
+        fed.skipped.append(NamespaceSkip(name="ghost", reason="unbuilt", detail="no plane"))
         stats = await fed.stats()
         assert [s["name"] for s in stats["skipped"]] == ["ghost"]
 
@@ -326,9 +308,7 @@ class TestResolveNamespaces:
                 "proj": WikiNamespaceConfig(path=str(other_root)),
             }
         )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert skipped == []
         assert sorted(h.name for h in handles) == ["proj", "sdir"]
         assert all(h.read_only for h in handles)
@@ -337,33 +317,21 @@ class TestResolveNamespaces:
 
     async def test_relative_repo_path_resolves_against_root(self, tmp_path: Path):
         await _build_plane(tmp_path / "planes", [("file:x", "x", "body")])
-        config = WikiProjectConfig(
-            namespaces={"rel": WikiNamespaceConfig(store="planes")}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"rel": WikiNamespaceConfig(store="planes")})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert skipped == [] and handles[0].storage_dir == tmp_path / "planes"
 
     async def test_skips_unbuilt_with_hint(self, tmp_path: Path):
         (tmp_path / "x").mkdir()
-        config = WikiProjectConfig(
-            namespaces={"x": WikiNamespaceConfig(path=str(tmp_path / "x"))}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"x": WikiNamespaceConfig(path=str(tmp_path / "x"))})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles
         assert skipped[0].reason == "unbuilt"
         assert "wikitoolkit build --path" in skipped[0].hint
 
     async def test_skips_missing_root(self, tmp_path: Path):
-        config = WikiProjectConfig(
-            namespaces={"gone": WikiNamespaceConfig(path=str(tmp_path / "gone"))}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"gone": WikiNamespaceConfig(path=str(tmp_path / "gone"))})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles and skipped[0].reason == "unbuilt"
 
     async def test_only_filter(self, tmp_path: Path):
@@ -383,9 +351,7 @@ class TestResolveNamespaces:
         )
         assert [h.name for h in handles] == ["b"]
 
-    async def test_repo_entry_wins_over_global(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    async def test_repo_entry_wins_over_global(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
         await _build_plane(tmp_path / "repo-plane", [("file:x", "x", "b")])
         await _build_plane(tmp_path / "global-plane", [("file:y", "y", "b")])
@@ -393,15 +359,11 @@ class TestResolveNamespaces:
             GlobalWikiRegistry(
                 namespaces={
                     "dup": WikiNamespaceConfig(store=str(tmp_path / "global-plane")),
-                    "only-global": WikiNamespaceConfig(
-                        store=str(tmp_path / "global-plane")
-                    ),
+                    "only-global": WikiNamespaceConfig(store=str(tmp_path / "global-plane")),
                 }
             )
         )
-        config = WikiProjectConfig(
-            namespaces={"dup": WikiNamespaceConfig(store=str(tmp_path / "repo-plane"))}
-        )
+        config = WikiProjectConfig(namespaces={"dup": WikiNamespaceConfig(store=str(tmp_path / "repo-plane"))})
         handles, skipped = await resolve_namespaces(tmp_path, config)
         assert skipped == []
         by_name = {h.name: h for h in handles}
@@ -409,9 +371,7 @@ class TestResolveNamespaces:
         assert by_name["dup"].storage_dir == tmp_path / "repo-plane"
         assert by_name["only-global"].origin == "global"
 
-    async def test_arango_entry_uses_credentials_env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    async def test_arango_entry_uses_credentials_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("LEGAL_HOST", "db.example")
         monkeypatch.setenv("LEGAL_PORT", "9999")
         monkeypatch.setenv("LEGAL_PASSWORD", "s3cret")
@@ -434,15 +394,9 @@ class TestResolveNamespaces:
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _FakeArango)
         config = WikiProjectConfig(
-            namespaces={
-                "legal": WikiNamespaceConfig(
-                    database="wiki_legal", credentials_env="LEGAL"
-                )
-            }
+            namespaces={"legal": WikiNamespaceConfig(database="wiki_legal", credentials_env="LEGAL")}
         )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert skipped == [] and [h.name for h in handles] == ["legal"]
         assert captured["database"] == "wiki_legal"
         assert captured["arango_params"]["host"] == "db.example"
@@ -455,9 +409,7 @@ class TestResolveNamespaces:
         # on whatever loop actually serves the read.
         assert _FakeArango.closed is True
 
-    async def test_unreachable_arango_is_skipped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    async def test_unreachable_arango_is_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         class _HangingArango:
             def __init__(self, **kwargs: Any) -> None:
                 self.read_only = kwargs.get("read_only", False)
@@ -471,12 +423,8 @@ class TestResolveNamespaces:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _HangingArango)
-        config = WikiProjectConfig(
-            namespaces={"legal": WikiNamespaceConfig(database="wiki_legal")}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"legal": WikiNamespaceConfig(database="wiki_legal")})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles
         assert skipped[0].reason == "unreachable"
 
@@ -490,31 +438,27 @@ class TestResolveNamespaces:
         )
         assert storage_dir == tmp_path / "w"
         assert isinstance(store, SQLiteWikiStore) and not store.read_only
-        await store.upsert_pages(
-            [WikiPageRecord(concept_id="file:new", title="n")]
-        )
+        await store.upsert_pages([WikiPageRecord(concept_id="file:new", title="n")])
         assert await store.get_page("file:new") is not None
 
 
 class TestReviewRegressions:
     """Regressions from the FEAT-450 code review (F1, F2, F5, L3, H1, H2)."""
 
-    async def test_scoped_write_strips_the_namespace_prefix(
-        self, tmp_path: Path
-    ):
+    async def test_scoped_write_strips_the_namespace_prefix(self, tmp_path: Path):
         """F1 — the backing plane must never see a ``ns::`` id."""
         store = await _build_plane(tmp_path / "other", [])
         scoped = FederatedWikiStore(store, "other", qualify_local=True)
-        await scoped.upsert_pages([
-            WikiPageRecord(
-                concept_id="other::file:x.py",
-                node_id="other::file:x.py",
-                title="x",
-            )
-        ])
-        await scoped.add_edges(
-            [("other::file:x.py", "other::file:y.py", "references")]
+        await scoped.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id="other::file:x.py",
+                    node_id="other::file:x.py",
+                    title="x",
+                )
+            ]
         )
+        await scoped.add_edges([("other::file:x.py", "other::file:y.py", "references")])
         await scoped.replace_source_slice(
             "src",
             [WikiPageRecord(concept_id="other::file:z.py", title="z")],
@@ -523,25 +467,18 @@ class TestReviewRegressions:
 
         raw_ids = {r["concept_id"] for r in await store.list_pages(limit=50)}
         assert raw_ids == {"file:x.py", "file:z.py"}
-        assert all(
-            "::" not in e["src"] and "::" not in e["dst"]
-            for e in await store.dump_edges()
-        )
+        assert all("::" not in e["src"] and "::" not in e["dst"] for e in await store.dump_edges())
         # The federated view still presents them qualified.
         page = await scoped.get_page("other::file:x.py")
         assert page is not None
         assert page["concept_id"] == "other::file:x.py"
         assert page["node_id"] == "other::file:x.py"
 
-    async def test_scoped_write_still_rejects_another_namespace(
-        self, tmp_path: Path
-    ):
+    async def test_scoped_write_still_rejects_another_namespace(self, tmp_path: Path):
         store = await _build_plane(tmp_path / "other", [])
         scoped = FederatedWikiStore(store, "other", qualify_local=True)
         with pytest.raises(ValueError, match="requires --ns elsewhere"):
-            await scoped.upsert_pages(
-                [WikiPageRecord(concept_id="elsewhere::file:x", title="x")]
-            )
+            await scoped.upsert_pages([WikiPageRecord(concept_id="elsewhere::file:x", title="x")])
 
     async def test_list_pages_represents_every_namespace(self, tmp_path: Path):
         """F2 — a busy local plane must not starve the namespaces."""
@@ -551,9 +488,7 @@ class TestReviewRegressions:
         )
         await _build_plane(tmp_path / "other", [("file:o.py", "o", "body")])
         other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
-        fed = FederatedWikiStore(
-            local, "local", [_handle("other", other, tmp_path / "other")]
-        )
+        fed = FederatedWikiStore(local, "local", [_handle("other", other, tmp_path / "other")])
         rows = await fed.list_pages(limit=20)
         assert len(rows) == 20
         assert "other::file:o.py" in {row["concept_id"] for row in rows}
@@ -568,9 +503,7 @@ class TestReviewRegressions:
             [(f"file:o{i}.py", f"o{i}", "b") for i in range(10)],
         )
         other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
-        fed = FederatedWikiStore(
-            local, "local", [_handle("other", other, tmp_path / "other")]
-        )
+        fed = FederatedWikiStore(local, "local", [_handle("other", other, tmp_path / "other")])
         rows = await fed.list_pages(limit=6)
         assert len(rows) == 6
         assert len({row["concept_id"] for row in rows}) == 6
@@ -589,9 +522,7 @@ class TestReviewRegressions:
         assert first == ["broken"]
         assert second == ["broken"]
 
-    async def test_stale_plane_is_reported_with_a_rebuild_hint(
-        self, tmp_path: Path
-    ):
+    async def test_stale_plane_is_reported_with_a_rebuild_hint(self, tmp_path: Path):
         """L3 — a pre-migration plane is `invalid`, not an opaque failure."""
         await _build_plane(tmp_path / "old", [("file:x", "x", "body")])
         db = tmp_path / "old" / "wiki.db"
@@ -602,12 +533,8 @@ class TestReviewRegressions:
         for suffix in ("-wal", "-shm"):
             db.with_name(db.name + suffix).unlink(missing_ok=True)
 
-        config = WikiProjectConfig(
-            namespaces={"old": WikiNamespaceConfig(store=str(tmp_path / "old"))}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"old": WikiNamespaceConfig(store=str(tmp_path / "old"))})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles
         assert skipped[0].reason == "invalid"
         assert "predates the current schema" in skipped[0].detail
@@ -615,17 +542,11 @@ class TestReviewRegressions:
 
     async def test_healthy_plane_passes_the_schema_probe(self, tmp_path: Path):
         await _build_plane(tmp_path / "ok", [("file:x", "x", "body")])
-        config = WikiProjectConfig(
-            namespaces={"ok": WikiNamespaceConfig(store=str(tmp_path / "ok"))}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"ok": WikiNamespaceConfig(store=str(tmp_path / "ok"))})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert skipped == [] and [h.name for h in handles] == ["ok"]
 
-    async def test_arango_namespace_never_provisions(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    async def test_arango_namespace_never_provisions(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """H1 — an unbuilt arango namespace is a skip, not a new database."""
         created: list[str] = []
 
@@ -635,9 +556,7 @@ class TestReviewRegressions:
 
             async def initialize(self) -> None:
                 if self.read_only:
-                    raise FileNotFoundError(
-                        "ArangoDB database 'wiki_typo' does not exist"
-                    )
+                    raise FileNotFoundError("ArangoDB database 'wiki_typo' does not exist")
                 created.append("wiki_typo")
 
             async def close(self) -> None:
@@ -646,12 +565,8 @@ class TestReviewRegressions:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _FakeArango)
-        config = WikiProjectConfig(
-            namespaces={"legal": WikiNamespaceConfig(database="wiki_typo")}
-        )
-        handles, skipped = await resolve_namespaces(
-            tmp_path, config, registry_path=tmp_path / "absent.json"
-        )
+        config = WikiProjectConfig(namespaces={"legal": WikiNamespaceConfig(database="wiki_typo")})
+        handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles
         assert skipped[0].reason == "unbuilt"
         assert created == []

@@ -45,10 +45,18 @@ from parrot.clients.amazon.nova.mantle import BedrockMantleClient
 
 pytestmark = [pytest.mark.real_llm, pytest.mark.asyncio]
 
-#: Kept tiny on purpose — this is a connectivity/wiring probe, not a quality
+#: Kept small on purpose — this is a connectivity/wiring probe, not a quality
 #: eval. One short word is enough to prove the round trip produced real text.
+#: 16 is NOT enough: several catalogued models (Claude 5's adaptive thinking,
+#: gpt-oss-120b / minimax-m2.5's hidden chain-of-thought) spend part of the
+#: completion budget on reasoning before emitting a single visible character,
+#: so a too-tight cap truncates before any answer appears — Bedrock Converse
+#: just returns a stopReason of "max_tokens" with empty/partial text, but the
+#: OpenAI SDK's chat.completions.parse() helper that BedrockMantleClient goes
+#: through raises ``openai.LengthFinishReasonError`` outright. 256 clears the
+#: reasoning overhead on every model above while staying cheap.
 PROMPT = "Reply with exactly one word: PONG"
-MAX_TOKENS = 16
+MAX_TOKENS = 256
 TIMEOUT_SECONDS = 60.0
 
 
@@ -234,7 +242,10 @@ async def test_bedrock_converse_model_live(model):
 
 MANTLE_MODELS = [
     "openai.gpt-oss-120b",  # BedrockMantleClient._default_model
-    "google.gemma-4-26b-a4b",  # BedrockMantleClient._fallback_model
+    # NOT "google.gemma-4-26b-a4b": confirmed live (2026-09-05) to 400 with
+    # "isn't supported on this route" — not a valid id on Mantle's
+    # chat-completions route at all. BedrockMantleClient._fallback_model
+    # was dropped to None over this finding; see nova/mantle.py.
     "anthropic.claude-sonnet-4-5-20250929-v1:0",
     "anthropic.claude-haiku-4-5-20251001-v1:0",
     "minimax.minimax-m2.5",

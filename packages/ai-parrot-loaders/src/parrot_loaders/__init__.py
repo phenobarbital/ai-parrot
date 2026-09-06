@@ -17,6 +17,7 @@ LOADER_REGISTRY: dict[str, str] = {
     "PDFLoader": "parrot_loaders.pdf.PDFLoader",
     "QAFileLoader": "parrot_loaders.qa.QAFileLoader",
     "EpubLoader": "parrot_loaders.epubloader.EpubLoader",
+    "MobiLoader": "parrot_loaders.mobiloader.MobiLoader",
     "PowerPointLoader": "parrot_loaders.ppt.PowerPointLoader",
     "DocumentConverterLoader": "parrot_loaders.doc_converter.DocumentConverterLoader",
     # --- PDF variants ---
