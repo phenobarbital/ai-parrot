@@ -507,6 +507,43 @@ def communities_cmd(as_json: bool) -> None:
         )
 
 
+@bookstore.command("export-wiki")
+@click.option(
+    "--out", "out_dir", default=None,
+    help="Output directory (default: <library>/wiki).",
+)
+@click.option(
+    "--global", "global_scope", is_flag=True,
+    help="Export the global library instead of the project one.",
+)
+@click.option(
+    "--no-register", is_flag=True,
+    help="Skip wikitoolkit namespace registration.",
+)
+def export_wiki(out_dir: Optional[str], global_scope: bool, no_register: bool) -> None:
+    """Project the book graph into a wikitoolkit plane (CLI-only)."""
+    from .library import BookstoreError
+
+    scope = "global" if global_scope else "project"
+    store = _open_bookstore(require_exists=True, use_llm=False, scope_needed=scope)
+    try:
+        result = asyncio.run(
+            store.export_wiki(
+                Path(out_dir) if out_dir else None,
+                scope=scope,
+                register=not no_register,
+            )
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"pages: {result['pages']}  edges: {result['edges']}")
+    click.echo(f"graph: {result['html']}")
+    if result.get("registered_in"):
+        click.echo(f"registered namespace 'bookstore' in {result['registered_in']}")
+    else:
+        click.echo("namespace registration skipped")
+
+
 @bookstore.command("remove")
 @click.argument("book_id")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")

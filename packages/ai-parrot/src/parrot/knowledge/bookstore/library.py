@@ -767,6 +767,88 @@ class Bookstore:
         raise BookstoreError(f"Unknown community {community_id!r}")
 
     # ------------------------------------------------------------------
+    # export-wiki (CLI-only — spec §4 Non-Goals: no write tool over MCP)
+    # ------------------------------------------------------------------
+    async def export_wiki(
+        self,
+        output_dir: Optional[Path] = None,
+        *,
+        scope: str = "project",
+        register: bool = True,
+    ) -> dict[str, Any]:
+        """Project the book graph into a dedicated wikitoolkit plane.
+
+        Lazily imports ``parrot.knowledge.wiki``/``graphindex.export_html``
+        (via ``.wiki_export``) — the MCP read path never touches this
+        method, so ``parrot.knowledge.wiki`` never enters ``sys.modules``
+        there.
+
+        Args:
+            output_dir: Export directory; defaults to
+                ``<library>/wiki`` for ``scope``.
+            scope: Which library location to export (``"project"`` or
+                ``"global"``); cards from every scope are still exported
+                as pages (the graph is the full merged one), this only
+                picks the output directory and the default namespace
+                registry.
+            register: Register namespace ``"bookstore"`` afterwards
+                (project's ``.parrot/wiki.json`` normally, global
+                ``wikis.json`` when ``scope="global"`` or no git root is
+                found).
+
+        Returns:
+            ``{"pages", "edges", "html", "json", "registered_in"}`` —
+            ``registered_in`` is the registry path written, or ``None``
+            when ``register=False``.
+
+        Raises:
+            BookstoreError: The wiki/graphindex packages are not
+                importable, or namespace registration conflicts with an
+                existing, different entry.
+        """
+        from .wiki_export import default_wiki_dir, export_plane, register_namespace
+
+        loc = self._location(scope)
+        out_dir = Path(output_dir) if output_dir is not None else default_wiki_dir(loc)
+
+        cards = self.list_books()
+        visible_ids = {card.book_id for card in cards}
+        relations = merged_relations(self._stores(), visible_ids)
+
+        # Rebuild the clustering graph purely for graph.html — never
+        # persisted here (Bookstore.relate_books/_relate_stage3 owns
+        # persistence). Prefer already-persisted labels over freshly
+        # (re-)derived fallback ones when a partition exists.
+        result, inter, assembler = detect_book_communities(cards, relations)
+        persisted_labels = {c.community_id: c.label for c in self.communities()}
+        if persisted_labels:
+            relabelled = [
+                community.model_copy(update={"label": persisted_labels[community.community_id]})
+                if community.community_id in persisted_labels
+                else community
+                for community in result.communities
+            ]
+            result = result.model_copy(update={"communities": relabelled})
+
+        stats = await export_plane(cards, relations, result, inter, assembler, out_dir)
+
+        registered_in: Optional[str] = None
+        if register:
+            try:
+                from parrot.knowledge.wiki.project import find_project_root
+            except ImportError as exc:
+                raise BookstoreError(
+                    "export-wiki requires the wiki/graphindex packages "
+                    "(pip install ai-parrot[wiki])"
+                ) from exc
+            git_root = None if scope == "global" else find_project_root(loc.root)
+            registered_in = str(
+                register_namespace(out_dir, scope=scope, git_root=git_root)
+            )
+
+        return {**stats, "registered_in": registered_in}
+
+    # ------------------------------------------------------------------
     # Ingestion surface (CLI-only)
     # ------------------------------------------------------------------
     async def add_book(
