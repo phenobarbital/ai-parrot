@@ -154,7 +154,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "New wiki_export.py plus library.py/cli.py edits shared with TASK-2918; sequential after 2918 (either order works, 2918 first preferred).",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2919-bookstore-export-wiki.md"
+      "completed_at": "2026-09-06T04:54:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2919-bookstore-export-wiki.md"
     },
     {
       "id": "TASK-2920",
