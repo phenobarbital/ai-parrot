@@ -262,10 +262,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_017szabNhV61kLcqqqh7gZQF)
+**Date**: 2026-09-06
+**Notes**: Added the `PARROT_NO_AUTO_LLM`-gated `detect_coding_agent_llm()`
+fallback branch to `resolve_adapter()` in `bookstore/_llm.py` exactly per the
+Implementation Notes pattern, with the lazy import kept inside the function.
+Added `packages/ai-parrot/tests/knowledge/bookstore/test_llm.py` with the
+full test scaffold from the Test Specification. All 4 new tests plus the
+5 pre-existing TASK-2892 tests pass (9/9); `ruff check` clean; verified the
+module still imports with zero stdout output (MCP-server stdout-purity
+constraint preserved).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
