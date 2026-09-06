@@ -7,13 +7,16 @@ GraphIndex pipeline, so a regression in the wiki-page → UniversalNode
 adaptation or the `compute_inter_community_graph()` wiring would be
 caught here.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from parrot.knowledge.wiki import cli as wiki_cli
 from parrot.knowledge.wiki.cli import wiki
 
 
@@ -23,9 +26,7 @@ def _strip_log_lines(output: str) -> str:
     command's own `click.echo` output (this repo's loggers prefix every
     line with an ANSI colour escape — plain `click.echo` output never
     does)."""
-    return "\n".join(
-        line for line in output.splitlines() if not line.startswith("\x1b[")
-    )
+    return "\n".join(line for line in output.splitlines() if not line.startswith("\x1b["))
 
 
 @pytest.fixture
@@ -36,19 +37,14 @@ def built_wiki(tmp_path: Path) -> Path:
     natural community boundary) plus a README, matching the default
     ``--graph-kinds=module,document,overview``.
     """
-    (tmp_path / "a.py").write_text(
-        '"""Module A."""\n\n\ndef foo():\n    return 1\n'
-    )
+    (tmp_path / "a.py").write_text('"""Module A."""\n\n\ndef foo():\n    return 1\n')
     (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "b.py").write_text(
-        '"""Module B."""\nfrom a import foo\n\n\ndef bar():\n    return foo() + 1\n'
-    )
-    (tmp_path / "README.md").write_text(
-        "# Sample\n\nThis is a sample repo for testing.\n"
-    )
+    (tmp_path / "pkg" / "b.py").write_text('"""Module B."""\nfrom a import foo\n\n\ndef bar():\n    return foo() + 1\n')
+    (tmp_path / "README.md").write_text("# Sample\n\nThis is a sample repo for testing.\n")
     runner = CliRunner()
     result = runner.invoke(
-        wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+        wiki,
+        ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
     )
     assert result.exit_code == 0, result.output
     return tmp_path
@@ -66,7 +62,8 @@ class TestCommunitiesCommand:
     def test_json_output_is_valid_communities_result(self, built_wiki):
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--json"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--json"],
         )
         assert result.exit_code == 0
         data = json.loads(_strip_log_lines(result.output))
@@ -93,14 +90,18 @@ class TestCommunitiesCommand:
         (tmp_path / "b.md").write_text("# B\n\nDoc B content.\n")
         runner = CliRunner()
         build = runner.invoke(
-            wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+            wiki,
+            ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
         )
         assert build.exit_code == 0, build.output
         result = runner.invoke(
             wiki,
             [
-                "communities", "--path", str(tmp_path),
-                "--graph-kinds", "document",
+                "communities",
+                "--path",
+                str(tmp_path),
+                "--graph-kinds",
+                "document",
             ],
         )
         assert result.exit_code == 0
@@ -114,8 +115,11 @@ class TestCommunitiesCommand:
         result = runner.invoke(
             wiki,
             [
-                "communities", "--path", str(built_wiki),
-                "--graph-kinds", "nonexistent-category",
+                "communities",
+                "--path",
+                str(built_wiki),
+                "--graph-kinds",
+                "nonexistent-category",
             ],
         )
         assert result.exit_code == 0
@@ -130,7 +134,8 @@ class TestCommunitiesInterFlag:
         not silence)."""
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--inter"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--inter"],
         )
         assert result.exit_code == 0
         output = _strip_log_lines(result.output)
@@ -143,7 +148,8 @@ class TestCommunitiesInterFlag:
         with a coupling ratio."""
         runner = CliRunner()
         result = runner.invoke(
-            wiki, ["communities", "--path", str(built_wiki), "--inter"],
+            wiki,
+            ["communities", "--path", str(built_wiki), "--inter"],
         )
         output = _strip_log_lines(result.output)
         assert "coupling:" in output
@@ -168,13 +174,196 @@ class TestCommunitiesInterFlag:
         (tmp_path / "solo.py").write_text("def only():\n    return 1\n")
         runner = CliRunner()
         build = runner.invoke(
-            wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+            wiki,
+            ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
         )
         assert build.exit_code == 0, build.output
         result = runner.invoke(
-            wiki, ["communities", "--path", str(tmp_path), "--inter"],
+            wiki,
+            ["communities", "--path", str(tmp_path), "--inter"],
         )
         assert result.exit_code == 0
         output = _strip_log_lines(result.output)
         assert "Inter-Community Relations" in output
         assert "no cross-community edges" in output.lower()
+
+
+@pytest.fixture(autouse=True)
+def _clean_llm_fallback_env(monkeypatch):
+    """Isolate the FEAT-531 auto-detection env vars from the dev machine."""
+    for var in ("WIKI_EXTRACT_LLM", "WIKI_MODEL", "WIKI_LIGHTWEIGHT_MODEL", "PARROT_NO_AUTO_LLM"):
+        monkeypatch.delenv(var, raising=False)
+
+
+class TestExtractIntoGraphDetectionFallback:
+    """FEAT-531 TASK-2894 Part A — ``_extract_into_graph``'s WIKI_EXTRACT_LLM fallback."""
+
+    def test_uses_detection_when_unset(self, capsys):
+        with (
+            patch(
+                "parrot.clients.detection.detect_coding_agent_llm",
+                return_value="claude-code:claude-haiku-4-5-20251001",
+            ),
+            patch(
+                "parrot.clients.factory.LLMFactory.create",
+                side_effect=RuntimeError("stop-after-detection"),
+            ),
+        ):
+            result = wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        output = capsys.readouterr().out
+        assert "auto-selected claude-code:claude-haiku-4-5-20251001" in output
+        assert "WIKI_EXTRACT_LLM" in output
+        # Detection auto-selected a spec, so the function proceeds into the
+        # try block (and degrades on the LLMFactory.create failure) rather
+        # than printing the "[extract skipped...]" message.
+        assert "[extract skipped" not in output
+        assert result is None
+
+    def test_respects_opt_out(self, monkeypatch, capsys):
+        monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
+        with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
+            result = wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        mock_detect.assert_not_called()
+        assert result is None
+        assert "[extract skipped" in capsys.readouterr().out
+
+    def test_explicit_config_wins(self, monkeypatch):
+        monkeypatch.setenv("WIKI_EXTRACT_LLM", "anthropic:claude-sonnet-5")
+        with (
+            patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect,
+            patch(
+                "parrot.clients.factory.LLMFactory.create",
+                side_effect=RuntimeError("stop-after-config-read"),
+            ),
+        ):
+            wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        mock_detect.assert_not_called()
+
+    def test_degrades_when_detection_misses(self, capsys):
+        with patch("parrot.clients.detection.detect_coding_agent_llm", return_value=None):
+            result = wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        assert result is None
+        assert "[extract skipped" in capsys.readouterr().out
+
+    def test_degrades_when_detection_itself_raises(self, capsys):
+        """Code-review fix: a detection failure (not just a construction
+        failure) must never escape _extract_into_graph — spec §7 requires
+        graceful degradation on any detection/resolution failure."""
+        with patch(
+            "parrot.clients.detection.detect_coding_agent_llm",
+            side_effect=RuntimeError("boom"),
+        ):
+            result = wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        assert result is None
+
+
+class TestIngestModelResolutionDetectionFallback:
+    """FEAT-531 TASK-2894 Part B — the ``ingest`` command's light/heavy pair."""
+
+    def _invoke_ingest(self, project: Path, capture: dict):
+        def _fake_build_triage_adapters(lightweight_model, model):
+            capture["lightweight_model"] = lightweight_model
+            capture["model"] = model
+            raise RuntimeError("stop-after-resolution")
+
+        with patch.object(
+            wiki_cli,
+            "_build_triage_adapters",
+            side_effect=_fake_build_triage_adapters,
+        ):
+            runner = CliRunner()
+            return runner.invoke(
+                wiki,
+                ["ingest", str(project), "--path", str(project), "--dry-run"],
+            )
+
+    def test_both_unset_uses_detection(self, built_wiki):
+        capture: dict = {}
+        with patch(
+            "parrot.clients.detection.detect_coding_agent_llm",
+            return_value="claude-code:claude-haiku-4-5-20251001",
+        ):
+            self._invoke_ingest(built_wiki, capture)
+        assert capture.get("lightweight_model") == "claude-code:claude-haiku-4-5-20251001"
+        assert capture.get("model") == "claude-code:claude-haiku-4-5-20251001"
+
+    def test_opt_out_disables_detection(self, built_wiki, monkeypatch):
+        monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
+        capture: dict = {}
+        with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
+            self._invoke_ingest(built_wiki, capture)
+        mock_detect.assert_not_called()
+        # Neither model is configured and detection is disabled — the
+        # existing ClickException path fires and _build_triage_adapters is
+        # never reached.
+        assert "lightweight_model" not in capture
+
+    def test_only_one_set_does_not_autodetect(self, built_wiki, monkeypatch):
+        monkeypatch.setenv("WIKI_MODEL", "anthropic:claude-sonnet-5")
+        capture: dict = {}
+        with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
+            self._invoke_ingest(built_wiki, capture)
+        mock_detect.assert_not_called()
+        assert "lightweight_model" not in capture
+
+    def test_explicit_both_set_does_not_autodetect(self, built_wiki, monkeypatch):
+        monkeypatch.setenv("WIKI_MODEL", "anthropic:claude-sonnet-5")
+        monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "anthropic:claude-haiku-4-5")
+        capture: dict = {}
+        with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
+            self._invoke_ingest(built_wiki, capture)
+        mock_detect.assert_not_called()
+        assert capture.get("lightweight_model") == "anthropic:claude-haiku-4-5"
+        assert capture.get("model") == "anthropic:claude-sonnet-5"
+
+    def test_auto_detected_construction_failure_degrades_cleanly(self, built_wiki):
+        """Code-review fix: when auto-detection succeeds but the detected
+        CLI turns out non-functional (LLMFactory.create/_build_triage_adapters
+        raises), `ingest` must fail with a controlled ClickException, not
+        an uncaught traceback — spec §7's "never fail startup on detection
+        or resolution failure" applies to construction failures too."""
+        capture: dict = {}
+        with patch(
+            "parrot.clients.detection.detect_coding_agent_llm",
+            return_value="claude-code:claude-haiku-4-5-20251001",
+        ):
+            result = self._invoke_ingest(built_wiki, capture)
+        assert capture.get("lightweight_model") == "claude-code:claude-haiku-4-5-20251001"
+        assert result.exit_code != 0
+        assert not isinstance(result.exception, RuntimeError)
+        assert "Could not build LLM client" in result.output

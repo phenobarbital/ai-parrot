@@ -178,10 +178,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_017szabNhV61kLcqqqh7gZQF)
+**Date**: 2026-09-06
+**Notes**: Updated `docs/guides/llm-wiki-guide.md`'s Environment Variables
+table (lines 1333-1348, confirmed accurate before editing) — changed the
+`Default` column for `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL`/`WIKI_EXTRACT_LLM`
+and added the new `PARROT_NO_AUTO_LLM` row plus a short explanatory
+paragraph, matching the existing table style. Updated `bookstore/_llm.py`'s
+module docstring only (no logic change) to document the auto-detection
+fallback and `PARROT_NO_AUTO_LLM`. Added the spec §4 integration test
+`test_bookstore_cli_degrades_without_any_config_or_cli` to
+`packages/ai-parrot/tests/knowledge/bookstore/test_cli.py`, following the
+file's existing `add-folder` test pattern exactly (reusing `_books_folder`)
+but WITHOUT `--no-llm`, so it actually exercises `resolve_adapter()` with
+`shutil.which` mocked to `None` for both CLIs and no env vars set —
+confirms the exact same "added: 2" / files-written outcome as the
+pre-existing `--no-llm` test.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+All FEAT-531-relevant tests pass: `pytest packages/ai-parrot/tests/knowledge/bookstore/
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py packages/ai-parrot/tests/clients/test_detection.py`
+→ 87 passed. The literal acceptance-criteria command
+(`pytest packages/ai-parrot/tests/knowledge/bookstore/
+packages/ai-parrot/tests/knowledge/wiki/ packages/ai-parrot/tests/clients/test_detection.py`)
+surfaces pre-existing failures in the wider `tests/knowledge/wiki/`
+directory that are unrelated to this feature and were not introduced by
+it: (1) `test_postgres_store.py`/`test_postgres_symbols.py` require a live
+PostgreSQL instance not available in this sandbox; (2)
+`test_mcp_server_vault.py`/`test_mcp_server_namespaces.py`/
+`test_mcp_server.py`/`test_installer_mcp.py` fail on a `BASE_TOOLS` vs.
+actual-registered-tools drift (`wiki_code_outline`/`wiki_blast_radius`/
+`wiki_symbol_lookup` present but not in the expected set) — confirmed
+pre-existing via `git diff --stat dev...HEAD` on those files (zero diff;
+this feature branch never touches `mcp_server.py` or its tests). Ran
+`ruff check` on every file this task touched — clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Note for the PR reviewer: the two
+pre-existing unrelated failure clusters above should be tracked/fixed
+separately from FEAT-531.

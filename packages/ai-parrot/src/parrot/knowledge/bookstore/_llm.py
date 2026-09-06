@@ -10,8 +10,15 @@ flag) as an ``LLMFactory`` spec string:
   model: ``PageIndexToolkit`` pairs the heavy adapter's client with this
   id (see ``wiki/cli.py:_build_adapters`` for the same constraint).
 
-When nothing is configured the bookstore runs degraded (BM25/catalog
-only) — that is a supported mode, not an error.
+When ``PARROT_BOOKSTORE_LLM`` is unset, this module auto-detects an
+available coding-agent CLI session (Claude Code preferred, falling back
+to Codex — see ``parrot.clients.detection.detect_coding_agent_llm``) and
+defaults to it, logging a visible warning naming the auto-selected spec.
+Set ``PARROT_NO_AUTO_LLM`` to disable this auto-detection.
+
+When nothing is configured (no explicit spec and no coding-agent CLI
+detected, or auto-detection is disabled) the bookstore runs degraded
+(BM25/catalog only) — that is a supported mode, not an error.
 
 Heavy parrot imports happen lazily inside the functions, under a
 stdout→stderr redirect, so this module is safe to import from the MCP
@@ -52,11 +59,34 @@ def resolve_adapter(
     spec = llm_spec or os.environ.get(ENV_LLM)
     light = lightweight_model or os.environ.get(ENV_LLM_LIGHT)
     if not spec:
-        logger.warning(
-            "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
-            ENV_LLM,
-        )
-        return None, None, None
+        if not os.environ.get("PARROT_NO_AUTO_LLM"):
+            try:
+                with contextlib.redirect_stdout(sys.stderr):
+                    from parrot.clients.detection import detect_coding_agent_llm
+
+                    detected = detect_coding_agent_llm()
+            except Exception as exc:  # noqa: BLE001 — degrade, never crash startup
+                logger.warning(
+                    "Coding-agent CLI auto-detection failed (%s) — running degraded",
+                    exc,
+                )
+                detected = None
+            if detected:
+                logger.warning(
+                    "No LLM configured (%s unset) — auto-selected %r because a "
+                    "coding-agent CLI session was detected. Set %s to override, "
+                    "or PARROT_NO_AUTO_LLM=1 to disable auto-detection.",
+                    ENV_LLM,
+                    detected,
+                    ENV_LLM,
+                )
+                spec = detected
+        if not spec:
+            logger.warning(
+                "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
+                ENV_LLM,
+            )
+            return None, None, None
     try:
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.clients.factory import LLMFactory
