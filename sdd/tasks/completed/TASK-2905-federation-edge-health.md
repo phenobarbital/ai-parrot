@@ -166,6 +166,43 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_edge_health.py -q` → 7 passed.
+- Broader regression: `tests/knowledge/wiki/test_toolkit.py tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/roblox/` → 165 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2905-federation-edge-health.log`.
+
+**Delivered**: `federation.py`'s `FederatedWikiStore.broken_edges()`
+classifies candidates at the federated boundary (resolved -> excluded;
+missing-in-available-namespace -> `status="broken"`;
+unavailable/unbuilt namespace -> `status="unverifiable"`; local/malformed
+-> unchanged `status="broken"`), via read-only `get_page` calls, never a
+network probe. `toolkit.py`'s `lint()` now uses `self._store_for(wiki_name)`
+for its cross-reference checks instead of always `self._store`, so a
+specifically-named federated namespace scopes edge/missing-body linting
+to just that namespace, while source staleness/orphan/uncovered checks
+stay on the toolkit's local plane.
+
+**Note on `toolkit.py`'s diff size**: running `black` (project config:
+`line-length = 120`) on this file collapsed many pre-existing multi-line
+calls/imports elsewhere in the file that had been wrapped at a narrower
+width than the project's configured line length — pure whitespace
+reformatting, zero logic changes outside the ~15-line block this task
+actually modified (verified: 165/165 tests pass, and the diff's
+non-`read_store`/`_store_for`-related lines are whitespace-only). Flagging
+for transparency per file-fidelity discipline, since the file's line
+count changed far more than the logical edit did.
+
+**Discovery documented in the test file**: `wiki_name="local"` is a
+reserved routing selector (`_is_namespace`) that `scoped()` resolves to
+the RAW unfederated local store, bypassing `FederatedWikiStore.broken_edges()`
+classification entirely — a caller wanting the classified view must use
+the toolkit's own distinct wiki name (routes to `self._store`, the full
+federation) or a specific namespace name, never the literal string
+`"local"`.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
