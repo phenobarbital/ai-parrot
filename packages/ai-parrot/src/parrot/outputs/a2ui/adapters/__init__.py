@@ -9,6 +9,7 @@ pure Pydantic model modules under ``parrot.models``. It MUST NEVER import
 ``parrot.bots``, ``parrot.clients`` or ``parrot.tools.dataset_manager``.
 """
 
+from parrot.outputs.a2ui.adapters.flow import flow_definition_to_graph
 from parrot.outputs.a2ui.adapters.infographic import (
     CHART_TYPE_MAP,
     infographic_response_to_envelope,
@@ -33,6 +34,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "chart_to_surface",
     "config_to_component_props",
+    "flow_definition_to_graph",
     "infographic_response_to_envelope",
     "map_to_surface",
     "root_component",
