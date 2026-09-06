@@ -74,7 +74,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Exports LyriaToolkit once implemented.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2924-lyria-toolkit-discovery-and-exports.md",
+      "completed_at": "2026-09-06T03:52:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2924-lyria-toolkit-discovery-and-exports.md",
       "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
