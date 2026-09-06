@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T00:09:29+00:00",
-  "completed_at": "2026-09-06T02:50:32+00:00",
+  "completed_at": "2026-09-06T03:10:46+00:00",
   "parallelism_notes": "TASK-2881 is the foundational catalog-shell task and must land first. TASK-2882 can proceed after the shell; TASK-2883 and TASK-2884 are parallel pure graph tasks after TASK-2882. TASK-2885 depends on the shell, models, and codec. TASK-2886 depends on the composite and layout. TASK-2887 is the shared renderer contract; TASK-2888 and TASK-2889 can run in parallel after it. TASK-2890 can run after the composite and in parallel with renderer tasks. TASK-2891 waits for all implementation lanes and owns final docs/conformance.",
   "tasks": [
     {
@@ -25,7 +25,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T01:32:19+00:00",
-      "file": "sdd/tasks/completed/TASK-2881-viz-core-catalog-shell.md"
+      "file": "sdd/tasks/completed/TASK-2881-viz-core-catalog-shell.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2882",
@@ -46,7 +47,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T01:35:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2882-graph-vocabulary-models.md"
+      "file": "sdd/tasks/completed/TASK-2882-graph-vocabulary-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2883",
@@ -67,7 +69,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T01:49:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2883-mermaid-graph-codec.md"
+      "file": "sdd/tasks/completed/TASK-2883-mermaid-graph-codec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2884",
@@ -88,7 +91,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T01:53:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2884-layered-graph-layout.md"
+      "file": "sdd/tasks/completed/TASK-2884-layered-graph-layout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2885",
@@ -111,7 +115,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:00:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2885-graph-catalog-composite.md"
+      "file": "sdd/tasks/completed/TASK-2885-graph-catalog-composite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2886",
@@ -135,7 +140,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:05:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2886-graph-builder-flow-adapter.md"
+      "file": "sdd/tasks/completed/TASK-2886-graph-builder-flow-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2887",
@@ -159,7 +165,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:10:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2887-shared-graph-svg-contract.md"
+      "file": "sdd/tasks/completed/TASK-2887-shared-graph-svg-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2888",
@@ -180,7 +187,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:16:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2888-echarts-graph-renderer.md"
+      "file": "sdd/tasks/completed/TASK-2888-echarts-graph-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2889",
@@ -201,7 +209,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:31:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2889-html-ssr-pdf-graph-renderers.md"
+      "file": "sdd/tasks/completed/TASK-2889-html-ssr-pdf-graph-renderers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2890",
@@ -222,7 +231,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:40:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2890-bundled-ui-graph-component.md"
+      "file": "sdd/tasks/completed/TASK-2890-bundled-ui-graph-component.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2891",
@@ -246,7 +256,8 @@
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
       "completed_at": "2026-09-06T02:50:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2891-a2ui-graph-docs-conformance.md"
+      "file": "sdd/tasks/completed/TASK-2891-a2ui-graph-docs-conformance.md",
+      "verification": "verified"
     }
   ]
 }
