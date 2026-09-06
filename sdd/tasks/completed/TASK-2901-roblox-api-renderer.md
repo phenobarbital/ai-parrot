@@ -153,6 +153,35 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_render.py -q` → 7 passed.
+- Full roblox regression: `tests/knowledge/wiki/roblox/` → 53 passed.
+- `ruff check --target-version py311` on both owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2901-roblox-api-renderer.log`.
+
+**Delivered**: `roblox/render.py` with `build_normalized_dump()` (merges
+dump identities with creator-docs prose, using the real dump's
+`{"Category":..., "Name":...}` type-object shape to precisely recognize
+`Class`/`Enum`-typed members) and `render_generation()` (deterministic
+`WikiPageRecord` rendering, `extends`/`references` edges restricted to
+this generation's own catalog, `RobloxApiCatalog` construction).
+`_safe_token_count()` reads (never writes) `store._TOKEN_ENCODER` to
+decide whether calling `store.estimate_tokens()` is safe, verified with
+a test that monkeypatches `tiktoken.get_encoding` to raise if called.
+
+**Interpretation on record**: the real creator-docs YAML's prose key name
+was not independently re-verified against a live fetch in this offline
+workflow (TASK-2900 only defines the transport, using a test-only
+`"summary"` key in its own fixtures). `_extract_description()` tries
+`"description"` first, then `"summary"`, so either convention works;
+flagging for confirmation once a real tarball is inspected. Also:
+"Class.X-style member links" (spec scope bullet) is implemented as
+page-level `references` edges (class-to-class/enum), not
+member-granular anchors — a deliberate simplification given
+`WikiPageRecord` has no sub-page anchor concept.
+
+**No deviations from file scope**: only the two files listed in the
+task's Files to Create/Modify table were touched.
