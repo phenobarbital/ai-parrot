@@ -47,6 +47,10 @@ _AGENTS = {
         "GEMINI.md", ".gemini/settings.json", "AfterTool",
         "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
     ),
+    "google": (
+        "GEMINI.md", ".gemini/settings.json", "AfterTool",
+        "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
+    ),
 }
 
 

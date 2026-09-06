@@ -4266,5 +4266,5 @@ def _register_agent_command(name: str) -> None:
             click.echo(f"  ✓ {item}")
 
 
-for _agent_name in ("codex", "claude", "gemini"):
+for _agent_name in ("codex", "claude", "gemini", "google"):
     _register_agent_command(_agent_name)

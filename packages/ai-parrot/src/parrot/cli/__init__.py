@@ -119,6 +119,8 @@ cli._lazy_commands = {
     "agent": "parrot.cli.agent_repl",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
     "codex": "parrot.knowledge.wiki.codex.cli",
+    "google": "parrot.knowledge.wiki.google.cli",
+    "gemini": "parrot.knowledge.wiki.google.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
     # FEAT-422 — Agent CLI Daemon (agentd), ships in ai-parrot-integrations.
