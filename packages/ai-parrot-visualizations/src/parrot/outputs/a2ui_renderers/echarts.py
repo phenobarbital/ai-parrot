@@ -49,7 +49,19 @@ _GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
 #: Wire Component-level keys (never part of GraphSpec) to strip from a
 #: baked whole-component dict before reconstructing a bare GraphSpec.
 _COMPONENT_ONLY_KEYS = frozenset(
-    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata", "data"}
+    {
+        "id",
+        "component",
+        "catalogId",
+        "child",
+        "children",
+        "weight",
+        "accessibility",
+        "checks",
+        "action",
+        "metadata",
+        "data",
+    }
 )
 
 # Vendored ECharts bundle (shared with the legacy infographic HTML renderer).
@@ -215,9 +227,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 base_option["yAxis"] = {"type": "category", "data": list(y_cols)}
             elif chart_type == "radar":
                 base_option["radar"] = {
-                    "indicator": [
-                        self._radar_indicator(str(c), idx, y_cols, rows) for idx, c in enumerate(categories)
-                    ]
+                    "indicator": [self._radar_indicator(str(c), idx, y_cols, rows) for idx, c in enumerate(categories)]
                 }
             # Code-review fix (FEAT-527): palette/colorBySign used to only be
             # applied in the standard per-y-column path below — the early

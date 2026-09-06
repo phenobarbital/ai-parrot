@@ -543,9 +543,7 @@ class TestGraphRendersOnEveryRegisteredRenderer:
                 surface_id="map",
             )
             graph_component = envelope.components[0].model_copy(update={"id": "graph"})
-            combined = map_and_graph.model_copy(
-                update={"components": [*map_and_graph.components, graph_component]}
-            )
+            combined = map_and_graph.model_copy(update={"components": [*map_and_graph.components, graph_component]})
             map_artifact = await FoliumMapRenderer().render(combined)
             map_degraded = map_artifact.metadata.get("degraded") or []
             graph_records = [record for record in map_degraded if record["component"] == "Graph"]

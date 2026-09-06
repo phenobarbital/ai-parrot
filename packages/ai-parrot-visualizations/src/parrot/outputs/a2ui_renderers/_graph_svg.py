@@ -56,7 +56,19 @@ _GROUP_MARGIN = 24.0
 #: Wire Component-level keys (never part of GraphSpec) to strip from a
 #: whole-component dict before reconstructing a bare GraphSpec.
 _COMPONENT_ONLY_KEYS = frozenset(
-    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata", "data"}
+    {
+        "id",
+        "component",
+        "catalogId",
+        "child",
+        "children",
+        "weight",
+        "accessibility",
+        "checks",
+        "action",
+        "metadata",
+        "data",
+    }
 )
 
 
@@ -137,9 +149,7 @@ def render_graph_svg(props: dict[str, Any], *, theme: str | None = None) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:.1f} {height:.1f}" '
         f'role="img" aria-label="{escaped_description}">'
-        f"<title>{escaped_description}</title>"
-        + "".join(body)
-        + "</svg>"
+        f"<title>{escaped_description}</title>" + "".join(body) + "</svg>"
     )
 
 
@@ -278,7 +288,9 @@ def _render_node(node: GraphNode, position: Position) -> str:
         )
     else:  # "rect" (also the fallback for an unrecognized shape)
         x, y = cx - half_w, cy - half_h
-        shape_markup = f'<rect x="{x:.1f}" y="{y:.1f}" width="{_NODE_WIDTH:.1f}" height="{_NODE_HEIGHT:.1f}" {common_attrs}/>'
+        shape_markup = (
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{_NODE_WIDTH:.1f}" height="{_NODE_HEIGHT:.1f}" {common_attrs}/>'
+        )
 
     text_markup = (
         f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" dominant-baseline="middle">'

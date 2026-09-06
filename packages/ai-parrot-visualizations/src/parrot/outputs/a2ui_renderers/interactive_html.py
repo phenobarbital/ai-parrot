@@ -1342,9 +1342,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             f"<pre>{html.escape(mermaid_source)}</pre></details></div>"
         )
 
-    def _render_graph_truncated_fallback(
-        self, props: dict[str, Any], degradations: list[dict[str, Any]]
-    ) -> str:
+    def _render_graph_truncated_fallback(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Oversize-graph fallback: ``GraphComponent``'s own lowered tree,
         with its edge-list Column truncated to :data:`MAX_STATIC_NODES` rows.
 

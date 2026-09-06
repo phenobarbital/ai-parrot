@@ -105,9 +105,7 @@ class TestFlowDefinitionToGraphShapesAndEdges:
         assert condition_edge.label == "score > 0.5"
 
         # Default accessibleDescription generated.
-        assert spec.accessible_description == (
-            f"demo workflow: {len(spec.nodes)} steps, {len(spec.edges)} transitions"
-        )
+        assert spec.accessible_description == (f"demo workflow: {len(spec.nodes)} steps, {len(spec.edges)} transitions")
 
     def test_flow_definition_to_graph_builds_a_valid_envelope(self):
         """Integration: the adapter's output builds through build_graph unmodified."""

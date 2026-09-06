@@ -275,8 +275,7 @@ class GraphSpec(BaseModel):
             missing = id_set - set(positions)
             if missing:
                 raise ValueError(
-                    "layout.engine='manual' requires a position for every node; "
-                    f"missing: {sorted(missing)}"
+                    "layout.engine='manual' requires a position for every node; " f"missing: {sorted(missing)}"
                 )
 
         return self

@@ -135,6 +135,6 @@ class TestNoColourFontPixelVocabulary:
         for model in (GraphNode, GraphEdge, GraphGroup, Position, GraphLayout, GraphSpec):
             for field_name in model.model_fields:
                 lowered = field_name.lower()
-                assert not any(bad in lowered for bad in forbidden_substrings), (
-                    f"{model.__name__}.{field_name} looks like styling vocabulary"
-                )
+                assert not any(
+                    bad in lowered for bad in forbidden_substrings
+                ), f"{model.__name__}.{field_name} looks like styling vocabulary"

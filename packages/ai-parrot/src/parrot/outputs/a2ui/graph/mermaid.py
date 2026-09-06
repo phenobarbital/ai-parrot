@@ -117,9 +117,7 @@ _FLOWCHART_EDGE_OP_SEARCH_RE = re.compile(r"-->|-\.->|==>")
 
 _STATE_ALIAS_RE = re.compile(rf'^state\s+"(?P<label>.*)"\s+as\s+(?P<id>{_IDENT})$')
 _STATE_COMPOSITE_OPEN_RE = re.compile(rf"^state\s+(?P<id>{_IDENT})\s*\{{$")
-_STATE_EDGE_RE = re.compile(
-    rf"^(?P<from>\[\*\]|{_IDENT})\s*-->\s*(?P<to>\[\*\]|{_IDENT})(\s*:\s*(?P<label>.+))?$"
-)
+_STATE_EDGE_RE = re.compile(rf"^(?P<from>\[\*\]|{_IDENT})\s*-->\s*(?P<to>\[\*\]|{_IDENT})(\s*:\s*(?P<label>.+))?$")
 _BARE_IDENT_RE = re.compile(rf"^{_IDENT}$")
 
 _SEQ_PARTICIPANT_RE = re.compile(rf"^participant\s+(?P<id>{_IDENT})(\s+as\s+(?P<label>.+))?$")
@@ -356,9 +354,7 @@ def from_mermaid(text: str) -> GraphSpec:
 def _parse_flowchart_node_decl(stripped: str) -> Optional[GraphNode]:
     for shape in _NODE_SHAPE_ORDER:
         open_bracket, close_bracket = _SHAPE_BRACKETS[shape]
-        pattern = re.compile(
-            rf"^(?P<id>{_IDENT}){re.escape(open_bracket)}(?P<label>.*){re.escape(close_bracket)}$"
-        )
+        pattern = re.compile(rf"^(?P<id>{_IDENT}){re.escape(open_bracket)}(?P<label>.*){re.escape(close_bracket)}$")
         match = pattern.match(stripped)
         if match:
             node_id = match.group("id")
@@ -441,9 +437,7 @@ def _parse_flowchart(lines: list[tuple[int, str]]) -> GraphSpec:
         if stripped == "end":
             if current_group_members is None:
                 raise MermaidCodecError(line_no, content, "'end' with no open subgraph")
-            groups.append(
-                GraphGroup(id=current_group_id, label=current_group_label, nodes=list(current_group_members))
-            )
+            groups.append(GraphGroup(id=current_group_id, label=current_group_label, nodes=list(current_group_members)))
             current_group_id = None
             current_group_label = None
             current_group_members = None
@@ -532,9 +526,7 @@ def _parse_state(lines: list[tuple[int, str]]) -> GraphSpec:
             to_id = _END if to_raw == "[*]" else to_raw
             _ensure_node(from_id)
             _ensure_node(to_id)
-            edges.append(
-                GraphEdge(**{"from": from_id, "to": to_id, "label": edge_match.group("label")})
-            )
+            edges.append(GraphEdge(**{"from": from_id, "to": to_id, "label": edge_match.group("label")}))
             continue
 
         bare_match = _BARE_IDENT_RE.match(stripped)

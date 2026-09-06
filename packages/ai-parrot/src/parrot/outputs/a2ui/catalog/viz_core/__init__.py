@@ -38,7 +38,7 @@ VIZ_CORE_INSTRUCTIONS: Final[str] = (
     "1. Pick the form by the data's job, not by taste: change over time -> "
     "`line` (or `area` only for a single series or a stacked total); "
     "magnitude across categories -> `bar` (horizontal when labels are long); "
-    "part-to-whole -> `bar` with `stack: \"percent\"`, or `arc` ONLY with <= 5 "
+    'part-to-whole -> `bar` with `stack: "percent"`, or `arc` ONLY with <= 5 '
     "categories; correlation -> `point`; one headline number -> `Stat`, not a "
     "chart.\n"
     "2. ONE y axis per Chart. Never ask for two y scales. Two measures of "
@@ -58,10 +58,10 @@ VIZ_CORE_INSTRUCTIONS: Final[str] = (
     'renderer\'s theme) or `"status"` with a `value` (good/warning/serious/'
     "critical). Use `sequential`/`diverging` only for `rect` (heatmap-like) "
     "marks.\n"
-    "7. Formats are semantic (`unit`, `format: \"currency\"|\"percent\"|"
+    '7. Formats are semantic (`unit`, `format: "currency"|"percent"|'
     '"compact"|"integer"`), never printf strings; the renderer applies '
     "locale.\n"
-    "8. More than 8 series is a design error: fold to \"Other\" before "
+    '8. More than 8 series is a design error: fold to "Other" before '
     "binding, or facet into several Charts.\n"
     "9. Do not set `metadata.extensions` render hints unless a human asked "
     "for a library-specific override; they are non-portable."

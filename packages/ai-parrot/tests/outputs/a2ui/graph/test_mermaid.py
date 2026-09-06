@@ -133,9 +133,7 @@ class TestMermaidRoundtripSequence:
         # separate ordering field — spec §2 Data Models is authoritative).
         text = to_mermaid(spec)
         restored = from_mermaid(text)
-        assert [(e.from_, e.to, e.label) for e in restored.edges] == [
-            (e.from_, e.to, e.label) for e in spec.edges
-        ]
+        assert [(e.from_, e.to, e.label) for e in restored.edges] == [(e.from_, e.to, e.label) for e in spec.edges]
 
 
 class TestMermaidQuotesReservedLabels:

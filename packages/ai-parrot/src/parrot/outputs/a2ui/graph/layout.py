@@ -78,9 +78,7 @@ class GraphTooLargeError(CatalogValidationError):
     """
 
     def __init__(self, node_count: int) -> None:
-        super().__init__(
-            f"Graph has {node_count} nodes, exceeding the static layout cap of {MAX_STATIC_NODES}."
-        )
+        super().__init__(f"Graph has {node_count} nodes, exceeding the static layout cap of {MAX_STATIC_NODES}.")
         self.node_count = node_count
 
 
@@ -109,9 +107,9 @@ class LayoutResult(BaseModel):
     reversed_edges: list[tuple[str, str]]
 
 
-def _break_cycles(node_ids: list[str], edge_pairs: list[tuple[str, str]]) -> tuple[
-    list[tuple[str, str]], list[tuple[str, str]]
-]:
+def _break_cycles(
+    node_ids: list[str], edge_pairs: list[tuple[str, str]]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Stable DFS (3-colour) feedback-arc-set: flips every back edge.
 
     Args:
@@ -336,9 +334,7 @@ def _extent(
     return (max_x + _LAYOUT_PADDING * 2, max_y + _LAYOUT_PADDING * 2)
 
 
-def _group_boxes(
-    spec: GraphSpec, positions: dict[str, Position]
-) -> dict[str, tuple[float, float, float, float]]:
+def _group_boxes(spec: GraphSpec, positions: dict[str, Position]) -> dict[str, tuple[float, float, float, float]]:
     boxes: dict[str, tuple[float, float, float, float]] = {}
     for group in spec.groups or []:
         member_positions = [positions[member_id] for member_id in group.nodes]

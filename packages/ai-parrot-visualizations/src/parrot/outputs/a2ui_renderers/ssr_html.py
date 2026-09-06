@@ -94,6 +94,7 @@ _UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap",
 #: with the shared catalog-aware `intercepts()` helper (FEAT-529).
 _GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
 
+
 def _truncate_graph_edge_list(tree: BasicNode) -> None:
     """Truncate a lowered ``Graph``'s edge-list ``Column`` children to
     :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` rows, in place
