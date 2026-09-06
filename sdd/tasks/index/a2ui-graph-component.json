@@ -144,7 +144,7 @@
       "feature_id": "FEAT-529",
       "feature": "a2ui-graph-component",
       "spec": "sdd/specs/a2ui-graph-component.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -158,8 +158,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-06T01:13:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2887-shared-graph-svg-contract.md"
+      "completed_at": "2026-09-06T02:10:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2887-shared-graph-svg-contract.md"
     },
     {
       "id": "TASK-2888",
