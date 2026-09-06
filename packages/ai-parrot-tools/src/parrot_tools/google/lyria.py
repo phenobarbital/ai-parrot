@@ -293,9 +293,7 @@ class LyriaToolkit(AbstractToolkit):
             # shorter than the requested duration_seconds (readframes()
             # silently returns fewer frames when the source runs out), so
             # reporting the requested value would misreport the real file.
-            actual_rate, actual_channels, actual_duration = await asyncio.to_thread(
-                self._read_wav_metadata, saved_file
-            )
+            actual_rate, actual_channels, actual_duration = await asyncio.to_thread(self._read_wav_metadata, saved_file)
 
             return LyriaMusicResult(
                 status="success",

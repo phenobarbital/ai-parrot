@@ -251,9 +251,7 @@ class TestLyriaToolkitReviewFixes:
         tk = LyriaToolkit()
 
         async def _raise(*args, **kwargs):
-            raise RuntimeError(
-                "GoogleGenAIClient is not available. Ensure ai-parrot-client-google is installed: boom"
-            )
+            raise RuntimeError("GoogleGenAIClient is not available. Ensure ai-parrot-client-google is installed: boom")
 
         monkeypatch.setattr(tk, "_get_client", _raise)
         res = await tk.generate_music(prompt="test")
