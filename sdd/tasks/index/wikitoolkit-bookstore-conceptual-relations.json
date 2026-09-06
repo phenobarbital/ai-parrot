@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T03:48:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2912-graphindex-payload-edge-weights.md"
+      "file": "sdd/tasks/completed/TASK-2912-graphindex-payload-edge-weights.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2913",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:01:23+00:00",
-      "file": "sdd/tasks/completed/TASK-2913-bookstore-relation-models-and-catalog-schema.md"
+      "file": "sdd/tasks/completed/TASK-2913-bookstore-relation-models-and-catalog-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2914",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:09:16+00:00",
-      "file": "sdd/tasks/completed/TASK-2914-bookstore-classification-carding.md"
+      "file": "sdd/tasks/completed/TASK-2914-bookstore-classification-carding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2915",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:15:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2915-bookstore-deterministic-relations.md"
+      "file": "sdd/tasks/completed/TASK-2915-bookstore-deterministic-relations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2916",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:28:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2916-bookstore-llm-relations-and-relate-command.md"
+      "file": "sdd/tasks/completed/TASK-2916-bookstore-llm-relations-and-relate-command.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2917",
@@ -125,7 +130,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:36:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2917-bookstore-communities.md"
+      "file": "sdd/tasks/completed/TASK-2917-bookstore-communities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2918",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:45:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2918-bookstore-relation-tools-and-skill.md"
+      "file": "sdd/tasks/completed/TASK-2918-bookstore-relation-tools-and-skill.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2919",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T04:54:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2919-bookstore-export-wiki.md"
+      "file": "sdd/tasks/completed/TASK-2919-bookstore-export-wiki.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2920",
@@ -186,7 +194,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
       "completed_at": "2026-09-06T05:08:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2920-bookstore-graph-integration-tests-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2920-bookstore-graph-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
