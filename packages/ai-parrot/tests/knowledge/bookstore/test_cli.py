@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from click.testing import CliRunner
 
 from parrot.knowledge.bookstore import cli as bookstore_cli
@@ -153,3 +155,25 @@ def test_list_requires_existing_library(tmp_path, monkeypatch):
     result = CliRunner().invoke(bookstore_cli.bookstore, ["list"])
     assert result.exit_code != 0
     assert "No library found" in result.output
+
+
+def test_bookstore_cli_degrades_without_any_config_or_cli(tmp_path, monkeypatch):
+    """FEAT-531 regression guard (spec §4 integration test): with no
+    PARROT_BOOKSTORE_LLM configured and no coding-agent CLI detected
+    (shutil.which mocked to None for both `claude` and `codex`), the
+    `bookstore` CLI must still run in the exact same degraded (no-LLM)
+    mode as before this feature — same success outcome as `--no-llm`."""
+    root = _books_folder(tmp_path)
+    for var in ("PARROT_BOOKSTORE_LLM", "PARROT_BOOKSTORE_LLM_LIGHT", "PARROT_NO_AUTO_LLM"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    with patch("shutil.which", return_value=None):
+        result = CliRunner().invoke(
+            bookstore_cli.bookstore, ["add-folder", str(root)]
+        )
+    assert result.exit_code == 0, result.output
+    assert "added: 2" in result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+    assert (tmp_path / "lib" / "trees" / "two.json").is_file()

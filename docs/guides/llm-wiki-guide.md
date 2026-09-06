@@ -1338,9 +1338,10 @@ wikitoolkit sync obsidian --prune
 | `WIKI_ENV` | *(none)* | Active wiki environment override — `WIKI_ENV` > `ENV` > `"local"` (FEAT-461) |
 | `WIKI_STORE` | *(none)* | Override: read a pre-built store directly |
 | `WIKI_STORE_BACKEND` | `sqlite` | Backend for `WIKI_STORE` (also honoured by `build`, FEAT-461) |
-| `WIKI_MODEL` | *(none)* | LLM for `ingest` stage-2 and page generation |
-| `WIKI_LIGHTWEIGHT_MODEL` | *(none)* | LLM for `ingest` stage-1 triage |
-| `WIKI_EXTRACT_LLM` | *(none)* | LLM for `remember --extract` entity extraction |
+| `WIKI_MODEL` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `ingest` stage-2 and page generation |
+| `WIKI_LIGHTWEIGHT_MODEL` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `ingest` stage-1 triage |
+| `WIKI_EXTRACT_LLM` | *(none — auto-detects a Claude Code/Codex CLI session if available; see below)* | LLM for `remember --extract` entity extraction |
+| `PARROT_NO_AUTO_LLM` | *(none)* | Set to disable coding-agent CLI auto-detection for `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL`/`WIKI_EXTRACT_LLM` and `PARROT_BOOKSTORE_LLM` |
 | `CLAUDE_AGENT_ID` | *(none)* | Identity for `remember`/`note`/`link` attribution |
 | `PARROT_AGENT_ID` | *(none)* | Fallback identity for attribution |
 | `ARANGODB_HOST` | `127.0.0.1` | ArangoDB host (prefix configurable) |
@@ -1348,6 +1349,14 @@ wikitoolkit sync obsidian --prune
 | `ARANGODB_PROTOCOL` | `http` | ArangoDB protocol |
 | `ARANGODB_USERNAME` | `root` | ArangoDB username |
 | `ARANGODB_PASSWORD` | *(empty)* | ArangoDB password |
+
+When `WIKI_MODEL`/`WIKI_LIGHTWEIGHT_MODEL` (together) or `WIKI_EXTRACT_LLM` are left
+unset, wikitoolkit auto-detects an available coding-agent CLI session — a Claude Code
+CLI session is preferred, falling back to Codex — and defaults to it, printing a visible
+message naming the auto-selected model and which env var to set to override it. This
+also applies to `bookstore`'s `PARROT_BOOKSTORE_LLM`. Set `PARROT_NO_AUTO_LLM=1` to
+disable this auto-detection entirely and restore the previous strict degraded
+(BM25/catalog-only) behavior when no LLM is explicitly configured.
 
 ---
 
