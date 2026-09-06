@@ -163,6 +163,31 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_api_cli.py -q` → 9 passed.
+- Broader CLI regression: `tests/knowledge/wiki/test_cli.py tests/knowledge/wiki/test_cli_env.py tests/knowledge/wiki/test_cli_sync.py` → 113 passed.
+- `ruff check --target-version py311` on both owned files → 1 pre-existing, unrelated `F821 Undefined name Optional` at cli.py:427 (verified present via `git stash` before this task's own changes too — not introduced here, out of scope to fix).
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2908-roblox-api-cli.log`.
+
+**Delivered**: `cli.py`'s `ingest()` early-dispatches bare SOURCE
+`roblox-api` to `_dispatch_roblox_api_ingest()` before any document-mode
+validation or LLM import; a new `--refresh` flag; explicit (non-default)
+document-ingest flags raise a `UsageError`. `status()` adds a
+machine-wide "Roblox API" block via `get_roblox_status()`.
+
+**Process note on record**: an initial pass ran `black`/`isort` across
+the whole `cli.py` file (per this task's own verification requirement),
+which reformatted/reorganized import blocks throughout the file
+unrelated to this task's changes — a real risk given this task's own
+context note that FEAT-531 is concurrently modifying `cli.py` and to
+"preserve those changes." Reverted (`git checkout --`) and re-applied
+only this task's own edits by hand, verified formatter-clean via
+`black --diff`/`isort --diff` showing zero remaining hunks outside the
+one collapsed line already folded in. Final diff is purely additive
+(167 insertions, 0 deletions).
+
+**No deviations from file scope**: only the two files listed in the
+task's Files to Create/Modify table were touched.

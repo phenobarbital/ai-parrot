@@ -1,20 +1,20 @@
-# TASK-2906: Extract API references including known-root chains
+# TASK-2900: Acquire the versioned API dump and SHA-pinned docs tarball
 
 **Feature**: FEAT-532 - Luau/Roblox support for wikitoolkit
 **Spec**: `sdd/specs/wikitoolkit-luau-roblox.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-2899, TASK-2901
+**Depends-on**: TASK-2897
 **Parallel**: true
-**Parallelism notes**: Can run in a separate implementation worktree alongside TASK-2900, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.
+**Parallelism notes**: Can run in a separate implementation worktree alongside TASK-2896, TASK-2898, TASK-2899, TASK-2901, TASK-2903, TASK-2904, TASK-2905, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Implements final section 8 expanded link scope, overriding the earlier proposal that excluded chains. TASK-2899 owns parser internals; consume its verified bounded interface after dependency completion.
+Implements section 8 final tarball decision, overriding earlier per-file concurrency/retry prose. The two-request figure concerns creator-docs only; Studio version/dump are additional requests. Do not claim benchmark timings as service guarantees.
 
 The approved spec's final section 8 owner decisions override stale earlier
 proposal text: real cross-namespace federation, SHA-pinned in-memory tarball
@@ -25,11 +25,11 @@ Luau registration or Luau `sym:` output.
 
 ## Scope
 
-- Recognize literal game:GetService("X"), explicit API type annotations and chained instance access on known unshadowed roots, including workspace.Terrain. Use the offline catalog from TASK-2901.
-- Use source spans and lexical scope to exclude comments/string examples, shadowed game/workspace/class names and local type aliases. Preserve literal service arguments while masking irrelevant strings.
-- Resolve known-root chains using explicit root/static catalog information; accept the owner-approved heuristic false-positive tradeoff without adding expression type inference or LSP calls.
-- Deduplicate and qualify references to known catalog targets; report unresolvable chains without guessing unknown class identities. Preserve evidence kind for diagnostics.
-- Use the same reviewed bounded source handling as the scanner; with no catalog produce no external edges and an explicit skipped-linking diagnostic.
+- Implement async explicit acquisition of Studio version and its API dump, plus creator-docs commit SHA and one codeload tarball pinned to that SHA. Validate each identity before using it in URL construction.
+- Use aiohttp, io.BytesIO and tarfile. Read only regular class YAML members under */content/en-us/reference/engine/classes/*.yaml using extractfile; never extract to the filesystem, follow archive links or invoke git.
+- Apply bounded HTTP timeouts and compressed/uncompressed/member-size limits. Filter to dump-named classes, safe-load YAML and distinguish missing class prose from malformed present data or transport failure.
+- Honor section 8: no raw-file fan-out, per-file cache, automatic retries or backoff. Fail the acquisition with a clear error; publication belongs to TASK-2902 and cannot occur here.
+- Return typed immutable-generation inputs and hashes for rendering. Accept previously acquired whole-generation payloads for explicit-refresh reuse when identities are unchanged; no ambient cache eviction or TTL.
 
 **NOT in scope**: work owned by other tasks, unrelated refactors, deployment,
 and changes to the approved feature decisions. Only edit the owned files below.
@@ -38,8 +38,8 @@ and changes to the approved feature decisions. Only edit the owned files below.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/knowledge/wiki/roblox/references.py` | CREATE | Bounded static code-to-API candidate resolution |
-| `tests/knowledge/wiki/roblox/test_reference_candidates.py` | CREATE | Literal service/type/chain and shadowing cases |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/roblox/acquire.py` | CREATE | Explicit async HTTP acquisition and in-memory tar member reading |
+| `tests/knowledge/wiki/roblox/test_acquire.py` | CREATE | Mocked endpoints, archive filtering and failure tests |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -50,9 +50,8 @@ Line numbers are anchors; reverify before implementation if the base changes.
 ### Verified Imports
 
 ```python
-from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
-from parrot.knowledge.wiki.languages import get_scan_root
-from parrot.knowledge.wiki.context import split_namespaced_id, qualify_id
+import aiohttp
+import yaml
 from pydantic import BaseModel, Field
 from parrot.knowledge.wiki.store import WikiPageRecord
 ```
@@ -64,21 +63,15 @@ and yaml are already imported by `packages/ai-parrot/src/parrot/knowledge/wiki/d
 
 ### Existing Signatures to Use
 
+- `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py:57` — `class DocumentRef(BaseModel):` Fields: uri: str; is_url: bool; suffix: str.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py:26` — `import aiohttp`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py:28` — `import yaml`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py:23` — `class LanguageOutline(BaseModel):` Fields: summary: str; outline: list[str]; imports: list[str]; symbols: list[SymbolRecord]; refs: list[SymbolRef].
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py:66` — `def outline(self, source: str, rel_path: str) -> LanguageOutline:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py:83` — `def build_reference_index(self, rel_paths: Iterable[str]) -> Any:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py:100` — `def resolve_import(self, spec: str, from_file: str, index: Any) -> str | None:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py:118` — `def mode(self) -> str:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/__init__.py:101` — `def get_scan_root() -> Path | None:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/languages/__init__.py:48` — `def scanner_for(suffix: str) -> LanguageScanner | None:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/context.py:54` — `def split_namespaced_id(page_id: str) -> tuple[str | None, str]:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/context.py:82` — `def qualify_id(namespace: str | None, page_id: str) -> str:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:299` — `class WikiPageRecord(BaseModel):` Fields: concept_id: str; node_id: Optional[str]; title: str; category: str; summary: str; body: str; source_id: Optional[str]; token_count: int; origin: str; asserted_by: Optional[str]; updated_at: Optional[str]; content_hash: Optional[str].
 
 ### Prerequisite Interfaces (new, not existing today)
 
-- `TASK-2899` supplies implement bounded luau outlines and register both suffixes; read its completion contract before importing any new symbol.
-- `TASK-2901` supplies render deterministic roblox class and enum pages; read its completion contract before importing any new symbol.
+- `TASK-2897` supplies define shared roblox scan and api generation models; read its completion contract before importing any new symbol.
 
 ### Does NOT Exist
 
@@ -117,14 +110,13 @@ spec supplies rationale; final owner decisions in section 8 are binding.
 ## Acceptance Criteria
 
 - [ ] The complete scoped deliverable is implemented with no production stubs.
-- [ ] Literal services and genuine API annotations yield class references.
-- [ ] Known-root chained access is included in v1.
-- [ ] Local scope aliases/shadowed roots/string examples do not create references.
-- [ ] No network and no invented API page ids.
-- [ ] Pathological source follows the reviewed fallback/resource policy.
-- [ ] Focused checks pass: `uv run pytest tests/knowledge/wiki/roblox/test_reference_candidates.py -q`.
+- [ ] One commit-resolution and one tarball request for docs; no raw YAML requests.
+- [ ] Only desired regular members are read; traversal/symlink/oversize archives fail or are ignored safely.
+- [ ] Absent class docs are structural-only; invalid present YAML fails.
+- [ ] Timeout, rate limit, invalid identities and truncated data fail once and do not publish.
+- [ ] Focused checks pass: `uv run pytest tests/knowledge/wiki/roblox/test_acquire.py -q`.
 - [ ] Applicable Python formatting/import checks pass for owned code.
-- [ ] Verification output is stored at `artifacts/logs/task-2906-roblox-api-reference-candidates.log`.
+- [ ] Verification output is stored at `artifacts/logs/task-2900-roblox-api-acquisition.log`.
 - [ ] Changes outside owned paths are absent; prerequisite review gates are recorded.
 
 ## Test Specification
@@ -135,11 +127,10 @@ Do not invent a test fixture/API from its name without verifying or defining it.
 
 | Test / check | Required behavior |
 |---|---|
-| `test_services_and_explicit_types` | Literal services and genuine API annotations yield class references. |
-| `test_workspace_terrain_and_known_chains` | Known-root chained access is included in v1. |
-| `test_shadowing_aliases_and_comments` | Local scope aliases/shadowed roots/string examples do not create references. |
-| `test_missing_catalog_and_unknown_target` | No network and no invented API page ids. |
-| `test_bounded_candidate_extraction` | Pathological source follows the reviewed fallback/resource policy. |
+| `test_sha_pinned_tarball_requests` | One commit-resolution and one tarball request for docs; no raw YAML requests. |
+| `test_no_archive_extraction_to_disk` | Only desired regular members are read; traversal/symlink/oversize archives fail or are ignored safely. |
+| `test_missing_vs_malformed_yaml` | Absent class docs are structural-only; invalid present YAML fails. |
+| `test_http_failure_no_retry` | Timeout, rate limit, invalid identities and truncated data fail once and do not publish. |
 
 ## Agent Instructions
 
@@ -149,7 +140,7 @@ Do not invent a test fixture/API from its name without verifying or defining it.
 4. Update only this task entry in `sdd/tasks/index/wikitoolkit-luau-roblox.json` to `in-progress`, recording assignment/time.
 5. Implement only owned paths; coordinate shared changes and preserve other work.
 6. Run the focused checks, record logs and verify each acceptance criterion.
-7. Move this task to `sdd/tasks/completed/TASK-2906-roblox-api-reference-candidates.md`.
+7. Move this task to `sdd/tasks/completed/TASK-2900-roblox-api-acquisition.md`.
 8. Update this per-spec index entry to `done` with completion time and moved path.
 9. Fill the completion note and commit implementation plus scoped task/index state.
 
@@ -157,6 +148,26 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_acquire.py -q` → 15 passed.
+- Full roblox regression: `tests/knowledge/wiki/roblox/` → 46 passed.
+- `ruff check --target-version py311` on both owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2900-roblox-api-acquisition.log`.
+
+**Delivered**: `roblox/acquire.py` with `resolve_studio_version`,
+`resolve_creator_docs_commit`, `fetch_api_dump`,
+`fetch_creator_docs_tarball`, `extract_class_docs` (in-memory tarfile
+reading, symlink/hardlink/path-traversal rejection, per-member and
+total-member-count bounds), and the orchestrating
+`acquire_roblox_api_payloads()` (identity-first, reuse-skip on unchanged
+Studio version + creator-docs commit). Tests use a hand-rolled
+URL-routing fake `aiohttp.ClientSession` (extending the existing
+`test_documents.py` double pattern, no `aioresponses` dependency added)
+and assert exact request counts (4 on a full acquisition, 2 on a
+reuse-hit).
+
+**No deviations from scope**: only the two files listed in the task's
+Files to Create/Modify table were touched.

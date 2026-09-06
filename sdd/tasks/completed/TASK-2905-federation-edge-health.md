@@ -1,20 +1,20 @@
-# TASK-2904: Route external neighbors and local incoming references
+# TASK-2905: Classify external reference health without weakening local lint
 
 **Feature**: FEAT-532 - Luau/Roblox support for wikitoolkit
 **Spec**: `sdd/specs/wikitoolkit-luau-roblox.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-2903
+**Depends-on**: TASK-2904
 **Parallel**: true
-**Parallelism notes**: Can run in a separate implementation worktree alongside TASK-2896, TASK-2897, TASK-2898, TASK-2899, TASK-2900, TASK-2901, TASK-2902, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Shared-file edits are serialized after TASK-2903. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.
+**Parallelism notes**: Can run in a separate implementation worktree alongside TASK-2896, TASK-2897, TASK-2898, TASK-2899, TASK-2900, TASK-2901, TASK-2902, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Shared-file edits are serialized after TASK-2903, TASK-2904. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Implements the fourth blast-radius surface as an explicit task. The existing neighbors contract already accepts arbitrary edge endpoints, allowing reverse lookup without a new public store method or a separate persistent inverse index. Reverify each backend before relying on implementation-specific optimizations.
+Implements sections 2 cross-plane health and 8 blast radius. No API CDN/GitHub probes and no SQL change to hide qualified targets. This task serializes after TASK-2904 because both own federation.py.
 
 The approved spec's final section 8 owner decisions override stale earlier
 proposal text: real cross-namespace federation, SHA-pinned in-memory tarball
@@ -25,11 +25,11 @@ Luau registration or Luau `sym:` output.
 
 ## Scope
 
-- Route each outgoing neighbor by its own destination namespace, hydrate foreign page stubs through read-only stores and retain the exact qualified id. Do not prefix it with the seed namespace again.
-- For a qualified foreign seed, combine its own internal neighbors with local incoming references by querying local.neighbors(qualified_id, direction="in"). Existing local edges are the reverse lookup source; never persist inverse edges into the API plane.
-- Preserve rel/direction filters, deduplicate results and clearly qualify source ids. Restrict incoming results to the explicitly composed project planes; no machine-wide project scan.
-- Preserve namespace scope and read-only behavior. If scoped() discards the original local store, retain only the read context needed for incoming results without changing the selected writable target.
-- Missing namespace/target must degrade with diagnostic context and no fabricated title. Test namespace selection and cancellation/error isolation alongside raw local reads.
+- Classify local broken_edges candidates at the federated boundary: resolved foreign pages are healthy, known-available namespaces with missing pages remain broken, unavailable/unbuilt namespaces are deferred/unverifiable diagnostics.
+- Never blanket-ignore a string containing ::. Preserve malformed/local ids as local lint failures and maintain task-local skip reporting for concurrent reads.
+- Inspect LLMWikiToolkit.lint and route a configured federation read context to cross-reference checks while keeping source staleness and ownership local. Do not acquire API data or silently create namespace state.
+- Keep standalone BaseWikiStore.broken_edges behavior unchanged. Use existing report dictionaries for additive classification; if the toolkit has no namespace declaration context, report raw unresolved edges honestly rather than treating them as valid.
+- Preserve scope semantics and fail-soft namespace reads without swallowing genuine local-store failures. CLI status presentation follows in TASK-2908.
 
 **NOT in scope**: work owned by other tasks, unrelated refactors, deployment,
 and changes to the approved feature decisions. Only edit the owned files below.
@@ -38,9 +38,9 @@ and changes to the approved feature decisions. Only edit the owned files below.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py` | MODIFY | Neighbor routing and scoped read behavior |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/context.py` | MODIFY | Only qualification behavior required for already-qualified destinations |
-| `tests/knowledge/wiki/roblox/test_reference_routing.py` | CREATE | Two-plane outgoing/incoming/scoped tests |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py` | MODIFY | Foreign target health and per-read degradation notes |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py` | MODIFY | Preserve federation-aware lint read context when supplied |
+| `tests/knowledge/wiki/roblox/test_edge_health.py` | CREATE | Resolved/missing/unavailable/malformed health matrix |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -52,8 +52,9 @@ Line numbers are anchors; reverify before implementation if the base changes.
 
 ```python
 from parrot.knowledge.wiki.federation import FederatedWikiStore, NamespaceHandle, NamespaceSkip
-from parrot.knowledge.wiki.context import split_namespaced_id, qualify_id
 from parrot.knowledge.wiki.store import WikiPageRecord, SQLiteWikiStore, create_wiki_store, estimate_tokens
+from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+from parrot.knowledge.wiki.models import WikiLintReport
 ```
 
 Declarations and source anchors for these imports are below. Pydantic, aiohttp
@@ -68,8 +69,6 @@ and yaml are already imported by `packages/ai-parrot/src/parrot/knowledge/wiki/d
 - `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py:877` — `async def neighbors( self, concept_id: str, rel: str | None = None, direction: str = "both", ) -> list[dict[str, Any]]:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py:1088` — `async def broken_edges(self) -> list[dict[str, Any]]:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py:552` — `def _qualify_row(row: dict[str, Any], namespace: str | None) -> dict[str, Any]:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/context.py:54` — `def split_namespaced_id(page_id: str) -> tuple[str | None, str]:`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/context.py:82` — `def qualify_id(namespace: str | None, page_id: str) -> str:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:299` — `class WikiPageRecord(BaseModel):` Fields: concept_id: str; node_id: Optional[str]; title: str; category: str; summary: str; body: str; source_id: Optional[str]; token_count: int; origin: str; asserted_by: Optional[str]; updated_at: Optional[str]; content_hash: Optional[str].
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:208` — `def estimate_tokens(text: str) -> int:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1795` — `def create_wiki_store( storage_dir: str | Path, wiki_name: str = "", backend: str = "sqlite", **kwargs: Any, ) -> BaseWikiStore:`
@@ -78,15 +77,17 @@ and yaml are already imported by `packages/ai-parrot/src/parrot/knowledge/wiki/d
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1176` — `async def replace_source_slice( self, source_id: str, pages: list[WikiPageRecord], edges: Optional[list[tuple[str, str, str]]] = None, ) -> dict[str, Any]:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1672` — `async def neighbors( self, concept_id: str, rel: Optional[str] = None, direction: str = "both", ) -> list[dict[str, Any]]:`
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1773` — `async def broken_edges(self) -> list[dict[str, Any]]:`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py:458` — `async def lint( self, wiki_name: str, fix: bool = False, ) -> dict[str, Any]:`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/models.py:302` — `class WikiLintReport(BaseModel):` Fields: okf_report: dict[str, Any]; orphan_sources: list[str]; stale_sources: list[str]; uncovered_sources: list[str]; cross_ref_issues: list[dict[str, Any]]; total_issues: int.
 
 ### Existing Owned Files
 
 - `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py:1` — existing owned file re-read; modifications restricted to the scope/file-table region above.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/context.py:1` — existing owned file re-read; modifications restricted to the scope/file-table region above.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py:1` — existing owned file re-read; modifications restricted to the scope/file-table region above.
 
 ### Prerequisite Interfaces (new, not existing today)
 
-- `TASK-2903` supplies allow local references to foreign destinations; read its completion contract before importing any new symbol.
+- `TASK-2904` supplies route external neighbors and local incoming references; read its completion contract before importing any new symbol.
 
 ### Does NOT Exist
 
@@ -125,14 +126,14 @@ spec supplies rationale; final owner decisions in section 8 are binding.
 ## Acceptance Criteria
 
 - [ ] The complete scoped deliverable is implemented with no production stubs.
-- [ ] Qualified class destination resolves once with API title.
-- [ ] API page expansion includes local callers without API-plane writes.
-- [ ] Filters and scoped foreign reads retain the correct local callers only.
-- [ ] Unknown/unbuilt namespace does not break local neighbor results.
-- [ ] Deletion/replacement automatically updates incoming results without a stale cache.
-- [ ] Focused checks pass: `uv run pytest tests/knowledge/wiki/roblox/test_reference_routing.py -q`.
+- [ ] Available API page clears the candidate while ordinary local missing targets remain broken.
+- [ ] Typo in an available declared namespace is still reported.
+- [ ] Unavailable plane is diagnosed separately and local results survive.
+- [ ] Malformed ids are not suppressed and per-call skip notes do not leak.
+- [ ] Configured federated lint classifies edges while checking local source staleness.
+- [ ] Focused checks pass: `uv run pytest tests/knowledge/wiki/roblox/test_edge_health.py -q`.
 - [ ] Applicable Python formatting/import checks pass for owned code.
-- [ ] Verification output is stored at `artifacts/logs/task-2904-federation-reference-routing.log`.
+- [ ] Verification output is stored at `artifacts/logs/task-2905-federation-edge-health.log`.
 - [ ] Changes outside owned paths are absent; prerequisite review gates are recorded.
 
 ## Test Specification
@@ -143,11 +144,11 @@ Do not invent a test fixture/API from its name without verifying or defining it.
 
 | Test / check | Required behavior |
 |---|---|
-| `test_outgoing_api_stub_no_double_prefix` | Qualified class destination resolves once with API title. |
-| `test_incoming_references_from_local_plane` | API page expansion includes local callers without API-plane writes. |
-| `test_rel_direction_and_scope` | Filters and scoped foreign reads retain the correct local callers only. |
-| `test_missing_namespace_degrades` | Unknown/unbuilt namespace does not break local neighbor results. |
-| `test_source_removed_reverse_lookup_updates` | Deletion/replacement automatically updates incoming results without a stale cache. |
+| `test_resolved_external_edge_is_healthy` | Available API page clears the candidate while ordinary local missing targets remain broken. |
+| `test_missing_page_is_broken` | Typo in an available declared namespace is still reported. |
+| `test_unbuilt_namespace_is_unverifiable` | Unavailable plane is diagnosed separately and local results survive. |
+| `test_malformed_namespace_and_concurrent_reads` | Malformed ids are not suppressed and per-call skip notes do not leak. |
+| `test_toolkit_lint_uses_read_context` | Configured federated lint classifies edges while checking local source staleness. |
 
 ## Agent Instructions
 
@@ -157,7 +158,7 @@ Do not invent a test fixture/API from its name without verifying or defining it.
 4. Update only this task entry in `sdd/tasks/index/wikitoolkit-luau-roblox.json` to `in-progress`, recording assignment/time.
 5. Implement only owned paths; coordinate shared changes and preserve other work.
 6. Run the focused checks, record logs and verify each acceptance criterion.
-7. Move this task to `sdd/tasks/completed/TASK-2904-federation-reference-routing.md`.
+7. Move this task to `sdd/tasks/completed/TASK-2905-federation-edge-health.md`.
 8. Update this per-spec index entry to `done` with completion time and moved path.
 9. Fill the completion note and commit implementation plus scoped task/index state.
 
@@ -165,6 +166,43 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_edge_health.py -q` → 7 passed.
+- Broader regression: `tests/knowledge/wiki/test_toolkit.py tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/roblox/` → 165 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2905-federation-edge-health.log`.
+
+**Delivered**: `federation.py`'s `FederatedWikiStore.broken_edges()`
+classifies candidates at the federated boundary (resolved -> excluded;
+missing-in-available-namespace -> `status="broken"`;
+unavailable/unbuilt namespace -> `status="unverifiable"`; local/malformed
+-> unchanged `status="broken"`), via read-only `get_page` calls, never a
+network probe. `toolkit.py`'s `lint()` now uses `self._store_for(wiki_name)`
+for its cross-reference checks instead of always `self._store`, so a
+specifically-named federated namespace scopes edge/missing-body linting
+to just that namespace, while source staleness/orphan/uncovered checks
+stay on the toolkit's local plane.
+
+**Note on `toolkit.py`'s diff size**: running `black` (project config:
+`line-length = 120`) on this file collapsed many pre-existing multi-line
+calls/imports elsewhere in the file that had been wrapped at a narrower
+width than the project's configured line length — pure whitespace
+reformatting, zero logic changes outside the ~15-line block this task
+actually modified (verified: 165/165 tests pass, and the diff's
+non-`read_store`/`_store_for`-related lines are whitespace-only). Flagging
+for transparency per file-fidelity discipline, since the file's line
+count changed far more than the logical edit did.
+
+**Discovery documented in the test file**: `wiki_name="local"` is a
+reserved routing selector (`_is_namespace`) that `scoped()` resolves to
+the RAW unfederated local store, bypassing `FederatedWikiStore.broken_edges()`
+classification entirely — a caller wanting the classified view must use
+the toolkit's own distinct wiki name (routes to `self._store`, the full
+federation) or a specific namespace name, never the literal string
+`"local"`.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.

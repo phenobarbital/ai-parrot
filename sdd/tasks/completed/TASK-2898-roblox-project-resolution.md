@@ -159,6 +159,32 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/ -q` → 31 passed (14 new for this task, plus TASK-2896/2897's suites unaffected).
+- `ruff check --target-version py311` on both owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2898-roblox-project-resolution.log`.
+
+**Delivered**: `roblox/project.py` with `build_instance_index()` (sourcemap.json
+first, `default.project.json` fallback only when the sourcemap is
+missing/invalid — never blended, per spec) and `resolve_roblox_require()`
+(script.Parent chains, `game.Service.Path`/`game:GetService("X")` chains,
+and mapping-independent relative-string requires). Bounded JSON loading
+enforces the TASK-2896 policy (16 MiB byte cap, 200-level depth cap) via
+a string-aware iterative pre-scan, never via exception-driven recovery
+from an expensive parse. `init.lua`/`init.luau`/`init.server.*`/`init.client.*`
+folder conventions and duplicate-instance-name retention (never collapsed)
+are implemented in the `default.project.json` `$path` walker.
+
+**Design note / interpretation on record**: the spec's "relative strings"
+require form was ambiguous about exact syntax; implemented as an
+explicitly `./`/`../`-prefixed quoted string resolved directly against
+the discovered file set (mirroring the existing PHP/JS scanners'
+relative-import pattern), independent of any DataModel mapping. Flagging
+this interpretation for TASK-2899's scanner author to confirm it matches
+real Luau require conventions once real fixtures are available.
+
+**No deviations from scope**: only the two files listed in the task's
+Files to Create/Modify table were touched.

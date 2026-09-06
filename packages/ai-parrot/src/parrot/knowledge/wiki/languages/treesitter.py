@@ -33,6 +33,7 @@ _GRAMMAR_MODULES: dict[str, str] = {
     "typescript": "tree_sitter_typescript",
     "rust": "tree_sitter_rust",
     "perl": "tree_sitter_perl",
+    "luau": "tree_sitter_luau",
 }
 
 #: Grammar-callable names to try, in order, for each language.
@@ -117,21 +118,24 @@ def _build_parser(language: str) -> Parser | None:
             except Exception as exc:  # noqa: BLE001 - try the next candidate
                 logger.debug(
                     "tree-sitter grammar callable %s.%s() for %s failed: %s",
-                    module_name, attr, language, exc,
+                    module_name,
+                    attr,
+                    language,
+                    exc,
                 )
                 continue
             logger.debug(
                 "tree-sitter grammar for %s loaded via %s.%s()",
-                language, module_name, attr,
+                language,
+                module_name,
+                attr,
             )
             return Parser(ts_language)
-        raise AttributeError(
-            f"module {module_name!r} exposes no usable grammar callable "
-            f"among {candidates!r}"
-        )
+        raise AttributeError(f"module {module_name!r} exposes no usable grammar callable " f"among {candidates!r}")
     except Exception as exc:  # noqa: BLE001 - optional dependency, never raise
         logger.debug(
-            "tree-sitter grammar for %s unavailable, falling back to "
-            "heuristic extraction: %s", language, exc,
+            "tree-sitter grammar for %s unavailable, falling back to " "heuristic extraction: %s",
+            language,
+            exc,
         )
         return None

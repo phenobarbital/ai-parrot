@@ -17,7 +17,12 @@ Three rules shape the design:
   never migrates, mutates, or even creates a sidecar next to it — SQLite
   namespaces are opened with ``read_only=True``.
 * **Local ids stay unprefixed.** Only foreign pages are qualified
-  ``<ns>::<id>``; the underlying stores never see the prefix.
+  ``<ns>::<id>``; the underlying stores never see the prefix. One narrow
+  exception (FEAT-532 §8): a **locally-owned edge's destination** may be
+  a foreign-qualified id, stored verbatim — a local page is allowed to
+  *reference* a foreign one (e.g. Luau code referencing the Roblox API
+  plane). The edge's *source* must still be local, and every other write
+  path (pages, deletes, embeddings) is unaffected.
 * **A broken namespace is a note, not a failure.** An unbuilt plane or
   an unreachable server is recorded as a :class:`NamespaceSkip` and the
   remaining namespaces still answer.
@@ -34,8 +39,6 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel
-
 from parrot.knowledge.wiki import store as wiki_store
 from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
 from parrot.knowledge.wiki.project import (
@@ -47,12 +50,8 @@ from parrot.knowledge.wiki.project import (
     resolve_arango_params,
     resolve_entry_base,
 )
-from parrot.knowledge.wiki.store import (
-    BaseWikiStore,
-    SQLiteWikiStore,
-    WikiPageRecord,
-    create_wiki_store,
-)
+from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiPageRecord, create_wiki_store
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -566,6 +565,25 @@ def _row_id(row: dict[str, Any]) -> str:
     return str(row.get("concept_id") or row.get("node_id") or row.get("page_id") or "")
 
 
+def _dedup_by_concept_id(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop later duplicates by :func:`_row_id`, preserving first-seen order.
+
+    Used by :meth:`FederatedWikiStore.neighbors` when combining outgoing
+    (hydrated) rows with incoming local-reference rows — there is no
+    ranking to merge on here (unlike :meth:`FederatedWikiStore._merge`),
+    just plain identity dedup.
+    """
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        key = _row_id(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # The federated store
 # ---------------------------------------------------------------------------
@@ -602,6 +620,7 @@ class FederatedWikiStore(BaseWikiStore):
         skipped: list[NamespaceSkip] | None = None,
         *,
         qualify_local: bool = False,
+        origin_local: BaseWikiStore | None = None,
     ) -> None:
         """Compose a federated store.
 
@@ -614,12 +633,23 @@ class FederatedWikiStore(BaseWikiStore):
                 ``local_name`` too. Used by :meth:`scoped` when a single
                 foreign namespace is selected, so its rows keep the
                 ``ns::`` prefix the caller expects.
+            origin_local: The *true* project local plane, when it is
+                different from ``local`` (FEAT-532 TASK-2904). Set by
+                :meth:`scoped` when narrowing to a single foreign
+                namespace replaces ``self._local`` with that namespace's
+                own store — read-only incoming-reference lookups
+                (:meth:`neighbors` on a qualified foreign seed) still
+                need the real local plane's edges to find local callers,
+                without changing what a write on this scoped instance
+                targets. ``None`` means ``local`` already is the true
+                local plane (the normal, non-scoped case).
         """
         self._local = local
         self.local_name = local_name
         self.namespaces: dict[str, NamespaceHandle] = {handle.name: handle for handle in (handles or [])}
         self.skipped: list[NamespaceSkip] = list(skipped or [])
         self._qualify_local = qualify_local
+        self._origin_local = origin_local
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -673,6 +703,12 @@ class FederatedWikiStore(BaseWikiStore):
                 handles=[],
                 skipped=[],
                 qualify_local=True,
+                # TASK-2904: retain the TRUE local plane for read-only
+                # incoming-reference lookups even though `local` above
+                # is now the foreign namespace's own store — the
+                # writable target this scoped instance exposes is
+                # unchanged (still `handle.store`).
+                origin_local=self._origin_local or self._local,
             )
         # A subset: keep the local plane only when explicitly named.
         include_local = SELECTOR_LOCAL in names
@@ -880,7 +916,27 @@ class FederatedWikiStore(BaseWikiStore):
         rel: str | None = None,
         direction: str = "both",
     ) -> list[dict[str, Any]]:
-        """Return edge neighbours, qualified with the seed's namespace."""
+        """Return edge neighbours, qualified with the seed's namespace.
+
+        Two FEAT-532 §8 additions on top of the original single-store
+        lookup:
+
+        1. **Outgoing hydration**: any neighbor whose own id is already
+           a foreign-qualified reference (a locally-owned edge's
+           destination stored verbatim — TASK-2903) is hydrated with its
+           real title/summary/category from that namespace's own
+           read-only store, via :meth:`_hydrate_foreign_neighbors`. The
+           qualified id itself is never re-derived — :func:`qualify_id`
+           is idempotent against re-homing an already-qualified id, so
+           no double prefix can occur.
+        2. **Incoming references**: when the seed itself is a qualified
+           foreign id, local pages that reference it are folded in too
+           (:meth:`_local_incoming_references`) — the existing
+           ``neighbors(..., direction="in")`` contract already answers
+           "what points at this id", so no new store method or
+           persisted inverse index is needed; it is always a live query
+           against the true local plane's own edges.
+        """
         handle, local_id, known = self._route(concept_id)
         if not known:
             return []
@@ -891,7 +947,93 @@ class FederatedWikiStore(BaseWikiStore):
         except Exception as exc:  # noqa: BLE001 — a broken namespace is a note
             self.logger.warning("Namespace %s failed on neighbors: %s", namespace or "local", exc)
             return []
-        return [_qualify_row(row, namespace) for row in rows]
+        qualified = [_qualify_row(row, namespace) for row in rows]
+        qualified = await self._hydrate_foreign_neighbors(qualified)
+
+        # `namespace` (not just `handle is not None`) is the right test:
+        # a store scoped to a single foreign namespace via `scoped(name)`
+        # answers an *unqualified* seed as "this namespace's own id"
+        # (`handle is None` there, since it is this instance's own
+        # "local" plane) — `namespace` still correctly reads as that
+        # namespace's name via `self._local_prefix` in that case.
+        if namespace is not None and direction in ("in", "both"):
+            qualified_seed = qualify_id(namespace, local_id)
+            incoming = await self._local_incoming_references(qualified_seed, rel=rel)
+            qualified = _dedup_by_concept_id(qualified + incoming)
+
+        return qualified
+
+    async def _hydrate_foreign_neighbors(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Replace a foreign-qualified neighbor stub's title/summary/
+        category with the real page, fetched read-only from its own
+        namespace's store. The qualified id is retained exactly as-is.
+
+        A row whose namespace is unresolvable, unreachable, or whose
+        target does not exist in that namespace is left as the
+        unhydrated raw stub — never a fabricated title (spec: "Missing
+        namespace/target must degrade with diagnostic context and no
+        fabricated title").
+        """
+        hydrated: list[dict[str, Any]] = []
+        for row in rows:
+            concept_id = row.get("concept_id")
+            if not concept_id:
+                hydrated.append(row)
+                continue
+            ns, local_id = split_namespaced_id(str(concept_id))
+            if ns is None or ns == self.local_name:
+                hydrated.append(row)  # local neighbor: nothing to hydrate
+                continue
+            handle = self.namespaces.get(ns)
+            if handle is None:
+                self.logger.debug("Neighbor %s names unresolved namespace %s; leaving raw stub", concept_id, ns)
+                hydrated.append(row)
+                continue
+            try:
+                page = await handle.store.get_page(local_id, include_body=False)
+            except Exception as exc:  # noqa: BLE001 — a broken namespace is a note, not fatal
+                self.logger.warning("Namespace %s failed hydrating neighbor %s: %s", ns, concept_id, exc)
+                hydrated.append(row)
+                continue
+            if page is None:
+                hydrated.append(row)  # target genuinely absent — no fabricated title
+                continue
+            merged = dict(row)
+            for key in ("title", "summary", "category"):
+                if page.get(key):
+                    merged[key] = page[key]
+            merged["concept_id"] = concept_id  # retained verbatim
+            merged["namespace"] = ns
+            hydrated.append(merged)
+        return hydrated
+
+    async def _local_incoming_references(self, qualified_seed: str, *, rel: str | None) -> list[dict[str, Any]]:
+        """Local pages that reference a qualified foreign seed.
+
+        Queries the TRUE local plane's own ``neighbors(qualified_seed,
+        direction="in")`` — a locally-owned edge stores its foreign
+        destination verbatim (TASK-2903), so this is exactly how one
+        already finds it; no new persisted inverse index, and never a
+        write into the foreign plane. Restricted to this federation's
+        own composed local plane — never a machine-wide project scan.
+
+        Args:
+            qualified_seed: The full ``ns::id`` seed a caller queried
+                ``neighbors()`` for.
+            rel: Optional relation filter, forwarded unchanged.
+
+        Returns:
+            The local plane's rows, qualified as local (unprefixed) —
+            their source is always local (foreign sources are forbidden
+            by :meth:`_assert_local`).
+        """
+        origin_local = self._origin_local or self._local
+        try:
+            rows = await origin_local.neighbors(qualified_seed, rel=rel, direction="in")
+        except Exception as exc:  # noqa: BLE001 — a broken local plane is a note, not fatal
+            self.logger.warning("Local plane failed incoming-reference lookup for %s: %s", qualified_seed, exc)
+            return []
+        return [_qualify_row(row, None) for row in rows]
 
     async def stats(self) -> dict[str, Any]:
         """Local counters plus a per-namespace block and the skip notes.
@@ -986,11 +1128,50 @@ class FederatedWikiStore(BaseWikiStore):
             return page
         return page.model_copy(update={"concept_id": concept_id, "node_id": node_id})
 
+    def _assert_local_or_foreign_destination(self, page_id: str) -> str:
+        """Validate an edge **destination**: local, or a syntactically
+        qualified foreign reference (FEAT-532 §8 real federation support).
+
+        This is the one narrow exception to "writes touch the local
+        plane only" — and it is scoped to edge destinations exclusively.
+        Sources, pages, deletes and embedding writes all still go
+        through the strict :meth:`_assert_local`, which continues to
+        reject any qualified id outright. A foreign namespace need not
+        be resolvable/online for this to succeed (spec: "Do not require
+        the foreign plane to be online to retain an already-known
+        reference") — this is a pure string check, no namespace lookup.
+
+        Args:
+            page_id: The edge's destination id, qualified or not.
+
+        Returns:
+            The id stripped of *this* namespace's own prefix when it
+            addresses the local plane (unchanged behavior), or an
+            unchanged foreign-qualified id — stored verbatim in the
+            local plane rather than rejected.
+        """
+        namespace, local_id = split_namespaced_id(page_id)
+        if namespace is None:
+            return page_id
+        if self._qualify_local and namespace == self.local_name:
+            return local_id
+        return page_id  # foreign destination: store the qualified id verbatim
+
     def _strip_edge(self, edge: tuple) -> tuple:
-        """Validate an edge's endpoints and strip this namespace's prefix."""
+        """Validate an edge's endpoints and strip this namespace's prefix.
+
+        The source (``edge[0]``) must always address the local plane —
+        unchanged, strict :meth:`_assert_local`. The destination
+        (``edge[1]``) may additionally be a syntactically qualified
+        foreign reference, which is preserved verbatim rather than
+        rejected (see :meth:`_assert_local_or_foreign_destination`).
+        Foreign *source* ids, and every non-edge write path (pages,
+        deletes, embeddings), remain fully forbidden — this exception is
+        deliberately narrow to references, not a general relaxation.
+        """
         stripped = (
             self._assert_local(str(edge[0])),
-            self._assert_local(str(edge[1])),
+            self._assert_local_or_foreign_destination(str(edge[1])),
             *edge[2:],
         )
         return stripped
@@ -1000,7 +1181,15 @@ class FederatedWikiStore(BaseWikiStore):
         return await self._local.upsert_pages([self._strip_page(page) for page in pages])
 
     async def add_edges(self, edges: list[tuple]) -> int:
-        """Write edges into the local plane (no cross-namespace edges)."""
+        """Write edges into the local plane.
+
+        The source of every edge must be local; the destination may
+        additionally be a syntactically qualified foreign reference
+        (FEAT-532 §8) — see :meth:`_strip_edge`. The whole batch is
+        validated (the list comprehension below) before
+        ``self._local.add_edges`` is ever called, so one forbidden edge
+        in a batch leaves nothing written, not a partial insert.
+        """
         return await self._local.add_edges([self._strip_edge(edge) for edge in edges])
 
     async def replace_source_slice(
@@ -1009,7 +1198,14 @@ class FederatedWikiStore(BaseWikiStore):
         pages: list[WikiPageRecord],
         edges: list[tuple[str, str, str]] | None = None,
     ) -> dict[str, Any]:
-        """Replace one source's slice of the local plane."""
+        """Replace one source's slice of the local plane.
+
+        Same edge-destination exception as :meth:`add_edges` — the
+        source-owned slice's outgoing ``references``/``extends`` edges
+        may target a foreign-qualified id. Validated in full (both
+        pages and edges) before the local plane's own atomic replace
+        runs.
+        """
         return await self._local.replace_source_slice(
             source_id,
             [self._strip_page(page) for page in pages],
@@ -1086,8 +1282,91 @@ class FederatedWikiStore(BaseWikiStore):
         return await self._local.orphan_sources()
 
     async def broken_edges(self) -> list[dict[str, Any]]:
-        """Lint the local plane only."""
-        return await self._local.broken_edges()
+        """Classify the local plane's broken-edge candidates at the
+        federated boundary (FEAT-532 TASK-2905).
+
+        ``self._local.broken_edges()`` (standalone ``BaseWikiStore``
+        behavior, unchanged) reports every edge whose ``dst`` is neither
+        a local page nor a local source — that necessarily includes
+        every foreign-qualified destination TASK-2903 now allows storing
+        verbatim, since a foreign id is never a local page. This method
+        resolves each such candidate against the actual federation
+        state instead of leaving it a false positive OR silently
+        dropping it:
+
+        - **Resolved** (the foreign page exists in an available
+          namespace) — healthy, excluded from the report entirely.
+        - **Missing in an available namespace** (e.g. a typo'd class
+          name) — still reported, ``status="broken"``. A namespace being
+          *available* is exactly what makes this a real finding, not a
+          guess.
+        - **Namespace unavailable/unbuilt** — reported separately as
+          ``status="unverifiable"``, never silently treated as healthy
+          and never conflated with a genuine local broken edge.
+        - A malformed or purely local ``dst`` (no valid ``::`` prefix,
+          or naming this store's own local plane) is never
+          blanket-ignored just because it happens to contain ``::`` —
+          it is reported as an ordinary local ``status="broken"`` edge,
+          same as before this task.
+
+        No API/CDN/GitHub network probe of any kind — resolution is a
+        read-only ``get_page`` against an already-opened namespace
+        store, or a plain dict lookup when the namespace was never
+        resolved at all.
+
+        Returns:
+            The local plane's broken-edge candidates, each augmented
+            with a ``status`` field (``"broken"`` or ``"unverifiable"``)
+            and, for namespace-related findings, a ``reason``. Resolved
+            foreign edges are omitted.
+        """
+        candidates = await self._local.broken_edges()
+        classified: list[dict[str, Any]] = []
+        for edge in candidates:
+            dst = str(edge.get("dst", ""))
+            namespace, local_id = split_namespaced_id(dst)
+            if namespace is None or namespace == self.local_name:
+                # Ordinary local broken edge — never suppressed just
+                # because the (malformed-looking) id contains "::".
+                classified.append({**edge, "status": "broken"})
+                continue
+
+            handle = self.namespaces.get(namespace)
+            if handle is None:
+                classified.append(
+                    {
+                        **edge,
+                        "status": "unverifiable",
+                        "reason": f"namespace {namespace!r} is not an available/built namespace",
+                    }
+                )
+                continue
+
+            try:
+                page = await handle.store.get_page(local_id, include_body=False)
+            except Exception as exc:  # noqa: BLE001 — a broken namespace is a note, not fatal
+                self.logger.warning("Namespace %s failed resolving broken-edge candidate %s: %s", namespace, dst, exc)
+                classified.append(
+                    {
+                        **edge,
+                        "status": "unverifiable",
+                        "reason": f"namespace {namespace!r} unreachable: {exc}",
+                    }
+                )
+                continue
+
+            if page is None:
+                classified.append(
+                    {
+                        **edge,
+                        "status": "broken",
+                        "reason": f"missing in available namespace {namespace!r}",
+                    }
+                )
+                continue
+            # Resolved: a real, existing page in an available namespace
+            # — healthy, excluded from the report.
+        return classified
 
     async def missing_bodies(self) -> list[str]:
         """Lint the local plane only."""

@@ -150,6 +150,30 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_models.py -q` → 11 passed.
+- `ruff check --target-version py311` on both owned Python files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2897-roblox-shared-models.log`.
+
+**Delivered**: `roblox/__init__.py` (inert package docstring, no imports)
+and `roblox/models.py` defining `RobloxInstanceIndex`, `RobloxApiManifest`,
+`RobloxApiCatalog` (+ `class_page_id`/`enum_page_id` helpers),
+`RobloxFileEnrichment`, `RobloxApiIngestResult`, plus the normalized dump
+input types (`RobloxApiParameter`, `RobloxApiMember`, `RobloxApiClass`,
+`RobloxApiEnumItem`, `RobloxApiEnum`, `NormalizedApiDump`) and reference
+candidate diagnostics (`RobloxApiReferenceCandidate`,
+`RobloxReferenceExtractionKind`). All models use
+`ConfigDict(extra="forbid")` and explicit field validators rejecting
+empty identifiers, invalid enums, and negative counts (via `Field(ge=0)`).
+
+**Verified inert on import**: `test_package_import_is_inert` spawns a
+fresh subprocess (in-process `sys.modules` checks are unreliable here
+since the pytest conftest already imports `aiohttp` transitively) and
+confirms importing `parrot.knowledge.wiki.roblox`/`.models` pulls in
+neither `aiohttp` nor `tree_sitter`/`tree_sitter_luau`.
+
+**No deviations from scope**: only the three files listed in the task's
+Files to Create/Modify table were touched.

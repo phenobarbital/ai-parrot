@@ -183,6 +183,48 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/languages/test_luau.py tests/knowledge/wiki/languages/test_registry.py tests/knowledge/wiki/languages/test_treesitter.py -q` → 36 passed.
+- Full regression: `tests/knowledge/wiki/languages/ tests/knowledge/wiki/test_repo_scan.py tests/knowledge/wiki/roblox/ tests/knowledge/wiki/test_federation.py` → 398 passed, no regressions.
+- `ruff check --target-version py311` on all 8 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2899-luau-scanner.log`.
+
+**Delivered**: `languages/luau.py` (`LuauScanner`: tree-sitter walk using
+verified `tree-sitter-luau` 1.2.0 node types — `function_declaration`
+with `dot_index_expression`/`method_index_expression`/plain `identifier`
+name nodes, `type_definition`, top-level `assignment_statement` for
+module-table field exports, `return_statement` for module-name detection
+— plus a comment/string-masking heuristic fallback and a balanced-paren
+`require(...)` argument extractor); `languages/luau_guard.py` (the three
+combined TASK-2896 guards). Registered `luau` in `_SCANNERS`,
+`_GRAMMAR_MODULES` (plain `language()`, confirmed against the installed
+wheel), and `CODE_SUFFIXES` (`.lua`, `.luau`).
+
+**Key design decision — enforceable timeout mechanism**: TASK-2896 found
+no cancellation API on the installed `tree_sitter.Parser`, and its policy
+doc recommended reserving subprocess isolation for the offline
+benchmark/CI path rather than the per-file production hot path (byte-cap
+alone bounds worst-case time). This task's own scope explicitly requires
+a **third, genuinely enforceable** timeout guard ("never depend on a
+post-parse check to interrupt a stuck parse"), which the byte-cap-only
+approach cannot satisfy for an unforeseen grammar-level hang. Resolved by
+implementing `luau_guard.run_isolated()`: a freshly **forked** (not
+spawned) child process per parse call — cheap because each fork is
+short-lived and creates its own parser from scratch (no risk of
+"carrying interrupted state" since nothing is reused across calls),
+falling back to `"spawn"` on platforms without `fork`. This does add a
+fork-per-file cost to every tree-sitter-eligible Luau file scanned;
+flagging this as a deliberate throughput/safety tradeoff for reviewer
+attention, since no other scanner in this codebase pays a per-file
+process-isolation cost.
+
+**Interpretation on record**: relative-string require syntax
+(`require("./Foo")`) was treated, per TASK-2898's own completion note, as
+an explicit `./`/`../`-prefixed quoted string — confirmed working
+end-to-end in `test_build_reference_index_and_resolve_import_delegates`.
+
+**No deviations from file scope**: all 8 files listed in the task's Files
+to Create/Modify table were touched, and only those.
