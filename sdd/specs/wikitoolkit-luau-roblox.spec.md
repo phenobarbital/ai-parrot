@@ -10,7 +10,7 @@ base_branch: dev
 **Date**: 2026-09-06
 **Author**: Jesus Lara
 **Status**: draft
-**Target version**: Pending owner confirmation (next release proposed)
+**Target version**: Next release (number not yet assigned)
 **Exploration**: `sdd/proposals/wikitoolkit-luau-roblox.brainstorm.md`
 **Isolation**: mixed
 
@@ -464,9 +464,11 @@ creates a spec only; it does not dispatch implementation agents or worktrees.
 
 ## 8. Open Questions
 
-The following owner answers and unresolved questions are carried forward verbatim.
-Unresolved choices are approval gates for their dependent modules, not silently
-selected requirements.
+All owner decisions from the 2026-09-06 review round are recorded below.
+One question remains open pending an owner pick; every other choice is
+settled and binding on its dependent module.
+
+### Settled by the owner
 
 - [x] ¿Tipo de flujo y rama base? — *Owner: Jesus Lara*: `feature` sobre `dev`.
 - [x] ¿Alcance de v1? — *Owner: Jesus Lara*: código **y** API de Roblox, los dos planos.
@@ -475,8 +477,8 @@ selected requirements.
       con fallback a `default.project.json` y a requires relativos por string;
       nunca invocando binarios.
 - [x] ¿Plano estructural `sym:` en v1? — *Owner: Jesus Lara*: no; degradar a
-      `mode="tree-sitter"` (además está verificado que ast-grep no puede
-      registrar Luau desde el wheel).
+      `mode="tree-sitter"` (verificado que ast-grep no puede registrar Luau
+      desde el wheel).
 - [x] ¿Fuente del conocimiento de la API? — *Owner: Jesus Lara*: API dump
       oficial **+** creator-docs.
 - [x] ¿Dump vendorizado o descargado? — *Owner: Jesus Lara*: descargado desde la
@@ -485,52 +487,91 @@ selected requirements.
       clase y por enum.
 - [x] ¿Se enlazan los dos planos? — *Owner: Jesus Lara*: sí, con aristas
       `references` desde el código hacia las páginas de la API.
-- [ ] **Aristas cross-namespace y `broken_edges()`**: ¿se extiende
-      `broken_edges()` para ignorar destinos cualificados con `ns::`, o el
-      plano local escribe páginas-stub para las clases que referencia?
-      La primera es más limpia pero toca código compartido de federación.
-      — *Owner: Jesus Lara*
-- [ ] **Umbral del guard de robustez**: ¿cota de tamaño por fichero (¿256 KB?),
-      densidad de nodos `ERROR`, timeout de parseo, o combinación? Hay que fijar
-      un número defendible a partir de la curva medida. — *Owner: Jesus Lara*
-- [ ] **Adquisición de creator-docs**: 625 peticiones a `raw.githubusercontent`
-      (verificado que funciona) frente a un tarball del repo o un clon
-      sparse-checkout. ¿Cuál, y con qué concurrencia y política de caché?
-      — *Owner: Jesus Lara*
-- [ ] **Invalidación del plano Roblox**: la versión de Studio (`versionQTStudio`)
-      cambia con frecuencia. ¿`--refresh` compara versión, o hay además una
-      caducidad temporal? ¿Se avisa en `wikitoolkit status` cuando el plano
-      está desfasado? — *Owner: Jesus Lara*
-- [ ] **Ámbito del enlace código→API**: ¿solo `game:GetService("X")` y
-      anotaciones de tipo explícitas, o también accesos encadenados
-      (`workspace.Terrain`)? Cuanto más agresiva la heurística, más aristas
-      falsas. — *Owner: Jesus Lara*
+- [x] **Target release** — *Owner: Jesus Lara*: próximo release, aún sin número.
+      El campo **Target version** permanece sin número hasta que se asigne.
+- [x] **Aristas cross-namespace** — *Owner: Jesus Lara*: **soporte real de
+      federación**, no páginas-stub locales. El alcance NO se limita a filtrar
+      `broken_edges()`; cubre las cuatro superficies medidas (ver § Blast radius).
+- [x] **Umbral del guard de robustez** — *Owner: Jesus Lara*: **una combinación**
+      — cota de tamaño **y** densidad de nodos `ERROR` **y** timeout de parseo,
+      no un solo criterio.
+- [x] **Medición antes que umbral** — *Owner: Jesus Lara*: la medición es
+      importante. Los 32 KiB propuestos son una hipótesis de partida, **no** una
+      cota de tiempo de pared probada. Se fija el presupuesto de cancelación, el
+      límite de entrada del fallback y las cotas del JSON de mapeo **después** de
+      medir, antes de aprobar la tarea del scanner.
+- [x] **Invalidación del plano Roblox** — *Owner: Jesus Lara*: **sin invalidación
+      automática**. `wikitoolkit status` solo indica **cuándo se descargó** el
+      plano Roblox (marca temporal + versión registrada) y **nunca** hace red.
+      `--refresh` es el único camino que toca la red y el único que regenera.
+- [x] **Política de refresco** — *Owner: Jesus Lara*: aceptada. Sin TTL en
+      segundo plano y sin llamadas de red desde `status`. Un `--refresh`
+      explícito comprueba la versión de Studio **y** el commit de creator-docs,
+      reutiliza los payloads si no cambiaron, y regenera cuando cambia
+      cualquiera de los dos o el esquema del renderizador. Compatible con la
+      decisión anterior: comparar no es invalidar — nada caduca solo.
+- [x] **Ámbito del enlace código→API** — *Owner: Jesus Lara*: **todo, incluidos
+      los accesos encadenados** (`workspace.Terrain`). Se acepta el coste de
+      aristas falsas a cambio de cobertura. Esta decisión **anula** la propuesta
+      de dejar los accesos encadenados fuera de v1: entran en v1. Se mantiene la
+      exclusión de shadowing y alias locales (una variable local que tape un
+      nombre de clase conocida no genera arista), y se mantiene que **no** hay
+      tipos inferidos: solo `game:GetService("X")` literal, anotaciones de tipo
+      explícitas y accesos encadenados sobre raíces conocidas.
 
-### Additional clarification and research proposals
+### Open — pending owner pick
 
-- [ ] Target release — owner asked; next release without a numeric version is
-      proposed. Author remains Jesus Lara; status remains draft.
-- [ ] Cross-namespace decision must include writes, neighbor routing, incoming
-      references and health classification, not just `broken_edges()` filtering.
-      The owner has been asked to choose federation support or local stubs.
-- [ ] Robustness proposal for review: start with a 32 KiB native-parse admission
-      cap (above it use bounded heuristic extraction), and benchmark/cancel any
-      admitted pathological parse. Do not treat 32 KiB as a proven wall-time bound.
-      Fix the cancellation budget, fallback input limit and mapping JSON bounds
-      after measurement, before approving the scanner task.
-- [ ] Acquisition proposal for review: fetch only dump-named class YAML at one
-      resolved creator-docs commit using at most 8 concurrent requests, 30-second
-      request timeout and at most 2 retries. Cache immutable responses by revision;
-      cache a confirmed missing file distinctly from transport failure.
-- [ ] Refresh proposal for review: no background TTL or network call from status;
-      explicit refresh checks both Studio version and docs commit, reusing payloads
-      if unchanged, regenerating when either or the renderer schema changes.
-- [ ] Link-scope proposal for review: literal `game:GetService("X")` and explicit
-      known API type annotations only, with shadowing/local aliases excluded;
-      chained instance accesses remain out of v1. No inferred types.
+- [ ] **Adquisición de creator-docs**: la propuesta previamente aceptada (625
+      peticiones a `raw.githubusercontent` con ≤8 concurrentes, timeout de 30 s
+      y ≤2 reintentos) queda cuestionada por medición posterior:
+
+      | Enfoque | Descarga | Tiempo | Peticiones | Requiere |
+      |---|---|---|---|---|
+      | Tarball fijado por SHA | 4,78 MB | 1,04 s | 1 | solo `aiohttp` |
+      | 625 fetches raw | 5,6 MB | ~8 s @8 conc. | 625 | `aiohttp` + reintentos + caché por fichero |
+      | Sparse-checkout blobless | 3,2 MB en `.git` | ~5,0 s | — | binario `git` |
+
+      El tarball completo comprimido resulta **más pequeño** que las 625 piezas
+      sueltas (los YAML comprimen ~4:1) y elimina toda la maquinaria de
+      concurrencia, reintentos y caché por fichero. Sparse-checkout baja menos
+      bytes pero exige el binario `git` — la misma clase de dependencia externa
+      que el diseño ya rechazó para `rojo`. Verificado: fijar por SHA funciona
+      (`codeload.github.com/Roblox/creator-docs/tar.gz/<sha>` → 200, 625 YAML).
+      **Recomendación: tarball fijado por SHA.** Se conservan en cualquier caso
+      el commit fijado y el filtrado a las clases nombradas en el dump (aplicado
+      tras extraer). — *Owner: Jesus Lara*
+
+### Blast radius — cross-namespace federation support (medido)
+
+La relajación no es cosmética: hoy la arista código→API **no se puede
+escribir**. `_assert_local()` (`federation.py:947`) lanza
+`ValueError("write to namespace 'roblox' requires --ns roblox")` para cualquier
+id cualificado en camino de escritura, y `_strip_edge()` lo aplica a **ambos**
+extremos. El invariante está declarado en el docstring de `add_edges()`:
+*"Write edges into the local plane (no cross-namespace edges)."*
+
+| Superficie | Ubicación | Cambio requerido |
+|---|---|---|
+| Escritura | `_assert_local` / `_strip_edge` | Relajación **asimétrica**: `src` foráneo sigue prohibido, `dst` foráneo pasa a ser legal |
+| Salud | `broken_edges()` (`federation.py:1088` → SQL en `store.py`) | Excluir destinos `ns::` cualificados, o resolverlos contra el namespace declarado |
+| Enrutado de vecinos | `neighbors()` (`federation.py:878`) | Enruta por el namespace de la semilla y cualifica las filas con él; una fila local cuyo `dst` ya es `roblox::…` se re-cualificaría → prefijo doble |
+| Referencias entrantes | — | No existe hoy. La regla read-only impide escribir aristas inversas en el plano de Roblox |
+
+Superficie de test que fija el comportamiento actual: 1.283 líneas
+(`test_federation.py` 657, `test_namespaces_e2e.py` 296,
+`test_project_namespaces.py` 199, `test_mcp_server_namespaces.py` 131). Dos
+tests afirman explícitamente el rechazo y deben reescribirse de forma
+deliberada: `test_federation.py:255` y `test_federation.py:541`
+(`pytest.raises(ValueError, match="requires --ns …")`).
+
+**Riesgo residual señalado, no bloqueante**: las referencias entrantes ("¿qué
+módulos de mi juego usan `TweenService`?") no tienen solución limpia dentro de
+la regla read-only — exigen un índice inverso que no puede vivir en el plano de
+Roblox y que en el plano local hay que construir aparte.
 
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-06 | Jesus Lara | Initial FEAT-532 draft from authoritative brainstorm; verified scanner/federation/CLI contracts; pending owner decisions retained |
+| 0.2 | 2026-09-06 | Jesus Lara | Owner review round resolved 13 of 14 open questions: real federation support for cross-namespace edges (blast radius measured), combined size+error-density+timeout guard with measurement first, no auto-invalidation (status reports download time only), chained instance accesses IN v1, next release without number. creator-docs acquisition reopened: measurement shows a SHA-pinned tarball (4.78 MB / 1.04 s / 1 request) beats the previously accepted 625-request fetch |
