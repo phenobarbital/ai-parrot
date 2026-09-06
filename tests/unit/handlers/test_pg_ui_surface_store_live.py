@@ -56,6 +56,15 @@ async def test_save_get_list_update_delete_roundtrip(store):
     try:
         got = await store.get(sid)
         assert got is not None and got.surface_id == sid and got.recipe_params == {"month": "2025-10"}
+        # Stored as real jsonb objects, not double-encoded JSON strings (2026-09-05).
+        from asyncdb import AsyncDB
+        db = AsyncDB("pg", dsn=DSN)
+        async with await db.connection() as conn:
+            types = await conn.fetch_one(
+                "select jsonb_typeof(envelope) e, jsonb_typeof(recipe_params) p from navigator.ui_surfaces where surface_id = $1",
+                uuid.UUID(sid),
+            )
+        assert (types["e"], types["p"]) == ("object", "object")
         assert [r.surface_id for r in await store.list(owner)] == [sid]
         assert [r.surface_id for r in await store.list(owner, kind=UISurfaceKind.dashboard)] == [sid]
         assert await store.list(owner, kind=UISurfaceKind.widget) == []

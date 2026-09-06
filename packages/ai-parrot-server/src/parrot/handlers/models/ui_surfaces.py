@@ -304,6 +304,9 @@ def _row_to_share(row: Any) -> UISurfaceShare:
 #   "invalid input for query argument … (bytes is not a 16-char string)".
 # * ``conn.fetchrow`` is the CURSOR method (no arguments); the one-row query
 #   is ``conn.fetch_one``. ``fetch_all`` returns ``None`` for an empty set.
+# * The driver registers a jsonb codec that json-encodes Python objects, so
+#   passing ``json.dumps(...)`` DOUBLE-encodes and stores a JSON string scalar
+#   (``jsonb_typeof = 'string'``); pass the dict and let the codec encode it.
 
 
 def _as_uuid(value: Any) -> uuid.UUID | None:
@@ -413,14 +416,14 @@ class PgUISurfaceStore:
                 surface_uuid,
                 record.kind.value,
                 record.title,
-                json.dumps(record.envelope),
+                record.envelope,
                 record.catalog_id,
                 record.agent_id,
                 record.user_id,
                 record.session_id,
                 record.recipe_name,
                 record.recipe_owner,
-                json.dumps(record.recipe_params),
+                record.recipe_params,
                 record.created_at,
                 record.updated_at,
             )
@@ -468,7 +471,7 @@ class PgUISurfaceStore:
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.fetchval(_UPDATE_ENVELOPE_SQL, surface_uuid, json.dumps(envelope), json.dumps(recipe_params))
+            await conn.fetchval(_UPDATE_ENVELOPE_SQL, surface_uuid, envelope, recipe_params)
 
     async def delete(self, surface_id: str, user_id: str) -> bool:
         """Delete a surface owned by ``user_id``. Returns ``True`` if a row was removed."""
