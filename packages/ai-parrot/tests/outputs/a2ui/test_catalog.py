@@ -1,4 +1,8 @@
-"""Unit tests for the A2UI component catalog (TASK-1721 / Module 2, updated FEAT-470)."""
+"""Unit tests for the A2UI component catalog (TASK-1721 / Module 2, updated FEAT-470).
+
+FEAT-529 Module 0 adds the keyed-registry (``(catalog_id, name)``) regression
+tests at the bottom of this file.
+"""
 
 from typing import ClassVar
 
@@ -6,15 +10,18 @@ import pytest
 from parrot.outputs.a2ui.catalog import (
     DEFAULT_CATALOG_ID,
     BasicNode,
+    CatalogError,
     CatalogValidationError,
     ComponentContractError,
     ComponentDefinition,
     ProducerOrigin,
     get_component,
+    list_components,
     register_component,
     unregister_component,
     validate_envelope,
 )
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
 from parrot.outputs.a2ui.models import Component, CreateSurface
 
 
@@ -146,3 +153,64 @@ class TestEnvelopeValidation:
 
         cleanup_catalog.append("DisplayOnlyDummy")
         validate_envelope(_surface("DisplayOnlyDummy"), origin=ProducerOrigin.LLM)
+
+
+class TestKeyedRegistry:
+    """FEAT-529 Module 0: ``_CATALOG`` keyed by ``(catalog_id, name)``."""
+
+    def test_registry_keyed_by_catalog_and_name(self):
+        @register_component("KeyedProbe", catalog_id=DEFAULT_CATALOG_ID)
+        class KeyedProbeDefault:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        @register_component("KeyedProbe", catalog_id=VIZ_CORE_CATALOG_ID)
+        class KeyedProbeVizCore:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        try:
+            with pytest.raises(CatalogError) as exc:
+                get_component("KeyedProbe")
+            assert set(exc.value.candidates) == {DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID}
+
+            assert get_component("KeyedProbe", DEFAULT_CATALOG_ID).component_cls is KeyedProbeDefault
+            assert get_component("KeyedProbe", VIZ_CORE_CATALOG_ID).component_cls is KeyedProbeVizCore
+        finally:
+            unregister_component("KeyedProbe", DEFAULT_CATALOG_ID)
+            unregister_component("KeyedProbe", VIZ_CORE_CATALOG_ID)
+
+    def test_registry_rejects_duplicate_pair(self, cleanup_catalog):
+        @register_component("DupPair")
+        class DupPair:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        cleanup_catalog.append("DupPair")
+
+        with pytest.raises(CatalogError):
+
+            @register_component("DupPair")
+            class DupPairAgain:
+                def lower(self, component, data_model):
+                    return BasicNode(component="Column")
+
+    def test_bare_name_lookup_stays_unique_today(self):
+        """Pins that no registered name is ambiguous until the charts spec."""
+        for definition in list_components():
+            get_component(definition.name)  # must not raise CatalogError
+
+    def test_component_exists_third_catalog(self, cleanup_catalog):
+        from parrot.outputs.a2ui.catalog import _component_exists
+
+        @register_component("VizCoreExistsProbe", catalog_id=VIZ_CORE_CATALOG_ID)
+        class VizCoreExistsProbe:
+            def lower(self, component, data_model):
+                return BasicNode(component="Column")
+
+        try:
+            assert _component_exists("VizCoreExistsProbe", VIZ_CORE_CATALOG_ID) is True
+            assert _component_exists("VizCoreExistsProbe", DEFAULT_CATALOG_ID) is False
+            assert _component_exists("Text", VIZ_CORE_CATALOG_ID) is False
+        finally:
+            unregister_component("VizCoreExistsProbe", VIZ_CORE_CATALOG_ID)

@@ -86,3 +86,28 @@ Folium, bundled UI, or changes to legacy Chart options.
 1. Verify the shared SVG/status contract and current ECharts option shape before coding.
 2. Keep this task limited to the ECharts satellite module and its tests.
 3. Run existing visualization ECharts tests alongside the new tests.
+
+### Completion Note
+
+Implemented as specified. Dispatch uses the shared `_intercept.intercepts()`
+helper (not a raw `resolve_component_catalog` call) so a malformed/
+ambiguous catalog id never raises mid-render — it just fails to intercept,
+falling through exactly like "no Graph present." `_build_graph_option`
+strips BOTH `data` and the wire Component-level keys (`id`, `component`,
+`catalogId`, `action`, `metadata`, ...) before reconstructing a bare
+`GraphSpec` — `props` here is a baked WHOLE-COMPONENT dict
+(`component.model_dump()`), unlike `catalog/viz_core/graph.py`'s `lower()`
+which only ever sees `component.model_extra` (declared fields already
+excluded there); this distinction cost one failed test run before the fix.
+
+**One pre-existing legacy test was also fixed**, a direct and foreseeable
+casualty of this task's own acceptance criterion ("ECharts capabilities
+include viz-core and Graph"): `test_echarts.py::TestTASK2544::
+test_echarts_capabilities` asserted `supported_components == {"Chart"}`
+exhaustively (not a subset check) — updated to `{"Chart", "Graph"}`.
+
+Verification: `pytest packages/ai-parrot-visualizations/tests -q` → 302
+passed (295 pre-existing + 7 new); `pytest packages/ai-parrot/tests/
+outputs/a2ui -q` → 726 passed, 1 skipped (core untouched by this
+satellite-only task); `ruff check` clean on all three touched/created
+files.

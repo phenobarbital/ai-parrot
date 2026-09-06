@@ -91,7 +91,9 @@ class TestTASK2543:
         caps = SSRHTMLRenderer.capabilities
         assert "Text" in caps.supported_components
         assert "Video" in caps.supported_components
-        assert len(caps.supported_components) == 18
+        # FEAT-529: Graph (viz-core) joined the 18 Basic primitives as of TASK-2889.
+        assert "Graph" in caps.supported_components
+        assert len(caps.supported_components) == 19
         assert "https://parrot.dev/catalogs/v1" in caps.supported_catalog_ids
 
     async def test_ssr_html_all_primitives(self):

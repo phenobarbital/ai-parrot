@@ -138,6 +138,16 @@ def test_adapters_subpackage_importable_without_agents_or_clients():
     )
 
 
+def test_adapters_flow_has_no_bots_import():
+    """FEAT-529 Module 5: adapters/flow.py accepts a mapping, never a live
+    FlowDefinition instance — importing it must never pull in parrot.bots."""
+    _run_import_probe(
+        _ADAPTERS_DIR.parents[3],  # .../src
+        "from parrot.outputs.a2ui.adapters.flow import flow_definition_to_graph",
+        "assert flow_definition_to_graph is not None",
+    )
+
+
 def test_catalog_basic_has_no_forbidden_imports():
     assert _CATALOG_BASIC_DIR.is_dir(), f"expected catalog/basic subpackage at {_CATALOG_BASIC_DIR}"
     offenders = _forbidden_import_offenders(_CATALOG_BASIC_DIR.rglob("*.py"))

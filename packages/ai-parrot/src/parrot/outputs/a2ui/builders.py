@@ -21,17 +21,35 @@ from typing import Any
 
 # Ensure the v1 parrot catalog is registered so allowlist validation resolves components.
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401
+
+# Ensure viz-core (and its Graph registration) is registered too — same
+# reasoning as the parrot import above (FEAT-529).
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401
 from parrot.outputs.a2ui.catalog import (
     DEFAULT_CATALOG_ID,
     ProducerOrigin,
     validate_envelope,
 )
-from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.graph import (
+    Direction,
+    GraphEdge,
+    GraphGroup,
+    GraphKind,
+    GraphLayout,
+    GraphNode,
+    GraphSelection,
+    GraphSpec,
+    VizSize,
+    compute_positions,
+)
+from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface
 
 __all__ = [
     "build_card",
     "build_chart",
     "build_datatable",
+    "build_graph",
     "build_html_document",
     "build_infographic",
     "build_kpicard",
@@ -292,4 +310,132 @@ def build_html_document(
         surface_id=surface_id,
         origin=ProducerOrigin.TOOL,
         metadata=metadata,
+    )
+
+
+def build_graph(
+    *,
+    nodes: Sequence[GraphNode | dict[str, Any]],
+    edges: Sequence[GraphEdge | dict[str, Any]],
+    kind: GraphKind = "flowchart",
+    direction: Direction = "TB",
+    title: str | None = None,
+    accessible_description: str | None = None,
+    size: VizSize = "tile",
+    groups: Sequence[GraphGroup | dict[str, Any]] | None = None,
+    layout: GraphLayout | dict[str, Any] | None = None,
+    selection: GraphSelection | dict[str, Any] | None = None,
+    data_binding: str | None = None,
+    data_model: dict[str, Any] | None = None,
+    action: Action | None = None,
+    compute_layout: bool = True,
+    surface_id: str = "graph",
+    origin: ProducerOrigin = ProducerOrigin.TOOL,
+) -> CreateSurface:
+    """Build a display (or action-bearing, TOOL-origin) envelope carrying a
+    single viz-core ``Graph`` component.
+
+    Unlike every other ``build_*`` helper, the emitted ``Graph`` component
+    carries its OWN ``catalogId`` (:data:`~parrot.outputs.a2ui.catalog.
+    viz_core.VIZ_CORE_CATALOG_ID`) — the surface's default ``catalogId``
+    stays the Parrot catalog (every public builder does this, spec §2 New
+    Public Interfaces), so ``Graph`` resolves under viz-core purely via its
+    own component-level override (spec §2 G2 resolution rule).
+
+    Args:
+        nodes: The graph's nodes (:class:`~parrot.outputs.a2ui.graph.
+            GraphNode` instances or equivalent wire-shaped dicts).
+        edges: The graph's edges.
+        kind: ``GraphSpec.kind``.
+        direction: ``GraphSpec.direction``.
+        title: Optional display title.
+        accessible_description: viz-core common prop; also the lowered
+            fallback's first line and the SVG ``<title>`` on static lanes.
+        size: viz-core common prop (layout intent, never pixels).
+        groups: Optional node groupings.
+        layout: Optional layout configuration. When given WITHOUT
+            ``positions`` and ``compute_layout=True`` (default), positions
+            are filled in (see ``compute_layout`` below); its own
+            ``rank_sep``/``node_sep`` (if set) are honoured.
+        selection: Optional selection state.
+        data_binding: Optional data-model pointer (e.g. ``"/nodes"``) —
+            becomes ``{"path": "/nodes"}`` on the wire, overlaying each
+            node's ``state``/``label``/``meta`` at render time.
+        data_model: The envelope's ``dataModel`` (forwarded to
+            :func:`build_surface`).
+        action: Optional component-level action. TOOL origin (this
+            function's default) may carry one; ``origin=ProducerOrigin.LLM``
+            with an ``action`` set is rejected by the existing
+            ``ACTION_NOT_ALLOWED_FOR_LLM`` gate (spec G3 — no new gate).
+        compute_layout: When ``True`` (default) and the (implicit or
+            explicit) layout engine is ``"layered"`` with no ``positions``
+            already given, fills ``layout.positions`` via
+            :func:`~parrot.outputs.a2ui.graph.compute_positions`. ``False``
+            leaves ``layout.positions`` absent (renderers without native
+            layout call ``compute_positions`` themselves at render time).
+        surface_id: Envelope surface id.
+        origin: Producer origin forwarded to :func:`build_surface`'s
+            :func:`~parrot.outputs.a2ui.catalog.validate_envelope` call.
+            Defaults to ``TOOL`` (unlike every other ``build_*`` helper,
+            which default to ``LLM``) since a builder-authored ``Graph`` —
+            positions, `action` — is deterministic tool output by
+            construction (spec's "authoring tiers": the LLM path never
+            calls this builder with positions/`action` set).
+
+    Returns:
+        The validated :class:`~parrot.outputs.a2ui.models.CreateSurface`.
+    """
+
+    def _model(value, model_cls):
+        if value is None or isinstance(value, model_cls):
+            return value
+        return model_cls(**value)
+
+    node_models = [_model(n, GraphNode) for n in nodes]
+    edge_models = [_model(e, GraphEdge) for e in edges]
+    group_models = [_model(g, GraphGroup) for g in groups] if groups else None
+    layout_model = _model(layout, GraphLayout)
+    selection_model = _model(selection, GraphSelection)
+
+    spec = GraphSpec(
+        kind=kind,
+        direction=direction,
+        title=title,
+        accessible_description=accessible_description,
+        size=size,
+        nodes=node_models,
+        edges=edge_models,
+        groups=group_models,
+        layout=layout_model,
+        selection=selection_model,
+    )
+
+    if compute_layout:
+        engine = spec.layout.engine if spec.layout else "layered"
+        positions_present = spec.layout.positions is not None if spec.layout else False
+        if engine == "layered" and not positions_present:
+            layout_kwargs: dict[str, float] = {}
+            if spec.layout and spec.layout.rank_sep is not None:
+                layout_kwargs["rank_sep"] = spec.layout.rank_sep
+            if spec.layout and spec.layout.node_sep is not None:
+                layout_kwargs["node_sep"] = spec.layout.node_sep
+            result = compute_positions(spec, **layout_kwargs)
+            base = spec.layout.model_dump(exclude_none=True) if spec.layout else {}
+            spec = spec.model_copy(update={"layout": GraphLayout(**{**base, "positions": result.positions})})
+
+    props = spec.model_dump(by_alias=True, exclude_none=True)
+    props["catalogId"] = VIZ_CORE_CATALOG_ID
+
+    binding = _binding(data_binding)
+    if binding is not None:
+        props["data"] = binding
+    if action is not None:
+        props["action"] = action
+
+    return build_surface(
+        "Graph",
+        props,
+        surface_id=surface_id,
+        data_model=data_model,
+        origin=origin,
     )

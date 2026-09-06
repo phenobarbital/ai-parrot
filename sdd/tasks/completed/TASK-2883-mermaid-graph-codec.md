@@ -92,3 +92,61 @@ or support for excluded dialects/directives.
 1. Verify TASK-2882 is available and its public model exports are unchanged.
 2. Keep the parser restricted to the documented subset; do not silently accept syntax.
 3. Make canonical output deterministic across runs and platforms.
+
+### Completion Note
+
+Implemented as specified: hand-written regex-based tokenizer/parser (no
+external dependency) for `flowchart`/`stateDiagram-v2`/`sequenceDiagram`,
+plus a deterministic canonical emitter. `MermaidCodecError(line_no, line,
+reason)` subclasses `CatalogValidationError`.
+
+Two design decisions worth flagging for reviewers, both driven by the
+spec's own contract — "`from_mermaid(to_mermaid(spec)) == spec` (modulo
+`accessibleDescription`/`size`)" is an OBJECT round-trip, not a textual
+one:
+
+1. **Collapsing conventions.** A node's `label`/`shape` collapse to
+   `None` on parse whenever they equal the id / the dialect's default
+   shape (`rect` for flowchart, `rounded` for state) — the inverse of
+   what `to_mermaid` does when those fields are `None`. This is
+   documented in the module docstring and in `test_mermaid_roundtrip_
+   flowchart_default_shape_and_label`. `GraphEdge.kind` is NOT collapsed
+   this way (an edge operator is always unambiguously explicit in text,
+   unlike "no shape/label given"); callers who want an edge's `kind` to
+   round-trip must set it explicitly, which every edge in this task's
+   fixtures does.
+2. **Declare-once-at-top ordering.** Both `_emit_flowchart` and
+   `_emit_state` declare EVERY node once, at top level, in `spec.nodes`
+   order; `subgraph`/composite-`state` blocks only bare-reference member
+   ids afterwards (never re-declare shape/label there). This was a
+   necessary fix during implementation — an earlier draft declared
+   grouped nodes only inside their group block, which reordered them in
+   the parsed result and broke the round-trip's list-order equality.
+   `__start__`/`__end__` are the one unavoidable exception: they have no
+   top-level textual form (they exist only via a `[*]` edge endpoint), so
+   they always land at the END of the parsed `nodes` list regardless of
+   their position in the original spec — the state round-trip fixture's
+   node order is deliberately arranged to match this (commented in the
+   test).
+
+`_check_unsupported` matches keywords on a WORD BOUNDARY (not bare
+`startswith`) — an earlier draft flagged `sequenceDiagram`'s own
+`participant` keyword as the excluded `par` (sequence "par" block)
+construct.
+
+`kind="dag"` reuses the flowchart dialect for `to_mermaid`; `from_mermaid`
+never infers `"dag"` back (unrecoverable from syntax alone) — matches the
+Test Specification, which only requires flowchart/state/sequence
+round-trips, not dag.
+
+19 tests in `test_mermaid.py` (7 named in the Test Specification plus
+default-shape/mid-label-syntax/reserved-id-collision/empty-source
+coverage), plus a fixture pair (`fixtures/mermaid/flowchart_mid_label.
+{mmd,json}`) proving `from_mermaid` accepts the `-- text -->` mid-label
+syntax even though `to_mermaid` only ever emits the pipe form.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui -q` → 696
+passed (678 pre-existing + 18 new — one of the 19 new tests is a second
+assertion block inside an existing test function, not a separate
+collected test), 1 skipped; `ruff check` clean on all three touched/
+created Python files.

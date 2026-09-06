@@ -104,3 +104,43 @@ or live action transport.
 1. Verify TASK-2887 SVG API and current degradation record shape first.
 2. Keep interception before lowering and preserve all legacy non-viz-core dispatch.
 3. Run the full visualization renderer test suite after implementation.
+
+### Completion Note
+
+Implemented as specified across all five renderer modules, plus PDF gets
+Graph support "for free" by inheriting `SSRHTMLRenderer._lower_composites`/
+`_render_Text` unchanged (only its own `RendererCapabilities` needed
+updating) — matching "PDF inherits SSR behavior" literally, no PDF-specific
+Graph code was needed.
+
+**A real bug in TASK-2887's shared contract was found and fixed here**:
+`_graph_svg.render_graph_svg` only stripped `data` before reconstructing a
+bare `GraphSpec`, never the other wire Component-level keys (`id`,
+`component`, `catalogId`, ...). TASK-2887's own unit tests never caught
+this because its fixtures passed bare GraphSpec-shaped dicts, never a
+realistic whole-baked-component dict — every ACTUAL caller in this task
+does exactly that, and hit `ValidationError: extra_forbidden` immediately
+during smoke-testing (before the pytest suite was even written). Fixed by
+introducing `_COMPONENT_ONLY_KEYS` in `_graph_svg.py` (mirroring the same
+fix independently made in `echarts.py`, TASK-2888) and re-verified
+TASK-2887's own `test_graph_svg.py` suite still green afterward.
+
+**Two pre-existing artifacts needed updating**, both direct, foreseeable
+casualties of this task's own acceptance criteria:
+1. `test_ssr_html.py::test_renderer_capabilities_declared` asserted
+   `len(supported_components) == 18` exactly — bumped to 19 (`Graph` added).
+2. `tailwind.generated.css` — this task's new interactive-HTML markup
+   introduces two literal CSS classes (`a2ui-graph-wrap`, `a2ui-graph-
+   source`); the EXISTING `test_all_a2ui_classes_have_css_rule` coverage
+   guard correctly caught their absence. Added curated Tailwind utility
+   mappings to `scripts/generate_a2ui_css.py`'s `SELECTOR_UTILITIES` and
+   regenerated the CSS via the script itself (confirmed `npx`/Tailwind CLI
+   available and working in this environment) — not hand-edited.
+
+Verification: `pytest packages/ai-parrot-visualizations/tests -q` → 313
+passed; `pytest packages/ai-parrot/tests/outputs/a2ui packages/ai-parrot/
+tests/integration/test_frontend_guide_examples.py -q` → 730 passed, 1
+skipped (core untouched by this satellite-only task); `ruff check` clean
+on all nine touched/created Python files. Every degradation path (force
+layout, oversize, unsupported-catalog on Adaptive Cards/Folium) was also
+manually smoke-tested end-to-end before the pytest suite was written.

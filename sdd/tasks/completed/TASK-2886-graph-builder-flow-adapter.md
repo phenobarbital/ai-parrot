@@ -101,3 +101,43 @@ renderers, or live workflow updates.
 1. Verify the builder signature and FlowDefinition mapping shape before coding.
 2. Keep the adapter independent from bot implementation modules, including under TYPE_CHECKING.
 3. Validate emitted envelopes against the existing conformance helper.
+
+### Completion Note
+
+Implemented as specified. `build_graph` folds `catalogId=VIZ_CORE_CATALOG_ID`
+into the `properties` dict passed to the EXISTING `build_surface` (Component's
+`catalog_id` field populates via its `catalogId` alias like any other prop) —
+`build_surface`'s own signature/body is completely untouched, matching "the
+surface catalogId stays DEFAULT_CATALOG_ID; the Graph component carries
+catalogId: viz-core explicitly" without adding a new parameter anywhere.
+`action` flows through the same properties dict so `build_surface`'s single
+`validate_envelope(origin=...)` call is the only gate.
+
+`flow_definition_to_graph`'s `data_binding` parameter is accepted (per the
+Codebase Contract's exact signature) but documented as presently a no-op:
+`GraphSpec.data` (TASK-2882) is typed as the RESOLVED per-node overlay shape
+(`dict[node_id, {...}]`), never the wire-only `{"path": ...}` binding
+descriptor, so there is nothing safe to do with a bare pointer string on a
+plain `GraphSpec` return value — a caller wires live-state binding through
+`build_graph(data_binding=...)` once they have something to build. This is a
+deliberate scope decision, not an oversight; flagging for the human reviewer
+since the Codebase Contract didn't call it out explicitly.
+
+`_edge_label`/`_edge_kind` interpret the spec's compact "`EdgeDefinition.
+condition` becomes the edge label" clause narrowly: only `on_condition`
+(→ predicate text) and an edge's own explicit `label` field produce a
+label; `on_error`/`on_timeout` affect `kind` (dashed), not the label; a
+default `on_success`/`always` edge gets neither — avoiding literal
+"on_success" text cluttering every ordinary transition. Only the two
+concretely-tested behaviors (`on_error → dashed`, `on_condition label ==
+predicate`) are asserted by the Test Specification, so this reading isn't
+contradicted by anything testable.
+
+Verification: `pytest packages/ai-parrot/tests/outputs/a2ui -q` → 730
+passed (718 pre-existing + 16 new — one extra beyond the five named tests
+covers `compute_layout=False`, TOOL-origin action attach, `build_graph` in
+`__all__`, and an end-to-end adapter→builder integration check), 1
+skipped; `ruff check` clean on all five touched/created files. A
+pre-existing, unrelated collection error in `tests/integration/
+observability/test_multiround_usage.py` was confirmed present in complete
+isolation (no a2ui import in the chain) — not a regression from this task.
