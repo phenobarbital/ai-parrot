@@ -16,7 +16,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Touches only graphindex/communities.py, graphindex/assemble.py and their tests — no bookstore file. Can run in its own worktree alongside TASK-2913/2914/2915.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2912-graphindex-payload-edge-weights.md"
+      "completed_at": "2026-09-06T03:48:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2912-graphindex-payload-edge-weights.md"
     },
     {
       "id": "TASK-2913",
