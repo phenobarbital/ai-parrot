@@ -92,7 +92,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Extends relations.py/library.py/cli.py/conftest from 2914+2915; sequential.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2916-bookstore-llm-relations-and-relate-command.md"
+      "completed_at": "2026-09-06T04:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2916-bookstore-llm-relations-and-relate-command.md"
     },
     {
       "id": "TASK-2917",
