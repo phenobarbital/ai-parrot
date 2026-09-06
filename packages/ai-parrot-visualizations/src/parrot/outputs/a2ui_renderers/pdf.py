@@ -90,9 +90,11 @@ def _chart_svg(props: dict) -> str:
         supports_actions=False,
         supports_updates=False,
         output="application/pdf",
-        # Inherits SSR's 18-primitive set minus Video/AudioPlayer — a static
-        # rasterized PDF cannot play media; both degrade to a link (spec
-        # Scope: "declara supported_components sin Video/Audio").
+        # Inherits SSR's catalogs (incl. viz-core, FEAT-529) and its
+        # 18-primitive set minus Video/AudioPlayer — a static rasterized
+        # PDF cannot play media; both degrade to a link (spec Scope:
+        # "declara supported_components sin Video/Audio").
+        supported_catalog_ids=list(SSRHTMLRenderer.capabilities.supported_catalog_ids),
         supported_components=SSRHTMLRenderer.capabilities.supported_components - {"Video", "AudioPlayer"},
     ),
 )

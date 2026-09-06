@@ -53,14 +53,24 @@ _NODE_HEIGHT = 40.0
 _PADDING = 40.0
 _GROUP_MARGIN = 24.0
 
+#: Wire Component-level keys (never part of GraphSpec) to strip from a
+#: whole-component dict before reconstructing a bare GraphSpec.
+_COMPONENT_ONLY_KEYS = frozenset(
+    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata", "data"}
+)
+
 
 def render_graph_svg(props: dict[str, Any], *, theme: str | None = None) -> str:
     """Render a baked ``Graph`` component's props to a static SVG string.
 
     Args:
-        props: The ``Graph`` component's top-level wire props (camelCase:
-            ``kind``, ``direction``, ``nodes``, ``edges``, ``groups``,
-            ``layout``, ``accessibleDescription``, ...). ``data`` (an
+        props: The ``Graph`` component's props — either the bare GraphSpec
+            fields (camelCase: ``kind``, ``direction``, ``nodes``,
+            ``edges``, ``groups``, ``layout``, ``accessibleDescription``,
+            ...) or a whole baked ``Component.model_dump()`` dict (also
+            carrying ``id``/``component``/``catalogId``/``action``/
+            ``metadata``); both shapes work — any wire Component-level key
+            is stripped before reconstructing a ``GraphSpec``. ``data`` (an
             unresolved binding descriptor, or already-resolved by an
             upstream bake pass) is never read as a literal ``GraphSpec.data``
             value here — callers that need live node-state overlays must
@@ -87,7 +97,13 @@ def render_graph_svg(props: dict[str, Any], *, theme: str | None = None) -> str:
             caller (a renderer module) is expected to catch this and
             degrade (spec G8).
     """
-    graph_props = {key: value for key, value in props.items() if key != "data"}
+    # `props` is a whole-component dict — a baked `Component.model_dump()`
+    # (id/component/catalogId/action/metadata/... alongside the actual
+    # GraphSpec fields) — never just `Component.model_extra` (which already
+    # excludes those declared fields). Strip them, plus `data` (an
+    # unresolved/resolved binding), before reconstructing a bare
+    # `GraphSpec` (`extra="forbid"`).
+    graph_props = {key: value for key, value in props.items() if key not in _COMPONENT_ONLY_KEYS}
     spec = GraphSpec.model_validate(graph_props)
 
     positions = _extract_positions(spec)

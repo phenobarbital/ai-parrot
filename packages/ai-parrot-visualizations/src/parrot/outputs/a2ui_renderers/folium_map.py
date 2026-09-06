@@ -299,14 +299,28 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
         if map_comp is None:
             raise ValueError("folium_map renderer requires a 'Map' component in the envelope.")
 
-        degradations = [
-            degradation_record(
-                BasicNode(id=item["id"], component=item["component"]),
-                f"{_SURFACE_NAME} renderer only renders a single Map component per surface",
+        degradations = []
+        for item in baked:
+            if item is map_comp:
+                continue
+            if item["component"] == "Graph":
+                # FEAT-529: a viz-core Graph gets its own catalog-named
+                # record (spec §7) rather than the generic
+                # "only renders a single Map" message below.
+                resolved_catalog_id = item.get("catalogId") or envelope.catalog_id
+                degradations.append(
+                    degradation_record(
+                        BasicNode(id=item["id"], component="Graph"),
+                        f"{_SURFACE_NAME} does not support catalog {resolved_catalog_id!r}; not rendered",
+                    )
+                )
+                continue
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=item["id"], component=item["component"]),
+                    f"{_SURFACE_NAME} renderer only renders a single Map component per surface",
+                )
             )
-            for item in baked
-            if item is not map_comp
-        ]
 
         document, _ = build_map_document(map_comp, cluster_threshold=DEFAULT_CLUSTER_THRESHOLD)
         return RenderedArtifact(

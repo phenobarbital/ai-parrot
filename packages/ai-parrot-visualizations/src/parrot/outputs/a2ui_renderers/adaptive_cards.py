@@ -54,10 +54,11 @@ from typing import Any
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
-from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
+from parrot.outputs.a2ui.catalog import get_component, resolve_catalog
+from parrot.outputs.a2ui.catalog.base import BasicNode, CatalogValidationError, TabSpec, to_components
 from parrot.outputs.a2ui.models import ActionMessage, Component, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
@@ -258,7 +259,7 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
         # TASK-2543) — binding-path extraction below must also see the
         # LOWERED (but not yet baked) input primitives, since they are
         # themselves Basic Catalog primitives and lowering never touches them.
-        lowered_envelope = self._lower_composites(envelope)
+        lowered_envelope, graph_degradations = self._lower_composites(envelope)
         binding_paths = self._binding_paths(lowered_envelope.components)
         button_actions = self._button_actions(lowered_envelope.components)
         baked_components = bake_envelope(lowered_envelope)
@@ -271,6 +272,7 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
             button_actions=button_actions,
             data_model=envelope.data_model,
         )
+        state.degradations.extend(graph_degradations)
 
         elements: list[ACElement] = []
         if "root" in by_id:
@@ -299,14 +301,40 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
 
     # -- lowering (composites -> flat primitives, BEFORE baking) -------------
 
-    def _lower_composites(self, envelope: CreateSurface) -> CreateSurface:
+    def _lower_composites(self, envelope: CreateSurface) -> tuple[CreateSurface, list[dict[str, Any]]]:
         """Replace every non-primitive (Parrot composite) component with its
         lowered + flattened primitive equivalents, in place, in the envelope's
         own flat component list. Mirrors
         :meth:`~parrot.outputs.a2ui_renderers.ssr_html.SSRHTMLRenderer._lower_composites`.
+
+        This renderer never declares viz-core support (spec §7 "Adaptive
+        Cards and Folium show the lowered description + edge list + mermaid
+        source with a degraded entry naming the catalog") — a viz-core
+        ``Graph`` always lowers via its own ``GraphComponent.lower()``
+        (already produces readable Text/Column/Card primitives this
+        renderer natively supports), but is ADDITIONALLY recorded as a
+        degradation naming the unsupported catalog id, since otherwise
+        nothing would ever indicate the native component was skipped.
+
+        Returns:
+            The envelope with composites lowered, and any Graph-specific
+            degradation records collected along the way.
         """
         new_components: list[Component] = []
+        degradations: list[dict[str, Any]] = []
         for comp in envelope.components:
+            if comp.component == "Graph":
+                try:
+                    resolved_catalog_id = resolve_catalog(comp.catalog_id, envelope.catalog_id)
+                except CatalogValidationError:
+                    resolved_catalog_id = comp.catalog_id or "unknown"
+                degradations.append(
+                    degradation_record(
+                        BasicNode(id=comp.id, component="Graph"),
+                        f"{_SURFACE_NAME} does not support catalog {resolved_catalog_id!r}; "
+                        "rendered as a lowered summary",
+                    )
+                )
             try:
                 entry = get_component(comp.component)
             except KeyError:
@@ -316,7 +344,7 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
                 new_components.extend(to_components(tree, id_prefix=f"{comp.id}-lc"))
             else:
                 new_components.append(comp)
-        return envelope.model_copy(update={"components": new_components})
+        return envelope.model_copy(update={"components": new_components}), degradations
 
     # -- binding-path extraction (BEFORE baking resolves them away) ----------
 

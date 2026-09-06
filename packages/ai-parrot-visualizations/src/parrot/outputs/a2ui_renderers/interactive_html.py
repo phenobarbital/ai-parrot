@@ -77,10 +77,15 @@ from typing import Any
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.base import BasicNode, DEFAULT_CATALOG_ID, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core.graph import GraphComponent
+from parrot.outputs.a2ui.graph import MAX_STATIC_NODES, GraphSpec, GraphTooLargeError, to_mermaid
 from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
@@ -90,6 +95,8 @@ from parrot.outputs.a2ui.renderers import (
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
+from ._graph_svg import render_graph_svg
+from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
     kpi_unit_html,
@@ -116,8 +123,15 @@ logger = logging.getLogger(__name__)
 _SURFACE_NAME = "interactive-html"
 
 #: Components intercepted BEFORE lowering — their real (graphics/nested)
-#: rendering is this renderer's own job, not their catalog `lower()`.
+#: rendering is this renderer's own job, not their catalog `lower()`. All
+#: Parrot catalog, bare-name unambiguous (FEAT-529 Module 0: Graph is
+#: viz-core-only and resolved catalog-aware via `_GRAPH_INTERCEPT_TABLE`
+#: below, not this set).
 _INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map", "HtmlDocument"}
+
+#: The one (catalog_id, name) pair intercepted as a native Graph — used
+#: with the shared catalog-aware `intercepts()` helper (FEAT-529).
+_GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -144,6 +158,39 @@ def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[C
         merged = {**parent_ext, **child_ext}  # child's own key wins on collision
         merged_components.append(child.model_copy(update={"metadata": ComponentMetadata(extensions=merged)}))
     return merged_components
+
+
+#: Wire Component-level keys (never part of GraphSpec) — `data` is
+#: deliberately KEPT out of this set: `GraphComponent.lower()` reads it off
+#: `Component.model_extra` itself for its `parrot_graph_data` pass-through
+#: (FEAT-529).
+_GRAPH_COMPONENT_ONLY_KEYS = frozenset(
+    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata"}
+)
+
+
+def _strip_graph_component_keys(props: dict[str, Any]) -> dict[str, Any]:
+    """Strip wire Component-level keys from a baked Graph props dict, keeping ``data``."""
+    return {key: value for key, value in props.items() if key not in _GRAPH_COMPONENT_ONLY_KEYS}
+
+
+def _graph_spec_props(props: dict[str, Any]) -> dict[str, Any]:
+    """``_strip_graph_component_keys`` plus ``data`` — a bare GraphSpec's own props."""
+    return {key: value for key, value in _strip_graph_component_keys(props).items() if key != "data"}
+
+
+def _truncate_graph_edge_list(tree: BasicNode) -> None:
+    """Truncate a lowered ``Graph``'s edge-list ``Column`` children to
+    :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` rows, in place
+    (FEAT-529 oversize-graph fallback)."""
+    column = tree.child
+    if column is None or not isinstance(column.children, list):
+        return
+    for child in column.children:
+        if isinstance(child, BasicNode) and node_extensions(child).get("parrot_role") == "edge-list":
+            if isinstance(child.children, list) and len(child.children) > MAX_STATIC_NODES:
+                child.children = child.children[:MAX_STATIC_NODES]
+            break
 
 
 #: Vendored Chart.js v4.5.1 UMD bundle (MIT license header preserved in the
@@ -559,6 +606,7 @@ def _esc(value: Any) -> str:
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_catalog_ids=[BASIC_CATALOG_ID, DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID],
         supported_components={
             "AudioPlayer",
             "Button",
@@ -582,6 +630,7 @@ def _esc(value: Any) -> str:
             "DataTable",
             "Infographic",
             "Map",
+            "Graph",
         },
     ),
 )
@@ -674,6 +723,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             if comp.component in _INTERCEPTED:
                 new_components.append(comp)
                 continue
+            if comp.component == "Graph" and intercepts(_GRAPH_INTERCEPT_TABLE, comp, envelope.catalog_id):
+                new_components.append(comp)
+                continue
             try:
                 entry = get_component(comp.component)
             except KeyError:
@@ -716,6 +768,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             return self._render_map(comp)
         if name == "HtmlDocument":
             return self._render_htmldocument(comp)
+        if name == "Graph":
+            return self._render_graph(comp, degradations)
         node = self._reconstruct(comp["id"], by_id)
         return self._render_basic(node, degradations)
 
@@ -1237,3 +1291,70 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             )
 
         return f'<section class="a2ui-html-document">{title_html}{iframe}</section>'
+
+    # -- Graph (FEAT-529) ----------------------------------------------------
+
+    def _render_graph(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
+        """Render a viz-core ``Graph`` as an inline SVG plus its mermaid source.
+
+        Bypasses catalog lowering entirely (``GraphComponent.lower()``
+        intentionally degrades to a text/edge-list summary — real graphics
+        are a renderer concern, same precedent as ``_render_chart``).
+        ``props`` is the baked component's own top-level dict.
+
+        ``layout.engine == "force"`` has no interactive-renderer-specific
+        force-directed drawing here either (spec: force is a hint for
+        interactive renderers "only" in general, but THIS static-SVG path
+        has none) — it degrades to the deterministic layered layout, same
+        as every other static lane. A graph above
+        :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` degrades to
+        ``GraphComponent``'s own lowered edge list, truncated to the cap.
+        """
+        node_id = props.get("id", "graph")
+        working_props = dict(props)
+        layout = working_props.get("layout") or {}
+        if layout.get("engine") == "force":
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=node_id, component="Graph"),
+                    f"{_SURFACE_NAME} has no force layout; rendered with the deterministic layered layout instead",
+                )
+            )
+            working_props = {key: value for key, value in working_props.items() if key != "layout"}
+
+        try:
+            svg = render_graph_svg(working_props)
+        except GraphTooLargeError:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=node_id, component="Graph"),
+                    f"{_SURFACE_NAME}: graph exceeds the static node cap ({MAX_STATIC_NODES}); "
+                    "rendered as a truncated edge list",
+                )
+            )
+            return self._render_graph_truncated_fallback(working_props, degradations)
+
+        mermaid_source = to_mermaid(GraphSpec.model_validate(_graph_spec_props(working_props)))
+        return (
+            '<div class="a2ui-card a2ui-graph-wrap">'
+            f"{svg}"
+            '<details class="a2ui-graph-source"><summary>Mermaid source</summary>'
+            f"<pre>{html.escape(mermaid_source)}</pre></details></div>"
+        )
+
+    def _render_graph_truncated_fallback(
+        self, props: dict[str, Any], degradations: list[dict[str, Any]]
+    ) -> str:
+        """Oversize-graph fallback: ``GraphComponent``'s own lowered tree,
+        with its edge-list Column truncated to :data:`MAX_STATIC_NODES` rows.
+
+        ``GraphComponent.lower()`` returns an already self-contained
+        ``BasicNode`` tree (no external id references left to resolve), so
+        it is handed straight to ``_render_basic`` — unlike the flat baked-
+        dict trees ``_reconstruct`` rebuilds elsewhere in this module.
+        """
+        node_id = props.get("id", "graph")
+        component = Component(id=node_id, component="Graph", **_strip_graph_component_keys(props))
+        tree = GraphComponent().lower(component, {})
+        _truncate_graph_edge_list(tree)
+        return self._render_basic(tree, degradations)

@@ -97,6 +97,8 @@ SELECTOR_UTILITIES: dict[str, str] = {
     "a2ui-field-label": "text-xs uppercase tracking-wide text-[var(--neutral-muted)]",
     "a2ui-field-value": "text-sm font-medium text-[var(--neutral-text)]",
     "a2ui-filter-empty": "py-2 text-sm italic text-[var(--neutral-muted)]",
+    "a2ui-graph-source": "mt-2 text-xs text-[var(--neutral-muted)]",
+    "a2ui-graph-wrap": "flex flex-col gap-[var(--density-gap)]",
     "a2ui-label": "text-xs uppercase tracking-wide text-[var(--neutral-muted)]",
     "a2ui-heading": "mb-1 text-base font-semibold text-[var(--neutral-text)]",
     "a2ui-icon": "inline-flex h-4 w-4 items-center justify-center",

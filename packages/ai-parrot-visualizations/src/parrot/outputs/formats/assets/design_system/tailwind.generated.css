@@ -127,6 +127,17 @@
   color: var(--neutral-muted);
   font-style: italic;
 }
+.a2ui-graph-source {
+  margin-top: calc(var(--spacing) * 2);
+  font-size: var(--text-xs);
+  line-height: var(--tw-leading, var(--text-xs--line-height));
+  color: var(--neutral-muted);
+}
+.a2ui-graph-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-gap);
+}
 .a2ui-heading {
   margin-bottom: var(--spacing);
   font-size: var(--text-base);

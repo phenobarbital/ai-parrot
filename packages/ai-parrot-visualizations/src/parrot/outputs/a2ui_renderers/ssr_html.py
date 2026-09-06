@@ -42,10 +42,15 @@ from typing import Any
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.base import BasicNode, DEFAULT_CATALOG_ID, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core.graph import GraphComponent
+from parrot.outputs.a2ui.graph import MAX_STATIC_NODES, GraphTooLargeError
 from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
@@ -56,6 +61,8 @@ from parrot.outputs.a2ui.catalog.parrot.htmldocument import parse_html_document_
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
+from ._graph_svg import render_graph_svg
+from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
     kpi_unit_html,
@@ -82,6 +89,23 @@ _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 #: FEAT-527 the adapter collapsed them to a supported type, so this static
 #: renderer never saw the literal type before.
 _UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap", "treemap"})
+
+#: The one (catalog_id, name) pair intercepted as a native Graph — used
+#: with the shared catalog-aware `intercepts()` helper (FEAT-529).
+_GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
+
+def _truncate_graph_edge_list(tree: BasicNode) -> None:
+    """Truncate a lowered ``Graph``'s edge-list ``Column`` children to
+    :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` rows, in place
+    (FEAT-529 oversize-graph fallback)."""
+    column = tree.child
+    if column is None or not isinstance(column.children, list):
+        return
+    for child in column.children:
+        if isinstance(child, BasicNode) and node_extensions(child).get("parrot_role") == "edge-list":
+            if isinstance(child.children, list) and len(child.children) > MAX_STATIC_NODES:
+                child.children = child.children[:MAX_STATIC_NODES]
+            break
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -126,6 +150,7 @@ def _esc(value: Any) -> str:
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_catalog_ids=[BASIC_CATALOG_ID, DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID],
         supported_components={
             "AudioPlayer",
             "Button",
@@ -145,6 +170,7 @@ def _esc(value: Any) -> str:
             "Text",
             "TextField",
             "Video",
+            "Graph",
         },
     ),
 )
@@ -273,6 +299,9 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         """
         new_components: list[Component] = []
         for comp in envelope.components:
+            if comp.component == "Graph" and intercepts(_GRAPH_INTERCEPT_TABLE, comp, envelope.catalog_id):
+                new_components.extend(self._lower_graph_component(comp, envelope.data_model, degradations))
+                continue
             if comp.component == "Chart":
                 chart_type = (comp.model_extra or {}).get("type")
                 if chart_type in _UNSUPPORTED_CHART_TYPES:
@@ -294,6 +323,52 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             else:
                 new_components.append(comp)
         return envelope.model_copy(update={"components": new_components})
+
+    def _lower_graph_component(
+        self, comp: Component, data_model: dict[str, Any], degradations: list[dict[str, Any]]
+    ) -> list[Component]:
+        """Replace an intercepted viz-core ``Graph`` with an inline-SVG
+        ``Text`` marker (FEAT-529), or — if it exceeds the static node cap —
+        ``GraphComponent``'s own lowered edge list, truncated.
+
+        ``layout.engine == "force"`` degrades to the deterministic layered
+        layout (spec: force is an interactive-renderer-only hint; every
+        static lane, this one included, has no force-directed drawing).
+        """
+        props = comp.model_dump(by_alias=True, mode="json", exclude_none=True)
+        working_props = dict(props)
+        layout = working_props.get("layout") or {}
+        if layout.get("engine") == "force":
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=comp.id, component="Graph"),
+                    f"{_SURFACE_NAME} has no force layout; rendered with the deterministic layered layout instead",
+                )
+            )
+            working_props = {key: value for key, value in working_props.items() if key != "layout"}
+
+        try:
+            svg = render_graph_svg(working_props)
+        except GraphTooLargeError:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=comp.id, component="Graph"),
+                    f"{_SURFACE_NAME}: graph exceeds the static node cap ({MAX_STATIC_NODES}); "
+                    "rendered as a truncated edge list",
+                )
+            )
+            tree = GraphComponent().lower(comp, data_model)
+            _truncate_graph_edge_list(tree)
+            lowered = to_components(tree, id_prefix=f"{comp.id}-lc")
+            return _propagate_extensions(comp, lowered)
+
+        svg_component = Component(
+            id=comp.id,
+            component="Text",
+            text=svg,
+            metadata={"extensions": {"parrot_role": "graph-svg"}},
+        )
+        return [svg_component]
 
     # -- DataTable column type/format re-derivation (TASK-2711) -------------
     # DataTableComponent.lower() cannot carry per-column type/format on its
@@ -432,6 +507,14 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         if node.metadata is not None and node.metadata.extensions is not None:
             extensions = node.metadata.extensions.root
             role = extensions.get("parrot_role")
+
+        if role == "graph-svg":
+            # FEAT-529: `_lower_graph_component` stamps this role on a
+            # Text node whose `text` is ALREADY a rendered <svg>...</svg>
+            # string (`_graph_svg.render_graph_svg`'s own output escapes
+            # every data value it embeds) — return it raw, never re-escaped
+            # like an ordinary Text value.
+            return str(props.get("text") or "")
 
         if role == "html_document":
             # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
