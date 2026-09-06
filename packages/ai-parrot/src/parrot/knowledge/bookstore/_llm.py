@@ -52,11 +52,26 @@ def resolve_adapter(
     spec = llm_spec or os.environ.get(ENV_LLM)
     light = lightweight_model or os.environ.get(ENV_LLM_LIGHT)
     if not spec:
-        logger.warning(
-            "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
-            ENV_LLM,
-        )
-        return None, None, None
+        if not os.environ.get("PARROT_NO_AUTO_LLM"):
+            from parrot.clients.detection import detect_coding_agent_llm
+
+            detected = detect_coding_agent_llm()
+            if detected:
+                logger.warning(
+                    "No LLM configured (%s unset) — auto-selected %r because a "
+                    "coding-agent CLI session was detected. Set %s to override, "
+                    "or PARROT_NO_AUTO_LLM=1 to disable auto-detection.",
+                    ENV_LLM,
+                    detected,
+                    ENV_LLM,
+                )
+                spec = detected
+        if not spec:
+            logger.warning(
+                "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
+                ENV_LLM,
+            )
+            return None, None, None
     try:
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.clients.factory import LLMFactory
