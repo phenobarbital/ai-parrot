@@ -14,7 +14,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Independent data models and heuristic NLP parsing functions.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
+      "completed_at": "2026-09-06T03:48:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
       "started_at": "2026-09-06T03:44:57+00:00"
     },
     {
