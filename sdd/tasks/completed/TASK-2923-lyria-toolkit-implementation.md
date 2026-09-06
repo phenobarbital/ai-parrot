@@ -393,3 +393,23 @@ verified (module not yet covered by the shared test suite — TASK-2925 adds
   client streaming 120 chunks of 19,200 bytes each: collects exactly
   `5 * 192,000 = 960,000` bytes, writes a valid 48kHz/2ch/16-bit WAV with
   `48000 * 5` frames, and returns `status="success"`.
+
+**Addendum (post-review fixes, commit `a6aa9e4fd`)**: the adversarial code
+review (Claude code-reviewer + codex cross-check, run after TASK-2925) found
+4 Important-severity bugs in this file, all fixed:
+1. `_get_client()` now passes `vertexai=(mode == "batch")` — batch mode was
+   otherwise unconditionally broken for the toolkit's own default lazy-init
+   path, since `generate_music_batch()` requires `vertexai=True`.
+2. `generate_music()` now catches the `RuntimeError` from `_get_client()`
+   and returns a `{"status": "error", ...}` dict instead of letting it
+   propagate unhandled (inconsistent with every other failure path here).
+3. `_generate_batch()` now reports the ACTUAL `sample_rate`/`channels`/
+   `duration_seconds` read back from the sliced WAV (new `_read_wav_metadata`
+   helper) instead of trusting the request — `slice_wav_file()` silently
+   returns fewer frames than requested when the source is shorter.
+4. `auto_open` is now `True` with a new `_open()` override calling
+   `_get_client()`, so `ToolManager.cleanup_toolkits()` can reach `_close()`
+   via `_ensure_open()`'s `_opened` flag — previously `_close()` was dead
+   code and the lazily-owned client never got released on bot shutdown.
+
+4 new regression tests added in TASK-2925's file cover all four fixes.

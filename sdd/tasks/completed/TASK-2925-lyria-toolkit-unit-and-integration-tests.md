@@ -233,3 +233,8 @@ with the real codebase rather than assumed APIs:
   TASK-2921's Completion Note); `genre` is a free-form `Optional[str]`.
 - The end-to-end test reads `ToolResult.result` (the actual field on
   `parrot.tools.abstract.ToolResult`), not `.data`, which does not exist.
+
+**Addendum (post-review fixes, commit `a6aa9e4fd`)**: added a
+`TestLyriaToolkitReviewFixes` class (4 tests) covering the 4 Important
+findings from the adversarial code review — see TASK-2923's addendum for
+details. Full suite is now 19/19 passing; ruff clean.
