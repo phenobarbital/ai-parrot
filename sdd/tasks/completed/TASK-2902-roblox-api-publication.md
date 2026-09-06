@@ -159,6 +159,35 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_publication.py -q` → 11 passed.
+- Full roblox regression: `tests/knowledge/wiki/roblox/` → 64 passed.
+- `ruff check --target-version py311` on all 3 owned files → all checks passed.
+- `black --check` / `isort --check-only` → clean.
+- Full log: `artifacts/logs/task-2902-roblox-api-publication.log`.
+
+**Delivered**: `roblox/generations.py` (`ActivePointer`, `read_active_pointer`,
+`publish_generation_cas` — real `fcntl.flock` exclusive lock + a checked
+compare against the observed prior generation id, both the metadata
+pointer and a `current` symlink re-pointed atomically together) and
+`roblox/ingest.py` (`ingest_roblox_api`, `RobloxApiNotIngestedError`,
+`get_roblox_status`). Generation identity is content-addressed
+(`sha256(studio_version|creator_docs_commit|schema_version)[:16]`), so
+"unchanged -> skip rebuild" is a cheap id comparison and a crashed
+publish retry naturally lands on the same directory. Full
+`AcquiredApiPayloads` (not per-file docs) are persisted one-per-generation
+for the next `--refresh`'s reuse check.
+
+**Design decision on record**: `ingest_roblox_api` never calls
+`save_global_registry` — registration is always the user's explicit
+`wikitoolkit ns add roblox --store <current> --backend sqlite --global`
+step; the function only returns that exact command as a diagnostic hint
+when no `roblox` namespace exists yet, and returns no hint at all when
+one already does (whatever it points at — this module never judges an
+existing declaration as "unrelated" and never touches it). Verified with
+a test that fails if `save_global_registry` is ever invoked.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
