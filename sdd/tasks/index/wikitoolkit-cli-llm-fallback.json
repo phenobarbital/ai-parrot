@@ -14,14 +14,14 @@
       "feature_id": "FEAT-531",
       "feature": "wikitoolkit-cli-llm-fallback",
       "spec": "sdd/specs/wikitoolkit-cli-llm-fallback.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundational module — TASK-2893 and TASK-2894 both import it, so it must land first. No sibling task exists at the same dependency depth to parallelize against.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2892-detection-helper.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-531",
       "feature": "wikitoolkit-cli-llm-fallback",
       "spec": "sdd/specs/wikitoolkit-cli-llm-fallback.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2892"],
+      "depends_on": [
+        "TASK-2892"
+      ],
       "parallel": true,
       "parallelism_notes": "Touches only packages/ai-parrot/src/parrot/knowledge/bookstore/_llm.py and its own test file — disjoint from TASK-2894's wiki/cli.py changes. Safe to run in a separate worktree concurrently with TASK-2894 once TASK-2892 is complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2893-bookstore-fallback.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-531",
       "feature": "wikitoolkit-cli-llm-fallback",
       "spec": "sdd/specs/wikitoolkit-cli-llm-fallback.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2892"],
+      "depends_on": [
+        "TASK-2892"
+      ],
       "parallel": true,
       "parallelism_notes": "Touches only packages/ai-parrot/src/parrot/knowledge/wiki/cli.py and its test file — disjoint from TASK-2893's bookstore/_llm.py changes. Safe to run in a separate worktree concurrently with TASK-2893 once TASK-2892 is complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2894-wikitoolkit-fallback.md"
     },
@@ -68,14 +72,17 @@
       "feature_id": "FEAT-531",
       "feature": "wikitoolkit-cli-llm-fallback",
       "spec": "sdd/specs/wikitoolkit-cli-llm-fallback.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2893", "TASK-2894"],
+      "depends_on": [
+        "TASK-2893",
+        "TASK-2894"
+      ],
       "parallel": false,
       "parallelism_notes": "Documents and regression-tests the combined behavior of both TASK-2893 and TASK-2894 — must run after both are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2895-docs-and-regression.md"
     }
