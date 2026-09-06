@@ -181,6 +181,42 @@ Do not use the historical `sdd/tasks/.index.json`.
 
 ## Completion Note
 
-To be completed by the implementing agent after verification; this task is pending.
-Record completed-by identity, date, exact checks/results, measured limits where
-applicable, and any deviations from the approved scope.
+**Completed by**: sdd-worker (Claude Sonnet 5), 2026-09-06.
+
+**Checks run**:
+- `uv run pytest tests/knowledge/wiki/roblox/test_incremental_enrichment.py -q` → 6 passed.
+- Full regression: `tests/knowledge/wiki/roblox/ tests/knowledge/wiki/test_cli.py tests/knowledge/wiki/test_repo_scan.py` → 255 passed.
+- `ruff check --target-version py311` on all 3 owned files → 1 pre-existing, unrelated `F821` at cli.py:427 (same one confirmed in TASK-2908, still present, still out of scope).
+- `black --check` (roblox/enrichment_state.py + test file) clean; `black --diff` on cli.py → 0 diff (hand-formatted).
+- `isort --check-only` clean; cli.py adds no new top-level imports (all new imports are function-local, matching the existing lazy-roblox-import convention).
+- Full log: `artifacts/logs/task-2909-roblox-incremental-persistence.log`.
+
+**Delivered**: `roblox/enrichment_state.py` (atomic per-plane digest
+map). `cli.py`'s `_apply_roblox_enrichment()`/`_load_active_roblox_catalog()`/
+`_discovered_paths_for_mapping()`/`_record_roblox_enrichment_success()`,
+wired into both `build`'s and `upsert`'s pipelines before
+`_ingest_files()`. `_ingest_files()` gained `force_rel_paths` (additive,
+`None`-default preserves the exact prior staleness rule for every other
+caller — verified via the full `test_cli.py` regression) and now folds
+`FileSlice.external_edges` into each source's own edge write.
+
+**Design decisions on record**:
+- `RobloxApiCatalog` was never persisted as a standalone artifact by
+  TASK-2902 — reconstructed here by reading the published generation's
+  own read-only SQLite plane's `roblox-class`/`roblox-enum` category
+  pages (title -> concept_id), never a new acquisition or network call.
+- For a partial `upsert`, the DataModel mapping is built from the
+  CURRENT scan's files UNION every rel_path already in the source
+  manifest (a cheap manifest read, not a second filesystem walk) —
+  documented as a known limitation for a repository that has never had
+  a full `build` and is only ever touched via partial `upsert` (its
+  mapping would be limited to whatever has been upserted so far;
+  TASK-2898's resolver already degrades any genuinely unresolvable
+  target to "not found" rather than guessing, so this never produces a
+  wrong answer, only a possibly-incomplete one until the next full build).
+- Same hand-formatting discipline as TASK-2908 for cli.py, for the same
+  reason (FEAT-531 concurrency risk) — diff verified purely additive and
+  independently black/isort-clean without a whole-file pass.
+
+**No deviations from file scope**: only the three files listed in the
+task's Files to Create/Modify table were touched.
