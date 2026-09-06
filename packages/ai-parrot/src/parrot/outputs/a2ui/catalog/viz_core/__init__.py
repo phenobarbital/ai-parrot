@@ -1,14 +1,14 @@
-"""The ``viz-core`` A2UI catalog — identity and instructions (FEAT-529 Module 0).
+"""The ``viz-core`` A2UI catalog — identity, instructions, and registrations
+(FEAT-529 Modules 0 and 2).
 
 ``viz-core`` is the third A2UI catalog (alongside the official Basic Catalog
 and the Parrot catalog): a library-agnostic, "describe what, never how"
-visualization vocabulary. This module carries only the catalog's IDENTITY —
-its id and its header-level LLM instructions (spec §2 Overview) — not any
-registered component. ``Graph`` (FEAT-529 Module 2, ``catalog/viz_core/
-graph.py``) is the first component to register under
-:data:`VIZ_CORE_CATALOG_ID`; importing it here for its registration side
-effect is that module's job, not this one's — this package intentionally
-registers nothing so Module 0 can land and be tested on its own.
+visualization vocabulary. This module carries the catalog's IDENTITY — its
+id and its header-level LLM instructions (spec §2 Overview) — and, at the
+bottom (AFTER those constants exist — ``graph.py`` imports
+``VIZ_CORE_CATALOG_ID`` back from this package, so the order matters),
+imports each registered component module for its ``@register_component``
+side effect. ``Graph`` (Module 2) is the first and, so far, only one.
 
 :data:`VIZ_CORE_INSTRUCTIONS` is copied VERBATIM from the design artifact's
 own ``instructions`` field (vendored at ``catalog/viz_core/spec/catalog.json``,
@@ -66,3 +66,10 @@ VIZ_CORE_INSTRUCTIONS: Final[str] = (
     "9. Do not set `metadata.extensions` render hints unless a human asked "
     "for a library-specific override; they are non-portable."
 )
+
+# Imported LAST, after VIZ_CORE_CATALOG_ID/VIZ_CORE_INSTRUCTIONS are defined
+# above — `graph.py` imports VIZ_CORE_CATALOG_ID back from this package at
+# ITS OWN top level, so this package must have already defined it (same
+# forward-reference discipline as `catalog/parrot/__init__.py`'s own
+# registration imports, `catalog/parrot/__init__.py:13-24`).
+from parrot.outputs.a2ui.catalog.viz_core import graph  # noqa: E402,F401

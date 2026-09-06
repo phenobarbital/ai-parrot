@@ -16,6 +16,8 @@ from parrot.outputs.a2ui.catalog.export import export_catalog_definition
 from parrot.outputs.a2ui.catalog.parrot import chart as chart_mod
 from parrot.outputs.a2ui.catalog.parrot import datatable as datatable_mod
 from parrot.outputs.a2ui.catalog.parrot import map as map_mod
+from parrot.outputs.a2ui.catalog.viz_core import graph as graph_mod
+from parrot.outputs.a2ui.graph import GraphSpec
 from parrot.outputs.a2ui.models import Component, CreateSurface
 
 
@@ -57,6 +59,32 @@ def test_datatable_schema_parity_unchanged():
     """
     previous_hand_written = {"columns", "totalRows", "truncated", "data"}
     assert previous_hand_written <= set(datatable_mod.DATATABLE_SCHEMA["properties"])
+
+
+def test_graph_schema_has_all_spec_fields():
+    """FEAT-529: every GraphSpec alias (plus `action`) is a GRAPH_SCHEMA property."""
+    aliases = {field.alias or name for name, field in GraphSpec.model_fields.items()} - {"data"}
+    assert aliases <= set(graph_mod.GRAPH_SCHEMA["properties"])
+    assert "action" in graph_mod.GRAPH_SCHEMA["properties"]
+    assert graph_mod.GRAPH_SCHEMA["properties"]["action"] == {
+        "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/Action"
+    }
+    # `data` is the binding descriptor, not the raw GraphSpec.data shape.
+    assert "path" not in graph_mod.GRAPH_SCHEMA["properties"]["data"].get("properties", {})
+
+
+def test_graph_schema_has_no_colour_vocabulary():
+    """FEAT-529 G9: no property name or enum value looks like styling vocabulary."""
+    import json
+    import re
+
+    blob = json.dumps(graph_mod.GRAPH_SCHEMA).lower()
+    for forbidden in ("color", "colour", "palette", "font"):
+        assert forbidden not in blob
+    # Word-boundary match for "hex" (would otherwise flag the legitimate
+    # "hexagon" node shape) and "px" (would otherwise flag "expression").
+    assert re.search(r"\bhex\b", blob) is None
+    assert re.search(r"\bpx\b", blob) is None
 
 
 def _surface(component: Component) -> CreateSurface:
