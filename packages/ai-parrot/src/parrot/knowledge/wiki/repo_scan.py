@@ -226,6 +226,18 @@ class FileSlice(BaseModel):
             (FEAT-498), empty when the structural backend did not run.
         refs: Unresolved symbol references extracted for this file
             (FEAT-498), empty when the structural backend did not run.
+        external_edges: Cross-plane reference edges (FEAT-532) —
+            ``(src_concept_id, qualified_dst, rel)`` tuples pointing
+            outside this repository's own file graph (e.g. a Luau file
+            referencing the federated Roblox API plane). Deliberately a
+            generic, language-agnostic carrier: empty for every language
+            except where an opt-in enrichment step (e.g.
+            :mod:`parrot.knowledge.wiki.roblox.enrichment`) attaches
+            them. Kept entirely separate from :attr:`imports`/
+            ``build_import_edges()`` and from :attr:`refs` (the
+            structural symbol resolver) — an external edge is never fed
+            through :meth:`~parrot.knowledge.wiki.languages.base.LanguageScanner.resolve_import`
+            and never wrapped in a local ``file:`` id.
     """
 
     rel_path: str
@@ -234,6 +246,7 @@ class FileSlice(BaseModel):
     language: str | None = None
     symbols: list[SymbolRecord] = Field(default_factory=list)
     refs: list[SymbolRef] = Field(default_factory=list)
+    external_edges: list[tuple[str, str, str]] = Field(default_factory=list)
 
 
 class RepoScan(BaseModel):
