@@ -8,7 +8,7 @@ base_branch: dev
 
 # Feature Specification: Bookstore Conceptual Relations — a book graph with communities over the ficha catalog
 
-**Feature ID**: FEAT-XXX
+**Feature ID**: FEAT-533
 **Date**: 2026-09-06
 **Author**: Jesus Lara (spec: Claude session 2026-09-06)
 **Status**: draft
@@ -853,7 +853,7 @@ No new required dependency.
 ## Worktree Strategy
 
 - **Default isolation unit**: `per-spec` — one worktree
-  `.claude/worktrees/feat-XXX-wikitoolkit-bookstore-conceptual-relations`
+  `.claude/worktrees/feat-533-wikitoolkit-bookstore-conceptual-relations`
   branched from `dev`; tasks run sequentially in dependency order
   M0 → M1 → M2 → M3 → M4 → M5.
 - **Parallelisable**: M0 touches only `graphindex/communities.py` + its

@@ -16,14 +16,14 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2897, TASK-2900, TASK-2901, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2896-luau-resource-measurement.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2903, TASK-2904, TASK-2905 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2897-roblox-shared-models.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2900, TASK-2901, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2898-roblox-project-resolution.md",
       "execution_gate": "TASK-2896 must record reviewed resource limits before mapping implementation starts."
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2900, TASK-2901, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2899-luau-scanner.md",
       "execution_gate": "Do not start until TASK-2896 has measured and recorded review of its resource policy; fixed thresholds are not guessed from the spec."
@@ -96,7 +96,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,7 +105,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2898, TASK-2899, TASK-2901, TASK-2903, TASK-2904, TASK-2905, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2900-roblox-api-acquisition.md"
     },
@@ -116,7 +116,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,7 +125,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2898, TASK-2899, TASK-2900, TASK-2903, TASK-2904, TASK-2905 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2901-roblox-api-renderer.md"
     },
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,7 +146,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2898, TASK-2899, TASK-2903, TASK-2904, TASK-2905, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2902-roblox-api-publication.md"
     },
@@ -157,14 +157,14 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2897, TASK-2898, TASK-2899, TASK-2900, TASK-2901, TASK-2902, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2903-federation-external-edge-writes.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -184,7 +184,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2897, TASK-2898, TASK-2899, TASK-2900, TASK-2901, TASK-2902, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Shared-file edits are serialized after TASK-2903. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2904-federation-reference-routing.md"
     },
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2897, TASK-2898, TASK-2899, TASK-2900, TASK-2901, TASK-2902, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Shared-file edits are serialized after TASK-2903, TASK-2904. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2905-federation-edge-health.md"
     },
@@ -215,7 +215,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -225,7 +225,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2900, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2906-roblox-api-reference-candidates.md"
     },
@@ -236,7 +236,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -246,7 +246,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2900, TASK-2902, TASK-2903, TASK-2904, TASK-2905, TASK-2908 once each task's own prerequisites are complete; owned files are disjoint. Shared-file edits are serialized after TASK-2899. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2907-roblox-scan-enrichment.md"
     },
@@ -257,7 +257,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -267,7 +267,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in a separate implementation worktree alongside TASK-2896, TASK-2898, TASK-2899, TASK-2906, TASK-2907 once each task's own prerequisites are complete; owned files are disjoint. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2908-roblox-api-cli.md"
     },
@@ -278,7 +278,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -288,7 +288,7 @@
       "parallel": false,
       "parallelism_notes": "Final dependent deliverable; no independent sibling work remains. Shared-file edits are serialized after TASK-2908. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2909-roblox-incremental-persistence.md"
     },
@@ -299,7 +299,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -308,7 +308,7 @@
       "parallel": false,
       "parallelism_notes": "Final dependent deliverable; no independent sibling work remains. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2910-roblox-end-to-end-validation.md"
     },
@@ -319,7 +319,7 @@
       "feature_id": "FEAT-532",
       "feature": "wikitoolkit-luau-roblox",
       "spec": "sdd/specs/wikitoolkit-luau-roblox.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -328,7 +328,7 @@
       "parallel": false,
       "parallelism_notes": "Final dependent deliverable; no independent sibling work remains. Do not share an implementation checkout between parallel writers. Per-spec index updates require coordination.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-06T03:24:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2911-roblox-docs-ci.md"
     }
