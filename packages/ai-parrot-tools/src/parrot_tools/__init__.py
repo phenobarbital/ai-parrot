@@ -74,6 +74,8 @@ TOOL_REGISTRY: dict[str, str] = {
     "google_reviews": "parrot_tools.google.tools.GoogleReviewsTool",
     "google_traffic": "parrot_tools.google.tools.GoogleTrafficTool",
     "google_routes": "parrot_tools.google.tools.GoogleRoutesTool",
+    "google_lyria": "parrot_tools.google.lyria.LyriaToolkit",
+    "lyria": "parrot_tools.google.lyria.LyriaToolkit",
     "graph_index": "parrot_tools.graphindex.toolkit.GraphIndexToolkit",
     "google_voice": "parrot_tools.gvoice.GoogleVoiceTool",
     "ibis_world": "parrot_tools.ibisworld.tool.IBISWorldTool",
