@@ -2710,6 +2710,17 @@ def _extract_into_graph(
         Extraction summary dict, or ``None`` when unavailable/failed.
     """
     spec = _env_setting("WIKI_EXTRACT_LLM")
+    if not spec and not _env_setting("PARROT_NO_AUTO_LLM"):
+        from parrot.clients.detection import detect_coding_agent_llm
+
+        detected = detect_coding_agent_llm()
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_EXTRACT_LLM — a coding-agent CLI "
+                "session was detected. Set WIKI_EXTRACT_LLM to override, or "
+                "PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            spec = detected
     if not spec:
         click.echo("[extract skipped: set WIKI_EXTRACT_LLM (e.g." " 'anthropic:claude-haiku-4-5') to enable]")
         return None
@@ -3711,8 +3722,22 @@ def ingest(
             for uri in skipped:
                 click.echo(f"  skipped: {uri}")
 
-    lightweight_model = _resolve_model_id(lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL")
-    model = _resolve_model_id(model_opt, "WIKI_MODEL")
+    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
+    model_value = model_opt or _env_setting("WIKI_MODEL")
+    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+        from parrot.clients.detection import detect_coding_agent_llm
+
+        detected = detect_coding_agent_llm()
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
+                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
+                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            lightweight_model_value = detected
+            model_value = detected
+    lightweight_model = _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL")
+    model = _resolve_model_id(model_value, "WIKI_MODEL")
     light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
