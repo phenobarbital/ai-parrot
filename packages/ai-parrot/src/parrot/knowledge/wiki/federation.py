@@ -1282,8 +1282,91 @@ class FederatedWikiStore(BaseWikiStore):
         return await self._local.orphan_sources()
 
     async def broken_edges(self) -> list[dict[str, Any]]:
-        """Lint the local plane only."""
-        return await self._local.broken_edges()
+        """Classify the local plane's broken-edge candidates at the
+        federated boundary (FEAT-532 TASK-2905).
+
+        ``self._local.broken_edges()`` (standalone ``BaseWikiStore``
+        behavior, unchanged) reports every edge whose ``dst`` is neither
+        a local page nor a local source — that necessarily includes
+        every foreign-qualified destination TASK-2903 now allows storing
+        verbatim, since a foreign id is never a local page. This method
+        resolves each such candidate against the actual federation
+        state instead of leaving it a false positive OR silently
+        dropping it:
+
+        - **Resolved** (the foreign page exists in an available
+          namespace) — healthy, excluded from the report entirely.
+        - **Missing in an available namespace** (e.g. a typo'd class
+          name) — still reported, ``status="broken"``. A namespace being
+          *available* is exactly what makes this a real finding, not a
+          guess.
+        - **Namespace unavailable/unbuilt** — reported separately as
+          ``status="unverifiable"``, never silently treated as healthy
+          and never conflated with a genuine local broken edge.
+        - A malformed or purely local ``dst`` (no valid ``::`` prefix,
+          or naming this store's own local plane) is never
+          blanket-ignored just because it happens to contain ``::`` —
+          it is reported as an ordinary local ``status="broken"`` edge,
+          same as before this task.
+
+        No API/CDN/GitHub network probe of any kind — resolution is a
+        read-only ``get_page`` against an already-opened namespace
+        store, or a plain dict lookup when the namespace was never
+        resolved at all.
+
+        Returns:
+            The local plane's broken-edge candidates, each augmented
+            with a ``status`` field (``"broken"`` or ``"unverifiable"``)
+            and, for namespace-related findings, a ``reason``. Resolved
+            foreign edges are omitted.
+        """
+        candidates = await self._local.broken_edges()
+        classified: list[dict[str, Any]] = []
+        for edge in candidates:
+            dst = str(edge.get("dst", ""))
+            namespace, local_id = split_namespaced_id(dst)
+            if namespace is None or namespace == self.local_name:
+                # Ordinary local broken edge — never suppressed just
+                # because the (malformed-looking) id contains "::".
+                classified.append({**edge, "status": "broken"})
+                continue
+
+            handle = self.namespaces.get(namespace)
+            if handle is None:
+                classified.append(
+                    {
+                        **edge,
+                        "status": "unverifiable",
+                        "reason": f"namespace {namespace!r} is not an available/built namespace",
+                    }
+                )
+                continue
+
+            try:
+                page = await handle.store.get_page(local_id, include_body=False)
+            except Exception as exc:  # noqa: BLE001 — a broken namespace is a note, not fatal
+                self.logger.warning("Namespace %s failed resolving broken-edge candidate %s: %s", namespace, dst, exc)
+                classified.append(
+                    {
+                        **edge,
+                        "status": "unverifiable",
+                        "reason": f"namespace {namespace!r} unreachable: {exc}",
+                    }
+                )
+                continue
+
+            if page is None:
+                classified.append(
+                    {
+                        **edge,
+                        "status": "broken",
+                        "reason": f"missing in available namespace {namespace!r}",
+                    }
+                )
+                continue
+            # Resolved: a real, existing page in an available namespace
+            # — healthy, excluded from the report.
+        return classified
 
     async def missing_bodies(self) -> list[str]:
         """Lint the local plane only."""
