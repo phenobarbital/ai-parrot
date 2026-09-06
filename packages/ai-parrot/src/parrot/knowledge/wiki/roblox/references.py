@@ -199,14 +199,16 @@ def _extract_type_annotations(
     return out
 
 
-def _extract_candidates_worker(source_bytes: bytes) -> dict[str, Any]:
-    """Module-level, picklable: parse + extract entirely inside the
-    isolated child process spawned by :func:`luau_guard.run_isolated`."""
-    import tree_sitter_luau
-    from tree_sitter import Language, Parser
+def _extract_candidates_worker(parser: Any, source_bytes: bytes) -> dict[str, Any]:
+    """Parse + extract using an already-loaded, cached ``Parser``.
 
-    ts_language = Language(tree_sitter_luau.language())
-    parser = Parser(ts_language)
+    Runs synchronously, in-process — per
+    ``docs/design/luau-parser-resource-policy.md`` §1/§3, per-file
+    subprocess isolation is reserved for the offline benchmark/CI
+    regression path, never a per-file production hot path (this function
+    runs once per enrichment-eligible Luau file, mirroring
+    :mod:`parrot.knowledge.wiki.languages.luau`'s ``outline()``).
+    """
     tree = parser.parse(source_bytes)
     root = tree.root_node
 
@@ -266,13 +268,15 @@ def extract_api_reference_candidates(
     source_bytes = source.encode("utf-8")
     if not luau_guard.admit_for_treesitter(source_bytes):
         return [], [f"source exceeds {luau_guard.BYTE_LIMIT}-byte guard, skipped API reference extraction"]
-    if treesitter.get_parser("luau") is None:
+    parser = treesitter.get_parser("luau")
+    if parser is None:
         return [], ["tree-sitter-luau grammar unavailable, skipped API reference extraction"]
 
-    result, error = luau_guard.run_isolated(_extract_candidates_worker, (source_bytes,), luau_guard.DEADLINE_SECONDS)
-    if error is not None:
-        logger.debug("API reference extraction guard failed: %s", error)
-        return [], [f"extraction guard failed ({error}), skipped API reference extraction"]
+    try:
+        result = _extract_candidates_worker(parser, source_bytes)
+    except Exception as exc:  # noqa: BLE001 - degrade, never raise
+        logger.debug("API reference extraction failed: %s", exc)
+        return [], [f"extraction failed ({exc}), skipped API reference extraction"]
 
     known_names = set(catalog.classes) | set(catalog.enums)
     seen: set[tuple[str, str, str]] = set()

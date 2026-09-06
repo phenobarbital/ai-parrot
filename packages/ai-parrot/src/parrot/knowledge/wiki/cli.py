@@ -840,8 +840,13 @@ async def _load_active_roblox_catalog() -> Any | None:
     generation_store = SQLiteWikiStore(gen_dir / "wiki.db", read_only=True)
     class_pages = await generation_store.list_pages(category="roblox-class", limit=1_000_000)
     enum_pages = await generation_store.list_pages(category="roblox-enum", limit=1_000_000)
-    classes = {str(p["title"]): str(p["concept_id"]) for p in class_pages}
-    enums = {str(p["title"]): str(p["concept_id"]) for p in enum_pages}
+    # Derive the raw API name from the concept_id (`class/<Name>` / `enum/<Name>`),
+    # never from `title` — enum pages render their title as "<Name> (Enum)"
+    # (render.py's `_render_enum_body` display convention), which would silently
+    # never match a raw extracted reference name (e.g. "Material") if used as
+    # the catalog key here.
+    classes = {str(p["concept_id"]).removeprefix("class/"): str(p["concept_id"]) for p in class_pages}
+    enums = {str(p["concept_id"]).removeprefix("enum/"): str(p["concept_id"]) for p in enum_pages}
     return RobloxApiCatalog(generation_id=pointer.generation_id, classes=classes, enums=enums)
 
 

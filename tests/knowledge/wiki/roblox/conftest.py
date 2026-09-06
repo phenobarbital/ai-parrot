@@ -96,7 +96,7 @@ def mixed_repo(tmp_path: Path) -> Path:
     return repo
 
 
-async def _publish_generation_async(class_names: list[str], generation_id: str) -> None:
+async def _publish_generation_async(class_names: list[str], generation_id: str, enum_names: list[str] = ()) -> None:
     gen_dir = roblox_generations.generation_dir_for(generation_id)
     store = create_wiki_store(gen_dir, wiki_name="roblox-api", backend="sqlite")
     pages = [
@@ -109,6 +109,21 @@ async def _publish_generation_async(class_names: list[str], generation_id: str) 
         )
         for name in class_names
     ]
+    # Enum pages render with a display title of "<Name> (Enum)" (render.py's
+    # `_render_enum_body` convention) — deliberately mirrored here so any
+    # regression that keys a reloaded catalog by page title instead of the
+    # raw name (concept_id's `enum/<Name>` suffix) is caught by a test
+    # publishing through the exact same page shape production code writes.
+    pages.extend(
+        WikiPageRecord(
+            concept_id=f"enum/{name}",
+            title=f"{name} (Enum)",
+            category="roblox-enum",
+            summary=f"The {name} enum.",
+            body=f"# {name} (Enum)\n\nThe {name} API enum.",
+        )
+        for name in enum_names
+    )
     await store.upsert_pages(pages)
     manifest = {
         "studio_version": "0.123.0.456789",
@@ -116,7 +131,7 @@ async def _publish_generation_async(class_names: list[str], generation_id: str) 
         "renderer_schema_version": 1,
         "downloaded_at": "2026-01-01T00:00:00+00:00",
         "class_count": len(class_names),
-        "enum_count": 0,
+        "enum_count": len(enum_names),
         "structural_only_count": 0,
     }
     pointer = roblox_generations.ActivePointer(generation_id, manifest)
@@ -127,11 +142,12 @@ async def _publish_generation_async(class_names: list[str], generation_id: str) 
 
 @pytest.fixture
 def publish_roblox_generation():
-    """``publish_roblox_generation(["Players", "Workspace"])`` — publishes
-    a tiny, hand-authored generation with the given class names, entirely
-    offline (real temporary SQLite planes, no acquisition code invoked)."""
+    """``publish_roblox_generation(["Players", "Workspace"], enum_names=["Material"])``
+    — publishes a tiny, hand-authored generation with the given class/enum
+    names, entirely offline (real temporary SQLite planes, no acquisition
+    code invoked)."""
 
-    def _publish(class_names: list[str], generation_id: str = "gen-e2e") -> None:
-        aio(_publish_generation_async(class_names, generation_id))
+    def _publish(class_names: list[str], generation_id: str = "gen-e2e", enum_names: list[str] = ()) -> None:
+        aio(_publish_generation_async(class_names, generation_id, enum_names))
 
     return _publish

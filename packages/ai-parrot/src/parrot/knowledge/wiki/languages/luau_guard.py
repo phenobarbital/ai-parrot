@@ -15,11 +15,20 @@ and recorded in ``docs/design/luau-parser-resource-policy.md`` §3:
    ``tree_sitter.Parser`` exposes no cancellation/timeout attribute, so
    neither an ``asyncio`` cancellation nor a ``threading.Thread`` join
    can interrupt a stalled native parse; only process termination can.
-   This guard therefore runs the parse-and-extract job in a **freshly
-   forked child process per call** and terminates (SIGTERM, escalating
-   to SIGKILL) it on deadline expiry — the same mechanism TASK-2896's
-   benchmark harness verified, applied here as the scanner's actual
-   per-file enforcement rather than only an offline/CI measurement tool.
+   This guard forks a child process per call and terminates (SIGTERM,
+   escalating to SIGKILL) it on deadline expiry.
+
+   Per ``docs/design/luau-parser-resource-policy.md`` §1/§3, this is
+   **NOT** wired into :meth:`~parrot.knowledge.wiki.languages.luau.LuauScanner.outline`'s
+   per-file production hot path — the measured pre-parse byte cap
+   (:func:`admit_for_treesitter`) already bounds worst-case wall time to
+   well under the deadline, and tree-sitter's own error recovery does
+   not hang or raise at these sizes, so there is nothing left for a
+   per-file fork to usefully cancel there. :func:`run_isolated` is
+   reserved for the *offline benchmark/CI regression* path
+   (``scripts/benchmarks/luau_parser_limits.py``,
+   ``test_resource_corpus.py``) — the guard against a future
+   tree-sitter-luau grammar regression that reintroduces a genuine hang.
 
    Deliberately uses the ``"fork"`` start method where available (cheap:
    no full interpreter re-init) rather than ``"spawn"``: TASK-2896 used
@@ -99,6 +108,20 @@ def error_density(root: Any) -> float:
     return errors / total if total else 0.0
 
 
+def _run_and_report(fn: Callable[..., T], args: tuple[Any, ...], queue: mp.Queue) -> None:
+    """Child-process entry point: run ``fn(*args)`` and report the result.
+
+    Deliberately a plain module-level function (never a closure) so it
+    stays picklable-by-reference under the ``"spawn"`` start method —
+    only ``fn``/``args``/``queue`` (passed as ``Process(args=...)``, thus
+    pickled independently) carry the actual job-specific state.
+    """
+    try:
+        queue.put({"ok": True, "value": fn(*args)})
+    except Exception as exc:  # noqa: BLE001 - reported to parent, not raised
+        queue.put({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
 def run_isolated(
     fn: Callable[..., T], args: tuple[Any, ...], deadline_seconds: float = DEADLINE_SECONDS
 ) -> tuple[T | None, str | None]:
@@ -121,13 +144,7 @@ def run_isolated(
     ctx = mp.get_context(start_method)
     queue: mp.Queue = ctx.Queue()
 
-    def _run() -> None:
-        try:
-            queue.put({"ok": True, "value": fn(*args)})
-        except Exception as exc:  # noqa: BLE001 - reported to parent, not raised
-            queue.put({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
-
-    process = ctx.Process(target=_run, daemon=True)
+    process = ctx.Process(target=_run_and_report, args=(fn, args, queue), daemon=True)
     process.start()
     process.join(timeout=deadline_seconds)
 
@@ -139,10 +156,16 @@ def run_isolated(
             process.join(timeout=1.0)
         return None, "timeout"
 
-    if not queue.empty():
-        payload = queue.get()
-        if payload["ok"]:
-            return payload["value"], None
-        return None, payload["error"]
-
-    return None, f"child exited (code={process.exitcode}) with no result"
+    try:
+        # A short, bounded `get(timeout=...)` rather than `empty()` + `get()`
+        # — `Queue.empty()` can read stale/false before the feeder thread has
+        # flushed a just-`put()` item, a documented multiprocessing race. The
+        # child has already exited at this point (checked above), so the
+        # item — if the child produced one — is either already flushed or
+        # arrives within a small, bounded window.
+        payload = queue.get(timeout=1.0)
+    except Exception:  # noqa: BLE001 - queue.Empty or any other queue failure
+        return None, f"child exited (code={process.exitcode}) with no result"
+    if payload["ok"]:
+        return payload["value"], None
+    return None, payload["error"]

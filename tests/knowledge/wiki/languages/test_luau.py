@@ -157,33 +157,39 @@ def test_guard_combination_oversized_for_treesitter_falls_back_to_heuristic(scan
 
 
 @requires_treesitter
-def test_guard_combination_timeout_terminates_and_cleans_up(scanner: LuauScanner, monkeypatch):
-    """A deliberately-stalled guard call terminates within the deadline,
-    leaves no child running, and the scanner degrades to heuristic output
-    rather than hanging or raising."""
+def test_guard_combination_parse_exception_falls_back_to_heuristic(scanner: LuauScanner, monkeypatch):
+    """A treesitter parse-time exception degrades to the heuristic path
+    rather than raising or producing a fully-empty outline.
 
-    def _stalled_run_isolated(fn, args, deadline_seconds=None):
-        return None, "timeout"
+    Per ``docs/design/luau-parser-resource-policy.md`` §1/§3, ``outline()``
+    runs tree-sitter synchronously, in-process (no per-file subprocess
+    isolation — that mechanism is reserved for the offline benchmark/CI
+    regression path). This exercises the in-process failure branch."""
+    import parrot.knowledge.wiki.languages.luau as luau_module
 
-    monkeypatch.setattr(luau_guard, "run_isolated", _stalled_run_isolated)
+    def _boom(parser, source_bytes):
+        raise RuntimeError("simulated parse failure")
+
+    monkeypatch.setattr(luau_module, "_run_treesitter_outline", _boom)
 
     start = time.monotonic()
     outline = scanner.outline(_VALID_SOURCE, "src/Module.luau")
     elapsed = time.monotonic() - start
 
     assert elapsed < 5.0
-    # Degrades to the heuristic path rather than an empty outline — the
-    # guard failure is logged, not silently total data loss, when a
-    # bounded fallback can still produce something useful.
     joined = "\n".join(outline.outline)
     assert "function Module.add(a: number, b: number): number" in joined
 
 
-@requires_treesitter
-def test_guard_combination_real_kill_leaves_clean_state_for_next_parse(scanner: LuauScanner):
-    """Exercises the REAL subprocess-kill path (not monkeypatched) with a
-    tiny deadline, then verifies a subsequent normal parse is unaffected —
-    mirrors TASK-2896's ``test_following_parse_is_clean``."""
+def test_run_isolated_real_kill_leaves_clean_state_for_next_parse(scanner: LuauScanner):
+    """Exercises the REAL subprocess-kill path of :func:`luau_guard.run_isolated`
+    directly (not monkeypatched, and not through ``outline()`` — which no
+    longer routes through it, per the design doc) with a tiny deadline,
+    then verifies a subsequent normal scanner parse is unaffected —
+    mirrors TASK-2896's ``test_following_parse_is_clean``. ``run_isolated``
+    itself remains exercised here because it is still the enforcement
+    mechanism for the offline benchmark/CI regression path
+    (``scripts/benchmarks/luau_parser_limits.py``, ``test_resource_corpus.py``)."""
     result, error = luau_guard.run_isolated(_stall_forever, (b"irrelevant",), deadline_seconds=0.3)
     assert result is None
     assert error == "timeout"

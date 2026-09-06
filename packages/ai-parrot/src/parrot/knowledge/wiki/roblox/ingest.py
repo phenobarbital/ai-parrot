@@ -21,6 +21,7 @@ only returns the exact command as a hint.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import UTC, datetime
@@ -130,7 +131,7 @@ async def _build_generation(
             (this function never touches the active pointer).
     """
     gen_dir = generations.generation_dir_for(generation_id)
-    gen_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(gen_dir.mkdir, parents=True, exist_ok=True)
 
     store = create_wiki_store(gen_dir, wiki_name="roblox-api", backend="sqlite")
     await store.upsert_pages(rendered.pages)
@@ -145,7 +146,7 @@ async def _build_generation(
     await validator.broken_edges()
 
     manifest = _build_manifest(payloads, rendered)
-    _save_payloads(generation_id, payloads)
+    await asyncio.to_thread(_save_payloads, generation_id, payloads)
     return manifest
 
 

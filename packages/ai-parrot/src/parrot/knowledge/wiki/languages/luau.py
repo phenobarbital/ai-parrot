@@ -298,18 +298,19 @@ def _ts_walk(root: Any, source_bytes: bytes) -> tuple[str, list[str]]:
     return summary, lines
 
 
-def _treesitter_outline_worker(source_bytes: bytes) -> dict[str, Any]:
-    """Module-level, picklable: parse + extract, entirely inside the
-    isolated child process spawned by :func:`luau_guard.run_isolated`.
+def _run_treesitter_outline(parser: Any, source_bytes: bytes) -> dict[str, Any]:
+    """Parse + extract using an already-loaded, cached ``Parser``.
 
-    Returns a plain, picklable dict — never a tree-sitter ``Tree``/``Node``
-    (those cannot cross a process boundary).
+    Runs synchronously, in-process — per
+    ``docs/design/luau-parser-resource-policy.md`` §1/§3, per-file
+    subprocess isolation is reserved for the offline benchmark/CI
+    regression path (:mod:`scripts.benchmarks.luau_parser_limits`,
+    ``test_resource_corpus.py``), never the production ``outline()`` hot
+    path: the measured pre-parse byte cap (:func:`luau_guard.admit_for_treesitter`)
+    already bounds worst-case wall time, and TASK-2896 measured that
+    tree-sitter's own error recovery does not hang or raise at these
+    sizes — there is nothing left for a per-file fork to usefully cancel.
     """
-    import tree_sitter_luau
-    from tree_sitter import Language, Parser
-
-    ts_language = Language(tree_sitter_luau.language())
-    parser = Parser(ts_language)
     tree = parser.parse(source_bytes)
     root = tree.root_node
     density = luau_guard.error_density(root)
@@ -434,22 +435,21 @@ class LuauScanner(LanguageScanner):
                 )
                 return LanguageOutline()
 
-            use_treesitter = luau_guard.admit_for_treesitter(source_bytes) and treesitter.get_parser("luau") is not None
+            parser = treesitter.get_parser("luau") if luau_guard.admit_for_treesitter(source_bytes) else None
 
-            if use_treesitter:
-                result, error = luau_guard.run_isolated(
-                    _treesitter_outline_worker, (source_bytes,), luau_guard.DEADLINE_SECONDS
-                )
-                if error is None:
+            if parser is not None:
+                try:
+                    result = _run_treesitter_outline(parser, source_bytes)
                     density = result["density"]
                     if density > luau_guard.DENSITY_THRESHOLD:
                         logger.debug("Luau %s parsed with high ERROR density %.2f", rel_path, density)
                     return LanguageOutline(summary=result["summary"], outline=result["outline"], imports=imports)
-                logger.debug(
-                    "Luau tree-sitter guard failed on %s (%s), falling back to heuristic",
-                    rel_path,
-                    error,
-                )
+                except Exception as exc:  # noqa: BLE001 - degrade to heuristic, never raise
+                    logger.debug(
+                        "Luau tree-sitter parse failed on %s (%s), falling back to heuristic",
+                        rel_path,
+                        exc,
+                    )
 
             summary, lines = _heuristic_outline(source)
             return LanguageOutline(summary=summary, outline=lines, imports=imports)

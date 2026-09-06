@@ -80,7 +80,9 @@ def _make_repo(tmp_path: Path, *, instance_name: str = "Main") -> Path:
     return repo
 
 
-async def _publish_fake_generation_async(class_names: list[str], generation_id: str) -> None:
+async def _publish_fake_generation_async(
+    class_names: list[str], generation_id: str, enum_names: list[str] = ()
+) -> None:
     gen_dir = roblox_generations.generation_dir_for(generation_id)
     store = create_wiki_store(gen_dir, wiki_name="roblox-api", backend="sqlite")
     pages = [
@@ -93,6 +95,22 @@ async def _publish_fake_generation_async(class_names: list[str], generation_id: 
         )
         for name in class_names
     ]
+    # Enum pages carry a "<Name> (Enum)" display title (render.py's
+    # `_render_enum_body` convention) — mirrored here deliberately so a
+    # reload-from-published-generation regression (a catalog keyed by
+    # `title` instead of the raw name derived from `concept_id`) is
+    # actually exercised by the build pipeline, not just unit-tested in
+    # isolation.
+    pages.extend(
+        WikiPageRecord(
+            concept_id=f"enum/{name}",
+            title=f"{name} (Enum)",
+            category="roblox-enum",
+            summary=f"{name} enum",
+            body=f"# {name} (Enum)",
+        )
+        for name in enum_names
+    )
     await store.upsert_pages(pages)
     manifest = {
         "studio_version": "0.1.0",
@@ -100,7 +118,7 @@ async def _publish_fake_generation_async(class_names: list[str], generation_id: 
         "renderer_schema_version": 1,
         "downloaded_at": "2026-01-01T00:00:00+00:00",
         "class_count": len(class_names),
-        "enum_count": 0,
+        "enum_count": len(enum_names),
         "structural_only_count": 0,
     }
     pointer = roblox_generations.ActivePointer(generation_id, manifest)
@@ -109,8 +127,10 @@ async def _publish_fake_generation_async(class_names: list[str], generation_id: 
     assert roblox_generations.publish_generation_cas(expected_current_id, pointer) is True
 
 
-def _publish_fake_generation(class_names: list[str], generation_id: str = "gen-test") -> None:
-    _aio(_publish_fake_generation_async(class_names, generation_id))
+def _publish_fake_generation(
+    class_names: list[str], generation_id: str = "gen-test", enum_names: list[str] = ()
+) -> None:
+    _aio(_publish_fake_generation_async(class_names, generation_id, enum_names))
 
 
 def _db_path(repo: Path) -> Path:
@@ -275,6 +295,34 @@ def test_failed_write_does_not_advance_digest(runner, isolated_parrot_home, monk
     assert retry.exit_code == 0, retry.output
     state_after_retry = roblox_enrichment_state.load_state(storage_dir)
     assert "src/Main.luau" in state_after_retry
+
+
+# ---------------------------------------------------------------------------
+# test_enum_reference_resolves_after_catalog_reload (code-review regression)
+# ---------------------------------------------------------------------------
+
+
+def test_enum_reference_resolves_after_catalog_reload(runner, isolated_parrot_home):
+    """An Enum reference resolves through the FULL published-generation
+    reload path (``cli.py``'s ``_load_active_roblox_catalog``), not just
+    the in-memory catalog a fresh render produces.
+
+    Regression coverage for a code-review finding: the reloaded catalog
+    was once keyed by page ``title`` (``"Material (Enum)"``) rather than
+    the raw name derived from ``concept_id`` (``"Material"``), which
+    silently broke every enum reference the moment a repo was built
+    against an *already-published* generation — the ordinary case for
+    every build after the first ``ingest roblox-api --refresh``.
+    """
+    repo = isolated_parrot_home.parent / "repo"
+    _write(repo, "src/Main.luau", "local m: Material\nreturn {}\n")
+    _write(repo, "README.md", "# Demo\n")
+    _publish_fake_generation(["Players"], enum_names=["Material"])
+
+    assert _build(runner, repo).exit_code == 0
+
+    edges = _dump_edges(repo)
+    assert ("file:src/Main.luau", "roblox::enum/Material", "references") in edges
 
 
 # ---------------------------------------------------------------------------

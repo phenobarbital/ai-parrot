@@ -171,15 +171,20 @@ def test_bounded_candidate_extraction_grammar_unavailable(monkeypatch):
 
 
 @requires_treesitter
-def test_bounded_candidate_extraction_guard_failure_is_diagnostic(monkeypatch):
-    def _fake_run_isolated(fn, args, deadline_seconds=None):
-        return None, "timeout"
+def test_bounded_candidate_extraction_parse_failure_is_diagnostic(monkeypatch):
+    """A parse-time exception (in-process — no per-file subprocess
+    isolation, per docs/design/luau-parser-resource-policy.md §1/§3)
+    degrades to a diagnostic, never a raise."""
+    import parrot.knowledge.wiki.roblox.references as references_module
 
-    monkeypatch.setattr(luau_guard, "run_isolated", _fake_run_isolated)
+    def _boom(parser, source_bytes):
+        raise RuntimeError("simulated parse failure")
+
+    monkeypatch.setattr(references_module, "_extract_candidates_worker", _boom)
     source = 'local x = game:GetService("Players")\n'
     candidates, diagnostics = extract_api_reference_candidates(source, _CATALOG)
     assert candidates == []
-    assert any("guard failed" in d for d in diagnostics)
+    assert any("extraction failed" in d for d in diagnostics)
 
 
 @requires_treesitter
