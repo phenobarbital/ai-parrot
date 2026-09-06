@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The codebase already has working LLM-provider clients for both Claude Code and Codex CLIs; this is an enrichment (add auto-detection + defaulting glue to two existing, well-understood resolution points) rather than an investigation into unknown behavior.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate how the bookstore CLI/MCP server resolves its LLM configuration today",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "bookstore LLM configuration default provider", "path": "."}
+    },
+    {
+      "id": "Q002",
+      "intent": "Confirm whether an ai-parrot client already wraps the Claude Agent SDK / Claude Code CLI credentials",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "Claude Agent SDK client Claude Code credentials", "path": "."}
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the full shared LLM-resolution helper to confirm the exact degraded-mode contract and env vars",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/_llm.py"}
+    },
+    {
+      "id": "Q004",
+      "intent": "Verify there is no hardcoded Gemini default anywhere in wiki/bookstore code (only illustrative doc examples)",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "gemini", "path": "packages/ai-parrot/src/parrot/knowledge/wiki/"}
+    },
+    {
+      "id": "Q005",
+      "intent": "Find the exact source of the warning the requester hit (\"No LLM configured for the bookstore\")",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "No LLM configured for the bookstore", "path": "packages/"}
+    },
+    {
+      "id": "Q006",
+      "intent": "Read the Bookstore/_NullAdapter degraded-mode design to understand the philosophy being changed",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py", "lines": [1, 100]}
+    },
+    {
+      "id": "Q007",
+      "intent": "Find wikitoolkit's own model-resolution points (WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL / WIKI_EXTRACT_LLM) in wiki/cli.py",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "LLMFactory|resolve_adapter|PARROT_WIKI|_resolve_model_id|_build_triage_adapters", "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py"}
+    },
+    {
+      "id": "Q008",
+      "intent": "Check whether an existing coding-agent CLI detector (wiki/coding_agents.py) can be reused for LLM-provider defaulting",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/coding_agents.py", "lines": [1, 160]}
+    },
+    {
+      "id": "Q009",
+      "intent": "Enumerate every registered parrot.clients entry point to confirm Claude Code and Codex both already have first-class LLMFactory providers",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "\\[project.entry-points.\\\"parrot.clients\\\"\\]", "path": "packages/", "include": "pyproject.toml"}
+    },
+    {
+      "id": "Q010",
+      "intent": "Confirm ClaudeAgentClient/OpenAICodexClient use a lazy, cheap-to-check SDK import guard rather than an eager subprocess/network call",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "_import_sdk", "path": "packages/ai-parrot-client-anthropic/,packages/ai-parrot-client-openai/"}
+    },
+    {
+      "id": "Q011",
+      "intent": "Find a documented cheap/deterministic model id for each provider (Haiku for Claude, an equivalent for Codex)",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "haiku|default_model", "path": "packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/models.py,packages/ai-parrot-client-openai/src/parrot/clients/openai/codex_agent.py"}
+    },
+    {
+      "id": "Q012",
+      "intent": "Confirm the env-var-default table in the shipped docs so the proposal's baseline claim (\"no default = none, not Gemini\") is documented, not just code-derived",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "docs/guides/llm-wiki-guide.md", "lines": [1320, 1340]}
+    }
+  ],
+  "expected_findings": [
+    "Neither bookstore nor wikitoolkit hardcodes a default LLM provider today — unset env vars mean fully degraded mode, by design.",
+    "ClaudeAgentClient (claude-agent/claude-code) and OpenAICodexClient (codex-agent/openai-codex/codex-code) are already registered LLMFactory providers — no new client code is needed.",
+    "Both clients guard the actual SDK import behind a lazy, exception-safe helper, which is the right primitive to build safe-execution detection on top of.",
+    "wiki/coding_agents.py is a precedent for CLI-name dispatch (codex/claude/gemini) but installs wiki hooks, not LLM defaults — not directly reusable, but confirms the three CLI names to detect."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["wikitoolkit", "bookstore", "Claude Agent SDK", "Claude Code", "OpenAI Codex", "Gemini", "haiku"],
+      "verbs": ["propondría", "detectar", "definir"],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {"files_read": 9, "grep_calls": 9, "git_calls": 0}
+  }
+}
