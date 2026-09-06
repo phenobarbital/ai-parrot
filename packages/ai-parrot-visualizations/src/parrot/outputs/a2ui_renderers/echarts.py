@@ -19,20 +19,38 @@ from typing import Any
 
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
-from parrot.outputs.a2ui.catalog.base import BasicNode
-from parrot.outputs.a2ui.models import CreateSurface
+from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID, BasicNode
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.graph import GraphEdge, GraphSpec, compute_positions
+from parrot.outputs.a2ui.models import Component, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
 from parrot.outputs.a2ui.renderers.degrade import degradation_record
+from parrot.outputs.a2ui_renderers._graph_svg import STATE_TO_STATUS
+from parrot.outputs.a2ui_renderers._intercept import intercepts
 
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "echarts"
+
+#: The one (catalog_id, name) pair this renderer intercepts as a native
+#: Graph — used with the shared catalog-aware `intercepts()` helper so a
+#: future viz-core `Chart` (a2ui-viz-core-charts) is never confused with
+#: this renderer's existing Parrot `Chart` dispatch.
+_GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
+
+#: Wire Component-level keys (never part of GraphSpec) to strip from a
+#: baked whole-component dict before reconstructing a bare GraphSpec.
+_COMPONENT_ONLY_KEYS = frozenset(
+    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata", "data"}
+)
 
 # Vendored ECharts bundle (shared with the legacy infographic HTML renderer).
 _ECHARTS_JS_PATH = Path(__file__).parent.parent / "formats" / "assets" / "echarts.min.js"
@@ -65,11 +83,12 @@ _ROW_NATIVE_TYPES = frozenset({"gauge", "funnel", "treemap", "heatmap", "waterfa
         supports_actions=False,
         supports_updates=False,
         output="application/json",
-        supported_components={"Chart"},
+        supported_catalog_ids=[BASIC_CATALOG_ID, DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID],
+        supported_components={"Chart", "Graph"},
     ),
 )
 class EChartsRenderer(AbstractA2UIRenderer):
-    """Chart-component → ECharts option JSON renderer (+ optional vendored HTML wrap)."""
+    """Chart/Graph-component → ECharts option JSON renderer (+ optional vendored HTML wrap)."""
 
     async def render(
         self,
@@ -78,10 +97,16 @@ class EChartsRenderer(AbstractA2UIRenderer):
         bake: bool = True,
         wrap_html: bool = False,
     ) -> RenderedArtifact:
-        """Render the first Chart component to an ECharts option (JSON or HTML wrap).
+        """Render the first Chart or viz-core Graph component to an ECharts option.
+
+        Graph is dispatched BEFORE Chart (spec Implementation Notes): a
+        viz-core ``Graph`` (resolved catalog-aware, via the satellite's
+        shared ``resolve_component_catalog`` helper — spec §7 "sibling spec
+        overlap") wins over a Parrot ``Chart`` if both are somehow present.
 
         Args:
-            envelope: The validated envelope containing a ``Chart`` component.
+            envelope: The validated envelope containing a ``Chart`` or
+                viz-core ``Graph`` component.
             bake: Bindings are always resolved (static output).
             wrap_html: When ``True``, emit a self-contained HTML document inlining the
                 vendored ECharts bundle instead of raw option JSON.
@@ -93,26 +118,37 @@ class EChartsRenderer(AbstractA2UIRenderer):
             never silent).
 
         Raises:
-            ValueError: If the envelope contains no ``Chart`` component.
+            ValueError: If the envelope contains neither a ``Chart`` nor a
+                viz-core ``Graph`` component.
         """
         baked = bake_envelope(envelope)
-        chart = next((c for c in baked if c["component"] == "Chart"), None)
-        if chart is None:
-            raise ValueError("echarts renderer requires a 'Chart' component in the envelope.")
+
+        graph_item = None
+        chart_item = None
+        for item in baked:
+            if item["component"] == "Graph" and graph_item is None:
+                if intercepts(_GRAPH_INTERCEPT_TABLE, Component(**item), envelope.catalog_id):
+                    graph_item = item
+            elif item["component"] == "Chart" and chart_item is None:
+                chart_item = item
+
+        primary = graph_item if graph_item is not None else chart_item
+        if primary is None:
+            raise ValueError("echarts renderer requires a 'Chart' or viz-core 'Graph' component in the envelope.")
 
         degradations = [
             degradation_record(
                 BasicNode(id=item["id"], component=item["component"]),
-                f"{_SURFACE_NAME} renderer only renders a single Chart component per surface",
+                f"{_SURFACE_NAME} renderer only renders a single Chart/Graph component per surface",
             )
             for item in baked
-            if item is not chart
+            if item is not primary
         ]
 
-        option = self._build_option(chart)
+        option = self._build_graph_option(primary) if graph_item is not None else self._build_option(primary)
 
         if wrap_html:
-            document = self._wrap_html(option, chart.get("title", ""))
+            document = self._wrap_html(option, primary.get("title", ""))
             return RenderedArtifact(
                 artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
                 mime_type="text/html",
@@ -286,6 +322,94 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 option["xAxis"] = x_axis
                 option["yAxis"] = y_axis
         return option
+
+    def _build_graph_option(self, props: dict[str, Any]) -> dict[str, Any]:
+        """Build a native ECharts ``graph`` series option from ``Graph`` props (FEAT-529).
+
+        Uses ``layout: "none"`` with server-prepared positions (spec §7 "a
+        layout is server-side preparation") — computed via
+        :func:`~parrot.outputs.a2ui.graph.compute_positions` when
+        ``layout.positions`` is absent or incomplete. Node ``state`` maps to
+        the shared viz-core status role (:data:`~parrot.outputs.
+        a2ui_renderers._graph_svg.STATE_TO_STATUS`) as the ECharts
+        ``category`` — colour/theme is ECharts' own concern (an
+        ``option["categories"]`` entry per role, no literal colour set
+        here); node order/edge from/to are preserved from the input.
+
+        Args:
+            props: The baked ``Graph`` component's top-level wire props.
+                ``data`` (an unresolved/resolved binding) is excluded before
+                reconstructing a :class:`~parrot.outputs.a2ui.graph.GraphSpec`
+                — the same reasoning as ``catalog/viz_core/graph.py``'s
+                ``lower()``.
+
+        Returns:
+            An ECharts option dict: a single ``series[0]`` of
+            ``type: "graph"``.
+        """
+        # `props` here is a BAKED whole-component dict (`component.model_dump()`),
+        # not `Component.model_extra` — so the wire Component-level keys
+        # (id/component/catalogId/action/metadata/...) are present and must
+        # be stripped, alongside `data` (an unresolved/resolved binding),
+        # before reconstructing a bare GraphSpec (`extra="forbid"`).
+        graph_props = {key: value for key, value in props.items() if key not in _COMPONENT_ONLY_KEYS}
+        spec = GraphSpec.model_validate(graph_props)
+
+        positions = spec.layout.positions if spec.layout else None
+        if not positions or not all(node.id in positions for node in spec.nodes):
+            positions = compute_positions(spec).positions
+
+        categories_in_order = ["good", "warning", "critical", "primary", "neutral"]
+        category_index = {name: idx for idx, name in enumerate(categories_in_order)}
+
+        data = []
+        for node in spec.nodes:
+            pos = positions[node.id]
+            status = STATE_TO_STATUS.get(node.state, "neutral") if node.state else "neutral"
+            data.append(
+                {
+                    "id": node.id,
+                    "name": node.label if node.label is not None else node.id,
+                    "x": pos.x,
+                    "y": pos.y,
+                    "category": category_index[status],
+                }
+            )
+
+        links = [
+            {
+                "source": edge.from_,
+                "target": edge.to,
+                "lineStyle": self._graph_edge_line_style(edge),
+                **({"label": {"show": True, "formatter": edge.label}} if edge.label else {}),
+            }
+            for edge in spec.edges
+        ]
+
+        return {
+            "title": {"text": spec.title or ""},
+            "series": [
+                {
+                    "type": "graph",
+                    "layout": "none",
+                    "roam": True,
+                    "label": {"show": True},
+                    "edgeSymbol": ["none", "arrow"],
+                    "categories": [{"name": name} for name in categories_in_order],
+                    "data": data,
+                    "links": links,
+                }
+            ],
+        }
+
+    @staticmethod
+    def _graph_edge_line_style(edge: GraphEdge) -> dict[str, Any]:
+        style: dict[str, Any] = {}
+        if edge.kind == "dashed":
+            style["type"] = "dashed"
+        elif edge.kind == "thick":
+            style["width"] = 3
+        return style
 
     @staticmethod
     def _linear_trend(values: list[Any]) -> list[float]:

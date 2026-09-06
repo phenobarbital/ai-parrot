@@ -79,7 +79,8 @@ class TestTASK2544:
 
     async def test_echarts_capabilities(self):
         caps = EChartsRenderer.capabilities
-        assert caps.supported_components == {"Chart"}
+        # FEAT-529: Graph (viz-core) joined Chart (Parrot) as of TASK-2888.
+        assert caps.supported_components == {"Chart", "Graph"}
 
     async def test_echarts_reads_top_level_props(self):
         """Chart props (v1.0) live top-level, not nested under "properties"."""
