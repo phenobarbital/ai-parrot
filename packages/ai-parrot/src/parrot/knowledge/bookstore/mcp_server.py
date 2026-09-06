@@ -1,6 +1,6 @@
 """Bookstore MCP server entry point (``bookstore mcp``).
 
-Wires the seven read-only ``bookstore_*`` tools into a core
+Wires the ten read-only ``bookstore_*`` tools into a core
 :class:`~parrot.mcp.local_server.StdioMCPServer` so Claude Code (and any
 MCP client) can research the personal indexed library with first-class
 tools — same pattern and stdout-purity discipline as
@@ -13,7 +13,9 @@ Degradation matrix:
 - No LLM, ``bm25s`` installed: ``search_book``/``search`` run BM25-only.
 - No LLM, no ``bm25s``: those two tools error explanatorily, while
   ``catalog_search`` / ``list_books`` / ``get_card`` / ``get_toc`` /
-  ``read_section`` (the core funnel) keep working fully.
+  ``read_section`` / ``related_books`` / ``communities`` /
+  ``get_community`` (the core funnel plus the FEAT-533 graph tools,
+  all SQL-only) keep working fully.
 """
 
 from __future__ import annotations
@@ -51,9 +53,7 @@ def _ensure_stderr_logging() -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.WARNING)
 
@@ -84,9 +84,7 @@ def create_bookstore_mcp_server(
         from .library import Bookstore
         from .toolkit import BookstoreToolkit
 
-        store = Bookstore(
-            locations, adapter=adapter, lightweight_model=lightweight_model
-        )
+        store = Bookstore(locations, adapter=adapter, lightweight_model=lightweight_model)
         toolkit = BookstoreToolkit(bookstore=store)
         tools = toolkit.get_tools_sync()
         book_count = len(store.list_books())
@@ -118,9 +116,7 @@ def main() -> None:
     """
     _ensure_stderr_logging()
 
-    locations = resolve_locations(
-        cwd=Path(_INVOCATION_CWD), require_exists=True
-    )
+    locations = resolve_locations(cwd=Path(_INVOCATION_CWD), require_exists=True)
     if not locations:
         print(
             "Error: no bookstore library found (neither .parrot/library in "
@@ -135,9 +131,7 @@ def main() -> None:
     adapter, lightweight_model, client = resolve_adapter()
 
     async def _serve() -> None:
-        server = create_bookstore_mcp_server(
-            locations, adapter=adapter, lightweight_model=lightweight_model
-        )
+        server = create_bookstore_mcp_server(locations, adapter=adapter, lightweight_model=lightweight_model)
         _ensure_stderr_logging()
         if client is not None and hasattr(client, "__aenter__"):
             async with client:

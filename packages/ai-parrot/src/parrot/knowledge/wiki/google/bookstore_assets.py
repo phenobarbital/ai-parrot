@@ -8,7 +8,7 @@ description: Research the user's indexed book library with PageIndex and the boo
 # Research the indexed book library
 
 Use the connected `bookstore` MCP server. Discover its tools by their
-`bookstore_*` names. The server exposes seven read-only tools over project
+`bookstore_*` names. The server exposes ten read-only tools over project
 and global libraries.
 
 ## Choose books, search sections, read evidence
@@ -17,6 +17,12 @@ and global libraries.
    This searches catalog cards through SQLite FTS5 without an LLM. Keep the
    returned `book_id` values. Use `bookstore_list_books()` for inventory or
    when a named book cannot be located by topic search.
+1b. **Expand by relations** — before opening any book, call
+    `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`
+    hit to find the author's other works, sibling works of the same
+    tradition/era, or conceptually adjacent works. For thematic or
+    comparative questions ("what schools of thought does this library
+    cover?"), call `bookstore_communities()` instead.
 2. Inspect `bookstore_get_toc(book_id)` for chapter titles, `node_id` values,
    and page ranges. Use `bookstore_get_card(book_id)` when you need the full
    summary, authors, or topics to compare candidate books.
@@ -41,6 +47,10 @@ Cite *Book Title*, “Section Title”, pp. start–end using the titles and
 comparing their advice. An empty `content` field is missing evidence; do not
 invent a passage or present a catalog summary as a quotation.
 
+When a relation drives a claim, cite its origin: "the library links
+these as parallels (LLM-inferred, 0.7)" vs "same author
+(deterministic)".
+
 ## Degraded or disconnected search
 
 - Without `PARROT_BOOKSTORE_LLM`, in-book/cross-book search is BM25-only and
@@ -50,7 +60,8 @@ invent a passage or present a catalog summary as a quotation.
 - If MCP is disconnected, run `parrot google install --no-build` in the target repository,
   then restart Antigravity CLI in that trusted project. CLI fallbacks are `bookstore search "topic" --catalog-only`,
   `bookstore list --json`, `bookstore show <book_id> --json`,
-  `bookstore toc <book_id>`, and `bookstore search "question" --book <book_id>`.
+  `bookstore toc <book_id>`, `bookstore search "question" --book <book_id>`,
+  `bookstore related <book_id> --json`, and `bookstore communities --json`.
   If the executable is missing, use the Python environment where ai-parrot is installed with
   `python -m parrot.knowledge.bookstore.cli` as the command prefix.
   The CLI has no section-read command: `show` returns a card, not book text.
@@ -63,6 +74,8 @@ automatic side effect of a research question. `bookstore locations` shows
 resolved paths; `bookstore add notes.md --no-llm` indexes deterministic
 Markdown, and `bookstore add-folder ./books --dry-run` previews a batch.
 PDF and other format ingestion may require an LLM and optional dependencies.
+`bookstore relate --all` computes relations and communities (also CLI-only,
+also on request only).
 
 `PARROT_LIBRARY_DIR` overrides the project library. Otherwise it lives under
 the active Git root at `.parrot/library`; the global library is under

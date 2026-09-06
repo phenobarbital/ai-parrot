@@ -11,6 +11,9 @@ base_branch: dev
 **Author**: Jesus Lara
 **Status**: implemented
 **Branch**: `claude/biblioteca-indexada-claude-code-gaam3p`
+**Extended by**: FEAT-533 (`wikitoolkit-bookstore-conceptual-relations.spec.md`)
+— adds a book relation graph, communities, three agent tools, and
+`export-wiki`; see §3-§6 below and `docs/bookstore-graph.md`.
 
 ---
 
@@ -55,7 +58,14 @@ Delivery to Claude Code:
 `page_count`, `chapter_count`, `added_at`,
 `card_origin` (`llm|fallback|manual`).
 
-## 4. Agent tool surface (read-only, 7 tools)
+**FEAT-533** added five more fields, filled by the same carding LLM
+call at zero extra cost (or left at their defaults with no LLM):
+`genre` (closed classification), `traditions[]` (free text,
+slug-normalised), `period` (free text era label),
+`community_id`/`community_label` (written back by `bookstore relate`,
+never by carding — see `docs/bookstore-graph.md`).
+
+## 4. Agent tool surface (read-only, 10 tools)
 
 | Tool | LLM? | Purpose |
 |---|---|---|
@@ -65,11 +75,17 @@ Delivery to Claude Code:
 | `bookstore_get_toc` | no | chapter tree with node ids + pages |
 | `bookstore_search_book` | optional | hybrid in-book search |
 | `bookstore_read_section` | no | sidecar markdown of one section |
-| `bookstore_search` | optional | catalog shortlist → scoped tree-walk (`search_documents_scoped`, ≤ `max_books`) |
+| `bookstore_related_books` (FEAT-533) | no | books related through the graph (same author, shares topic, LLM-judged conceptual relations, ...) |
+| `bookstore_communities` (FEAT-533) | no | every detected community, member briefs |
+| `bookstore_get_community` (FEAT-533) | no | full community detail incl. inter-community relations |
+| `bookstore_search` | optional | catalog shortlist → scoped tree-walk (`search_documents_scoped`, ≤ `max_books`); `expand_related` (FEAT-533) widens the shortlist with depth-1 related books, no extra LLM call |
 
 Ingestion (`add`/`remove`/`card --refresh`) is CLI-only: indexing is a
 minutes-long LLM batch, the wrong shape for a stdio tool call, and the
-MCP surface stays non-destructive.
+MCP surface stays non-destructive. **FEAT-533** extends this rule to
+the relation graph: computing relations/communities (`bookstore
+relate`) and exporting to wikitoolkit (`bookstore export-wiki`) are
+also CLI-only — see `docs/bookstore-graph.md`.
 
 ## 5. Ingestion (`bookstore add <file>`)
 
@@ -83,22 +99,33 @@ python-docx cannot read it) → `derive_toc` → LLM carding or fallback
 (filename title + chapter topics) → catalog upsert. Failed imports
 delete the partial tree.
 
-**Bulk ingest** — `bookstore add-folder <dir> [--recursive] [--dry-run]`
-(`Bookstore.iter_folder_files` + `add_folder`): sequential loop over
-every supported file, per-file progress, continues past failures
-(recorded as `failed` in the summary), sha256 dedupe makes re-runs
-idempotent; exit code is non-zero only when every file failed.
+**FEAT-533**: an opt-in `--relate` flag runs `bookstore relate` for
+just the new book (Stage 1-2 only, no communities) right after
+cataloguing it — plain `add`/`add-folder` never call the relation LLM
+implicitly.
+
+**Bulk ingest** — `bookstore add-folder <dir> [--recursive] [--dry-run]
+[--relate]` (`Bookstore.iter_folder_files` + `add_folder`): sequential
+loop over every supported file, per-file progress, continues past
+failures (recorded as `failed` in the summary), sha256 dedupe makes
+re-runs idempotent; exit code is non-zero only when every file failed.
+With `--relate`, each new book is related as it's ingested, then one
+communities-only pass runs once at the end over the whole library.
 
 ## 6. Degradation matrix
 
-| Configuration | catalog/toc/read | search_book / search |
-|---|---|---|
-| LLM (`PARROT_BOOKSTORE_LLM`) | full | hybrid BM25 + LLM tree-walk |
-| no LLM, `bm25s` installed | full | BM25-only |
-| no LLM, no `bm25s` | full | explanatory error |
+| Configuration | catalog/toc/read | search_book / search | relations (FEAT-533) |
+|---|---|---|---|
+| LLM (`PARROT_BOOKSTORE_LLM`) | full | hybrid BM25 + LLM tree-walk | full — Stage 1 deterministic + Stage 2 LLM conceptual relations + Stage 3 communities with LLM labels |
+| no LLM, `bm25s` installed | full | BM25-only | Stage 1 + Stage 3 (deterministic/title community labels); Stage 2 skipped with an explanatory note |
+| no LLM, no `bm25s` | full | explanatory error | same as above — relations don't depend on `bm25s` |
 
 Cross-book `search` falls back to searching all books (capped) when the
-catalog shortlist is empty (thin fallback cards).
+catalog shortlist is empty (thin fallback cards). See
+`docs/bookstore-graph.md` for the full FEAT-533 relations/communities
+design, the `relate` cost model, and the `export-wiki` degradation
+(CLI-only regardless of row; fails with an explanatory error when the
+wiki/graphindex packages aren't installed).
 
 ## 7. Acceptance criteria (all verified)
 

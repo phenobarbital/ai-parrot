@@ -218,10 +218,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: New `wiki_export.py`: `default_wiki_dir`, `card_to_page`,
+`relation_to_edge`, `export_plane` (deletes `wiki.db` before rebuilding
+— no delete-edges API on `BaseWikiStore`, documented in the module
+docstring per the task's own fallback instruction), `register_namespace`
+(mirrors `ns_add` using only load/save primitives; same-store
+re-registration is idempotent, different-store or cross-registry name
+collision raises `BookstoreError`). `Bookstore.export_wiki` rebuilds
+the clustering graph fresh (never persists it), relabels communities
+from already-persisted labels when a partition exists, calls
+`export_plane`, then optionally `register_namespace` (git root
+resolved via `find_project_root`, falling back to the global registry
+when `None`). CLI `export-wiki [--out] [--global] [--no-register]`.
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 131 passed,
+same 3 pre-existing unrelated failures as prior tasks. `ruff check`
+clean on every file this task touched (the 1 remaining `F401` on
+`cli.py`'s `sys` import is the same pre-existing issue noted in
+TASK-2914/2915/2916/2917).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Fixed
+`test_mcp_server.py::test_mcp_server_does_not_import_wiki` (added by
+TASK-2918, not in this task's file list) — running the full bookstore
+suite revealed it was order-dependent: once `test_export_wiki.py`
+(this task, which legitimately imports `parrot.knowledge.wiki`) had
+run earlier in the same pytest session, the module stayed cached in
+`sys.modules` and the regression check failed regardless of whether
+`create_bookstore_mcp_server` itself imported it. Fixed by popping any
+`parrot.knowledge.wiki*` entries from `sys.modules` before the check
+and restoring them after — verified the fix makes the full-suite run
+green in both file orders.

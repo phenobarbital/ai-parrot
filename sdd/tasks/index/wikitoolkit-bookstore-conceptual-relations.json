@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T03:37:33.253639+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-06T05:09:08+00:00",
   "isolation": "per-spec",
   "parallelism_notes": "Per-spec worktree, sequential M0→M5. Only TASK-2912 (graphindex) is file-disjoint and may run in a separate worktree; all bookstore tasks share models.py/catalog.py/library.py/cli.py.",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Touches only graphindex/communities.py, graphindex/assemble.py and their tests — no bookstore file. Can run in its own worktree alongside TASK-2913/2914/2915.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2912-graphindex-payload-edge-weights.md"
+      "completed_at": "2026-09-06T03:48:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2912-graphindex-payload-edge-weights.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2913",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Root of the bookstore chain: models.py + catalog.py. Every later bookstore task imports from it. Sequential in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2913-bookstore-relation-models-and-catalog-schema.md"
+      "completed_at": "2026-09-06T04:01:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2913-bookstore-relation-models-and-catalog-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2914",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Edits carding.py, library.py, cli.py and conftest — shared with TASK-2915/2916; keep sequential.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2914-bookstore-classification-carding.md"
+      "completed_at": "2026-09-06T04:09:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2914-bookstore-classification-carding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2915",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Creates relations.py and edits library.py/cli.py; TASK-2914 touches the same two files, so run after it in the same worktree (order 2914 → 2915 preferred, either works).",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2915-bookstore-deterministic-relations.md"
+      "completed_at": "2026-09-06T04:15:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2915-bookstore-deterministic-relations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2916",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Extends relations.py/library.py/cli.py/conftest from 2914+2915; sequential.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2916-bookstore-llm-relations-and-relate-command.md"
+      "completed_at": "2026-09-06T04:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2916-bookstore-llm-relations-and-relate-command.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2917",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Needs TASK-2912 merged (payload weights) and the relate orchestrator; replaces the _relate_stage3 stub. Sequential.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2917-bookstore-communities.md"
+      "completed_at": "2026-09-06T04:36:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2917-bookstore-communities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2918",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Edits toolkit.py, library.py (search), mcp_server.py, three skill mirrors. Shares library.py/cli.py with TASK-2919 — keep sequential; wiki/google/bookstore_assets.py is under edit by another feature, rebase first.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2918-bookstore-relation-tools-and-skill.md"
+      "completed_at": "2026-09-06T04:45:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2918-bookstore-relation-tools-and-skill.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2919",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -164,8 +171,9 @@
       "parallelism_notes": "New wiki_export.py plus library.py/cli.py edits shared with TASK-2918; sequential after 2918 (either order works, 2918 first preferred).",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2919-bookstore-export-wiki.md"
+      "completed_at": "2026-09-06T04:54:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2919-bookstore-export-wiki.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2920",
@@ -174,7 +182,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +193,9 @@
       "parallelism_notes": "Closes the feature: integration tests over the public surfaces, docs, legacy spec update. Sequential last.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2920-bookstore-graph-integration-tests-and-docs.md"
+      "completed_at": "2026-09-06T05:08:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2920-bookstore-graph-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

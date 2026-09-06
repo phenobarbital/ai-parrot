@@ -90,7 +90,24 @@ from tests.knowledge.bookstore.conftest import make_adapter, SAMPLE_MARKDOWN   #
 
 ### Existing Signatures to Use
 ```python
-# tests/knowledge/bookstore/test_mcp_server.py — existing subprocess smoke test: launches `python -m parrot.knowledge.bookstore.cli mcp` with PARROT_LIBRARY_DIR set, writes JSON-RPC `initialize` + `tools/list` to stdin, asserts every stdout line parses as JSON-RPC
+# CORRECTED 2026-09-06 (stale entry): tests/knowledge/bookstore/test_mcp_server.py
+# has NO subprocess test — it only exercises create_bookstore_mcp_server()
+# in-process (verified by reading the file in full). The real subprocess
+# JSON-RPC pattern to mirror lives in
+# packages/ai-parrot/tests/knowledge/wiki/test_mcp_server.py::
+# TestWikiMCPServerIntegration.test_initialize_and_list_tools:
+#   asyncio.create_subprocess_exec(sys.executable, "-m",
+#     "parrot.knowledge.wiki.mcp_server", cwd=..., env=_subprocess_env(),
+#     stdin/stdout/stderr=asyncio.subprocess.PIPE) — write one JSON line +
+#   "\n" to stdin, read one line from stdout, json.loads it; PYTHONPATH is
+#   prepended with this worktree's own package src roots so the subprocess
+#   never resolves `parrot` from a different checkout's site-packages
+#   install. For bookstore, the equivalent standalone module entry point
+#   is `python -m parrot.knowledge.bookstore.mcp_server` (mcp_server.py's
+#   own `main()`/`__main__` block — no click subcommand needed, unlike
+#   `cli.py mcp` which requires `-m parrot.knowledge.bookstore.cli mcp`);
+#   set PARROT_LIBRARY_DIR (not PARROT_BOOKSTORE_LLM, to stay hermetic)
+#   so resolve_locations(require_exists=True) finds the seeded library.
 # tests/knowledge/bookstore/test_cli.py — CliRunner usage pattern, `_open_bookstore` anchoring on invocation CWD
 # tests/knowledge/bookstore/test_library.py — fixtures `store`, `store_no_llm`, `book_md`, `locations` (lines 1-40)
 # bookstore/library.py (after TASK-2916/2917/2919): relate_books(...), related_books(...), communities(), get_community(), export_wiki(output_dir=None, *, scope="project", register=True)
@@ -176,10 +193,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: All 5 integration tests pass on the first try (5/5 in
+`test_integration_graph.py`), including a real subprocess MCP JSON-RPC
+roundtrip against `python -m parrot.knowledge.bookstore.mcp_server`.
+`docs/bookstore-graph.md` created and linked from `docs/bookstore-codex.md`;
+`sdd/specs/bookstore-indexed-library.spec.md` §3/§4/§5/§6 updated with
+a FEAT-533 pointer at the header and inline. `pytest packages/ai-parrot/
+tests/knowledge/bookstore/ -q` → 136 passed (same 3 pre-existing
+unrelated failures as every prior task). `ruff check packages/ai-parrot/
+src/parrot/knowledge/bookstore/` → clean (see deviations). Evidence
+saved to `artifacts/logs/feat-533-tests.log` (force-added — `artifacts/`
+is globally gitignored, but this task's own file list requires it).
+Full `packages/ai-parrot/tests/knowledge/{bookstore,pageindex,graphindex,
+wiki}/` run: 1505 passed, 98 failed, 87 errors — every failure/error
+verified pre-existing and unrelated to FEAT-533 (Postgres-dependent
+tests with no DB available, EdgeKind-completeness gaps from other
+in-flight work, wiki MCP subprocess/tool-list drift, pageindex adapter
+tests — none touch a file this feature modified, confirmed via
+`git diff --stat` across the whole feature branch against
+`wiki/pageindex/graphindex`, which shows only `graphindex/communities.py`
++`assemble.py` (TASK-2912) and `wiki/google/bookstore_assets.py`
+(TASK-2918, a skill-text asset) ever changed). Full breakdown and
+rationale recorded in the log itself (section 4).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Fixed the two pre-existing unused imports
+every prior task's Completion Note flagged and deliberately left alone
+(`carding.py`'s `Optional`, `cli.py`'s `sys`) — this task's own
+acceptance criterion is `ruff check packages/ai-parrot/src/parrot/
+knowledge/bookstore/` clean, which those two entries were the only
+thing blocking. While already touching `cli.py`/`__init__.py` for that
+one-line-each fix, also corrected their stale "seven `bookstore_*`
+tools" / incomplete command-list docstrings (10 tools;
+`add-folder`/`related`/`relate`/`communities`/`export-wiki` were
+missing from the list) — same accuracy category as the doc updates
+this task is otherwise scoped to write, not a behavior change.

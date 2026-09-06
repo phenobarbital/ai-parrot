@@ -224,10 +224,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: `relations.py` Stage 2: `_RELATION_PROMPT`, `candidate_pairs`
+(det-neighbours-by-weight then FTS, dedup, cap), `judge_relations`
+(hallucinated `dst_book_id` filtering), `llm_relations_from_draft`
+(0.5 floor, `rel != "none"`). `Bookstore.relate_books` orchestrates
+Stage 1 (always, filtered to edges touching targets) + Stage 2 (per
+target, `try/except` → `summary.failed`) + Stage 3 hook
+(`_relate_stage3`, no-op, `TODO(TASK-2917)`). `add_book(relate=)` /
+`add_folder(relate=)` wired; `add`/`add-folder` CLI gained `--relate`;
+new `bookstore relate` command. `conftest.py::make_adapter._structured`
+gained a `RelationDraft` branch parsing `book_id=` tokens from the
+candidates section of the prompt (one `parallels` 0.7 + one `none` 0.9,
+deterministic and order-based).
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 105 passed,
+same 3 pre-existing unrelated failures as prior tasks. `ruff check`
+clean on every file this task touched (the 1 remaining `F401` on
+`cli.py`'s `sys` import is the same pre-existing issue noted in
+TASK-2914/2915, still untouched).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Touched two files NOT in this task's own
+`Files to Create/Modify` list — both required for the task to be
+implementable at all, both documented in the commit message and here:
+1. `models.py` — `RelateSummary`'s field list. TASK-2913 first defined
+   it with placeholder fields (`related`/`failed`/`skipped`/`llm_used`/
+   `communities_computed`/`notes`) and *explicitly flagged them for
+   re-verification* by this task, since the spec's Data Models block
+   never actually lists `RelateSummary`'s fields. This task's own
+   Codebase Contract specifies a *different*, concrete field list
+   (`targets`/`deterministic_edges`/`llm_prompts`/`llm_edges`/
+   `skipped_llm_reason`/`failed: dict`/`communities: Optional[int]`/
+   `notes`) — replaced the placeholder with it, since without this the
+   task's Scope (`relate_books -> RelateSummary`) and CLI summary
+   printer are not implementable. No tests referenced the old field
+   names (checked before changing).
+2. `catalog.py` — added `CatalogStore.delete_relation_pair(src, dst,
+   *, origin=None)`. The Key Constraints section requires "delete only
+   (src, dst) pairs re-judged in this run, so edges judged earlier
+   from the *other* direction survive" — not expressible with the
+   existing `delete_relations(book_id=None, origin=None)`, whose
+   `book_id` filter matches EITHER endpoint against every OTHER edge
+   too (would also delete edges judged from the other book's
+   perspective). Added as a narrow, additive CRUD method mirroring the
+   TASK-2913 pattern, not a redesign.

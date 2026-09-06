@@ -197,10 +197,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: Added `_payload_weight()`/`_has_payload_weights()` helpers in
+`communities.py`; both conversion loops (`_to_undirected_networkx`,
+`_to_igraph`) now use `_payload_weight(_payload)` when `weight_fn is
+None`, falling back to 1.0 for non-dict/non-numeric/negative weights
+without raising. `detect_communities` computes `weighted` once as
+`signal_config is not None or _has_payload_weights(graph)` and uses it
+in both `CommunitiesResult` return paths (empty-partition and normal).
+`GraphAssembler.add_edge` copies `domain_tags["weight"]` into the edge
+payload when it's a numeric, non-bool value. Added `TestPayloadWeights`
+in `test_communities.py` per the task's Test Specification (7 tests).
+`pytest packages/ai-parrot/tests/knowledge/graphindex/test_communities.py
+test_assemble.py -q` → 82 passed. `ruff check` clean on all 3 changed
+files. Verified the rest of the `graphindex/` suite's pre-existing
+failures (test_hybrid_retrieve.py DB-dependent tests, test_meta_ontology
+/test_projection/test_schema EdgeKind-completeness gaps) are unrelated
+to this change — reproduced identically against the unmodified files.
 
 **Deviations from spec**: none

@@ -172,10 +172,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: `_CARD_PROMPT` gained genre/traditions/period rules plus a
+`{genres}` key filled from `get_args(Genre)` in `generate_card_fields`.
+`Bookstore.add_book`'s `BookCard(...)` construction now passes
+`draft.genre/traditions/period`; `refresh_card` carries them via the
+`draft.x or card.x` pattern (as specified) and never touches
+`community_id`/`community_label`. `_echo_card` appends a `class` line
+(genre/traditions/period, only non-default parts) and a `community`
+line. `conftest.py::make_adapter._structured`'s `CardDraft` branch now
+returns `genre="essay"`, `traditions=["Estoicismo"]`,
+`period="Imperio romano"`.
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 83 passed,
+3 pre-existing unrelated failures (same ones as TASK-2913, reproduced
+identically against unmodified files). `ruff check` clean on every
+file this task touched; 2 unrelated pre-existing `F401` warnings
+(`carding.py: Optional`, `cli.py: sys`) verified present at HEAD before
+this task's changes — left alone (no scope creep).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: `test_card_prompt_requests_classification`
+is in the Test Specification but not listed in this task's own
+`Files to Create/Modify` (no `test_carding.py` exists; the file that
+happens to hold `carding.py`'s other tests, `test_models.py`, is also
+not in this task's file list — a small spec gap). Placed the test in
+`test_library.py` (already in scope) rather than touching an
+out-of-scope file, with a note in the test docstring explaining why.
