@@ -102,3 +102,12 @@ Add entries to `TOOL_REGISTRY`:
 - [ ] `from parrot_tools.google import LyriaToolkit` succeeds.
 - [ ] `from parrot_tools import TOOL_REGISTRY; TOOL_REGISTRY["lyria"] == "parrot_tools.google.lyria.LyriaToolkit"` succeeds.
 - [ ] `TOOL_REGISTRY["google_lyria"] == "parrot_tools.google.lyria.LyriaToolkit"` succeeds.
+
+---
+
+### Completion Note
+
+Exported `LyriaToolkit` from `parrot_tools.google.__init__` and registered
+both `"lyria"` and `"google_lyria"` in `parrot_tools.TOOL_REGISTRY`. Manually
+verified: `from parrot_tools.google import LyriaToolkit` succeeds, and both
+registry entries resolve to `"parrot_tools.google.lyria.LyriaToolkit"`.

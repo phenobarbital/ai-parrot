@@ -210,3 +210,31 @@ class TestLyriaToolkit:
 - [ ] 10-second default and custom *n*-second duration outputs are accurately verified.
 - [ ] Prompt heuristic parsing is validated against user's natural language test case.
 - [ ] Registry discovery is verified.
+
+---
+
+### Completion Note
+
+Implemented `packages/ai-parrot-tools/tests/test_lyria_toolkit.py` covering
+all listed cases (models defaults/boundaries/heuristics, audio utils,
+toolkit tool generation, stream/batch exact-duration generation, catalog,
+lazy-client error, registry discovery) plus the end-to-end
+`ToolManager.register_toolkit()` + `execute()` integration test from the
+spec's §4 Integration Tests table.
+
+`15/15` tests pass (`python -m pytest packages/ai-parrot-tools/tests/test_lyria_toolkit.py -v`);
+`ruff check` clean on all 4 new/modified files.
+
+Two corrections to the task's suggested test code, both to keep it aligned
+with the real codebase rather than assumed APIs:
+- `test_parse_natural_music_request_ambient_slow` asserts
+  `p.genre == "Ambient"` (a literal string) rather than
+  `MusicGenre.AMBIENT.value` — `MusicGenre` has no `AMBIENT` member (see
+  TASK-2921's Completion Note); `genre` is a free-form `Optional[str]`.
+- The end-to-end test reads `ToolResult.result` (the actual field on
+  `parrot.tools.abstract.ToolResult`), not `.data`, which does not exist.
+
+**Addendum (post-review fixes, commit `a6aa9e4fd`)**: added a
+`TestLyriaToolkitReviewFixes` class (4 tests) covering the 4 Important
+findings from the adversarial code review — see TASK-2923's addendum for
+details. Full suite is now 19/19 passing; ruff clean.

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T03:42:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-06T12:12:52+00:00",
   "tasks": [
     {
       "id": "TASK-2921",
@@ -14,7 +14,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,9 +22,10 @@
       "parallelism_notes": "Independent data models and heuristic NLP parsing functions.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "completed_at": "2026-09-06T03:48:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2922",
@@ -33,7 +34,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -41,9 +42,10 @@
       "parallelism_notes": "Independent audio utility using standard library wave.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2922-lyria-audio-extraction-and-wav-framing.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "completed_at": "2026-09-06T03:49:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2922-lyria-audio-extraction-and-wav-framing.md",
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2923",
@@ -52,7 +54,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallelism_notes": "Depends on models (TASK-2921) and audio utilities (TASK-2922).",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2923-lyria-toolkit-implementation.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "completed_at": "2026-09-06T03:51:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2923-lyria-toolkit-implementation.md",
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2924",
@@ -74,7 +77,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,9 +87,10 @@
       "parallelism_notes": "Exports LyriaToolkit once implemented.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2924-lyria-toolkit-discovery-and-exports.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "completed_at": "2026-09-06T03:52:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2924-lyria-toolkit-discovery-and-exports.md",
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2925",
@@ -95,7 +99,7 @@
       "feature": "Lyria Toolkit for Natural Language Music Generation",
       "feature_id": "FEAT-534",
       "spec": "sdd/specs/lyria-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -106,9 +110,10 @@
       "parallelism_notes": "Tests the full toolkit and exports.",
       "assigned_to": null,
       "assigned_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2925-lyria-toolkit-unit-and-integration-tests.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "completed_at": "2026-09-06T03:54:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2925-lyria-toolkit-unit-and-integration-tests.md",
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     }
   ]
 }

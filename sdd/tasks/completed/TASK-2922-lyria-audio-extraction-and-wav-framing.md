@@ -247,3 +247,19 @@ async def async_slice_wav_file(
 - [ ] Written WAV file has 48,000 Hz, 2 channels, 16-bit (sample width 2).
 - [ ] `slice_wav_file` truncates audio correctly without header corruption.
 - [ ] `async_save_pcm_to_wav` and `async_slice_wav_file` coroutines execute via `asyncio.to_thread` without blocking the event loop.
+
+---
+
+### Completion Note
+
+Implemented exactly as specified in
+`packages/ai-parrot-tools/src/parrot_tools/google/audio_utils.py`. Manually
+verified (module not yet covered by the shared test suite — TASK-2925 adds
+`test_lyria_toolkit.py`):
+- `seconds_to_pcm_bytes(10.0) == 1920000`, `seconds_to_pcm_bytes(1.0) == 192000`.
+- `save_pcm_to_wav` produces a WAV readable by `wave.open` with 48000 Hz,
+  2 channels, sample width 2.
+- `slice_wav_file` truncates a 3s PCM WAV down to exactly 1s (48000 frames)
+  without header corruption.
+- `async_save_pcm_to_wav`/`async_slice_wav_file` run correctly via
+  `asyncio.to_thread`.

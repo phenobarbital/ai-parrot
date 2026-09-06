@@ -104,6 +104,13 @@ class MusicMood(str, Enum):
 ### Does NOT Exist
 - ~~`parrot.models.google.LyriaMusicParameters`~~ — Does not exist; created in this module.
 - ~~`MusicGenerationRequest.duration_seconds`~~ — Does not exist on the base request.
+- ~~`MusicGenre.AMBIENT`~~ — **Contract correction (implemented 2026-09-06):** verified against
+  `packages/ai-parrot/src/parrot/models/google.py` — `MusicGenre` has no `AMBIENT` member (it only
+  exists on `MusicMood`). The Implementation Notes below originally referenced
+  `MusicGenre.AMBIENT.value` in the genre fallback, which would raise `AttributeError` at runtime.
+  Since `LyriaMusicParameters.genre` is a free-form `Optional[str]` (not constrained to the enum),
+  the fix uses the literal string `"Ambient"` instead — this still satisfies the Acceptance
+  Criteria (`genre == "Ambient"`) without referencing a nonexistent enum attribute.
 
 ---
 
@@ -312,3 +319,28 @@ def parse_natural_music_request(text: str, default_duration: int = 10) -> LyriaM
   - `mood in ("Ambient", "Subdued Melody", "Chill")`
 - [ ] Explicit duration in text like *"generate 25 seconds of synthwave"* correctly sets `duration_seconds = 25`.
 - [ ] Boundary validation enforces `1 <= duration_seconds <= 120` and `60 <= bpm <= 200`.
+
+---
+
+### Completion Note
+
+Implemented `LyriaMusicParameters`, `LyriaMusicResult`, and
+`parse_natural_music_request()` exactly as specified in
+`packages/ai-parrot-tools/src/parrot_tools/google/lyria_models.py`.
+
+**Contract correction**: the Implementation Notes' fallback branch referenced
+`MusicGenre.AMBIENT.value`, but `MusicGenre` (verified in
+`packages/ai-parrot/src/parrot/models/google.py`) has no `AMBIENT` member —
+only `MusicMood` does. Since `LyriaMusicParameters.genre` is a free-form
+`Optional[str]`, the fallback now uses the literal string `"Ambient"`
+instead, which still satisfies the acceptance criterion `genre == "Ambient"`
+without referencing a nonexistent enum attribute. See the "Does NOT Exist"
+section above for the documented correction.
+
+Manually verified against acceptance criteria (module not yet covered by
+the shared test suite — TASK-2925 adds `test_lyria_toolkit.py`):
+- `parse_natural_music_request("a soft ambient music with slow tempo")` →
+  `duration_seconds=10, bpm=70, density=0.3, genre="Ambient", mood="Ambient"`
+- `parse_natural_music_request("energetic techno beat for 25 seconds")` →
+  `duration_seconds=25, bpm=130, genre="Techno"`
+- Pydantic `ge`/`le` constraints enforce the `1-120` / `60-200` bounds.
