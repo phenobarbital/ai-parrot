@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T01:54:13+00:00",
-  "completed_at": "2026-09-06T02:21:27+00:00",
+  "completed_at": "2026-09-06T02:40:45+00:00",
   "tasks": [
     {
       "id": "TASK-2892",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": "2026-09-06T02:09:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2892-detection-helper.md"
+      "file": "sdd/tasks/completed/TASK-2892-detection-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2893",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": "2026-09-06T02:10:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2893-bookstore-fallback.md"
+      "file": "sdd/tasks/completed/TASK-2893-bookstore-fallback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2894",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": "2026-09-06T02:17:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2894-wikitoolkit-fallback.md"
+      "file": "sdd/tasks/completed/TASK-2894-wikitoolkit-fallback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2895",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-06T02:05:47+00:00",
       "completed_at": "2026-09-06T02:21:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2895-docs-and-regression.md"
+      "file": "sdd/tasks/completed/TASK-2895-docs-and-regression.md",
+      "verification": "verified"
     }
   ]
 }
