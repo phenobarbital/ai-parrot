@@ -54,3 +54,17 @@ def test_degrades_when_detection_misses(monkeypatch, caplog):
         adapter, light, client = _llm.resolve_adapter()
     assert (adapter, light, client) == (None, None, None)
     assert "bookstore runs BM25/catalog only" in caplog.text
+
+
+def test_degrades_when_detection_itself_raises(monkeypatch, caplog):
+    """Code-review fix: detection failures (entry-point discovery blowing
+    up, shutil.which raising, etc.) must never escape resolve_adapter() —
+    spec §7 requires graceful degradation on any detection/resolution
+    failure, matching the existing except-Exception pattern."""
+    caplog.set_level(logging.WARNING)
+    with patch(
+        "parrot.clients.detection.detect_coding_agent_llm",
+        side_effect=RuntimeError("boom"),
+    ):
+        adapter, light, client = _llm.resolve_adapter()
+    assert (adapter, light, client) == (None, None, None)

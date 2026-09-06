@@ -273,11 +273,29 @@ class TestExtractIntoGraphDetectionFallback:
         assert result is None
         assert "[extract skipped" in capsys.readouterr().out
 
+    def test_degrades_when_detection_itself_raises(self, capsys):
+        """Code-review fix: a detection failure (not just a construction
+        failure) must never escape _extract_into_graph — spec §7 requires
+        graceful degradation on any detection/resolution failure."""
+        with patch(
+            "parrot.clients.detection.detect_coding_agent_llm",
+            side_effect=RuntimeError("boom"),
+        ):
+            result = wiki_cli._extract_into_graph(
+                root=Path("/tmp/does-not-exist"),
+                config=object(),
+                text="hello world",
+                source_uri="doc://test",
+                asserted_by="agent:test",
+                run_id=None,
+            )
+        assert result is None
+
 
 class TestIngestModelResolutionDetectionFallback:
     """FEAT-531 TASK-2894 Part B — the ``ingest`` command's light/heavy pair."""
 
-    def _invoke_ingest(self, project: Path, capture: dict) -> None:
+    def _invoke_ingest(self, project: Path, capture: dict):
         def _fake_build_triage_adapters(lightweight_model, model):
             capture["lightweight_model"] = lightweight_model
             capture["model"] = model
@@ -289,7 +307,7 @@ class TestIngestModelResolutionDetectionFallback:
             side_effect=_fake_build_triage_adapters,
         ):
             runner = CliRunner()
-            runner.invoke(
+            return runner.invoke(
                 wiki,
                 ["ingest", str(project), "--path", str(project), "--dry-run"],
             )
@@ -332,3 +350,20 @@ class TestIngestModelResolutionDetectionFallback:
         mock_detect.assert_not_called()
         assert capture.get("lightweight_model") == "anthropic:claude-haiku-4-5"
         assert capture.get("model") == "anthropic:claude-sonnet-5"
+
+    def test_auto_detected_construction_failure_degrades_cleanly(self, built_wiki):
+        """Code-review fix: when auto-detection succeeds but the detected
+        CLI turns out non-functional (LLMFactory.create/_build_triage_adapters
+        raises), `ingest` must fail with a controlled ClickException, not
+        an uncaught traceback — spec §7's "never fail startup on detection
+        or resolution failure" applies to construction failures too."""
+        capture: dict = {}
+        with patch(
+            "parrot.clients.detection.detect_coding_agent_llm",
+            return_value="claude-code:claude-haiku-4-5-20251001",
+        ):
+            result = self._invoke_ingest(built_wiki, capture)
+        assert capture.get("lightweight_model") == "claude-code:claude-haiku-4-5-20251001"
+        assert result.exit_code != 0
+        assert not isinstance(result.exception, RuntimeError)
+        assert "Could not build LLM client" in result.output

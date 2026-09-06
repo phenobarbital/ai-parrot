@@ -2711,9 +2711,13 @@ def _extract_into_graph(
     """
     spec = _env_setting("WIKI_EXTRACT_LLM")
     if not spec and not _env_setting("PARROT_NO_AUTO_LLM"):
-        from parrot.clients.detection import detect_coding_agent_llm
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
 
-        detected = detect_coding_agent_llm()
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
         if detected:
             click.echo(
                 f"[auto-selected {detected} for WIKI_EXTRACT_LLM — a coding-agent CLI "
@@ -3725,9 +3729,13 @@ def ingest(
     lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
     model_value = model_opt or _env_setting("WIKI_MODEL")
     if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
-        from parrot.clients.detection import detect_coding_agent_llm
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
 
-        detected = detect_coding_agent_llm()
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
         if detected:
             click.echo(
                 f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
@@ -3738,7 +3746,12 @@ def ingest(
             model_value = detected
     lightweight_model = _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL")
     model = _resolve_model_id(model_value, "WIKI_MODEL")
-    light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    try:
+        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    except Exception as exc:
+        raise click.ClickException(
+            f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+        ) from exc
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
     # PageIndexToolkit builds its OWN internal lightweight adapter as

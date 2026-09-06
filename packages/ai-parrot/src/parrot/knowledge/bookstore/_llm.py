@@ -60,9 +60,17 @@ def resolve_adapter(
     light = lightweight_model or os.environ.get(ENV_LLM_LIGHT)
     if not spec:
         if not os.environ.get("PARROT_NO_AUTO_LLM"):
-            from parrot.clients.detection import detect_coding_agent_llm
+            try:
+                with contextlib.redirect_stdout(sys.stderr):
+                    from parrot.clients.detection import detect_coding_agent_llm
 
-            detected = detect_coding_agent_llm()
+                    detected = detect_coding_agent_llm()
+            except Exception as exc:  # noqa: BLE001 — degrade, never crash startup
+                logger.warning(
+                    "Coding-agent CLI auto-detection failed (%s) — running degraded",
+                    exc,
+                )
+                detected = None
             if detected:
                 logger.warning(
                     "No LLM configured (%s unset) — auto-selected %r because a "
