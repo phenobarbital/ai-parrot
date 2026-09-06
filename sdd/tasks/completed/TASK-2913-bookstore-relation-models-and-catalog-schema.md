@@ -223,10 +223,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-06
+**Notes**: Added `Genre`/`RelationKind`/`SYMMETRIC_RELS`/`REL_WEIGHTS`
+plus `BookRelation` (self-pair rejected via `model_validator`),
+`RelationJudgement`, `RelationDraft`, `CommunityLabelDraft`,
+`BookCommunity`, `RelateSummary` to `models.py`; `genre`/`traditions`/
+`period` on `CardDraft`, plus `community_id`/`community_label` on
+`BookCard`, `brief()` extended. `catalog.py`: `_ADDED_COLUMNS` for the
+5 new book columns, `traditions` added to `_JSON_COLUMNS`,
+`_RELATIONS_DDL`/`_JUDGEMENTS_DDL`/`_COMMUNITIES_DDL` + index,
+`_ensure_fts_schema`/`_repopulate_fts` for the FTS5 rebuild-on-drift
+path (6→8 columns), `_normalise_traditions` (slugify + dedupe) wired
+into `upsert`, full relation/judgement/community CRUD
+(`upsert_relations`/`delete_relations`/`list_relations`/
+`record_judgements`/`judged_pairs`/`delete_judgements`/
+`upsert_communities`/`list_communities`/`get_community`/
+`set_card_community`) plus module-level `merged_relations`/
+`merged_communities`. `__init__.py` exports the new model names
+(kept `CatalogStore` lazy). Added `legacy_library_db` fixture
+(pre-feature DDL literals) to `conftest.py`.
+`pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` → 77 passed,
+3 pre-existing unrelated failures (`test_cli.py::test_add_outside_repo_
+gives_clear_error`, `test_list_requires_existing_library`,
+`test_config.py::test_no_git_root_yields_global_only` — reproduced
+identically against the unmodified files; environment/git-root
+detection issue inside a nested worktree, unrelated to this task).
+`ruff check` clean on all 6 changed files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: `RelateSummary`'s field list is not given in
+spec §2's Data Models block (only referenced as `relate_books`'s return
+type with "related/failed/skipped per book" in §3 Module 2). Filled the
+gap with `related`/`failed`/`skipped`/`llm_used`/`communities_computed`/
+`notes` fields, documented in the model's own docstring as a best-effort
+completion for TASK-2916 (the `relate_books` orchestrator, the actual
+consumer) to re-verify/extend if needed. `REL_WEIGHTS` values for
+`responds_to`/`contrasts_with`/`same_community` are also not given
+explicit numbers in the spec text (marked "e.g." + spec §8 flags these
+as "proposed defaults, adjust after the first real run") — set to
+mirror their nearest sibling relation, documented inline.

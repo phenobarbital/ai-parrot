@@ -34,7 +34,7 @@
       "feature_id": "FEAT-533",
       "feature": "wikitoolkit-bookstore-conceptual-relations",
       "spec": "sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "Root of the bookstore chain: models.py + catalog.py. Every later bookstore task imports from it. Sequential in the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-09-06T03:40:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2913-bookstore-relation-models-and-catalog-schema.md"
+      "completed_at": "2026-09-06T04:01:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2913-bookstore-relation-models-and-catalog-schema.md"
     },
     {
       "id": "TASK-2914",
