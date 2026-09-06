@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-06T03:42:00+00:00",
-  "completed_at": "2026-09-06T03:54:12+00:00",
+  "completed_at": "2026-09-06T12:12:52+00:00",
   "tasks": [
     {
       "id": "TASK-2921",
@@ -24,7 +24,8 @@
       "assigned_at": null,
       "completed_at": "2026-09-06T03:48:40+00:00",
       "file": "sdd/tasks/completed/TASK-2921-lyria-music-models-and-nlp-heuristics.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2922",
@@ -43,7 +44,8 @@
       "assigned_at": null,
       "completed_at": "2026-09-06T03:49:44+00:00",
       "file": "sdd/tasks/completed/TASK-2922-lyria-audio-extraction-and-wav-framing.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2923",
@@ -65,7 +67,8 @@
       "assigned_at": null,
       "completed_at": "2026-09-06T03:51:14+00:00",
       "file": "sdd/tasks/completed/TASK-2923-lyria-toolkit-implementation.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2924",
@@ -86,7 +89,8 @@
       "assigned_at": null,
       "completed_at": "2026-09-06T03:52:11+00:00",
       "file": "sdd/tasks/completed/TASK-2924-lyria-toolkit-discovery-and-exports.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2925",
@@ -108,7 +112,8 @@
       "assigned_at": null,
       "completed_at": "2026-09-06T03:54:12+00:00",
       "file": "sdd/tasks/completed/TASK-2925-lyria-toolkit-unit-and-integration-tests.md",
-      "started_at": "2026-09-06T03:44:57+00:00"
+      "started_at": "2026-09-06T03:44:57+00:00",
+      "verification": "verified"
     }
   ]
 }
