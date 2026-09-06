@@ -414,9 +414,7 @@ class Bookstore:
         _card, loc = self.resolve_book(book_id)
         return self._catalog(loc.scope)
 
-    def _write_deterministic(
-        self, relations: list[BookRelation], target_ids: Optional[set[str]] = None
-    ) -> None:
+    def _write_deterministic(self, relations: list[BookRelation], target_ids: Optional[set[str]] = None) -> None:
         """Persist deterministic edges, replacing prior ones for every target.
 
         First deletes every existing ``origin="deterministic"`` edge
@@ -446,11 +444,7 @@ class Bookstore:
                 always pass it explicitly.
         """
         if target_ids is None:
-            target_ids = {
-                book_id
-                for relation in relations
-                for book_id in (relation.src_book_id, relation.dst_book_id)
-            }
+            target_ids = {book_id for relation in relations for book_id in (relation.src_book_id, relation.dst_book_id)}
         for book_id in target_ids:
             for _scope, store in self._stores():
                 store.delete_relations(book_id=book_id, origin="deterministic")
