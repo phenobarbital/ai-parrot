@@ -247,10 +247,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session_017szabNhV61kLcqqqh7gZQF)
+**Date**: 2026-09-06
+**Notes**: Implemented `detect_coding_agent_llm()` in
+`packages/ai-parrot/src/parrot/clients/detection.py` exactly per the
+Implementation Notes pattern in this task, plus the full test scaffold from
+the Test Specification in `packages/ai-parrot/tests/clients/test_detection.py`.
+All 5 unit tests pass; `ruff check` is clean; grep confirms no
+`claude_agent_sdk`/`openai_codex` imports anywhere in the module.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
