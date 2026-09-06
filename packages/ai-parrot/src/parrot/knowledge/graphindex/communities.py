@@ -19,6 +19,7 @@ edges by ``signal_relevance(a, b).combined`` before detection runs, so
 community boundaries respect the signal model rather than raw edge
 counts. The FEAT-190 import is lazy — FEAT-191 ships standalone.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -127,16 +128,79 @@ class HierarchicalCommunitiesResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 #: Generic tokens that carry no discriminative signal for a label.
-_LABEL_STOPWORDS: frozenset[str] = frozenset({
-    "the", "and", "for", "with", "from", "this", "that", "into", "over",
-    "get", "set", "new", "old", "def", "class", "func", "function", "method",
-    "module", "self", "value", "values", "data", "item", "items", "list",
-    "dict", "str", "int", "bool", "none", "true", "false", "test", "tests",
-    "init", "main", "util", "utils", "helper", "helpers", "base", "abstract",
-    "type", "types", "kind", "node", "edge", "graph", "id", "ids", "name",
-    "names", "obj", "object", "args", "kwargs", "return", "returns", "param",
-    "params", "note", "todo", "why", "hack", "fixme", "xxx", "add", "remove",
-})
+_LABEL_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "into",
+        "over",
+        "get",
+        "set",
+        "new",
+        "old",
+        "def",
+        "class",
+        "func",
+        "function",
+        "method",
+        "module",
+        "self",
+        "value",
+        "values",
+        "data",
+        "item",
+        "items",
+        "list",
+        "dict",
+        "str",
+        "int",
+        "bool",
+        "none",
+        "true",
+        "false",
+        "test",
+        "tests",
+        "init",
+        "main",
+        "util",
+        "utils",
+        "helper",
+        "helpers",
+        "base",
+        "abstract",
+        "type",
+        "types",
+        "kind",
+        "node",
+        "edge",
+        "graph",
+        "id",
+        "ids",
+        "name",
+        "names",
+        "obj",
+        "object",
+        "args",
+        "kwargs",
+        "return",
+        "returns",
+        "param",
+        "params",
+        "note",
+        "todo",
+        "why",
+        "hack",
+        "fixme",
+        "xxx",
+        "add",
+        "remove",
+    }
+)
 
 #: Splits identifiers into word tokens (camelCase, snake_case, punctuation).
 _LABEL_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
@@ -328,9 +392,12 @@ def _build_weight_fn(
     def _weight(a: str, b: str) -> float:
         try:
             rel = signal_relevance(
-                graph=graph, nodes=nodes,
-                node_a=a, node_b=b,
-                config=signal_config, embedder=embedder,
+                graph=graph,
+                nodes=nodes,
+                node_a=a,
+                node_b=b,
+                config=signal_config,
+                embedder=embedder,
             )
         except KeyError:
             return 1.0
@@ -451,7 +518,10 @@ def _run_leiden(
         return None
 
     ig_graph, vertex_node_ids = _to_igraph(
-        graph, nodes, signal_config=signal_config, embedder=embedder,
+        graph,
+        nodes,
+        signal_config=signal_config,
+        embedder=embedder,
     )
     if ig_graph.vcount() == 0:
         return []
@@ -596,7 +666,10 @@ def detect_communities(
         `node_id → community_id` lookup.
     """
     nx_graph = _to_undirected_networkx(
-        graph, nodes, signal_config=signal_config, embedder=embedder,
+        graph,
+        nodes,
+        signal_config=signal_config,
+        embedder=embedder,
     )
     # Computed once (FEAT-533 Module 0): True when either FEAT-190 signal
     # weighting is active, or any edge payload carries a weight != 1.0.
@@ -607,8 +680,12 @@ def detect_communities(
 
     if algorithm == "leiden":
         leiden_partition = _run_leiden(
-            graph, nodes, resolution=resolution, seed=seed,
-            signal_config=signal_config, embedder=embedder,
+            graph,
+            nodes,
+            resolution=resolution,
+            seed=seed,
+            signal_config=signal_config,
+            embedder=embedder,
         )
         if leiden_partition is not None:
             partition_sets = leiden_partition
@@ -626,9 +703,12 @@ def detect_communities(
 
     if not partition_sets:
         return CommunitiesResult(
-            modularity=0.0, resolution=resolution, seed=seed,
+            modularity=0.0,
+            resolution=resolution,
+            seed=seed,
             weighted=weighted,
-            communities=[], node_to_community={},
+            communities=[],
+            node_to_community={},
             algorithm=used_algorithm,
         )
 
@@ -640,9 +720,14 @@ def detect_communities(
     # to explain, same treatment as the empty-partition short-circuit above.
     total_weight = _total_edge_weight(nx_graph)
     global_q = (
-        float(nx.community.modularity(
-            nx_graph, partition_sets, weight="weight", resolution=resolution,
-        ))
+        float(
+            nx.community.modularity(
+                nx_graph,
+                partition_sets,
+                weight="weight",
+                resolution=resolution,
+            )
+        )
         if total_weight > 0.0
         else 0.0
     )
@@ -661,7 +746,10 @@ def detect_communities(
         ordered_members = _order_members(nx_graph, members_list, centroid)
         cohesion = cohesion_for_community(nx_graph, member_set)
         contribution = _community_modularity_contribution(
-            nx_graph, member_set, total_weight, resolution,
+            nx_graph,
+            member_set,
+            total_weight,
+            resolution,
         )
         member_titles = [title_lookup.get(nid, nid) for nid in ordered_members]
         top_titles = member_titles[:5]
@@ -756,9 +844,12 @@ def detect_hierarchical_communities(
     sorted_resolutions = sorted(resolutions)
     levels = [
         detect_communities(
-            graph, nodes,
-            resolution=res, seed=seed,
-            signal_config=signal_config, embedder=embedder,
+            graph,
+            nodes,
+            resolution=res,
+            seed=seed,
+            signal_config=signal_config,
+            embedder=embedder,
             write_back_to_nodes=False,
         )
         for res in sorted_resolutions
@@ -776,10 +867,7 @@ def detect_hierarchical_communities(
 
 def _total_edge_weight(nx_graph: nx.Graph) -> float:
     """Sum of edge weights (defaults to 1.0 when 'weight' attr missing)."""
-    return float(sum(
-        data.get("weight", 1.0)
-        for _u, _v, data in nx_graph.edges(data=True)
-    ))
+    return float(sum(data.get("weight", 1.0) for _u, _v, data in nx_graph.edges(data=True)))
 
 
 def _community_modularity_contribution(

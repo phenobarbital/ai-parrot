@@ -161,16 +161,28 @@ async def test_related_books_depth2_and_filters(store):
     project.upsert_relations(
         [
             BookRelation(
-                src_book_id="a", dst_book_id="b", rel="same_author",
-                origin="deterministic", weight=0.9, computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="b",
+                rel="same_author",
+                origin="deterministic",
+                weight=0.9,
+                computed_at=_NOW,
             ),
             BookRelation(
-                src_book_id="b", dst_book_id="c", rel="same_tradition",
-                origin="deterministic", weight=0.7, computed_at=_NOW,
+                src_book_id="b",
+                dst_book_id="c",
+                rel="same_tradition",
+                origin="deterministic",
+                weight=0.7,
+                computed_at=_NOW,
             ),
             BookRelation(
-                src_book_id="a", dst_book_id="d", rel="parallels",
-                origin="llm", confidence=0.3, computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="d",
+                rel="parallels",
+                origin="llm",
+                confidence=0.3,
+                computed_at=_NOW,
             ),
         ]
     )
@@ -200,8 +212,11 @@ async def test_cross_scope_edge_stored_in_src_scope_and_dangling_filtered(store)
     global_.upsert(_card("g-book", scope="global"))
 
     relation = BookRelation(
-        src_book_id="g-book", dst_book_id="a", rel="same_author",
-        origin="deterministic", computed_at=_NOW,
+        src_book_id="g-book",
+        dst_book_id="a",
+        rel="same_author",
+        origin="deterministic",
+        computed_at=_NOW,
     )
     store._write_deterministic([relation])
     assert global_.list_relations("g-book")
@@ -210,8 +225,11 @@ async def test_cross_scope_edge_stored_in_src_scope_and_dangling_filtered(store)
     # Dangling: an edge in the global DB pointing to a book invisible
     # to this Bookstore must be filtered out on read, never raise.
     ghost = BookRelation(
-        src_book_id="g-book", dst_book_id="ghost", rel="same_genre",
-        origin="deterministic", computed_at=_NOW,
+        src_book_id="g-book",
+        dst_book_id="ghost",
+        rel="same_genre",
+        origin="deterministic",
+        computed_at=_NOW,
     )
     global_.upsert_relations([ghost])
     results = store.related_books("a")
@@ -231,22 +249,26 @@ async def test_remove_book_cascades_relations_and_judgements(store):
     project.upsert_relations(
         [
             BookRelation(
-                src_book_id="a", dst_book_id="c", rel="same_author",
-                origin="deterministic", computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="c",
+                rel="same_author",
+                origin="deterministic",
+                computed_at=_NOW,
             ),
         ]
     )
     global_.upsert_relations(
         [
             BookRelation(
-                src_book_id="b", dst_book_id="a", rel="same_tradition",
-                origin="deterministic", computed_at=_NOW,
+                src_book_id="b",
+                dst_book_id="a",
+                rel="same_tradition",
+                origin="deterministic",
+                computed_at=_NOW,
             ),
         ]
     )
-    global_.record_judgements(
-        "b", [RelationJudgement(dst_book_id="a", rel="parallels", confidence=0.6)]
-    )
+    global_.record_judgements("b", [RelationJudgement(dst_book_id="a", rel="parallels", confidence=0.6)])
 
     await store.remove_book("a")
 
@@ -265,12 +287,20 @@ def test_candidate_pairs_prefilter_and_cap():
     others = [_card(f"n{i}") for i in range(10)]
     det = [
         BookRelation(
-            src_book_id="src", dst_book_id="n0", rel="same_author",
-            origin="deterministic", weight=0.9, computed_at=_NOW,
+            src_book_id="src",
+            dst_book_id="n0",
+            rel="same_author",
+            origin="deterministic",
+            weight=0.9,
+            computed_at=_NOW,
         ),
         BookRelation(
-            src_book_id="n1", dst_book_id="src", rel="same_genre",
-            origin="deterministic", weight=0.3, computed_at=_NOW,
+            src_book_id="n1",
+            dst_book_id="src",
+            rel="same_genre",
+            origin="deterministic",
+            weight=0.3,
+            computed_at=_NOW,
         ),
     ]
     fts_hits = [others[0], others[2], others[3]]  # n0 duplicate must be deduped
@@ -329,7 +359,9 @@ async def test_llm_relations_from_draft_drops_unknown_ids():
 async def test_judge_relations_one_prompt_per_book(store_llm, fake_adapter):
     project = store_llm._catalog("project")
     for card in (
-        _card("a", topics=["x"]), _card("b", topics=["x"]), _card("c", topics=["x"]),
+        _card("a", topics=["x"]),
+        _card("b", topics=["x"]),
+        _card("c", topics=["x"]),
     ):
         project.upsert(card)
     fake_adapter.ask_structured.reset_mock()
@@ -362,7 +394,8 @@ async def test_relate_skips_judged_pairs_unless_force(store_llm, fake_adapter):
 async def test_relate_no_llm_runs_stage1_only(store):
     project = store._catalog("project")
     for card in (
-        _card("a", authors=["Same Author"]), _card("b", authors=["Same Author"]),
+        _card("a", authors=["Same Author"]),
+        _card("b", authors=["Same Author"]),
     ):
         project.upsert(card)
 

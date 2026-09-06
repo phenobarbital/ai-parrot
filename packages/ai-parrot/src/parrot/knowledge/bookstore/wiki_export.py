@@ -147,8 +147,7 @@ async def export_plane(
         from parrot.knowledge.wiki.store import SQLiteWikiStore
     except ImportError as exc:
         raise BookstoreError(
-            "export-wiki requires the wiki/graphindex packages "
-            "(pip install ai-parrot[wiki])"
+            "export-wiki requires the wiki/graphindex packages " "(pip install ai-parrot[wiki])"
         ) from exc
 
     out_dir = Path(out_dir)
@@ -245,7 +244,9 @@ def register_namespace(
                 f"— run `wikitoolkit ns remove {name}` first."
             )
         registry.namespaces[name] = WikiNamespaceConfig(
-            store=store_value, backend="sqlite", description=description,
+            store=store_value,
+            backend="sqlite",
+            description=description,
         )
         return save_global_registry(registry)
 
@@ -266,6 +267,8 @@ def register_namespace(
             f"run `wikitoolkit ns remove {name} --global` first."
         )
     config.namespaces[name] = WikiNamespaceConfig(
-        store=store_value, backend="sqlite", description=description,
+        store=store_value,
+        backend="sqlite",
+        description=description,
     )
     return save_project_config(git_root, config)

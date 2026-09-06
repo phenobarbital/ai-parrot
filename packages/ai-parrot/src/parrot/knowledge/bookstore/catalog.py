@@ -79,8 +79,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
 #: it), used to detect a pre-FEAT-533 table (6 columns) that needs a
 #: rebuild — FTS5 virtual tables cannot ``ALTER``.
 _FTS_COLUMNS = (
-    "book_id", "title", "authors_text", "topics_text", "summary",
-    "toc_digest", "genre", "traditions_text",
+    "book_id",
+    "title",
+    "authors_text",
+    "topics_text",
+    "summary",
+    "toc_digest",
+    "genre",
+    "traditions_text",
 )
 
 #: Additive migrations: column name -> ALTER clause. Extend (never edit
@@ -112,10 +118,7 @@ CREATE TABLE IF NOT EXISTS book_relations (
 )
 """
 
-_RELATIONS_INDEX_DDL = (
-    "CREATE INDEX IF NOT EXISTS idx_book_relations_dst "
-    "ON book_relations(dst_book_id)"
-)
+_RELATIONS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS idx_book_relations_dst " "ON book_relations(dst_book_id)"
 
 #: Log of every LLM-judged candidate pair (including ``rel="none"`` and
 #: below-floor confidences) so ``bookstore relate`` never re-asks a
@@ -194,10 +197,7 @@ class CatalogStore:
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute(_BOOKS_DDL)
-        existing = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(books)").fetchall()
-        }
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(books)").fetchall()}
         for column, clause in _ADDED_COLUMNS:
             if column not in existing:
                 conn.execute(f"ALTER TABLE books ADD COLUMN {clause}")
@@ -230,10 +230,7 @@ class CatalogStore:
         just at ``__init__``) — the physical table is never touched
         again, so its ``sqlite_master`` identity is stable.
         """
-        existing_cols = tuple(
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(books_fts)").fetchall()
-        )
+        existing_cols = tuple(row["name"] for row in conn.execute("PRAGMA table_info(books_fts)").fetchall())
         needs_rebuild = bool(existing_cols) and existing_cols != _FTS_COLUMNS
         if needs_rebuild:
             conn.execute("DROP TABLE IF EXISTS books_fts")
@@ -245,8 +242,7 @@ class CatalogStore:
     def _repopulate_fts(conn: sqlite3.Connection) -> None:
         """Rebuild ``books_fts`` rows from the current ``books`` table."""
         rows = conn.execute(
-            "SELECT book_id, title, authors, topics, summary, toc_digest, "
-            "genre, traditions FROM books"
+            "SELECT book_id, title, authors, topics, summary, toc_digest, " "genre, traditions FROM books"
         ).fetchall()
         for row in rows:
             authors = json.loads(row["authors"] or "[]")
@@ -276,8 +272,7 @@ class CatalogStore:
             try:
                 with self._connection() as conn:
                     row = conn.execute(
-                        "SELECT name FROM sqlite_master "
-                        "WHERE type='table' AND name='books_fts'"
+                        "SELECT name FROM sqlite_master " "WHERE type='table' AND name='books_fts'"
                     ).fetchone()
                 self._fts_available = row is not None
             except sqlite3.Error:
@@ -324,9 +319,7 @@ class CatalogStore:
                 payload,
             )
             if self._fts_available:
-                conn.execute(
-                    "DELETE FROM books_fts WHERE book_id = ?", (card.book_id,)
-                )
+                conn.execute("DELETE FROM books_fts WHERE book_id = ?", (card.book_id,))
                 conn.execute(
                     "INSERT INTO books_fts "
                     "(book_id, title, authors_text, topics_text, summary, "
@@ -369,13 +362,9 @@ class CatalogStore:
         """
         with self._connection() as conn:
             self._ensure_schema(conn)
-            cursor = conn.execute(
-                "DELETE FROM books WHERE book_id = ?", (book_id,)
-            )
+            cursor = conn.execute("DELETE FROM books WHERE book_id = ?", (book_id,))
             if self._fts_available:
-                conn.execute(
-                    "DELETE FROM books_fts WHERE book_id = ?", (book_id,)
-                )
+                conn.execute("DELETE FROM books_fts WHERE book_id = ?", (book_id,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -385,25 +374,19 @@ class CatalogStore:
     def get(self, book_id: str) -> Optional[BookCard]:
         """Load one card by id, or ``None``."""
         with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM books WHERE book_id = ?", (book_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM books WHERE book_id = ?", (book_id,)).fetchone()
         return self._row_to_card(row) if row else None
 
     def find_by_sha(self, sha256: str) -> Optional[BookCard]:
         """Find the card for an already-ingested source file, if any."""
         with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM books WHERE source_sha256 = ?", (sha256,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM books WHERE source_sha256 = ?", (sha256,)).fetchone()
         return self._row_to_card(row) if row else None
 
     def list_cards(self) -> list[BookCard]:
         """All cards, ordered by title."""
         with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM books ORDER BY title COLLATE NOCASE"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
         return [self._row_to_card(row) for row in rows]
 
     def taken_slugs(self) -> set[str]:
@@ -454,9 +437,7 @@ class CatalogStore:
         terms = _FTS_TERM_RE.findall(query)
         return " OR ".join(f'"{term}"' for term in terms)
 
-    def _like_search(
-        self, query: str, top_k: int
-    ) -> list[tuple[BookCard, float]]:
+    def _like_search(self, query: str, top_k: int) -> list[tuple[BookCard, float]]:
         terms = [t.lower() for t in _FTS_TERM_RE.findall(query)]
         if not terms:
             return []
@@ -531,9 +512,7 @@ class CatalogStore:
                 )
             conn.commit()
 
-    def delete_relations(
-        self, book_id: Optional[str] = None, origin: Optional[str] = None
-    ) -> int:
+    def delete_relations(self, book_id: Optional[str] = None, origin: Optional[str] = None) -> int:
         """Delete edges matching ``book_id`` (as either endpoint) and/or ``origin``.
 
         With no filters, deletes every edge in this store.
@@ -556,9 +535,7 @@ class CatalogStore:
             conn.commit()
             return cursor.rowcount
 
-    def delete_relation_pair(
-        self, src_book_id: str, dst_book_id: str, *, origin: Optional[str] = None
-    ) -> int:
+    def delete_relation_pair(self, src_book_id: str, dst_book_id: str, *, origin: Optional[str] = None) -> int:
         """Delete edge(s) between exactly this pair, in whichever direction stored.
 
         Added for TASK-2916 (Stage 2 orchestration): symmetric relations
@@ -580,10 +557,7 @@ class CatalogStore:
             if both directions happen to hold distinct ``rel`` values,
             e.g. a directed ``influenced_by`` plus a symmetric one).
         """
-        clauses = [
-            "((src_book_id = :a AND dst_book_id = :b) OR "
-            "(src_book_id = :b AND dst_book_id = :a))"
-        ]
+        clauses = ["((src_book_id = :a AND dst_book_id = :b) OR " "(src_book_id = :b AND dst_book_id = :a))"]
         params: dict[str, str] = {"a": src_book_id, "b": dst_book_id}
         if origin is not None:
             clauses.append("origin = :origin")
@@ -597,9 +571,7 @@ class CatalogStore:
             conn.commit()
             return cursor.rowcount
 
-    def list_relations(
-        self, book_id: str, rel: Optional[str] = None
-    ) -> list[BookRelation]:
+    def list_relations(self, book_id: str, rel: Optional[str] = None) -> list[BookRelation]:
         """Edges touching ``book_id`` in either direction, optionally filtered by ``rel``."""
         clauses = ["(src_book_id = :book_id OR dst_book_id = :book_id)"]
         params: dict[str, str] = {"book_id": book_id}
@@ -669,8 +641,7 @@ class CatalogStore:
         with self._connection() as conn:
             self._ensure_schema(conn)
             cursor = conn.execute(
-                "DELETE FROM relation_judgements "
-                "WHERE src_book_id = ? OR dst_book_id = ?",
+                "DELETE FROM relation_judgements " "WHERE src_book_id = ? OR dst_book_id = ?",
                 (book_id, book_id),
             )
             conn.commit()
@@ -733,9 +704,7 @@ class CatalogStore:
     def list_communities(self) -> list[BookCommunity]:
         """All communities, largest first."""
         with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM communities ORDER BY size DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM communities ORDER BY size DESC").fetchall()
         return [self._row_to_community(row) for row in rows]
 
     def get_community(self, community_id: str) -> Optional[BookCommunity]:
@@ -747,15 +716,12 @@ class CatalogStore:
             ).fetchone()
         return self._row_to_community(row) if row else None
 
-    def set_card_community(
-        self, book_id: str, community_id: Optional[str], label: Optional[str]
-    ) -> None:
+    def set_card_community(self, book_id: str, community_id: Optional[str], label: Optional[str]) -> None:
         """Write back a card's community assignment (Stage 3 persistence)."""
         with self._connection() as conn:
             self._ensure_schema(conn)
             conn.execute(
-                "UPDATE books SET community_id = ?, community_label = ? "
-                "WHERE book_id = ?",
+                "UPDATE books SET community_id = ?, community_label = ? " "WHERE book_id = ?",
                 (community_id, label, book_id),
             )
             conn.commit()
@@ -776,8 +742,7 @@ def merged_cards(stores: list[tuple[str, CatalogStore]]) -> list[BookCard]:
         for card in store.list_cards():
             if card.book_id in seen:
                 logger.warning(
-                    "Book id %r also exists in the %s catalog — shadowed "
-                    "by an earlier scope",
+                    "Book id %r also exists in the %s catalog — shadowed " "by an earlier scope",
                     card.book_id,
                     scope,
                 )
@@ -787,9 +752,7 @@ def merged_cards(stores: list[tuple[str, CatalogStore]]) -> list[BookCard]:
     return merged
 
 
-def merged_search(
-    stores: list[tuple[str, CatalogStore]], query: str, top_k: int = 8
-) -> list[BookCard]:
+def merged_search(stores: list[tuple[str, CatalogStore]], query: str, top_k: int = 8) -> list[BookCard]:
     """Search several catalogs and merge by score.
 
     BM25 scores from different databases are not strictly comparable;
@@ -814,9 +777,7 @@ def merged_search(
     return [card for _, _, card in ranked[:top_k]]
 
 
-def merged_relations(
-    stores: list[tuple[str, CatalogStore]], visible_ids: set[str]
-) -> list[BookRelation]:
+def merged_relations(stores: list[tuple[str, CatalogStore]], visible_ids: set[str]) -> list[BookRelation]:
     """Union relation edges across scopes, dropping dangling endpoints.
 
     A global book may relate to books in several projects; each project
@@ -837,10 +798,7 @@ def merged_relations(
     merged: list[BookRelation] = []
     for _scope, store in stores:
         for relation in store._all_relations():
-            if (
-                relation.src_book_id not in visible_ids
-                or relation.dst_book_id not in visible_ids
-            ):
+            if relation.src_book_id not in visible_ids or relation.dst_book_id not in visible_ids:
                 continue
             key = (relation.src_book_id, relation.dst_book_id, relation.rel)
             if key in seen:

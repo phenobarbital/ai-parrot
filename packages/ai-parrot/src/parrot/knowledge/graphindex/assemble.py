@@ -96,14 +96,10 @@ class GraphAssembler:
         tgt_idx = self._node_index_map.get(edge.target_id)
 
         if src_idx is None:
-            logger.warning(
-                "Edge source '%s' not found in graph — skipping edge", edge.source_id
-            )
+            logger.warning("Edge source '%s' not found in graph — skipping edge", edge.source_id)
             return None
         if tgt_idx is None:
-            logger.warning(
-                "Edge target '%s' not found in graph — skipping edge", edge.target_id
-            )
+            logger.warning("Edge target '%s' not found in graph — skipping edge", edge.target_id)
             return None
 
         payload = {
@@ -162,9 +158,7 @@ class GraphAssembler:
             return None
         return self.graph[idx]
 
-    def get_neighbors(
-        self, node_id: str, direction: str = "outgoing"
-    ) -> list[dict]:
+    def get_neighbors(self, node_id: str, direction: str = "outgoing") -> list[dict]:
         """Get neighboring node payloads.
 
         Args:
@@ -197,9 +191,7 @@ class GraphAssembler:
                 result.append(self.graph[i])
         return result
 
-    def get_edges_for_node(
-        self, node_id: str, direction: str = "both"
-    ) -> list[dict]:
+    def get_edges_for_node(self, node_id: str, direction: str = "both") -> list[dict]:
         """Get edge payloads connected to a node.
 
         Args:

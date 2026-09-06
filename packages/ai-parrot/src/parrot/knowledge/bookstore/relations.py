@@ -122,9 +122,7 @@ def _relation(
     )
 
 
-def _same_era(
-    a: BookCard, b: BookCard, era_window_years: int
-) -> Optional[str]:
+def _same_era(a: BookCard, b: BookCard, era_window_years: int) -> Optional[str]:
     """Rationale string when ``a``/``b`` share an era, else ``None``.
 
     Matches on a ``year`` window (``|year_a - year_b| <= window``) OR
@@ -185,7 +183,11 @@ def deterministic_relations(
         if shared_authors:
             out.append(
                 _relation(
-                    a, b, "same_author", REL_WEIGHTS["same_author"], now,
+                    a,
+                    b,
+                    "same_author",
+                    REL_WEIGHTS["same_author"],
+                    now,
                     rationale=f"author={sorted(shared_authors)[0]}",
                 )
             )
@@ -194,7 +196,11 @@ def deterministic_relations(
         if jaccard >= topic_jaccard_min:
             out.append(
                 _relation(
-                    a, b, "shares_topic", jaccard, now,
+                    a,
+                    b,
+                    "shares_topic",
+                    jaccard,
+                    now,
                     rationale=f"jaccard={jaccard:.2f}",
                 )
             )
@@ -203,7 +209,11 @@ def deterministic_relations(
         if shared_traditions:
             out.append(
                 _relation(
-                    a, b, "same_tradition", REL_WEIGHTS["same_tradition"], now,
+                    a,
+                    b,
+                    "same_tradition",
+                    REL_WEIGHTS["same_tradition"],
+                    now,
                     rationale=f"tradition={sorted(shared_traditions)[0]}",
                 )
             )
@@ -211,7 +221,11 @@ def deterministic_relations(
         if a.genre != "other" and a.genre == b.genre:
             out.append(
                 _relation(
-                    a, b, "same_genre", REL_WEIGHTS["same_genre"], now,
+                    a,
+                    b,
+                    "same_genre",
+                    REL_WEIGHTS["same_genre"],
+                    now,
                     rationale=f"genre={a.genre}",
                 )
             )
@@ -220,7 +234,11 @@ def deterministic_relations(
         if era_rationale is not None:
             out.append(
                 _relation(
-                    a, b, "same_era", REL_WEIGHTS["same_era"], now,
+                    a,
+                    b,
+                    "same_era",
+                    REL_WEIGHTS["same_era"],
+                    now,
                     rationale=era_rationale,
                 )
             )
@@ -228,7 +246,11 @@ def deterministic_relations(
         if a.language and b.language and a.language == b.language:
             out.append(
                 _relation(
-                    a, b, "same_language", REL_WEIGHTS["same_language"], now,
+                    a,
+                    b,
+                    "same_language",
+                    REL_WEIGHTS["same_language"],
+                    now,
                     rationale=f"language={a.language}",
                 )
             )
@@ -375,7 +397,9 @@ async def judge_relations(
     """
     logger.debug(
         "Stage 2: judging %d candidate(s) for %r (model=%s)",
-        len(candidates), card.book_id, model_name or "?",
+        len(candidates),
+        card.book_id,
+        model_name or "?",
     )
     prompt = _RELATION_PROMPT.format(
         source_brief=_brief_line(card),
@@ -575,11 +599,7 @@ async def label_community(
     Returns:
         The LLM-filled :class:`CommunityLabelDraft`.
     """
-    members = [
-        cards_by_id[node_id]
-        for node_id in community.member_node_ids[:10]
-        if node_id in cards_by_id
-    ]
+    members = [cards_by_id[node_id] for node_id in community.member_node_ids[:10] if node_id in cards_by_id]
     lines = [
         f"- title={card.title} | authors={', '.join(card.authors) or '(unknown)'} | "
         f"traditions={', '.join(card.traditions) or '(none)'} | "
@@ -593,9 +613,7 @@ async def label_community(
     return draft
 
 
-def fallback_label(
-    community: Community, cards_by_id: dict[str, BookCard]
-) -> tuple[str, str]:
+def fallback_label(community: Community, cards_by_id: dict[str, BookCard]) -> tuple[str, str]:
     """Deterministic label when no LLM is available or labelling failed.
 
     Args:

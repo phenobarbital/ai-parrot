@@ -26,8 +26,8 @@ FUNNEL_STEP_1B = (
     "    `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`\n"
     "    hit to find the author's other works, sibling works of the same\n"
     "    tradition/era, or conceptually adjacent works. For thematic or\n"
-    "    comparative questions (\"what schools of thought does this library\n"
-    "    cover?\"), call `bookstore_communities()` instead."
+    '    comparative questions ("what schools of thought does this library\n'
+    '    cover?"), call `bookstore_communities()` instead.'
 )
 
 CITATION_RULE = (
@@ -44,12 +44,8 @@ def _bookstore_assets_text() -> str:
 
 
 def test_skill_mirrors_share_funnel_section():
-    skill_md = (_REPO_ROOT / ".agent" / "skills" / "bookstore" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    command_md = (_REPO_ROOT / ".claude" / "commands" / "bookstore.md").read_text(
-        encoding="utf-8"
-    )
+    skill_md = (_REPO_ROOT / ".agent" / "skills" / "bookstore" / "SKILL.md").read_text(encoding="utf-8")
+    command_md = (_REPO_ROOT / ".claude" / "commands" / "bookstore.md").read_text(encoding="utf-8")
     assets_py = _bookstore_assets_text()
 
     for label, text in (

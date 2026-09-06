@@ -15,8 +15,18 @@ from pydantic import BaseModel, Field, model_validator
 #: alongside title/authors/topics (FEAT-533). ``"other"`` is the
 #: default for un-classified/legacy cards.
 Genre = Literal[
-    "novel", "short_stories", "essay", "treatise", "poetry", "drama",
-    "dialogue", "biography", "history", "letters", "reference", "manual",
+    "novel",
+    "short_stories",
+    "essay",
+    "treatise",
+    "poetry",
+    "drama",
+    "dialogue",
+    "biography",
+    "history",
+    "letters",
+    "reference",
+    "manual",
     "other",
 ]
 
@@ -27,9 +37,16 @@ Genre = Literal[
 #:   ``influenced_by``/``responds_to`` are directed, the rest symmetric.
 #: - derived (``origin="community"``): written from a community partition.
 RelationKind = Literal[
-    "same_author", "shares_topic", "same_tradition", "same_genre",
-    "same_era", "same_language",
-    "influenced_by", "responds_to", "parallels", "contrasts_with",
+    "same_author",
+    "shares_topic",
+    "same_tradition",
+    "same_genre",
+    "same_era",
+    "same_language",
+    "influenced_by",
+    "responds_to",
+    "parallels",
+    "contrasts_with",
     "same_community",
 ]
 
@@ -38,8 +55,14 @@ RelationKind = Literal[
 #: :data:`RelationKind` except the two directed conceptual relations.
 SYMMETRIC_RELS: frozenset[str] = frozenset(
     {
-        "same_author", "shares_topic", "same_tradition", "same_genre",
-        "same_era", "same_language", "parallels", "contrasts_with",
+        "same_author",
+        "shares_topic",
+        "same_tradition",
+        "same_genre",
+        "same_era",
+        "same_language",
+        "parallels",
+        "contrasts_with",
         "same_community",
     }
 )
@@ -99,15 +122,9 @@ class CardDraft(BaseModel):
     """
 
     title: str = Field(..., description="Full book title.")
-    authors: list[str] = Field(
-        default_factory=list, description="Author names, best effort."
-    )
-    year: Optional[int] = Field(
-        default=None, description="Publication year when identifiable."
-    )
-    language: Optional[str] = Field(
-        default=None, description="Primary language, ISO 639-1 (e.g. 'en', 'es')."
-    )
+    authors: list[str] = Field(default_factory=list, description="Author names, best effort.")
+    year: Optional[int] = Field(default=None, description="Publication year when identifiable.")
+    language: Optional[str] = Field(default=None, description="Primary language, ISO 639-1 (e.g. 'en', 'es').")
     topics: list[str] = Field(
         default_factory=list,
         description="5-10 research topics/keywords this book is useful for.",
@@ -115,13 +132,10 @@ class CardDraft(BaseModel):
     summary: str = Field(
         default="",
         description=(
-            "One-paragraph librarian summary: what the book covers and "
-            "what kind of questions it can answer."
+            "One-paragraph librarian summary: what the book covers and " "what kind of questions it can answer."
         ),
     )
-    genre: Genre = Field(
-        default="other", description="Closed literary genre classification."
-    )
+    genre: Genre = Field(default="other", description="Closed literary genre classification.")
     traditions: list[str] = Field(
         default_factory=list,
         description=(
@@ -131,9 +145,7 @@ class CardDraft(BaseModel):
     )
     period: Optional[str] = Field(
         default=None,
-        description=(
-            "Historical period or era (e.g. 'siglo de oro', 'han dynasty')."
-        ),
+        description=("Historical period or era (e.g. 'siglo de oro', 'han dynasty')."),
     )
 
 
@@ -236,10 +248,7 @@ class BookRelation(BaseModel):
     def _reject_self_pair(self) -> "BookRelation":
         """Backstop for the DB's ``CHECK (src_book_id <> dst_book_id)``."""
         if self.src_book_id == self.dst_book_id:
-            raise ValueError(
-                "BookRelation cannot relate a book to itself "
-                f"({self.src_book_id!r})"
-            )
+            raise ValueError("BookRelation cannot relate a book to itself " f"({self.src_book_id!r})")
         return self
 
 
@@ -287,9 +296,7 @@ class CommunityLabelDraft(BaseModel):
     """
 
     label: str = Field(..., description="Community label, 6 words or fewer.")
-    description: str = Field(
-        default="", description="One-sentence description of the community."
-    )
+    description: str = Field(default="", description="One-sentence description of the community.")
 
 
 class BookCommunity(BaseModel):

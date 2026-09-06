@@ -62,9 +62,7 @@ def _subprocess_env(library_dir: Path) -> dict:
         str(Path(__file__).resolve().parents[4] / "ai-parrot-server" / "src"),
     ]
     existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        os.pathsep.join([*src_roots, existing]) if existing else os.pathsep.join(src_roots)
-    )
+    env["PYTHONPATH"] = os.pathsep.join([*src_roots, existing]) if existing else os.pathsep.join(src_roots)
     env["PARROT_LIBRARY_DIR"] = str(library_dir)
     env.pop("PARROT_BOOKSTORE_LLM", None)
     return env
@@ -90,21 +88,15 @@ def test_cli_relate_related_communities_json(library_five_books, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(library_dir.parent / "home"))
     monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(library_dir.parent))
 
-    relate_result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["relate", "--all", "--no-llm"]
-    )
+    relate_result = CliRunner().invoke(bookstore_cli.bookstore, ["relate", "--all", "--no-llm"])
     assert relate_result.exit_code == 0, relate_result.output
 
     book_id = library_five_books.list_books()[0].book_id
-    related_result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["related", book_id, "--json"]
-    )
+    related_result = CliRunner().invoke(bookstore_cli.bookstore, ["related", book_id, "--json"])
     assert related_result.exit_code == 0, related_result.output
     json.loads(related_result.output)
 
-    communities_result = CliRunner().invoke(
-        bookstore_cli.bookstore, ["communities", "--json"]
-    )
+    communities_result = CliRunner().invoke(bookstore_cli.bookstore, ["communities", "--json"])
     assert communities_result.exit_code == 0, communities_result.output
     json.loads(communities_result.output)
 
@@ -116,7 +108,9 @@ async def test_mcp_related_books_roundtrip(library_five_books, tmp_path):
     book_id = library_five_books.list_books()[0].book_id
 
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "parrot.knowledge.bookstore.mcp_server",
+        sys.executable,
+        "-m",
+        "parrot.knowledge.bookstore.mcp_server",
         cwd=str(tmp_path),
         env=_subprocess_env(library_dir),
         stdin=asyncio.subprocess.PIPE,
@@ -124,6 +118,7 @@ async def test_mcp_related_books_roundtrip(library_five_books, tmp_path):
         stderr=asyncio.subprocess.PIPE,
     )
     try:
+
         async def send(request: dict) -> dict:
             proc.stdin.write((json.dumps(request) + "\n").encode())
             await proc.stdin.drain()
@@ -143,7 +138,9 @@ async def test_mcp_related_books_roundtrip(library_five_books, tmp_path):
 
         resp = await send(
             {
-                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
                 "params": {
                     "name": "bookstore_related_books",
                     "arguments": {"book_id": book_id},
@@ -176,9 +173,7 @@ async def test_export_wiki_then_wiki_reads_it(library_five_books, tmp_path):
     assert result["pages"] == len(pages)
     assert result["edges"] == len(edges)
 
-    nodes, graph_edges = await _load_graphindex_nodes_edges(
-        read_store, frozenset({"book"})
-    )
+    nodes, graph_edges = await _load_graphindex_nodes_edges(read_store, frozenset({"book"}))
     assert len(nodes) == 5
     assert len(graph_edges) == len(edges)
 

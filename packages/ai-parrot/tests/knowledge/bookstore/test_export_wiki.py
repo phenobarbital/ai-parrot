@@ -50,12 +50,19 @@ def store_with_relations(locations) -> Bookstore:
     project.upsert_relations(
         [
             BookRelation(
-                src_book_id="a", dst_book_id="b", rel="same_author",
-                origin="deterministic", computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="b",
+                rel="same_author",
+                origin="deterministic",
+                computed_at=_NOW,
             ),
             BookRelation(
-                src_book_id="a", dst_book_id="c", rel="parallels",
-                origin="llm", confidence=0.7, computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="c",
+                rel="parallels",
+                origin="llm",
+                confidence=0.7,
+                computed_at=_NOW,
             ),
         ]
     )
@@ -131,9 +138,7 @@ async def test_export_wiki_registers_namespace_project(git_root, monkeypatch):
     assert wiki_json.is_file()
     data = json.loads(wiki_json.read_text(encoding="utf-8"))
     assert "bookstore" in data["namespaces"]
-    assert data["namespaces"]["bookstore"]["store"] == str(
-        Path(".parrot") / "library" / "wiki"
-    )
+    assert data["namespaces"]["bookstore"]["store"] == str(Path(".parrot") / "library" / "wiki")
     assert result["registered_in"] == str(wiki_json)
 
 
@@ -168,7 +173,8 @@ async def test_export_wiki_conflicting_namespace_refused(git_root, monkeypatch):
 
     config = load_project_config(git_root)
     config.namespaces["bookstore"] = WikiNamespaceConfig(
-        store="/some/other/place", backend="sqlite",
+        store="/some/other/place",
+        backend="sqlite",
     )
     save_project_config(git_root, config)
 

@@ -198,9 +198,7 @@ class Bookstore:
 
     def _content_store(self, scope: str) -> NodeContentStore:
         if scope not in self._content_stores:
-            self._content_stores[scope] = NodeContentStore(
-                self._location(scope).trees_dir
-            )
+            self._content_stores[scope] = NodeContentStore(self._location(scope).trees_dir)
         return self._content_stores[scope]
 
     def _stores(self) -> list[tuple[str, CatalogStore]]:
@@ -244,9 +242,7 @@ class Bookstore:
             card = self._catalog(loc.scope).get(book_id)
             if card is not None:
                 return card.model_copy(update={"scope": loc.scope}), loc
-        raise BookstoreError(
-            f"Unknown book {book_id!r} — use catalog_search/list_books first"
-        )
+        raise BookstoreError(f"Unknown book {book_id!r} — use catalog_search/list_books first")
 
     def get_card(self, book_id: str) -> BookCard:
         """Full ficha for one book."""
@@ -263,9 +259,7 @@ class Bookstore:
             "entries": [entry.model_dump() for entry in card.toc],
         }
 
-    async def search_book(
-        self, book_id: str, query: str, top_k: int = 8
-    ) -> list[dict[str, Any]]:
+    async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:
         """Hybrid search inside one book's tree.
 
         The LLM tree-walk runs only when an adapter is configured;
@@ -291,10 +285,7 @@ class Bookstore:
         body = self._content_store(loc.scope).load(card.tree_name, node_id)
         entry = next((e for e in card.toc if e.node_id == node_id), None)
         if body is None and entry is None:
-            raise BookstoreError(
-                f"Unknown section {node_id!r} in book {book_id!r} — "
-                "check bookstore_get_toc"
-            )
+            raise BookstoreError(f"Unknown section {node_id!r} in book {book_id!r} — " "check bookstore_get_toc")
         return {
             "book_id": card.book_id,
             "book_title": card.title,
@@ -391,18 +382,12 @@ class Bookstore:
                             "book_id": tree,
                             "title": titles.get(tree, tree),
                             "scope": scope,
-                            **{
-                                k: v
-                                for k, v in result.items()
-                                if k != "tree_name"
-                            },
+                            **{k: v for k, v in result.items() if k != "tree_name"},
                         }
                     )
         else:
             for card in cards:
-                results = await self.search_book(
-                    card.book_id, query, top_k=top_k
-                )
+                results = await self.search_book(card.book_id, query, top_k=top_k)
                 books.append(
                     {
                         "book_id": card.book_id,
@@ -513,9 +498,7 @@ class Bookstore:
             if other_id == book_id or other_id not in cards_by_id:
                 return
             current = best.get(other_id)
-            if current is None or hop < current[0] or (
-                hop == current[0] and relation.weight > current[1].weight
-            ):
+            if current is None or hop < current[0] or (hop == current[0] and relation.weight > current[1].weight):
                 best[other_id] = (hop, relation, via)
 
         hop1_neighbors: set[str] = set()
@@ -591,19 +574,14 @@ class Bookstore:
             det = deterministic_relations(all_cards, now=now)
             target_set = set(targets)
             touching_targets = [
-                relation
-                for relation in det
-                if relation.src_book_id in target_set
-                or relation.dst_book_id in target_set
+                relation for relation in det if relation.src_book_id in target_set or relation.dst_book_id in target_set
             ]
             if touching_targets:
                 self._write_deterministic(touching_targets)
             summary.deterministic_edges = len(touching_targets)
 
             if not use_llm or not self.has_llm:
-                summary.skipped_llm_reason = (
-                    "no LLM configured" if not self.has_llm else "--no-llm"
-                )
+                summary.skipped_llm_reason = "no LLM configured" if not self.has_llm else "--no-llm"
             else:
                 for book_id in targets:
                     card = cards_by_id.get(book_id)
@@ -612,37 +590,44 @@ class Bookstore:
                     try:
                         store = self._relations_store_for(book_id)
                         judged = set() if force else store.judged_pairs(book_id)
-                        fts_hits = self.catalog_search(
-                            card.summary or " ".join(card.topics), top_k=8
-                        )
+                        fts_hits = self.catalog_search(card.summary or " ".join(card.topics), top_k=8)
                         candidates = candidate_pairs(
-                            card, all_cards, det, fts_hits, judged,
+                            card,
+                            all_cards,
+                            det,
+                            fts_hits,
+                            judged,
                         )
                         if not candidates:
                             continue
                         model_name = getattr(self.adapter, "model", "") or ""
                         draft = await judge_relations(
-                            self.adapter, card, candidates, model_name=model_name,
+                            self.adapter,
+                            card,
+                            candidates,
+                            model_name=model_name,
                         )
                         summary.llm_prompts += 1
                         store.record_judgements(
-                            book_id, draft.judgements, model=model_name,
+                            book_id,
+                            draft.judgements,
+                            model=model_name,
                         )
                         # Replace only the pairs re-judged this run, so
                         # edges judged earlier from the *other* book's
                         # perspective survive (spec §7 asymmetry rule).
                         for judgement in draft.judgements:
                             store.delete_relation_pair(
-                                book_id, judgement.dst_book_id, origin="llm",
+                                book_id,
+                                judgement.dst_book_id,
+                                origin="llm",
                             )
                         rels = llm_relations_from_draft(card, draft, now=now)
                         if rels:
                             store.upsert_relations(rels)
                         summary.llm_edges += len(rels)
                     except Exception as exc:  # noqa: BLE001 — never abort the batch
-                        logger.warning(
-                            "relate: Stage 2 failed for %r: %s", book_id, exc
-                        )
+                        logger.warning("relate: Stage 2 failed for %r: %s", book_id, exc)
                         summary.failed[book_id] = str(exc)
 
         if communities:
@@ -666,14 +651,14 @@ class Bookstore:
             return
         visible_ids = {card.book_id for card in visible_cards}
         relations = [
-            relation
-            for relation in merged_relations(self._stores(), visible_ids)
-            if relation.rel != "same_community"
+            relation for relation in merged_relations(self._stores(), visible_ids) if relation.rel != "same_community"
         ]
 
         try:
             result, inter, _assembler = detect_book_communities(
-                visible_cards, relations, resolution=resolution,
+                visible_cards,
+                relations,
+                resolution=resolution,
             )
         except Exception as exc:  # noqa: BLE001 — never abort the batch
             logger.warning("relate: Stage 3 detection failed: %s", exc)
@@ -688,7 +673,9 @@ class Bookstore:
                 if self.has_llm:
                     draft = await label_community(self.adapter, community, cards_by_id)
                     labels[community.community_id] = (
-                        draft.label, draft.description, "llm",
+                        draft.label,
+                        draft.description,
+                        "llm",
                     )
                 else:
                     label, origin = fallback_label(community, cards_by_id)
@@ -696,13 +683,18 @@ class Bookstore:
             except Exception as exc:  # noqa: BLE001 — never abort the batch
                 logger.warning(
                     "relate: labelling failed for community %r: %s",
-                    community.community_id, exc,
+                    community.community_id,
+                    exc,
                 )
                 label, origin = fallback_label(community, cards_by_id)
                 labels[community.community_id] = (label, "", origin)
 
         book_communities = communities_from_result(
-            result, inter, labels, cards_by_id, now=now,
+            result,
+            inter,
+            labels,
+            cards_by_id,
+            now=now,
         )
         self._communities_store().upsert_communities(book_communities)
 
@@ -718,8 +710,11 @@ class Bookstore:
                 _card_a, loc = self.resolve_book(a)
                 by_scope_edges.setdefault(loc.scope, []).append(
                     BookRelation(
-                        src_book_id=a, dst_book_id=b, rel="same_community",
-                        weight=same_community_weight, origin="community",
+                        src_book_id=a,
+                        dst_book_id=b,
+                        rel="same_community",
+                        weight=same_community_weight,
+                        origin="community",
                         computed_at=now,
                     )
                 )
@@ -732,13 +727,13 @@ class Bookstore:
             label = labels[community_id][0] if community_id is not None else None
             loc_scope = self.resolve_book(card.book_id)[1].scope
             self._catalog(loc_scope).set_card_community(
-                card.book_id, community_id, label,
+                card.book_id,
+                community_id,
+                label,
             )
 
         summary.communities = len(result.communities)
-        summary.notes.append(
-            f"communities: {result.algorithm} ({len(result.communities)})"
-        )
+        summary.notes.append(f"communities: {result.algorithm} ({len(result.communities)})")
 
     def _communities_store(self) -> CatalogStore:
         """The scope DB that receives the ``communities`` table this run.
@@ -823,9 +818,11 @@ class Bookstore:
         persisted_labels = {c.community_id: c.label for c in self.communities()}
         if persisted_labels:
             relabelled = [
-                community.model_copy(update={"label": persisted_labels[community.community_id]})
-                if community.community_id in persisted_labels
-                else community
+                (
+                    community.model_copy(update={"label": persisted_labels[community.community_id]})
+                    if community.community_id in persisted_labels
+                    else community
+                )
                 for community in result.communities
             ]
             result = result.model_copy(update={"communities": relabelled})
@@ -838,13 +835,10 @@ class Bookstore:
                 from parrot.knowledge.wiki.project import find_project_root
             except ImportError as exc:
                 raise BookstoreError(
-                    "export-wiki requires the wiki/graphindex packages "
-                    "(pip install ai-parrot[wiki])"
+                    "export-wiki requires the wiki/graphindex packages " "(pip install ai-parrot[wiki])"
                 ) from exc
             git_root = None if scope == "global" else find_project_root(loc.root)
-            registered_in = str(
-                register_namespace(out_dir, scope=scope, git_root=git_root)
-            )
+            registered_in = str(register_namespace(out_dir, scope=scope, git_root=git_root))
 
         return {**stats, "registered_in": registered_in}
 
@@ -891,10 +885,7 @@ class Bookstore:
             raise BookstoreError(f"File not found: {path}")
         fmt = _FORMAT_BY_SUFFIX.get(path.suffix.lower())
         if fmt is None:
-            raise BookstoreError(
-                f"Unsupported format {path.suffix!r} — "
-                f"supported: {sorted(_FORMAT_BY_SUFFIX)}"
-            )
+            raise BookstoreError(f"Unsupported format {path.suffix!r} — " f"supported: {sorted(_FORMAT_BY_SUFFIX)}")
 
         catalog = self._catalog(scope)
         payload = await asyncio.to_thread(path.read_bytes)
@@ -933,9 +924,7 @@ class Bookstore:
             elif fmt == "md":
                 await toolkit.insert_markdown(
                     tree_name=slug,
-                    markdown=await asyncio.to_thread(
-                        path.read_text, encoding="utf-8"
-                    ),
+                    markdown=await asyncio.to_thread(path.read_text, encoding="utf-8"),
                     doc_name=title or path.stem,
                 )
             elif fmt == "txt":
@@ -946,9 +935,7 @@ class Bookstore:
                     )
                 await toolkit.insert_content(
                     tree_name=slug,
-                    content=await asyncio.to_thread(
-                        path.read_text, encoding="utf-8"
-                    ),
+                    content=await asyncio.to_thread(path.read_text, encoding="utf-8"),
                 )
             elif fmt == "docx":
                 markdown = await self._docx_to_markdown(path)
@@ -1057,8 +1044,7 @@ class Bookstore:
             from parrot_loaders.docx import MSWordLoader
         except ImportError as exc:
             raise BookstoreError(
-                "DOCX support requires the ai-parrot-loaders package "
-                "(pip install ai-parrot-loaders)"
+                "DOCX support requires the ai-parrot-loaders package " "(pip install ai-parrot-loaders)"
             ) from exc
         loader = MSWordLoader(str(path))
         markdown = await asyncio.to_thread(loader.docx_to_markdown, path)
@@ -1104,9 +1090,7 @@ class Bookstore:
         return [section.model_dump() for section in sections]
 
     @staticmethod
-    def iter_folder_files(
-        folder: str | Path, recursive: bool = False
-    ) -> tuple[list[Path], list[Path]]:
+    def iter_folder_files(folder: str | Path, recursive: bool = False) -> tuple[list[Path], list[Path]]:
         """Enumerate a folder's ingestable files.
 
         Args:
@@ -1176,19 +1160,13 @@ class Bookstore:
         any_succeeded = False
         for path in supported:
             try:
-                card, status = await self.add_book(
-                    path, scope=scope, force=force, relate=relate
-                )
-                results.append(
-                    {"file": str(path), "status": status, "book_id": card.book_id}
-                )
+                card, status = await self.add_book(path, scope=scope, force=force, relate=relate)
+                results.append({"file": str(path), "status": status, "book_id": card.book_id})
                 if status in ("added", "updated"):
                     any_succeeded = True
             except Exception as exc:  # noqa: BLE001 — keep the loop alive
                 logger.warning("Failed to ingest %s: %s", path, exc)
-                results.append(
-                    {"file": str(path), "status": "failed", "error": str(exc)}
-                )
+                results.append({"file": str(path), "status": "failed", "error": str(exc)})
         if relate and any_succeeded:
             await self.relate_books(None, communities_only=True)
         return {
@@ -1210,9 +1188,7 @@ class Bookstore:
         try:
             await toolkit.delete_tree(card.tree_name)
         except Exception:  # noqa: BLE001 — the tree may already be gone
-            logger.warning(
-                "Tree %r missing while removing book %r", card.tree_name, book_id
-            )
+            logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
         for _scope, store in self._stores():
             store.delete_relations(book_id=book_id)
             store.delete_judgements(book_id)

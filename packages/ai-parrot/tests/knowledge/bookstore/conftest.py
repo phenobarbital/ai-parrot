@@ -110,14 +110,18 @@ def make_adapter() -> MagicMock:
             if len(ids) >= 1:
                 judgements.append(
                     RelationJudgement(
-                        dst_book_id=ids[0], rel="parallels", confidence=0.7,
+                        dst_book_id=ids[0],
+                        rel="parallels",
+                        confidence=0.7,
                         rationale="Explores a similar theme independently.",
                     )
                 )
             if len(ids) >= 2:
                 judgements.append(
                     RelationJudgement(
-                        dst_book_id=ids[1], rel="none", confidence=0.9,
+                        dst_book_id=ids[1],
+                        rel="none",
+                        confidence=0.9,
                         rationale="No meaningful conceptual relation.",
                     )
                 )
@@ -149,12 +153,8 @@ def _stub_tiktoken(monkeypatch):
     def _approx(text: str, model: str = "gpt-4o") -> int:
         return max(1, len(text or ""))
 
-    monkeypatch.setattr(
-        "parrot.knowledge.pageindex.utils.count_tokens", _approx
-    )
-    monkeypatch.setattr(
-        "parrot.knowledge.pageindex.md_builder.count_tokens", _approx
-    )
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", _approx)
 
 
 @pytest.fixture

@@ -40,9 +40,7 @@ class BookstoreToolkit(AbstractToolkit):
         super().__init__(**kwargs)
         self._bookstore = bookstore
 
-    async def catalog_search(
-        self, query: str, top_k: int = 8
-    ) -> list[dict[str, Any]]:
+    async def catalog_search(self, query: str, top_k: int = 8) -> list[dict[str, Any]]:
         """Find which books cover a topic — ALWAYS start here.
 
         Lexical (FTS/BM25) search over the per-book catalog cards
@@ -57,9 +55,7 @@ class BookstoreToolkit(AbstractToolkit):
         Returns:
             Compact card dicts, best match first.
         """
-        cards = self._bookstore.catalog_search(
-            query, top_k=max(1, min(top_k, 50))
-        )
+        cards = self._bookstore.catalog_search(query, top_k=max(1, min(top_k, 50)))
         return [card.brief() for card in cards]
 
     async def list_books(self) -> list[dict[str, Any]]:
@@ -97,9 +93,7 @@ class BookstoreToolkit(AbstractToolkit):
         """
         return self._bookstore.get_toc(book_id)
 
-    async def search_book(
-        self, book_id: str, query: str, top_k: int = 8
-    ) -> list[dict[str, Any]]:
+    async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:
         """Search inside ONE book's chapter tree.
 
         Hybrid BM25 + LLM tree-walk when a model is configured,
@@ -113,9 +107,7 @@ class BookstoreToolkit(AbstractToolkit):
         Returns:
             ``{node_id, title, summary, score, source}`` candidates.
         """
-        return await self._bookstore.search_book(
-            book_id, query, top_k=max(1, min(top_k, 50))
-        )
+        return await self._bookstore.search_book(book_id, query, top_k=max(1, min(top_k, 50)))
 
     async def read_section(self, book_id: str, node_id: str) -> dict[str, Any]:
         """Read one section's full markdown content.
@@ -161,7 +153,10 @@ class BookstoreToolkit(AbstractToolkit):
             top_k: Maximum results returned (clamped to 1-50).
         """
         return self._bookstore.related_books(
-            book_id, rel=rel, depth=max(1, min(depth, 2)), top_k=max(1, min(top_k, 50)),
+            book_id,
+            rel=rel,
+            depth=max(1, min(depth, 2)),
+            top_k=max(1, min(top_k, 50)),
         )
 
     async def communities(self) -> list[dict[str, Any]]:

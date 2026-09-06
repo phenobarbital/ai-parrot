@@ -40,25 +40,16 @@ def _open_bookstore(
     from ._llm import resolve_adapter
     from .library import Bookstore, BookstoreError
 
-    locations = resolve_locations(
-        cwd=Path(_INVOCATION_CWD), require_exists=require_exists
-    )
-    if scope_needed and not any(
-        loc.scope == scope_needed for loc in locations
-    ):
+    locations = resolve_locations(cwd=Path(_INVOCATION_CWD), require_exists=require_exists)
+    if scope_needed and not any(loc.scope == scope_needed for loc in locations):
         hint = (
-            " — not inside a git repository; cd into your project, set "
-            "PARROT_LIBRARY_DIR, or use --global"
+            " — not inside a git repository; cd into your project, set " "PARROT_LIBRARY_DIR, or use --global"
             if scope_needed == "project"
             else ""
         )
-        raise click.ClickException(
-            f"No {scope_needed} library location available{hint}"
-        )
+        raise click.ClickException(f"No {scope_needed} library location available{hint}")
     if not locations:
-        raise click.ClickException(
-            "No library found — add a book first with `bookstore add <file>`"
-        )
+        raise click.ClickException("No library found — add a book first with `bookstore add <file>`")
     adapter, light = (None, None)
     if use_llm:
         adapter, light, _client = resolve_adapter(llm_spec)
@@ -110,17 +101,13 @@ def bookstore() -> None:
 
 @bookstore.command("add")
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
-@click.option(
-    "--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library."
-)
+@click.option("--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library.")
 @click.option("--title", default=None, help="Override the book title.")
 @click.option("--author", "authors", multiple=True, help="Override authors.")
 @click.option("--topic", "topics", multiple=True, help="Override topics.")
 @click.option("--force", is_flag=True, help="Re-index even if already added.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM carding/summaries.")
-@click.option(
-    "--relate", is_flag=True, help="Compute relations for this book after adding it."
-)
+@click.option("--relate", is_flag=True, help="Compute relations for this book after adding it.")
 @click.option(
     "--llm",
     default=None,
@@ -171,9 +158,7 @@ def add(
 @bookstore.command("add-folder")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--recursive", "-r", is_flag=True, help="Descend into subdirectories.")
-@click.option(
-    "--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library."
-)
+@click.option("--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library.")
 @click.option("--force", is_flag=True, help="Re-index files already added.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM carding/summaries.")
 @click.option(
@@ -186,9 +171,7 @@ def add(
     default=None,
     help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
 )
-@click.option(
-    "--dry-run", is_flag=True, help="List what would be indexed, change nothing."
-)
+@click.option("--dry-run", is_flag=True, help="List what would be indexed, change nothing.")
 def add_folder(
     folder: str,
     recursive: bool,
@@ -211,9 +194,7 @@ def add_folder(
     from .library import Bookstore, BookstoreError
 
     try:
-        supported, ignored = Bookstore.iter_folder_files(
-            folder, recursive=recursive
-        )
+        supported, ignored = Bookstore.iter_folder_files(folder, recursive=recursive)
     except BookstoreError as exc:
         raise click.ClickException(str(exc)) from exc
     if not supported:
@@ -240,19 +221,13 @@ def add_folder(
         any_succeeded = False
         for i, path in enumerate(supported, start=1):
             try:
-                card, status = await store.add_book(
-                    path, scope=scope, force=force, relate=relate
-                )
-                results.append(
-                    {"file": str(path), "status": status, "book_id": card.book_id}
-                )
+                card, status = await store.add_book(path, scope=scope, force=force, relate=relate)
+                results.append({"file": str(path), "status": status, "book_id": card.book_id})
                 if status in ("added", "updated"):
                     any_succeeded = True
                 click.echo(f"[{i}/{total}] {status}: {card.book_id}")
             except Exception as exc:  # noqa: BLE001 — keep the loop alive
-                results.append(
-                    {"file": str(path), "status": "failed", "error": str(exc)}
-                )
+                results.append({"file": str(path), "status": "failed", "error": str(exc)})
                 click.echo(f"[{i}/{total}] FAILED: {path} — {exc}")
         if relate and any_succeeded:
             await store.relate_books(None, communities_only=True)
@@ -271,9 +246,7 @@ def add_folder(
 
 @bookstore.command("list")
 @click.option("--json", "as_json", is_flag=True, help="JSON output.")
-@click.option(
-    "--by-community", is_flag=True, help="Group books by their community."
-)
+@click.option("--by-community", is_flag=True, help="Group books by their community.")
 def list_cmd(as_json: bool, by_community: bool) -> None:
     """List every book in the library."""
     store = _open_bookstore(require_exists=True, use_llm=False)
@@ -347,9 +320,7 @@ def toc(book_id: str) -> None:
 @bookstore.command("search")
 @click.argument("query")
 @click.option("--book", "book_id", default=None, help="Search inside one book.")
-@click.option(
-    "--catalog-only", is_flag=True, help="Only search the catalog cards."
-)
+@click.option("--catalog-only", is_flag=True, help="Only search the catalog cards.")
 @click.option(
     "--llm",
     default=None,
@@ -364,9 +335,7 @@ def search(
     """Search the library — catalog cards, one book, or cross-book."""
     from .library import BookstoreError
 
-    store = _open_bookstore(
-        llm_spec=llm, require_exists=True, use_llm=not catalog_only
-    )
+    store = _open_bookstore(llm_spec=llm, require_exists=True, use_llm=not catalog_only)
     try:
         if catalog_only:
             result: Any = [c.brief() for c in store.catalog_search(query)]
@@ -436,13 +405,9 @@ def related(book_id: str, rel: Optional[str], depth: int, as_json: bool) -> None
 @click.argument("book_ids", nargs=-1)
 @click.option("--all", "relate_all", is_flag=True, help="Relate every visible book.")
 @click.option("--no-llm", is_flag=True, help="Deterministic relations only (Stage 1).")
-@click.option(
-    "--communities-only", is_flag=True, help="Skip Stages 1-2, only compute communities."
-)
+@click.option("--communities-only", is_flag=True, help="Skip Stages 1-2, only compute communities.")
 @click.option("--force", is_flag=True, help="Re-judge pairs already logged.")
-@click.option(
-    "--resolution", default=1.0, type=float, help="Community detection resolution."
-)
+@click.option("--resolution", default=1.0, type=float, help="Community detection resolution.")
 @click.option(
     "--llm",
     default=None,
@@ -511,15 +476,20 @@ def communities_cmd(as_json: bool) -> None:
 
 @bookstore.command("export-wiki")
 @click.option(
-    "--out", "out_dir", default=None,
+    "--out",
+    "out_dir",
+    default=None,
     help="Output directory (default: <library>/wiki).",
 )
 @click.option(
-    "--global", "global_scope", is_flag=True,
+    "--global",
+    "global_scope",
+    is_flag=True,
     help="Export the global library instead of the project one.",
 )
 @click.option(
-    "--no-register", is_flag=True,
+    "--no-register",
+    is_flag=True,
     help="Skip wikitoolkit namespace registration.",
 )
 def export_wiki(out_dir: Optional[str], global_scope: bool, no_register: bool) -> None:
@@ -559,9 +529,7 @@ def remove(book_id: str, yes: bool) -> None:
     except BookstoreError as exc:
         raise click.ClickException(str(exc)) from exc
     if not yes:
-        click.confirm(
-            f"Remove {card.title!r} ({card.scope}) and its index?", abort=True
-        )
+        click.confirm(f"Remove {card.title!r} ({card.scope}) and its index?", abort=True)
     removed = asyncio.run(store.remove_book(book_id))
     click.echo("removed" if removed else "nothing removed")
 

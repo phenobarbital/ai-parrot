@@ -46,17 +46,28 @@ def test_build_book_graph_edge_weights_and_provenance():
     a, b, c = _card("a"), _card("b"), _card("c")
     relations = [
         BookRelation(
-            src_book_id="a", dst_book_id="b", rel="parallels", origin="llm",
-            confidence=0.7, weight=REL_WEIGHTS["parallels"], computed_at=_NOW,
-        ),
-        BookRelation(
-            src_book_id="b", dst_book_id="c", rel="same_author",
-            origin="deterministic", weight=REL_WEIGHTS["same_author"],
+            src_book_id="a",
+            dst_book_id="b",
+            rel="parallels",
+            origin="llm",
+            confidence=0.7,
+            weight=REL_WEIGHTS["parallels"],
             computed_at=_NOW,
         ),
         BookRelation(
-            src_book_id="a", dst_book_id="c", rel="same_community",
-            origin="community", computed_at=_NOW,
+            src_book_id="b",
+            dst_book_id="c",
+            rel="same_author",
+            origin="deterministic",
+            weight=REL_WEIGHTS["same_author"],
+            computed_at=_NOW,
+        ),
+        BookRelation(
+            src_book_id="a",
+            dst_book_id="c",
+            rel="same_community",
+            origin="community",
+            computed_at=_NOW,
         ),
     ]
     assembler, nodes = build_book_graph([a, b, c], relations)
@@ -70,10 +81,7 @@ def test_build_book_graph_edge_weights_and_provenance():
     assert ab["confidence"] == 0.7
     assert ab["weight"] == REL_WEIGHTS["parallels"]
 
-    bc = [
-        e for e in assembler.get_edges_for_node("b", direction="outgoing")
-        if e["target_id"] == "c"
-    ][0]
+    bc = [e for e in assembler.get_edges_for_node("b", direction="outgoing") if e["target_id"] == "c"][0]
     assert bc["provenance"] == "extracted"
     assert bc["confidence"] is None
     assert bc["weight"] == REL_WEIGHTS["same_author"]
@@ -97,8 +105,12 @@ def test_fallback_label_derived_and_singleton_title():
         "b": _card("b", title="Stoic Meditations"),
     }
     community = Community(
-        community_id="c1", size=2, member_node_ids=["a", "b"],
-        centroid_node_id="a", cohesion=1.0, modularity_contribution=0.1,
+        community_id="c1",
+        size=2,
+        member_node_ids=["a", "b"],
+        centroid_node_id="a",
+        cohesion=1.0,
+        modularity_contribution=0.1,
         top_titles=["Stoic Ethics", "Stoic Meditations"],
     )
     label, origin = fallback_label(community, cards_by_id)
@@ -106,8 +118,12 @@ def test_fallback_label_derived_and_singleton_title():
     assert label == "Stoic Ethics Meditations"
 
     singleton = Community(
-        community_id="c2", size=1, member_node_ids=["a"],
-        centroid_node_id="a", cohesion=0.0, modularity_contribution=0.0,
+        community_id="c2",
+        size=1,
+        member_node_ids=["a"],
+        centroid_node_id="a",
+        cohesion=0.0,
+        modularity_contribution=0.0,
         top_titles=["Stoic Ethics"],
     )
     label2, origin2 = fallback_label(singleton, cards_by_id)
@@ -154,10 +170,9 @@ async def test_stage3_skipped_under_three_cards(store):
 @pytest.mark.asyncio
 async def test_stage3_persists_partition_and_same_community_edges(store):
     project = store._catalog("project")
-    for card in (
-        [_card(f"a{i}", authors=["Author A"]) for i in range(3)]
-        + [_card(f"b{i}", authors=["Author B"]) for i in range(3)]
-    ):
+    for card in [_card(f"a{i}", authors=["Author A"]) for i in range(3)] + [
+        _card(f"b{i}", authors=["Author B"]) for i in range(3)
+    ]:
         project.upsert(card)
 
     summary = await store.relate_books(None, use_llm=False)
@@ -180,25 +195,27 @@ async def test_stage3_persists_partition_and_same_community_edges(store):
 async def test_stage3_rewrites_same_community_edges(store):
     project = store._catalog("project")
     for card in (
-        _card("a", authors=["Author X"]), _card("b", authors=["Author X"]), _card("c", authors=["Author Y"]),
+        _card("a", authors=["Author X"]),
+        _card("b", authors=["Author X"]),
+        _card("c", authors=["Author Y"]),
     ):
         project.upsert(card)
     # A stale edge that must not survive Stage 3's rewrite.
     project.upsert_relations(
         [
             BookRelation(
-                src_book_id="a", dst_book_id="c", rel="same_community",
-                origin="community", computed_at=_NOW,
+                src_book_id="a",
+                dst_book_id="c",
+                rel="same_community",
+                origin="community",
+                computed_at=_NOW,
             ),
         ]
     )
 
     await store.relate_books(None, use_llm=False)
 
-    stale = [
-        r for r in project.list_relations("a", rel="same_community")
-        if r.dst_book_id == "c"
-    ]
+    stale = [r for r in project.list_relations("a", rel="same_community") if r.dst_book_id == "c"]
     assert stale == []
 
 
@@ -248,7 +265,9 @@ async def test_communities_table_in_project_db_only(store):
 async def test_community_id_stable_for_same_membership(store):
     project = store._catalog("project")
     for card in (
-        _card("a", authors=["Author X"]), _card("b", authors=["Author X"]), _card("c", authors=["Author Y"]),
+        _card("a", authors=["Author X"]),
+        _card("b", authors=["Author X"]),
+        _card("c", authors=["Author Y"]),
     ):
         project.upsert(card)
 

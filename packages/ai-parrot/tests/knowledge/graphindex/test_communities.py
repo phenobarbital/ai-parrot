@@ -2,6 +2,7 @@
 
 FEAT-191 (Louvain) + FEAT-401 (Leiden, hierarchical communities).
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,22 +40,25 @@ from parrot.knowledge.graphindex.schema import (
 # ---------------------------------------------------------------------------
 
 
-def _node(node_id: str, kind: NodeKind = NodeKind.SECTION,
-          title: str = "", source_uri: str = "d.md") -> UniversalNode:
+def _node(node_id: str, kind: NodeKind = NodeKind.SECTION, title: str = "", source_uri: str = "d.md") -> UniversalNode:
     return UniversalNode(
-        node_id=node_id, kind=kind,
-        title=title or node_id, source_uri=source_uri,
+        node_id=node_id,
+        kind=kind,
+        title=title or node_id,
+        source_uri=source_uri,
     )
 
 
 def _add(graph: rustworkx.PyDiGraph, n: UniversalNode) -> int:
-    return graph.add_node({
-        "node_id": n.node_id,
-        "kind": n.kind.value,
-        "title": n.title,
-        "source_uri": n.source_uri,
-        "domain_tags": dict(n.domain_tags),
-    })
+    return graph.add_node(
+        {
+            "node_id": n.node_id,
+            "kind": n.kind.value,
+            "title": n.title,
+            "source_uri": n.source_uri,
+            "domain_tags": dict(n.domain_tags),
+        }
+    )
 
 
 def _build_two_cliques() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
@@ -73,8 +77,7 @@ def _build_two_cliques() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
         members = [f"{cluster}{i}" for i in range(5)]
         for i in range(5):
             for j in range(i + 1, 5):
-                g.add_edge(idxs[members[i]], idxs[members[j]],
-                           {"kind": EdgeKind.REFERENCES.value})
+                g.add_edge(idxs[members[i]], idxs[members[j]], {"kind": EdgeKind.REFERENCES.value})
     # Bridge.
     g.add_edge(idxs["A0"], idxs["B0"], {"kind": EdgeKind.REFERENCES.value})
     return g, nodes
@@ -105,8 +108,7 @@ def _build_hierarchical_graph() -> tuple[rustworkx.PyDiGraph, list[UniversalNode
     for members in subs.values():
         for i in range(len(members)):
             for j in range(i + 1, len(members)):
-                g.add_edge(idxs[members[i]], idxs[members[j]],
-                           {"kind": EdgeKind.REFERENCES.value})
+                g.add_edge(idxs[members[i]], idxs[members[j]], {"kind": EdgeKind.REFERENCES.value})
     # Tight coupling between subs of the same super-community.
     for a, b in [("a", "d"), ("b", "e"), ("c", "f")]:
         g.add_edge(idxs[a], idxs[b], {"kind": EdgeKind.REFERENCES.value})
@@ -129,8 +131,7 @@ def _build_tiny_graph() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
         idxs[m] = _add(g, n)
     for i in range(len(members)):
         for j in range(i + 1, len(members)):
-            g.add_edge(idxs[members[i]], idxs[members[j]],
-                       {"kind": EdgeKind.REFERENCES.value})
+            g.add_edge(idxs[members[i]], idxs[members[j]], {"kind": EdgeKind.REFERENCES.value})
     return g, nodes
 
 
@@ -160,17 +161,25 @@ class TestStableCommunityId:
 class TestPydanticModels:
     def test_community_frozen(self):
         c = Community(
-            community_id="x", size=1, member_node_ids=["a"],
-            centroid_node_id="a", cohesion=0.0,
-            modularity_contribution=0.0, top_titles=["a"],
+            community_id="x",
+            size=1,
+            member_node_ids=["a"],
+            centroid_node_id="a",
+            cohesion=0.0,
+            modularity_contribution=0.0,
+            top_titles=["a"],
         )
         with pytest.raises(Exception):
             c.size = 99
 
     def test_communities_result_frozen(self):
         r = CommunitiesResult(
-            modularity=0.5, resolution=1.0, seed=42,
-            weighted=False, communities=[], node_to_community={},
+            modularity=0.5,
+            resolution=1.0,
+            seed=42,
+            weighted=False,
+            communities=[],
+            node_to_community={},
         )
         with pytest.raises(Exception):
             r.modularity = 0.99
@@ -210,9 +219,13 @@ class TestNetworkxConversion:
         # full FEAT-190 stack semantics in a unit test.
         g, nodes = _build_two_cliques()
         from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+
         cfg = SignalRelevanceConfig()
         nx_graph = _to_undirected_networkx(
-            g, nodes, signal_config=cfg, embedder=None,
+            g,
+            nodes,
+            signal_config=cfg,
+            embedder=None,
         )
         # Bridge edge A0-B0 should have a weight (could be small but
         # never zero — _build_weight_fn clamps to >= 0.001).
@@ -351,8 +364,7 @@ class TestDetectCommunities:
                 all_idxs[m] = _add(g, node)
             for i in range(n_members):
                 for j in range(i + 1, n_members):
-                    g.add_edge(all_idxs[members[i]], all_idxs[members[j]],
-                               {"kind": EdgeKind.REFERENCES.value})
+                    g.add_edge(all_idxs[members[i]], all_idxs[members[j]], {"kind": EdgeKind.REFERENCES.value})
         result = detect_communities(g, nodes, write_back_to_nodes=False)
         sizes = [c.size for c in result.communities]
         assert sizes == sorted(sizes, reverse=True)
@@ -375,8 +387,7 @@ class TestDetectCommunities:
         nodes = [_node("a"), _node("b")]
         for n in nodes:
             _add(g, n)
-        result = detect_communities(g, nodes, algorithm=algorithm,
-                                     write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm=algorithm, write_back_to_nodes=False)
         assert result.modularity == 0.0
         assert len(result.communities) == 2
         assert all(c.size == 1 for c in result.communities)
@@ -385,9 +396,9 @@ class TestDetectCommunities:
     def test_weighted_flag_reflects_signal_config(self):
         g, nodes = _build_two_cliques()
         from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+
         cfg = SignalRelevanceConfig()
-        result = detect_communities(g, nodes, signal_config=cfg,
-                                    write_back_to_nodes=False)
+        result = detect_communities(g, nodes, signal_config=cfg, write_back_to_nodes=False)
         assert result.weighted is True
 
     def test_unweighted_flag_when_no_signal_config(self):
@@ -410,6 +421,7 @@ class TestDetectCommunities:
 class TestBuilderIntegration:
     def test_builder_flag_default_off(self, tmp_path):
         from parrot.knowledge.graphindex.builder import GraphIndexBuilder
+
         builder = GraphIndexBuilder(
             persistence=MagicMock(),
             embedder=MagicMock(),
@@ -420,6 +432,7 @@ class TestBuilderIntegration:
 
     def test_builder_accepts_detect_communities_kwarg(self, tmp_path):
         from parrot.knowledge.graphindex.builder import GraphIndexBuilder
+
         builder = GraphIndexBuilder(
             persistence=MagicMock(),
             embedder=MagicMock(),
@@ -442,6 +455,7 @@ class TestAnalyticsReport:
             AnalyticsResult,
             _render_report,
         )
+
         g, nodes = _build_two_cliques()
         comm_result = detect_communities(g, nodes, write_back_to_nodes=False)
         analytics = AnalyticsResult()
@@ -456,6 +470,7 @@ class TestAnalyticsReport:
             AnalyticsResult,
             _render_report,
         )
+
         analytics = AnalyticsResult()
         report = _render_report(analytics)
         assert "## Communities" not in report
@@ -471,8 +486,7 @@ class TestLeidenAlgorithm:
         """Leiden produces well-connected communities on two cliques."""
         pytest.importorskip("leidenalg")
         g, nodes = _build_two_cliques()
-        result = detect_communities(g, nodes, algorithm="leiden",
-                                     write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm="leiden", write_back_to_nodes=False)
         assert result.algorithm == "leiden"
         assert len(result.communities) >= 2
         # Every community must be internally connected — verify by
@@ -488,8 +502,7 @@ class TestLeidenAlgorithm:
         """Falls back to Louvain when leidenalg is not importable."""
         g, nodes = _build_two_cliques()
         with patch.dict(sys.modules, {"leidenalg": None}):
-            result = detect_communities(g, nodes, algorithm="leiden",
-                                         write_back_to_nodes=False)
+            result = detect_communities(g, nodes, algorithm="leiden", write_back_to_nodes=False)
         assert result.algorithm == "louvain"
         assert len(result.communities) == 2
 
@@ -497,15 +510,13 @@ class TestLeidenAlgorithm:
         """The fallback path logs a warning naming the missing package."""
         g, nodes = _build_two_cliques()
         with patch.dict(sys.modules, {"leidenalg": None}), caplog.at_level(logging.WARNING):
-            detect_communities(g, nodes, algorithm="leiden",
-                                write_back_to_nodes=False)
+            detect_communities(g, nodes, algorithm="leiden", write_back_to_nodes=False)
         assert any("leidenalg" in rec.message for rec in caplog.records)
 
     def test_detect_communities_louvain_explicit(self):
         """algorithm='louvain' always uses the existing networkx path."""
         g, nodes = _build_two_cliques()
-        result = detect_communities(g, nodes, algorithm="louvain",
-                                     write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm="louvain", write_back_to_nodes=False)
         assert result.algorithm == "louvain"
         assert len(result.communities) == 2
 
@@ -514,16 +525,19 @@ class TestLeidenAlgorithm:
         construction (backward compatibility, e.g. persisted/cached
         results built before FEAT-401)."""
         r = CommunitiesResult(
-            modularity=0.5, resolution=1.0, seed=42,
-            weighted=False, communities=[], node_to_community={},
+            modularity=0.5,
+            resolution=1.0,
+            seed=42,
+            weighted=False,
+            communities=[],
+            node_to_community={},
         )
         assert r.algorithm == "louvain"
 
     def test_algorithm_field_roundtrip(self):
         """CommunitiesResult.algorithm survives serialization."""
         g, nodes = _build_two_cliques()
-        result = detect_communities(g, nodes, algorithm="louvain",
-                                     write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm="louvain", write_back_to_nodes=False)
         dumped = result.model_dump()
         restored = CommunitiesResult(**dumped)
         assert restored.algorithm == result.algorithm == "louvain"
@@ -557,7 +571,10 @@ class TestLeidenAlgorithm:
         g, nodes = _build_two_cliques()
         cfg = SignalRelevanceConfig()
         result = detect_communities(
-            g, nodes, algorithm="leiden", signal_config=cfg,
+            g,
+            nodes,
+            algorithm="leiden",
+            signal_config=cfg,
             write_back_to_nodes=False,
         )
         assert result.algorithm == "leiden"
@@ -575,7 +592,9 @@ class TestHierarchicalCommunities:
         """Multi-resolution sweep returns one partition per resolution."""
         g, nodes = _build_hierarchical_graph()
         result = detect_hierarchical_communities(
-            g, nodes, resolutions=[0.5, 1.0, 2.0],
+            g,
+            nodes,
+            resolutions=[0.5, 1.0, 2.0],
         )
         assert isinstance(result, HierarchicalCommunitiesResult)
         assert len(result.levels) == 3
@@ -586,7 +605,9 @@ class TestHierarchicalCommunities:
     def test_hierarchical_sorts_resolutions(self):
         g, nodes = _build_hierarchical_graph()
         result = detect_hierarchical_communities(
-            g, nodes, resolutions=[2.0, 0.5, 1.0],
+            g,
+            nodes,
+            resolutions=[2.0, 0.5, 1.0],
         )
         assert result.resolutions == [0.5, 1.0, 2.0]
 
@@ -618,11 +639,15 @@ class TestHierarchicalCommunities:
         # isolates to exercise the >=20 default-resolutions branch.
         extra_nodes = [_node(f"iso{i}") for i in range(10)]
         for n in extra_nodes:
-            g.add_node({
-                "node_id": n.node_id, "kind": n.kind.value,
-                "title": n.title, "source_uri": n.source_uri,
-                "domain_tags": dict(n.domain_tags),
-            })
+            g.add_node(
+                {
+                    "node_id": n.node_id,
+                    "kind": n.kind.value,
+                    "title": n.title,
+                    "source_uri": n.source_uri,
+                    "domain_tags": dict(n.domain_tags),
+                }
+            )
         all_nodes = nodes + extra_nodes
         result = detect_hierarchical_communities(g, all_nodes)
         assert result.resolutions == [0.25, 0.5, 1.0, 2.0, 4.0]
@@ -663,8 +688,7 @@ class TestPersistRoundTrip:
 class TestIntegration:
     def test_louvain_on_two_cliques(self):
         g, nodes = _build_two_cliques()
-        result = detect_communities(g, nodes, algorithm="louvain",
-                                     write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm="louvain", write_back_to_nodes=False)
         assert len(result.communities) == 2
         for c in result.communities:
             assert c.cohesion >= 0.9
@@ -702,7 +726,10 @@ class TestIntegration:
 
         cfg = SignalRelevanceConfig()
         result = detect_communities(
-            g, all_nodes, algorithm="louvain", signal_config=cfg,
+            g,
+            all_nodes,
+            algorithm="louvain",
+            signal_config=cfg,
             write_back_to_nodes=False,
         )
         # We expect 2 communities, one per source.
@@ -746,6 +773,7 @@ class TestPayloadWeights:
         # this test is that signal_relevance drives the weight, not a
         # payload default of 1.0 nor any payload weight that might exist.
         from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+
         cfg = SignalRelevanceConfig()
         nx_graph = _to_undirected_networkx(g, nodes, signal_config=cfg, embedder=None)
         bridge_weight = nx_graph["A0"]["B0"]["weight"]
@@ -777,17 +805,26 @@ class TestPayloadWeights:
     def test_assembler_copies_numeric_weight_tag(self):
         asm = GraphAssembler(tenant_id="t")
         asm.add_nodes([_node("a"), _node("b")])
-        idx = asm.add_edge(UniversalEdge(
-            source_id="a", target_id="b", kind=EdgeKind.REFERENCES,
-            provenance=Provenance.EXTRACTED, domain_tags={"weight": 0.7},
-        ))
+        idx = asm.add_edge(
+            UniversalEdge(
+                source_id="a",
+                target_id="b",
+                kind=EdgeKind.REFERENCES,
+                provenance=Provenance.EXTRACTED,
+                domain_tags={"weight": 0.7},
+            )
+        )
         assert asm.graph.get_edge_data_by_index(idx)["weight"] == 0.7
 
     def test_assembler_omits_weight_when_tag_absent(self):
         asm = GraphAssembler(tenant_id="t")
         asm.add_nodes([_node("a"), _node("b")])
-        idx = asm.add_edge(UniversalEdge(
-            source_id="a", target_id="b", kind=EdgeKind.REFERENCES,
-            provenance=Provenance.EXTRACTED,
-        ))
+        idx = asm.add_edge(
+            UniversalEdge(
+                source_id="a",
+                target_id="b",
+                kind=EdgeKind.REFERENCES,
+                provenance=Provenance.EXTRACTED,
+            )
+        )
         assert "weight" not in asm.graph.get_edge_data_by_index(idx)

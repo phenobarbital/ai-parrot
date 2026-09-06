@@ -53,9 +53,7 @@ def _ensure_stderr_logging() -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.WARNING)
 
@@ -86,9 +84,7 @@ def create_bookstore_mcp_server(
         from .library import Bookstore
         from .toolkit import BookstoreToolkit
 
-        store = Bookstore(
-            locations, adapter=adapter, lightweight_model=lightweight_model
-        )
+        store = Bookstore(locations, adapter=adapter, lightweight_model=lightweight_model)
         toolkit = BookstoreToolkit(bookstore=store)
         tools = toolkit.get_tools_sync()
         book_count = len(store.list_books())
@@ -120,9 +116,7 @@ def main() -> None:
     """
     _ensure_stderr_logging()
 
-    locations = resolve_locations(
-        cwd=Path(_INVOCATION_CWD), require_exists=True
-    )
+    locations = resolve_locations(cwd=Path(_INVOCATION_CWD), require_exists=True)
     if not locations:
         print(
             "Error: no bookstore library found (neither .parrot/library in "
@@ -137,9 +131,7 @@ def main() -> None:
     adapter, lightweight_model, client = resolve_adapter()
 
     async def _serve() -> None:
-        server = create_bookstore_mcp_server(
-            locations, adapter=adapter, lightweight_model=lightweight_model
-        )
+        server = create_bookstore_mcp_server(locations, adapter=adapter, lightweight_model=lightweight_model)
         _ensure_stderr_logging()
         if client is not None and hasattr(client, "__aenter__"):
             async with client:

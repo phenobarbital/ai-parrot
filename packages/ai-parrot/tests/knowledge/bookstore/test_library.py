@@ -75,9 +75,7 @@ async def test_add_book_no_llm_fallback_card(store_no_llm, book_md):
 
 @pytest.mark.asyncio
 async def test_add_book_manual_overrides(store, book_md):
-    card, _ = await store.add_book(
-        book_md, title="My Handbook", authors=["Me"], topics=["testing"]
-    )
+    card, _ = await store.add_book(book_md, title="My Handbook", authors=["Me"], topics=["testing"])
     assert card.card_origin == "manual"
     assert (card.title, card.authors, card.topics) == (
         "My Handbook",
@@ -275,9 +273,7 @@ async def test_add_folder_continues_after_failures(store_no_llm, tmp_path):
     root = tmp_path / "books"
     root.mkdir()
     (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
-    (root / "two.md").write_text(
-        SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8"
-    )
+    (root / "two.md").write_text(SAMPLE_MARKDOWN + "\nDifferent sha.\n", encoding="utf-8")
     # .txt needs an LLM → fails in the no-LLM store; loop must continue.
     (root / "notes.txt").write_text("plain text", encoding="utf-8")
     (root / "cover.png").write_bytes(b"x")
@@ -371,9 +367,7 @@ async def test_add_book_no_llm_classification_defaults(store_no_llm, book_md):
 async def test_refresh_card_carries_classification_and_keeps_community(store, book_md):
     card, _ = await store.add_book(book_md)
     catalog = store._catalog("project")
-    stamped = card.model_copy(
-        update={"community_id": "c1", "community_label": "Virtue ethics"}
-    )
+    stamped = card.model_copy(update={"community_id": "c1", "community_label": "Virtue ethics"})
     catalog.upsert(stamped)
     await store.refresh_card(card.book_id)
     # Re-fetch: CatalogStore.upsert() slug-normalises traditions in the

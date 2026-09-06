@@ -85,9 +85,7 @@ def unique_slug(base: str, taken: set[str]) -> str:
     return f"{base}-{n}"
 
 
-def derive_toc(
-    tree: dict[str, Any], max_depth: int = 2
-) -> tuple[list[TocEntry], str]:
+def derive_toc(tree: dict[str, Any], max_depth: int = 2) -> tuple[list[TocEntry], str]:
     """Walk a PageIndex tree dict into ToC entries plus a text digest.
 
     Args:
@@ -128,7 +126,7 @@ def derive_toc(
     for entry in entries:
         while len(numbering) < entry.depth:
             numbering.append(0)
-        del numbering[entry.depth:]
+        del numbering[entry.depth :]
         numbering[entry.depth - 1] += 1
         number = ".".join(str(n) for n in numbering)
         pages = ""
@@ -192,9 +190,7 @@ async def generate_card_fields(
     return CardDraft.model_validate(draft)
 
 
-def sample_sections(
-    content_loader: Any, node_ids: list[str], max_samples: int = 2
-) -> list[str]:
+def sample_sections(content_loader: Any, node_ids: list[str], max_samples: int = 2) -> list[str]:
     """Load up to ``max_samples`` representative sidecar bodies.
 
     Picks the first node and one from the middle of the book, which is

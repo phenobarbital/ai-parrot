@@ -50,9 +50,7 @@ def test_tool_discovery_exposes_exactly_the_read_surface(toolkit):
 
 
 @pytest.mark.asyncio
-async def test_catalog_search_never_touches_the_llm(
-    toolkit, bookstore, book_md, fake_adapter
-):
+async def test_catalog_search_never_touches_the_llm(toolkit, bookstore, book_md, fake_adapter):
     await bookstore.add_book(book_md)
     fake_adapter.ask.reset_mock()
     fake_adapter.ask_structured.reset_mock()
