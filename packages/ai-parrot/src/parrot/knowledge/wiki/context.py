@@ -19,9 +19,8 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.wiki.store import estimate_tokens
+from pydantic import BaseModel, Field
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s")
 
@@ -83,9 +82,15 @@ def qualify_id(namespace: str | None, page_id: str) -> str:
     """Prefix a page id with its namespace (``ns::id``).
 
     Local pages stay unprefixed (FEAT-450, U3), so a ``None`` or empty
-    namespace returns the id unchanged. Qualifying an id that already
-    carries the same namespace is a no-op, which makes the helper safe
-    to apply to rows that have been through a federated store once.
+    namespace returns the id unchanged. An id that is **already
+    qualified with any namespace** is also returned unchanged — not just
+    when it matches ``namespace`` exactly (FEAT-532 §8 fix). A locally
+    owned edge may now store a foreign-qualified destination verbatim
+    (e.g. ``"roblox::class/Players"``); re-qualifying that already-homed
+    id against a *different* enclosing namespace (e.g. some wrapping
+    federation context) previously produced a double/wrong prefix like
+    ``"local::roblox::class/Players"``. An id has one home; once it
+    carries a namespace, no caller gets to re-home it.
 
     Args:
         namespace: Namespace name, or ``None`` for the local plane.
@@ -97,7 +102,7 @@ def qualify_id(namespace: str | None, page_id: str) -> str:
     if not namespace:
         return page_id
     existing, _ = split_namespaced_id(page_id)
-    if existing == namespace:
+    if existing is not None:
         return page_id
     return f"{namespace}{NS_SEPARATOR}{page_id}"
 

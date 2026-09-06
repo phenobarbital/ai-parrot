@@ -12,6 +12,7 @@ from pathlib import Path
 
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
 from parrot.knowledge.wiki.languages.javascript import JavaScriptScanner
+from parrot.knowledge.wiki.languages.luau import LuauScanner
 from parrot.knowledge.wiki.languages.perl import PerlScanner
 from parrot.knowledge.wiki.languages.php import PhpScanner
 from parrot.knowledge.wiki.languages.python import PythonScanner
@@ -35,14 +36,11 @@ _SCANNERS: dict[str, LanguageScanner] = {
     "javascript": JavaScriptScanner(),
     "rust": RustScanner(),
     "perl": PerlScanner(),
+    "luau": LuauScanner(),
 }
 
 #: suffix -> scanner name, derived from ``_SCANNERS`` for O(1) lookup.
-_SUFFIX_INDEX: dict[str, str] = {
-    suffix: scanner.name
-    for scanner in _SCANNERS.values()
-    for suffix in scanner.suffixes
-}
+_SUFFIX_INDEX: dict[str, str] = {suffix: scanner.name for scanner in _SCANNERS.values() for suffix in scanner.suffixes}
 
 
 def scanner_for(suffix: str) -> LanguageScanner | None:

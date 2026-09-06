@@ -34,22 +34,11 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
-from pydantic import BaseModel, Field
-
-from parrot.knowledge.wiki.languages import (
-    all_scanners,
-    scanned_suffixes,
-    scanner_for,
-    set_scan_root,
-)
+from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for, set_scan_root
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
-from parrot.knowledge.wiki.symbols import (
-    SymbolRecord,
-    SymbolRef,
-    sym_concept_id,
-    symbol_to_page_fields,
-)
+from parrot.knowledge.wiki.symbols import SymbolRecord, SymbolRef, sym_concept_id, symbol_to_page_fields
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +81,8 @@ CODE_SUFFIXES: frozenset[str] = frozenset(
         ".sql",
         ".sh",
         ".bash",
+        ".lua",
+        ".luau",
     }
 )
 
@@ -235,6 +226,18 @@ class FileSlice(BaseModel):
             (FEAT-498), empty when the structural backend did not run.
         refs: Unresolved symbol references extracted for this file
             (FEAT-498), empty when the structural backend did not run.
+        external_edges: Cross-plane reference edges (FEAT-532) —
+            ``(src_concept_id, qualified_dst, rel)`` tuples pointing
+            outside this repository's own file graph (e.g. a Luau file
+            referencing the federated Roblox API plane). Deliberately a
+            generic, language-agnostic carrier: empty for every language
+            except where an opt-in enrichment step (e.g.
+            :mod:`parrot.knowledge.wiki.roblox.enrichment`) attaches
+            them. Kept entirely separate from :attr:`imports`/
+            ``build_import_edges()`` and from :attr:`refs` (the
+            structural symbol resolver) — an external edge is never fed
+            through :meth:`~parrot.knowledge.wiki.languages.base.LanguageScanner.resolve_import`
+            and never wrapped in a local ``file:`` id.
     """
 
     rel_path: str
@@ -243,6 +246,7 @@ class FileSlice(BaseModel):
     language: str | None = None
     symbols: list[SymbolRecord] = Field(default_factory=list)
     refs: list[SymbolRef] = Field(default_factory=list)
+    external_edges: list[tuple[str, str, str]] = Field(default_factory=list)
 
 
 class RepoScan(BaseModel):

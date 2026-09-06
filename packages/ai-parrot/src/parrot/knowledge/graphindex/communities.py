@@ -19,6 +19,7 @@ edges by ``signal_relevance(a, b).combined`` before detection runs, so
 community boundaries respect the signal model rather than raw edge
 counts. The FEAT-190 import is lazy — FEAT-191 ships standalone.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -127,16 +128,79 @@ class HierarchicalCommunitiesResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 #: Generic tokens that carry no discriminative signal for a label.
-_LABEL_STOPWORDS: frozenset[str] = frozenset({
-    "the", "and", "for", "with", "from", "this", "that", "into", "over",
-    "get", "set", "new", "old", "def", "class", "func", "function", "method",
-    "module", "self", "value", "values", "data", "item", "items", "list",
-    "dict", "str", "int", "bool", "none", "true", "false", "test", "tests",
-    "init", "main", "util", "utils", "helper", "helpers", "base", "abstract",
-    "type", "types", "kind", "node", "edge", "graph", "id", "ids", "name",
-    "names", "obj", "object", "args", "kwargs", "return", "returns", "param",
-    "params", "note", "todo", "why", "hack", "fixme", "xxx", "add", "remove",
-})
+_LABEL_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "into",
+        "over",
+        "get",
+        "set",
+        "new",
+        "old",
+        "def",
+        "class",
+        "func",
+        "function",
+        "method",
+        "module",
+        "self",
+        "value",
+        "values",
+        "data",
+        "item",
+        "items",
+        "list",
+        "dict",
+        "str",
+        "int",
+        "bool",
+        "none",
+        "true",
+        "false",
+        "test",
+        "tests",
+        "init",
+        "main",
+        "util",
+        "utils",
+        "helper",
+        "helpers",
+        "base",
+        "abstract",
+        "type",
+        "types",
+        "kind",
+        "node",
+        "edge",
+        "graph",
+        "id",
+        "ids",
+        "name",
+        "names",
+        "obj",
+        "object",
+        "args",
+        "kwargs",
+        "return",
+        "returns",
+        "param",
+        "params",
+        "note",
+        "todo",
+        "why",
+        "hack",
+        "fixme",
+        "xxx",
+        "add",
+        "remove",
+    }
+)
 
 #: Splits identifiers into word tokens (camelCase, snake_case, punctuation).
 _LABEL_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
@@ -207,6 +271,42 @@ def _stable_community_id(member_node_ids: Iterable[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _payload_weight(payload: object) -> float:
+    """Read a numeric ``"weight"`` off an edge payload, defaulting to 1.0.
+
+    Used by :func:`_to_undirected_networkx` and :func:`_to_igraph` when no
+    ``signal_config`` weight function is available (FEAT-533 Module 0).
+    Non-dict payloads, missing keys, non-numeric values (including
+    ``bool``, which is a ``numbers`` subtype in Python) and negative
+    values all fall back to ``1.0`` — this loop must never raise.
+    """
+    if not isinstance(payload, dict):
+        return 1.0
+    raw = payload.get("weight", 1.0)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        logger.debug("Ignoring non-numeric edge payload weight: %r", raw)
+        return 1.0
+    value = float(raw)
+    if value < 0:
+        logger.debug("Ignoring negative edge payload weight: %r", raw)
+        return 1.0
+    return value
+
+
+def _has_payload_weights(graph: rustworkx.PyDiGraph) -> bool:
+    """True when any edge payload carries a weight different from 1.0.
+
+    Drives :class:`CommunitiesResult`'s ``weighted`` flag (FEAT-533
+    Module 0) so payload-driven weighting (via
+    :meth:`GraphAssembler.add_edge` / ``UniversalEdge.domain_tags`)
+    is reported the same way FEAT-190 ``signal_config`` weighting is.
+    """
+    for _src_idx, _tgt_idx, payload in graph.edge_index_map().values():
+        if _payload_weight(payload) != 1.0:
+            return True
+    return False
+
+
 def _to_undirected_networkx(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
@@ -227,6 +327,13 @@ def _to_undirected_networkx(
     When ``signal_config`` is supplied, edges are weighted by the
     FEAT-190 combined relevance score for the endpoint pair. The
     import is lazy so FEAT-191 builds and runs without FEAT-190.
+
+    When ``signal_config`` is not supplied, edges fall back to the
+    rustworkx edge payload's ``"weight"`` key (as written by
+    :meth:`parrot.knowledge.graphindex.assemble.GraphAssembler.add_edge`
+    from ``UniversalEdge.domain_tags["weight"]``), defaulting to ``1.0``
+    when the payload is not a dict or carries no ``"weight"`` (FEAT-533
+    Module 0). Signal weights always win when ``signal_config`` is set.
     """
     g = nx.Graph()
     idx_to_node_id: dict[int, str] = {}
@@ -251,7 +358,7 @@ def _to_undirected_networkx(
         if not a or not b or a == b:
             continue
         key = (a, b) if a < b else (b, a)
-        w = weight_fn(a, b) if weight_fn is not None else 1.0
+        w = weight_fn(a, b) if weight_fn is not None else _payload_weight(_payload)
         if key in seen_pairs:
             # Edge already added (the reverse direction or a parallel
             # edge). Keep the larger weight.
@@ -285,9 +392,12 @@ def _build_weight_fn(
     def _weight(a: str, b: str) -> float:
         try:
             rel = signal_relevance(
-                graph=graph, nodes=nodes,
-                node_a=a, node_b=b,
-                config=signal_config, embedder=embedder,
+                graph=graph,
+                nodes=nodes,
+                node_a=a,
+                node_b=b,
+                config=signal_config,
+                embedder=embedder,
             )
         except KeyError:
             return 1.0
@@ -319,6 +429,11 @@ def _to_igraph(
 
     ``igraph`` is imported lazily by the caller — this function assumes
     it is already importable.
+
+    When ``signal_config`` is not supplied, edges fall back to the
+    rustworkx edge payload's ``"weight"`` key (FEAT-533 Module 0), same
+    contract as :func:`_to_undirected_networkx` — see
+    :func:`_payload_weight`.
 
     Args:
         graph: The assembled PyDiGraph.
@@ -361,7 +476,7 @@ def _to_igraph(
         if not a or not b or a == b:
             continue
         key = (a, b) if a < b else (b, a)
-        w = weight_fn(a, b) if weight_fn is not None else 1.0
+        w = weight_fn(a, b) if weight_fn is not None else _payload_weight(_payload)
         if key in edge_weight:
             # Edge already added (the reverse direction or a parallel
             # edge). Keep the larger weight.
@@ -403,7 +518,10 @@ def _run_leiden(
         return None
 
     ig_graph, vertex_node_ids = _to_igraph(
-        graph, nodes, signal_config=signal_config, embedder=embedder,
+        graph,
+        nodes,
+        signal_config=signal_config,
+        embedder=embedder,
     )
     if ig_graph.vcount() == 0:
         return []
@@ -527,6 +645,10 @@ def detect_communities(
             detection runs.
         embedder: Optional embedder forwarded to FEAT-190 when computing
             edge weights (ignored unless ``signal_config`` is set).
+            Independently, the result's ``weighted`` flag is also
+            ``True`` when the graph carries payload weights (edge
+            ``domain_tags["weight"]`` via :meth:`GraphAssembler.add_edge`,
+            FEAT-533 Module 0) even without a ``signal_config``.
         write_back_to_nodes: When True (default), writes
             ``domain_tags['community_id']`` into every node and
             ``domain_tags['community_centroid']=True`` for each centroid.
@@ -544,16 +666,26 @@ def detect_communities(
         `node_id → community_id` lookup.
     """
     nx_graph = _to_undirected_networkx(
-        graph, nodes, signal_config=signal_config, embedder=embedder,
+        graph,
+        nodes,
+        signal_config=signal_config,
+        embedder=embedder,
     )
+    # Computed once (FEAT-533 Module 0): True when either FEAT-190 signal
+    # weighting is active, or any edge payload carries a weight != 1.0.
+    weighted = signal_config is not None or _has_payload_weights(graph)
 
     used_algorithm = "louvain"
     partition_sets: list[set[str]] = []
 
     if algorithm == "leiden":
         leiden_partition = _run_leiden(
-            graph, nodes, resolution=resolution, seed=seed,
-            signal_config=signal_config, embedder=embedder,
+            graph,
+            nodes,
+            resolution=resolution,
+            seed=seed,
+            signal_config=signal_config,
+            embedder=embedder,
         )
         if leiden_partition is not None:
             partition_sets = leiden_partition
@@ -571,9 +703,12 @@ def detect_communities(
 
     if not partition_sets:
         return CommunitiesResult(
-            modularity=0.0, resolution=resolution, seed=seed,
-            weighted=signal_config is not None,
-            communities=[], node_to_community={},
+            modularity=0.0,
+            resolution=resolution,
+            seed=seed,
+            weighted=weighted,
+            communities=[],
+            node_to_community={},
             algorithm=used_algorithm,
         )
 
@@ -585,9 +720,14 @@ def detect_communities(
     # to explain, same treatment as the empty-partition short-circuit above.
     total_weight = _total_edge_weight(nx_graph)
     global_q = (
-        float(nx.community.modularity(
-            nx_graph, partition_sets, weight="weight", resolution=resolution,
-        ))
+        float(
+            nx.community.modularity(
+                nx_graph,
+                partition_sets,
+                weight="weight",
+                resolution=resolution,
+            )
+        )
         if total_weight > 0.0
         else 0.0
     )
@@ -606,7 +746,10 @@ def detect_communities(
         ordered_members = _order_members(nx_graph, members_list, centroid)
         cohesion = cohesion_for_community(nx_graph, member_set)
         contribution = _community_modularity_contribution(
-            nx_graph, member_set, total_weight, resolution,
+            nx_graph,
+            member_set,
+            total_weight,
+            resolution,
         )
         member_titles = [title_lookup.get(nid, nid) for nid in ordered_members]
         top_titles = member_titles[:5]
@@ -636,7 +779,7 @@ def detect_communities(
         modularity=global_q,
         resolution=resolution,
         seed=seed,
-        weighted=signal_config is not None,
+        weighted=weighted,
         communities=communities,
         node_to_community=node_to_community,
         algorithm=used_algorithm,
@@ -701,9 +844,12 @@ def detect_hierarchical_communities(
     sorted_resolutions = sorted(resolutions)
     levels = [
         detect_communities(
-            graph, nodes,
-            resolution=res, seed=seed,
-            signal_config=signal_config, embedder=embedder,
+            graph,
+            nodes,
+            resolution=res,
+            seed=seed,
+            signal_config=signal_config,
+            embedder=embedder,
             write_back_to_nodes=False,
         )
         for res in sorted_resolutions
@@ -721,10 +867,7 @@ def detect_hierarchical_communities(
 
 def _total_edge_weight(nx_graph: nx.Graph) -> float:
     """Sum of edge weights (defaults to 1.0 when 'weight' attr missing)."""
-    return float(sum(
-        data.get("weight", 1.0)
-        for _u, _v, data in nx_graph.edges(data=True)
-    ))
+    return float(sum(data.get("weight", 1.0) for _u, _v, data in nx_graph.edges(data=True)))
 
 
 def _community_modularity_contribution(

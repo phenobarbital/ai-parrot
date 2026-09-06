@@ -290,18 +290,21 @@ def export_catalog_definition(
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "protocolVersion": "1.0",
         "catalogId": catalog_id,
-        "instructions": catalog_instructions(),
+        "instructions": catalog_instructions(catalog_ids=[catalog_id]),
         "components": components,
         "functions": functions,
     }
 
 
-def write_catalog_definition(path: Path) -> None:
+def write_catalog_definition(path: Path, *, catalog_id: str = DEFAULT_CATALOG_ID) -> None:
     """Write :func:`export_catalog_definition`'s output to ``path`` as JSON.
 
     Args:
         path: The destination file path.
+        catalog_id: The catalog to export. Defaults to the Parrot catalog
+            (FEAT-529 Module 0 — was previously hardcoded to the default;
+            now forwarded so a caller can write the viz-core document too).
     """
     import json
 
-    path.write_text(json.dumps(export_catalog_definition(), indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(export_catalog_definition(catalog_id=catalog_id), indent=2, sort_keys=True) + "\n")

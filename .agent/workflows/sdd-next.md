@@ -1,51 +1,98 @@
 ---
-description: Suggest next unblocked SDD tasks to assign
+description: Suggest next unblocked SDD tasks to assign across per-spec indexes.
 ---
 
-# /sdd-next — Suggest Next Tasks to Assign
+# /sdd-next — Suggest Next Unblocked SDD Tasks
 
-Read `sdd/tasks/.index.json`, identify unblocked tasks, and suggest assignments.
+Aggregate tasks across all per-spec indexes (`sdd/tasks/index/*.json`),
+identify unblocked tasks, and suggest assignments. Shows worktree context
+to help the user decide where to run each task.
 
 ## Guardrails
-- This is a **read-only** workflow — do not modify any files.
-- If `sdd/tasks/.index.json` does not exist, inform the user and suggest running `/sdd-task` first.
+- Only suggest tasks with status `"pending"` and all dependencies `"done"`.
+- If `sdd/tasks/index/` is empty or does not exist, inform the user and suggest running `/sdd-task` first.
+- **Skip `sdd/tasks/index/_orphans.json`** — orphans have no resolvable feature; they are surfaced by `/sdd-status`, never suggested by `/sdd-next`.
+- Sort by priority (high → medium → low), then by effort (S → M → L → XL).
 
 ## Steps
 
-### 1. Read the Task Index
-Read `sdd/tasks/.index.json`.
+### 1. Read All Per-Spec Indexes (FEAT-145)
 
-### 2. Compute Unblocked Tasks
-A task is **unblocked and ready** when:
-- Its status is `"pending"`.
-- ALL tasks in its `depends_on` list have status `"done"`.
+Glob `sdd/tasks/index/*.json` (excluding `_orphans.json`) and aggregate
+the `tasks[]` arrays:
 
-### 3. Sort and Limit
-- Sort by priority: `high` → `medium` → `low`.
-- If the user provides a count `<N>`, show only the top N. Default: show all.
-
-### 4. Print Suggestions
-Output:
-```
-🚀 Next unblocked tasks ready to assign:
-
-  TASK-003  [high/L]  PgVector integration
-  TASK-004  [high/L]  ArangoDB integration
-
-These can run in parallel. To start a task:
-
-  1. Read tasks/active/TASK-003-pgvector-integration.md
-  2. Follow the implementation notes and acceptance criteria
-  3. On completion, move to tasks/completed/ and update the index
+```bash
+TASKS=$(jq -s '[.[] | select(.feature != "_orphans") | .tasks[]]' sdd/tasks/index/*.json)
 ```
 
-If no tasks are unblocked, print:
+If no per-spec index files exist, suggest the user run `/sdd-task` first.
+
+### 2. Detect Active Worktrees
+Run `git worktree list` to identify which feature worktrees are currently active.
+Map each active worktree to its feature ID by matching the worktree name pattern
+`feat-<FEAT-ID>-<slug>` or `task-<TASK-ID>-<slug>`.
+
+### 3. Compute Unblocked Tasks
+For each task with `status: "pending"`:
+- Check that every task in `depends_on` has `status: "done"`.
+- If all deps are done (or `depends_on` is empty) → task is **unblocked**.
+
+### 4. Group and Annotate
+Group unblocked tasks by feature. For each task, determine:
+- **Has active worktree**: the feature already has a worktree running → suggest
+  `/sdd-start TASK-<NNN>` inside that worktree session.
+- **Needs new worktree**: no active worktree for this feature → show the
+  `git worktree add` command.
+- **Parallel task**: marked `parallel: true` → can use its own worktree.
+
+### 5. Sort and Present
+Sort unblocked tasks by priority, then effort. Output:
+
 ```
-⏸️  No unblocked tasks available.
-    All pending tasks have unmet dependencies.
-    Run /sdd-status to see the full board.
+📋 Next unblocked SDD tasks:
+
+FEAT-007 — Ontological RAG
+  🟢 Active worktree: feat-007-ontology-rag
+  1. TASK-003 — GraphStore           [high / M]
+     Depends-on: TASK-001 ✅, TASK-002 ✅
+     → /sdd-start TASK-003  (run inside existing worktree)
+
+FEAT-008 — MCP Security Layer
+  🔵 No worktree — create one:
+     git worktree add -b feat-008-mcp-security .claude/worktrees/feat-008-mcp-security HEAD
+     cd .claude/worktrees/feat-008-mcp-security
+  2. TASK-010 — SecurityLayer base   [high / M]
+     Depends-on: none
+     → /sdd-start TASK-010
+
+FEAT-009 — Security Toolkits
+  ⚡ Parallel tasks (can run in separate worktrees):
+  3. TASK-042 — Prowler Toolkit      [medium / S]
+     git worktree add -b task-042-prowler .claude/worktrees/task-042-prowler HEAD
+     → cd .claude/worktrees/task-042-prowler && /sdd-start TASK-042
+  4. TASK-043 — Trivy Toolkit        [medium / S]
+     git worktree add -b task-043-trivy .claude/worktrees/task-043-trivy HEAD
+     → cd .claude/worktrees/task-043-trivy && /sdd-start TASK-043
+```
+
+If no tasks are unblocked:
+```
+⚠ No unblocked tasks found.
+  All pending tasks are waiting on: <list of blocking task IDs>
+  Run /sdd-status for the full board.
+```
+
+### 6. Show In-Progress Summary
+After the unblocked list, show a brief summary of what's currently running:
+
+```
+🔄 In progress:
+  TASK-002 — OntologyParser [in feat-007-ontology-rag]
+  TASK-021 — Trivy Toolkit  [in task-021-trivy-toolkit]
 ```
 
 ## Reference
-- Index file: `sdd/tasks/.index.json`
+- Per-spec index files: `sdd/tasks/index/*.json` (excluding `_orphans.json`)
+- Active worktrees: `git worktree list`
+- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`
 - SDD methodology: `sdd/WORKFLOW.md`

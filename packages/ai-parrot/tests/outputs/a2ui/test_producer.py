@@ -207,6 +207,24 @@ class TestProducerUsesV1StructuredOutput:
         system = client.system_prompts[0]
         assert "root" in system.lower()
 
+    async def test_producer_passes_surface_catalogs(self):
+        """FEAT-529 Module 0: `catalog=` scopes the system prompt's instructions."""
+        from parrot.outputs.a2ui.catalog.viz_core import (
+            VIZ_CORE_CATALOG_ID,
+            VIZ_CORE_INSTRUCTIONS,
+        )
+
+        client = FakeClient([_valid_envelope()])
+        # max_attempts=1 with a mismatched surface catalog will degrade (the
+        # fake envelope's components resolve under DEFAULT_CATALOG_ID), but
+        # generate_envelope still sends its FIRST system prompt scoped to the
+        # requested catalog before validation ever runs.
+        await generate_envelope(client, "make a graph", model="m", max_attempts=1, catalog=VIZ_CORE_CATALOG_ID)
+        system = client.system_prompts[0]
+        assert VIZ_CORE_INSTRUCTIONS in system
+        assert "Chart:" not in system
+        assert "InfoCard:" not in system
+
 
 class TestRepairPromptIncludesCode:
     """TASK-2547 Test Specification: ``test_repair_prompt_includes_code``."""

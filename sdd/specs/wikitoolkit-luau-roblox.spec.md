@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-532
 **Date**: 2026-09-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: Next release (number not yet assigned)
 **Exploration**: `sdd/proposals/wikitoolkit-luau-roblox.brainstorm.md`
 **Isolation**: mixed

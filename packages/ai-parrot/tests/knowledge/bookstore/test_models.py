@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args
+
+import pytest
+from pydantic import ValidationError
 
 from parrot.knowledge.bookstore.carding import (
     derive_toc,
@@ -10,7 +14,15 @@ from parrot.knowledge.bookstore.carding import (
     slugify,
     unique_slug,
 )
-from parrot.knowledge.bookstore.models import BookCard, TocEntry
+from parrot.knowledge.bookstore.models import (
+    REL_WEIGHTS,
+    RelationKind,
+    BookCard,
+    BookRelation,
+    CardDraft,
+    RelationJudgement,
+    TocEntry,
+)
 
 
 def _card(**overrides) -> BookCard:
@@ -79,3 +91,61 @@ def test_fallback_card_fields_uses_filename_and_chapters(sample_tree):
     assert draft.title == "The Pragmatic Programmer"
     assert draft.topics == ["Chapter One", "Chapter Two"]
     assert draft.summary == ""
+
+
+# ---------------------------------------------------------------------------
+# FEAT-533 — classification + relations/communities models
+# ---------------------------------------------------------------------------
+
+
+def test_card_draft_classification_defaults():
+    draft = CardDraft(title="Meditations")
+    assert draft.genre == "other"
+    assert draft.traditions == []
+    assert draft.period is None
+
+
+def test_brief_includes_classification_and_community():
+    brief = _card(
+        genre="essay",
+        traditions=["stoicism"],
+        period="imperio romano",
+        community_id="c1",
+        community_label="Virtue ethics",
+    ).brief()
+    assert brief["genre"] == "essay"
+    assert brief["traditions"] == ["stoicism"]
+    assert brief["period"] == "imperio romano"
+    assert brief["community_id"] == "c1"
+    assert brief["community_label"] == "Virtue ethics"
+
+
+def _relation(**overrides) -> BookRelation:
+    data = {
+        "src_book_id": "a",
+        "dst_book_id": "b",
+        "rel": "same_author",
+        "origin": "deterministic",
+        "computed_at": "2026-09-06T00:00:00+00:00",
+    }
+    data.update(overrides)
+    return BookRelation(**data)
+
+
+def test_book_relation_rejects_self_pair():
+    with pytest.raises(ValidationError):
+        _relation(src_book_id="a", dst_book_id="a")
+
+
+def test_relation_judgement_confidence_bounds():
+    RelationJudgement(dst_book_id="b", rel="parallels", confidence=0.0)
+    RelationJudgement(dst_book_id="b", rel="parallels", confidence=1.0)
+    with pytest.raises(ValidationError):
+        RelationJudgement(dst_book_id="b", rel="parallels", confidence=1.1)
+    with pytest.raises(ValidationError):
+        RelationJudgement(dst_book_id="b", rel="parallels", confidence=-0.1)
+
+
+def test_rel_weights_cover_every_relation_kind():
+    for kind in get_args(RelationKind):
+        assert kind in REL_WEIGHTS
