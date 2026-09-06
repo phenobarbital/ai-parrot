@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-533
 **Date**: 2026-09-06
 **Author**: Jesus Lara (spec: Claude session 2026-09-06)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Input**: `sdd/proposals/wikitoolkit-bookstore-conceptual-relations.brainstorm.md` (Recommended Option A)
 
