@@ -1,0 +1,26 @@
+{
+  "flow": "dev_loop",
+  "version": "1.0",
+  "description": "FEAT-529 test fixture: a FlowDefinition.model_dump(by_alias=True)-shaped mapping — never imports parrot.bots.",
+  "nodes": [
+    {"id": "start", "type": "start"},
+    {"id": "research", "type": "agent", "label": "Research"},
+    {"id": "decision", "type": "decision", "label": "Ready?"},
+    {"id": "development", "type": "agent", "label": "Development"},
+    {"id": "qa", "type": "agent", "label": "QA"},
+    {"id": "docs", "type": "agent", "label": "Docs"},
+    {"id": "close", "type": "agent", "label": "Close"},
+    {"id": "failure_handler", "type": "agent", "label": "Failure Handler"},
+    {"id": "end", "type": "end"}
+  ],
+  "edges": [
+    {"from": "start", "to": "research", "condition": "always"},
+    {"from": "research", "to": "decision", "condition": "on_success"},
+    {"from": "decision", "to": "development", "condition": "on_condition", "predicate": "ready == true"},
+    {"from": "development", "to": ["qa", "docs"], "condition": "on_success"},
+    {"from": "development", "to": "failure_handler", "condition": "on_error"},
+    {"from": "qa", "to": "close", "condition": "always"},
+    {"from": "docs", "to": "close", "condition": "always"},
+    {"from": "close", "to": "end", "condition": "always"}
+  ]
+}

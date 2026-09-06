@@ -539,12 +539,18 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 
 | id | interactive | actions | updates | output | supported components |
 |---|---|---|---|---|---|
-| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe) (+ FilterBar handled via lowering) |
-| `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic |
+| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering) |
+| `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic + `Graph` (**FEAT-529**, viz-core) |
 | `pdf` | ✗ | ✗ | ✗ | `application/pdf` | SSR minus `Video`, `AudioPlayer` |
-| `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart` |
+| `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart`, `Graph` (**FEAT-529**, viz-core) |
 | `folium_map` | ✗ | ✗ | ✗ | `text/html` | `Map` |
 | `adaptive_cards` | ✗ | ✓ | ✗ | Adaptive Cards | Text, Image, Row, Column, Card, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput, Button |
+
+`echarts`/`interactive-html`/`ssr_html`/`pdf` additionally declare
+`https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json` in
+`supported_catalog_ids` (**FEAT-529**) — `adaptive_cards`/`folium_map` do
+not, so a `Graph` there always lowers/is skipped with one `degraded` entry
+naming that catalog id (§5.4).
 
 The Svelte renderer will be the first one with `interactive: true, supports_actions: true, supports_updates: true, output: "live"`. Rule inherited from `renderers/degrade.py`: **never throw on an unsupported component** — render a visible notice `Text` (`"[<Component> not supported here: <reason>]"`, `parrot_role: notice`) that **keeps the original id** so references still resolve, and collect `{id, component, reason}` records (`degraded[]`) for telemetry.
 
@@ -563,6 +569,101 @@ The Svelte renderer will be the first one with `interactive: true, supports_acti
 > `Infographic`/`Report` root; a toolbar toggle falls back to the existing
 > HTML iframe view. This is unrelated to (and does not replace)
 > navigator-frontend-next's own Svelte renderer referenced above.
+
+### 5.4 viz-core catalog (FEAT-529)
+
+A THIRD catalog, `catalogId: "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json"`,
+alongside Basic and Parrot (§5.1/§5.2, still 10 composites — viz-core is
+additive, nothing moved). Its rule: **describe what, never how** — no
+colour, font, pixel size, or renderer-library option on the wire; semantic
+colour roles/formats; `size` is layout intent (`inline`/`tile`/`hero`),
+never pixels; every visual carries `accessibleDescription`; the standard
+`action` is the only interaction primitive. A viz-core component ALWAYS
+carries its own explicit `catalogId` — the surface's default stays
+Parrot's; resolve a component's effective catalog as `component.catalogId
+?? surface.catalogId` (mirrors the backend's `catalog.resolve_catalog`).
+
+#### `Graph` (`catalog/viz_core/graph.py`) — required `nodes`, `edges`
+
+| Prop | Type | Notes |
+|---|---|---|
+| `kind` | `flowchart, state, sequence, dag` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop) |
+| `direction` | `TB, LR, BT, RL` | default `TB` |
+| `nodes` | `[{id, label?, shape?, group?, state?, icon?, meta?}]` | `shape ∈ rect (default), rounded, diamond, circle, hexagon, subroutine`; `state ∈ pending, running, completed, failed, skipped, waiting` — DATA, see the status-role table below |
+| `edges` | `[{from, to, label?, kind?, condition?}]` | `kind ∈ solid (default), dashed, thick` |
+| `groups` | `[{id, label?, nodes: [id, ...]}]` | rendered as a bounding box |
+| `layout` | `{engine: layered (default) \| force \| manual, rankSep?, nodeSep?, positions?}` | `positions` (when present) are SERVER-PREPARED — draw them as-is, never recompute; `manual` requires `positions` for every node |
+| `selection` | `{selectable?, selected?}` | |
+| `data` | `{"path": …}` | binding to `{node_id: {state?, label?, meta?}}` — overlays per-node state at render time |
+| `accessibleDescription`, `size` (`inline, tile (default), hero`) | | viz-core common props, same meaning everywhere |
+| `action` | the standard v1.0 `Action` | TOOL origin only (D10b gate, same as everywhere else) — dispatched on node click with `context.nodeId`/`context.nodeLabel` added |
+
+Node `state` → semantic status role → theme token (the SAME five roles
+this app's own `A2UIGraph.svelte` and the backend's `_graph_svg`/`echarts`
+renderers use — only the token NAMES differ per surface, since this app's
+theme schema has no `--accent-*`/`--neutral-muted` of its own):
+
+| `state` | status role | this app's Tailwind/shadcn token |
+|---|---|---|
+| `completed` | `good` | `--chart-2` |
+| `waiting` | `warning` | `--chart-3` |
+| `failed` | `critical` | `--destructive` |
+| `running` | `primary` | `--primary` |
+| `pending`, `skipped` | `neutral` | `--muted-foreground` |
+
+Lowered fallback (any lane without viz-core support, or without a graph
+engine): `Card{Column[Text description, Text title?, Text caption, Column
+edge-list, Text graph-source]}`, `parrot_variant: "graph"` — see
+[`docs/outputs/a2ui-v1.md`](../outputs/a2ui-v1.md#graph--the-viz-core-workflowstate-machine-component-feat-529)
+for the exhaustive lowering-role table, the mermaid codec subset, and the
+layout/degradation contract (force → layered, oversize → truncated edge
+list, both recorded).
+
+**Frontend**: dispatch `Graph` via ECharts' native `graph` series
+(`layout: "none"` from `layout.positions` when present, else `"circular"`)
+— no new graph/diagram npm dependency (no mermaid/dagre/elkjs/@xyflow/
+svelteflow). `A2UIGraph.svelte` (bundled UI reference implementation)
+resolves positions, maps `state` to the token table above, shows a
+tooltip from `meta`, and exposes an `onNodeClick` hook with NO action
+transport wired yet (that ships with the live-workflow-surface follow-up).
+
+```json a2ui-envelope
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "workflow",
+    "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+    "components": [
+      {"id": "root", "component": "Column", "children": ["graph"]},
+      {
+        "id": "graph",
+        "component": "Graph",
+        "catalogId": "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json",
+        "kind": "flowchart",
+        "direction": "TB",
+        "nodes": [
+          {"id": "start", "label": "Start", "shape": "circle", "state": "completed"},
+          {"id": "research", "label": "Research", "state": "running"},
+          {"id": "end", "label": "End", "shape": "circle"}
+        ],
+        "edges": [
+          {"from": "start", "to": "research"},
+          {"from": "research", "to": "end", "label": "done"}
+        ],
+        "accessibleDescription": "A tiny research workflow: start, research, end."
+      }
+    ]
+  }
+}
+```
+
+This example is deliberately **mixed-catalog**: the surface's own default
+`catalogId` is the official Basic Catalog (its `root` `Column` resolves
+under it with no override), while `graph` carries its own explicit
+viz-core `catalogId` — exactly the shape `catalog.resolve_catalog`/
+`validate_envelope` are built to handle. Dropping `graph`'s `catalogId`
+here would make it resolve against the Basic surface default instead,
+where `Graph` does not exist — `UNKNOWN_COMPONENT`.
 
 ---
 

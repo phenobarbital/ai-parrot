@@ -56,15 +56,18 @@ expected to — validate against it directly. So ``_assert_conformant`` checks:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from parrot.models.infographic import InfographicResponse
 from parrot.outputs.a2ui.adapters import infographic_response_to_envelope
+from parrot.outputs.a2ui.adapters.flow import flow_definition_to_graph
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.builders import (
     build_card,
     build_chart,
     build_datatable,
+    build_graph,
     build_infographic,
     build_kpicard,
     build_surface,
@@ -75,14 +78,18 @@ from parrot.outputs.a2ui.catalog import (
     validate_envelope,
     validate_message,
 )
-from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.catalog.base import CatalogValidationError, to_components
 from parrot.outputs.a2ui.catalog.parrot.form import FormField, FormSubmit, build_form
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.graph import from_mermaid, to_mermaid
 from parrot.outputs.a2ui.models import A2UIAgentMessage, Component, CreateSurface
 from parrot.outputs.a2ui.recipes import SUPPORTED_SCHEMA_VERSION
 from parrot.outputs.a2ui.recipes.migrate import migrate_layout
 from parrot.outputs.a2ui.recipes.models import LayoutSpec
 
 from .._v1 import DEFAULT_CATALOG_ID
+
+_FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 
 def _lower_to_basic_components(envelope: CreateSurface) -> list[Component]:
@@ -158,6 +165,17 @@ class TestBuildersConformance:
             title="Q1 Overview",
             sections=[{"heading": "Summary", "text": "Revenue grew."}],
         )
+        _assert_conformant(envelope)
+
+    def test_build_graph(self):
+        """FEAT-529: build_graph()'s output validates against the wire
+        schema (lowered — GraphComponent.lower() is a Basic-only tree)."""
+        envelope = build_graph(
+            nodes=[{"id": "a", "label": "Start"}, {"id": "b", "label": "End"}],
+            edges=[{"from": "a", "to": "b", "label": "go"}],
+            accessible_description="Tiny graph",
+        )
+        assert envelope.components[0].catalog_id == VIZ_CORE_CATALOG_ID
         _assert_conformant(envelope)
 
 
@@ -429,3 +447,144 @@ class TestRendererConformance:
         # vocabulary, not an A2UI envelope (see module docstring).
         card = json.loads(artifact.content)
         assert card.get("type") == "AdaptiveCard" or "body" in card
+
+
+# ---------------------------------------------------------------------------
+# FEAT-529: viz-core Graph — cross-cutting acceptance (Module 8, TASK-2891).
+# ---------------------------------------------------------------------------
+
+
+def _graph_envelope() -> CreateSurface:
+    return build_graph(
+        nodes=[{"id": "a", "label": "Start"}, {"id": "b", "label": "End"}],
+        edges=[{"from": "a", "to": "b", "label": "go"}],
+        accessible_description="Tiny graph",
+    )
+
+
+class TestFlowToGraphToMermaidRoundtrip:
+    """The dev-loop FlowDefinition fixture -> Graph -> mermaid -> Graph
+    round-trips (modulo accessibleDescription/size, per the codec's own
+    contract), and the adapter's own build_graph() output is conformant."""
+
+    def test_flow_to_graph_to_mermaid_roundtrip(self):
+        definition = json.loads((_FIXTURES_DIR / "dev_loop_flow.json").read_text())
+        spec = flow_definition_to_graph(definition)
+
+        envelope = build_graph(
+            nodes=spec.nodes,
+            edges=spec.edges,
+            accessible_description=spec.accessible_description,
+        )
+        _assert_conformant(envelope)
+
+        mermaid_text = to_mermaid(spec)
+        roundtripped = from_mermaid(mermaid_text)
+
+        def _normalize(graph_spec):
+            dumped = graph_spec.model_dump(by_alias=True, exclude={"accessible_description", "size"})
+            # The mermaid codec never collapses an edge's `kind` back to
+            # `None` (an edge operator is always unambiguously explicit in
+            # text) — normalize the two equivalent representations before
+            # comparing (documented in graph/mermaid.py's module docstring;
+            # flow_definition_to_graph legitimately leaves `kind=None` on
+            # every non-on_error/on_timeout edge).
+            for edge in dumped.get("edges", []):
+                if edge.get("kind") is None:
+                    edge["kind"] = "solid"
+            return dumped
+
+        assert _normalize(roundtripped) == _normalize(spec)
+
+
+class TestGraphRendersOnEveryRegisteredRenderer:
+    """A viz-core Graph envelope renders (natively, or via exactly one
+    recorded, readable degradation) on every registered satellite renderer."""
+
+    @pytest.mark.asyncio
+    async def test_graph_renders_on_every_registered_renderer(self):
+        from parrot.outputs.a2ui_renderers.adaptive_cards import AdaptiveCardsRenderer
+        from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer
+        from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer
+        from parrot.outputs.a2ui_renderers.ssr_html import SSRHTMLRenderer
+
+        envelope = _graph_envelope()
+        _assert_conformant(envelope)
+
+        for renderer in (SSRHTMLRenderer(), InteractiveHTMLRenderer(), EChartsRenderer()):
+            artifact = await renderer.render(envelope)
+            assert not artifact.metadata.get("degraded"), type(renderer).__name__
+
+        try:
+            import weasyprint  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            from parrot.outputs.a2ui_renderers.pdf import PDFRenderer
+
+            pdf_artifact = await PDFRenderer().render(envelope)
+            assert not pdf_artifact.metadata.get("degraded")
+
+        ac_artifact = await AdaptiveCardsRenderer().render(envelope)
+        ac_degraded = ac_artifact.metadata.get("degraded") or []
+        assert len(ac_degraded) == 1
+        assert VIZ_CORE_CATALOG_ID in ac_degraded[0]["reason"]
+
+        try:
+            import folium  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            from parrot.outputs.a2ui_renderers.folium_map import FoliumMapRenderer
+
+            map_and_graph = build_surface(
+                "Map",
+                {"layers": [{"layer": "base"}]},
+                surface_id="map",
+            )
+            graph_component = envelope.components[0].model_copy(update={"id": "graph"})
+            combined = map_and_graph.model_copy(
+                update={"components": [*map_and_graph.components, graph_component]}
+            )
+            map_artifact = await FoliumMapRenderer().render(combined)
+            map_degraded = map_artifact.metadata.get("degraded") or []
+            graph_records = [record for record in map_degraded if record["component"] == "Graph"]
+            assert len(graph_records) == 1
+            assert VIZ_CORE_CATALOG_ID in graph_records[0]["reason"]
+
+
+class TestCatalogDefinitionIncludesGraph:
+    def test_catalog_definition_includes_graph(self):
+        from parrot.outputs.a2ui.catalog.export import export_catalog_definition
+
+        viz_core_doc = export_catalog_definition(catalog_id=VIZ_CORE_CATALOG_ID)
+        assert "Graph" in viz_core_doc["components"]
+
+        parrot_doc = export_catalog_definition()  # DEFAULT_CATALOG_ID
+        assert "Graph" not in parrot_doc["components"]
+
+
+class TestMixedCatalogSurfaceValidates:
+    def test_mixed_catalog_surface_validates(self):
+        from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+
+        graph_component = Component(
+            id="graph",
+            component="Graph",
+            catalogId=VIZ_CORE_CATALOG_ID,
+            nodes=[{"id": "a"}, {"id": "b"}],
+            edges=[{"from": "a", "to": "b"}],
+        )
+        root = Component(id="root", component="Column", children=["graph"])
+        surface = CreateSurface(
+            surfaceId="s",
+            catalogId=BASIC_CATALOG_ID,
+            components=[root, graph_component],
+        )
+        validate_envelope(surface)  # must not raise — mixed-catalog shape
+
+        graph_without_catalog_id = graph_component.model_copy(update={"catalog_id": None})
+        bad_surface = surface.model_copy(update={"components": [root, graph_without_catalog_id]})
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(bad_surface)
+        assert "Graph" in exc.value.unknown_components

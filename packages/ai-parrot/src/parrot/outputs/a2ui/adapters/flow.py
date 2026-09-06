@@ -100,8 +100,16 @@ def flow_definition_to_graph(
 
     nodes = [
         GraphNode(
+            # Leave label=None (not node_def["id"]) when the node carries no
+            # label of its own — GraphNode.label already documents "defaults
+            # to id on render" (spec §2 Data Models), and the mermaid codec
+            # collapses an explicit label EQUAL to id back to None on
+            # import (graph/mermaid.py's own collapsing convention) — a
+            # redundant explicit id-as-label here would silently break
+            # from_mermaid(to_mermaid(spec)) == spec for every node with no
+            # authored label (caught by TASK-2891's own conformance test).
             id=node_def["id"],
-            label=node_def.get("label") or node_def["id"],
+            label=node_def.get("label") or None,
             shape=_shape_for_node_type(node_def.get("type", "")),
         )
         for node_def in node_defs
