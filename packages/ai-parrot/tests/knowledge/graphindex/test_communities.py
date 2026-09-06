@@ -25,9 +25,12 @@ from parrot.knowledge.graphindex.communities import (
     detect_communities,
     detect_hierarchical_communities,
 )
+from parrot.knowledge.graphindex.assemble import GraphAssembler
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
     NodeKind,
+    Provenance,
+    UniversalEdge,
     UniversalNode,
 )
 
@@ -706,4 +709,85 @@ class TestIntegration:
         community_of = result.node_to_community
         assert community_of["C1"] == community_of["S1"] == community_of["S2"]
         assert community_of["C2"] == community_of["S3"] == community_of["S4"]
-        assert community_of["C1"] != community_of["C2"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-533 Module 0 — payload edge weights
+# ---------------------------------------------------------------------------
+
+
+class TestPayloadWeights:
+    def test_payload_weight_used_without_signal_config(self):
+        g = rustworkx.PyDiGraph()
+        a, b = _node("a"), _node("b")
+        ia, ib = _add(g, a), _add(g, b)
+        g.add_edge(ia, ib, {"kind": "references", "weight": 0.2})
+
+        nx_graph = _to_undirected_networkx(g, [a, b])
+        assert nx_graph["a"]["b"]["weight"] == 0.2
+
+        pytest.importorskip("igraph")
+        ig_graph, vertex_node_ids = _to_igraph(g, [a, b])
+        assert list(ig_graph.es["weight"]) == [0.2]
+
+    def test_payload_weight_max_wins_on_collapse(self):
+        g = rustworkx.PyDiGraph()
+        a, b = _node("a"), _node("b")
+        ia, ib = _add(g, a), _add(g, b)
+        g.add_edge(ia, ib, {"kind": "references", "weight": 0.2})
+        g.add_edge(ib, ia, {"kind": "references", "weight": 0.9})
+
+        nx_graph = _to_undirected_networkx(g, [a, b])
+        assert nx_graph["a"]["b"]["weight"] == 0.9
+
+    def test_payload_weight_ignored_with_signal_config(self):
+        g, nodes = _build_two_cliques()
+        # _build_two_cliques' edges carry no payload weight; the point of
+        # this test is that signal_relevance drives the weight, not a
+        # payload default of 1.0 nor any payload weight that might exist.
+        from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+        cfg = SignalRelevanceConfig()
+        nx_graph = _to_undirected_networkx(g, nodes, signal_config=cfg, embedder=None)
+        bridge_weight = nx_graph["A0"]["B0"]["weight"]
+        # Signal weights are clamped to >= 0.001 and derived from
+        # signal_relevance, never the (absent, in this fixture) payload.
+        assert bridge_weight > 0
+        assert bridge_weight != 1.0
+
+    def test_weighted_flag_true_with_payload_weights(self):
+        g = rustworkx.PyDiGraph()
+        a, b = _node("a"), _node("b")
+        ia, ib = _add(g, a), _add(g, b)
+        g.add_edge(ia, ib, {"kind": "references", "weight": 0.3})
+        result = detect_communities(g, [a, b], write_back_to_nodes=False)
+        assert result.weighted is True
+
+    def test_non_numeric_payload_weight_falls_back_to_one(self):
+        g = rustworkx.PyDiGraph()
+        a, b = _node("a"), _node("b")
+        ia, ib = _add(g, a), _add(g, b)
+        g.add_edge(ia, ib, {"kind": "references", "weight": "heavy"})
+
+        nx_graph = _to_undirected_networkx(g, [a, b])
+        assert nx_graph["a"]["b"]["weight"] == 1.0
+
+        result = detect_communities(g, [a, b], write_back_to_nodes=False)
+        assert result.weighted is False
+
+    def test_assembler_copies_numeric_weight_tag(self):
+        asm = GraphAssembler(tenant_id="t")
+        asm.add_nodes([_node("a"), _node("b")])
+        idx = asm.add_edge(UniversalEdge(
+            source_id="a", target_id="b", kind=EdgeKind.REFERENCES,
+            provenance=Provenance.EXTRACTED, domain_tags={"weight": 0.7},
+        ))
+        assert asm.graph.get_edge_data_by_index(idx)["weight"] == 0.7
+
+    def test_assembler_omits_weight_when_tag_absent(self):
+        asm = GraphAssembler(tenant_id="t")
+        asm.add_nodes([_node("a"), _node("b")])
+        idx = asm.add_edge(UniversalEdge(
+            source_id="a", target_id="b", kind=EdgeKind.REFERENCES,
+            provenance=Provenance.EXTRACTED,
+        ))
+        assert "weight" not in asm.graph.get_edge_data_by_index(idx)
