@@ -679,6 +679,179 @@
             line-height: 1.5;
         }
 
+        /* Avatar viewer (FEAT-536 TASK-2945) — subscribe-only LiveKit card,
+           off by default, floating bottom-left so it never overlaps the
+           settings panel (which slides in from the right). */
+        .avatar-card {
+            position: fixed;
+            bottom: 16px;
+            left: 16px;
+            width: 220px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-elevated);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            z-index: 50;
+        }
+
+        .avatar-card[hidden] {
+            display: none;
+        }
+
+        .avatar-card-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+        }
+
+        .avatar-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .avatar-status-dot.avatar-status-connecting {
+            background: var(--warning);
+        }
+
+        .avatar-status-dot.avatar-status-live {
+            background: var(--accent-primary);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+
+        .avatar-status-dot.avatar-status-error {
+            background: var(--danger);
+        }
+
+        .avatar-video {
+            display: block;
+            width: 100%;
+            height: 160px;
+            background: var(--bg-primary);
+            object-fit: cover;
+        }
+
+        .avatar-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+        }
+
+        .avatar-btn {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 11px;
+            border-radius: 8px;
+            border: 1px solid var(--bg-elevated);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: var(--transition-fast);
+        }
+
+        .avatar-btn:hover {
+            border-color: var(--accent-primary);
+        }
+
+        .avatar-btn[hidden] {
+            display: none;
+        }
+
+        .avatar-audio-source-select {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 11px;
+            border-radius: 8px;
+            border: 1px solid var(--bg-elevated);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .avatar-mute-btn {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            flex: none;
+        }
+
+        .avatar-setting-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            text-transform: none;
+            letter-spacing: normal;
+            cursor: pointer;
+        }
+
+        .avatar-setting-input {
+            margin-top: 8px;
+        }
+
+        /* Tool & data events panel (FEAT-536 TASK-2945 — spec's shared
+           display_data/tool_call panel; textContent/JSON only, never raw
+           tool HTML). */
+        .tool-events-panel {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            width: 280px;
+            max-height: 220px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-elevated);
+            border-radius: 14px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tool-events-panel[hidden] {
+            display: none;
+        }
+
+        .tool-events-header {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+            border-top-left-radius: 14px;
+            border-top-right-radius: 14px;
+        }
+
+        .tool-events-list {
+            overflow-y: auto;
+            padding: 8px 12px;
+        }
+
+        .tool-event-item {
+            margin-bottom: 10px;
+        }
+
+        .tool-event-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-primary);
+            margin-bottom: 2px;
+        }
+
+        .tool-event-body {
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin: 0;
+        }
+
         /* Responsive */
         @media (max-width: 600px) {
             .app-container {
@@ -758,11 +931,42 @@
                     </div>
                 </div>
 
+                <button class="control-btn" id="interruptBtn" title="Interrupt and speak again" disabled>
+                    ⏹️
+                </button>
+
                 <button class="control-btn" id="clearBtn" title="Clear chat">
                     🗑️
                 </button>
             </div>
         </footer>
+    </div>
+
+    <!-- Avatar viewer (FEAT-536 TASK-2945) — off by default; see the
+         "LiveAvatar viewer" setting group below. Subscribe-only: never
+         publishes microphone/camera. -->
+    <div class="avatar-card" id="avatarCard" hidden>
+        <div class="avatar-card-header">
+            <span class="avatar-status-dot" id="avatarStatusDot"></span>
+            <span id="avatarStatusText">Avatar off</span>
+        </div>
+        <video id="avatarVideo" class="avatar-video" autoplay playsinline muted></video>
+        <audio id="avatarAudio" autoplay></audio>
+        <div class="avatar-controls">
+            <button class="avatar-btn" id="avatarEnableAudioBtn" hidden>Enable avatar audio</button>
+            <select class="avatar-audio-source-select" id="avatarAudioSourceSelect" title="Audible output source">
+                <option value="avatar">Avatar audio</option>
+                <option value="browser">Browser audio</option>
+            </select>
+            <button class="avatar-btn avatar-mute-btn" id="avatarMuteBtn" title="Mute avatar/voice audio">🔊</button>
+        </div>
+    </div>
+
+    <!-- Tool & data events panel (FEAT-536 TASK-2945) — display_data/
+         tool_call frames, rendered as textContent/JSON only. -->
+    <div class="tool-events-panel" id="toolEventsPanel" hidden>
+        <div class="tool-events-header">Tool &amp; Data Events</div>
+        <div class="tool-events-list" id="toolEventsList"></div>
     </div>
 
     <!-- Settings Panel -->
@@ -789,6 +993,23 @@
             <label class="setting-label">System Prompt (Optional Override)</label>
             <textarea class="setting-input" id="systemPrompt" rows="4"
                 placeholder="Custom instructions for the assistant..."></textarea>
+        </div>
+
+        <div class="setting-group">
+            <label class="setting-label">LiveAvatar Viewer</label>
+            <label class="avatar-setting-checkbox-row" for="avatarEnabledCheckbox">
+                <input type="checkbox" id="avatarEnabledCheckbox">
+                Enable avatar (off by default)
+            </label>
+            <input class="setting-input avatar-setting-input" id="avatarTenantId"
+                placeholder="Tenant ID (optional)">
+            <input class="setting-input avatar-setting-input" id="avatarAvatarId"
+                placeholder="Avatar ID override (optional)">
+            <p class="capability-note">
+                Requires the LiveAvatar backend opt-in for this tenant/agent and the
+                locked LiveKit SDK asset; falls back to voice-only when unavailable.
+                Changing this while connected restarts the voice session.
+            </p>
         </div>
 
         <div class="setting-group">
@@ -851,6 +1072,22 @@
                 this.usageStrip = document.getElementById('usageStrip');
                 this.capabilityTable = document.getElementById('capabilityTable');
                 this.capabilityProviderLabel = document.getElementById('capabilityProviderLabel');
+                this.interruptBtn = document.getElementById('interruptBtn');
+
+                // Avatar viewer elements (FEAT-536 TASK-2945)
+                this.avatarCard = document.getElementById('avatarCard');
+                this.avatarStatusDot = document.getElementById('avatarStatusDot');
+                this.avatarStatusText = document.getElementById('avatarStatusText');
+                this.avatarVideo = document.getElementById('avatarVideo');
+                this.avatarAudio = document.getElementById('avatarAudio');
+                this.avatarEnableAudioBtn = document.getElementById('avatarEnableAudioBtn');
+                this.avatarAudioSourceSelect = document.getElementById('avatarAudioSourceSelect');
+                this.avatarMuteBtn = document.getElementById('avatarMuteBtn');
+                this.avatarEnabledCheckbox = document.getElementById('avatarEnabledCheckbox');
+                this.avatarTenantIdInput = document.getElementById('avatarTenantId');
+                this.avatarAvatarIdInput = document.getElementById('avatarAvatarId');
+                this.toolEventsPanel = document.getElementById('toolEventsPanel');
+                this.toolEventsList = document.getElementById('toolEventsList');
 
                 // State
                 this.ws = null;
@@ -865,6 +1102,15 @@
                 this.canSpeak = true;  // Controls when user can start speaking
                 this.currentMessageId = null;
                 this.usageByProvider = {};  // last known usage per provider key
+
+                // Avatar viewer state (FEAT-536 TASK-2945). The controller
+                // itself (AvatarViewerController) is lazy-loaded on first
+                // enable — see ensureAvatarController()/loadAvatarSdk().
+                this.avatarConfig = { enabled: false, tenantId: '', avatarId: '' };
+                this.avatarController = null;
+                this.avatarSdkPromise = null;
+                this.avatarUserMuted = false;
+                this.currentPlaybackSource = null;
 
                 // Server-rendered config (providers + capabilities), templated
                 // by server.py's index_handler.
@@ -888,10 +1134,17 @@
             init() {
                 this.createVisualizerBars();
                 this.bindEvents();
+                this.initAvatarUI();
                 this.loadSettings();
                 this.renderProviderButtons();
                 this.renderCapabilityPanel();
                 this.renderUsageStrip();
+
+                // Page teardown invalidates the avatar viewer's generation
+                // and disconnects its room (spec "Lifecycle/races").
+                window.addEventListener('beforeunload', () => {
+                    this.teardownAvatarViewer();
+                });
             }
 
             createVisualizerBars() {
@@ -934,6 +1187,12 @@
 
                 // Connect/Disconnect toggle
                 this.connectBtn.addEventListener('click', () => this.toggleConnection());
+
+                // Interrupt / speak-again (FEAT-536 TASK-2945) — reuses the
+                // existing start_recording path; no new WebSocket message.
+                if (this.interruptBtn) {
+                    this.interruptBtn.addEventListener('click', () => this.handleInterrupt());
+                }
 
                 // Settings inputs
                 document.getElementById('languageSelect').addEventListener('change', (e) => {
@@ -1071,6 +1330,12 @@
 
                         this.connectBtn.classList.remove('active');
                         this.connectBtn.title = 'Connect';
+
+                        // Lifecycle/races (FEAT-536 TASK-2945): a WebSocket
+                        // close ends this voice session server-side too —
+                        // the viewer's room must not outlive it.
+                        this.teardownAvatarViewer();
+                        this.setInterruptEnabled(false);
                     };
 
                     this.ws.onerror = (error) => {
@@ -1098,6 +1363,7 @@
                     this.ws.close();
                     this.ws = null;
                 }
+                this.teardownAvatarViewer();
             }
 
             reconnect() {
@@ -1119,6 +1385,7 @@
                     case 'session_started':
                         this.sessionStarted = true;
                         this.updateStatusBar('Session ready. Click to speak.');
+                        this.handleAvatarSessionStarted(message.avatar);
                         break;
 
                     case 'response_chunk':
@@ -1137,6 +1404,7 @@
                         this.recordBtn.disabled = false;
                         this.recordBtn.classList.remove('disabled');
                         this.updateStatusBar('Click to speak.');
+                        this.setInterruptEnabled(false);
                         break;
 
                     case 'error':
@@ -1145,6 +1413,7 @@
                         this.canSpeak = true;
                         this.recordBtn.disabled = false;
                         this.recordBtn.classList.remove('disabled');
+                        this.setInterruptEnabled(false);
                         break;
 
                     case 'transcription':
@@ -1154,20 +1423,45 @@
                             this.appendToCurrentMessage(message.text);
                         }
                         break;
+
+                    case 'display_data':
+                        // Keep text/events flowing regardless of the active
+                        // audio source — this panel is independent of the
+                        // one-source audio policy.
+                        this.renderToolEvent('Data', message.data);
+                        break;
+
+                    case 'tool_call':
+                        this.renderToolEvent('Tool: ' + message.name, {
+                            arguments: message.arguments,
+                            result: message.result,
+                            execution_time_ms: message.execution_time_ms,
+                        });
+                        break;
                 }
             }
 
             startSession() {
                 if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-                this.ws.send(JSON.stringify({
+                const payload = {
                     type: 'start_session',
                     config: {
                         voice_name: this.providers[this.activeProvider].voice,
                         language: this.config.language,
                         system_prompt: this.config.systemPrompt || undefined
                     }
-                }));
+                };
+
+                // Avatar fields are top-level on start_session, never nested
+                // under config (spec "Avatar viewer in the existing Voice UI").
+                if (this.avatarConfig.enabled) {
+                    payload.avatar = true;
+                    if (this.avatarConfig.tenantId) payload.tenant_id = this.avatarConfig.tenantId;
+                    if (this.avatarConfig.avatarId) payload.avatar_id = this.avatarConfig.avatarId;
+                }
+
+                this.ws.send(JSON.stringify(payload));
             }
 
             // =====================================
@@ -1207,6 +1501,7 @@
                     this.updateStatusBar('Listening...');
                     this.updateVisualization();
                     this.emptyState.style.display = 'none';
+                    this.setInterruptEnabled(false);
 
                 } catch (error) {
                     console.error('Failed to start recording:', error);
@@ -1289,6 +1584,7 @@
                 this.recordBtn.disabled = true;
                 this.recordBtn.classList.add('disabled');
                 this.updateStatusBar('Agent responding...');
+                this.setInterruptEnabled(true);
             }
 
             stopRecording() {
@@ -1315,6 +1611,50 @@
                 this.recordBtn.disabled = true;
                 this.recordBtn.classList.add('disabled');
                 this.updateStatusBar('Processing...');
+                this.setInterruptEnabled(true);
+            }
+
+            // =====================================
+            // Interrupt / speak-again (FEAT-536 TASK-2945)
+            // =====================================
+
+            setInterruptEnabled(enabled) {
+                if (this.interruptBtn) this.interruptBtn.disabled = !enabled;
+            }
+
+            async handleInterrupt() {
+                if (!this.sessionStarted) return;
+
+                // Stop/clear local playback immediately. The avatar
+                // interrupt itself is server-side, triggered by the
+                // start_recording message below (_handle_start_recording,
+                // FEAT-536 TASK-2942) — no new WebSocket message is added.
+                this.stopLocalPlayback();
+
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'start_recording' }));
+                }
+
+                // Bypass the "await response" gate — an explicit interrupt
+                // may fire even while a response is still in flight.
+                this.canSpeak = true;
+                this.recordBtn.disabled = false;
+                this.recordBtn.classList.remove('disabled');
+                this.setInterruptEnabled(false);
+
+                await this.startRecording();
+            }
+
+            stopLocalPlayback() {
+                if (this.audioPlaybackQueue) this.audioPlaybackQueue.length = 0;
+                if (this.currentPlaybackSource) {
+                    try {
+                        this.currentPlaybackSource.stop();
+                    } catch (e) {
+                        // Already stopped/ended — ignore.
+                    }
+                    this.currentPlaybackSource = null;
+                }
             }
 
             updateVisualization() {
@@ -1368,6 +1708,14 @@
             }
 
             queueAudioChunk(base64Data) {
+                // One-source audio policy (FEAT-536 TASK-2945): once avatar
+                // audio owns playback, suppress new local chunks outright
+                // rather than queuing a backlog that would later duplicate
+                // speech when falling back.
+                if (this.avatarController && !this.avatarController.shouldPlayLocalAudio()) {
+                    return;
+                }
+
                 if (!this.audioPlaybackQueue) {
                     this.audioPlaybackQueue = [];
                 }
@@ -1393,6 +1741,14 @@
                 }
 
                 while (this.audioPlaybackQueue && this.audioPlaybackQueue.length > 0) {
+                    // Defensive re-check: a switch to avatar audio can land
+                    // mid-drain (several chunks may already be queued) —
+                    // drop the remainder rather than let it play alongside
+                    // the avatar track.
+                    if (this.avatarController && !this.avatarController.shouldPlayLocalAudio()) {
+                        this.audioPlaybackQueue.length = 0;
+                        break;
+                    }
                     const pcmData = this.audioPlaybackQueue.shift();
                     try {
                         const int16Array = new Int16Array(pcmData);
@@ -1405,12 +1761,15 @@
                         const source = audioContext.createBufferSource();
                         source.buffer = audioBuffer;
                         source.connect(audioContext.destination);
+                        this.currentPlaybackSource = source;
                         await new Promise((resolve) => {
                             source.onended = resolve;
                             source.start();
                         });
+                        this.currentPlaybackSource = null;
                     } catch (error) {
                         console.error('Error playing audio chunk:', error);
+                        this.currentPlaybackSource = null;
                     }
                 }
 
@@ -1538,6 +1897,226 @@
                 this.currentMessageId = null;
                 this.currentUserMessageId = null;
                 this.lastUserTranscription = null;
+
+                // Clear event panels on provider/session switch (shared with
+                // Module 6 / TASK-2948's tool demo) — never let a stale
+                // tool_call/display_data from a previous session linger.
+                if (this.toolEventsList) this.toolEventsList.innerHTML = '';
+                if (this.toolEventsPanel) this.toolEventsPanel.hidden = true;
+            }
+
+            // =====================================
+            // Tool & data events panel (FEAT-536 TASK-2945)
+            // =====================================
+
+            renderToolEvent(label, data) {
+                if (!this.toolEventsList) return;
+                if (this.toolEventsPanel) this.toolEventsPanel.hidden = false;
+
+                const item = document.createElement('div');
+                item.className = 'tool-event-item';
+
+                // textContent only — never raw tool HTML (spec "Handle
+                // display_data and tool_call in shared panels").
+                const heading = document.createElement('div');
+                heading.className = 'tool-event-label';
+                heading.textContent = label;
+
+                const body = document.createElement('pre');
+                body.className = 'tool-event-body';
+                body.textContent = this.formatToolEventData(data);
+
+                item.appendChild(heading);
+                item.appendChild(body);
+                this.toolEventsList.appendChild(item);
+                this.toolEventsList.scrollTop = this.toolEventsList.scrollHeight;
+            }
+
+            formatToolEventData(data) {
+                if (data === null || data === undefined) return '';
+                if (typeof data === 'string') return data;
+                try {
+                    return JSON.stringify(data, null, 2);
+                } catch (e) {
+                    // Unknown/circular shape: a readable fallback, never a throw.
+                    return String(data);
+                }
+            }
+
+            // =====================================
+            // Avatar viewer (FEAT-536 TASK-2945)
+            // =====================================
+
+            initAvatarUI() {
+                if (this.avatarEnabledCheckbox) {
+                    this.avatarEnabledCheckbox.addEventListener('change', (e) => {
+                        this.avatarConfig.enabled = e.target.checked;
+                        this.saveSettings();
+                        this.onAvatarSettingChanged();
+                    });
+                }
+                if (this.avatarTenantIdInput) {
+                    this.avatarTenantIdInput.addEventListener('change', (e) => {
+                        this.avatarConfig.tenantId = e.target.value.trim();
+                        this.saveSettings();
+                        this.onAvatarSettingChanged();
+                    });
+                }
+                if (this.avatarAvatarIdInput) {
+                    this.avatarAvatarIdInput.addEventListener('change', (e) => {
+                        this.avatarConfig.avatarId = e.target.value.trim();
+                        this.saveSettings();
+                        this.onAvatarSettingChanged();
+                    });
+                }
+                if (this.avatarEnableAudioBtn) {
+                    this.avatarEnableAudioBtn.addEventListener('click', async () => {
+                        if (this.avatarController) {
+                            await this.avatarController.enableAudio();
+                        }
+                    });
+                }
+                if (this.avatarAudioSourceSelect) {
+                    this.avatarAudioSourceSelect.addEventListener('change', (e) => {
+                        if (this.avatarController) {
+                            this.avatarController.setPreferredAudioSource(e.target.value);
+                        }
+                    });
+                }
+                if (this.avatarMuteBtn) {
+                    this.avatarMuteBtn.addEventListener('click', () => {
+                        this.avatarUserMuted = !this.avatarUserMuted;
+                        if (this.avatarController) this.avatarController.setMuted(this.avatarUserMuted);
+                        this.avatarMuteBtn.textContent = this.avatarUserMuted ? '🔇' : '🔊';
+                    });
+                }
+                this.updateAvatarCardVisibility();
+            }
+
+            updateAvatarCardVisibility() {
+                if (this.avatarCard) this.avatarCard.hidden = !this.avatarConfig.enabled;
+            }
+
+            onAvatarSettingChanged() {
+                this.updateAvatarCardVisibility();
+                if (this.isConnected) {
+                    // Changing avatar settings during an active session
+                    // restarts that voice session through the existing
+                    // stop/start (reconnect) flow — disconnect the prior
+                    // viewer first so no billable orphan session remains
+                    // (server-side teardown happens via the ws close it
+                    // triggers, mirrored client-side here for the viewer).
+                    this.teardownAvatarViewer();
+                    this.reconnect();
+                }
+            }
+
+            async ensureAvatarController() {
+                if (this.avatarController) return this.avatarController;
+                const sdk = await this.loadAvatarSdk();
+                if (!sdk) return null;
+                const { AvatarViewerController } = await import('/static/avatar-viewer.js');
+                this.avatarController = new AvatarViewerController({
+                    sdk,
+                    videoEl: this.avatarVideo,
+                    audioEl: this.avatarAudio,
+                    onStatusChange: (status) => this.setAvatarStatus(status),
+                    onAudioSourceChange: (source) => this.setAvatarAudioSource(source),
+                    onStopLocalPlayback: () => this.stopLocalPlayback(),
+                    onAudioPlaybackBlocked: () => this.showAvatarEnableAudioButton(),
+                    onError: (err) => console.error('AvatarViewerController error:', err),
+                });
+                if (this.avatarUserMuted) this.avatarController.setMuted(true);
+                return this.avatarController;
+            }
+
+            async loadAvatarSdk() {
+                if (window.LivekitClient) return window.LivekitClient;
+                if (this.avatarSdkPromise) return this.avatarSdkPromise;
+
+                const avatarAssetCfg = window.__CONFIG__.avatar;
+                if (!avatarAssetCfg || !avatarAssetCfg.available) {
+                    return null;
+                }
+                this.avatarSdkPromise = new Promise((resolve) => {
+                    const script = document.createElement('script');
+                    script.src = avatarAssetCfg.sdkUrl;
+                    script.onload = () => resolve(window.LivekitClient || null);
+                    script.onerror = () => resolve(null);
+                    document.head.appendChild(script);
+                });
+                return this.avatarSdkPromise;
+            }
+
+            async handleAvatarSessionStarted(avatarBlock) {
+                if (!this.avatarConfig.enabled) return;
+
+                if (!avatarBlock || !avatarBlock.active) {
+                    this.setAvatarStatusText(
+                        avatarBlock && avatarBlock.reason
+                            ? 'Avatar unavailable: ' + avatarBlock.reason
+                            : 'Avatar unavailable — voice-only'
+                    );
+                    await this.teardownAvatarViewer();
+                    return;
+                }
+
+                try {
+                    const controller = await this.ensureAvatarController();
+                    if (!controller) {
+                        this.setAvatarStatusText('Avatar SDK not installed — voice-only');
+                        return;
+                    }
+                    await controller.join({
+                        livekit_url: avatarBlock.livekit_url,
+                        client_token: avatarBlock.client_token,
+                        room: avatarBlock.room,
+                    });
+                } catch (err) {
+                    console.error('Avatar join failed:', err);
+                    this.setAvatarStatusText('Avatar connection failed — voice-only');
+                }
+            }
+
+            async teardownAvatarViewer() {
+                if (this.avatarController) {
+                    try {
+                        await this.avatarController.teardown();
+                    } catch (err) {
+                        console.warn('Avatar teardown failed (non-fatal):', err);
+                    }
+                }
+                this.setAvatarStatusText(this.avatarConfig.enabled ? 'Avatar off' : '');
+                if (this.avatarStatusDot) this.avatarStatusDot.className = 'avatar-status-dot';
+                if (this.avatarEnableAudioBtn) this.avatarEnableAudioBtn.hidden = true;
+            }
+
+            setAvatarStatus(status) {
+                if (this.avatarStatusDot) {
+                    this.avatarStatusDot.className = 'avatar-status-dot avatar-status-' + status;
+                }
+                const labels = {
+                    idle: 'Avatar idle',
+                    connecting: 'Connecting avatar…',
+                    live: 'Avatar live',
+                    error: 'Avatar error',
+                };
+                this.setAvatarStatusText(labels[status] || status);
+                if (status !== 'error' && this.avatarEnableAudioBtn) {
+                    this.avatarEnableAudioBtn.hidden = true;
+                }
+            }
+
+            setAvatarStatusText(text) {
+                if (this.avatarStatusText) this.avatarStatusText.textContent = text;
+            }
+
+            setAvatarAudioSource(source) {
+                if (this.avatarAudioSourceSelect) this.avatarAudioSourceSelect.value = source;
+            }
+
+            showAvatarEnableAudioButton() {
+                if (this.avatarEnableAudioBtn) this.avatarEnableAudioBtn.hidden = false;
             }
 
             // =====================================
@@ -1568,6 +2147,24 @@
 
                         document.getElementById('languageSelect').value = this.config.language;
                         document.getElementById('systemPrompt').value = this.config.systemPrompt || '';
+
+                        // Avatar opt-in/tenant/avatar-id (FEAT-536 TASK-2945)
+                        // — none of these are credentials, only opt-in
+                        // preferences; the viewer credentials themselves
+                        // never touch localStorage.
+                        if (typeof settings.avatarEnabled === 'boolean') {
+                            this.avatarConfig.enabled = settings.avatarEnabled;
+                        }
+                        if (typeof settings.avatarTenantId === 'string') {
+                            this.avatarConfig.tenantId = settings.avatarTenantId;
+                        }
+                        if (typeof settings.avatarAvatarId === 'string') {
+                            this.avatarConfig.avatarId = settings.avatarAvatarId;
+                        }
+                        if (this.avatarEnabledCheckbox) this.avatarEnabledCheckbox.checked = this.avatarConfig.enabled;
+                        if (this.avatarTenantIdInput) this.avatarTenantIdInput.value = this.avatarConfig.tenantId;
+                        if (this.avatarAvatarIdInput) this.avatarAvatarIdInput.value = this.avatarConfig.avatarId;
+                        this.updateAvatarCardVisibility();
                     } catch (e) {
                         console.error('Failed to load settings:', e);
                     }
@@ -1583,6 +2180,9 @@
                     language: this.config.language,
                     systemPrompt: this.config.systemPrompt,
                     activeProvider: this.activeProvider,
+                    avatarEnabled: this.avatarConfig.enabled,
+                    avatarTenantId: this.avatarConfig.tenantId,
+                    avatarAvatarId: this.avatarConfig.avatarId,
                 }));
             }
 
