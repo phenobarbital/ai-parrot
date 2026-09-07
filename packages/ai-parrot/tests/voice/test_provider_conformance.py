@@ -12,7 +12,13 @@ translation logic is actually exercised.
 import pytest
 from parrot.models.voice import VoiceStreamOptions
 
-from .conftest import build_client, collect_responses, nova_session_start_config
+from .conftest import (
+    VoiceAwareEchoTool,
+    build_client,
+    collect_responses,
+    make_tool_manager,
+    nova_session_start_config,
+)
 
 # ---------------------------------------------------------------------
 # Cross-provider config extraction (adapts each SDK's own representation
@@ -142,6 +148,45 @@ class TestDescriptorHonesty:
         caps = build_client(monkeypatch, provider).voice_capabilities
         assert caps.voice_catalog
         assert caps.default_voice in caps.voice_catalog
+
+
+class TestDualOutputConformance:
+    """FEAT-536 TASK-2946 (spec §3 Module 6): the SAME real,
+    deterministic voice-aware AbstractTool registered on both providers —
+    no mock replaces stream_voice, the tool's own execution, or
+    ToolManager.execute_tool on this path; only each provider's own
+    SDK/transport boundary is mocked (see conftest.py)."""
+
+    @pytest.mark.asyncio
+    async def test_provider_dual_output_conformance(self, provider, monkeypatch):
+        tool = VoiceAwareEchoTool()
+        tm = make_tool_manager(tool)
+        client = build_client(monkeypatch, provider, scenario="tool_call", tool_manager=tm)
+
+        responses = await collect_responses(client)
+
+        # The tool executes exactly once — no mocked re-execution. Nova's
+        # own architecture (TASK-2940/2941) re-lists an already-delivered
+        # tool in its final completion snapshot alongside the original
+        # per-tool delta, so dedupe by id (the WS-frame-level dedup that
+        # prevents a literal duplicate SEND is _HandlerVoiceSession's
+        # concern, exercised in test_nova_dual_output_integration.py —
+        # this conformance check is about the Python-level semantic
+        # content, not wire framing).
+        by_id = {tc.id: tc for r in responses for tc in r.tool_calls}
+        assert len(by_id) == 1
+        tool_call = next(iter(by_id.values()))
+
+        # Semantic spoken output: both providers prioritize the tool's own
+        # voice_text into the SAME {"output": ...} envelope shape.
+        assert tool_call.result == {"output": "Echo: weather"}
+
+        # Semantic visual output: the exact display_data object, delivered
+        # via metadata["display_data"] on both providers — never a
+        # provider-specific transformation or a stringified copy.
+        display_responses = [r for r in responses if r.metadata.get("display_data")]
+        assert len(display_responses) == 1
+        assert display_responses[0].metadata["display_data"] == {"topic": "weather", "kind": "echo"}
 
 
 class TestDropInEquivalence:
