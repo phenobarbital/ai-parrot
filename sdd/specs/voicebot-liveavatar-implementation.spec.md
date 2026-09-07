@@ -10,7 +10,7 @@ research_state: sdd/state/FEAT-560/
 **Feature ID**: FEAT-536
 **Date**: 2026-09-07
 **Author**: Jesus Lara (specification prepared with Codex)
-**Status**: review
+**Status**: approved
 **Target version**: next planned release after core 1.0.0; no version bump in this feature
 
 Source: accepted [proposal](../proposals/voicebot-liveavatar-implementation.proposal.md), research identity **FEAT-560**. **FEAT-536** is the formal identity returned by the shared ID allocator. These identities have different purposes; do not rename the proposal audit directory or reserve another feature ID during task decomposition.
