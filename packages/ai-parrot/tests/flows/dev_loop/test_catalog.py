@@ -35,9 +35,7 @@ def shim():
     Mirrors how ``examples/dev_loop/server.py`` imports it today
     (sys.path-based, not a package import).
     """
-    examples_dev_loop = str(
-        Path(__file__).resolve().parents[5] / "examples" / "dev_loop"
-    )
+    examples_dev_loop = str(Path(__file__).resolve().parents[5] / "examples" / "dev_loop")
     inserted = examples_dev_loop not in sys.path
     if inserted:
         sys.path.insert(0, examples_dev_loop)
@@ -57,9 +55,9 @@ def test_shim_reexports_identical_objects(shim):
     from parrot.flows.dev_loop import catalog
 
     for name in PUBLIC_NAMES:
-        assert getattr(shim, name) is getattr(catalog, name), (
-            f"{name} on the shim is not identical to parrot.flows.dev_loop.catalog.{name}"
-        )
+        assert getattr(shim, name) is getattr(
+            catalog, name
+        ), f"{name} on the shim is not identical to parrot.flows.dev_loop.catalog.{name}"
 
 
 def test_backends_have_unique_ids():
@@ -81,3 +79,28 @@ def test_backends_for_role_development_includes_all_backends():
     development_ids = {b.id for b in catalog.backends_for_role("development")}
     all_ids = {b.id for b in catalog.BACKENDS}
     assert development_ids == all_ids
+
+
+def test_research_primary_role_in_catalog_payload():
+    from parrot.flows.dev_loop import catalog
+
+    payload = catalog.catalog_payload()
+    assert "research_primary" in payload["roles"]
+    assert len(payload["roles"]["research_primary"]) > 0
+
+
+def test_claude_code_is_research_primary_backend():
+    from parrot.flows.dev_loop import catalog
+
+    payload = catalog.catalog_payload()
+    assert "claude-code" in payload["roles"]["research_primary"]
+
+
+def test_fable_in_claude_code_backend_models():
+    from parrot.flows.dev_loop import catalog
+
+    payload = catalog.catalog_payload()
+    cc = next((b for b in payload["backends"] if b["id"] == "claude-code"), None)
+    assert cc is not None, "claude-code backend not in catalog payload"
+    assert "claude-fable-5-1" in cc["models"]
+    assert "claude-fable-5" in cc["models"]

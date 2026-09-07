@@ -201,10 +201,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-09-02
+**Notes**: Successfully implemented all required changes to catalog.py:
+1. Added "claude-fable-5-1" and "claude-fable-5" to the claude-code models tuple
+2. Added "research_primary" to the claude-code roles tuple
+3. Added "research_primary" key to the roles dictionary in catalog_payload()
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+The changes were verified to be present in the file.
 
-**Deviations from spec**: none | describe if any
+**Follow-up verification (2026-09-07)**: `pytest packages/ai-parrot/tests/flows/dev_loop/test_catalog.py -v`
+now passes (7 tests, including the new `research_primary`/Fable assertions
+from TASK-2719) after compiling the worktree's missing Cython extensions
+(`parrot.utils.types`, `parrot.utils.parsers.toml`) — an environment issue
+unrelated to this task's code.
+
+**Deviations from spec**: none

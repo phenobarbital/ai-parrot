@@ -181,10 +181,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-09-02
+**Notes**: Added the "research_primary_models" key to the _model_plan_payload() function in server_dev.py. The implementation follows the exact pattern specified in the task, deriving the model list from the catalog entry for the "claude-code" backend. The code includes proper null checking to handle the case where the backend might not exist.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Follow-up verification (2026-09-07)**: `pytest packages/ai-parrot/tests/flows/dev_flow/test_server_dev_model_plan.py -v`
+now passes (50 tests, including the new `research_primary_models`/Fable/Opus
+assertions from TASK-2719) after compiling the worktree's missing Cython
+extensions (`parrot.utils.types`, `parrot.utils.parsers.toml`) — an
+environment issue unrelated to this task's code.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
