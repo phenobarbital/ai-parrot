@@ -305,3 +305,39 @@ def test_register_checkpoint_type_conflicting_tag_raises() -> None:
 
     # Idempotent re-registration of the same class/tag is a no-op, not an error.
     register_checkpoint_type(_ModelOne, tag=tag)
+
+
+# ---------------------------------------------------------------------------
+# The two findings, asserted on the old path
+# ---------------------------------------------------------------------------
+#
+# Everything above proves the fix works. These two prove it is still *needed*:
+# they pin the behaviour of `resume()` without a factory, so if a later change
+# ever made the default path preserve dependencies and explicit edges on its
+# own, these turn red and say so — rather than `flow_factory` quietly becoming
+# ceremony nobody can safely remove.
+
+
+async def test_without_a_factory_live_dependencies_are_silently_dropped(
+    store, registry
+) -> None:
+    """A failure would be better: this looks like a successful resume."""
+    await _checkpointed_run(store)
+
+    resumed = await AgentsFlow.resume("run-1", agent_registry=registry, store=store)
+    nodes = resumed._materialize_nodes()
+
+    assert nodes["d"].sink is None
+
+
+async def test_without_a_factory_the_explicit_edge_scheduler_is_lost(
+    store, registry
+) -> None:
+    """OR-join, back-edges and predicates all switch off together."""
+    await _checkpointed_run(store)
+
+    resumed = await AgentsFlow.resume("run-1", agent_registry=registry, store=store)
+
+    assert resumed._definition is not None
+    # This expression is what run_flow() uses to pick the scheduler.
+    assert (resumed._definition is None and bool(resumed._edges)) is False

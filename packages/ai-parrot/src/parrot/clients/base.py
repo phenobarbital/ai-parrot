@@ -402,7 +402,14 @@ $backstory
         # class default" (see _resolve_max_tokens).
         self.invoke_max_tokens: Optional[int] = kwargs.get("invoke_max_tokens", None)
         self.base_headers.update(kwargs.get("headers", {}))
-        self.api_key = kwargs.get("api_key", None)
+        # A subclass may already have resolved its key before delegating
+        # here — ``GoogleGenAIClient`` pops ``api_key`` out of ``kwargs`` so
+        # it never reaches this call. Overwriting unconditionally blanked
+        # that key, after which ``genai.Client(api_key=None)`` silently fell
+        # back to the process-wide ``GOOGLE_API_KEY`` — a caller-supplied
+        # (per-tenant) key discarded without a warning. Keep what the
+        # subclass set.
+        self.api_key = kwargs.get("api_key") or getattr(self, "api_key", None)
         self.version = kwargs.get("version", self.version)
         self._config = config
         self.logger: logging.Logger = logging.getLogger(self.__name__)

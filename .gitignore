@@ -263,6 +263,14 @@ uv.lock
 # ML Training logs
 runs/
 train/
+# ...but `runs/` is unanchored, so it also matches any source directory with
+# that name anywhere in the tree. It silently swallowed
+# `parrot_saas/runs/` — a real Python package — which then went missing from a
+# commit that `git add -A` reported as complete, and only surfaced when a
+# fresh clone could not import it. Same trap as the `templates/` rule
+# CLAUDE.md warns about. Keep source packages exempt explicitly.
+!packages/**/src/**/runs/
+!packages/**/src/**/runs/**
 
 # Navigator configuration
 /settings/

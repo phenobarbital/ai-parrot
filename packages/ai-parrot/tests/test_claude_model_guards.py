@@ -54,6 +54,12 @@ def test_model_str_normalisation(value, expected):
     "model",
     [
         "claude-fable-5",
+        # The 5-family entries are as load-bearing as the 4.x ones: Opus 5 is
+        # the current default in several deployments, and a missing prefix here
+        # is a 400 on the model's first call, not a degraded response.
+        "claude-mythos-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
         ClaudeModel.FABLE_5,

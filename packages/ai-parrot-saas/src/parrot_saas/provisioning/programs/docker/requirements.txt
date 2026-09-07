@@ -1,0 +1,10 @@
+# Dependencies for the tenant provisioning program ONLY.
+#
+# Deliberately not part of the uv workspace. This program runs inside Pulumi's
+# own interpreter, in a virtualenv the deployer creates beside it, and pulling
+# the Pulumi SDK into the application's dependency tree would make every
+# deployment of the API — most of which never provision anything — install and
+# resolve it.
+pulumi>=3.100.0,<4.0.0
+pulumi-docker>=4.5.0,<5.0.0
+pulumi-random>=4.15.0,<5.0.0

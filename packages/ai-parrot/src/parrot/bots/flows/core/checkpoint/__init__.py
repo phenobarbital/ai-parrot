@@ -43,6 +43,7 @@ __all__ = [
     "FlowNotExportableError",
     "FlowRecoveryService",
     "FlowStateSerializer",
+    "register_checkpoint_type",
     "MemoryRefs",
     "NodeStateSnapshot",
     "RedisCheckpointStore",
