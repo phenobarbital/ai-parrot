@@ -14,7 +14,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2937-toolmanager-complete-result.md",
       "acceptance_criteria": [
@@ -37,7 +37,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -47,7 +47,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2938-toolmanager-voice-field-safety.md",
       "acceptance_criteria": [
@@ -62,7 +62,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,7 +72,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2939-nova-voice-tool-adapter.md",
       "acceptance_criteria": [
@@ -89,7 +89,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,7 +99,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2940-nova-tool-progress-coordinator.md",
       "acceptance_criteria": [
@@ -115,7 +115,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,7 +125,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2941-nova-tool-lifecycle.md",
       "acceptance_criteria": [
@@ -142,7 +142,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -152,7 +152,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2942-voice-relay-tool-dedup.md",
       "acceptance_criteria": [
@@ -168,7 +168,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,7 +178,7 @@
       "parallelism_notes": "May run alongside TASK-2944; owns server.py and SDK route tests only.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2943-voice-demo-sdk-asset.md",
       "acceptance_criteria": [
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallelism_notes": "May run alongside TASK-2943; owns controller and its Vitest tests only.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2944-voice-avatar-controller.md",
       "acceptance_criteria": [
@@ -220,7 +220,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -231,7 +231,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2945-voice-ui-avatar-and-events.md",
       "acceptance_criteria": [
@@ -249,7 +249,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -259,7 +259,7 @@
       "parallelism_notes": "May run alongside TASK-2946/TASK-2947/TASK-2948 after TASK-2945; each owns disjoint files. Read-only references confer no edit ownership.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2946-voice-provider-dual-output-integration.md",
       "acceptance_criteria": [
@@ -282,7 +282,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -292,7 +292,7 @@
       "parallelism_notes": "May run alongside TASK-2946/TASK-2947/TASK-2948 after TASK-2945; each owns disjoint files. Read-only references confer no edit ownership.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2947-voice-demo-browser-e2e.md",
       "acceptance_criteria": [
@@ -309,7 +309,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -319,7 +319,7 @@
       "parallelism_notes": "May run alongside TASK-2946/TASK-2947/TASK-2948 after TASK-2945; each owns disjoint files. Read-only references confer no edit ownership.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2948-voice-demo-tools-and-runbook.md",
       "acceptance_criteria": [
@@ -335,7 +335,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -347,7 +347,7 @@
       "parallelism_notes": "Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-07T20:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2949-voice-liveavatar-operational-acceptance.md",
       "acceptance_criteria": [
