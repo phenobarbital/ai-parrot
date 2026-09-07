@@ -58,6 +58,7 @@ call, only the voice differs.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import logging
 import os
@@ -84,7 +85,7 @@ from parrot.bots import VoiceBot
 from parrot.clients.google.live import GeminiLiveClient
 from parrot.clients.protocols import VoiceCapable
 from parrot.models.voice import VoiceCapabilities, VoiceConfig, VoiceProvider
-from parrot.tools import tool
+from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from parrot.voice.handler import VoiceChatHandler
 
 logging.basicConfig(
@@ -107,18 +108,70 @@ SYSTEM_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
-# Shared tool — both bots register the SAME tool so a tool call is directly
-# comparable across providers (spec §3 Module 12 Key Constraints).
+# Demo tool (FEAT-536 TASK-2948 — spec §3 Module 6): a deterministic,
+# voice-aware AbstractTool so BOTH providers exercise the SAME supported
+# dual-output ToolResult route (voice_text + display_data), not just a
+# plain string return. Both factories below instantiate their OWN fresh
+# tool object — never a shared module-level singleton — so this tool's
+# per-instance state (the resolved demo delay) can never leak between the
+# Gemini and Nova bots, or between connections (spec: "Instantiate tools
+# per bot factory; share their definition/behavior rather than mutable
+# invocation state"). All returned data is a labeled demo fixture, not a
+# real weather lookup.
 # ---------------------------------------------------------------------------
 
 
-@tool
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    return f"It's sunny and 25°C in {location}."
+class _WeatherArgs(AbstractToolArgsSchema):
+    location: str = ""
 
 
-SHARED_TOOLS = [get_weather]
+class VoiceDemoWeatherTool(AbstractTool):
+    """Deterministic weather demo tool with a bounded, opt-in slow-tool
+    scenario.
+
+    Set ``VOICEBOT_DEMO_TOOL_DELAY_SECONDS`` (clamped to
+    ``[0, _MAX_DEMO_DELAY_SECONDS]``) to make this tool sleep before
+    answering, so the real-live tool-interruption acceptance scenario
+    (spec §4) can actually be exercised on demand — the demo runs at its
+    normal (instant) speed otherwise.
+    """
+
+    name = "get_weather"
+    description = "Get the current weather for a location."
+    args_schema = _WeatherArgs
+
+    _MAX_DEMO_DELAY_SECONDS = 30.0
+    _DELAY_ENV_VAR = "VOICEBOT_DEMO_TOOL_DELAY_SECONDS"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._delay_seconds = self._resolve_demo_delay()
+
+    def _resolve_demo_delay(self) -> float:
+        raw = os.environ.get(self._DELAY_ENV_VAR, "0")
+        try:
+            value = float(raw)
+        except ValueError:
+            return 0.0
+        return max(0.0, min(value, self._MAX_DEMO_DELAY_SECONDS))
+
+    async def _execute(self, location: str = "", **kwargs: Any) -> ToolResult:
+        if self._delay_seconds:
+            await asyncio.sleep(self._delay_seconds)
+        location_label = location or "your area"
+        return ToolResult(
+            success=True,
+            status="success",
+            result={"location": location_label, "condition": "sunny", "temp_c": 25},
+            voice_text=f"It's sunny and 25 degrees Celsius in {location_label}.",
+            display_data={
+                "kind": "weather",
+                "location": location_label,
+                "condition": "sunny",
+                "temp_c": 25,
+                "demo_fixture": True,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +280,7 @@ def make_gemini_bot() -> VoiceBot:
     return VoiceBot(
         name=BOT_NAME,
         system_prompt=SYSTEM_PROMPT,
-        tools=list(SHARED_TOOLS),
+        tools=[VoiceDemoWeatherTool()],
         voice_config=VoiceConfig(provider=VoiceProvider.GOOGLE_LIVE, voice_name="Puck"),
     )
 
@@ -249,7 +302,7 @@ def make_nova_bot() -> VoiceBot:
     return VoiceBot(
         name=BOT_NAME,
         system_prompt=SYSTEM_PROMPT,
-        tools=list(SHARED_TOOLS),
+        tools=[VoiceDemoWeatherTool()],
         voice_config=VoiceConfig(provider=VoiceProvider.NOVA, voice_name="matthew"),
     )
 

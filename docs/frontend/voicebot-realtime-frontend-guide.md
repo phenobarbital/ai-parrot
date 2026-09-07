@@ -10,7 +10,16 @@
 > 3. **FEAT-245** — el "tee" de audio que mueve la boca de un avatar LiveAvatar/LiveKit.
 >
 > Todo lo descrito aquí está verificado contra el código en `packages/ai-parrot` y
-> `packages/ai-parrot-integrations` (estado: `dev`, junio 2026).
+> `packages/ai-parrot-integrations` (estado: `dev`, junio 2026; sección de avatar
+> actualizada FEAT-536, septiembre 2026).
+>
+> **Referencia funcionando**: `examples/clients/voice/` sirve TODO lo descrito en esta guía
+> como una página real y ejecutable — provider toggle Gemini/Nova, panel de capacidades,
+> `tool_call`/`display_data`, el control **Avatar** (off por defecto, con tenant/agent ID),
+> el video/audio del avatar con la política de una sola fuente, el botón **Enable avatar
+> audio** para autoplay bloqueado, y el control **Interrupt / speak-again**. Léelo junto a
+> esta guía — `examples/clients/voice/README.md` documenta el runbook de aceptación
+> completo (arranque, prerequisitos, matriz de escenarios).
 
 ---
 
@@ -38,8 +47,8 @@
                               VoiceBot.ask_stream(audio_iter)  │
                                               ▼  │  LiveVoiceResponse(audio 24k, text, tool_calls)
                           ┌───────────────────────────────────────────────┐
-                          │  VoiceBot → GeminiLiveClient                    │
-                          │   · Gemini 2.5 native-audio                     │
+                          │  VoiceBot → GeminiLiveClient | NovaClient        │
+                          │   · Gemini 2.5 native-audio / Nova 2 Sonic      │
                           │   · VAD · STT in/out · tools · interrupción     │
                           └───────────────────────────────────────────────┘
                                               │  (FEAT-245: tee del MISMO audio 24k)
@@ -51,9 +60,13 @@
 
 1. **Entrada**: micrófono → **PCM 16-bit, 16 kHz, mono** → enviar como **binario** (preferido) o base64.
 2. **Salida**: el servidor manda **PCM 16-bit, 24 kHz, mono** dentro de `response_chunk.audio_base64`.
-3. **Avatar (FEAT-245)**: si pides `avatar:true`, el navegador recibe el audio **dos veces**
-   (por `/ws/voice` y por la sala LiveKit). **Debes silenciar una fuente** para evitar eco —
-   recomendado: silenciar el audio de `/ws/voice` y escuchar la pista del avatar (la que tiene lip-sync).
+3. **Avatar (FEAT-245, política de una sola fuente afinada en FEAT-536)**: si pides
+   `avatar:true`, el navegador puede recibir el audio **dos veces** (por `/ws/voice` y por la
+   sala LiveKit) — como mucho **una** debe sonar a la vez. Pero **no la silencies
+   incondicionalmente al conectar**: sigue reproduciendo `/ws/voice` mientras la pista del
+   avatar todavía no es reproducible (conectando, autoplay bloqueado, o silenciada), y recién
+   entonces cambia — muteando la fuente `/ws/voice` y dejando sonar la pista del avatar (la
+   que tiene lip-sync). Ver §4.3/§4.4 para la secuencia exacta.
 
 ---
 
@@ -65,8 +78,13 @@
 class VoiceBot(A2AEnabledMixin, BaseBot):
 ```
 
-`VoiceBot` es un bot de AI-Parrot especializado en voz. Internamente **siempre** usa
-`GeminiLiveClient` (Gemini 2.5 con audio nativo), independientemente del `llm` que pases.
+`VoiceBot` es un bot de AI-Parrot especializado en voz. Es **multi-proveedor**: internamente
+usa `GeminiLiveClient` (Gemini 2.5 con audio nativo) o `NovaClient` (Amazon Nova 2 Sonic),
+según `voice_config.provider` — `"google_live"` (default) o `"nova"` (FEAT-315/FEAT-418).
+La selección de proveedor de voz es **independiente** del `llm` de texto que pases; ambos
+clientes implementan el mismo protocolo `VoiceCapable` (`stream_voice()` →
+`AsyncIterator[LiveVoiceResponse]`), así que todo lo descrito en el resto de esta guía —
+formato de frames WS, `tool_call`/`display_data`, avatar — aplica igual a los dos.
 
 ### 1.1 Construcción
 
@@ -95,7 +113,8 @@ await bot.configure()   # inicialización async (memoria Redis por defecto)
 
 | Campo | Default | Nota |
 |---|---|---|
-| `voice_name` | `"Puck"` | voz prebuilt de Gemini |
+| `provider` | `"google_live"` | `"google_live"` (Gemini Live) o `"nova"` (Amazon Nova 2 Sonic) |
+| `voice_name` | `"Puck"` | voz prebuilt del proveedor activo — `"Puck"`/`"Charon"`/... para Gemini, `"matthew"`/... para Nova |
 | `language` | `"en-US"` | BCP-47 |
 | `input_format` | `PCM_16K` | lo que el navegador **debe** enviar |
 | `output_format` | `PCM_24K` | lo que el servidor devuelve |
@@ -120,7 +139,10 @@ por los frames que llegan del WebSocket.
 
 ### 1.3 `LiveVoiceResponse` — el objeto que fluye en cada chunk
 
-**Archivo**: `packages/ai-parrot/src/parrot/clients/live.py`
+**Archivo**: `packages/ai-parrot/src/parrot/models/voice.py` — el mismo dataclass lo produce
+tanto `GeminiLiveClient` (`packages/ai-parrot-client-google/src/parrot/clients/google/live.py`)
+como `NovaClient` (`packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py`),
+así que el handler nunca necesita ramificar por proveedor.
 
 ```python
 @dataclass
@@ -273,7 +295,7 @@ Se elige en `start_session` con `streaming_mode` (default `"streaming"`).
 | `start_session` | `{config:{...}, streaming_mode?, avatar?, avatar_id?, tenant_id?}` | inicia sesión de voz |
 | `end_session` | `{}` | termina sesión |
 | `reset_session` | `{}` | end + restart |
-| `start_recording` | `{}` | marca inicio de grabación (buffered) |
+| `start_recording` | `{}` | marca inicio de grabación (buffered); **también** el mensaje a usar para un botón explícito "Interrupt / speak-again" (FEAT-536) — reenviarlo mientras una respuesta está en curso interrumpe el avatar activo (si lo hay) y reemplaza el turno en curso; **no** inventes un mensaje nuevo para esto |
 | `stop_recording` | `{}` | fin de grabación → procesa buffer |
 | `audio_data` / `audio_chunk` | `{data:"<base64 PCM16 16k>"}` | chunk de audio vía JSON |
 | `send_text` / `text_message` | `{text:"...", streaming?}` | entrada de texto → respuesta hablada |
@@ -339,17 +361,20 @@ output_format: "audio/pcm;rate=24000"   // lo que el servidor devuelve
 
 ## 4. FEAT-245 — Avatar con lip-sync (LiveAvatar + LiveKit)
 
-**Spec**: `sdd/specs/voicechat-liveavatar-gemini.spec.md` · **Estado: completo y mergeado**
-(TASK-1588/1589/1590 ✅).
+**Spec**: `sdd/specs/voicechat-liveavatar-gemini.spec.md` (Gemini, TASK-1588/1589/1590 ✅) +
+`sdd/specs/voicebot-liveavatar-implementation.spec.md` (paridad Nova y viewer en la UI del
+demo, FEAT-536). **Estado: completo y mergeado en ambos proveedores.**
 
 ### 4.1 Qué hace
 
-Gemini Live emite audio a **24 kHz mono 16-bit** — exactamente lo que espera la "boca" del
-avatar (`AVATAR_PCM_SAMPLE_RATE = 24_000`). FEAT-245 **tee-a** (duplica) ese mismo audio:
+Tanto Gemini Live como Nova 2 Sonic emiten audio a **24 kHz mono 16-bit** — exactamente lo
+que espera la "boca" del avatar (`AVATAR_PCM_SAMPLE_RATE = 24_000`), así que el mismo tee
+funciona sin cambios para el proveedor activo. FEAT-245/FEAT-536 **tee-an** (duplican) ese
+mismo audio:
 una copia va al navegador (comportamiento existente) y otra va al avatar, **sin resampling**.
 
 ```
-Gemini Live (24k) ──▶ VoiceChatHandler._send_voice_response
+Gemini Live | Nova 2 Sonic (24k) ──▶ VoiceChatHandler._send_voice_response
                           ├──▶ response_chunk (browser, audio b64)         [existente]
                           └──▶ VoiceAvatarSession.speak(pcm_24k)            [FEAT-245]
                                  └──▶ AvatarWebSocket.send_audio_frame → LiveAvatar
@@ -410,9 +435,22 @@ La respuesta `session_started` incluye un bloque `avatar`:
 
 1. **Degradación elegante**: si `avatar.active == false`, la voz funciona igual; muestra solo
    el modo voz-sin-cara. **Nunca** bloquees la conversación porque el avatar falle.
-2. **Audio dual / eco**: cuando `avatar.active == true` y `avatar.audio == "dual"`, el audio
-   llega por `/ws/voice` **y** por la sala LiveKit. **Silencia el audio de `/ws/voice`** y deja
-   sonar solo la pista del avatar (lleva el lip-sync sincronizado). Si no, habrá eco/doble voz.
+2. **Audio dual / eco — política de una sola fuente (FEAT-536)**: cuando `avatar.active ==
+   true` y `avatar.audio == "dual"`, el audio puede llegar por `/ws/voice` **y** por la sala
+   LiveKit — a lo sumo **una** fuente debe sonar en cada instante. **No la silencies de
+   inmediato al suscribirte a la pista**: la pista del avatar puede no ser reproducible todavía
+   (conectando, bloqueada por autoplay, o silenciada). Sigue la secuencia: (a) mientras la
+   pista del avatar no sea reproducible, deja sonar `/ws/voice` con normalidad; (b) cuando el
+   navegador confirme que SÍ es reproducible (`RoomEvent.AudioPlaybackStatusChanged` /
+   `room.canPlaybackAudio`, y opcionalmente tras un gesto del usuario vía `Room.startAudio()`
+   si el autoplay lo bloqueó) y el usuario elija/por-defecto use audio de avatar, silencia el
+   elemento remoto, detén/limpia el PCM local pendiente, deja de reproducir chunks locales
+   nuevos y recién entonces des-silencia el avatar; (c) si el avatar falla/se desconecta,
+   vuelve a `/ws/voice` pero **solo para chunks futuros** — no reproduzcas un backlog que
+   duplicaría lo ya dicho. Un mute explícito del usuario es pegajoso: ninguna transición
+   automática debe deshacerlo. Referencia de implementación completa (controlador
+   inyectable con SDK falso para tests):
+   `examples/clients/voice/static/avatar-viewer.js`'s `AvatarViewerController`.
 3. **Solo subscribe**: el `client_token` es **subscribe-only**. El navegador se une a la sala
    LiveKit como espectador (vídeo+audio del avatar). El micrófono del usuario **NO** se publica
    a LiveKit; sigue yendo por `/ws/voice`.
@@ -423,22 +461,46 @@ La respuesta `session_started` incluye un bloque `avatar`:
 
 ### 4.4 Unirse a la sala LiveKit (cliente)
 
-```js
-import { Room, RoomEvent } from 'livekit-client';
+> **Referencia completa y probada**: `examples/clients/voice/static/avatar-viewer.js`
+> (`AvatarViewerController`, FEAT-536) implementa exactamente esta política de una sola
+> fuente — registra los listeners antes de conectar, nunca publica micrófono/cámara, guarda
+> un token de generación para invalidar conexiones/eventos obsoletos, y solo cambia a audio
+> del avatar cuando `room.canPlaybackAudio` confirma que es reproducible. El snippet de abajo
+> es una versión simplificada con fines ilustrativos — usa el archivo real como base de
+> implementación, no reescribas esta política desde cero.
 
-async function joinAvatarRoom(avatar) {
+```js
+import { Room, RoomEvent, Track } from 'livekit-client';
+
+async function joinAvatarRoom(avatar, { onAvatarPlayable, onStopLocalPlayback } = {}) {
   if (!avatar?.active) return null;
   const room = new Room({ adaptiveStream: true });
-  await room.connect(avatar.livekit_url, avatar.client_token);
 
-  room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-    if (track.kind === 'video') {
+  // Listeners ANTES de connect() — no te pierdas tracks ya presentes al unirte.
+  room.on(RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === Track.Kind.Video) {
       track.attach(document.getElementById('avatarVideo'));
-    } else if (track.kind === 'audio') {
-      track.attach();                  // reproduce la voz del avatar (con lip-sync)
-      muteVoiceWsPlayback(true);       // ← silencia la fuente /ws/voice (evita eco)
+      return;
+    }
+    if (track.kind === Track.Kind.Audio) {
+      const audioEl = document.getElementById('avatarAudio');
+      track.attach(audioEl);
+      audioEl.muted = true; // empieza silenciado — /ws/voice sigue sonando
     }
   });
+  room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+    if (room.canPlaybackAudio) {
+      // SOLO ahora es seguro cambiar de fuente: (1) silencia el elemento
+      // remoto durante la transición, (2) detén/limpia el PCM local
+      // pendiente, (3) deja de reproducir chunks locales nuevos, (4)
+      // des-silencia el avatar. Ver avatar-viewer.js para la secuencia
+      // completa con guardas de generación y mute explícito pegajoso.
+      onStopLocalPlayback?.();
+      onAvatarPlayable?.();
+    }
+  });
+
+  await room.connect(avatar.livekit_url, avatar.client_token);
   return room;
 }
 ```
@@ -653,7 +715,8 @@ LIVEAVATAR_ENABLED_AGENTS=agent1,agent2   # opcional, filtra por agente
 |---|---|---|
 | Audio entrecortado / "chipmunk" | enviar al sample rate del `AudioContext` (48k) en vez de 16k | downsamplear a **16 kHz** antes de enviar |
 | El asistente no responde | enviar mono≠1, formato no-PCM, o no llegar a `ready_to_speak` | mono, PCM16 16k, esperar `ready_to_speak` |
-| **Eco / voz doble** con avatar | reproduces audio de `/ws/voice` **y** de LiveKit | silencia `/ws/voice` cuando `avatar.audio=="dual"` |
+| **Eco / voz doble** con avatar | reproduces audio de `/ws/voice` **y** de LiveKit a la vez | aplica la política de una sola fuente (§4.3/§4.4): silencia `/ws/voice` recién cuando `room.canPlaybackAudio` confirme que la pista del avatar es reproducible, no al suscribirte |
+| **Sin audio** tras habilitar avatar | silenciaste `/ws/voice` incondicionalmente antes de que la pista del avatar fuera reproducible (autoplay bloqueado) | deja sonar `/ws/voice` hasta confirmar `room.canPlaybackAudio`; ofrece un botón "Enable avatar audio" que llame a `Room.startAudio()` |
 | El asistente no se calla al interrumpir | ignoras `is_interrupted` | `player.flush()` al recibirlo |
 | Avatar no aparece | `avatar.active=false` | revisar `tenant_id` en opt-in + `LIVEAVATAR_SANDBOX` + extra instalado |
 | `/start` da 400 | avatar de producción con `SANDBOX=true` | `LIVEAVATAR_SANDBOX=false` |
@@ -664,16 +727,27 @@ LIVEAVATAR_ENABLED_AGENTS=agent1,agent2   # opcional, filtra por agente
 
 ## 8. Referencias de código (rutas absolutas)
 
-**VoiceBot / cliente Gemini Live**
+**VoiceBot / clientes Gemini Live y Nova 2 Sonic**
 - `packages/ai-parrot/src/parrot/bots/voice.py` — `VoiceBot`
-- `packages/ai-parrot/src/parrot/models/voice.py` — `VoiceConfig`
-- `packages/ai-parrot/src/parrot/clients/live.py` — `GeminiLiveClient`, `LiveVoiceResponse`
+- `packages/ai-parrot/src/parrot/models/voice.py` — `VoiceConfig`, `LiveVoiceResponse`, `LiveToolCall`
+- `packages/ai-parrot-client-google/src/parrot/clients/google/live.py` — `GeminiLiveClient`
+- `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py` — `NovaClient` (Amazon Nova 2 Sonic, FEAT-315/FEAT-536)
 - `packages/ai-parrot/src/parrot/core/ws_auth.py` — `TokenValidator`, `AuthenticatedUser`
 
 **Handler WebSocket**
 - `packages/ai-parrot-integrations/src/parrot/voice/handler.py` — `VoiceChatHandler`, `WebSocketConnection`
 - `packages/ai-parrot-integrations/src/parrot/voice/ui/basic.js` — cliente JS de referencia
 - `packages/ai-parrot-integrations/src/parrot/voice/ui/voice_chat.html` — UI de voz completa
+
+**Demo funcionando, ambos proveedores + avatar (FEAT-536)**
+- `examples/clients/voice/server.py` — dos `VoiceChatHandler` (`/ws/gemini`, `/ws/nova`), el
+  tool de demo dual-output, y la ruta `/voice-assets/livekit-client.umd.js`
+- `examples/clients/voice/static/dual_provider.html` — la página completa: toggle de
+  proveedor, panel de capacidades, avatar, panel de tool/data events, Interrupt
+- `examples/clients/voice/static/avatar-viewer.js` — `AvatarViewerController`, la política de
+  una sola fuente implementada y con tests (SDK inyectable)
+- `examples/clients/voice/README.md` — prerequisitos (incluyendo el LiveKit SDK bloqueado) y
+  el runbook de aceptación real-live (§4/AC13)
 
 **FEAT-245 — Avatar**
 - `sdd/specs/voicechat-liveavatar-gemini.spec.md` — spec
