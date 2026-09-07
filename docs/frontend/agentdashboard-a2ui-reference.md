@@ -289,9 +289,12 @@ A host with its own tenancy seam — FieldSync, whose tenant is declared in the 
 class FieldsyncSurfaceScopeResolver:
     async def resolve(self, request):
         tenant = declared_programme(request)          # URL-declared, not session-derived
-        groups, is_superuser = resolve_session_authorization(request)
-        user_id = resolve_user_id(request)
-        return SurfaceScope(user_id, tenant, frozenset(groups), is_superuser)
+        session = await get_session(request)          # navigator_session, the request-dict entry
+        _programs, is_superuser = resolve_session_authorization(session)  # (programs, superuser) — groups are NOT in it
+        userinfo = session.get(AUTH_SESSION_OBJECT) if session is not None else None
+        groups = userinfo.get("groups") if isinstance(userinfo, dict) else []
+        user_id = resolve_user_id(request, session)
+        return SurfaceScope(user_id, tenant, frozenset(g for g in groups if isinstance(g, str)), is_superuser)
 
 app["ui_surfaces_scope_resolver"] = FieldsyncSurfaceScopeResolver()
 ```
