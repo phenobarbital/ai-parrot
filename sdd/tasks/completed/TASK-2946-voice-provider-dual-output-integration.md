@@ -258,9 +258,95 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Created `packages/ai-parrot-integrations/tests/voice/test_nova_dual_output_integration.py`
+(6 tests, all real path — only Nova's own SDK-transport boundary is
+mocked): a real `VoiceBot` (with a real `ToolManager`/`AbstractTool`
+registered via normal construction) has its `_llm` wired to the SAME
+real `NovaClient` `VoiceBot._create_llm_client()` would build, with only
+`_open_stream`/`_send_event`/`_iter_events` mocked; turns are driven
+through the real `_AskStreamVoiceClient.stream_voice()` (→
+`VoiceBot.ask_stream()` → Nova's real `stream_voice()`) and relayed
+through a real `_HandlerVoiceSession._relay()`/`build_frames()` — the
+exact objects `VoiceChatHandler._run_voice_session()` constructs in
+production. `test_voicebot_nova_websocket_tool_audio_display` proves
+exactly one `tool_call` frame, one `display_data` frame and the correct
+audio bytes reach the WebSocket. `test_voicebot_nova_avatar_audio_and_lifecycle`
+(+ a barge-in variant) proves identical PCM reaches a real
+`VoiceAvatarSession` over `patched_stack` (FEAT-245) and
+`finish_turn`/`interrupt` forward correctly.
+`test_avatar_failure_preserves_websocket_delivery` proves an avatar
+transport exception never blocks the browser's audio/tool/display
+frames. `test_two_voice_sessions_do_not_mix_results` runs two fully
+independent bot/tool/connection/session sets concurrently
+(`asyncio.gather`) and proves zero cross-talk. 
+`test_tool_final_only_and_next_turn_id_reuse` uses a genuine causal gate
+(`_GatedEchoTool` awaiting a test-controlled `asyncio.Event`, NOT a
+sleep or a preloaded-array assumption) to deterministically force Nova's
+real `_drain_admitted_tools()` branch (tool still running when
+`completionEnd` arrives) and proves the resulting tool is still
+delivered exactly once at the WS-frame level, then reuses the same
+`tool_use_id` in a second turn and proves it is delivered again (no
+stale cross-turn dedup).
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+Extended `packages/ai-parrot/tests/voice/conftest.py` (Module 9's shared
+provider-conformance fixtures, backward compatible — every new
+parameter is optional/keyword-only with a default that reproduces the
+prior behavior exactly) with `VoiceAwareEchoTool`/`make_tool_manager()`
+(the same deterministic real tool for both providers),
+`gemini_tool_call_events()`/`nova_tool_call_events()`, a new
+`"tool_call"` scenario on `build_gemini_client()`/`build_nova_client()`/
+`build_client()`, and `gated_nova_iter_events()` — a reusable two-phase
+causal-gate Nova event iterator (pre-gate events, suspend on an
+`asyncio.Event`, post-gate events) satisfying the Codebase Contract's
+"add causal gates, not just preloaded arrays" note, available for future
+tests in this directory even though this task's own conformance test
+did not need timing control.
+
+Added `TestDualOutputConformance::test_provider_dual_output_conformance`
+to `test_provider_conformance.py` (parametrized Gemini/Nova via the
+existing `provider` fixture): the same tool executes exactly once per
+provider (deduped by id when flattening — Nova's own architecture
+re-lists an already-delivered call in its final completion snapshot;
+that is a Python-object-level fact distinct from the WS-frame-level
+dedup already proven in the new integration file) and both providers
+converge on the identical `{"output": "Echo: weather"}` spoken shape and
+`{"topic": "weather", "kind": "echo"}` visual shape via
+`metadata["display_data"]`.
+
+Verification:
+- `pytest packages/ai-parrot-integrations/tests/voice/test_nova_dual_output_integration.py`
+  — 6 passed (`artifacts/logs/TASK-2946-pytest-integration.log`).
+- `pytest packages/ai-parrot/tests/voice/conftest.py
+  packages/ai-parrot/tests/voice/test_provider_conformance.py` — 26
+  passed, 2 failed
+  (`artifacts/logs/TASK-2946-pytest-conformance.log`).
+- `ruff check` clean on all three files.
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: The 2 failures in `test_provider_conformance.py`
+(`TestCanonicalEnvelope::test_user_and_assistant_both_present[gemini]`,
+`TestDropInEquivalence::test_role_sequence_structurally_identical`) are
+PRE-EXISTING on baseline `dev` — confirmed by `git stash`-ing every file
+this task touched (including `conftest.py`) and re-running the exact
+same two tests, which still failed identically with my changes fully
+removed. A third pre-existing failure,
+`test_voice_session.py::TestVoiceSession::test_no_aiohttp_import`, was
+also confirmed pre-existing the same way when it appeared in a
+directory-wide run. None of these three are in this task's file scope
+(`test_provider_conformance.py`'s two failing tests predate this task's
+new `TestDualOutputConformance` class and are unrelated to it;
+`test_voice_session.py` is not a file this task touches at all) — they
+are reported here for the code reviewer's visibility, not fixed, per
+the task's explicit instruction to "Fix production failures via the
+owning scoped task, not unplanned code edits here." Running the full
+`packages/ai-parrot/tests/voice/` and
+`packages/ai-parrot-integrations/tests/voice/` directories in a SINGLE
+pytest invocation together raises an unrelated `ImportPathMismatchError`
+(both packages' `tests/voice/conftest.py` collide on the module name
+`tests.voice.conftest` because neither package tree has `__init__.py`
+markers) — a pre-existing, repo-wide pytest-configuration fact
+(each package has its own `pyproject.toml`/test root), not something
+this task's file scope can or should change; verification commands
+above run each package's voice test directory as a separate invocation.
 **Deviations from spec**: none recorded
