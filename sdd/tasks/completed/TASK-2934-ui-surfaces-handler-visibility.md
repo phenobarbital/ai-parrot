@@ -153,10 +153,76 @@ async def test_viewer_get_json_200(fake_store):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-07
 **Notes**:
+- `resolve_surface_access` gained the `scope=` kwarg with the owner → scope
+  → token → 404 order exactly per spec §2; docstring explains why a token
+  still works across tenants (explicit out-of-band consent).
+- `PublishSurfaceRequest` gained `visibility`/`allowed_groups` (no `tenant`
+  field — pydantic's default `extra="ignore"` drops a body-supplied one).
+  New `PatchVisibilityRequest`.
+- `UISurfacesHandler._scope()` resolves once per request via
+  `get_scope_resolver(self.request.app).resolve(self.request)`; `get`,
+  `_pin_save`, `_refresh` each call it exactly once (never per store call).
+- `_get_list` now calls `store.list_visible(scope, kind=kind)` instead of
+  `store.list(user_id, kind=kind)`, unioned with `list_shared_with` via a
+  new `_tag_and_merge` helper (owner/tenant/shared tags, dedupe by
+  `surface_id`, visible wins over shared — spec §7 Known Risk).
+- `_pin_save` sets `record.tenant = scope.tenant` (never from the body) and
+  returns `422` when `visibility != private` and `scope.tenant is None`.
+- New `patch()` verb → `_patch_visibility()`: validates the body via
+  `PatchVisibilityRequest` (`400` on error), confirms ownership via a
+  single `store.get()` compared in Python (SAME pattern already used by
+  `_mint_share`/`_revoke_share` in this file — see Deviations), `422` when
+  `visibility != private` and the STORED record has no tenant, then calls
+  `store.update_visibility` (SQL-level owner enforcement, spec §7) and
+  treats a `False` result as a defensive-fallback `404`.
+- `_surface_metadata` now also exposes `tenant`, `visibility` (`.value`),
+  `allowed_groups`, `recipe_name`, `recipe_params`.
+- `_refresh` computes `scope` once and passes it through
+  `_resolve_surface_for_access`; a tenant/group viewer can refresh, still
+  under the OWNER's `PermissionContext` (unchanged rule, new test added).
+- Extended `test_ui_surfaces_handler.py`: `fake_store` fixture gained
+  `list_visible`/`update_visibility` `AsyncMock`s; new `_StubResolver` +
+  `_app(..., scope=...)` install a fixed `SurfaceScope`; new `_patch()`
+  unwrap helper. Added: list union/tag/dedupe with a "visible wins over
+  shared" case, viewer `GET` JSON+HTML `200`, viewer group-mismatch `404`,
+  viewer `DELETE` `404` (no oracle), viewer `refresh` `200` under owner
+  pctx, tenant-less-publish `422` / with-scope `201` / body-tenant-ignored,
+  metadata field exposure, and a `TestPatchVisibility` class (owner `200`,
+  non-owner `404`, bad body `400`, tenant-rule `422`, store-returns-False
+  defensive `404`). One PRE-EXISTING test
+  (`test_list_owned_union_shared_with_access_tag`) was adapted to mock
+  `list_visible` instead of `list` — same intent (owned ∪ shared, tagged),
+  updated only because the underlying store call changed (AC: "pass
+  unchanged in intent", not "unchanged verbatim").
+- Full run: `test_ui_surfaces_store.py` + `_store_live.py` + `_scope.py` +
+  `_handler.py` = 77 passed. `flake8`/`black --check` clean on both
+  changed files.
+- **Mutation-check evidence (`scope_grants` wired into
+  `resolve_surface_access`)**: short-circuited the scope branch
+  (`if scope is not None and False and scope_grants(...)`) → 3 viewer
+  tests went RED (`test_viewer_get_json_200`, `test_viewer_get_html_200`,
+  `test_refresh_tenant_viewer_uses_owner_pctx`, all `404` instead of
+  `200`). Reverted; suite green again (42/42 handler, 77/77 overall).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- **`_patch_visibility` confirms ownership via an explicit
+  `store.get()` + Python comparison BEFORE the tenant-rule check**,
+  instead of relying on `store.update_visibility`'s SQL-level `WHERE
+  user_id = $2` as the sole gate the task's prose implied. Reasoning: the
+  task's literal order — validate body, check "the STORED record's
+  tenant" for the 422 rule, THEN call `update_visibility` — requires
+  fetching the record before the SQL-level owner check runs. If that
+  pre-fetch were NOT also gated on ownership, a non-owner could
+  distinguish "surface exists with no tenant" (`422`) from "surface
+  doesn't exist" (`404`) purely by probing `PATCH` with `visibility=
+  tenant` on an arbitrary id — a real existence-oracle leak, which spec
+  §7 explicitly forbids ("no existence oracle"). Fetching+comparing
+  ownership in Python before that check (uniform `404` for "not found OR
+  not owned") closes the leak and matches the EXISTING convention already
+  used by `_mint_share`/`_revoke_share` in this same file — not a new
+  pattern. `store.update_visibility`'s own SQL-level owner enforcement
+  (Module 1, TASK-2932) is kept as a defensive second gate, per spec §7's
+  general principle for owner-only mutations.

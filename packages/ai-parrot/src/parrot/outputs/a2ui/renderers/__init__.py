@@ -154,15 +154,31 @@ def get_a2ui_renderer(name: str) -> type[AbstractA2UIRenderer]:
     if name in _RENDERERS:
         return _RENDERERS[name]
 
+    # Renderer NAMES are public ids and may carry a hyphen ("interactive-html");
+    # the satellite MODULE that registers one is a Python identifier
+    # ("interactive_html"). Try the literal name first, then the normalised
+    # module name — otherwise every hyphenated renderer is unreachable until
+    # something else happens to import its module (found replaying a recipe
+    # with ``render.profile == "interactive-html"`` from a host, 2026-09-05).
     module_path = f"{_RENDERER_NAMESPACE}.{name}"
+    candidates = [module_path]
+    normalised = f"{_RENDERER_NAMESPACE}.{name.replace('-', '_')}"
+    if normalised != module_path:
+        candidates.append(normalised)
     extra = _extra_for(name)
-    try:
-        importlib.import_module(module_path)
-    except ImportError as exc:
+    last_exc: ImportError | None = None
+    for candidate in candidates:
+        try:
+            importlib.import_module(candidate)
+            last_exc = None
+            break
+        except ImportError as exc:
+            last_exc = exc
+    if last_exc is not None:
         raise ImportError(
-            f"Cannot import A2UI renderer '{name}' from '{module_path}': {exc}. "
+            f"Cannot import A2UI renderer '{name}' from '{module_path}': {last_exc}. "
             f"Install the renderer backend with: pip install {extra}"
-        ) from exc
+        ) from last_exc
 
     if name not in _RENDERERS:
         raise ImportError(

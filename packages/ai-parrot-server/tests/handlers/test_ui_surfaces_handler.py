@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot.handlers.models.ui_surfaces import (
+    SurfaceVisibility,
     UISurfaceKind,
     UISurfaceRecord,
     UISurfaceShare,
@@ -31,6 +32,7 @@ from parrot.handlers.ui_surfaces import (
     SurfaceNegotiationService,
     UISurfacesHandler,
 )
+from parrot.handlers.ui_surfaces_scope import SurfaceScope
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.outputs.a2ui.recipes.models import RecipeRunError
 from parrot.tools.infographic_recipes.runner import RecipeRunException
@@ -90,6 +92,10 @@ async def _delete(h):
     return await _unwrap(UISurfacesHandler.delete)(h)
 
 
+async def _patch(h):
+    return await _unwrap(UISurfacesHandler.patch)(h)
+
+
 async def _decode(response) -> dict:
     return json.loads(response.body)
 
@@ -133,9 +139,11 @@ def fake_store():
     store = MagicMock()
     store.get = AsyncMock(return_value=None)
     store.list = AsyncMock(return_value=[])
+    store.list_visible = AsyncMock(return_value=[])
     store.list_shared_with = AsyncMock(return_value=[])
     store.save = AsyncMock(return_value="surface-1")
     store.update_envelope = AsyncMock(return_value=None)
+    store.update_visibility = AsyncMock(return_value=True)
     store.delete = AsyncMock(return_value=True)
     store.mint_share = AsyncMock()
     store.resolve_share = AsyncMock(return_value=None)
@@ -151,13 +159,26 @@ def fake_runner():
     return runner
 
 
-def _app(store, runner=None, artifact_store=None):
+def _app(store, runner=None, artifact_store=None, scope=None):
     app = {"ui_surfaces_store": store}
     if runner is not None:
         app["recipe_runner"] = runner
     if artifact_store is not None:
         app["artifact_store"] = artifact_store
+    if scope is not None:
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope)
     return app
+
+
+class _StubResolver:
+    """Installs a fixed :class:`SurfaceScope` on ``app["ui_surfaces_scope_resolver"]``
+    (spec §3 Module 2/3 test fixture)."""
+
+    def __init__(self, scope: SurfaceScope):
+        self._scope = scope
+
+    async def resolve(self, request):
+        return self._scope
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +313,10 @@ class TestGet:
     async def test_list_owned_union_shared_with_access_tag(self, fake_store):
         owned = _make_record(surface_id="owned-1", user_id="user-1")
         shared = _make_record(surface_id="shared-1", user_id="owner-b")
-        fake_store.list.return_value = [owned]
+        # `_get_list` now calls `store.list_visible(scope, kind=kind)` instead
+        # of `store.list(user_id, kind=kind)` — `list_visible` already
+        # includes everything the caller owns (spec §2/§3 Module 3).
+        fake_store.list_visible.return_value = [owned]
         fake_store.list_shared_with.return_value = [shared]
         h = _handler(_app(fake_store), match_info={}, user_id="user-1")
 
@@ -302,6 +326,126 @@ class TestGet:
         body = await _decode(resp)
         by_id = {s["surface_id"]: s["access"] for s in body["surfaces"]}
         assert by_id == {"owned-1": "owner", "shared-1": "shared"}
+
+    async def test_list_visible_tenant_tag_and_shared_dedupe(self, fake_store):
+        """A tenant-visible surface is tagged ``tenant``; a surface BOTH
+        tenant-visible AND token-shared is reported once, tagged ``tenant``
+        (spec §7 Known Risk: "visible wins over shared")."""
+        owned = _make_record(surface_id="owned-1", user_id="user-1")
+        tenant_visible = _make_record(
+            surface_id="tenant-1", user_id="owner-b", tenant="epson", visibility=SurfaceVisibility.tenant
+        )
+        also_shared = _make_record(
+            surface_id="both-1", user_id="owner-c", tenant="epson", visibility=SurfaceVisibility.tenant
+        )
+        fake_store.list_visible.return_value = [owned, tenant_visible, also_shared]
+        fake_store.list_shared_with.return_value = [also_shared]
+        scope = SurfaceScope(user_id="user-1", tenant="epson", groups=frozenset(), is_superuser=False)
+        h = _handler(_app(fake_store, scope=scope), match_info={}, user_id="user-1")
+
+        resp = await _get(h)
+
+        assert resp.status == 200
+        body = await _decode(resp)
+        by_id = {s["surface_id"]: s["access"] for s in body["surfaces"]}
+        assert by_id == {"owned-1": "owner", "tenant-1": "tenant", "both-1": "tenant"}
+
+    async def test_viewer_get_json_200(self, fake_store):
+        record = _make_record(user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant)
+        fake_store.get.return_value = record
+        scope = SurfaceScope(
+            user_id="u-viewer", tenant="epson", groups=frozenset({"epson_fieldsync_manager"}), is_superuser=False
+        )
+        h = _handler(
+            _app(fake_store, scope=scope),
+            match_info={"surface_id": "surface-1"},
+            user_id="u-viewer",
+        )
+
+        resp = await _get(h)
+
+        assert resp.status == 200
+
+    async def test_viewer_get_html_200(self, fake_store):
+        record = _make_record(user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant)
+        fake_store.get.return_value = record
+        scope = SurfaceScope(user_id="u-viewer", tenant="epson", groups=frozenset(), is_superuser=False)
+        h = _handler(
+            _app(fake_store, scope=scope),
+            match_info={"surface_id": "surface-1"},
+            user_id="u-viewer",
+            query={"format": "html"},
+        )
+
+        resp = await _get(h)
+
+        assert resp.status == 200
+        assert resp.content_type == "text/html"
+
+    async def test_viewer_group_mismatch_404(self, fake_store):
+        record = _make_record(
+            user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.groups, allowed_groups=["g1"]
+        )
+        fake_store.get.return_value = record
+        scope = SurfaceScope(user_id="u-viewer", tenant="epson", groups=frozenset({"g2"}), is_superuser=False)
+        h = _handler(
+            _app(fake_store, scope=scope),
+            match_info={"surface_id": "surface-1"},
+            user_id="u-viewer",
+        )
+
+        resp = await _get(h)
+
+        assert resp.status == 404
+
+    async def test_viewer_delete_404_no_oracle(self, fake_store):
+        """A tenant/group viewer can read but never delete (spec §2/§5).
+
+        ``_delete_surface`` (unchanged by this feature) never re-derives
+        ownership in Python — it delegates straight to
+        ``store.delete(surface_id, user_id)``, whose SQL is
+        ``WHERE surface_id = $1 AND user_id = $2``. A viewer's OWN
+        ``user_id`` (never the owner's) is passed, so a real database would
+        naturally find no matching row; the fake mimics that by returning
+        ``False`` for this call, same as ``test_delete_surface_not_found``.
+        """
+        record = _make_record(user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant)
+        fake_store.get.return_value = record
+        fake_store.delete.return_value = False
+        scope = SurfaceScope(user_id="u-viewer", tenant="epson", groups=frozenset(), is_superuser=False)
+        h = _handler(
+            _app(fake_store, scope=scope),
+            match_info={"surface_id": "surface-1"},
+            user_id="u-viewer",
+        )
+
+        resp = await _delete(h)
+
+        assert resp.status == 404
+        fake_store.delete.assert_awaited_once_with("surface-1", "u-viewer")
+
+    async def test_metadata_exposes_visibility_and_recipe_fields(self, fake_store):
+        record = _make_record(
+            user_id="user-1",
+            tenant="epson",
+            visibility=SurfaceVisibility.groups,
+            allowed_groups=["g1"],
+            recipe_name="daily-budget",
+            recipe_params={"window": "7d"},
+        )
+        fake_store.get.return_value = record
+        h = _handler(_app(fake_store), match_info={"surface_id": "surface-1"}, user_id="user-1")
+
+        resp = await _get(h)
+
+        assert resp.status == 200
+        body = await _decode(resp)
+        metadata = body["metadata"]
+        assert metadata["tenant"] == "epson"
+        assert metadata["visibility"] == "groups"
+        assert metadata["allowed_groups"] == ["g1"]
+        assert metadata["recipe_name"] == "daily-budget"
+        assert metadata["recipe_params"] == {"window": "7d"}
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +512,58 @@ class TestPinSave:
         assert resp.status == 201
         artifact_store.get_artifact.assert_awaited_once()
 
+    async def test_post_pin_tenant_visibility_without_scope_tenant_422(self, fake_store):
+        body = {
+            "kind": "dashboard",
+            "title": "My Dashboard",
+            "envelope": _sample_envelope(),
+            "visibility": "tenant",
+        }
+        # No scope resolver installed -> default resolver -> tenant=None
+        # (the fake request's session has no navigator-auth data).
+        h = _handler(_app(fake_store), match_info={}, path="/api/v1/ui/surfaces", json_body=body)
+
+        resp = await _post(h)
+
+        assert resp.status == 422
+        fake_store.save.assert_not_awaited()
+
+    async def test_post_pin_tenant_visibility_with_scope_tenant_201(self, fake_store):
+        body = {
+            "kind": "dashboard",
+            "title": "My Dashboard",
+            "envelope": _sample_envelope(),
+            "visibility": "tenant",
+        }
+        scope = SurfaceScope(user_id="user-1", tenant="epson", groups=frozenset(), is_superuser=False)
+        h = _handler(_app(fake_store, scope=scope), match_info={}, path="/api/v1/ui/surfaces", json_body=body)
+
+        resp = await _post(h)
+
+        assert resp.status == 201
+        saved_record = fake_store.save.call_args.args[0]
+        assert saved_record.tenant == "epson"
+        assert saved_record.visibility is SurfaceVisibility.tenant
+
+    async def test_post_pin_body_tenant_is_ignored(self, fake_store):
+        """A body-supplied ``tenant`` has no effect — pydantic's default
+        ``extra="ignore"`` drops it; the server sets ``tenant`` from the
+        resolved scope only (spec §2/§6)."""
+        body = {
+            "kind": "dashboard",
+            "title": "My Dashboard",
+            "envelope": _sample_envelope(),
+            "tenant": "attacker-supplied-tenant",
+        }
+        scope = SurfaceScope(user_id="user-1", tenant="epson", groups=frozenset(), is_superuser=False)
+        h = _handler(_app(fake_store, scope=scope), match_info={}, path="/api/v1/ui/surfaces", json_body=body)
+
+        resp = await _post(h)
+
+        assert resp.status == 201
+        saved_record = fake_store.save.call_args.args[0]
+        assert saved_record.tenant == "epson"
+
 
 # ---------------------------------------------------------------------------
 # POST: refresh
@@ -427,6 +623,31 @@ class TestRefresh:
         _, kwargs = fake_runner.run.call_args
         pctx = kwargs["pctx"]
         assert pctx.user_id == "owner-a"  # OWNER's identity, never the bearer's
+
+    async def test_refresh_tenant_viewer_uses_owner_pctx(self, fake_store, fake_runner):
+        """A tenant/group viewer may refresh — same rule as a share bearer
+        (spec §2 Known Risk): the replay still runs under the OWNER's
+        ``PermissionContext``, never the viewer's."""
+        record = _make_record(
+            user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant, recipe_name="daily-budget"
+        )
+        fake_store.get.return_value = record
+        fake_runner.run.return_value = SimpleNamespace(metadata={"source_envelope": _sample_envelope()})
+        scope = SurfaceScope(user_id="u-viewer", tenant="epson", groups=frozenset(), is_superuser=False)
+
+        h = _handler(
+            _app(fake_store, runner=fake_runner, scope=scope),
+            match_info={"surface_id": "surface-1"},
+            path="/api/v1/ui/surfaces/surface-1/refresh",
+            json_body={},
+            user_id="u-viewer",
+        )
+
+        resp = await _post(h)
+
+        assert resp.status == 200
+        _, kwargs = fake_runner.run.call_args
+        assert kwargs["pctx"].user_id == "owner-a"
 
     async def test_refresh_not_refreshable_409(self, fake_store):
         record = _make_record(user_id="user-1", recipe_name=None)
@@ -576,5 +797,90 @@ class TestDeleteSurface:
         h = _handler(_app(fake_store), match_info={"surface_id": "surface-1"}, user_id="user-1")
 
         resp = await _delete(h)
+
+        assert resp.status == 404
+
+
+# ---------------------------------------------------------------------------
+# PATCH: visibility
+# ---------------------------------------------------------------------------
+
+
+class TestPatchVisibility:
+    async def test_patch_owner_200(self, fake_store):
+        record = _make_record(user_id="user-1", tenant="epson", visibility=SurfaceVisibility.private)
+        fake_store.get.return_value = record
+        h = _handler(
+            _app(fake_store),
+            match_info={"surface_id": "surface-1"},
+            json_body={"visibility": "tenant", "allowed_groups": []},
+            user_id="user-1",
+        )
+
+        resp = await _patch(h)
+
+        assert resp.status == 200
+        fake_store.update_visibility.assert_awaited_once_with("surface-1", "user-1", SurfaceVisibility.tenant, [])
+
+    async def test_patch_non_owner_404_no_oracle(self, fake_store):
+        record = _make_record(user_id="owner-a", tenant="epson")
+        fake_store.get.return_value = record
+        h = _handler(
+            _app(fake_store),
+            match_info={"surface_id": "surface-1"},
+            json_body={"visibility": "tenant"},
+            user_id="someone-else",
+        )
+
+        resp = await _patch(h)
+
+        assert resp.status == 404
+        fake_store.update_visibility.assert_not_awaited()
+
+    async def test_patch_bad_body_400(self, fake_store):
+        record = _make_record(user_id="user-1", tenant="epson")
+        fake_store.get.return_value = record
+        h = _handler(
+            _app(fake_store),
+            match_info={"surface_id": "surface-1"},
+            json_body={"visibility": "not-a-real-value"},
+            user_id="user-1",
+        )
+
+        resp = await _patch(h)
+
+        assert resp.status == 400
+        fake_store.update_visibility.assert_not_awaited()
+
+    async def test_patch_tenant_rule_422_when_record_has_no_tenant(self, fake_store):
+        record = _make_record(user_id="user-1", tenant=None, visibility=SurfaceVisibility.private)
+        fake_store.get.return_value = record
+        h = _handler(
+            _app(fake_store),
+            match_info={"surface_id": "surface-1"},
+            json_body={"visibility": "tenant"},
+            user_id="user-1",
+        )
+
+        resp = await _patch(h)
+
+        assert resp.status == 422
+        fake_store.update_visibility.assert_not_awaited()
+
+    async def test_patch_store_returns_false_404(self, fake_store):
+        """Defensive fallback — even for a confirmed owner, a ``False`` from
+        the store (e.g. deleted between the two calls) is still a ``404``,
+        never a differentiating error."""
+        record = _make_record(user_id="user-1", tenant="epson")
+        fake_store.get.return_value = record
+        fake_store.update_visibility.return_value = False
+        h = _handler(
+            _app(fake_store),
+            match_info={"surface_id": "surface-1"},
+            json_body={"visibility": "tenant"},
+            user_id="user-1",
+        )
+
+        resp = await _patch(h)
 
         assert resp.status == 404

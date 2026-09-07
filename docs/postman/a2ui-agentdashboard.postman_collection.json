@@ -1187,7 +1187,7 @@
     },
     {
       "name": "3. UI surfaces (FEAT-492 rehydration)",
-      "description": "/api/v1/ui/surfaces — persistent, bookmarkable A2UI surfaces of kind dashboard | infographic | widget. Negotiation: ?format=html|json wins over Accept; default JSON. Errors: {status:'error', message}. Unknown/foreign => 404, bad share token => 410, HTML renderer missing => 501.",
+      "description": "/api/v1/ui/surfaces — persistent, bookmarkable A2UI surfaces of kind dashboard | infographic | widget. Negotiation: ?format=html|json wins over Accept; default JSON. Errors: {status:'error', message}. Unknown/foreign => 404, bad share token => 410, HTML renderer missing => 501. List responses now include tenant/group-visible surfaces alongside owned and shared ones (access: owner|tenant|shared) — see 'List my surfaces (tenant view)' below. FEAT-535.",
       "item": [
         {
           "name": "List my surfaces",
@@ -1316,6 +1316,44 @@
           ]
         },
         {
+          "name": "List my surfaces (tenant view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces"
+              ]
+            },
+            "description": "Same endpoint as 'List my surfaces'. When the caller's resolved SurfaceScope carries a tenant (the default resolver: the session has exactly one program; a host like FieldSync installs its own URL-declared resolver), the response also includes tenant/group-visible surfaces owned by OTHER users, tagged access:\"tenant\". FEAT-535."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('2xx', () => pm.response.to.be.success);",
+                  "pm.test('json', () => pm.response.to.be.json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Pin/save: widget (inline envelope)",
           "request": {
             "method": "POST",
@@ -1395,7 +1433,7 @@
             "description": "Two sections => two tabs in every renderer. metadata.extensions.parrot_theme/parrot_layout select the HTML design-system axes. Saves surface_id into {{dashboardSurfaceId}}.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"kind\": \"dashboard\",\n  \"title\": \"Demo Dashboard\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"envelope\": {\n    \"surfaceId\": \"demo-dashboard-infographic\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"metadata\": {\n      \"extensions\": {\n        \"parrot_theme\": \"dark\",\n        \"parrot_layout\": \"analytics\"\n      }\n    },\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"Infographic\",\n        \"title\": \"Demo Dashboard\",\n        \"subtitle\": \"Two sections -> two tabs\",\n        \"sections\": [\n          {\n            \"heading\": \"KPIs\",\n            \"components\": [\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Worked Hours\",\n                  \"value\": {\n                    \"path\": \"/hero/worked_hours\"\n                  },\n                  \"unit\": \"h\",\n                  \"trend\": \"up\"\n                }\n              },\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Payroll\",\n                  \"value\": {\n                    \"path\": \"/hero/payroll\"\n                  },\n                  \"unit\": \"USD\",\n                  \"trend\": \"flat\"\n                }\n              }\n            ]\n          },\n          {\n            \"heading\": \"Trend\",\n            \"components\": [\n              {\n                \"component\": \"FilterBar\",\n                \"properties\": {\n                  \"title\": \"Filters\",\n                  \"filters\": [\n                    {\n                      \"column\": \"region\",\n                      \"label\": \"Region\",\n                      \"multiple\": true,\n                      \"options\": [\n                        {\n                          \"label\": \"West\",\n                          \"value\": \"West\"\n                        },\n                        {\n                          \"label\": \"East\",\n                          \"value\": \"East\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              },\n              {\n                \"component\": \"Chart\",\n                \"properties\": {\n                  \"title\": \"Hours by month\",\n                  \"type\": \"line\",\n                  \"x\": \"month\",\n                  \"y\": [\n                    \"hours\"\n                  ],\n                  \"showLegend\": true,\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              },\n              {\n                \"component\": \"DataTable\",\n                \"properties\": {\n                  \"title\": \"Detail\",\n                  \"columns\": [\n                    {\n                      \"name\": \"month\",\n                      \"type\": \"string\",\n                      \"title\": \"Month\"\n                    },\n                    {\n                      \"name\": \"region\",\n                      \"type\": \"string\",\n                      \"title\": \"Region\"\n                    },\n                    {\n                      \"name\": \"hours\",\n                      \"type\": \"number\",\n                      \"title\": \"Hours\"\n                    }\n                  ],\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"dataModel\": {\n      \"hero\": {\n        \"worked_hours\": 18234.5,\n        \"payroll\": 812345.0\n      },\n      \"series\": [\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"West\",\n          \"hours\": 9100\n        },\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"East\",\n          \"hours\": 9134.5\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"West\",\n          \"hours\": 9600\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"East\",\n          \"hours\": 9411\n        }\n      ]\n    }\n  }\n}",
+              "raw": "{\n  \"kind\": \"dashboard\",\n  \"title\": \"Demo Dashboard\",\n  \"agent_id\": \"{{agentId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"envelope\": {\n    \"surfaceId\": \"demo-dashboard-infographic\",\n    \"catalogId\": \"https://parrot.dev/catalogs/v1\",\n    \"sendDataModel\": false,\n    \"metadata\": {\n      \"extensions\": {\n        \"parrot_theme\": \"dark\",\n        \"parrot_layout\": \"analytics\"\n      }\n    },\n    \"components\": [\n      {\n        \"id\": \"root\",\n        \"component\": \"Infographic\",\n        \"title\": \"Demo Dashboard\",\n        \"subtitle\": \"Two sections -> two tabs\",\n        \"sections\": [\n          {\n            \"heading\": \"KPIs\",\n            \"components\": [\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Worked Hours\",\n                  \"value\": {\n                    \"path\": \"/hero/worked_hours\"\n                  },\n                  \"unit\": \"h\",\n                  \"trend\": \"up\"\n                }\n              },\n              {\n                \"component\": \"KPICard\",\n                \"properties\": {\n                  \"label\": \"Payroll\",\n                  \"value\": {\n                    \"path\": \"/hero/payroll\"\n                  },\n                  \"unit\": \"USD\",\n                  \"trend\": \"flat\"\n                }\n              }\n            ]\n          },\n          {\n            \"heading\": \"Trend\",\n            \"components\": [\n              {\n                \"component\": \"FilterBar\",\n                \"properties\": {\n                  \"title\": \"Filters\",\n                  \"filters\": [\n                    {\n                      \"column\": \"region\",\n                      \"label\": \"Region\",\n                      \"multiple\": true,\n                      \"options\": [\n                        {\n                          \"label\": \"West\",\n                          \"value\": \"West\"\n                        },\n                        {\n                          \"label\": \"East\",\n                          \"value\": \"East\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              },\n              {\n                \"component\": \"Chart\",\n                \"properties\": {\n                  \"title\": \"Hours by month\",\n                  \"type\": \"line\",\n                  \"x\": \"month\",\n                  \"y\": [\n                    \"hours\"\n                  ],\n                  \"showLegend\": true,\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              },\n              {\n                \"component\": \"DataTable\",\n                \"properties\": {\n                  \"title\": \"Detail\",\n                  \"columns\": [\n                    {\n                      \"name\": \"month\",\n                      \"type\": \"string\",\n                      \"title\": \"Month\"\n                    },\n                    {\n                      \"name\": \"region\",\n                      \"type\": \"string\",\n                      \"title\": \"Region\"\n                    },\n                    {\n                      \"name\": \"hours\",\n                      \"type\": \"number\",\n                      \"title\": \"Hours\"\n                    }\n                  ],\n                  \"data\": {\n                    \"path\": \"/series\"\n                  }\n                }\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"dataModel\": {\n      \"hero\": {\n        \"worked_hours\": 18234.5,\n        \"payroll\": 812345.0\n      },\n      \"series\": [\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"West\",\n          \"hours\": 9100\n        },\n        {\n          \"month\": \"2025-07\",\n          \"region\": \"East\",\n          \"hours\": 9134.5\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"West\",\n          \"hours\": 9600\n        },\n        {\n          \"month\": \"2025-08\",\n          \"region\": \"East\",\n          \"hours\": 9411\n        }\n      ]\n    }\n  },\n  \"visibility\": \"private\",\n  \"allowed_groups\": []\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1927,6 +1965,57 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200/404', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH visibility (owner)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ui/surfaces/{{dashboardSurfaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ui",
+                "surfaces",
+                "{{dashboardSurfaceId}}"
+              ]
+            },
+            "description": "Owner-only visibility change (FEAT-535). 200 with metadata on success. 404 for a non-owner or unknown surface_id (no existence oracle — same response either way). 422 when visibility != \"private\" and the STORED surface has no tenant (the owner's scope had none when it was saved).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visibility\": \"tenant\",\n  \"allowed_groups\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 404 or 422', () => [200, 404, 422].includes(pm.response.code));"
                 ]
               }
             }

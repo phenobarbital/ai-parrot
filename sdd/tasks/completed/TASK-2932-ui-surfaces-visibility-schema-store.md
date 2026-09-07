@@ -161,10 +161,71 @@ pytestmark = pytest.mark.skipif(not DSN, reason="NAVIGATOR_PG_DSN not set (fs-sc
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-07
 **Notes**:
+- Implemented `SurfaceVisibility` enum, the three `UISurfaceRecord` fields,
+  the four live-migration DDL statements (appended after the two
+  `CREATE TABLE`s, plus the three new columns added to the `CREATE TABLE
+  ui_surfaces` column list), `_INSERT_SQL`/`_UPSERT_SQL`/`_GET_SQL`/
+  `_LIST_SHARED_WITH_SQL` extended, `_row_to_record` reading the new columns
+  defensively, `_decode_jsonb_list` (sibling of `_decode_jsonb`), the new
+  `_LIST_VISIBLE_SQL`/`_LIST_VISIBLE_BY_KIND_SQL`/`_UPDATE_VISIBILITY_SQL`
+  constants exactly per spec §2, and `list_visible`/`update_visibility` on
+  `PgUISurfaceStore` (scope is duck-typed `Any`, no import of the handler
+  package).
+- Extended `test_ui_surfaces_store.py`'s fake state/SQL dispatch and added
+  `test_old_row_without_new_columns_loads_as_private`,
+  `test_list_visible_matrix`, `test_update_visibility_owner_only`.
+- Created `test_ui_surfaces_store_live.py`, gated on `NAVIGATOR_PG_DSN`:
+  `test_ensure_schema_adds_columns_to_pre_feature_table` (literal
+  pre-feature `CREATE TABLE` → `ensure_schema()` → asserts columns/index via
+  `information_schema`/`pg_indexes`, second run no-op),
+  `test_list_visible_matrix` (owner/tenant/groups-hit/groups-miss/superuser/
+  no-tenant-caller/no-tenant-row, against real rows, cleaned up via
+  `store.delete()` in a `finally`), `test_update_visibility_owner_only_live`.
+- Full suite: 14 tests in `test_ui_surfaces_store.py` + 3 in
+  `test_ui_surfaces_store_live.py` = 17 passed. `flake8`/`black --check`
+  clean on all three changed files. Confirmed pre-existing (unrelated)
+  failures in `test_ui_surfaces_handler.py` / `test_a2ui_surfaces_route.py`
+  / `test_ui_surfaces_e2e.py` predate this task (reproduced on `dev` via a
+  `git stash` round-trip before committing) — out of this task's scope
+  (Modules 3/4, TASK-2934/2935).
+- **Mutation-check evidence (owner-only `update_visibility`)**: the
+  in-memory fake's owner check lives in Python (`row["user_id"] == user_id`)
+  independent of the SQL text, so it cannot prove the SQL-level guard. Used
+  the live test instead: replaced `WHERE surface_id = $1 AND user_id = $2`
+  with `WHERE surface_id = $1 AND (user_id = $2 OR TRUE)` in
+  `_UPDATE_VISIBILITY_SQL` → `test_update_visibility_owner_only_live` failed
+  with `assert True is False` (non-owner update now silently succeeds).
+  Reverted; suite green again (17/17).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- **`allowed_groups` is written as a raw `list[str]`, NOT
+  `json.dumps(allowed_groups)`**, in both `save()` and `update_visibility()`
+  — the spec/task text says "same regime as `recipe_params`"
+  (`json.dumps(...)` into `$N::jsonb`). Live-DB testing showed this literal
+  instruction breaks the feature: asyncdb's `pg` driver has a jsonb codec
+  that correctly encodes a native Python object passed to a `::jsonb`
+  parameter; pre-serializing it with `json.dumps()` double-encodes the
+  value into a jsonb **scalar string** (verified via `jsonb_typeof` on a
+  live database: `'string'`, not `'array'`), which silently makes
+  `allowed_groups ?| $3::text[]` always evaluate `False` — the `groups`
+  visibility rule would be permanently broken in production despite every
+  fake-backed unit test passing. `envelope`/`recipe_params` are untouched
+  (out of scope) and keep the pre-existing `json.dumps()` convention;
+  `_decode_jsonb_list` still tolerates a legacy double-encoded string on
+  read, so this is purely a write-path correction, additive and
+  backward-compatible. Flagged here per the Codebase Contract "verify and
+  correct a stale entry" instruction rather than silently deviating.
+- The pre-existing `_FakeConn` in `test_ui_surfaces_store.py` matched SQL
+  dispatch against `execute`/`fetchrow`/`fetchall` and treated `_INSERT_SQL`
+  as reached via `execute` — stale relative to the store's own
+  2026-09-05 asyncdb-quirks fix (`_exec`/`_fetch_rows`/`fetch_one`/
+  `fetch_all`, and writes going through `fetchval` on
+  `_INSERT_OR_SKIP_SQL`/`_UPSERT_SQL`, never raising on conflict). Before my
+  changes, 10 of 11 pre-existing tests in this file were already failing
+  against current `dev` (verified). Corrected the fake's method names and
+  dispatch targets to match the real store; this is why all 14 tests in
+  the file (11 pre-existing + 3 new) now pass, matching AC "All pre-existing
+  tests in `test_ui_surfaces_store.py` pass unchanged in intent."
