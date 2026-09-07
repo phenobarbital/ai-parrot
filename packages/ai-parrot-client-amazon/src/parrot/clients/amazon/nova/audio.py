@@ -914,6 +914,122 @@ class NovaAudio:
 
         return provider_result, display_data, result.status
 
+    async def _send_event_locked(self, write_lock: asyncio.Lock, stream: Any, event: Dict[str, Any]) -> None:
+        """Send a single wire event while holding *write_lock* (FEAT-536
+        TASK-2940 — spec §2 "Serialize outbound SDK writes with a
+        stream-local mechanism").
+
+        Held only for the duration of one ``_send_event`` call — never
+        across tool execution or a provider-event wait, and never
+        recursively (this is the only place ``write_lock`` is acquired;
+        :meth:`_execute_and_deliver_tool` acquires it once, briefly, for
+        its own 3-frame tool-result sequence, and releases it before
+        returning).
+
+        Args:
+            write_lock: The per-stream lock created once in
+                :meth:`stream_voice` and shared by the audio sender, the
+                tool-coordinator and the setup/shutdown sequences.
+            stream: The handle returned by :meth:`_open_stream`.
+            event: The event frame to send.
+        """
+        async with write_lock:
+            await self._send_event(stream, event)
+
+    async def _execute_and_deliver_tool(
+        self,
+        pending: LiveToolCall,
+        raw_input: Optional[str],
+        *,
+        stream: Any,
+        prompt_name: str,
+        write_lock: asyncio.Lock,
+        session_id: Optional[str],
+        turn_id: str,
+        user_id: Optional[str],
+        permission_context: Optional["PermissionContext"],
+    ) -> LiveVoiceResponse:
+        """Execute ONE admitted tool call end-to-end and build its streamed
+        delta (FEAT-536 TASK-2940 — spec §3 Module 3).
+
+        Shared by the immediate-admission coordinator in
+        :meth:`stream_voice` (one call per admitted tool, run as its own
+        ``asyncio.Task`` so the coordinator can await provider events and
+        tool completions concurrently). Mirrors
+        :meth:`_flush_pending_tools`'s inner per-tool logic (TASK-2939)
+        but does NOT touch ``tool_calls_list``/``usage`` bookkeeping —
+        left to the caller so admission-time (arrival) ordering into
+        ``tool_calls_list`` is preserved regardless of completion order
+        (spec §2: "Result delivery follows completion order with stable
+        IDs. Arrival order remains available for the final snapshot.").
+
+        Uses :meth:`_execute_tool_full` (TASK-2939) — the SAME dispatch
+        exactly once — never re-executes a tool and never bypasses the
+        manager. The manager's own per-instance lock (TASK-2938) already
+        serializes same-instance calls; this method does not duplicate
+        that.
+
+        Args:
+            pending: The admitted ``LiveToolCall`` (mutated in place with
+                ``arguments``/``result``/``error``/``execution_time_ms``).
+            raw_input: The stashed raw ``toolUse.content`` JSON string.
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+            write_lock: The stream-local write lock (see
+                :meth:`_send_event_locked`) — held only for the 3-frame
+                tool-result sequence, never across execution.
+            session_id: Session identifier for the yielded response.
+            turn_id: Turn identifier for the yielded response.
+            user_id: User identifier for the yielded response.
+            permission_context: Optional trusted ``PermissionContext``.
+
+        Returns:
+            The one :class:`LiveVoiceResponse` delta for this tool call.
+        """
+        start = time.monotonic()
+        try:
+            args = _parse_tool_arguments(raw_input)
+            pending.arguments = args
+            tool_result = await self._execute_tool_full(
+                pending.name,
+                args,
+                session_id=session_id,
+                user_id=user_id,
+                turn_id=turn_id,
+                permission_context=permission_context,
+            )
+            provider_result, display_data, tool_status = self._map_tool_result_to_nova(tool_result)
+            if tool_status != "success" or tool_result.success is not True:
+                pending.error = tool_result.error or f"Tool failed with status={tool_status}"
+        except Exception as exc:
+            pending.error = str(exc)
+            provider_result = {"error": str(exc), "status": "error"}
+            display_data = None
+            tool_status = "error"
+        pending.result = provider_result
+        pending.execution_time_ms = (time.monotonic() - start) * 1000
+
+        # Serialized against audio input / other tool results / shutdown —
+        # held only for :meth:`_send_tool_result`'s 3-frame sequence, never
+        # across execution or a provider-event wait (no lock is held above
+        # this point). Reuses `_send_tool_result` verbatim rather than
+        # re-implementing the contentStart/toolResult/contentEnd framing.
+        async with write_lock:
+            await self._send_tool_result(stream, prompt_name, pending.id, provider_result)
+
+        response_metadata: Dict[str, Any] = {"tool_status": tool_status}
+        if display_data is not None:
+            response_metadata["display_data"] = display_data
+        return LiveVoiceResponse(
+            text="",
+            tool_calls=[pending],
+            is_complete=False,
+            session_id=session_id,
+            turn_id=turn_id,
+            user_id=user_id,
+            metadata=response_metadata,
+        )
+
     async def _flush_pending_tools(
         self,
         stream: Any,
@@ -1157,6 +1273,16 @@ class NovaAudio:
         connection_start = time.monotonic()
         stream = await self._open_stream(resolved_model)
 
+        # FEAT-536 TASK-2940: one stream-local write lock shared by the
+        # setup sequence below, the audio sender, and the tool coordinator
+        # — "serialize outbound SDK writes with a stream-local mechanism"
+        # (spec §2). Never held across tool execution or a provider-event
+        # wait, and never acquired recursively (see
+        # :meth:`_send_event_locked`). Created here — NOT on ``self`` —
+        # because ``NovaAudio`` is a shared mixin that may serve concurrent
+        # sessions (same rationale as ``_TurnState``).
+        write_lock = asyncio.Lock()
+
         # FEAT-416 (TASK-2147): thread VoiceConfig inference parameters
         # through to the Nova Sonic sessionStart event instead of hardcoding
         # them. VoiceBot wires these from VoiceConfig (TASK-2151).
@@ -1168,7 +1294,8 @@ class NovaAudio:
         max_tokens = kwargs.get("max_tokens", options.max_tokens if options is not None else 4096)
         top_p = kwargs.get("top_p", options.top_p if options is not None else 0.9)
 
-        await self._send_event(
+        await self._send_event_locked(
+            write_lock,
             stream,
             {
                 "event": {
@@ -1182,12 +1309,13 @@ class NovaAudio:
                 }
             },
         )
-        await self._send_event(stream, self._build_prompt_start(prompt_name, resolved_voice_id))
+        await self._send_event_locked(write_lock, stream, self._build_prompt_start(prompt_name, resolved_voice_id))
         if system_prompt:
             # FEAT-408 Module 2 (gap 10): the AWS sample marks SYSTEM
             # content as interactive=False — it's context for the model,
             # not user-interactive content that triggers generation.
-            await self._send_event(
+            await self._send_event_locked(
+                write_lock,
                 stream,
                 {
                     "event": {
@@ -1202,7 +1330,8 @@ class NovaAudio:
                     }
                 },
             )
-            await self._send_event(
+            await self._send_event_locked(
+                write_lock,
                 stream,
                 {
                     "event": {
@@ -1214,7 +1343,8 @@ class NovaAudio:
                     }
                 },
             )
-            await self._send_event(
+            await self._send_event_locked(
+                write_lock,
                 stream,
                 {
                     "event": {
@@ -1231,7 +1361,8 @@ class NovaAudio:
         # triggers model generation — required when tools are declared;
         # without it Nova waits indefinitely for "interactive content")
         # and includes audioType:"SPEECH" in the input configuration.
-        await self._send_event(
+        await self._send_event_locked(
+            write_lock,
             stream,
             {
                 "event": {
@@ -1254,33 +1385,189 @@ class NovaAudio:
             },
         )
 
-        sender_task = asyncio.create_task(self._audio_sender(stream, audio_iterator, prompt_name, content_name))
+        sender_task = asyncio.create_task(
+            self._audio_sender(stream, audio_iterator, prompt_name, content_name, write_lock)
+        )
+
+        # FEAT-536 TASK-2940: tool-coordinator state — local to this
+        # stream_voice() call, never on ``self`` (shared-mixin rationale
+        # above). Replaces the "queue and flush on next non-tool event"
+        # model (FEAT-416 TASK-2148): a call is admitted (execution starts)
+        # the instant its contentEnd(TOOL) is parsed, as its own
+        # ``asyncio.Task`` — the coordinator loop below then races the next
+        # provider event against every in-flight tool task so it "wakes"
+        # on whichever completes first (spec §2: "the coordinator consumes
+        # both provider events and completed tool jobs; it must wake when
+        # a tool finishes even if no new provider event arrives").
+        admitted_ids: set[str] = set()  # every ID ever admitted — dedup guard, IDs scoped to this stream
+        running_tasks: Dict[str, "asyncio.Task[LiveVoiceResponse]"] = {}  # tool_use_id -> in-flight task
+        queued_tools: List[tuple] = []  # admitted but waiting for a concurrency slot: (LiveToolCall, raw_input)
+        max_concurrent_tools = 4 if parallel_tool_execution else 1
+        MAX_UNFINISHED_TOOLS = 32  # spec §2: "Bound admitted unfinished calls to 32 per stream"
+
+        def _start_queued_tools() -> None:
+            """Promote queued calls into running tasks up to the
+            concurrency cap. Same-instance serialization beyond this
+            numeric cap is the manager's own per-instance lock (TASK-2938)
+            — this coordinator does not track tool-instance identity."""
+            while queued_tools and len(running_tasks) < max_concurrent_tools:
+                next_pending, next_raw_input = queued_tools.pop(0)
+                running_tasks[next_pending.id] = asyncio.create_task(
+                    self._execute_and_deliver_tool(
+                        next_pending,
+                        next_raw_input,
+                        stream=stream,
+                        prompt_name=prompt_name,
+                        write_lock=write_lock,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        user_id=user_id,
+                        permission_context=permission_context,
+                    )
+                )
+
+        def _admit_tool(pending: LiveToolCall, raw_input: Optional[str]) -> Optional[LiveVoiceResponse]:
+            """Admit a fully-parsed contentEnd(TOOL) call immediately.
+
+            Returns a controlled overload-error :class:`LiveVoiceResponse`
+            to yield when the 32-unfinished bound is exceeded; ``None`` on
+            success (including a silently-ignored duplicate — spec §2: "A
+            duplicate completion for an already admitted ID must not
+            re-execute it").
+            """
+            if pending.id in admitted_ids:
+                self.logger.warning(
+                    "Nova Sonic session %s: duplicate contentEnd(TOOL) for "
+                    "already-admitted id=%s — ignored, not re-executed.",
+                    session_id,
+                    pending.id,
+                )
+                return None
+            if len(running_tasks) + len(queued_tools) >= MAX_UNFINISHED_TOOLS:
+                pending.error = f"Rejected: {MAX_UNFINISHED_TOOLS} in-flight tool calls already admitted this stream."
+                self.logger.warning(
+                    "Nova Sonic session %s: tool admission bound (%d) exceeded — rejecting id=%s.",
+                    session_id,
+                    MAX_UNFINISHED_TOOLS,
+                    pending.id,
+                )
+                return LiveVoiceResponse(
+                    text="",
+                    tool_calls=[pending],
+                    is_complete=False,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                    metadata={"tool_status": "overloaded"},
+                )
+            admitted_ids.add(pending.id)
+            # Arrival order preserved here — REGARDLESS of completion
+            # order below (spec §2: "Arrival order remains available for
+            # the final snapshot").
+            tool_calls_list.append(pending)
+            queued_tools.append((pending, raw_input))
+            _start_queued_tools()
+            return None
+
+        async def _harvest_finished_tools(done_tasks: "set[asyncio.Task]") -> List[LiveVoiceResponse]:
+            """Collect finished tool tasks: update usage, free their
+            running-slot, promote the next queued call, and return their
+            responses IN COMPLETION ORDER (spec §2: "result delivery
+            follows completion order with stable IDs")."""
+            responses: List[LiveVoiceResponse] = []
+            for finished in done_tasks:
+                tool_use_id = next((tid for tid, t in running_tasks.items() if t is finished), None)
+                if tool_use_id is not None:
+                    del running_tasks[tool_use_id]
+                response = await finished  # already done — retrieves result/re-raises
+                usage.tool_calls_executed += 1
+                for tc in response.tool_calls:
+                    usage.tool_execution_time_ms += tc.execution_time_ms
+                responses.append(response)
+            _start_queued_tools()
+            return responses
+
+        async def _drain_admitted_tools() -> AsyncIterator[LiveVoiceResponse]:
+            """Settle every admitted-but-unfinished tool call before a
+            final snapshot or teardown (spec §2: "On normal provider
+            completion, settle admitted work and result sends before the
+            final snapshot").
+
+            Respects the SAME concurrency cap as normal admission —
+            draining does not blow the cap open (a provider that sends
+            ``completionEnd`` while several calls are still queued must
+            not suddenly cause them all to run at once, silently
+            abandoning the default's "one at a time" ordering guarantee).
+            It simply keeps awaiting completions and promoting the next
+            queued call — via :meth:`_harvest_finished_tools`'s own
+            ``_start_queued_tools()`` call — until both ``running_tasks``
+            and ``queued_tools`` are empty.
+            """
+            _start_queued_tools()  # fill any currently-unfilled slot
+            while running_tasks or queued_tools:
+                if not running_tasks:
+                    # Nothing running but calls remain queued — cannot
+                    # happen with cap >= 1, but never spin forever.
+                    break
+                done, _pending_set = await asyncio.wait(running_tasks.values(), return_when=asyncio.FIRST_COMPLETED)
+                for response in await _harvest_finished_tools(done):
+                    yield response
+
+        # Reads exactly one event per call — wrapped in its own Task so the
+        # coordinator loop below can race it against in-flight tool tasks
+        # via asyncio.wait(FIRST_COMPLETED). A private sentinel (not None,
+        # which is a valid audio-sender value elsewhere) marks a clean
+        # StopAsyncIteration so the loop can tell "stream ended" apart from
+        # "next event is falsy".
+        _STREAM_END = object()
+        events_iter = self._iter_events(stream)
+
+        async def _read_next_event():
+            try:
+                return await events_iter.__anext__()
+            except StopAsyncIteration:
+                return _STREAM_END
+
+        next_event_task: "asyncio.Task" = asyncio.create_task(_read_next_event())
+        exited_via_explicit_break = False  # True for reconnect/completionEnd breaks; False for _STREAM_END
 
         try:
-            async for event in self._iter_events(stream):
+            while True:
+                done, _pending_set = await asyncio.wait(
+                    {next_event_task, *running_tasks.values()}, return_when=asyncio.FIRST_COMPLETED
+                )
+
+                # Deliver finished tool results FIRST and promptly — the
+                # whole point of this coordinator (spec §2: "the
+                # coordinator consumes both provider events and completed
+                # tool jobs"). Never blocks on the next provider event.
+                tool_tasks_done = done - {next_event_task}
+                for tool_response in await _harvest_finished_tools(tool_tasks_done):
+                    yield tool_response
+
+                if next_event_task not in done:
+                    # Only tool task(s) completed this round — go straight
+                    # back to waiting; do not fabricate a provider event.
+                    continue
+
+                event = next_event_task.result()
+                if event is _STREAM_END:
+                    break
+                # Schedule reading the NEXT provider event immediately —
+                # before any per-event handling below, so a slow tool
+                # handler never delays the read.
+                next_event_task = asyncio.create_task(_read_next_event())
                 if time.monotonic() - connection_start >= self._CONNECTION_LIMIT_SECONDS:
-                    # Code-review fix (FEAT-416 TASK-2148/2152): flush any
-                    # tool queued-but-not-yet-executed (TASK-2148 defers
-                    # execution from contentEnd(TOOL) to the next non-tool
-                    # event) before tearing down for reconnect — otherwise
-                    # the 8-minute connection limit landing in that window
-                    # would silently drop the tool call: never executed,
-                    # its result never sent to Nova.
-                    if turn_state.pending_tools:
-                        for tool_response in await self._flush_pending_tools(
-                            stream,
-                            prompt_name,
-                            turn_state.pending_tools,
-                            tool_calls_list,
-                            usage,
-                            session_id,
-                            turn_id,
-                            user_id,
-                            parallel_tool_execution,
-                            permission_context,
-                        ):
-                            yield tool_response
-                        turn_state.pending_tools = []
+                    # FEAT-536 TASK-2940: settle every admitted-but-
+                    # unfinished tool call before tearing down for
+                    # reconnect — otherwise the 8-minute connection limit
+                    # landing mid-flight would silently drop a call: never
+                    # executed, its result never sent to Nova (same
+                    # requirement the old "flush before teardown" fix
+                    # addressed, TASK-2148/2152 — now via the coordinator's
+                    # own drain instead of a pending_tools queue).
+                    async for tool_response in _drain_admitted_tools():
+                        yield tool_response
 
                     self.logger.info(
                         "Nova Sonic session %s approaching 8-minute connection " "limit — signalling reconnect.",
@@ -1296,6 +1583,7 @@ class NovaAudio:
                         turn_id=turn_id,
                         user_id=user_id,
                     )
+                    exited_via_explicit_break = True
                     break
 
                 # Log every received event type for diagnostics.
@@ -1304,29 +1592,6 @@ class NovaAudio:
                     "Nova Sonic event: %s",
                     ", ".join(event_keys) if event_keys else list(event.keys()),
                 )
-
-                # FEAT-416 (TASK-2148): flush any queued tool-call batch
-                # before handling a non-tool event, so all tool results are
-                # sent back before the model resumes (Nova Sonic protocol
-                # requirement) — this is the "next non-tool event" boundary
-                # described in spec §3 Module 4. No-op when nothing is
-                # queued (the default, single-tool-at-a-time case).
-                is_tool_event = "toolUse" in event or (event.get("contentEnd") or {}).get("type") == "TOOL"
-                if not is_tool_event and turn_state.pending_tools:
-                    for tool_response in await self._flush_pending_tools(
-                        stream,
-                        prompt_name,
-                        turn_state.pending_tools,
-                        tool_calls_list,
-                        usage,
-                        session_id,
-                        turn_id,
-                        user_id,
-                        parallel_tool_execution,
-                        permission_context,
-                    ):
-                        yield tool_response
-                    turn_state.pending_tools = []
 
                 content_start = event.get("contentStart")
                 if content_start:
@@ -1437,26 +1702,34 @@ class NovaAudio:
                     pending = turn_state.pending_tool
                     if pending is None:
                         # No stashed call for this contentEnd(TOOL) — ignore
-                        # rather than raise.
+                        # rather than raise (spec §2: "Reject malformed or
+                        # uncorrelatable input with a controlled protocol/
+                        # tool error" — there is nothing to correlate this
+                        # contentEnd to, so it is dropped, not executed).
                         continue
 
-                    # FEAT-416 (TASK-2148): queue the completed tool call
-                    # instead of executing it immediately — Nova may send
-                    # several toolUse/contentEnd(TOOL) pairs back-to-back
-                    # before the next non-tool event, and the queue lets
-                    # them execute concurrently (parallel_tool_execution)
-                    # when there's more than one. Execution + result-sending
-                    # happens in _flush_pending_tools(), triggered at the
-                    # next non-tool event boundary above — for the default
-                    # single-tool case that's immediate (this loop's very
-                    # next iteration sees a non-tool event), so behavior is
-                    # unchanged from the previous synchronous-execute path.
-                    turn_state.pending_tools.append((pending, turn_state.pending_tool_raw_input))
+                    # FEAT-536 TASK-2940: admit — and start executing —
+                    # immediately, instead of queueing for a later "next
+                    # non-tool event" flush (FEAT-416 TASK-2148's old
+                    # behavior, which is exactly the progress risk this
+                    # task fixes: a provider waiting for the tool result
+                    # might never send that next event).
+                    raw_input = turn_state.pending_tool_raw_input
                     turn_state.pending_tool = None
                     turn_state.pending_tool_raw_input = None
+                    if (overload_response := _admit_tool(pending, raw_input)) is not None:
+                        yield overload_response
                     continue
 
                 if "completionEnd" in event or event.get("stopReason") == "END_TURN":
+                    # FEAT-536 TASK-2940 (spec §2): settle every admitted-
+                    # but-unfinished tool call before the final snapshot —
+                    # `tool_calls_list` already has every admitted call in
+                    # ARRIVAL order (populated by `_admit_tool`); draining
+                    # here only fills in `result`/`error` for whichever
+                    # were still running, it does not reorder the list.
+                    async for tool_response in _drain_admitted_tools():
+                        yield tool_response
                     turn_metadata.ended_at = None
                     yield LiveVoiceResponse(
                         text="",
@@ -1468,8 +1741,10 @@ class NovaAudio:
                         turn_id=turn_id,
                         user_id=user_id,
                     )
+                    exited_via_explicit_break = True
                     break
-            else:
+
+            if not exited_via_explicit_break:
                 # Stream ended without a completionEnd event (e.g. server
                 # closed the connection).  Yield a completion so callers
                 # are never left hanging.
@@ -1477,23 +1752,10 @@ class NovaAudio:
                     "Nova Sonic session %s: stream ended without completionEnd",
                     session_id,
                 )
-                # FEAT-416 (TASK-2148): flush any tool batch still queued
+                # FEAT-536 TASK-2940: settle any tool batch still admitted
                 # when the stream ended without a completionEnd boundary.
-                if turn_state.pending_tools:
-                    for tool_response in await self._flush_pending_tools(
-                        stream,
-                        prompt_name,
-                        turn_state.pending_tools,
-                        tool_calls_list,
-                        usage,
-                        session_id,
-                        turn_id,
-                        user_id,
-                        parallel_tool_execution,
-                        permission_context,
-                    ):
-                        yield tool_response
-                    turn_state.pending_tools = []
+                async for tool_response in _drain_admitted_tools():
+                    yield tool_response
                 yield LiveVoiceResponse(
                     text="",
                     is_complete=True,
@@ -1536,6 +1798,21 @@ class NovaAudio:
                 user_id=user_id,
             )
         finally:
+            # FEAT-536 TASK-2940: cancellation-safe coordinator cleanup —
+            # release ownership of the event-reader task and any tool
+            # tasks still in flight (detailed deadline/generation policy
+            # is TASK-2941 scope; this is the baseline "never leak a task,
+            # never write after the transport closes" guarantee). Runs
+            # BEFORE `_end_session()`'s shutdown frames so no coordinator
+            # write can race them.
+            next_event_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await next_event_task
+            for leftover_task in running_tasks.values():
+                leftover_task.cancel()
+            if running_tasks:
+                await asyncio.gather(*running_tasks.values(), return_exceptions=True)
+
             sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sender_task
@@ -1555,6 +1832,7 @@ class NovaAudio:
         audio_iterator: AsyncIterator[bytes],
         prompt_name: str,
         content_name: str,
+        write_lock: Optional[asyncio.Lock] = None,
     ) -> None:
         """Forward PCM audio chunks from *audio_iterator* as ``audioInput``
         event frames.  A ``None`` sentinel marks end-of-turn and exits the
@@ -1573,7 +1851,17 @@ class NovaAudio:
         single shutdown sequence by :meth:`_end_session`, called from
         :meth:`stream_voice`'s ``finally`` block after the model has
         finished responding (or the turn timed out / errored).
+
+        Args:
+            write_lock: The stream-local write lock (FEAT-536 TASK-2940 —
+                spec §2 "Serialize outbound SDK writes with a stream-local
+                mechanism"), shared with the tool coordinator so
+                ``audioInput`` frames never interleave mid-frame with a
+                tool-result send. Optional/defaults to a fresh, private
+                lock when called standalone (e.g. directly from a test) —
+                :meth:`stream_voice` always passes its own shared lock.
         """
+        write_lock = write_lock if write_lock is not None else asyncio.Lock()
         chunks_sent = 0
         try:
             async for chunk in audio_iterator:
@@ -1589,7 +1877,8 @@ class NovaAudio:
                 # before being embedded in the JSON event frame — sending
                 # raw bytes verbatim would both violate the declared wire
                 # format and fail JSON serialization outright.
-                await self._send_event(
+                await self._send_event_locked(
+                    write_lock,
                     stream,
                     {
                         "event": {
