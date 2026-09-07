@@ -1,0 +1,181 @@
+# TASK-2945: Integrate avatar, tool panels and interruption in the Voice UI
+
+**Feature**: FEAT-536 - VoiceBot — Nova dual output and LiveAvatar in the Voice UI
+**Spec**: `sdd/specs/voicebot-liveavatar-implementation.spec.md`
+**Status**: pending
+**Priority**: high
+**Estimated effort**: M (2–4h; target 4h)
+**Depends-on**: TASK-2943, TASK-2944
+**Assigned-to**: unassigned
+**Parallel**: false
+**Parallelism notes**: Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.
+
+---
+
+## Context
+
+Implements §3 Module 5 and contributes to AC1, AC12, AC14, AC15, AC16. The approved spec remains authoritative for cross-task behavior. This task is one bounded deliverable in the single FEAT-536 worktree.
+
+## Scope
+
+- Extend the actual dual_provider.html with Avatar default-off toggle, tenant/optional avatar IDs, video state card, remote audio element, output selection/mute and enable-audio action.
+- Lazy-load the same-origin configured SDK only for avatar use and wire the new controller. Missing SDK/credentials/inactive avatar leaves ordinary voice functional.
+- Send avatar/tenant_id/avatar_id at the top level of existing start_session. Consume current session_started.avatar only; keep the chosen Gemini/Nova route and PCM microphone WebSocket path.
+- Handle display_data and tool_call in shared panels with textContent/JSON fallback, never raw tool HTML. Keep text/events flowing regardless of audio source.
+- Wire the one-source controller callbacks to stop/clear active and queued local PCM, suppress incoming local playback as appropriate and preserve explicit mute.
+- Provider/session changes, avatar disable and page teardown invalidate callbacks and clean media; avatar setting changes also close/restart the server voice session so no billable orphan remains.
+- Add Interrupt / speak-again action using existing start_recording; stop local playback and start fresh recording even while awaiting a response. Do not introduce a new protocol message.
+
+**NOT in scope**: No replacement page, raw-client app changes, SDK dependency change or demo tool implementation.
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `examples/clients/voice/static/dual_provider.html` | MODIFY | Scoped deliverable owned by TASK-2945 |
+
+Only the files above belong to this task, plus its task state and per-spec index. You are not alone in this codebase: preserve others' edits and adapt to completed dependencies. Read-only references below do not grant edit ownership.
+
+## Codebase Contract (Anti-Hallucination)
+
+Re-read and verified on 2026-09-07 against dev `77bd1a50c1282694444e05b4f41ad4138c880ff2`. These are baseline definitions, not invented future APIs. Dependencies may change their lines/signatures: refresh them before implementation.
+
+### Verified Imports
+
+```python
+from aiohttp import web
+from parrot.voice.handler import VoiceChatHandler, WebSocketConnection
+from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
+```
+
+Imports are verified from local definitions/usage, not an all-package runtime smoke. Browser SDK access is through the existing livekit-client package exposed as LivekitClient UMD; the controller accepts an injected SDK in tests.
+
+### Existing Signatures to Use
+
+```python
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:184
+class WebSocketConnection
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:296
+class _AskStreamVoiceClient
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:353
+class _HandlerVoiceSession
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:370
+def build_frames(self, resp, turn_no: int) -> list
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:510
+async def _relay(self, resp, turn_no: int) -> None
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1631
+async def _run_voice_session(self, connection: WebSocketConnection) -> None
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1688
+async def _send_voice_response(self, connection: WebSocketConnection, response: Any) -> None
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:55
+class VoiceAvatarSession
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:223
+async def speak(self, pcm: bytes) -> None
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:235
+async def finish_turn(self) -> None
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:243
+async def interrupt(self) -> None
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:252
+async def aclose(self) -> None
+
+# examples/clients/voice/server.py:116
+def get_weather(location: str) -> str
+
+# examples/clients/voice/server.py:155
+def make_gemini_bot() -> VoiceBot
+
+# examples/clients/voice/server.py:165
+def make_nova_bot() -> VoiceBot
+
+# examples/clients/voice/server.py:239
+async def index_handler(request: web.Request) -> web.Response
+
+# examples/clients/voice/server.py:276
+def build_app() -> web.Application
+
+# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1274
+async def _handle_start_recording(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None
+
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:208
+def viewer_credentials(self) -> dict[str, str]
+```
+
+### Task-specific References
+
+- `examples/clients/voice/static/dual_provider.html` — handleMessage 1112–1158 lacks display_data/tool_call/avatar handling. startSession 1161–1173 sends config only. queueAudioChunk/playStreamingAudio at 1368 onward drive local PCM. Existing startRecording rejects !canSpeak.
+- `examples/clients/voice/static/avatar-viewer.js` — NEW deliverable of this feature; verify dependent task exports before importing.
+- `examples/clients/voice/server.py` — index_handler injects window.__CONFIG__ once; build_app mounts /ws/gemini, /ws/nova and /static/. Existing get_weather returns a plain string; factories copy a shared tool list.
+- `packages/ai-parrot-integrations/src/parrot/voice/handler.py` — display_data.data and tool_call frames at 437–458 and 1749–1778. Avatar request/response at 1150–1214 uses top-level avatar/tenant_id/avatar_id and viewer credentials. start_recording currently invokes start_turn without avatar interruption.
+- `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py` — viewer_credentials returns only livekit_url/client_token/room. speak forwards 24 kHz PCM unchanged. Session teardown method is aclose(), not close().
+
+### Does NOT Exist
+
+- No root parrot/ source tree; use workspace package paths. No model-native JSON-schema voice output is added.
+- No shared last-result storage or LiveVoiceResponse.display_data attribute; structured output uses response.metadata["display_data"].
+- The demo avatar controller and /voice-assets/livekit-client.umd.js route are NEW; no existing exports or route should be assumed.
+- The admin Svelte viewer is not importable into standalone HTML. No second REST avatar session or microphone publication is allowed.
+
+## Implementation Notes
+
+### Pattern to Follow
+
+Use the task-specific source anchors and spec §2 behavior. Preserve existing execution/transport ownership. Keep helpers typed and private where possible; match Python black and frontend prettier conventions.
+
+### Key Constraints
+
+- No new dependencies or unrelated refactors. No production change to AbstractClient or GeminiLiveClient.
+- Keep secrets/permission objects out of provider arguments, browser panels and logs.
+- Follow the task DAG and file ownership above; report cross-scope failures to the owning task.
+- Save exact verification commands and results under artifacts/logs/ and reference them in completion notes.
+
+## Acceptance Criteria
+
+- [ ] Both provider choices use the same avatar/event code with correct top-level request fields.
+- [ ] The page renders avatar video and tools/structured JSON together and avoids stale session updates.
+- [ ] Interrupt is reachable while a response is active; provider/Avatar toggles close the old session and cleanup before reuse.
+- [ ] Focused controller tests pass; served-page automated scenarios are delivered by TASK-2947.
+- [ ] Scoped tests and relevant regressions pass; evidence is recorded, not inferred from source inspection.
+
+## Test Specification
+
+- Manual local fake-transport smoke of the served HTML and controller integration; record observations without claiming a real-live pass.
+
+Use behavioral fixtures with real tools/manager where that path is under test. Mock only provider/transport boundaries for conformance. Event gates and patched deadlines should replace timing-sensitive sleeps. Browser tests load the actual demo page. No live test runs are required for automated CI.
+
+Commands to run from the feature worktree using its configured environment (capture output in artifacts/logs/):
+
+```bash
+pnpm --dir packages/ai-parrot-server/ui test src/lib/utils/voice-demo-avatar.test.ts
+```
+
+Missing optional SDK/browser/live credentials are prerequisites to record explicitly; they cannot be reported as passing verification. For the operational acceptance task, the live matrix itself is mandatory and completion remains pending until all required scenarios pass.
+
+## Agent Instructions
+
+1. Read the approved spec and this task; check dependencies in the per-spec index.
+2. Refresh the Codebase Contract before writing code; verify new dependency exports rather than assuming them.
+3. Update status to in-progress with assignment/start timestamp in `sdd/tasks/index/voicebot-liveavatar-implementation.json` only; do not use the historical monolithic index.
+4. Implement only owned files and run the required behavioral verification.
+5. Perform the repository task review workflow; resolve findings within scope.
+6. Once acceptance passes, move this file to sdd/tasks/completed/ and set its per-spec entry to done with completion timestamp and updated path.
+7. Fill in the Completion Note with code/test evidence and deviations. Do not mark done merely because work was attempted or a required live scenario was not run.
+
+## Completion Note
+
+Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+
+**Completed by**: unassigned
+**Date**: pending
+**Notes**: pending
+**Deviations from spec**: none recorded
