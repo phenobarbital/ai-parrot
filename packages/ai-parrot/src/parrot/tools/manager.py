@@ -7,7 +7,7 @@ import logging
 from enum import Enum
 import aiohttp
 import pandas as pd
-from .abstract import AbstractTool, ToolResult
+from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
 from .compression import (
     codecs as _compression_codecs,
@@ -1561,6 +1561,11 @@ class ToolManager(MCPToolManagerMixin):
         """
         if tool_name not in self._tools:
             return ToolResult(success=False, status="not_found", error=f"Tool '{tool_name}' not found", result=None)
+        # FEAT-536 TASK-2938: only set once the AbstractTool full-result
+        # branch below has actually acquired the tool instance's lock —
+        # released in the `finally` at the bottom of this method, covering
+        # every exit path (return or exception) while it is held.
+        full_result_lock: Optional[asyncio.Lock] = None
         try:
             tool = self._tools[tool_name]
             tool_kind = "tool_definition" if isinstance(tool, ToolDefinition) else "abstract_tool"
@@ -1728,6 +1733,20 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
+                if return_tool_result:
+                    # FEAT-536 TASK-2938: serialize complete-result calls to
+                    # THIS instance — from pipeline stamping (right below)
+                    # through `tool.execute()` through result copying in
+                    # `_finish_abstract_tool_full_result()` — because a
+                    # `ToolManager.clone()` shares tool *instances* by
+                    # reference across managers. Different tool instances
+                    # never contend for each other's lock. Assign to the
+                    # outer `full_result_lock` only AFTER a successful
+                    # acquire, so a cancellation while waiting never
+                    # attempts to release a lock this call never held.
+                    _fr_lock = tool._get_full_result_lock()
+                    await _fr_lock.acquire()
+                    full_result_lock = _fr_lock
                 # Redaction opt-in: stamp the owning agent's flag onto the tool
                 # so AbstractTool.execute() scrubs only for flagged agents.
                 if self.enable_redaction and not tool.enable_redaction:
@@ -1926,6 +1945,13 @@ class ToolManager(MCPToolManagerMixin):
         except Exception as e:
             self.logger.error("Error executing tool %s: %s", tool_name, e)
             raise
+        finally:
+            # FEAT-536 TASK-2938: release the complete-result lock (if this
+            # call actually acquired one) on every exit path — normal
+            # return, early guard-denial return, or an exception/
+            # CancelledError propagating out of the try block above.
+            if full_result_lock is not None:
+                full_result_lock.release()
 
     async def register_a2a_agent(self, url: str) -> RegisteredAgent:
         """
@@ -2087,9 +2113,20 @@ class ToolManager(MCPToolManagerMixin):
           exactly once, before compression — on a **copied** metadata
           dict so the tool-owned envelope's ``metadata`` is never
           mutated. Compression runs on ``result`` only;
-          ``voice_text``/``display_data`` are never compressed. Returns
-          ``result.model_copy(update=...)`` — a new envelope, not the
-          original instance.
+          ``voice_text``/``display_data`` are never compressed but DO
+          run through the tool's configured TOOL_OUTPUT guard/redaction
+          helper (FEAT-536 TASK-2938) when
+          ``tool.enable_redaction or tool._has_tool_output_guardrails()``
+          — the same gate ``AbstractTool.execute()`` already uses for
+          ``result``/``error``/``metadata`` (never processed twice here;
+          only the two newly-exposed fields are handled in this method).
+          A ``display_data`` value that no longer has dict shape after
+          guardrail processing is suppressed (``None``) rather than
+          forwarded; a field whose processing itself raises is likewise
+          suppressed and a controlled note is added to
+          ``metadata["output_guard_errors"]`` — the original unsafe value
+          is never returned. Returns ``result.model_copy(update=...)`` —
+          a new envelope, not the original instance.
 
         Args:
             tool_name: Registered tool name (dispatch key).
@@ -2149,8 +2186,79 @@ class ToolManager(MCPToolManagerMixin):
         meta.update(comp_meta)
 
         # voice_text/display_data are intentionally NOT passed through
-        # compression — the copied envelope below carries them unchanged.
-        return result.model_copy(update={"result": compressed_out, "metadata": meta})
+        # compression, but — when output guardrails/redaction are
+        # configured for this tool — DO go through the same TOOL_OUTPUT
+        # guard helper `AbstractTool.execute()` already applies to
+        # result/error/metadata (FEAT-536 TASK-2938). This is the ONLY
+        # place these two newly-exposed fields are processed; result/
+        # error/metadata are never re-processed here (already handled
+        # once inside `tool.execute()` above, before this method ran).
+        voice_text = result.voice_text
+        display_data = result.display_data
+        if voice_text is not None or display_data is not None:
+            if tool.enable_redaction or tool._has_tool_output_guardrails():
+                pipeline = tool._tool_output_pipeline
+                flag_reports: Dict[str, Dict[str, Any]] = {}
+                output_guard_errors: Dict[str, str] = {}
+
+                if voice_text is not None:
+                    try:
+                        processed_voice, reports = await _run_tool_output_guardrails(pipeline, voice_text, tool_name)
+                        if isinstance(processed_voice, str):
+                            voice_text = processed_voice
+                            flag_reports.update(reports)
+                        else:
+                            # Guardrail processing changed the field's
+                            # shape (should not happen for a str input,
+                            # but never forward an unexpected type) —
+                            # suppress rather than risk leaking it raw.
+                            voice_text = None
+                            output_guard_errors["voice_text"] = "suppressed: unexpected type after guard processing"
+                    except Exception as guard_exc:  # noqa: BLE001
+                        self.logger.warning(
+                            "Output guardrail failed for voice_text on %s: %s",
+                            tool_name,
+                            guard_exc,
+                        )
+                        voice_text = None
+                        output_guard_errors["voice_text"] = f"suppressed: {guard_exc}"
+
+                if display_data is not None:
+                    try:
+                        processed_display, reports = await _run_tool_output_guardrails(
+                            pipeline, display_data, tool_name
+                        )
+                        if isinstance(processed_display, dict):
+                            display_data = processed_display
+                            flag_reports.update(reports)
+                        else:
+                            # Lost its dict shape after blocking/redaction
+                            # — suppress rather than forward the original
+                            # unsafe (or now-malformed) value.
+                            display_data = None
+                            output_guard_errors["display_data"] = "suppressed: not a dict after guard processing"
+                    except Exception as guard_exc:  # noqa: BLE001
+                        self.logger.warning(
+                            "Output guardrail failed for display_data on %s: %s",
+                            tool_name,
+                            guard_exc,
+                        )
+                        display_data = None
+                        output_guard_errors["display_data"] = f"suppressed: {guard_exc}"
+
+                if flag_reports:
+                    meta.setdefault("guardrails", {}).update(flag_reports)
+                if output_guard_errors:
+                    meta["output_guard_errors"] = output_guard_errors
+
+        return result.model_copy(
+            update={
+                "result": compressed_out,
+                "metadata": meta,
+                "voice_text": voice_text,
+                "display_data": display_data,
+            }
+        )
 
     def _postprocess_result(self, tool_name: str, out: Any, meta: Dict[str, Any]) -> None:
         """Auto-share DataFrame outputs and push to PythonPandasTool."""

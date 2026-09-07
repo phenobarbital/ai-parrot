@@ -1,4 +1,5 @@
-"""Unit tests for FEAT-536 TASK-2937 — opt-in complete ToolResult execution.
+"""Unit tests for FEAT-536 TASK-2937/TASK-2938 — opt-in complete ToolResult
+execution, output-field guard processing, and shared-instance isolation.
 
 Adds ``ToolManager.execute_tool(..., return_tool_result=True)``: a
 keyword-only, opt-in option. Default-mode (``return_tool_result=False``,
@@ -9,15 +10,16 @@ the guardrail/grant/confirmation/resolver stubs needed to observe
 enforcement order and denial statuses (same pattern as
 ``test_tooldefinition_enforcement.py`` and ``test_toolmanager_confirmation.py``).
 
-Test names below are the task's required target tests (§ Test
-Specification, TASK-2937); each is implemented as a class grouping the
-scenarios that make up that behavioral guarantee.
+Test names below are the tasks' required target tests (§ Test
+Specification, TASK-2937/TASK-2938); each is implemented as a class
+grouping the scenarios that make up that behavioral guarantee.
 """
 
 from __future__ import annotations
 
+import asyncio
 import threading
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -581,3 +583,362 @@ class TestFullResultHooksOnceBeforeCompression:
         assert isinstance(result, ToolResult)
         assert result.result == "1"
         assert thread_ids["tool"] != thread_ids["test"]  # ran off the event loop thread
+
+
+# ── TASK-2938 fixtures: voice/display output-guard processing ────────────
+
+
+class _GuardedVoiceTool(AbstractTool):
+    """Minimal AbstractTool isolating voice_text/display_data output-guard
+    behavior. ``result``/``error``/``metadata`` are intentionally empty/
+    None so ``AbstractTool.execute()``'s own (separate, pre-existing)
+    result/error/metadata scrub gate never fires — keeping these fixtures'
+    assertions about voice_text/display_data uncontaminated by that
+    unrelated pipeline."""
+
+    name = "guarded_voice_tool"
+    description = "Returns only voice_text/display_data, for output-guard tests."
+
+    def __init__(self, voice_text: str | None = None, display_data: dict | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self._voice_text = voice_text
+        self._display_data = display_data
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        return ToolResult(
+            success=True,
+            status="success",
+            result=None,
+            voice_text=self._voice_text,
+            display_data=self._display_data,
+        )
+
+
+class _TransformVoiceGuardrail(Guardrail):
+    name = "transform_voice"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 50
+    on_error = "fail_open"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.TRANSFORM, content=content.replace("SECRET-123", "[redacted]"))
+
+
+class _BlockVoiceGuardrail(Guardrail):
+    name = "block_voice"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 10
+    on_error = "fail_closed"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.BLOCK, reason="sensitive content")
+
+
+class _FlagVoiceGuardrail(Guardrail):
+    name = "flag_voice"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 200
+    on_error = "fail_open"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.FLAG, report={"note": "flagged"})
+
+
+class _DisplayDataScrubGuardrail(Guardrail):
+    """Non-str escape hatch (see ``GuardrailPipeline.guardrails`` docstring):
+    redacts a ``"secret"`` key from dict payloads, preserving dict shape."""
+
+    name = "display_scrub"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 50
+    on_error = "fail_open"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.PASS)  # never called for dict values
+
+    def scrub(self, value: Any, tool_name: str | None = None) -> Any:
+        if isinstance(value, dict):
+            redacted = dict(value)
+            redacted.pop("secret", None)
+            return redacted
+        return value
+
+
+class _MalformedDisplayScrubGuardrail(Guardrail):
+    """Simulates a misbehaving guardrail whose ``scrub()`` returns a
+    non-dict on success (no exception) — must be suppressed, not forwarded."""
+
+    name = "malformed_display_scrub"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 50
+    on_error = "fail_open"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.PASS)
+
+    def scrub(self, value: Any, tool_name: str | None = None) -> Any:
+        return "not-a-dict-anymore"
+
+
+class _BoomDisplayScrubGuardrail(Guardrail):
+    """``scrub()`` raises; ``on_error="fail_closed"`` — the existing
+    ``_run_tool_output_guardrails()`` helper itself replaces the value with
+    a safe placeholder dict (never the original sensitive value)."""
+
+    name = "boom_display_scrub"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+    priority = 50
+    on_error = "fail_closed"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.PASS)
+
+    def scrub(self, value: Any, tool_name: str | None = None) -> Any:
+        raise RuntimeError("scrub boom")
+
+
+class _BoomPipeline:
+    """Duck-typed pipeline whose `.guardrails` property raises — used to
+    prove a genuinely-raised processing exception is caught and suppressed
+    by ``_finish_abstract_tool_full_result()``, not left to propagate with
+    the original unsafe value forwarded."""
+
+    has_guardrails = True
+
+    @property
+    def guardrails(self):
+        raise RuntimeError("pipeline boom")
+
+
+# ── test_full_result_output_fields_obey_guards ────────────────────────────
+
+
+class TestFullResultOutputFieldsObeyGuards:
+    """Transform/block/flag and processing-error fixtures prove no original
+    sensitive voice/display field escapes when output guardrails/redaction
+    are configured (FEAT-536 TASK-2938)."""
+
+    @pytest.mark.asyncio
+    async def test_voice_text_transform(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(voice_text="token=SECRET-123 please speak this")
+        tm._tool_output_pipeline = _pipeline_with(_TransformVoiceGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert "SECRET-123" not in result.voice_text
+        assert "[redacted]" in result.voice_text
+
+    @pytest.mark.asyncio
+    async def test_voice_text_block_uses_safe_placeholder(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(voice_text="the sensitive number is 12345")
+        tm._tool_output_pipeline = _pipeline_with(_BlockVoiceGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert result.voice_text is not None  # a safe placeholder — still speakable
+        assert "12345" not in result.voice_text
+        assert "removed" in result.voice_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_voice_text_flag_recorded_in_metadata(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(voice_text="ordinary text")
+        tm._tool_output_pipeline = _pipeline_with(_FlagVoiceGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert result.voice_text == "ordinary text"  # FLAG doesn't alter content
+        assert result.metadata["guardrails"]["flag_voice"] == {"note": "flagged"}
+
+    @pytest.mark.asyncio
+    async def test_display_data_scrub_removes_secret_key(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(display_data={"secret": "sk-abc123", "chart": "bar"})
+        tm._tool_output_pipeline = _pipeline_with(_DisplayDataScrubGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert "secret" not in result.display_data
+        assert result.display_data["chart"] == "bar"
+
+    @pytest.mark.asyncio
+    async def test_display_data_suppressed_when_no_longer_a_dict(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(display_data={"secret": "sk-abc123"})
+        tm._tool_output_pipeline = _pipeline_with(_MalformedDisplayScrubGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert result.display_data is None  # suppressed — never forwarded as a non-dict
+        assert "sk-abc123" not in str(result.metadata)
+        assert result.metadata["output_guard_errors"]["display_data"]
+
+    @pytest.mark.asyncio
+    async def test_display_data_fail_closed_scrub_error_never_leaks_original(self):
+        tm = _tool_manager()
+        original = {"secret": "sk-abc123", "chart": "bar"}
+        tool_instance = _GuardedVoiceTool(display_data=dict(original))
+        tm._tool_output_pipeline = _pipeline_with(_BoomDisplayScrubGuardrail())
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        # `_run_tool_output_guardrails()`'s own fail_closed handling
+        # replaces the value with a safe placeholder dict (still
+        # dict-shaped, so this manager code forwards it as-is) — the
+        # original sensitive value never escapes either way.
+        assert result.display_data != original
+        assert "sk-abc123" not in str(result.display_data)
+
+    @pytest.mark.asyncio
+    async def test_display_data_processing_exception_is_suppressed_not_leaked(self):
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(display_data={"secret": "sk-abc123"})
+        tm._tool_output_pipeline = _BoomPipeline()
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert result.display_data is None
+        assert "sk-abc123" not in str(result.metadata)
+        assert "display_data" in result.metadata["output_guard_errors"]
+
+    @pytest.mark.asyncio
+    async def test_no_guard_configuration_leaves_fields_untouched(self):
+        """No pipeline/no enable_redaction: matches AbstractTool.execute()'s
+        own gate — voice_text/display_data pass through unprocessed."""
+        tm = _tool_manager()
+        tool_instance = _GuardedVoiceTool(voice_text="hello", display_data={"a": 1})
+        tm.register_tool(tool_instance)
+
+        result = await tm.execute_tool(tool_instance.name, {}, return_tool_result=True)
+
+        assert result.voice_text == "hello"
+        assert result.display_data == {"a": 1}
+
+
+# ── test_full_result_shared_tool_context_isolation ────────────────────────
+
+
+class _GatedTool(AbstractTool):
+    """Blocks in ``_execute`` until ``gate`` is set; records the
+    ``_current_pctx`` snapshot observed at each entry, and signals
+    ``entered`` the instant it starts running — used to prove full-mode
+    calls to the SAME instance serialize (never overlap inside
+    ``_execute``) while calls to DIFFERENT instances do not contend."""
+
+    name = "gated_tool"
+    description = "Blocks on a gate; records entry pctx snapshots."
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.gate = asyncio.Event()
+        self.entered = asyncio.Event()
+        self.observed: list[Any] = []
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        self.observed.append(self._current_pctx)
+        self.entered.set()
+        await self.gate.wait()
+        return ToolResult(status="success", result="done")
+
+
+class TestFullResultSharedToolContextIsolation:
+    """Two cloned managers sharing one tool instance cannot overlap mutable
+    permission/pipeline state; distinct tool instances run concurrently;
+    cancellation releases the lock so a following invocation completes."""
+
+    @pytest.mark.asyncio
+    async def test_shared_instance_serializes_full_mode_calls(self):
+        tm1 = _tool_manager()
+        tool_instance = _GatedTool()
+        tm1.register_tool(tool_instance)
+        tm2 = tm1.clone()  # shares the SAME tool instance by reference
+
+        # AbstractTool.execute() unconditionally reads `pctx.trace_context`
+        # when a permission_context is supplied — a bare `object()` (fine
+        # for the ToolDefinition-path tests above, which never reach
+        # `tool.execute()`) would blow up here, so use a minimal stub.
+        class _Ctx:
+            trace_context = None
+
+        ctx_a = _Ctx()
+        ctx_b = _Ctx()
+
+        task_a = asyncio.create_task(
+            tm1.execute_tool("gated_tool", {}, permission_context=ctx_a, return_tool_result=True)
+        )
+        await asyncio.wait_for(tool_instance.entered.wait(), timeout=1)
+        tool_instance.entered.clear()
+
+        task_b = asyncio.create_task(
+            tm2.execute_tool("gated_tool", {}, permission_context=ctx_b, return_tool_result=True)
+        )
+        # task_b must be waiting on the LOCK — not yet inside _execute —
+        # while task_a is still mid-flight (blocked on the gate).
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(tool_instance.entered.wait(), timeout=0.2)
+        assert tool_instance.observed == [ctx_a]  # only task_a has entered so far
+        assert tool_instance._current_pctx is ctx_a  # not clobbered by task_b
+
+        tool_instance.gate.set()
+        result_a = await task_a
+        assert result_a.status == "success"
+
+        # Now that task_a released the lock, task_b can enter and complete.
+        await asyncio.wait_for(tool_instance.entered.wait(), timeout=1)
+        result_b = await task_b
+        assert result_b.status == "success"
+        assert tool_instance.observed == [ctx_a, ctx_b]
+
+    @pytest.mark.asyncio
+    async def test_different_instances_run_concurrently(self):
+        tm = _tool_manager()
+        tool_a = _GatedTool()
+        tool_a.name = "gated_tool_a"
+        tool_b = _GatedTool()
+        tool_b.name = "gated_tool_b"
+        tm.register_tool(tool_a)
+        tm.register_tool(tool_b)
+
+        task_a = asyncio.create_task(tm.execute_tool("gated_tool_a", {}, return_tool_result=True))
+        task_b = asyncio.create_task(tm.execute_tool("gated_tool_b", {}, return_tool_result=True))
+
+        # Both enter without waiting on each other — no cross-instance lock.
+        await asyncio.wait_for(tool_a.entered.wait(), timeout=1)
+        await asyncio.wait_for(tool_b.entered.wait(), timeout=1)
+
+        tool_a.gate.set()
+        tool_b.gate.set()
+        result_a = await task_a
+        result_b = await task_b
+        assert result_a.status == "success"
+        assert result_b.status == "success"
+
+    @pytest.mark.asyncio
+    async def test_cancellation_releases_lock_for_next_invocation(self):
+        tm = _tool_manager()
+        tool_instance = _GatedTool()
+        tm.register_tool(tool_instance)
+
+        task = asyncio.create_task(tm.execute_tool("gated_tool", {}, return_tool_result=True))
+        await asyncio.wait_for(tool_instance.entered.wait(), timeout=1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # A following full-mode call on the SAME instance must not
+        # deadlock — the cancelled call's `finally` released the lock.
+        tool_instance.entered.clear()
+        tool_instance.gate.set()  # already set — the next call falls through
+        result = await asyncio.wait_for(tm.execute_tool("gated_tool", {}, return_tool_result=True), timeout=2)
+        assert result.status == "success"
+        assert result.result == "done"

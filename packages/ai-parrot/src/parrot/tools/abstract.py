@@ -540,6 +540,41 @@ class AbstractTool(EventEmitterMixin, ABC):
                 await self._open()
                 self._opened = True
 
+    # ── FEAT-536 TASK-2938: complete-result (opt-in) instance lock ─────────
+
+    def _get_full_result_lock(self) -> asyncio.Lock:
+        """Return this instance's lazily-created complete-result lock.
+
+        ``ToolManager.execute_tool(..., return_tool_result=True)``
+        (FEAT-536 Module 1) serializes complete-result calls to the SAME
+        ``AbstractTool`` instance — from pipeline stamping
+        (``enable_redaction``/``_tool_output_pipeline``, stamped by the
+        manager just before dispatch) through ``execute()`` (which sets
+        the shared, unlocked :attr:`_current_pctx`) through result
+        copying — because managers created via :meth:`ToolManager.clone`
+        share the same tool *instances* by reference (per-user session
+        isolation clones the manager, not its tools). Different tool
+        instances are never serialized against each other, and ordinary
+        (non-opt-in) calls never touch this lock at all — concurrency
+        semantics there are unchanged.
+
+        Lazily created (not a class attribute, not eagerly built in
+        ``__init__``): only instances that actually receive an opt-in
+        complete-result call ever allocate one. Safe to create with a
+        plain attribute check-and-set here — this runs on a single
+        cooperatively-scheduled event loop thread with no ``await``
+        between the check and the assignment, so there is no race window
+        for two coroutines to each create and install their own lock.
+
+        Returns:
+            The per-instance ``asyncio.Lock`` guarding complete-result calls.
+        """
+        lock = getattr(self, "_full_result_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._full_result_lock = lock
+        return lock
+
     @abstractmethod
     async def _execute(self, **kwargs) -> Any:
         """
