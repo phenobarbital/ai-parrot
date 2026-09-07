@@ -1516,6 +1516,8 @@ class ToolManager(MCPToolManagerMixin):
         tool_name: str,
         parameters: Dict[str, Any],
         permission_context: Optional["PermissionContext"] = None,
+        *,
+        return_tool_result: bool = False,
     ) -> Any:
         """Execute a registered tool function.
 
@@ -1530,12 +1532,32 @@ class ToolManager(MCPToolManagerMixin):
                 enforcement parity). If not provided, no new enforcement
                 occurs beyond what was already unconditional (e.g. an
                 unconditional guardrail pipeline).
+            return_tool_result: Keyword-only, opt-in (FEAT-536 TASK-2937).
+                When ``False`` (default), behavior is byte-for-byte
+                unchanged: raw values/exceptions/early statuses, guard
+                order, compression and hook behavior are all preserved
+                exactly as before this option existed. When ``True``,
+                returns the full ``ToolResult`` envelope instead of the
+                reduced payload — ``voice_text``/``display_data`` survive
+                uncompressed, non-success statuses (``error``,
+                ``forbidden``, ``not_found``, ``cancelled``, ``timeout``,
+                ``pending``, ``authorization_required``, ...) are returned
+                rather than raised/reduced, and the returned envelope is a
+                copy with a distinct ``metadata`` dict — the tool-owned
+                instance/envelope is never mutated. Uses the exact same
+                dispatch and enforcement path exactly once; never executes
+                the tool twice or bypasses the manager.
 
         Returns:
-            Tool execution result.
+            Tool execution result — a raw value/exception by default, or
+            a ``ToolResult`` when ``return_tool_result=True``.
 
         Raises:
-            ValueError: If tool not found or execution fails.
+            ValueError: If tool not found or execution fails (default
+                mode only — ``return_tool_result=True`` returns non-success
+                statuses instead of raising, except for resolver/pipeline/
+                dispatch exceptions and ``CancelledError``, which always
+                propagate).
         """
         if tool_name not in self._tools:
             return ToolResult(success=False, status="not_found", error=f"Tool '{tool_name}' not found", result=None)
@@ -1674,6 +1696,29 @@ class ToolManager(MCPToolManagerMixin):
                     )
                 # === End manager-level Layer 2 resolver check ===
 
+                if return_tool_result:
+                    # Opt-in mode (TASK-2937): normalize a raw return into
+                    # ToolResult(status="success", result=value); preserve
+                    # an already-returned ToolResult as-is. Do not
+                    # interpret an arbitrary business dict as an envelope
+                    # merely because it has similar keys — only an actual
+                    # ToolResult instance is treated as one. Retain the
+                    # existing plain-function processing behavior: no
+                    # AbstractTool compression pipeline or result hooks
+                    # are added to plain-function execution in either
+                    # mode. Offload a synchronous function to a thread so
+                    # it cannot block the event loop; default mode below
+                    # remains unchanged (inline synchronous call).
+                    if asyncio.iscoroutinefunction(tool.function):
+                        full_result = await tool.function(**parameters)
+                    else:
+                        full_result = await asyncio.to_thread(tool.function, **parameters)
+
+                    self.logger.debug("Executed tool %r with parameters: %s", tool_name, parameters)
+                    if isinstance(full_result, ToolResult):
+                        return full_result
+                    return ToolResult(status="success", result=full_result)
+
                 if asyncio.iscoroutinefunction(tool.function):
                     result = await tool.function(**parameters)
                 else:
@@ -1775,6 +1820,14 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
                 result = await tool.execute(**exec_kwargs)
+
+                if return_tool_result:
+                    # Opt-in complete-result mode (TASK-2937): use the same
+                    # dispatch above exactly once — never re-execute the
+                    # tool or bypass the manager.
+                    return await self._finish_abstract_tool_full_result(
+                        tool_name, tool, tool_kind, result, permission_context
+                    )
 
                 # Handle ToolResult objects
                 if isinstance(result, ToolResult):
@@ -1998,6 +2051,106 @@ class ToolManager(MCPToolManagerMixin):
             return {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
         except Exception as e:
             return {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
+
+    async def _finish_abstract_tool_full_result(
+        self,
+        tool_name: str,
+        tool: "AbstractTool",
+        tool_kind: str,
+        result: ToolResult,
+        permission_context: Optional["PermissionContext"],
+    ) -> ToolResult:
+        """Opt-in complete-result finish for ``AbstractTool``/``ToolkitTool``.
+
+        (FEAT-536 TASK-2937.) Called once, immediately after
+        ``tool.execute()`` in ``execute_tool(..., return_tool_result=True)``
+        — never a second dispatch. Mirrors the default-mode postprocess /
+        result-hooks / compression pipeline (see the ``isinstance(result,
+        ToolResult)`` block right below this method) but returns the full
+        envelope instead of the reduced ``result.result`` payload:
+
+        - ``forbidden``: returned as-is (already logged by
+          ``AbstractTool.execute()``'s own Layer 2 resolver check —
+          logged here the same way the default branch does, for
+          uniform observability, FEAT-474 G6).
+        - Any other non-success envelope (``status != "success"`` or
+          ``success is not True`` — e.g. ``error``, ``pending``,
+          ``cancelled``, ``timeout``, ``not_found``,
+          ``authorization_required``): returned as-is, full
+          status/error/metadata intact. Never turned into success merely
+          because ``result`` is empty; no success hooks run. The existing
+          error-payload capture (tee) still runs for ``status == "error"``
+          — matching the default branch's tee-before-raise — but the
+          envelope is *returned*, not raised as ``ValueError``.
+        - Successful envelope (``status == "success" and success is
+          True``): extraction/result hooks observe the original payload
+          exactly once, before compression — on a **copied** metadata
+          dict so the tool-owned envelope's ``metadata`` is never
+          mutated. Compression runs on ``result`` only;
+          ``voice_text``/``display_data`` are never compressed. Returns
+          ``result.model_copy(update=...)`` — a new envelope, not the
+          original instance.
+
+        Args:
+            tool_name: Registered tool name (dispatch key).
+            tool: The ``AbstractTool``/``ToolkitTool`` instance just executed.
+            tool_kind: ``"abstract_tool"`` (for ``_log_enforcement``).
+            result: The ``ToolResult`` returned by ``tool.execute()``.
+            permission_context: The context passed to ``execute_tool()``,
+                forwarded to ``_log_enforcement`` for the forbidden case.
+
+        Returns:
+            The full ``ToolResult`` envelope to return to the caller.
+        """
+        if result.status == "forbidden":
+            self._log_enforcement(
+                tool_name,
+                tool_kind,
+                "resolver",
+                "deny",
+                permission_context,
+                result.error,
+            )
+            return result
+
+        is_successful = result.status == "success" and result.success is True
+        if not is_successful:
+            if result.status == "error":
+                # Preserve the existing error-payload capture hook (tee)
+                # where it applies — the full-mode envelope is returned
+                # (not raised), so the payload would otherwise never be
+                # teed anywhere else.
+                try:
+                    self._bind_compression_tee()
+                    await self._compression_tee.store(tool_name, result.result, "error")
+                except Exception as tee_exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "Compression tee failed while capturing error payload for %s: %s",
+                        tool_name,
+                        tee_exc,
+                    )
+            return result
+
+        out = result.result
+        # Distinct metadata dict: hooks/compression mutate this copy, never
+        # the tool-owned `result.metadata` object.
+        meta: Dict[str, Any] = dict(result.metadata) if result.metadata else {}
+        self._postprocess_result(tool_name, out, meta)
+        self._run_result_hooks(tool_name, out, meta)
+
+        self._bind_compression_tee()
+        compressed_out, comp_meta = await self._compression_stage.run(
+            tool_name,
+            out,
+            status=result.status,
+            metadata=meta,
+            return_direct=getattr(tool, "return_direct", False),
+        )
+        meta.update(comp_meta)
+
+        # voice_text/display_data are intentionally NOT passed through
+        # compression — the copied envelope below carries them unchanged.
+        return result.model_copy(update={"result": compressed_out, "metadata": meta})
 
     def _postprocess_result(self, tool_name: str, out: Any, meta: Dict[str, Any]) -> None:
         """Auto-share DataFrame outputs and push to PythonPandasTool."""
