@@ -173,9 +173,90 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Extended `examples/clients/voice/static/dual_provider.html` only (no
+replacement page, no raw-client `app.js`/`index.html` changes, no SDK
+dependency change, no demo-tool implementation — all out of scope per the
+task).
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+Added markup: a floating, off-by-default avatar card (`#avatarCard`) with
+a muted `<video>` for the subscribe-only track and a dedicated `<audio>`
+element for the one-source policy, a status dot/text, an "Enable avatar
+audio" button, an audio-source `<select>` and a mute toggle; a settings-
+panel group (`#avatarEnabledCheckbox`, `#avatarTenantId`, `#avatarAvatarId`)
+next to the existing language/system-prompt settings; a shared
+`#toolEventsPanel`/`#toolEventsList` for `display_data`/`tool_call`
+frames; and `#interruptBtn` next to the existing clear-chat control.
+
+Wired the JS `VoiceChatClient` class: `initAvatarUI()` binds all avatar
+controls; `ensureAvatarController()`/`loadAvatarSdk()` lazy-load
+`avatar-viewer.js` (via `import('/static/avatar-viewer.js')`, served
+through the existing `/static/` mount) and the locked SDK's UMD build
+(via a dynamically-created `<script src>` pointed at
+`window.__CONFIG__.avatar.sdkUrl` from TASK-2943, resolving
+`window.LivekitClient`) only once avatar is enabled;
+`handleAvatarSessionStarted()` consumes `session_started.avatar` from the
+CURRENT session only and calls `controller.join({livekit_url,
+client_token, room})` — the exact wire shape, no translation layer;
+`startSession()` now sends `avatar`/`tenant_id`/`avatar_id` at the
+top level (never nested under `config`); `onAvatarSettingChanged()`
+tears down the prior viewer and calls the existing `reconnect()` (fresh
+session, old socket closed — no billable orphan) whenever an avatar
+setting changes while connected. `queueAudioChunk()`/
+`playStreamingAudio()` gate on `avatarController.shouldPlayLocalAudio()`
+both at enqueue time and defensively mid-drain (a switch can land after
+several chunks are already queued); `stopLocalPlayback()` (the
+controller's `onStopLocalPlayback` callback) clears the queue and stops
+any in-flight `AudioBufferSourceNode`. `ws.onclose` and `beforeunload`
+both call `teardownAvatarViewer()` so a superseded generation's room is
+always disconnected (spec "Lifecycle/races") without a second live room
+or a new protocol message. `handleMessage()` gained `display_data`/
+`tool_call` cases rendering into the shared panel via `textContent` +
+`JSON.stringify` fallback (`renderToolEvent()`/`formatToolEventData()`)
+— never raw tool HTML; `clearChat()` now also clears/hides that panel on
+provider/session switch. The Interrupt control
+(`handleInterrupt()`) stops local playback, sends the EXISTING
+`start_recording` wire message (this page never previously sent it —
+it is also what triggers TASK-2942's server-side avatar interrupt in
+`_handle_start_recording`), then bypasses the `canSpeak` gate and calls
+the existing `startRecording()` — no new WebSocket message was added.
+`avatarConfig` (enabled/tenantId/avatarId — no credentials) persists via
+the existing `loadSettings()`/`saveSettings()` localStorage round-trip
+alongside language/system-prompt/activeProvider.
+
+Verification:
+- `pnpm --dir packages/ai-parrot-server/ui test
+  src/lib/utils/voice-demo-avatar.test.ts` — 11 passed, re-run after this
+  HTML-only change to confirm no regression
+  (`artifacts/logs/TASK-2944-vitest.log`).
+- A manual local fake-transport smoke
+  (`artifacts/logs/TASK-2945-smoke.log`) built an `aiohttp` `TestClient`
+  against `server.py`'s real `build_app()`/`index_handler()` and
+  confirmed: the rendered page contains every new element id
+  (avatarCard, interruptBtn, toolEventsPanel, avatarEnabledCheckbox,
+  avatarVideo, avatarAudio) and the string `AvatarViewerController`;
+  `/static/avatar-viewer.js` serves 200 and exports
+  `AvatarViewerController`; `/voice-assets/livekit-client.umd.js`
+  resolved 200 (this sandbox actually has the locked 2.22.1 UMD artifact
+  installed from TASK-2944's `pnpm install --frozen-lockfile
+  --prefer-offline`, run against the real `pnpm-lock.yaml`); and
+  `/ws/gemini`/`/ws/nova` remain mounted.
+- `node --check` on the page's extracted inline `<script>` block confirms
+  valid JS syntax; a rough HTML tag-balance check (div/script/button/
+  video/audio/select/aside open vs. close counts) confirms no unclosed
+  markup was introduced.
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: No real-live browser pass (a user actually seeing avatar
+video/hearing avatar audio, exercising autoplay-block/enable-audio in a
+real browser, or a real LiveAvatar backend) is claimed — that is
+TASK-2947's Playwright scope and TASK-2949's operational acceptance
+scope, exactly as this task's own Test Specification states ("served-page
+automated scenarios are delivered by TASK-2947"). Also worth recording:
+running `node` against the real installed `livekit-client.umd.js` outside
+a browser/jsdom context fails at UMD-init time (it expects browser
+globals like `navigator.mediaDevices`/`AudioContext` well beyond what a
+bare Node global shim provides) — expected and not a defect in this
+task's code; it is exactly why TASK-2947 uses Playwright's real browser
+context rather than a Node-only smoke for that layer.
 **Deviations from spec**: none recorded
