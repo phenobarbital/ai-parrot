@@ -421,6 +421,125 @@ class TestUsageInResponseComplete:
         assert "usage" not in complete_frame
 
 
+class TestToolCallDedup:
+    """FEAT-536 TASK-2942 (spec §2 "Event delivery and completion
+    snapshots"): a delta emits tool_call once; the final snapshot only
+    emits IDs not seen earlier; a final-only tool call still emits once;
+    IDs may legitimately be reused in a later turn."""
+
+    @pytest.mark.asyncio
+    async def test_tool_final_only_and_next_turn_id_reuse(self, handler, connection):
+        from parrot.models.voice import LiveToolCall
+
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+
+        tc1 = LiveToolCall(id="tu_1", name="get_weather", arguments={}, result={"output": "sunny"})
+
+        # Delta: streamed once.
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=False),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+        # Final snapshot for the SAME turn carries the SAME id again — must
+        # NOT be re-sent as a second tool_call frame.
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=True),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+        # A final-only tool call (never streamed as its own delta) still
+        # emits exactly once, alongside the already-seen id.
+        tc2 = LiveToolCall(id="tu_2", name="get_time", arguments={}, result={"output": "noon"})
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1, tc2], is_complete=True),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 2
+
+        # A LATER turn may legitimately reuse "tu_1" — bookkeeping resets
+        # per turn_no, so it must be delivered again.
+        connection.ws.send_json.reset_mock()
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=False),
+            turn_no=2,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_connections_do_not_share_dedup_state(self, handler, connection):
+        """Two independent _HandlerVoiceSession instances (one per
+        connection) must not share tool-call dedup bookkeeping."""
+        from parrot.models.voice import LiveToolCall
+
+        mock_ws2 = MagicMock()
+        mock_ws2.send_json = AsyncMock()
+        connection2 = WebSocketConnection(ws=mock_ws2, session_id="sess-2")
+
+        session1 = _HandlerVoiceSession(
+            client=_capable_mock_client(), send_fn=AsyncMock(), system_prompt="hi",
+            handler=handler, connection=connection,
+        )
+        session2 = _HandlerVoiceSession(
+            client=_capable_mock_client(), send_fn=AsyncMock(), system_prompt="hi",
+            handler=handler, connection=connection2,
+        )
+
+        tc = LiveToolCall(id="tu_shared_id", name="get_weather", arguments={}, result="sunny")
+        await session1._relay(LiveVoiceResponse(text="", tool_calls=[tc], is_complete=False), turn_no=1)
+        await session2._relay(LiveVoiceResponse(text="", tool_calls=[tc], is_complete=False), turn_no=1)
+
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+        assert len([t for t in _sent_types(connection2) if t == "tool_call"]) == 1
+
+
+class TestExplicitTurnReplacementInterruptsAvatar:
+    """FEAT-536 TASK-2942 (spec §2 "Demo interruption controls"): explicit
+    start_recording interrupts an active avatar before start_turn; avatar
+    failures are isolated and never block recording or WebSocket delivery."""
+
+    @pytest.mark.asyncio
+    async def test_explicit_turn_replacement_interrupts_avatar(self, handler, connection):
+        avatar_session = MagicMock()
+        avatar_session.interrupt = AsyncMock()
+        connection.avatar_session = avatar_session
+
+        await handler._handle_start_recording(connection, {})
+
+        avatar_session.interrupt.assert_awaited_once()
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+    @pytest.mark.asyncio
+    async def test_no_avatar_session_skips_interrupt_call(self, handler, connection):
+        connection.avatar_session = None
+        await handler._handle_start_recording(connection, {})
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+    @pytest.mark.asyncio
+    async def test_avatar_failure_preserves_websocket_delivery(self, handler, connection):
+        """An avatar interrupt() failure must not prevent recording from
+        starting or the recording_started frame from being sent."""
+        avatar_session = MagicMock()
+        avatar_session.interrupt = AsyncMock(side_effect=RuntimeError("avatar exploded"))
+        connection.avatar_session = avatar_session
+
+        await handler._handle_start_recording(connection, {})  # must not raise
+
+        avatar_session.interrupt.assert_awaited_once()
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+
 class TestNamespacePackagingFix:
     """Regression guard for the packaging bug this task had to fix:
     ``parrot.voice`` is split across two installed distributions
