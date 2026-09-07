@@ -54,6 +54,7 @@ from parrot.handlers.ui_surfaces import (
     SurfaceNegotiationService,
     resolve_surface_access,
 )
+from parrot.handlers.ui_surfaces_scope import get_scope_resolver
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 from parrot.outputs.a2ui.catalog.export import agent_capabilities
@@ -272,6 +273,14 @@ class A2UIHandler(AgentTalk):
         the existing ``_authenticate()`` for auth/consistency with every
         other route on this handler, but the surface lookup itself is by
         ``surface_id`` alone (same as the REST lane).
+
+        FEAT-535: also resolves the caller's ``SurfaceScope`` via the SAME
+        ``get_scope_resolver(app)`` seam the REST lane uses, and passes it
+        into the SHARED :func:`resolve_surface_access` — the tenant/group
+        rule cannot drift between the two routes (spec §2/§3 Module 3).
+        Never derive the tenant from ``agent_id``; the scope resolver is
+        called with the same ``request``, independently of agent
+        resolution.
         """
         _agent, user_id, _session_id, err = await self._authenticate(self._resolution_data())
         if err is not None:
@@ -280,8 +289,9 @@ class A2UIHandler(AgentTalk):
         surface_id = self.request.match_info["surface_id"]
         qs = self.query_parameters(self.request)
         token = qs.get("share")
+        scope = await get_scope_resolver(self.request.app).resolve(self.request)
 
-        record, error = await resolve_surface_access(self._ui_surfaces_store(), surface_id, user_id, token)
+        record, error = await resolve_surface_access(self._ui_surfaces_store(), surface_id, user_id, token, scope=scope)
         if error is not None:
             message, status = error
             return self.json_response({"status": "error", "message": message}, status=status)
