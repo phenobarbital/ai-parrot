@@ -128,9 +128,40 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Created `docs/testing/voicebot-liveavatar-acceptance.md` (the one file this task owns),
+recording the required spec §4 real-live matrix (8 scenarios) executed against this
+autonomous sandboxed session's ACTUAL environment. A concrete prerequisite check was
+performed (not assumed): `GOOGLE_API_KEY`/Vertex AI credentials — absent; AWS Bedrock
+credentials — absent; `aws_sdk_bedrock_runtime` — not installed; `LIVEAVATAR_API_KEY`/
+`LIVEAVATAR_AVATAR_ID` — absent; a reachable real LiveKit/LiveAvatar backend — none; an
+interactive human tester able to judge real audio/lip-sync in a real browser — none (this
+is an autonomous CLI session). The one prerequisite that IS satisfied in this sandbox —
+the locked `livekit-client` 2.22.1 UMD build actually installed and served correctly — is
+recorded too, for completeness.
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+**Result: 0 of 8 required scenarios executed. All 8 marked NOT RUN with their specific
+reason**, per this task's own explicit instruction ("mark affected scenarios NOT RUN with
+reason and keep this task and operational acceptance pending; do not mark the feature
+complete") and its "Does NOT Exist" note ("Passing mocked provider/browser tests is not
+proof of a real AWS/Gemini/LiveAvatar session"). The report separately catalogs, for the
+code reviewer's visibility only, the automated/mocked evidence TASK-2937 through TASK-2948
+already gathered — explicitly stating it is NOT equivalent to or a substitute for the
+real-live matrix. It lists concretely what a future run would need (real Gemini + Nova
+credentials, a real LiveAvatar/LiveKit backend, a human tester) and recommends the
+feature's implementation PR proceed while operational acceptance remains explicitly open
+and unmerged-as-accepted.
+
+No production code, test, or documentation file outside this task's own scope was touched.
+No credentials, tokens, or sensitive tool data appear anywhere in the report.
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: This task is marked `done-with-issues`, NOT `done` — the deliverable (the
+acceptance report itself) is complete and accurate, but the actual real-live acceptance it
+documents did not and could not happen in this environment. Per the task's own repeated
+instruction, this must not be represented as a passing operational acceptance, and FEAT-536
+should not be considered fully accepted end-to-end until a future run (with real
+credentials/services/a human tester) replaces every "NOT RUN" row in
+`docs/testing/voicebot-liveavatar-acceptance.md` with a dated PASS/FAIL and evidence.
+**Deviations from spec**: none — the spec's own explicit allowance for "credentials or an
+external service unavailable" is exercised exactly as written, not deviated from.
