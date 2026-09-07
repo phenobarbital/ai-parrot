@@ -162,9 +162,66 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Created `examples/clients/voice/static/avatar-viewer.js` exporting
+`AvatarViewerController` (+ `AvatarStatus`/`AudioSource` enums), an
+SDK-injectable subscribe-only LiveKit Room lifecycle controller. It takes
+`{sdk: {Room, RoomEvent, Track}, videoEl, audioEl, onStatusChange,
+onAudioSourceChange, onStopLocalPlayback, onAudioPlaybackBlocked, onError}`
+in its constructor and exposes `join(credentials)` (accepting the exact
+`session_started.avatar` wire shape — `livekit_url`/`client_token`/`room`),
+`teardown()`, `enableAudio()`, `setPreferredAudioSource()`, `setMuted()`,
+and `status`/`audioSource`/`canPlayAvatarAudio`/`muted`/
+`shouldPlayLocalAudio()` for the page (TASK-2945) to query before each
+locally-queued WebSocket PCM chunk. `join()` registers all four
+`RoomEvent` listeners before calling `room.connect()`, never touches any
+publish/localParticipant method, and forces the video element muted so
+sound only ever comes from the dedicated audio element. Every async
+continuation (the `connect()` promise, track/disconnect/audio-playback
+event handlers) is gated by a connection-generation token bumped on each
+`join()`/`teardown()`, so a superseded join's late resolution or a stale
+track event is a safe no-op and never leaves two live rooms or attaches
+old media — `teardown()` also `removeAllListeners()`s and `disconnect()`s
+the room, detaches any held tracks, nulls `srcObject` on both elements,
+and is idempotent. The one-source policy (mute remote → stop local via
+`onStopLocalPlayback()` → flip `audioSource` → unmute remote) fires only
+once the avatar audio track is subscribed AND `room.canPlaybackAudio` is
+true, defaults to preferring avatar audio once playable, falls back to
+future-only local audio on track-unsubscribe/disconnect (no backlog
+replay — that queue is owned by the page), supports `Room.startAudio()`
+for the autoplay-gesture requirement, and treats `setMuted()` as sticky
+(never silently reverted by an automatic transition).
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+Created `packages/ai-parrot-server/ui/src/lib/utils/voice-demo-avatar.test.ts`
+(11 Vitest tests, all passing), importing the controller module by
+relative path (it is a standalone ES module for the plain HTML demo page,
+not part of this SvelteKit package) against a fake `{Room, RoomEvent,
+Track}` SDK double — no real LiveKit connection or `livekit-client`
+install is required. Covers: listeners-before-connect with zero publish
+calls; video/audio track attach with forced video mute, and detach on
+unsubscribe; the full browser→avatar switch sequence and its
+`onStopLocalPlayback` ordering; automatic fallback to future-only local
+audio on unsubscribe/disconnect; `AudioPlaybackStatusChanged`
+autoplay-blocked reporting plus recovery via `enableAudio()`; an explicit
+mute silencing both sources and surviving an automatic re-fire of the
+playback-status event; `setPreferredAudioSource('browser')` not forcing a
+switch back once already blocked/browser-selected; a superseded `join()`'s
+late `connect()` resolution and its captured stale-generation listener
+closures never attaching media or leaving a second live room; and
+`teardown()` being idempotent both with and without an active room.
+
+Verification: `pnpm --dir packages/ai-parrot-server/ui test
+src/lib/utils/voice-demo-avatar.test.ts` — 11 passed
+(`artifacts/logs/TASK-2944-vitest.log`); full `pnpm --dir
+packages/ai-parrot-server/ui test` — 305 passed across 46 files, no
+regression from this task's additions.
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: `packages/ai-parrot-server/ui`'s `node_modules` was absent at
+task start (same documented sandbox gap as TASK-2943/livekit-client's UMD
+artifact); running `pnpm --dir packages/ai-parrot-server/ui install
+--frozen-lockfile --prefer-offline` resolved it from the local pnpm
+store without any network access, so Vitest coverage for this task was
+run and verified directly rather than merely inferred from source
+inspection.
 **Deviations from spec**: none recorded
