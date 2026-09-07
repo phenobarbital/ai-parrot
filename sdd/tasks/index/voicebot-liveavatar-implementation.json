@@ -62,7 +62,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -73,8 +73,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2939-nova-voice-tool-adapter.md",
+      "completed_at": "2026-09-07T21:07:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2939-nova-voice-tool-adapter.md",
       "acceptance_criteria": [
         "AC2",
         "AC5",

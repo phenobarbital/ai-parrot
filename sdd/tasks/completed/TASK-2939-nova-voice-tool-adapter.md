@@ -207,9 +207,91 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented Module 2 in `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- `_build_trusted_tool_arguments()` — strips `_RESERVED_TOOL_KWARGS`
+  (`_permission_context`/`_resolver`/`_broker`/`_cred_channel`/
+  `_cred_user_id`) from model-supplied args first, then merges trusted
+  `session_id`/`user_id`/`turn_id` LAST (filtered through the existing
+  `AbstractClient._tool_param_names()` — `None` means "accept
+  everything", used for `**kwargs` tools and any bare `AbstractTool`
+  subclass whose introspection can't resolve a signature), so trusted
+  values always win — the deliberate opposite of
+  `AbstractClient._execute_tool()`'s `{**filtered_ctx, **parameters}`.
+- `_execute_tool_full()` — calls
+  `self.tool_manager.execute_tool(name, merged_args, permission_context=...,
+  return_tool_result=True)` exactly once (never bypasses the manager,
+  never calls `tool.execute()`/`_execute()` directly the way Gemini's
+  `LiveToolAdapter.execute_tool()` does — Nova gets the full
+  permissions/grant/confirmation/credential-broker/lifecycle/hook
+  pipeline Gemini's route skips).
+- `_map_tool_result_to_nova()` — pure mapping function implementing
+  the spec §2 precedence table exactly (voice_text > dict > string >
+  None="Success" > str(other); falsy scalars `False`/`0`/`0.0`
+  preserved distinctly from `None`; non-success envelope never emits a
+  visual; empty `display_data` dict stays suppressed;
+  non-JSON-serializable `display_data` is omitted with a logged
+  warning while the spoken result still reaches Nova).
+- `_flush_pending_tools()` — signature gained an optional
+  `permission_context` kwarg (plumbed from `stream_voice()`'s
+  `**kwargs`, defaulting to `getattr(self, "_permission_context",
+  None)`, same convention `AbstractClient._execute_tool()` already
+  uses); `_run_one()` now calls `_execute_tool_full()` +
+  `_map_tool_result_to_nova()` instead of the reducing
+  `self._execute_tool()`; `LiveToolCall.result` now holds the
+  NORMALIZED provider-facing payload (not the raw envelope, per spec
+  §2 "LiveToolCall.result contains the normalized provider-facing
+  result"); each yielded `LiveVoiceResponse.metadata` carries
+  `tool_status` and, when present, `display_data`.
+- No scheduling/admission changes (queue-on-next-non-tool-event stays
+  as-is — TASK-2940 scope). No `NovaClient._execute_tool` override, no
+  Google import from Amazon.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/clients/test_nova_dual_output.py -q`
+  → 16 passed (`artifacts/logs/task-2939-nova-suite.log` covers the
+  broader run below; the dedicated file-only run was captured
+  separately and is identical to the passing subset there).
+- `pytest packages/ai-parrot/tests/clients/ -k nova -q` → 148 passed,
+  8 skipped, 5 failed (`artifacts/logs/task-2939-nova-suite.log`).
+  Of the 5 failures:
+  - `test_nova_protocol_frames.py::test_prompt_start_declares_tool_use_output_configuration`
+    is **pre-existing on unmodified `dev`** (verified) — unrelated to
+    this task.
+  - The other 4 —
+    `test_nova.py::TestStreamVoice::test_stream_voice_tool_use`,
+    `test_nova_tool_result.py::TestToolTiming::test_executed_on_tool_content_end`,
+    `test_nova_tool_result.py::TestToolArguments::test_json_string_content_parsed_to_kwargs`,
+    `test_nova_tool_result.py::TestToolResultEnvelope::test_non_json_serializable_result_does_not_abort_turn`
+    — are a **known, spec-anticipated consequence** of this task: they
+    `patch.object(client, "_execute_tool", ...)` to intercept Nova's
+    tool-flush path, which no longer calls that method (by design —
+    this task's whole point is routing through
+    `ToolManager.execute_tool(..., return_tool_result=True)` instead).
+    The spec's own Module 3 (§3, TASK-2940) explicitly plans to
+    "update existing `test_nova_tool_result.py` assumptions"; three of
+    these four failures are exactly that file.
+    `test_nova.py::test_stream_voice_tool_use` has the identical root
+    cause but was not itself named in TASK-2940's file table — flagged
+    here for TASK-2940 to also fix (same worktree, executed next in
+    this session), since "retain protocol, shutdown and interruption
+    regression suites" is that module's own acceptance bar and this is
+    a one-assertion fix caused by the same architectural change.
+    **Not left unresolved**: TASK-2940 addresses this immediately
+    after in the same session.
+- `ruff check` on both changed/created files: clean, zero findings.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-07
+**Notes**: Confirmed via `AbstractTool.execute()`'s `validate_args()`/
+`_shallow_dump()` path that a bare `AbstractTool` subclass with no
+custom `args_schema` silently drops ALL kwargs (including trusted
+context AND model-supplied arguments) — not specific to this task, but
+required giving the test fixtures explicit `args_schema` classes to
+actually exercise the trusted-context-override behavior; documented in
+the test file's fixture docstrings.
+**Deviations from spec**: none in the implementation. One test-scope
+note: `test_nova.py::test_stream_voice_tool_use` needs the same
+`_execute_tool`-assumption fix TASK-2940 already plans for
+`test_nova_tool_result.py` — addressed there, not silently left
+broken.
