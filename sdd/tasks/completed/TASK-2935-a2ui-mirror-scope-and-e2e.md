@@ -125,10 +125,67 @@ async def test_mirror_route_tenant_visible_viewer_200(client, fake_store):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-07
 **Notes**:
+- `A2UIHandler._get_surface` now resolves `scope = await
+  get_scope_resolver(self.request.app).resolve(self.request)` right after
+  `surface_id`/`token`, and passes `scope=scope` into the SHARED
+  `resolve_surface_access` — one-line functional change, matching the
+  REST lane exactly, no second copy of the access rule.
+- `test_a2ui_surfaces_route.py`: added `_StubResolver` (mirrors the REST
+  lane's own test fixture) plus `test_mirror_route_tenant_visible_viewer_200`
+  and `test_mirror_route_foreign_tenant_404`, per the spec's Test
+  Specification. All pre-existing tests kept unchanged.
+- `test_ui_surfaces_e2e.py`: the `_FakeConn` was on the SAME stale
+  dispatch TASK-2932 found and fixed in `test_ui_surfaces_store.py`
+  (`execute`/`fetchrow`/`fetchall` instead of the store's actual
+  `execute`/`fetch_one`/`fetch_all`/`fetchval`-for-writes-with-RETURNING) —
+  extended it identically (mirrored, not re-invented, per the task's own
+  instruction), added `_row_visible`/`_row_allowed_groups` helpers for
+  `_LIST_VISIBLE_SQL`/`_LIST_VISIBLE_BY_KIND_SQL`, and added `_patch`/
+  `_StubResolver` handler-harness helpers. Added
+  `test_e2e_tenant_visibility_roundtrip`: pin (`visibility=tenant`) → list
+  as a tenant peer B (`access=tenant`) → GET+refresh as B (owner pctx) →
+  absent/`404` for C in a different tenant → owner PATCHes to
+  `groups=["g1"]` → B with `groups=["g1"]` sees it (`200`), B with
+  `["g2"]` does not (`404`) → superuser in T sees it regardless → viewer
+  B `DELETE` stays `404`, row intact.
+- Fixing the stale fake ALSO turned 5 pre-existing e2e tests from FAILING
+  to PASSING (`test_e2e_publish_get_json_get_html`,
+  `test_e2e_pin_then_bookmark_new_session`, `test_e2e_refresh_flow`,
+  `test_e2e_share_lifecycle`, `test_get_html_render_failure_returns_422`)
+  — confirmed these were already failing on `dev` before this feature
+  touched anything (same drift TASK-2932 found and documented).
+- Full run: `test_ui_surfaces_store.py` + `_store_live.py` + `_scope.py` +
+  `_handler.py` + `test_a2ui_surfaces_route.py` + `test_ui_surfaces_e2e.py`
+  = 88 passed. `flake8`/`black --check` clean on all three changed files.
+- **Environment limitation (not a code defect)**: this venv
+  (`/home/juanfran/Documents/navigator/fieldsync/.venv`) has no
+  `pytest-aiohttp` plugin installed (`ModuleNotFoundError:
+  pytest_aiohttp`; confirmed `pytest-aiohttp` is not a listed dependency
+  of `ai-parrot-server` either). Every test using the `client`
+  (`aiohttp_client`) fixture in `test_a2ui_surfaces_route.py` — 9
+  pre-existing plus my 2 new ones — errors at fixture-resolution time,
+  never reaching test body code. Verified this is pre-existing (same 9
+  errors before this task) and NOT something introduced here; also tried
+  `-p aiohttp.pytest_plugin` (aiohttp's own legacy bundled plugin) as a
+  workaround — it collects but then fails with an unrelated
+  `RuntimeError: Timeout context manager should be used inside a task`
+  (an asyncio-loop-management conflict with `pytest-asyncio`), so it is
+  not a viable substitute; did not install any package into the shared
+  venv (out of scope — it is shared with a FieldSync worker per the
+  environment brief).
+- **Mutation-check evidence (mirror route scope wiring)**: since every
+  `client`-based test that would catch this is blocked by the environment
+  gap above, verified by hand instead — constructed `A2UIHandler` via
+  `__new__` (the same bypass-the-router technique
+  `test_ui_surfaces_handler.py`/`test_ui_surfaces_e2e.py` use for
+  `UISurfacesHandler`), stubbed `_authenticate` and
+  `app["ui_surfaces_scope_resolver"]`, and called `_get_surface` directly
+  for a tenant-visible surface owned by someone else. With
+  `resolve_surface_access(..., scope=scope)` mutated to
+  `scope=None` → `404`. Reverted → `200`. (Script not committed — ad hoc
+  verification, not a test file per the task's file list.)
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
