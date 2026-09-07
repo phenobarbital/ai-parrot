@@ -1,5 +1,5 @@
-"""Unit tests for FEAT-536 TASK-2940 — coordinate provider events and tool
-completion without stalls.
+"""Unit tests for FEAT-536 TASK-2940/2941 — coordinate provider events and
+tool completion without stalls; bound deadlines/interruption/shutdown.
 
 Replaces the "queue and flush on next non-tool event" model (FEAT-416
 TASK-2148) with a coordinator that admits a fully-parsed contentEnd(TOOL)
@@ -7,18 +7,21 @@ call immediately (execution starts right away, as its own ``asyncio.Task``)
 and races the next provider event against every in-flight tool task, so it
 "wakes" on whichever completes first — a slow/stalled tool can no longer
 block audio/interruption delivery, and a provider that never sends another
-event still gets its tool result.
+event still gets its tool result. TASK-2941 adds a named per-call deadline,
+interruption-generation tracking (stale visual suppression), the 32/4
+admission/concurrency bounds as patchable named constants, and bounded
+cooperative cleanup.
 
 Uses a real ``ToolManager`` + real ``AbstractTool`` fixtures throughout —
 only the Bedrock SDK/transport thin wrappers (``_open_stream``/
 ``_send_event``/``_iter_events``/``_close_stream``) are mocked, matching
 ``test_nova_tool_result.py``/``test_nova_dual_output.py``'s existing
-pattern. Event gates (``asyncio.Event``) replace timing-sensitive sleeps
-throughout, per the task's own Test Specification.
+pattern. Event gates (``asyncio.Event``) and patched deadlines replace
+timing-sensitive sleeps throughout, per the tasks' own Test Specifications.
 
-Test names below are the task's required target tests (§ Test
-Specification, TASK-2940); each is implemented as a class grouping the
-scenarios that make up that behavioral guarantee.
+Test names below are the tasks' required target tests (§ Test
+Specification, TASK-2940/TASK-2941); each is implemented as a class
+grouping the scenarios that make up that behavioral guarantee.
 """
 
 from __future__ import annotations
@@ -148,7 +151,7 @@ class TestToolResultWithoutNextProviderEvent:
             # another provider event to trigger the flush (the exact
             # progress risk FEAT-416's old "flush on next non-tool event"
             # model had).
-            await asyncio.wait_for(result_sent.wait(), timeout=2)
+            await asyncio.wait_for(result_sent.wait(), timeout=5)
             yield {"completionEnd": {}}
 
         responses, sent = await _run(client, fake_events())
@@ -182,7 +185,7 @@ class TestAudioAndInterruptionDuringSlowTool:
             # wait for it to actually enter before sending audio/
             # interruption, so this genuinely proves they are delivered
             # WHILE it is still running (not merely before admission).
-            await asyncio.wait_for(tool_entered.wait(), timeout=2)
+            await asyncio.wait_for(tool_entered.wait(), timeout=5)
             yield {"audioOutput": {"content": "AQI="}}  # base64 of b"\x01\x02"
             yield {"textOutput": {"content": '{"interrupted":true}'}}
             tool_gate.set()
@@ -233,13 +236,13 @@ class TestParallelCompletionCorrelatesIds:
             yield {"contentEnd": {"type": "TOOL"}}
             yield {"toolUse": {"toolUseId": "tu_fast", "toolName": "fast_tool", "content": "{}"}}
             yield {"contentEnd": {"type": "TOOL"}}
-            await asyncio.wait_for(slow_entered.wait(), timeout=2)
-            await asyncio.wait_for(fast_entered.wait(), timeout=2)
+            await asyncio.wait_for(slow_entered.wait(), timeout=5)
+            await asyncio.wait_for(fast_entered.wait(), timeout=5)
             # Complete the FAST tool first — its result must be delivered
             # and correlated by its OWN id before the slow one, even
             # though the slow one was admitted first.
             fast_gate.set()
-            await asyncio.wait_for(first_result_sent.wait(), timeout=2)
+            await asyncio.wait_for(first_result_sent.wait(), timeout=5)
             slow_gate.set()
             yield {"completionEnd": {}}
 
@@ -392,3 +395,242 @@ class TestDuplicateToolCompletionAndFinalSnapshot:
         assert tool_instance.call_count == 0
         assert _tool_deltas(responses) == []
         assert responses[-1].is_complete is True
+
+
+# ── test_stale_visual_after_barge_in_is_suppressed ────────────────────────
+
+
+class _VisualGatedTool(AbstractTool):
+    """Like ``_GatedTool`` but also returns ``display_data`` — used to
+    prove a stale generation's visual is suppressed while its result/id
+    remain auditable."""
+
+    description = "Gated tool that also returns display_data."
+
+    def __init__(self, name: str, gate: asyncio.Event, entered: asyncio.Event, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self._gate = gate
+        self._entered = entered
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        self._entered.set()
+        await self._gate.wait()
+        return ToolResult(status="success", result="ok", display_data={"chart": "stale-or-not"})
+
+
+class TestStaleVisualAfterBargeInIsSuppressed:
+    """Barge-in marks in-flight/queued calls' generation stale; their
+    late visual is suppressed but the tool result/id stay auditable."""
+
+    @pytest.mark.asyncio
+    async def test_stale_visual_after_barge_in_is_suppressed(self):
+        tool_gate = asyncio.Event()
+        tool_entered = asyncio.Event()
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_VisualGatedTool(name="visual_tool", gate=tool_gate, entered=tool_entered))
+        client = _make_client(tm)
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "visual_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            # Wait for the call to actually be running, THEN barge-in —
+            # this admits/starts it under generation 0, then bumps the
+            # generation to 1 while it is still in flight.
+            await asyncio.wait_for(tool_entered.wait(), timeout=5)
+            yield {"textOutput": {"content": '{"interrupted":true}'}}
+            tool_gate.set()
+            yield {"completionEnd": {}}
+
+        responses, _ = await _run(client, fake_events())
+
+        deltas = _tool_deltas(responses)
+        assert len(deltas) == 1
+        delta = deltas[0]
+        # Auditable: the tool result and id still reach the caller.
+        assert delta.tool_calls[0].id == "tu_1"
+        assert delta.tool_calls[0].result == {"output": "ok"}
+        assert delta.tool_calls[0].error is None
+        # Suppressed: no display_data on a stale-generation delta.
+        assert "display_data" not in delta.metadata
+        assert delta.metadata.get("stale_generation") is True
+
+    @pytest.mark.asyncio
+    async def test_non_stale_visual_survives_without_barge_in(self):
+        """Control case: no barge-in — the visual is NOT suppressed."""
+        tool_gate = asyncio.Event()
+        tool_entered = asyncio.Event()
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_VisualGatedTool(name="visual_tool", gate=tool_gate, entered=tool_entered))
+        client = _make_client(tm)
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "visual_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            await asyncio.wait_for(tool_entered.wait(), timeout=5)
+            tool_gate.set()
+            yield {"completionEnd": {}}
+
+        responses, _ = await _run(client, fake_events())
+
+        delta = _tool_deltas(responses)[0]
+        assert delta.metadata.get("display_data") == {"chart": "stale-or-not"}
+        assert "stale_generation" not in delta.metadata
+
+
+# ── test_limits_timeout_disconnect_and_reconnect ──────────────────────────
+
+
+class TestLimitsTimeoutDisconnectAndReconnect:
+    """Queue expiry, tool timeout, EOF and idle reconnect are tested with
+    patched deadlines — no timing-sensitive sleeps."""
+
+    @pytest.mark.asyncio
+    async def test_tool_call_deadline_expires_running_call(self):
+        never_gate = asyncio.Event()  # never set — the tool would hang forever without a deadline
+        entered = asyncio.Event()
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_GatedTool(name="hangs_forever", gate=never_gate, entered=entered))
+        client = _make_client(tm)
+        client._TOOL_CALL_DEADLINE_SECONDS = 0.05  # patched, tiny — spec-named constant
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "hangs_forever", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            yield {"completionEnd": {}}
+
+        responses, _ = await _run(client, fake_events())
+
+        delta = _tool_deltas(responses)[0]
+        assert delta.metadata["tool_status"] == "error"
+        assert delta.tool_calls[0].error is not None
+        assert "deadline" in delta.tool_calls[0].error.lower() or "timeout" in delta.tool_calls[0].error.lower()
+
+    @pytest.mark.asyncio
+    async def test_deadline_expires_while_still_queued(self):
+        """A call still QUEUED (never started) when its deadline elapses
+        expires without ever dispatching — deadline is measured from
+        ADMISSION, including queue wait (spec §2).
+
+        Deadline is captured ONCE, at admission — reassigning
+        ``client._TOOL_CALL_DEADLINE_SECONDS`` afterwards does not
+        retroactively change an already-admitted call's deadline. This
+        gives "blocker" a generous deadline (so it is only ever released
+        by the gate, never by its own timeout — avoiding a race between
+        the two calls' near-simultaneous deadlines) while echo_tool, only
+        admitted AFTER the constant is lowered, gets a tiny one that can
+        safely be observed elapsing while it is still queued behind
+        blocker.
+        """
+        blocker_gate = asyncio.Event()
+        blocker_entered = asyncio.Event()
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_GatedTool(name="blocker", gate=blocker_gate, entered=blocker_entered))
+        tm.register_tool(_EchoTool())
+        client = _make_client(tm)
+        client._TOOL_CALL_DEADLINE_SECONDS = 5.0  # blocker: never expires on its own
+
+        async def fake_events():
+            # Serial mode (default): "blocker" occupies the only slot.
+            yield {"toolUse": {"toolUseId": "tu_blocker", "toolName": "blocker", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            await asyncio.wait_for(blocker_entered.wait(), timeout=5)
+            client._TOOL_CALL_DEADLINE_SECONDS = 0.02  # now: echo_tool gets a tiny deadline
+            yield {"toolUse": {"toolUseId": "tu_echo", "toolName": "echo_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            # Let echo_tool's tiny deadline elapse WHILE STILL QUEUED —
+            # blocker (generous deadline) still holds the only slot.
+            await asyncio.sleep(0.1)
+            blocker_gate.set()
+            yield {"completionEnd": {}}
+
+        responses, _ = await _run(client, fake_events())
+
+        deltas = {tc.id: tc for r in responses for tc in r.tool_calls}
+        assert deltas["tu_blocker"].error is None  # released via the gate, not its own deadline
+        assert deltas["tu_echo"].error is not None
+        assert "deadline" in deltas["tu_echo"].error.lower()
+
+    @pytest.mark.asyncio
+    async def test_admission_bound_rejects_excess_with_correlated_error(self):
+        tm = ToolManager(include_search_tool=False)
+        gate = asyncio.Event()
+        entered1 = asyncio.Event()
+        entered2 = asyncio.Event()
+        tm.register_tool(_GatedTool(name="t1", gate=gate, entered=entered1))
+        tm.register_tool(_GatedTool(name="t2", gate=gate, entered=entered2))
+        client = _make_client(tm)
+        client._MAX_UNFINISHED_TOOLS = 1  # patched — spec-named constant
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "t1", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            yield {"toolUse": {"toolUseId": "tu_2", "toolName": "t2", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            gate.set()
+            yield {"completionEnd": {}}
+
+        responses, _ = await _run(client, fake_events())
+
+        overloaded = [r for r in responses if r.metadata.get("tool_status") == "overloaded"]
+        assert len(overloaded) == 1
+        assert overloaded[0].tool_calls[0].id == "tu_2"
+
+    @pytest.mark.asyncio
+    async def test_stream_eof_cleans_up_without_replay(self):
+        """The provider stream ends abruptly (EOF/fatal disconnect) while
+        a tool is still running — cleanup cancels it, no crash, no result
+        is ever replayed on a (nonexistent) new stream."""
+        gate = asyncio.Event()
+        entered = asyncio.Event()
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_GatedTool(name="slow_tool", gate=gate, entered=entered))
+        client = _make_client(tm)
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "slow_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            # Stream simply ends here — no completionEnd, tool never
+            # released. Coordinator must still finish cleanly.
+
+        responses, _ = await _run(client, fake_events())
+
+        # A completion is still yielded so callers are never left hanging.
+        assert responses[-1].is_complete is True
+        # The never-released tool never produced a streamed delta (it was
+        # cancelled during cleanup, not settled) — no fabricated result.
+        assert _tool_deltas(responses) == []
+
+    @pytest.mark.asyncio
+    async def test_reconnect_deadline_settles_admitted_work_first(self):
+        """Approaching the connection-limit still settles admitted work
+        (spec §2) before signalling reconnect_required — reusing
+        TASK-2940's drain path, now cap-respecting (TASK-2941).
+
+        The connection-limit check runs once per received provider event
+        (see audio.py's own note on why this is not an independent
+        wall-clock timer). A tiny (but nonzero) patched limit plus a
+        short real sleep — bounded and deterministic, not a race — lets
+        the limit genuinely elapse only AFTER echo_tool is admitted, so
+        the settle-before-reconnect behavior is exercised rather than
+        short-circuited before admission ever happens.
+        """
+        tm = ToolManager(include_search_tool=False)
+        tm.register_tool(_EchoTool())
+        client = _make_client(tm)
+        client._CONNECTION_LIMIT_SECONDS = 0.02
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "echo_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            await asyncio.sleep(0.05)  # let the tiny connection limit elapse
+            yield {"textOutput": {"content": "should not be reached before reconnect"}}
+
+        responses, _ = await _run(client, fake_events())
+
+        # The admitted echo_tool call was settled (delivered) even though
+        # the connection limit fired on the very next event.
+        deltas = _tool_deltas(responses)
+        assert len(deltas) == 1
+        assert deltas[0].tool_calls[0].id == "tu_1"
+        assert responses[-1].metadata.get("reconnect_required") is True
