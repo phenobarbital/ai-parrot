@@ -9,6 +9,7 @@ there plus a scenario-event builder pair, not new test bodies.
 Mocks at the provider-SDK boundary (see conftest.py) so each client's own
 translation logic is actually exercised.
 """
+
 import pytest
 from parrot.models.voice import VoiceStreamOptions
 
@@ -25,6 +26,7 @@ from .conftest import (
 # to a canonical comparable value — NOT a behavioral branch; the
 # assertions below never branch on provider).
 # ---------------------------------------------------------------------
+
 
 def _captured_temperature(client, provider_name: str) -> float:
     if provider_name == "gemini":

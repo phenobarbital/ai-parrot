@@ -184,7 +184,9 @@ def _make_connection(session_id: str) -> WebSocketConnection:
     return conn
 
 
-def _make_handler_session(handler: VoiceChatHandler, bot: VoiceBot, connection: WebSocketConnection) -> _HandlerVoiceSession:
+def _make_handler_session(
+    handler: VoiceChatHandler, bot: VoiceBot, connection: WebSocketConnection
+) -> _HandlerVoiceSession:
     client = _AskStreamVoiceClient(bot, user_id=connection.user_id)
 
     async def send_fn(payload: dict) -> None:
@@ -489,11 +491,11 @@ class TestToolFinalOnlyAndNextTurnIdReuse:
         # an already-relayed id from turn 1. The gate is already open
         # (set above), so the same tool instance resolves immediately —
         # this turn is proving id-reuse-across-turns, not timing.
-        client._iter_events = _fake_iter_events(
-            _tool_call_events("tu_1", "voice_echo", '{"topic": "commute"}')
-        )
+        client._iter_events = _fake_iter_events(_tool_call_events("tu_1", "voice_echo", '{"topic": "commute"}'))
 
         await _drive_turn(session, connection, turn_no=2)
 
-        turn2_tool_call_frames = [f for f in _frames_of_type(connection, "tool_call") if f.get("arguments") == {"topic": "commute"}]
+        turn2_tool_call_frames = [
+            f for f in _frames_of_type(connection, "tool_call") if f.get("arguments") == {"topic": "commute"}
+        ]
         assert len(turn2_tool_call_frames) == 1, "reuse of the same id in a later turn must still be delivered"

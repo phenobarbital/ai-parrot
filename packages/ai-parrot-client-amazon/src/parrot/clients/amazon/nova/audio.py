@@ -1146,7 +1146,9 @@ class NovaAudio:
         if not pending_tools:
             return []
 
-        async def _run_one(pending: LiveToolCall, raw_input: Optional[str]) -> tuple[Any, Optional[Dict[str, Any]], str]:
+        async def _run_one(
+            pending: LiveToolCall, raw_input: Optional[str]
+        ) -> tuple[Any, Optional[Dict[str, Any]], str]:
             start = time.monotonic()
             try:
                 args = _parse_tool_arguments(raw_input)

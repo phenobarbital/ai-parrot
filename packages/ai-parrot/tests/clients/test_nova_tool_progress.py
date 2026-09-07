@@ -36,7 +36,6 @@ from parrot.clients.amazon.nova import NovaClient
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 
-
 # ── Shared fixtures ────────────────────────────────────────────────────────
 
 
@@ -218,12 +217,8 @@ class TestParallelCompletionCorrelatesIds:
         first_result_sent = asyncio.Event()
 
         tm = ToolManager(include_search_tool=False)
-        tm.register_tool(
-            _GatedTool(name="slow_tool", gate=slow_gate, entered=slow_entered, result="slow-result")
-        )
-        tm.register_tool(
-            _GatedTool(name="fast_tool", gate=fast_gate, entered=fast_entered, result="fast-result")
-        )
+        tm.register_tool(_GatedTool(name="slow_tool", gate=slow_gate, entered=slow_entered, result="slow-result"))
+        tm.register_tool(_GatedTool(name="fast_tool", gate=fast_gate, entered=fast_entered, result="fast-result"))
         client = _make_client(tm)
 
         async def on_send(event):

@@ -485,12 +485,18 @@ class TestToolCallDedup:
         connection2 = WebSocketConnection(ws=mock_ws2, session_id="sess-2")
 
         session1 = _HandlerVoiceSession(
-            client=_capable_mock_client(), send_fn=AsyncMock(), system_prompt="hi",
-            handler=handler, connection=connection,
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
         )
         session2 = _HandlerVoiceSession(
-            client=_capable_mock_client(), send_fn=AsyncMock(), system_prompt="hi",
-            handler=handler, connection=connection2,
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection2,
         )
 
         tc = LiveToolCall(id="tu_shared_id", name="get_weather", arguments={}, result="sunny")

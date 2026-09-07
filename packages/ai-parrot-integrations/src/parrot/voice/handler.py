@@ -1330,8 +1330,7 @@ class VoiceChatHandler:
                 await connection.avatar_session.interrupt()
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "VoiceChatHandler: avatar interrupt on start_recording failed "
-                    "(voice recording unaffected): %s",
+                    "VoiceChatHandler: avatar interrupt on start_recording failed " "(voice recording unaffected): %s",
                     exc,
                 )
 

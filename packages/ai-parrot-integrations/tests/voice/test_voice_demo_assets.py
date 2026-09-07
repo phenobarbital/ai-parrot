@@ -108,7 +108,9 @@ class TestVoiceDemoSdkRouteIsScoped:
             assert "not installed" in body.lower()
 
     @pytest.mark.asyncio
-    async def test_adjacent_traversal_like_urls_are_not_routed_here(self, server_module, fixture_umd_asset, monkeypatch):
+    async def test_adjacent_traversal_like_urls_are_not_routed_here(
+        self, server_module, fixture_umd_asset, monkeypatch
+    ):
         """The route has no path parameter — a traversal-shaped adjacent
         URL cannot dispatch to this handler at all (404, not the asset,
         not an arbitrary node_modules file)."""
@@ -195,7 +197,9 @@ class TestVoiceDemoConfigBootstrap:
     only the asset URL and its availability, and carries no credentials."""
 
     @pytest.mark.asyncio
-    async def test_config_bootstrap_is_valid_json_with_avatar_section(self, server_module, fixture_umd_asset, monkeypatch):
+    async def test_config_bootstrap_is_valid_json_with_avatar_section(
+        self, server_module, fixture_umd_asset, monkeypatch
+    ):
         monkeypatch.setattr(server_module, "_resolve_livekit_umd_path", lambda: fixture_umd_asset)
         app = server_module.build_app()
 

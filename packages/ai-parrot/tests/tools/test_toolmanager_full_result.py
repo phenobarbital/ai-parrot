@@ -44,7 +44,6 @@ from parrot.tools.decorators import tool
 from parrot.tools.manager import ToolManager
 from parrot.tools.toolkit import AbstractToolkit
 
-
 # ── Shared fixtures/tools ────────────────────────────────────────────────
 
 # Nulls (elided by MINIMAL json_compact) so compression is observable.
@@ -136,7 +135,9 @@ class _BlockGuardrail(Guardrail):
     on_error = "fail_closed"
 
     async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
-        return GuardrailResult(action=GuardrailAction.BLOCK, reason="policy:blocked", report={"message": "Denied by policy."})
+        return GuardrailResult(
+            action=GuardrailAction.BLOCK, reason="policy:blocked", report={"message": "Denied by policy."}
+        )
 
 
 def _pipeline_with(*guardrails: Guardrail) -> GuardrailPipeline:

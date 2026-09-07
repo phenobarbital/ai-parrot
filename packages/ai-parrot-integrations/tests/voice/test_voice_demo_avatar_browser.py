@@ -301,9 +301,7 @@ class TestVoiceDemoAvatarBrowserRequestAndTracks:
         await _push_ws_message(page, {"type": "session_started", "session_id": "sess-e2e"})
         await page.wait_for_timeout(50)
 
-        await _push_ws_message(
-            page, {"type": "display_data", "data": {"topic": "weather", "kind": "echo"}}
-        )
+        await _push_ws_message(page, {"type": "display_data", "data": {"topic": "weather", "kind": "echo"}})
         await _push_ws_message(
             page,
             {
@@ -321,9 +319,7 @@ class TestVoiceDemoAvatarBrowserRequestAndTracks:
         assert "weather" in panel_text
         assert "voice_echo" in panel_text
         # textContent/JSON only — never raw HTML from a tool payload.
-        assert await page.eval_on_selector(
-            "#toolEventsList", "el => el.querySelector('script') === null"
-        )
+        assert await page.eval_on_selector("#toolEventsList", "el => el.querySelector('script') === null")
         assert page.errors == []  # type: ignore[attr-defined]
 
 
