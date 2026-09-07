@@ -168,7 +168,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -179,8 +179,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2943-voice-demo-sdk-asset.md",
+      "completed_at": "2026-09-07T22:32:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2943-voice-demo-sdk-asset.md",
       "acceptance_criteria": [
         "AC12",
         "AC14",
