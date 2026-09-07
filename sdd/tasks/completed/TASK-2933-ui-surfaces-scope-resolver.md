@@ -137,10 +137,45 @@ async def test_default_resolver_empty_request():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-07
 **Notes**:
+- Created `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces_scope.py`
+  with `SurfaceScope` (frozen dataclass, `groups: frozenset[str]` no
+  default, `is_superuser` default `False`), `EMPTY_SCOPE` module constant
+  plus `SurfaceScope.EMPTY` alias, the `SurfaceScopeResolver` protocol,
+  `SessionSurfaceScopeResolver`, `get_scope_resolver`, and `scope_grants`
+  exactly per spec §2/§3 Module 2.
+- Verified live against the actual navigator-auth/session stack (not just
+  imports): confirmed `navigator_session.get_session()` raises
+  `RuntimeError` for a bare `make_mocked_request` (no session storage
+  configured) and `AUTH_SESSION_OBJECT == "session"`,
+  `SESSION_OBJECT == "NAV_SESSION"`; wrapped `get_session()` in a broad
+  `except Exception` so both that `RuntimeError` and an `AttributeError`
+  from a request-like double lacking `.get()` fail closed to `EMPTY_SCOPE`
+  (per the "attribute-only double" contract note).
+- `programs`/`groups` are only ever iterated after an `isinstance(x, (list,
+  tuple))` check (never iterating a bare `str`, which would silently yield
+  single characters); non-`bool` `superuser` values default to `False`;
+  `tenant = programs[0] if len(programs) == 1 else None`.
+- Created `test_ui_surfaces_scope.py` (18 tests): empty request, an
+  attribute-only double (`SimpleNamespace(session=object())`), a real
+  `SessionData` with a single program / two programs / malformed types /
+  non-dict `userinfo`; `get_scope_resolver` with a plain-dict app, a
+  `web.Application`, and an installed stub resolver; the 7-row
+  `scope_grants` truth table from the spec's Test Specification, plus two
+  extra tenant-None-on-either-side cases. All 18 pass; removed the
+  module-level `pytestmark = pytest.mark.asyncio` (this suite mixes sync
+  and async tests; `asyncio_mode = "auto"` in `pyproject.toml` already
+  covers the async ones without a marker — kept `test_ui_surfaces_store.py`
+  as-is since every test there is async).
+- `flake8`/`black --check` clean. Full run alongside TASK-2932's suites:
+  35 passed (`test_ui_surfaces_store.py` + `test_ui_surfaces_store_live.py`
+  + `test_ui_surfaces_scope.py`).
+- **Mutation-check evidence (`scope_grants`)**: inserted an early
+  `return False` at the top of the function body (reverting the guard) →
+  3 of the 7 truth-table rows went RED (`tenant`/`groups`-hit/superuser
+  cases, e.g. `assert False is True`). Reverted; suite green again
+  (18/18, 35/35 overall).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
