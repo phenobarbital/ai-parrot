@@ -1,0 +1,623 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-561",
+  "mode": "enrichment",
+  "summary_oneline": "Complete Nova 2 Sonic VoiceBot avatar broadcasting to multiple LiveKit viewers with one HTML test page.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "VoiceBot._resolve_llm_config",
+      "lines": "190-258",
+      "role": "VoiceBot already selects Nova 2 Sonic and owns voice memory",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "VoiceBot.ask_stream",
+      "lines": "475-663",
+      "role": "VoiceBot already selects Nova 2 Sonic and owns voice memory",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio",
+      "lines": "303-305,633-657,1119-1177,1237-1249",
+      "role": "Nova and LiveAvatar have matching output formats",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/voice/session.py",
+      "symbol": "VoiceSession",
+      "lines": "36-250,297-346",
+      "role": "Nova and LiveAvatar have matching output formats",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "_HandlerVoiceSession._relay",
+      "lines": "254-256,510-537,1151-1196,1631-1686,1688-1717,1791-1804",
+      "role": "VoiceChat already forwards generated audio to a LITE avatar",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "VoiceChatHandler",
+      "lines": "586-644",
+      "role": "VoiceChat already forwards generated audio to a LITE avatar",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+      "symbol": "VoiceAvatarSession",
+      "lines": "151-250",
+      "role": "VoiceChat already forwards generated audio to a LITE avatar",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+      "symbol": "VoiceAvatarSession",
+      "lines": "151-270",
+      "role": "Existing LITE session and audio transport can be reused",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/avatar_ws.py",
+      "symbol": "AvatarWebSocket",
+      "lines": "153-228,283-305",
+      "role": "Existing LITE session and audio transport can be reused",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/client.py",
+      "symbol": "LiveAvatarClient.create_session_token",
+      "lines": "149-170",
+      "role": "Existing LITE session and audio transport can be reused",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+      "symbol": "_mint_viewer_tokens",
+      "lines": "560-653,680-688",
+      "role": "Multi-viewer token issuance exists but targets REST session state",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+      "symbol": "AvatarViewersView",
+      "lines": "643-653",
+      "role": "Multi-viewer token issuance exists but targets REST session state",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/room_manager.py",
+      "symbol": "LiveKitRoomManager.mint_room_tokens",
+      "lines": "64-135",
+      "role": "Multi-viewer token issuance exists but targets REST session state",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/api/avatar.ts",
+      "symbol": "mintViewerTokens",
+      "lines": "205-235,339-375",
+      "role": "Existing UI helpers need an observer-only lifecycle",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/avatar/AvatarViewer.svelte",
+      "symbol": "startSession",
+      "lines": "82-179",
+      "role": "Existing UI helpers need an observer-only lifecycle",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/avatar/VoiceNativeAvatarViewer.svelte",
+      "symbol": "startSession",
+      "lines": "97-171",
+      "role": "Existing UI helpers need an observer-only lifecycle",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py",
+      "symbol": "test_gemini_audio_to_avatar_end_to_end",
+      "lines": "1-149",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/voice/test_voice_avatar_session.py",
+      "symbol": "test_viewer_credentials_no_agent_token",
+      "lines": "20-84",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/handlers/test_avatar_viewers.py",
+      "symbol": "test_mint_viewer_tokens_returns_n_tokens",
+      "lines": "35-91,176-200",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/pyproject.toml",
+      "symbol": "liveavatar",
+      "lines": "91-97",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/pyproject.toml",
+      "symbol": "dependencies",
+      "lines": "17-25",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/package.json",
+      "symbol": "livekit-client",
+      "lines": "45",
+      "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "sdd/specs/liveavatar-voice-consolidation.spec.md",
+      "symbol": "FEAT-249",
+      "lines": "1-136",
+      "role": "The old RTC worker was intentionally removed",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md",
+      "symbol": "TASK-1600",
+      "lines": "wiki page; Completion Note",
+      "role": "The old RTC worker was intentionally removed",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "docs/frontend/liveavatar-phase-c-frontend-guide.md",
+      "symbol": "deprecation notice",
+      "lines": "1-4",
+      "role": "The old RTC worker was intentionally removed",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+      "symbol": "_start_avatar_session",
+      "lines": "151-188,216-240,344-367,435-465",
+      "role": "Direct audio fallback exists in another session path",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/room_audio_publisher.py",
+      "symbol": "RoomAudioPublisher",
+      "lines": "138-153,170-236",
+      "role": "Direct audio fallback exists in another session path",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "_register_voice_chat_routes",
+      "lines": "1816-1841",
+      "role": "Server mounting and process ownership need deliberate integration",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "VoiceChatHandler",
+      "lines": "586-644",
+      "role": "Server mounting and process ownership need deliberate integration",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/output_transport.py",
+      "symbol": "RedisBroadcastForwarder",
+      "lines": "1-35",
+      "role": "Server mounting and process ownership need deliberate integration",
+      "evidence": [
+        "F010"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Preserve VoiceBot-owned prompt, tools and conversation persistence.",
+      "evidence": [
+        "F001",
+        "F010"
+      ],
+      "implication": "Extend transport/session integration; do not substitute a raw Nova SDK conversation."
+    },
+    {
+      "statement": "The existing avatar tee and viewer-token endpoint use different session ownership stores.",
+      "evidence": [
+        "F003",
+        "F005",
+        "F010"
+      ],
+      "implication": "Add a shared, authorized broadcast descriptor and owner routing; keep live sockets process-local."
+    },
+    {
+      "statement": "One viewer identity must not be shared by multiple browser connections.",
+      "evidence": [
+        "F005",
+        "F012"
+      ],
+      "implication": "Mint a unique subscribe-only token per viewer connection."
+    },
+    {
+      "statement": "The avatar sink consumes PCM audio without a required text field.",
+      "evidence": [
+        "F004",
+        "F011"
+      ],
+      "implication": "Keep transcripts and tool/UI output on a separate application channel."
+    },
+    {
+      "statement": "A direct audio publisher shares the avatar identity by default and its flush does not clear queued audio.",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "If audience-wide audio fallback is selected, give it a distinct identity and prove queue clearing and exclusive playback."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "scope_confidence": "medium",
+    "new": [
+      "An ownership-aware shared broadcast descriptor linking a VoiceBot session to one avatar/LiveKit room.",
+      "An observer join/leave flow that does not start a second Nova/avatar session.",
+      "One self-contained HTML example with controller and viewer modes and an end-to-end test recipe.",
+      "Audience-wide Nova audio fallback in the same room, with at most 10 receiving browsers and a unique publisher identity."
+    ],
+    "modified": [
+      {
+        "area": "Voice session lifecycle and relay",
+        "evidence": [
+          "F003",
+          "F004",
+          "F010"
+        ]
+      },
+      {
+        "area": "Viewer authorization and token discovery",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "area": "Observer-only UI and audio playback ownership",
+        "evidence": [
+          "F006",
+          "F009"
+        ]
+      },
+      {
+        "area": "Combined integration coverage",
+        "evidence": [
+          "F007"
+        ]
+      }
+    ],
+    "untouched": [
+      "FULL mode behavior",
+      "Existing text-to-avatar and avatar-free paths",
+      "Multiple microphone drivers or RTC input pipeline",
+      "Cross-room forwarding, HLS/CDN streaming and recordings",
+      "New STT/TTS pipeline or old Phase C worker restoration"
+    ],
+    "patterns": [
+      {
+        "statement": "Reuse LITE session lifecycle, PCM forwarding, viewer grants and provider-neutral VoiceBot execution.",
+        "evidence": [
+          "F001",
+          "F003",
+          "F004",
+          "F005"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "statement": "Vendor config/track behavior needs a small live contract probe before final implementation commitments.",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "statement": "A local registry alone fails when join requests land on another process.",
+        "evidence": [
+          "F005",
+          "F010"
+        ]
+      },
+      {
+        "statement": "Dual output or fallback can double audio and lose avatar synchronization.",
+        "evidence": [
+          "F003",
+          "F009"
+        ]
+      },
+      {
+        "statement": "Observer disconnect must not stop the shared producer.",
+        "evidence": [
+          "F006",
+          "F009"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "VoiceBot already selects Nova 2 Sonic and streams audio through its bot-owned execution path.",
+      "evidence": [
+        "F001",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct source reads."
+    },
+    {
+      "id": "C2",
+      "statement": "The current voice relay already sends generated PCM, completion and interruption to LiveAvatar.",
+      "evidence": [
+        "F003",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Current _HandlerVoiceSession._relay was read; not inferred from legacy handler alone."
+    },
+    {
+      "id": "C3",
+      "statement": "The existing viewer endpoint cannot discover a VoiceBot avatar from the examined connection-only storage path.",
+      "evidence": [
+        "F003",
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "Separate storage and lookup paths read directly."
+    },
+    {
+      "id": "C4",
+      "statement": "LiveKit documents simultaneous audio/video broadcast to multiple viewers.",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "Explicit official livestreaming use case."
+    },
+    {
+      "id": "C5",
+      "statement": "A single LiveAvatar LITE session should serve the clarified audience through one shared LiveKit room.",
+      "evidence": [
+        "F011",
+        "F012",
+        "F014"
+      ],
+      "confidence": "medium",
+      "reasoning": "Documented capabilities compose, but the combined live service path has not been exercised."
+    },
+    {
+      "id": "C6",
+      "statement": "The current Nova output rate and PCM representation match the documented avatar input contract.",
+      "evidence": [
+        "F002",
+        "F004",
+        "F011",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "Repository constants and vendor formats agree."
+    },
+    {
+      "id": "C7",
+      "statement": "The existing viewer component needs separate observer join/leave semantics to avoid starting or stopping the shared session.",
+      "evidence": [
+        "F006",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Its start and teardown call controller APIs."
+    },
+    {
+      "id": "C8",
+      "statement": "Multi-worker session discovery and authenticated ownership must be integrated explicitly.",
+      "evidence": [
+        "F005",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "Session records are process-local and the handler defaults to optional authentication."
+    },
+    {
+      "id": "C9",
+      "statement": "The accepted LiveAvatar BYO payload keys and actual audio/video track publication remain unverified.",
+      "evidence": [
+        "F004",
+        "F011"
+      ],
+      "confidence": "low",
+      "reasoning": "Documentation example and repository keys differ; OpenAPI retrieval was unavailable and no account probe ran."
+    },
+    {
+      "id": "C10",
+      "statement": "Existing mock tests do not establish Nova-to-avatar playback across simultaneous real browsers.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "Tests fake the transports and viewer JWTs."
+    },
+    {
+      "id": "C11",
+      "statement": "Restoring the former RTC microphone worker is unnecessary for the clarified output-only scope.",
+      "evidence": [
+        "F008",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "Explicit user clarification plus documented worker deletion."
+    },
+    {
+      "id": "C12",
+      "statement": "A working HTML controller/viewer test page is required to demonstrate the complete combined path.",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "Explicit user requirement."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "What audience size should be validated beyond the minimum three simultaneous viewers?",
+      "blocks_claims": [
+        "C5"
+      ],
+      "plausible_answers": [
+        "up to 10",
+        "up to 50",
+        "more than 50"
+      ],
+      "ask_user": true,
+      "resolved": true,
+      "answer": "At most 10 viewers.",
+      "answer_source": "clarifications.md"
+    },
+    {
+      "id": "U2",
+      "question": "If LiveAvatar fails, should the broadcast continue with direct Nova audio for all viewers or stop with an explicit error?",
+      "blocks_claims": [
+        "C5",
+        "C7"
+      ],
+      "plausible_answers": [
+        "continue audio-only",
+        "stop broadcast"
+      ],
+      "ask_user": true,
+      "resolved": true,
+      "answer": "Continue with Nova audio only for the broadcast audience.",
+      "answer_source": "clarifications.md"
+    }
+  ],
+  "answers": [
+    {
+      "question": "Does multi-room imply multiple RTC microphone drivers?",
+      "answer": "Output only: multiple connected people receive the same generated avatar audio/video.",
+      "source": "clarifications.md",
+      "resolved_by_user": true
+    },
+    {
+      "question": "What end-to-end deliverables are required?",
+      "answer": "Complete Nova 2 audio VoiceBot + LiveAvatar + LiveKit + multiple-browser path, including one HTML example for testing.",
+      "source": "clarifications.md",
+      "resolved_by_user": true
+    },
+    {
+      "question": "Audience size and avatar failure policy",
+      "answer": "small groups: no more than 10 viewers and yes: if liveavatar fails, continue with Nova Audio only",
+      "source": "clarifications.md",
+      "resolved_by_user": true
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All material user requirements are resolved; specify the complete combined path and HTML acceptance fixture, with a mandatory vendor contract spike and cross-worker/fallback validation."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014"
+    ],
+    "findings_unused": [],
+    "notes": "Research budget overrun of 37.3 seconds includes finding persistence. Further account/capacity probes deferred; no implementation or live validation claims. sdd-spec is recommended due explicit scope steering, not direct task execution. FEAT-561 is provisional proposal identity; formal spec reservation remains separate.",
+    "review_gate": {
+      "scope_confirmed_by_user": true,
+      "proposal_accepted": false,
+      "choices": [
+        "proceed",
+        "refine research",
+        "refine synthesis",
+        "abort"
+      ],
+      "review_status": "User clarified and confirmed the scope, HTML acceptance requirement, audience limit and audio-only fallback. Final proposal remains review, not accepted."
+    },
+    "research_followups": [
+      "Verify accepted LiveAvatar livekit_config keys and actual audio/video tracks against the configured account.",
+      "Verify deployment capacity and late-join A/V synchronization under the selected viewer count.",
+      "Resolve whether to provide invite links or authenticated per-viewer joins; use authenticated same-tenant access as the proposed first version."
+    ]
+  }
+}

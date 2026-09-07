@@ -1,0 +1,272 @@
+[
+  {
+    "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+    "symbol": "VoiceBot._resolve_llm_config",
+    "lines": "190-258",
+    "role": "VoiceBot already selects Nova 2 Sonic and owns voice memory",
+    "evidence": [
+      "F001"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+    "symbol": "VoiceBot.ask_stream",
+    "lines": "475-663",
+    "role": "VoiceBot already selects Nova 2 Sonic and owns voice memory",
+    "evidence": [
+      "F001"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+    "symbol": "NovaAudio",
+    "lines": "303-305,633-657,1119-1177,1237-1249",
+    "role": "Nova and LiveAvatar have matching output formats",
+    "evidence": [
+      "F002"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot/src/parrot/voice/session.py",
+    "symbol": "VoiceSession",
+    "lines": "36-250,297-346",
+    "role": "Nova and LiveAvatar have matching output formats",
+    "evidence": [
+      "F002"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+    "symbol": "_HandlerVoiceSession._relay",
+    "lines": "254-256,510-537,1151-1196,1631-1686,1688-1717,1791-1804",
+    "role": "VoiceChat already forwards generated audio to a LITE avatar",
+    "evidence": [
+      "F003"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+    "symbol": "VoiceChatHandler",
+    "lines": "586-644",
+    "role": "VoiceChat already forwards generated audio to a LITE avatar",
+    "evidence": [
+      "F003"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+    "symbol": "VoiceAvatarSession",
+    "lines": "151-250",
+    "role": "VoiceChat already forwards generated audio to a LITE avatar",
+    "evidence": [
+      "F003"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+    "symbol": "VoiceAvatarSession",
+    "lines": "151-270",
+    "role": "Existing LITE session and audio transport can be reused",
+    "evidence": [
+      "F004"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/avatar_ws.py",
+    "symbol": "AvatarWebSocket",
+    "lines": "153-228,283-305",
+    "role": "Existing LITE session and audio transport can be reused",
+    "evidence": [
+      "F004"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/client.py",
+    "symbol": "LiveAvatarClient.create_session_token",
+    "lines": "149-170",
+    "role": "Existing LITE session and audio transport can be reused",
+    "evidence": [
+      "F004"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+    "symbol": "_mint_viewer_tokens",
+    "lines": "560-653,680-688",
+    "role": "Multi-viewer token issuance exists but targets REST session state",
+    "evidence": [
+      "F005"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+    "symbol": "AvatarViewersView",
+    "lines": "643-653",
+    "role": "Multi-viewer token issuance exists but targets REST session state",
+    "evidence": [
+      "F005"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/room_manager.py",
+    "symbol": "LiveKitRoomManager.mint_room_tokens",
+    "lines": "64-135",
+    "role": "Multi-viewer token issuance exists but targets REST session state",
+    "evidence": [
+      "F005"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/ui/src/lib/api/avatar.ts",
+    "symbol": "mintViewerTokens",
+    "lines": "205-235,339-375",
+    "role": "Existing UI helpers need an observer-only lifecycle",
+    "evidence": [
+      "F006"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/ui/src/lib/components/agents/avatar/AvatarViewer.svelte",
+    "symbol": "startSession",
+    "lines": "82-179",
+    "role": "Existing UI helpers need an observer-only lifecycle",
+    "evidence": [
+      "F006"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/ui/src/lib/components/agents/avatar/VoiceNativeAvatarViewer.svelte",
+    "symbol": "startSession",
+    "lines": "97-171",
+    "role": "Existing UI helpers need an observer-only lifecycle",
+    "evidence": [
+      "F006"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py",
+    "symbol": "test_gemini_audio_to_avatar_end_to_end",
+    "lines": "1-149",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/tests/voice/test_voice_avatar_session.py",
+    "symbol": "test_viewer_credentials_no_agent_token",
+    "lines": "20-84",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/tests/handlers/test_avatar_viewers.py",
+    "symbol": "test_mint_viewer_tokens_returns_n_tokens",
+    "lines": "35-91,176-200",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/pyproject.toml",
+    "symbol": "liveavatar",
+    "lines": "91-97",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-client-amazon/pyproject.toml",
+    "symbol": "dependencies",
+    "lines": "17-25",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/ui/package.json",
+    "symbol": "livekit-client",
+    "lines": "45",
+    "role": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+    "evidence": [
+      "F007"
+    ]
+  },
+  {
+    "path": "sdd/specs/liveavatar-voice-consolidation.spec.md",
+    "symbol": "FEAT-249",
+    "lines": "1-136",
+    "role": "The old RTC worker was intentionally removed",
+    "evidence": [
+      "F008"
+    ]
+  },
+  {
+    "path": "sdd/tasks/completed/TASK-1600-delete-phase-c-worker-stack.md",
+    "symbol": "TASK-1600",
+    "lines": "wiki page; Completion Note",
+    "role": "The old RTC worker was intentionally removed",
+    "evidence": [
+      "F008"
+    ]
+  },
+  {
+    "path": "docs/frontend/liveavatar-phase-c-frontend-guide.md",
+    "symbol": "deprecation notice",
+    "lines": "1-4",
+    "role": "The old RTC worker was intentionally removed",
+    "evidence": [
+      "F008"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+    "symbol": "_start_avatar_session",
+    "lines": "151-188,216-240,344-367,435-465",
+    "role": "Direct audio fallback exists in another session path",
+    "evidence": [
+      "F009"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/room_audio_publisher.py",
+    "symbol": "RoomAudioPublisher",
+    "lines": "138-153,170-236",
+    "role": "Direct audio fallback exists in another session path",
+    "evidence": [
+      "F009"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+    "symbol": "_register_voice_chat_routes",
+    "lines": "1816-1841",
+    "role": "Server mounting and process ownership need deliberate integration",
+    "evidence": [
+      "F010"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+    "symbol": "VoiceChatHandler",
+    "lines": "586-644",
+    "role": "Server mounting and process ownership need deliberate integration",
+    "evidence": [
+      "F010"
+    ]
+  },
+  {
+    "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/output_transport.py",
+    "symbol": "RedisBroadcastForwarder",
+    "lines": "1-35",
+    "role": "Server mounting and process ownership need deliberate integration",
+    "evidence": [
+      "F010"
+    ]
+  }
+]
