@@ -172,9 +172,124 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Rewrote `stream_voice()`'s tool-scheduling section in
+`packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- **Coordinator loop**: a single `_read_next_event()` task (wrapping
+  `events_iter.__anext__()`) races against every in-flight tool task via
+  `asyncio.wait({next_event_task, *running_tasks.values()},
+  return_when=FIRST_COMPLETED)`. Finished tool tasks are harvested and
+  their deltas yielded FIRST on every loop pass, regardless of whether
+  the provider-event task also completed — the exact "wake on completed
+  tool jobs even without a new provider event" requirement.
+- **Immediate admission**: `_admit_tool()` runs at `contentEnd(TOOL)` —
+  dedups by `admitted_ids` (silently ignores a duplicate, never
+  re-executes), bounds unfinished work to 32
+  (`MAX_UNFINISHED_TOOLS`, a correlated `{"tool_status": "overloaded"}`
+  response on excess), appends to `tool_calls_list` in ARRIVAL order
+  (before dispatch), then calls `_start_queued_tools()`.
+- **Concurrency**: `max_concurrent_tools = 4 if parallel_tool_execution
+  else 1`. `_start_queued_tools()` promotes queued calls up to that cap;
+  `_harvest_finished_tools()` frees a slot and re-promotes on every
+  completion. The manager's per-instance lock (TASK-2938) still
+  serializes same-instance calls beneath this numeric cap — Nova's
+  coordinator does not track tool-instance identity itself.
+- **`_execute_and_deliver_tool()`** (new): the per-tool execute→map→send→
+  build-delta unit, extracted so it can run as an independent
+  `asyncio.Task`. Does NOT touch `tool_calls_list`/`usage` itself —
+  left to the caller so admission-order and completion-order stay
+  correctly decoupled.
+- **`_drain_admitted_tools()`** (new): settles admitted-but-unfinished
+  work before the final snapshot (completionEnd/END_TURN), the
+  8-minute connection-limit teardown, and a stream-ended-without-
+  completionEnd exit. **Bug found and fixed during implementation**: an
+  earlier version force-started every queued call immediately on drain
+  ("ignore the cap, we're closing out") — this silently broke the
+  default serial ordering whenever `completionEnd` arrived while a
+  second call was still queued (a real scenario: Nova can send
+  `completionEnd` immediately after two back-to-back tool calls,
+  without waiting for either to finish). Fixed to respect the SAME
+  `max_concurrent_tools` cap during drain — it just keeps
+  awaiting+harvesting+re-promoting until both `running_tasks` and
+  `queued_tools` are empty. Caught by
+  `test_parallel_tool_execution.py::test_sequential_default`'s
+  wall-clock assertion (105ms observed vs. the ≥180ms expected for two
+  sequential 100ms tools) — traced with a throwaway instrumented debug
+  run, not source inspection alone.
+- **Write lock**: a stream-local `write_lock = asyncio.Lock()` created
+  once in `stream_voice()`, threaded to `_audio_sender()` (new optional
+  param, defaults to a fresh lock if not supplied) and to
+  `_execute_and_deliver_tool()`'s `_send_tool_result()` call (via the
+  new `_send_event_locked()` helper) — held only per-frame(-sequence),
+  never across tool execution or a provider-event wait, never acquired
+  recursively. The setup sequence (`sessionStart`/`promptStart`/system-
+  prompt/user-content-start) also goes through it for consistency.
+- **Cancellation-safe cleanup**: `finally` now cancels+awaits
+  `next_event_task` and every still-running tool task BEFORE
+  `_end_session()` sends its shutdown frames, so no coordinator write
+  can race the shutdown sequence.
+- `_TurnState.pending_tools` (the old queue field) is left declared but
+  unused by the new flow — not removed, since other tests may still
+  construct/inspect `_TurnState` directly and it costs nothing to leave
+  it as a harmless, backward-compatible dataclass field.
+- `_flush_pending_tools()` (TASK-2939) is left completely unchanged —
+  no longer called from `stream_voice()`'s main flow, but still a
+  valid, independently-tested batch-execution utility
+  (`test_nova_dual_output.py` calls it directly) — removing or
+  refactoring it risked that file's tests for no benefit in this task.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/clients/test_nova_tool_progress.py -q`
+  → 7 passed (`artifacts/logs/task-2940-nova-suite.log`).
+- `pytest packages/ai-parrot/tests/clients/ -k nova -q` → 159 passed, 1
+  failed (pre-existing on `dev` — `test_nova_protocol_frames.py::
+  test_prompt_start_declares_tool_use_output_configuration`, verified),
+  8 skipped (`artifacts/logs/task-2940-nova-suite.log`).
+- Full `packages/ai-parrot/tests/clients/` suite → 382 passed, 7 failed,
+  39 skipped (`artifacts/logs/task-2940-full-clients-suite.log`); all 7
+  failures verified pre-existing on unmodified `dev`
+  (`test_bedrock_inference_config.py` x2, `test_factory_bedrock.py` x1,
+  `test_live_envelope.py` x2, `test_nova_protocol_frames.py` x1,
+  `test_parallel_tool_execution.py::test_parallel_error_isolation` — the
+  last one fails on both baseline and here due to a PRE-EXISTING
+  duplicate-counting artifact of `LiveToolCall` objects appearing in
+  both their own streamed delta AND the final `tool_calls_list`
+  snapshot — not introduced or worsened by this task).
+- Stability check: ran the combined Nova client test files 3x in a row
+  (isolated, paired, and full-suite combinations) — 0 flakes after the
+  drain-cap fix above; one isolated pre-fix flake during debugging was
+  traced to the same force-start-on-drain bug, not test timing.
+- `ruff check` on all 5 touched/created files: clean, zero findings.
+
+**Scope note (transparent deviation)**: this task's file table lists
+only `audio.py`, `test_nova_tool_progress.py` (new), and
+`test_nova_tool_result.py` (modify). Two additional pre-existing files
+— `test_nova.py` (one test:
+`TestStreamVoice::test_stream_voice_tool_use`) and
+`test_parallel_tool_execution.py` (three tests) — were ALSO broken by
+this task's `_execute_tool` → `_execute_tool_full` architecture change
+(same root cause TASK-2939's completion note already flagged for
+`test_nova.py`), and `test_parallel_tool_execution.py` specifically
+exercises the EXACT feature area this task rewrites (FEAT-416 TASK-2148
+§3 Module 4 — the old queue/flush model). Fixed both rather than left
+broken: this task's own acceptance criterion is "retain protocol,
+shutdown and interruption regression suites," and a `dev`-bound feature
+branch should not ship with a self-inflicted, easily-traceable
+regression in an adjacent file just because a task-decomposition table
+didn't anticipate it. Both fixes are mechanical (mock target rename +
+`{"output": ...}` wrapping assertion updates) with no behavioral
+changes to the tests' own intent.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-07
+**Notes**: The drain-cap bug (see above) was the one non-trivial defect
+found during implementation; caught by an existing regression test's
+wall-clock assertion, not by any of this task's own new tests (worth
+noting for future coordinator work: none of the 7 new
+`test_nova_tool_progress.py` tests exercise a "completionEnd arrives
+while more than `max_concurrent_tools` calls are still queued in serial
+mode" scenario directly — `test_parallel_tool_execution.py::
+test_sequential_default` incidentally covers it).
+**Deviations from spec**: none in the implementation. Test-scope
+deviation documented above (two extra files fixed, transparently, not
+silently).
