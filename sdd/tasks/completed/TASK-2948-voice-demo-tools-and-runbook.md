@@ -194,9 +194,94 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Replaced `examples/clients/voice/server.py`'s plain `@tool`-decorated
+`get_weather(location) -> str` (shared as a single module-level object
+across both bot factories) with `VoiceDemoWeatherTool`, a deterministic
+`AbstractTool` (`name="get_weather"`) returning a `ToolResult` with
+`voice_text`, structured `display_data` (tagged `demo_fixture: True`) and
+a plain `result` — so both Gemini and Nova exercise the same supported
+dual-output route. `make_gemini_bot()`/`make_nova_bot()` each now
+construct `tools=[VoiceDemoWeatherTool()]` — a fresh instance per call,
+never a shared singleton — satisfying "instantiate fresh mutable tools
+per bot factory." The tool also resolves a bounded, opt-in slow-tool
+delay from `VOICEBOT_DEMO_TOOL_DELAY_SECONDS` (clamped to `[0, 30]`) so
+the real-live tool-interruption scenario can be exercised on demand
+without a permanently slow demo.
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+Created `packages/ai-parrot-integrations/tests/voice/test_voice_demo_tools.py`
+(11 tests, no cloud credentials needed — `aws_sdk_bedrock_runtime` is
+stubbed via `sys.modules` before the module loads so `make_nova_bot()`
+constructs a real `NovaClient` for real, same trick used throughout this
+feature's Nova tests): factory isolation (three separate factory calls —
+two Gemini, one Nova — all produce distinct tool objects; mutating one
+instance's `_delay_seconds` never affects another); identical
+`voice_text`/`display_data` output from the Gemini and Nova bots' own
+fresh tool instances for the same input; and the delay resolution's
+clamping (missing/invalid/negative/over-max env values) plus proof that
+`asyncio.sleep` is genuinely awaited for the resolved (clamped) duration
+via an instrumented stand-in — never a real 30-second wait in CI, and
+`test_zero_delay_never_calls_sleep` proves the normal (instant) case
+never touches `asyncio.sleep` at all.
+
+Rewrote `examples/clients/voice/README.md`: a new "LiveAvatar viewer
+(optional, FEAT-536)" section documenting all three prerequisites
+(backend tenant/agent opt-in, `LIVEAVATAR_*`/LiveKit server
+configuration, the locked frontend SDK's `pnpm install` step) with the
+degrade-gracefully behavior when any is missing; the shared-tool section
+rewritten to describe `VoiceDemoWeatherTool`'s per-factory isolation;
+a new "Triggering a slow tool" subsection documenting the env var; and a
+full "Real-live acceptance runbook (spec §4, AC13)" table covering both
+providers with/without avatar, a second turn, the slow-tool +
+Interrupt scenario, reconnect/provider-switch with avatar on, and the
+avatar-failure fallback — explicitly pointing evidence at TASK-2949's
+own report rather than claiming a pass here. The Files table now lists
+`avatar-viewer.js` too.
+
+Corrected `docs/frontend/voicebot-realtime-frontend-guide.md`: (1) the
+stale "VoiceBot siempre usa GeminiLiveClient" claim, replaced with the
+actual `voice_config.provider`-driven Gemini/Nova selection plus a new
+`provider` row in the `VoiceConfig` table; (2) the nonexistent
+`packages/ai-parrot/src/parrot/clients/live.py` path (two occurrences),
+corrected to `packages/ai-parrot-client-google/.../google/live.py` +
+`packages/ai-parrot-client-amazon/.../nova/audio.py`, and to
+`packages/ai-parrot/src/parrot/models/voice.py` for `LiveVoiceResponse`
+itself (which lives in neither client file); (3) the unconditional
+"mute `/ws/voice` immediately on avatar track subscribe" guidance
+(appeared 4 times: the quick-summary golden rule, §4.3 rule #2, the
+`joinAvatarRoom()` code sample, and the troubleshooting table) — all
+replaced with the actual one-source policy this feature implements:
+continue the WebSocket fallback until `room.canPlaybackAudio`/
+`RoomEvent.AudioPlaybackStatusChanged` confirms the avatar track is
+actually playable, only then mute-and-switch, with a sticky explicit
+mute and future-only resume on avatar failure — each pointing to
+`examples/clients/voice/static/avatar-viewer.js`'s `AvatarViewerController`
+as the tested reference implementation rather than re-deriving the
+sequence from scratch. Also documented `start_recording` doubling as
+the Interrupt/speak-again message (spec: no new protocol message) and
+added a "Referencia funcionando" pointer to the whole
+`examples/clients/voice/` demo near the top of the document plus a
+"Demo funcionando" bullet group in §8's reference table.
+
+Verification:
+- `pytest packages/ai-parrot-integrations/tests/voice/test_voice_demo_tools.py`
+  — 11 passed (`artifacts/logs/TASK-2948-pytest.log`).
+- Full `packages/ai-parrot-integrations/tests/voice/` — 175 passed, 1
+  skipped, no regression from the tool swap.
+- TASK-2945's aiohttp `TestClient` smoke script re-run against the
+  modified `server.py` — index page, `/static/avatar-viewer.js`,
+  `/voice-assets/livekit-client.umd.js` and both `/ws/*` routes all
+  still serve correctly.
+- `ruff check` clean on both Python files.
+- Markdown sanity: both doc files have balanced code fences; no
+  remaining `clients/live.py` or "siempre...Gemini" references (grepped
+  to confirm zero occurrences after the edits).
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: No real-live matrix run is claimed here — the README's new
+runbook table is a documented procedure for a human (or TASK-2949) to
+execute against real Gemini/Nova credentials and a real LiveAvatar
+backend; this task's own verification is limited to the automated tool
+tests and a smoke-level server re-check, exactly matching this task's
+"NOT in scope: ... no live acceptance claim."
 **Deviations from spec**: none recorded
