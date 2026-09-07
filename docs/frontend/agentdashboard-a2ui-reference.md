@@ -213,7 +213,7 @@ Registered in `manager.py:2047-2052`, literal sub-routes first.
 | `POST` | `/api/v1/agents/{agent_id}/a2ui?session_id=…[&user_id=…][&agent_name=…]` | Dispatch one renderer→agent envelope, a JSON array of them, or JSONL |
 | `GET` | `/api/v1/agents/{agent_id}/a2ui?session_id=…` | **SSE** stream of queued `callRendererFunction` envelopes for that session |
 | `GET` | `/api/v1/agents/{agent_id}/a2ui/capabilities` | `{"v1.0":{"supportedCatalogIds":[parrot, basic],"acceptsInlineCatalogs":false}}` |
-| `GET` | `/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}[?format=html\|json][&share=token]` | Mirror of the persisted-surface GET (§3.4), same negotiation service |
+| `GET` | `/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}[?format=html\|json][&share=token]` | Mirror of the persisted-surface GET (§3.4), same negotiation service — same scope-aware access rule too (§3.4.1): a tenant/group-visible surface owned by someone else is readable here exactly as it is through the REST lane |
 
 **POST semantics** (`a2ui.py:135-204`):
 
@@ -227,21 +227,22 @@ Registered in `manager.py:2047-2052`, literal sub-routes first.
 
 **SSE stream** (`a2ui.py:274-315`): `Content-Type: text/event-stream`, frames `data: {"version":"v1.0","callRendererFunction":{…}}\n\n`, keepalive comment `: keepalive` every 15 s. Records are only marked delivered after a successful write, so a dropped connection redelivers on reconnect. Use `EventSource` (cookie auth) or a `fetch` reader (bearer auth) — `EventSource` cannot set headers.
 
-### 3.4 Persistent surfaces: `UISurfacesHandler` (FEAT-492)
+### 3.4 Persistent surfaces: `UISurfacesHandler` (FEAT-492, tenant/group visibility FEAT-535)
 
 Kinds: `UISurfaceKind = "dashboard" | "infographic" | "widget"`. Table `navigator.ui_surfaces` (+ `ui_surface_shares`). Every route requires an authenticated user; errors are always `{"status":"error","message":"…"}`.
 
 | Method | Route | Body / params | Response |
 |---|---|---|---|
-| `GET` | `/api/v1/ui/surfaces[?kind=dashboard\|infographic\|widget]` | — | `{"status":"success","count":N,"surfaces":[{surface_id, kind, title, refreshable, created_at, updated_at, catalog_id, agent_id, access:"owner"\|"shared"}]}` |
-| `GET` | `/api/v1/ui/surfaces/{surface_id}[?share=token][&format=json\|html]` | `Accept: text/html` also selects HTML; `?format=` wins; default JSON | JSON: `{"status":"success","envelope":{…createSurface…},"metadata":{…same fields as list…}}` · HTML: `text/html` rendered on the fly by `InteractiveHTMLRenderer` |
-| `POST` | `/api/v1/ui/surfaces` | `PublishSurfaceRequest` (below) | `201 {"status":"success","surface_id":"<uuid4>"}` |
-| `POST` | `/api/v1/ui/surfaces/{surface_id}/refresh[?share=token]` | `{"params":{…}}` | The **negotiated** (JSON or HTML) refreshed surface |
-| `POST` | `/api/v1/ui/surfaces/{surface_id}/share` | `{"expires_at": iso8601\|null, "ttl": false}` | `201 {"status":"success","token":"…","expires_at":…,"permissions":"read+refresh"}` |
-| `DELETE` | `/api/v1/ui/surfaces/{surface_id}` | — | `{"status":"success"}` |
-| `DELETE` | `/api/v1/ui/surfaces/{surface_id}/share/{token}` | — | `{"status":"success"}` |
+| `GET` | `/api/v1/ui/surfaces[?kind=dashboard\|infographic\|widget]` | — | `{"status":"success","count":N,"surfaces":[{surface_id, kind, title, refreshable, created_at, updated_at, catalog_id, agent_id, tenant, visibility, allowed_groups, recipe_name, recipe_params, access:"owner"\|"tenant"\|"shared"}]}` — owned ∪ tenant/group-visible ∪ token-shared, deduplicated by `surface_id` (a row both visible-by-scope AND token-shared is reported once, tagged `"tenant"`; owner always wins) |
+| `GET` | `/api/v1/ui/surfaces/{surface_id}[?share=token][&format=json\|html]` | `Accept: text/html` also selects HTML; `?format=` wins; default JSON | JSON: `{"status":"success","envelope":{…createSurface…},"metadata":{…same fields as list…}}` · HTML: `text/html` rendered on the fly by `InteractiveHTMLRenderer` — a tenant/group-visible viewer gets `200` here exactly like the owner (§3.4.1) |
+| `POST` | `/api/v1/ui/surfaces` | `PublishSurfaceRequest` (below) | `201 {"status":"success","surface_id":"<uuid4>"}` · `422` when `visibility` is not `"private"` and the caller has no scope tenant (§3.4.1) |
+| `POST` | `/api/v1/ui/surfaces/{surface_id}/refresh[?share=token]` | `{"params":{…}}` | The **negotiated** (JSON or HTML) refreshed surface — a tenant/group viewer may refresh too, same as a share bearer, still under the **owner's** permission context |
+| `POST` | `/api/v1/ui/surfaces/{surface_id}/share` | `{"expires_at": iso8601\|null, "ttl": false}` | `201 {"status":"success","token":"…","expires_at":…,"permissions":"read+refresh"}` — **owner-only**, `404` otherwise (no oracle) |
+| `PATCH` | `/api/v1/ui/surfaces/{surface_id}` | `PatchVisibilityRequest`: `{"visibility": "private"\|"tenant"\|"groups", "allowed_groups": ["…"]}` | `200 {"status":"success","metadata":{…}}` — **owner-only**. `400` on an invalid body. `404` for a non-owner or unknown id (no oracle — same response either way). `422` when `visibility` is not `"private"` and the STORED surface has no `tenant` |
+| `DELETE` | `/api/v1/ui/surfaces/{surface_id}` | — | `{"status":"success"}` — **owner-only**, `404` otherwise |
+| `DELETE` | `/api/v1/ui/surfaces/{surface_id}/share/{token}` | — | `{"status":"success"}` — **owner-only**, `404` otherwise |
 
-`PublishSurfaceRequest` (`ui_surfaces.py:58-76`):
+`PublishSurfaceRequest` (`ui_surfaces.py`):
 
 ```jsonc
 {
@@ -253,7 +254,9 @@ Kinds: `UISurfaceKind = "dashboard" | "infographic" | "widget"`. Table `navigato
   "session_id": "…",
   "recipe_name": "flex-program-dashboard",   // optional: makes the surface refreshable
   "recipe_owner": null,
-  "recipe_params": {"month": "2025-10"}
+  "recipe_params": {"month": "2025-10"},
+  "visibility": "private",             // optional, default "private" — "private" | "tenant" | "groups"
+  "allowed_groups": []                 // optional, default [] — only consulted when visibility="groups"
 }
 ```
 
@@ -261,9 +264,43 @@ Rules that matter to the client:
 
 - `envelope` is validated as `CreateSurface` (the **inner** object). Pass `a2ui_envelope.createSurface`, not the whole `{version, createSurface}` envelope. Validation failure → `400 {"status":"error","message":"Invalid envelope","errors":[…pydantic…]}`.
 - The stored `surface_id` is **always a fresh uuid4** — it differs from the envelope's own `surfaceId`. Key your UI state on the stored id; keep the envelope's `surfaceId` for RPC messages.
-- Access: owner, or anyone presenting a valid `?share=` token. Unknown / foreign-without-token → `404` (no existence oracle). Token supplied but revoked/expired/mismatched → `410`. A token is **claimed** by the first authenticated user who opens it and then appears in that user's list with `access: "shared"`.
-- `refreshable` is `true` iff `recipe_name` is set. Refresh precedence: request `params` > stored `recipe_params` > recipe defaults. Refresh runs under the **owner's** permission context even for share bearers. Non-refreshable → `409 {"status":"error","message":"Surface has no recipe_ref and cannot be refreshed","refreshable":false}`. Recipe failure → `422` (or `502` when the failing stage is `data`) with `RecipeRunError` fields (`recipe, stage, transformer, dataset, missing_columns, detail`).
+- Access: owner, or tenant/group-visible by the caller's scope (§3.4.1), or anyone presenting a valid `?share=` token. Unknown / foreign-without-any-of-those → `404` (no existence oracle). Token supplied but revoked/expired/mismatched → `410`. A token is **claimed** by the first authenticated user who opens it and then appears in that user's list with `access: "shared"`.
+- **There is no `tenant` field in the request body** — the server always sets `record.tenant` from the caller's resolved scope; a client-supplied `tenant` key is silently ignored. `visibility`/`allowed_groups` ARE client-supplied, on save (above) and later via `PATCH` (above).
+- `refreshable` is `true` iff `recipe_name` is set. Refresh precedence: request `params` > stored `recipe_params` > recipe defaults. Refresh runs under the **owner's** permission context even for share bearers AND tenant/group viewers. Non-refreshable → `409 {"status":"error","message":"Surface has no recipe_ref and cannot be refreshed","refreshable":false}`. Recipe failure → `422` (or `502` when the failing stage is `data`) with `RecipeRunError` fields (`recipe, stage, transformer, dataset, missing_columns, detail`).
 - HTML lane unavailable (visualizations package not installed) → `501`.
+
+#### 3.4.1 Visibility and the host scope resolver (FEAT-535)
+
+A surface carries a `visibility`, one of:
+
+- **`private`** (the default) — owner + share-token bearers only. Identical to pre-FEAT-535 behaviour; every row written before this feature loads as `private` with `tenant: null`, `allowed_groups: []`.
+- **`tenant`** — every caller whose resolved scope tenant equals the surface's `tenant`.
+- **`groups`** — tenant match AND the caller's groups intersect `allowed_groups`.
+
+Access order for `GET`/`?format=`/`refresh`: **owner → scope (tenant/group/superuser) → share token → `404`**. A share token still works across a foreign tenant — minting one is explicit, out-of-band consent that the tenant/group rule does not block. **Delete, share mint/revoke, and `PATCH` stay owner-only** regardless of scope — a tenant/group viewer can read and refresh, never mutate or share.
+
+A **superuser** scope sees every surface whose `tenant` equals the scope's own tenant — never cross-tenant, and never a surface with no `tenant` at all.
+
+The caller's identity, tenant, groups and superuser flag come from a **host-pluggable scope resolver** installed on the aiohttp app under `app["ui_surfaces_scope_resolver"]` (`parrot.handlers.ui_surfaces_scope.SurfaceScopeResolver` protocol — `async def resolve(request) -> SurfaceScope`, where `SurfaceScope` is `(user_id, tenant, groups, is_superuser)`). When no resolver is installed, the **default** (`SessionSurfaceScopeResolver`) reads the navigator-auth session (`user_id`, `programs`, `groups`, `superuser`) and resolves a `tenant` **only when the session carries exactly one program** — a multi-program session (e.g. an admin spanning several programs) yields `tenant: null`, which makes every tenant/group rule evaluate to "no match", keeping today's owner-only behaviour for any host that has not opted in.
+
+A host with its own tenancy seam — FieldSync, whose tenant is declared in the URL rather than the session — installs its own resolver instead of relying on the default, e.g.:
+
+```python
+class FieldsyncSurfaceScopeResolver:
+    async def resolve(self, request):
+        tenant = declared_programme(request)          # URL-declared, not session-derived
+        groups, is_superuser = resolve_session_authorization(request)
+        user_id = resolve_user_id(request)
+        return SurfaceScope(user_id, tenant, frozenset(groups), is_superuser)
+
+app["ui_surfaces_scope_resolver"] = FieldsyncSurfaceScopeResolver()
+```
+
+The SAME resolver is consulted by both the REST lane (`UISurfacesHandler`) and the A2UI mirror route (`GET .../a2ui/surfaces/{surface_id}`, §3.3) — access cannot drift between the two.
+
+**The group-vocabulary contract**: `allowed_groups` and `scope.groups` are **opaque strings** to parrot — the rule is a plain set intersection, nothing more. Parrot does not validate, normalize, or interpret them. Whoever writes `allowed_groups` (the surface's owner, via `POST`/`PATCH`) MUST use the same vocabulary the host's installed resolver emits in `scope.groups` (FieldSync's convention: session group names such as `<program>_fieldsync_manager`). A vocabulary mismatch makes a `groups`-visibility surface visible to nobody but its owner — by construction, not a bug parrot can detect or report.
+
+Back-compat: a client that sends none of the new fields (`visibility`, `allowed_groups`) observes **exactly** today's behaviour — owner-only list, owner-or-token direct access. Existing rows load as `visibility: "private"`, `tenant: null`, `allowed_groups: []` regardless of when they were written.
 
 ### 3.5 Deep-link resume (FEAT-469)
 
