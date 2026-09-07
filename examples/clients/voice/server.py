@@ -146,6 +146,76 @@ NOVA_UNAVAILABLE_REASON = (
 
 
 # ---------------------------------------------------------------------------
+# LiveKit SDK asset (FEAT-536 TASK-2943 — spec §2 "Delivering the existing
+# LiveKit SDK to the standalone page"): serve the SAME locked
+# `livekit-client` dependency `packages/ai-parrot-server/ui/package.json`
+# already declares (^2.19.2, pnpm-lock.yaml resolves 2.22.1) from that
+# package's own node_modules — never a CDN, never a different/upgraded
+# version, and never node_modules at large. Missing installation degrades
+# the avatar viewer only; both voice-provider WebSocket routes keep
+# working regardless.
+# ---------------------------------------------------------------------------
+
+_UI_PACKAGE_DIR = Path(__file__).resolve().parents[3] / "packages" / "ai-parrot-server" / "ui"
+_LIVEKIT_UMD_ROUTE = "/voice-assets/livekit-client.umd.js"
+
+
+def _resolve_livekit_umd_path() -> Path | None:
+    """Resolve the installed ``livekit-client`` UMD asset.
+
+    Verified against the upstream 2.22.1 package manifest (spec §2) and
+    the local lockfile: the UMD build lives at ``dist/livekit-client.umd.js``
+    inside the package. Resolves through pnpm's symlinked
+    ``node_modules/livekit-client`` — the real (symlink-followed) path is
+    checked to still live under that same package directory, so a
+    malformed/malicious symlink can never cause an unrelated file to be
+    served.
+
+    Returns:
+        The resolved, existing path to the UMD asset, or ``None`` when
+        the package is not installed (``pnpm install`` has not been run
+        for the UI workspace) — a documented prerequisite, not a hard
+        failure for this example.
+    """
+    package_dir = (_UI_PACKAGE_DIR / "node_modules" / "livekit-client").resolve()
+    candidate = (package_dir / "dist" / "livekit-client.umd.js").resolve()
+    if not candidate.is_file():
+        return None
+    try:
+        candidate.relative_to(package_dir)
+    except ValueError:
+        # The resolved path escaped the package directory (e.g. a
+        # tampered symlink) — refuse to serve it.
+        return None
+    return candidate
+
+
+async def voice_assets_livekit_handler(request: web.Request) -> web.Response:  # noqa: ARG001
+    """Serve the installed ``livekit-client`` UMD asset at a single,
+    narrowly-scoped, EXACT route (no path parameter, so no traversal
+    surface exists for this route at all — aiohttp's exact-match routing
+    never dispatches ``/voice-assets/../…`` or any other URL here).
+
+    Returns a controlled, non-crashing response when the package is not
+    installed — the avatar viewer is unavailable, but both voice-provider
+    WebSocket routes and the page itself keep working.
+    """
+    path = _resolve_livekit_umd_path()
+    if path is None:
+        return web.Response(
+            status=503,
+            text=(
+                "livekit-client is not installed for the UI workspace "
+                "(packages/ai-parrot-server/ui) — run its install step to "
+                "enable the avatar viewer. Voice-provider routes are "
+                "unaffected."
+            ),
+            content_type="text/plain",
+        )
+    return web.FileResponse(path, headers={"Content-Type": "application/javascript"})
+
+
+# ---------------------------------------------------------------------------
 # Bot factories — VoiceChatHandler calls bot_factory() fresh for every new
 # WebSocket connection (see _handle_start_session), so each factory must
 # build a brand-new VoiceBot rather than returning a shared instance.
@@ -257,6 +327,14 @@ async def index_handler(request: web.Request) -> web.Response:
             },
         },
         "capabilities": request.app["capabilities"],
+        # FEAT-536 TASK-2943: only the asset URL and its availability are
+        # exposed here — never a credential, never a LiveAvatar/LiveKit
+        # secret (those only ever reach the browser via each session's own
+        # session_started.avatar viewer credentials, Module 5/TASK-2945).
+        "avatar": {
+            "sdkUrl": _LIVEKIT_UMD_ROUTE,
+            "available": _resolve_livekit_umd_path() is not None,
+        },
     }
     # Anchored to the exact bootstrap statement (`window.__CONFIG__ =
     # __CONFIG__;`), count=1 — a bare token-wide str.replace() would ALSO
@@ -297,6 +375,10 @@ def build_app() -> web.Application:
 
     app.router.add_get("/", index_handler)
     app.router.add_static("/static/", path=STATIC_DIR, name="static")
+    # FEAT-536 TASK-2943: single, exact, narrowly-scoped route — never a
+    # prefix/static mount over node_modules (that would expose the whole
+    # tree, not just the one locked asset).
+    app.router.add_get(_LIVEKIT_UMD_ROUTE, voice_assets_livekit_handler)
 
     if not NOVA_AVAILABLE:
         logger.warning("Nova route mounted but reports unavailable: %s", NOVA_UNAVAILABLE_REASON)
