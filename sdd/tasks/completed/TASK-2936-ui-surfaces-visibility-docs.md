@@ -92,10 +92,57 @@ Documentation only. `python -m json.tool docs/postman/a2ui-agentdashboard.postma
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-07
 **Notes**:
+- `docs/frontend/agentdashboard-a2ui-reference.md`:
+  - §3.3 mirror-route row updated to mention the scope-aware access rule.
+  - §3.4 table: list row gains `tenant`/`visibility`/`allowed_groups`/
+    `recipe_name`/`recipe_params` fields and `access: owner|tenant|shared`
+    (with the dedupe/tag-priority note); GET row notes the tenant/group
+    viewer `200`; POST row notes the `422` tenant rule; refresh row notes
+    viewer refresh under owner pctx; NEW `PATCH` row (owner-only,
+    `200`/`400`/`404`/`422`); DELETE/share rows explicitly marked
+    owner-only.
+  - `PublishSurfaceRequest` JSON example gains `visibility`/
+    `allowed_groups`; prose gains the "no `tenant` field in the body"
+    rule right where the `access` rules are already documented.
+  - New §3.4.1 "Visibility and the host scope resolver": the three
+    visibilities and their rule, access order (owner → scope → token →
+    404), owner-only mutations, superuser rule, the
+    `app["ui_surfaces_scope_resolver"]` protocol + default single-program
+    resolver, the FieldSync example resolver (using the exact
+    `declared_programme`/`resolve_session_authorization` names from spec
+    §8), the group-vocabulary contract, and the back-compat statement.
+  - Every quoted field/status/class name spot-checked against the merged
+    `ui_surfaces.py`/`ui_surfaces_scope.py`/`models/ui_surfaces.py` in this
+    worktree (not the spec text alone) — including the Completion Notes
+    of TASK-2932..2935 for the two documented deviations (raw-list
+    `allowed_groups` encoding is an internal detail, not client-visible,
+    so it is NOT mentioned in the client-facing doc; the `_patch_visibility`
+    ownership-check-before-tenant-check deviation is also internal-only,
+    the client-visible contract — `404` non-owner, `422` tenant rule — is
+    unchanged and is what the doc describes).
+  - `python -m json.tool` not applicable to this file (Markdown); no other
+    validation tooling exists for prose docs in this repo.
+- `docs/postman/a2ui-agentdashboard.postman_collection.json`: added
+  `visibility`/`allowed_groups` to the "Pin/save: dashboard" body; added a
+  "List my surfaces (tenant view)" request (folder note); added a new
+  "PATCH visibility (owner)" request with a body and a status-code test
+  script. Edited via a Python `json.load`/`json.dump(..., ensure_ascii=False)`
+  round-trip to keep the diff scoped to the intended additions (the first
+  attempt used the default `ensure_ascii=True`, which re-escaped every
+  existing em-dash in the ENTIRE file into `—` — reverted via `git
+  checkout` and redone with `ensure_ascii=False`; verified with `git diff`
+  that only the 2 intended line replacements + 2 new blocks remain).
+  `python -m json.tool docs/postman/a2ui-agentdashboard.postman_collection.json
+  > /dev/null` succeeds.
+- Changelog: `packages/ai-parrot-server` has no package-scoped
+  `CHANGELOG.md` of its own (only a repo-root `CHANGELOG.md` covering all
+  distributions together, maintained per-release rather than per-task —
+  see its own `[Unreleased]` heading and the FEAT-528 "whoever cuts the
+  release decides the number" convention this spec's own header cites).
+  Per the task's literal condition ("if `packages/ai-parrot-server`
+  keeps a changelog") — skipped, per the task's own instruction to say so.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
