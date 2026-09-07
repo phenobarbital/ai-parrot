@@ -53,7 +53,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
 
 from ..models import translate as translate_bedrock_model
 from ....models.voice import (
@@ -62,6 +62,20 @@ from ....models.voice import (
     LiveVoiceResponse,
     VoiceStreamOptions,
     VoiceTurnMetadata,
+)
+from ....tools.abstract import ToolResult
+
+if TYPE_CHECKING:
+    from ....auth.permission import PermissionContext
+
+# FEAT-536 TASK-2939: internal execution kwargs the manager's
+# AbstractTool/ToolDefinition dispatch reserves for trusted, request-local
+# use (permission enforcement, credential broker). A malicious or confused
+# model must never be able to set these by naming them as tool arguments —
+# stripped from provider-supplied args before merging trusted context in
+# ``NovaAudio._build_trusted_tool_arguments``.
+_RESERVED_TOOL_KWARGS: frozenset = frozenset(
+    {"_permission_context", "_resolver", "_broker", "_cred_channel", "_cred_user_id"}
 )
 
 # Nova Sonic / Nova 2 Sonic synthesis voice catalog (FEAT-418, TASK-2169).
@@ -280,7 +294,11 @@ class NovaAudio:
     :class:`~parrot.clients.nova.client.NovaClient` / inherited from
     ``BedrockConverseBase``): ``self.voice_id``, ``self._region``,
     ``self.model``, ``self.default_model``, ``self.logger``,
-    ``self._execute_tool(name, input)``,
+    ``self.tool_manager``, ``self._tool_param_names(name)`` (FEAT-536
+    TASK-2939 — tool execution goes through
+    ``self.tool_manager.execute_tool(..., return_tool_result=True)`` via
+    :meth:`_execute_tool_full`, NOT the reducing
+    ``self._execute_tool(name, input)`` route used elsewhere/by default),
     ``self.apply_guardrail_text(text, source)``, plus the credentials
     ``BedrockConverseBase`` resolved — ``self._aws_access_key``,
     ``self._aws_secret_key``, ``self._aws_session_token`` and
@@ -733,6 +751,169 @@ class NovaAudio:
             },
         )
 
+    def _build_trusted_tool_arguments(
+        self,
+        tool_name: str,
+        model_args: Dict[str, Any],
+        *,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        turn_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Merge trusted request-local context into model-provided tool
+        arguments (FEAT-536 TASK-2939 — spec §2 "Trusted execution context").
+
+        Reserved internal execution kwargs (``_permission_context``,
+        ``_resolver``, ``_broker``, ...) are stripped from *model_args*
+        first — a provider/model must never be able to set these by naming
+        them as tool arguments. ``session_id``/``user_id``/``turn_id`` are
+        then injected ONLY for fields the tool's declared schema/signature
+        actually accepts (via the existing
+        :meth:`~parrot.clients.base.AbstractClient._tool_param_names`
+        introspection — ``None`` means "accepts everything", e.g. ``**kwargs``
+        tools), and are merged LAST so trusted values always win over any
+        model-supplied value with the same key — the OPPOSITE precedence of
+        :meth:`~parrot.clients.base.AbstractClient._execute_tool`, whose
+        ``{**filtered_ctx, **parameters}`` merge lets the model override
+        context (spec explicitly calls this out as unsuitable for Nova's
+        trusted path).
+
+        Args:
+            tool_name: The tool being invoked (schema lookup key).
+            model_args: Parsed provider/model-supplied arguments.
+            session_id: Trusted session identifier, or ``None``.
+            user_id: Trusted user identifier, or ``None``.
+            turn_id: Trusted turn identifier, or ``None``.
+
+        Returns:
+            The merged arguments dict to pass to
+            :meth:`~parrot.tools.manager.ToolManager.execute_tool`.
+        """
+        args = {k: v for k, v in model_args.items() if k not in _RESERVED_TOOL_KWARGS}
+
+        trusted = {"session_id": session_id, "user_id": user_id, "turn_id": turn_id}
+        trusted = {k: v for k, v in trusted.items() if v is not None}
+
+        accepted = self._tool_param_names(tool_name)
+        if accepted is not None:
+            trusted = {k: v for k, v in trusted.items() if k in accepted}
+
+        return {**args, **trusted}
+
+    async def _execute_tool_full(
+        self,
+        tool_name: str,
+        model_args: Dict[str, Any],
+        *,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        turn_id: Optional[str],
+        permission_context: Optional["PermissionContext"],
+    ) -> ToolResult:
+        """Execute a tool through the manager's opt-in complete-result mode
+        (FEAT-536 TASK-2939, Module 2 — replaces the reducing
+        :meth:`~parrot.clients.base.AbstractClient._execute_tool` route for
+        Nova voice ONLY; ``NovaClient._execute_tool`` itself is NOT
+        overridden, so the text/generation path is unaffected).
+
+        Uses the SAME dispatch exactly once, with the manager's existing
+        permissions, grant/confirmation checks, credential broker, lifecycle
+        and result hooks (spec §2 G2) — never bypasses
+        :class:`~parrot.tools.manager.ToolManager`.
+
+        Args:
+            tool_name: The tool to execute.
+            model_args: Parsed provider/model-supplied arguments.
+            session_id: Trusted session identifier for context injection.
+            user_id: Trusted user identifier for context injection.
+            turn_id: Trusted turn identifier for context injection.
+            permission_context: Optional trusted ``PermissionContext`` from
+                a Python caller's ``**kwargs`` (never derived from provider/
+                model arguments — spec §2).
+
+        Returns:
+            The full ``ToolResult`` envelope (never the reduced payload).
+        """
+        merged_args = self._build_trusted_tool_arguments(
+            tool_name, model_args, session_id=session_id, user_id=user_id, turn_id=turn_id
+        )
+        result = await self.tool_manager.execute_tool(
+            tool_name,
+            merged_args,
+            permission_context=permission_context,
+            return_tool_result=True,
+        )
+        if not isinstance(result, ToolResult):
+            # Defensive: return_tool_result=True always yields a ToolResult
+            # (TASK-2937/2938) — normalize just in case a future manager
+            # change slips an unwrapped value through.
+            result = ToolResult(status="success", result=result)
+        return result
+
+    def _map_tool_result_to_nova(self, result: ToolResult) -> tuple[Any, Optional[Dict[str, Any]], str]:
+        """Map a complete ``ToolResult`` onto Nova's wire payload plus an
+        optional visual event (FEAT-536 TASK-2939 — spec §2 "Nova
+        tool-to-voice mapping" precedence table).
+
+        A successful envelope means ``status == "success" and success is
+        True``. Precedence for the provider-facing (spoken) payload:
+        nonempty ``voice_text`` wins (``{"output": voice_text}``); else a
+        dict ``result`` is sent as-is; else a string ``result`` becomes
+        ``{"output": result}``; else ``None`` maps to ``{"output":
+        "Success"}`` and any OTHER value (including falsy scalars like
+        ``False``/``0``, which must survive, not be confused with missing
+        data) becomes ``{"output": str(result)}``. A non-success envelope
+        (or one whose ``display_data`` cannot be delivered) never emits a
+        visual event; ``display_data`` itself is never serialized into the
+        spoken channel.
+
+        Args:
+            result: The full envelope from :meth:`_execute_tool_full`.
+
+        Returns:
+            ``(provider_result, display_data_or_None, tool_status)`` —
+            ``provider_result`` is what :meth:`_send_tool_result` sends to
+            Nova; ``display_data`` is the nonempty JSON-serializable visual
+            payload (or ``None``); ``tool_status`` is ``result.status``,
+            recorded by the caller under ``metadata["tool_status"]``.
+        """
+        is_successful = result.status == "success" and result.success is True
+        if not is_successful:
+            message = result.error or f"Tool failed with status={result.status}"
+            return {"error": message, "status": result.status}, None, result.status
+
+        if result.voice_text:
+            provider_result: Any = {"output": result.voice_text}
+        elif isinstance(result.result, dict):
+            provider_result = result.result
+        elif isinstance(result.result, str):
+            provider_result = {"output": result.result}
+        elif result.result is None:
+            provider_result = {"output": "Success"}
+        else:
+            # Preserve falsy scalars (False, 0, "") rather than treating
+            # them as missing data — only `None` gets the "Success" default.
+            provider_result = {"output": str(result.result)}
+
+        display_data: Optional[Dict[str, Any]] = None
+        # An empty dict stays suppressed, matching Gemini/the existing
+        # handler (spec §2) — `if result.display_data` is falsy for {}.
+        if result.display_data:
+            try:
+                json.dumps(result.display_data)
+                display_data = result.display_data
+            except (TypeError, ValueError):
+                # Omit the visual event but let the valid spoken result
+                # still reach Nova — do not fail the whole tool call over
+                # a non-serializable visual payload.
+                self.logger.warning(
+                    "display_data for a tool result is not JSON-serializable "
+                    "(status=%s); omitting the visual event.",
+                    result.status,
+                )
+
+        return provider_result, display_data, result.status
+
     async def _flush_pending_tools(
         self,
         stream: Any,
@@ -744,9 +925,11 @@ class NovaAudio:
         turn_id: str,
         user_id: Optional[str],
         parallel_tool_execution: bool,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> List[LiveVoiceResponse]:
         """Execute and send results for all queued tool calls (FEAT-416,
-        TASK-2148 — spec §3 Module 4).
+        TASK-2148 — spec §3 Module 4; result mapping updated by FEAT-536
+        TASK-2939 — spec §3 Module 2).
 
         Executes sequentially (current, default behavior) unless
         *parallel_tool_execution* is ``True`` AND more than one tool is
@@ -774,6 +957,9 @@ class NovaAudio:
             parallel_tool_execution: Concurrency gate (from ``VoiceConfig``,
                 wired via ``**kwargs`` — TASK-2151 threads this from
                 ``VoiceBot``).
+            permission_context: Optional trusted ``PermissionContext``
+                (FEAT-536 TASK-2939), forwarded to
+                :meth:`_execute_tool_full` for every queued call.
 
         Returns:
             One :class:`LiveVoiceResponse` per queued tool, in order.
@@ -781,35 +967,58 @@ class NovaAudio:
         if not pending_tools:
             return []
 
-        async def _run_one(pending: LiveToolCall, raw_input: Optional[str]) -> Any:
+        async def _run_one(pending: LiveToolCall, raw_input: Optional[str]) -> tuple[Any, Optional[Dict[str, Any]], str]:
             start = time.monotonic()
             try:
                 args = _parse_tool_arguments(raw_input)
                 # Record what was actually attempted before executing, so
                 # LiveToolCall.arguments reflects the real arguments even if
-                # _execute_tool() itself raises.
+                # execution itself raises.
                 pending.arguments = args
-                result = await self._execute_tool(pending.name, args)
-                pending.result = result
+                tool_result = await self._execute_tool_full(
+                    pending.name,
+                    args,
+                    session_id=session_id,
+                    user_id=user_id,
+                    turn_id=turn_id,
+                    permission_context=permission_context,
+                )
+                provider_result, display_data, tool_status = self._map_tool_result_to_nova(tool_result)
+                if tool_status != "success" or tool_result.success is not True:
+                    pending.error = tool_result.error or f"Tool failed with status={tool_status}"
             except Exception as exc:
                 pending.error = str(exc)
-                result = str(exc)
+                provider_result = {"error": str(exc), "status": "error"}
+                display_data = None
+                tool_status = "error"
+            # LiveToolCall.result carries the NORMALIZED provider-facing
+            # result (spec §2), not the raw ToolResult envelope.
+            pending.result = provider_result
             pending.execution_time_ms = (time.monotonic() - start) * 1000
-            return result
+            return provider_result, display_data, tool_status
 
         if parallel_tool_execution and len(pending_tools) > 1:
             async with asyncio.TaskGroup() as tg:
                 tasks = [tg.create_task(_run_one(pending, raw_input)) for pending, raw_input in pending_tools]
-            results = [task.result() for task in tasks]
+            outcomes = [task.result() for task in tasks]
         else:
-            results = [await _run_one(pending, raw_input) for pending, raw_input in pending_tools]
+            outcomes = [await _run_one(pending, raw_input) for pending, raw_input in pending_tools]
 
         responses: List[LiveVoiceResponse] = []
-        for (pending, _raw_input), result in zip(pending_tools, results, strict=True):
+        for (pending, _raw_input), (provider_result, display_data, tool_status) in zip(
+            pending_tools, outcomes, strict=True
+        ):
             tool_calls_list.append(pending)
             usage.tool_calls_executed += 1
             usage.tool_execution_time_ms += pending.execution_time_ms
-            await self._send_tool_result(stream, prompt_name, pending.id, result)
+            await self._send_tool_result(stream, prompt_name, pending.id, provider_result)
+            # FEAT-536 TASK-2939: the streamed delta carries
+            # metadata["tool_status"] and, when present, a nonempty
+            # JSON-serializable metadata["display_data"] — one visual
+            # update per successful, non-stale invocation (spec §2).
+            response_metadata: Dict[str, Any] = {"tool_status": tool_status}
+            if display_data is not None:
+                response_metadata["display_data"] = display_data
             responses.append(
                 LiveVoiceResponse(
                     text="",
@@ -818,6 +1027,7 @@ class NovaAudio:
                     session_id=session_id,
                     turn_id=turn_id,
                     user_id=user_id,
+                    metadata=response_metadata,
                 )
             )
         return responses
@@ -917,6 +1127,16 @@ class NovaAudio:
         parallel_tool_execution = kwargs.get(
             "parallel_tool_execution",
             options.parallel_tool_execution if options is not None else False,
+        )
+        # FEAT-536 TASK-2939: optional trusted PermissionContext from a
+        # Python caller's **kwargs (spec §2 "Trusted execution context") —
+        # NEVER derived from provider/model arguments. Threaded through to
+        # every _flush_pending_tools() call below and on into
+        # _execute_tool_full()'s ToolManager.execute_tool(..., permission_
+        # context=...) call, same as VoiceBot/_execute_tool's existing
+        # self._permission_context convention.
+        permission_context: Optional["PermissionContext"] = kwargs.get(
+            "permission_context", getattr(self, "_permission_context", None)
         )
         prompt_name = str(uuid.uuid4())
         content_name = str(uuid.uuid4())
@@ -1057,6 +1277,7 @@ class NovaAudio:
                             turn_id,
                             user_id,
                             parallel_tool_execution,
+                            permission_context,
                         ):
                             yield tool_response
                         turn_state.pending_tools = []
@@ -1102,6 +1323,7 @@ class NovaAudio:
                         turn_id,
                         user_id,
                         parallel_tool_execution,
+                        permission_context,
                     ):
                         yield tool_response
                     turn_state.pending_tools = []
@@ -1268,6 +1490,7 @@ class NovaAudio:
                         turn_id,
                         user_id,
                         parallel_tool_execution,
+                        permission_context,
                     ):
                         yield tool_response
                     turn_state.pending_tools = []
