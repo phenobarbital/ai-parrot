@@ -10,7 +10,7 @@ depends_on:
 **Feature ID**: FEAT-537
 **Date**: 2026-09-07
 **Author**: Jesús Lara / AI assistant
-**Status**: review
+**Status**: approved
 **Target version**: next minor release after FEAT-536
 **Depends on**: [FEAT-536 — voicebot-liveavatar-implementation](voicebot-liveavatar-implementation.spec.md), hard implementation prerequisite
 
