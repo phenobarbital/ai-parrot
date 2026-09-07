@@ -154,9 +154,61 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented the `return_tool_result: bool = False` keyword-only option on
+`ToolManager.execute_tool()` (`packages/ai-parrot/src/parrot/tools/manager.py`).
+Default mode is unchanged (verified by regression suites below, plus
+dedicated `TestDefaultResultContractUnchanged` cases). Opt-in mode:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- `ToolDefinition` branch: preserves an already-returned `ToolResult`;
+  normalizes a raw value to `ToolResult(status="success", result=value)`;
+  never adds the AbstractTool compression pipeline to plain-function
+  execution; offloads a synchronous function via `asyncio.to_thread` (only
+  in opt-in mode — default mode's inline synchronous call is untouched).
+- `AbstractTool`/`ToolkitTool` branch: new private
+  `_finish_abstract_tool_full_result()` helper, called exactly once
+  immediately after the single `tool.execute()` dispatch (never a second
+  execution). `forbidden` is logged via the existing `_log_enforcement`
+  helper and returned as-is. Any non-success envelope
+  (`status != "success"` or `success is not True` — `error`, `pending`,
+  `cancelled`, `timeout`, `not_found`, `authorization_required`, ...) is
+  returned in full (status/error/metadata intact) instead of being raised
+  or reduced; the existing error-payload tee still runs for
+  `status == "error"`, but the envelope is returned, not raised. A
+  successful envelope runs `_postprocess_result`/`_run_result_hooks`
+  exactly once on the original payload, on a **copied** metadata dict (so
+  the tool-owned envelope's `metadata` is never mutated), then compresses
+  only `result` — `voice_text`/`display_data` are never compressed — and
+  returns `result.model_copy(update={...})`, a new envelope instance.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/tools/test_toolmanager_full_result.py -q`
+  → 22 passed (`artifacts/logs/task-2937-pytest.log`).
+- Regression: `test_tooldefinition_enforcement.py` +
+  `test_manager_integration.py` (compression) +
+  `test_toolmanager_confirmation.py` → 41 passed
+  (`artifacts/logs/task-2937-regression-pytest.log`).
+- Full `packages/ai-parrot/tests/tools/` suite → 1080 passed, 52 failed
+  (`artifacts/logs/task-2937-full-tools-suite.log`); the 52 failures
+  (`test_toolkit_ddl_guard.py`, `test_auto_registration_hooks.py`) are
+  pre-existing on `dev` (verified by running the same tests against the
+  unmodified `dev` checkout — identical failures, unrelated to this
+  task's `AttributeError`/registry-fixture causes) — not a regression
+  introduced here.
+- `ruff check` on both changed/created files: the new test file is clean;
+  `manager.py` has 2 pre-existing findings (unused `codecs` import at
+  line 13, `F821 AbstractToolkit` forward-ref at line 1058) verified
+  present on unmodified `dev` too — not introduced by this task.
+
+**Environment note**: the shared `.venv`'s editable installs resolve
+`parrot.*` to the MAIN checkout's absolute path, not this worktree — a
+`PYTHONPATH` override prepending this worktree's `packages/*/src` dirs
+(plus copying the two `.so` Cython build artifacts under
+`parrot/utils/{,parsers/}` that are gitignored and worktree-absent) was
+required to actually exercise the worktree's edited source. Recorded here
+for the next task in this worktree; not part of this task's file scope.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-07
+**Notes**: No deviations from the Codebase Contract; all Verified
+Imports/Signatures/References matched the current baseline as read.
+**Deviations from spec**: none
