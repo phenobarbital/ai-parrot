@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2970
@@ -152,4 +152,83 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run pytest packages/ai-parrot/tests/tools/working_memory/task_memory/test_models.py -q`
+  → **55 passed**. Log: `artifacts/logs/task-2971-tm-domain-models.log`.
+- `ruff check` clean; `black --line-length 120 --target-version py312` and
+  `isort` applied to all four files.
+- Regressions run: `tests/tools/compression`, `tests/tools/execution_plan`,
+  `tests/bots/flows/plan` → **284 passed, 6 skipped, 2 failed**.
+
+### Pre-existing failures (NOT caused by this task)
+
+Both reproduce identically on unmodified `dev` in the main checkout when
+the same directory set is run together, and both pass in isolation — they
+are cross-module test-ordering pollution that predates this branch:
+
+- `tools/compression/test_e2e.py::test_execute_tool_public_signature_unchanged`
+  (also fails on baseline when run alone).
+- `bots/flows/plan/test_plan.py::test_tool_not_registered_on_import`
+  (passes alone, fails on baseline in the combined run).
+
+Reported as a pre-existing condition, not as a passed acceptance case.
+
+### Acceptance mapping
+
+| Criterion | Evidence |
+|---|---|
+| Reject overlong strings / oversized collections / oversized UTF-8 payloads / unknown enums and schema versions | `test_bounds_*` (16 focused cases + aggregate `test_bounds`) |
+| Event variants round-trip; derived lists are not duplicate persisted state | `test_roundtrip_every_payload_variant` (9 parametrized), `test_roundtrip_derived_lists_are_not_persisted` |
+| Defaults: 64 MiB snapshot, 512 MiB cache, 2,000,000-byte rehydration, retention thresholds | `test_defaults_byte_budgets`, `test_defaults_retention_thresholds` |
+| AC2 (identical semantics both stores) | Shared vocabulary + pure derived readiness rules; store parity is exercised by TASK-2978/2995 |
+| AC7 (replanning, partial plans, completion gate) | `test_roundtrip_completion_guard`, `test_roundtrip_derived_readiness_rules` |
+| AC11 (scope isolation) | `TaskScope.cache_key()` percent-encodes components so no value can forge another scope's key; `TaskScope.matches()` |
+| AC12 (retention/limits auditable) | `Limits`, `TaskMemoryConfig` retention table, `is_journal_exhausted(reserved=...)`, `EventType.is_reserved` |
+
+### Design decisions worth flagging downstream
+
+1. **`durable=True` is accepted, not rejected.** An earlier draft raised at
+   construction time because Delivery A has no PostgreSQL store. That was
+   reverted: it would force the Delivery B tasks (TASK-2994+) to edit a
+   file they do not own. The flag now expresses intent, and the *store
+   factory* performs the lazy `asyncpg` availability check and raises
+   `TaskMemoryUnavailable`. Configuration validation does not guess at
+   backend availability.
+2. **Typed payloads are grouped into nine families**, not one class per
+   event type. `PAYLOAD_FAMILY_BY_EVENT` maps every `EventType` to its
+   family and `JournalEvent` rejects a mismatch as a `ReducerError`.
+   `test_roundtrip_every_event_type_has_a_payload_family` fails loudly if
+   a future event type is added without a family.
+3. **`InvocationRecord.invocation` is typed `Optional[Any]`** and holds the
+   existing compaction `ToolInvocation` dataclass. Re-declaring it as a
+   Pydantic model would have broken leaf-safety and duplicated the
+   compaction serializer; the spec requires preserving it unchanged as the
+   shared normalized payload.
+4. **`ArtifactDescriptor._check_verifiability`** refuses `evidence_verifiable`
+   without a fingerprint or for an unsupported kind. This is the model-level
+   enforcement of TASK-2970's finding that pandas silently repr-hashes
+   unhashable object cells, so a *computable* fingerprint over nested
+   mutable data is not integrity proof.
+5. **`CallOutcome.NOT_EXECUTED`** was added for the manager's early returns
+   (unknown tool, guard denial, authorization required). The spec requires
+   those be classified as unsuccessful dispatch with `executed=False`
+   rather than pretending a tool body ran; `ToolCallPayload.executed`
+   carries the same fact into the journal.
+6. **Leaf-safety is tested by loading `models.py` directly from its path**
+   in a subprocess, not by importing it through the package — importing by
+   package path legitimately executes the parent `__init__` modules, which
+   do import the toolkit. What must stay leaf-safe is the module itself.
+
+### Notes
+
+Test-running in this worktree requires
+`PYTHONPATH=<worktree>/packages/ai-parrot/src`, because the shared venv
+resolves `parrot` from the *main* checkout. The compiled Cython/Rust
+extensions (`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`,
+`yaml_rs*.so`) were copied from the main checkout into the worktree; they
+are gitignored build artifacts and are not part of this commit.
