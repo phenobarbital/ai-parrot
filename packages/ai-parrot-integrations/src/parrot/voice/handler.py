@@ -418,6 +418,8 @@ class _BroadcastSocketState:
         attached: Whether the mandatory ``attach`` handshake completed.
         bound: Whether this socket currently holds the microphone binding.
         rejected_frames: Count of unauthorized/stale input frames dropped.
+        speaker_input: The local or relayed sink this socket feeds, once it has
+            started recording.
     """
 
     socket_id: str
@@ -430,6 +432,7 @@ class _BroadcastSocketState:
     attached: bool = False
     bound: bool = False
     rejected_frames: int = 0
+    speaker_input: Any = None
     _message_times: List[float] = field(default_factory=list)
 
     def allow_message(self) -> bool:
@@ -1478,13 +1481,6 @@ class VoiceChatHandler:
             )
             return
 
-        session = service.voice_session(tenant_id, state.broadcast_id)
-        if session is None:
-            await self._send_broadcast_error(
-                state.ws, "not_found", "producer is not on this worker"
-            )
-            return
-
         if msg_type == "start_recording":
             try:
                 await service.bind_speaker_socket(
@@ -1503,10 +1499,26 @@ class VoiceChatHandler:
                 )
                 return
             state.bound = True
-            session.begin_speaker_turn(
-                state.lease_id, state.principal, descriptor.floor_epoch
-            )
-            await session.start_turn()
+            # The producer may live on another worker: `attach_speaker_input`
+            # returns a local sink or an authenticated relay, and this handler
+            # never needs to know which (spec §2 cross-worker input routing).
+            try:
+                state.speaker_input = await service.attach_speaker_input(
+                    tenant_id,
+                    state.broadcast_id,
+                    state.lease_id,
+                    state.principal,
+                    descriptor.floor_epoch,
+                )
+                await state.speaker_input.start_turn()
+            except BroadcastError as exc:
+                state.rejected_frames += 1
+                await self._send_broadcast_error(
+                    state.ws,
+                    exc.reason.value if exc.reason else "forbidden",
+                    str(exc),
+                )
+                return
             await self._send_message(
                 state.ws,
                 {"type": "recording_started", "floor_epoch": descriptor.floor_epoch},
@@ -1514,7 +1526,8 @@ class VoiceChatHandler:
             return
 
         if msg_type == "stop_recording":
-            await session.end_turn()
+            if state.speaker_input is not None:
+                await state.speaker_input.end_turn()
             await self._send_message(state.ws, {"type": "recording_stopped"})
             return
 
@@ -1536,7 +1549,15 @@ class VoiceChatHandler:
                 state.ws, "invalid_audio", "audio payload is not valid base64"
             )
             return
-        await session.push_audio(pcm)
+        # Cheap, caller-independent validation happens above; only the actual
+        # hand-off to the producer needs an established recording turn.
+        if state.speaker_input is None:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(
+                state.ws, "floor_not_granted", "send start_recording first"
+            )
+            return
+        await state.speaker_input.push_audio(pcm)
 
     async def _release_speaking(
         self, service: Any, state: "_BroadcastSocketState"
@@ -1545,6 +1566,10 @@ class VoiceChatHandler:
         if not state.attached or state.lease_id is None:
             return
         tenant_id = state.principal.tenant_id
+        if state.speaker_input is not None:
+            with contextlib.suppress(Exception):
+                await state.speaker_input.aclose()
+            state.speaker_input = None
         with contextlib.suppress(Exception):
             await service.unbind_speaker_socket(
                 tenant_id, state.broadcast_id, state.lease_id, state.socket_id

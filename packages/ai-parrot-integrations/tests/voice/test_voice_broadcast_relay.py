@@ -561,6 +561,20 @@ class FakeBroadcastService:
     def media_session(self, tenant_id: str, broadcast_id: str) -> Any:
         return None
 
+    async def attach_speaker_input(
+        self,
+        tenant_id: str,
+        broadcast_id: str,
+        lease_id: str,
+        principal: Any,
+        floor_epoch: int,
+    ) -> Any:
+        from parrot.integrations.liveavatar.broadcast.worker_transport import (
+            LocalSpeakerInput,
+        )
+
+        return LocalSpeakerInput(self.session, lease_id, principal, floor_epoch)
+
     async def release_floor(
         self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
     ) -> Any:
