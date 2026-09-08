@@ -276,9 +276,9 @@ async def test_commands(toolkit_on: WorkingMemoryToolkit, tm_enabled: TaskMemory
     paused = await toolkit_on.update_task(task_id=task_id, expected_revision=current, status="paused")
     assert paused["task_status"] == "paused", paused
 
-    assert (
-        await toolkit_on.update_task(task_id=task_id, expected_revision=paused["revision"], status="ascended")
-    )["error"] == "invalid_status"
+    assert (await toolkit_on.update_task(task_id=task_id, expected_revision=paused["revision"], status="ascended"))[
+        "error"
+    ] == "invalid_status"
 
     # A cancelled task is terminal, so it stops being the default target.
     cancelled = await toolkit_on.update_task(

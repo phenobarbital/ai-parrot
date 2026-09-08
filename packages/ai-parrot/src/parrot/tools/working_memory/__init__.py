@@ -1,4 +1,5 @@
 """WorkingMemoryToolkit — intermediate result store for analytical operations."""
+
 from .tool import WorkingMemoryToolkit
 from .models import (
     OperationType,
@@ -16,6 +17,7 @@ from .models import (
     RecallInteractionInput,
 )
 from .internals import GenericEntry
+
 # FEAT-538: the composition root callers pass as `task_memory=` to opt
 # the toolkit into recoverable task memory. Exported because it is the
 # supported wiring entry point; the stores, service, reducer and the
