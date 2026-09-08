@@ -242,6 +242,9 @@ from `GET …/connection`.
 | `LIVEAVATAR_API_KEY` / `LIVEAVATAR_AVATAR_ID` | both | Broadcast still runs, in `audio_only` from the start. |
 | `PARROT_BROADCAST_WORKER_TOKEN` | multi-worker | The relay refuses to mount; a speaker whose socket lands on a non-owner worker cannot send audio. |
 | `PARROT_BROADCAST_ALLOWED_ORIGINS` | server | Same-origin only. |
+| `PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S` | both | Requests the spec default of 600 s. **Set this on a capped account.** The ceiling is an account property: a sandbox key rejects 600 s with `400 max_session_duration (600s) exceeds the maximum allowed (60s)`, and because avatar startup degrades rather than raises, every broadcast then falls back to `audio_only` with the cause visible only in a warning log. Verified against a live sandbox account (see `docs/testing/voicebot-multiroom-live-gate.md`). |
+| `PARROT_BROADCAST_WORKER_URL` / `PARROT_BROADCAST_WORKER_BIND` | multi-worker | The relay is not served and this worker is not advertised; cross-worker speaking fails closed with `owner_lost`. Single-worker deployments need neither. |
+| `PARROT_LIVE_BROADCAST_GATE` | live gate only | The live vendor probe **skips**. Its skip text mentions credentials, so an unset switch looks like missing credentials — set it to `1` to actually run the gate. |
 | `VOICEBOT_DEMO_PARTICIPANTS` | example only | No demo auth; supply real authentication. |
 | `VOICEBOT_BROADCAST_FAILURE_HOOK` | example only | Injection route absent (the default). |
 

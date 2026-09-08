@@ -204,3 +204,40 @@ cannot complete this feature").
 **Deviations from spec**: none. The task's own contingency branch ("If credentials/SDK/human
 are unavailable: still land the probe code + report with every scenario NOT RUN … mark this
 task `done-with-issues`") is the branch taken, verbatim.
+
+---
+
+## Live run — 2026-09-08 (supersedes the NOT RUN record above)
+
+The probe was executed against **real LiveAvatar (sandbox) + LiveKit**:
+**8 of 12 scenarios ran — 7 PASS, 1 REJECTED-with-finding.**
+
+The original "no credentials" conclusion was **wrong**, and the mistake was mine: the
+probe runs inside a git worktree, `env/` is gitignored so it does not exist there, and I
+inferred the credentials were absent instead of checking the main checkout. They were
+present throughout. The real blocker was the probe's own opt-in switch,
+`PARROT_LIVE_BROADCAST_GATE=1`, never being set — and its skip text says "credentials
+missing", which made the wrong diagnosis look confirmed.
+
+Running it surfaced three defects, two of them in this probe:
+
+1. **Product** — the account caps `max_session_duration` at 60 s and rejects the spec's
+   600 s with a `400`. Avatar startup degrades rather than raises, so every broadcast on
+   such an account silently became audio-only. Fixed: `BroadcastSession` now honours
+   `PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S` (default still the spec's 600 s).
+2. **Probe** — track-kind detection used `str(track.kind).endswith("AUDIO")`, but
+   livekit's `TrackKind` is an int-backed enum stringifying to `"1"`/`"2"`. No media pump
+   was ever created, so the probe measured zero audio *and* zero video while the vendor
+   was publishing both — a green-looking harness that measured nothing.
+3. **Probe** — first-audio latency counted the silent comfort frames that precede the
+   utterance, yielding a negative latency (-0.54 s); it now measures the first *audible*
+   frame (0.686 s).
+
+Measured: 858 audio frames (301 audible, peak 13 417) and 195 H264 video frames at **each**
+of two distinct subscribers; `agent.interrupt` -> silence in **0.399 s**;
+`AudioSource.clear_queue()` -> silence in **0.103 s** (both <= 1 s); 8 control-WS event
+types observed.
+
+**Still `done-with-issues`**: rows 1-4 remain NOT RUN because `aws_sdk_bedrock_runtime`
+is not installed, so no real Nova/Bedrock turn has been exercised - the PCM used here is
+a synthesized tone. Lip-sync is unassessed (needs a human observer).

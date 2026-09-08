@@ -97,7 +97,14 @@ _OBSERVE_SECONDS: float = 8.0
 _INTERRUPT_BUDGET_SECONDS: float = 1.0
 
 #: Vendor session cap (spec §7 — must be ≤ 600 s / 10 min).
-_MAX_SESSION_DURATION: int = 600
+#:
+#: Overridable because the ceiling is an *account* property, not a protocol
+#: constant: a sandbox key rejects anything above 60 s outright
+#: (``400 max_session_duration (600s) exceeds the maximum allowed (60s)``), so
+#: a hard-coded 600 made the probe unrunnable on exactly the tier most people
+#: have. Defaults to the sandbox-safe value; raise it via
+#: ``PARROT_LIVE_MAX_SESSION_DURATION`` on a production key.
+_MAX_SESSION_DURATION: int = int(os.environ.get("PARROT_LIVE_MAX_SESSION_DURATION", "60"))
 
 #: A frame is considered audible when its peak sample exceeds this.
 _SILENCE_PEAK_THRESHOLD: int = 300
@@ -289,6 +296,27 @@ def room_tokens() -> Any:
 # ── Subscriber harness ─────────────────────────────────────────────────────
 
 
+def _kind_name(kind: Any) -> str:
+    """Readable track-kind label for the evidence artifact.
+
+    The raw enum serialises as a bare "1"/"2", which is what disguised the
+    pump-selection bug in the first place.
+
+    Args:
+        kind: A ``livekit.rtc.TrackKind`` value.
+
+    Returns:
+        ``"audio"``, ``"video"``, or the raw value as a string.
+    """
+    from livekit import rtc
+
+    if kind == rtc.TrackKind.KIND_AUDIO:
+        return "audio"
+    if kind == rtc.TrackKind.KIND_VIDEO:
+        return "video"
+    return str(kind)
+
+
 class _Subscriber:
     """A headless ``livekit.rtc.Room`` that measures received audio and video.
 
@@ -307,6 +335,7 @@ class _Subscriber:
         self.video_frames = 0
         self.peak = 0
         self.first_audio_at: Optional[float] = None
+        self.first_audible_at: Optional[float] = None
         self.last_audible_at: Optional[float] = None
         self.tracks: List[Dict[str, Any]] = []
         self._room: Any = None
@@ -328,7 +357,7 @@ class _Subscriber:
             self.tracks.append(
                 {
                     "publisher_identity": participant.identity,
-                    "kind": str(getattr(track, "kind", "")),
+                    "kind": _kind_name(getattr(track, "kind", None)),
                     "name": getattr(publication, "name", ""),
                     "sid": getattr(publication, "sid", ""),
                     "source": str(getattr(publication, "source", "")),
@@ -336,9 +365,16 @@ class _Subscriber:
                     "subscribed_at": time.monotonic(),
                 }
             )
-            if str(getattr(track, "kind", "")).endswith("AUDIO"):
+            # Compare against the enum, not its string form: livekit's
+            # TrackKind is an int-backed protobuf enum, so str() yields "1" /
+            # "2" and a `.endswith("AUDIO")` test silently never matches —
+            # every track subscribed, no pump was ever started, and the probe
+            # reported zero audio AND zero video while the vendor was in fact
+            # publishing both.
+            kind = getattr(track, "kind", None)
+            if kind == rtc.TrackKind.KIND_AUDIO:
                 self._pumps.append(asyncio.create_task(self._pump_audio(rtc.AudioStream(track))))
-            elif str(getattr(track, "kind", "")).endswith("VIDEO"):
+            elif kind == rtc.TrackKind.KIND_VIDEO:
                 self._pumps.append(asyncio.create_task(self._pump_video(rtc.VideoStream(track))))
 
         self._room.on("track_subscribed", _on_track_subscribed)
@@ -357,6 +393,8 @@ class _Subscriber:
                     self.first_audio_at = now
                 if peak >= _SILENCE_PEAK_THRESHOLD:
                     self.audible_frames += 1
+                    if self.first_audible_at is None:
+                        self.first_audible_at = now
                     self.last_audible_at = now
         except asyncio.CancelledError:
             raise
@@ -379,6 +417,7 @@ class _Subscriber:
         self.audible_frames = 0
         self.peak = 0
         self.first_audio_at = None
+        self.first_audible_at = None
         self.last_audible_at = None
 
     def manifest(self) -> Dict[str, Any]:
@@ -566,8 +605,14 @@ async def test_nova_pcm_reaches_two_subscribers(
             started = time.monotonic()
             await session.speak_tone(_UTTERANCE_SECONDS)
             await asyncio.sleep(_OBSERVE_SECONDS)
+            # Measured to the first *audible* frame, not the first frame of
+            # any kind: the avatar publishes silent comfort audio from the
+            # moment it joins, and the subscribers connect before the speak
+            # request, so timing to `first_audio_at` reported a NEGATIVE
+            # latency (-0.54 s) — an obviously meaningless figure to carry
+            # into an acceptance record.
             latencies = {
-                sub.identity: (round(sub.first_audio_at - started, 3) if sub.first_audio_at is not None else None)
+                sub.identity: (round(sub.first_audible_at - started, 3) if sub.first_audible_at is not None else None)
                 for sub in subscribers
             }
             evidence.events.extend(_harvest_event_types(caplog))

@@ -10,7 +10,7 @@ deployment, **no** Nova Sonic SDK, **no** human observer.
 
 ---
 
-## Result: **NOT ACCEPTED — 8 of 15 criteria PASS, 5 partial, 2 NOT RUN**
+## Result: **NOT ACCEPTED — 9 of 15 criteria PASS, 5 partial, 1 NOT RUN**
 
 > ## ⚠️ NOT VERIFIED
 >
@@ -22,9 +22,11 @@ deployment, **no** Nova Sonic SDK, **no** human observer.
 >
 > The blocking product defect found during acceptance (§4) — and every finding
 > from the two adversarial reviews (§4c) — has since been **fixed and covered by
-> tests**. What remains outstanding is solely the **live vendor evidence**: this
-> environment has no LiveAvatar, LiveKit or Nova access, so the criteria that
-> require real media are still unverified. A live run is now worth scheduling.
+> tests**. The **live vendor gate has now been executed** (§7): 8 of 12 scenarios
+> ran against real LiveAvatar + LiveKit, verifying the Module 1 media contract and
+> the 1 s interruption budget on real media. What remains is the **Nova half** —
+> `aws_sdk_bedrock_runtime` is not installed, so no real Bedrock turn has run — and
+> **lip-sync**, which needs a human observer.
 
 Prerequisite gate — **AC15 is half-satisfied**: FEAT-536 is *integrated* (PR
 #1333, `dev` `f8a56c48b`) but **not verified** — its own report
@@ -92,18 +94,19 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 | **AC3** — unique subscribe-only credentials; tenant/agent/owner authz, floor/socket replay and lease-ownership tests; no vendor/publisher credentials in the browser | automated | suites 1, 3, 5, 6 · JWT grants decoded (`canPublish=false`, `canPublishData=false`, unique `sub`) · Redis scanned for `token|secret|ws_url|api_key` · browser scan of URL/localStorage/console | **PASS** |
 | **AC4** — late join, leave and reconnect without starting/stopping the producer; stale credentials cannot bypass admission | automated | suites 1, 5, 7 · tombstone + identity-reuse tests · scenario 1 late joiner | **PASS** |
 | **AC5** — startup and runtime avatar failure preserve Nova speech for all healthy viewers, exclusive playback, 3 s post-transition target; no auto-recovery or ambiguous replay | automated (mechanism) + live (perception) | suite 7 scenarios 5 & 6 · per-page switch latency **< 3 s** recorded in `feat-537-browser-scenario6-*.json`; `test_voice_broadcast_media.py` covers ambiguous-frame handling | **PARTIAL** — mechanism PASS; the 3 s figure is against a **faked** sink, so the real perceived target is **NOT VERIFIED** |
-| **AC6** — interruption clears native + software queues, stale speech stops within 1 s in both modes; delayed avatar events cannot become audible | automated (mechanism) + live (timing) | `test_voice_broadcast_media.py` (`interrupt` clears deque + `avatar.interrupt()` + `publisher.flush()`→`clear_queue`), `test_room_audio_publisher.py`, scenario 6 late-avatar rejection | **PARTIAL** — mechanism PASS; the **1 s** target is **NOT MEASURED** against real media |
+| **AC6** — interruption clears native + software queues, stale speech stops within 1 s in both modes; delayed avatar events cannot become audible | automated (mechanism) + live (timing) | `test_voice_broadcast_media.py` (`interrupt` clears deque + `avatar.interrupt()` + `publisher.flush()`→`clear_queue`), `test_room_audio_publisher.py`, scenario 6 late-avatar rejection; **live gate**: `agent.interrupt`→silence **0.399 s**, `clear_queue`→silence **0.103 s** | **PASS** — mechanism PASS and the **1 s** target is now **MEASURED on real media**, both modes, well inside budget |
 | **AC7** — cross-worker stop, owner fencing, rollback and shutdown; ≤ 30 s process-death cleanup; fatal failures not mislabelled as fallback | automated | suite 5 (`stop` on worker A ends the producer owned by B; owner death fenced, room emptied, `failed`/`owner_lost`, simulated ≤ 30 s) · `test_voice_broadcast_media.py` (LiveKit prerequisite failure → `failed`, never `audio_only`) | **PASS** (simulated clock) |
 | **AC8** — HTML roles, Raise Hand/Cancel, Grant/Revoke/Reclaim, Finish Speaking, real resampling, existing-track attachment, autoplay recovery; ungranted participants never capture | automated | suite 7 scenarios 2, 3, 8 · `test_voice_demo_broadcast_browser.py` (stateful 44.1 kHz→16 kHz resampler, `getUserMedia` spy = 0 calls) · scenario 1 late-join attachment | **PASS** — except **autoplay-blocked recovery**, which the harness forces off (`--autoplay-policy=no-user-gesture-required`) and is therefore **NOT VERIFIED** |
 | **AC9** — scoped pytest, real Redis and browser suites pass; existing voice/avatar regressions green; logs identify versions and skipped live cases | automated | suites 1–8; FEAT-536 regression **52 passed**; versions in §1; skips reported as NOT VERIFIED | **PASS** — with the caveat that `pnpm test` (vitest) and the Nova client suite could not run in this environment (both **identical on clean `dev`** or tool-absent) |
-| **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **0 of 12** | **NOT RUN** |
+| **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **8 of 12 executed** (7 PASS, 1 REJECTED-with-finding); real LiveAvatar + LiveKit, two subscribers, 858 audio / 195 video frames each | **PARTIAL** — Module 1 media contract is now **verified live**. Still NOT RUN: the four Nova/Bedrock rows (SDK not installed) and lip-sync, which needs a human observer |
 | **AC11** — setup/authentication/environment/limits/failure-injection docs complete with exact tested commands; FULL/custom-LLM and non-broadcast interfaces still compatible | automated + review | `examples/clients/voice/README.md` §Broadcast mode, [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../voice/voicebot-multiroom-heygen-avatar.md); env names grep-verified, links checked, commands executed; suites 2 & 4 prove the legacy avatar/voice paths unchanged | **PASS** |
 | **AC12** — concurrent first joins select exactly one moderator; a raised hand grants no microphone; only the moderator grants/revokes/reclaims; the moderator cannot transmit while another holds the floor | automated | suite 1 (`test_first_admission_elects_single_moderator_under_race`), suite 5, suite 7 scenarios 2 & 3 | **PASS** |
 | **AC13** — two different participants complete sequential voice turns through the same conversation; unauthorized, stale-epoch and duplicate-socket audio rejected, incl. concurrent handoffs and across workers; a failed handoff stays silent with a visible error | automated (rejection) + live (turns) | Rejection: suites 1, 5, 6, 7 (`floor_not_granted`, `stale_floor_epoch`, `speaker_connection_exists`, cross-worker binding, barrier-timeout → floor idle + retryable error). Turns: — | **PARTIAL** — the rejection half is PASS; **actual sequential voice turns are NOT RUN** (no vendor access). The §4 defect that previously blocked them is fixed, and the handoff is exercised end-to-end against faked vendors |
 | **AC14** — speaker departure returns the floor to the moderator; moderator departure elects the earliest remaining participant; rejoining restores nothing; all browsers show the new roles; the last departure cleans up | automated | suites 1, 5, 7 scenario 3 (both remaining pages converge on the same successor); `test_last_departure_ends_the_broadcast` | **PASS** |
 | **AC15** — FEAT-536 integrated **and verified** before FEAT-537 implementation; extends the existing HTML/server/viewer/SDK route; no second HTML/backend; ordinary Gemini/Nova tests green | review + automated | Integrated: `dev` `f8a56c48b`. Verified: **no** (0/8). No second example: `dual_provider.html`, `server.py` and `avatar-viewer.js` were extended in place; `broadcast-ui.js` is an additional **asset**, not a second page. Ordinary tests: suites 2 & 4 green | **PARTIAL** — "integrated" ✅, "verified" ❌ |
 
-**Tally: 8 PASS · 5 PARTIAL · 2 NOT RUN · 0 FAIL.**
+**Tally: 9 PASS · 5 PARTIAL · 1 NOT RUN · 0 FAIL.**  
+_(AC6 PARTIAL→PASS and AC10 NOT RUN→PARTIAL after the live vendor gate was executed — see §7.)_
 
 ---
 
@@ -210,3 +213,46 @@ credential-in-logs risk was the `?token=` query form, which is gone.
   interruption-latency measurement against real media exists.
 - No token, credential, room URL or vendor session identifier appears in this
   document or in any committed artifact.
+
+---
+
+## 7. Live vendor gate — executed 2026-09-08
+
+The gate was re-run with real LiveAvatar (sandbox tier) and LiveKit credentials.
+**8 of 12 scenarios executed: 7 PASS, 1 REJECTED-with-finding.** Full record and
+measurements: [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md).
+
+**Correction.** The earlier report said the vendor credentials were absent from
+`env/.env`. They were not — that was an incorrect inference on my part: the probe runs in
+a git worktree, `env/` is gitignored so it is absent *there*, and I never checked the main
+checkout. The gate's actual blocker was that its opt-in switch,
+`PARROT_LIVE_BROADCAST_GATE=1`, was never set; its skip message reads "credentials
+missing", which made the wrong diagnosis look confirmed. Everything previously reported as
+NOT RUN "for lack of credentials" was in fact runnable.
+
+Executing it found three defects — one product, two in the probe itself:
+
+1. **Product:** the account caps `max_session_duration` at 60 s and rejects the spec
+   default of 600 s outright (`400`). Because avatar startup degrades instead of raising,
+   every broadcast on such an account silently fell back to audio-only, with the real
+   cause visible only in a warning log. Fixed: configurable via
+   `PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S` (default unchanged at the spec's 600 s).
+2. **Probe:** track-kind detection compared `str(track.kind).endswith("AUDIO")`, but
+   livekit's `TrackKind` is an int-backed enum stringifying to `"1"`/`"2"`, so no media
+   pump was ever started — the probe reported zero audio *and* zero video while the vendor
+   was publishing both. This is the failure mode a harness written without ever running
+   against the vendor is most prone to, and it would have made a green gate meaningless.
+3. **Probe:** first-audio latency was measured to the first frame of any kind, including
+   pre-utterance silent comfort audio, producing a **negative** figure (−0.54 s). It now
+   measures to the first *audible* frame: 0.686 s.
+
+**What this does and does not establish.** The Module 1 media contract is now verified on
+real infrastructure: LITE accepts our `livekit_config`, 24 kHz PCM16 through `agent.speak`
+reaches **two distinct** subscribers as non-zero audio (858 frames, 301 audible, peak
+13 417 each, plus 195 H264 video frames), interrupt stops speech in 0.399 s and
+`clear_queue` in 0.103 s — both inside the 1 s budget. It does **not** establish the Nova
+half: the PCM is a synthesized tone, `aws_sdk_bedrock_runtime` is still not installed, and
+no real Bedrock turn has run. Lip-sync remains unassessed — it is a subjective A/V
+judgement that no assertion substitutes for.
+
+---

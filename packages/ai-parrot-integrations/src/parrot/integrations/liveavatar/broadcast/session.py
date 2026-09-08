@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
 from collections import deque
 from typing import Any, Awaitable, Callable, Deque, Dict, Optional
@@ -68,6 +69,34 @@ STOP_POLL_S: float = 1.0
 #: ``agent-voice``: the avatar and the direct publisher must be distinguishable
 #: by the browser when it selects its single audible source.
 DIRECT_TRACK_NAME: str = "direct-voice"
+
+
+def _default_max_session_duration_s() -> int:
+    """Vendor session cap to request, in seconds.
+
+    The ceiling is an **account** property, not a protocol constant: a sandbox
+    LiveAvatar key rejects the spec's 600 s outright with
+    ``400 max_session_duration (600s) exceeds the maximum allowed (60s)``.
+    Because avatar startup degrades rather than raises, a hard-coded 600
+    turned every broadcast on such an account into a silent audio-only
+    fallback — the feature "working", minus the avatar, with the real cause
+    only visible in a warning log. Operators on a capped tier set
+    ``PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S``.
+
+    Returns:
+        The configured cap, or the spec default of 600 s.
+    """
+    raw = os.environ.get("PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S")
+    if not raw:
+        return 600
+    try:
+        value = int(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S=%r is not an integer — using 600", raw
+        )
+        return 600
+    return value if value > 0 else 600
 
 
 class BroadcastSession:
@@ -113,7 +142,7 @@ class BroadcastSession:
         speech_watchdog_s: float = 10.0,
         send_deadline_s: float = 2.0,
         max_queued_bytes: int = MAX_QUEUED_PCM_BYTES,
-        max_session_duration_s: int = 600,
+        max_session_duration_s: Optional[int] = None,
     ) -> None:
         self.descriptor = descriptor
         self.registry = registry
@@ -133,7 +162,9 @@ class BroadcastSession:
         self._speech_watchdog_s = speech_watchdog_s
         self._send_deadline_s = send_deadline_s
         self._max_queued_bytes = max_queued_bytes
-        self._max_session_duration_s = max_session_duration_s
+        self._max_session_duration_s = (
+            max_session_duration_s if max_session_duration_s is not None else _default_max_session_duration_s()
+        )
 
         short = descriptor.broadcast_id[:8]
         self.room_name: str = descriptor.room_name or f"bcast-{descriptor.broadcast_id}"
