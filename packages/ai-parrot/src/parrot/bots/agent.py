@@ -1,3 +1,4 @@
+import asyncio
 import textwrap
 from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from datetime import datetime
@@ -41,6 +42,13 @@ class BasicAgent(Chatbot, NotificationMixin):
     - Compatible with all existing agent functionality
     - Notification capabilities through various channels (e.g., email, Slack, Teams)
     """
+
+    #: FEAT-538: optional durable task-memory runtime. ``None`` keeps the
+    #: agent exactly as it was — nothing is connected, scheduled or
+    #: imported. A host sets this to a
+    #: :class:`~parrot.tools.working_memory.task_memory.config.TaskMemoryRuntime`
+    #: before ``configure()`` to opt in.
+    task_memory_runtime: Optional[Any] = None
 
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None
@@ -156,7 +164,28 @@ class BasicAgent(Chatbot, NotificationMixin):
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
+        await self._start_task_memory_runtime()
         self._adopt_task_memory_from_toolkits()
+
+    async def _start_task_memory_runtime(self) -> None:
+        """Start the durable task-memory runtime, when one is configured.
+
+        Inert unless the host set ``task_memory_runtime``. Startup is
+        deliberately allowed to FAIL the configure call: a durable
+        deployment whose database or migration is missing must not come
+        up pretending to be durable — that is the failure mode the whole
+        feature exists to prevent, and it stays invisible until a restart.
+
+        Note that this does not invent a scope. A scope is per
+        user/session and is not known at configure time, so wiring a
+        toolkit to the runtime is the host's call, via
+        ``WorkingMemoryToolkit.from_runtime(runtime, scope)``.
+        """
+        runtime = getattr(self, "task_memory_runtime", None)
+        if runtime is None or getattr(runtime, "is_running", False):
+            return
+        await runtime.start()
+        self.logger.debug("Started task-memory runtime (durable=%s)", getattr(runtime.config, "durable", False))
 
     def _adopt_task_memory_from_toolkits(self) -> None:
         """Adopt the task memory of a registered WorkingMemoryToolkit.
@@ -1000,6 +1029,20 @@ class BasicAgent(Chatbot, NotificationMixin):
         if hasattr(self, "tool_manager"):
             await self.tool_manager.disconnect_all_mcp()
             self.logger.info("Disconnected all MCP servers")
+
+        # FEAT-538: stop scheduling and close only what the runtime owns.
+        # Shielded because shutdown is frequently reached via cancellation,
+        # and a cancelled stop would leave the retention loop running and
+        # the pool open — the exact leak this call exists to prevent.
+        runtime = getattr(self, "task_memory_runtime", None)
+        if runtime is not None and getattr(runtime, "is_running", False):
+            try:
+                await asyncio.shield(runtime.stop())
+            except asyncio.CancelledError:
+                self.logger.warning("Task-memory shutdown was cancelled; the runtime stop was shielded")
+                raise
+            except Exception:  # noqa: BLE001 - shutdown must not mask the original failure
+                self.logger.warning("Task-memory runtime did not stop cleanly", exc_info=True)
 
         if hasattr(super(), "shutdown"):
             await super().shutdown(**kwargs)

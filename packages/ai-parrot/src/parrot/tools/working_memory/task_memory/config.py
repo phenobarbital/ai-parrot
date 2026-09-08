@@ -21,7 +21,9 @@ network, a database or a file.
 
 from __future__ import annotations
 
-from typing import Any, FrozenSet, Optional, Tuple
+import inspect
+import logging
+from typing import Any, FrozenSet, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -31,6 +33,8 @@ __all__ = (
     "MIB",
     "DEFAULT_REDACTED_KEYS",
     "TaskMemoryConfig",
+    "TaskMemoryRuntime",
+    "DurableStartupError",
 )
 
 #: One mebibyte, for readable byte defaults.
@@ -155,6 +159,21 @@ class TaskMemoryConfig(BaseModel):
     max_open_tasks_per_scope: int = Field(default=Limits.MAX_OPEN_TASKS_PER_SCOPE, ge=1)
 
     # ── archive and redaction ────────────────────────────────────────
+    #: PostgreSQL DSN. REQUIRED when ``durable`` is true — there is no
+    #: silent fallback to the in-memory store, because a deployment that
+    #: asked for durability and quietly got a dict is the worst outcome
+    #: available: it looks healthy right up until the restart.
+    dsn: Optional[str] = None
+    #: Connection-pool bounds for the durable store.
+    pool_min_size: int = Field(default=1, ge=1)
+    pool_max_size: int = Field(default=10, ge=1)
+    #: Root path segment for durable blobs.
+    blob_prefix: str = "task_memory"
+    #: Seconds between in-process retention sweeps. A host running a
+    #: qworker should schedule ``run_once`` there instead and leave this
+    #: loop stopped.
+    retention_interval_seconds: float = Field(default=3600.0, gt=0)
+
     archive_uri: Optional[str] = None
     extra_redacted_keys: Tuple[str, ...] = ()
     validator_names: Tuple[str, ...] = (
@@ -216,6 +235,16 @@ class TaskMemoryConfig(BaseModel):
             raise ValueError(
                 f"raw_page_limit_default ({self.raw_page_limit_default}) must not exceed "
                 f"raw_page_limit_max ({self.raw_page_limit_max})"
+            )
+        if self.durable and not self.dsn:
+            raise ValueError(
+                "durable=True requires a dsn: task memory will not silently fall back to the "
+                "in-memory store, because a deployment that asked for durability and got a dict "
+                "looks healthy until the first restart"
+            )
+        if self.pool_min_size > self.pool_max_size:
+            raise ValueError(
+                f"pool_min_size ({self.pool_min_size}) must not exceed pool_max_size ({self.pool_max_size})"
             )
         if self.abandoned_cancel_days <= self.inactivity_pause_days:
             raise ValueError(
@@ -361,3 +390,303 @@ class TaskMemoryConfig(BaseModel):
 
         values.update(overrides)
         return cls(**values)
+
+
+class DurableStartupError(RuntimeError):
+    """A durable deployment could not satisfy its own prerequisites.
+
+    Raised at startup rather than at the first append. The alternative —
+    degrading to the in-memory store — is precisely the failure this
+    feature exists to prevent: the deployment looks healthy, and the loss
+    only becomes visible after the restart that was supposed to be
+    survivable.
+    """
+
+
+class TaskMemoryRuntime:
+    """Owns the durable backend graph and its background scheduling.
+
+    This lives in the configuration module because it is the wiring the
+    configuration describes: one place that turns a
+    :class:`TaskMemoryConfig` into connected stores, and back again on
+    shutdown. It builds **one** task store and **one** artifact store
+    over it, so the toolkit, the observer and the plan factory all share
+    the same backend and the same transaction coordinator (D1). Nothing
+    here constructs a sibling artifact store.
+
+    Ownership is tracked deliberately. A runtime handed a pool or a file
+    manager by its host did not create them and must not close them:
+    shutting down a bot should not tear down a connection pool the rest
+    of the application is still using.
+
+    Args:
+        config: The resolved configuration.
+        file_manager: Blob backend. Required when ``durable`` is true.
+        association: Optional association store, for durable selection.
+        pool: An existing asyncpg pool to borrow rather than create.
+    """
+
+    def __init__(
+        self,
+        config: TaskMemoryConfig,
+        *,
+        file_manager: Optional[Any] = None,
+        association: Optional[Any] = None,
+        pool: Optional[Any] = None,
+    ) -> None:
+        """Initialize the runtime without connecting to anything."""
+        self.config = config
+        self.association = association
+        self._file_manager = file_manager
+        self._pool = pool
+        #: A borrowed pool is not ours to close.
+        self._owns_pool = pool is None
+        self._owns_file_manager = False
+        self.store: Optional[Any] = None
+        self.artifacts: Optional[Any] = None
+        self.blobs: Optional[Any] = None
+        self.sweeper: Optional[Any] = None
+        self.periodic: Optional[Any] = None
+        self._started = False
+        self._scopes: List[Any] = []
+        self.logger = logging.getLogger(f"{__name__}.TaskMemoryRuntime")
+
+    # ── lifecycle ────────────────────────────────────────────────────
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the runtime has completed startup."""
+        return self._started
+
+    async def start(self, *, start_scheduler: bool = True) -> "TaskMemoryRuntime":
+        """Connect the backends and verify their prerequisites.
+
+        Idempotent. Every prerequisite is checked BEFORE anything is
+        scheduled, so a misconfigured deployment fails during startup
+        with a message naming what is missing, rather than at the first
+        append with something unreadable from inside a transaction.
+
+        Args:
+            start_scheduler: Whether to run the in-process retention
+                loop. A host scheduling :meth:`run_once` from a qworker
+                should pass ``False`` and leave the loop stopped.
+
+        Returns:
+            This runtime.
+
+        Raises:
+            DurableStartupError: If a durable prerequisite is missing.
+        """
+        if self._started:
+            return self
+        if not self.config.enabled:
+            # Disabled is not an error and not a durable deployment; it
+            # simply builds nothing.
+            self._started = True
+            return self
+
+        if self.config.durable:
+            await self._build_durable()
+        else:
+            self._build_in_memory()
+
+        if start_scheduler and self.sweeper is not None:
+            from .retention import PeriodicRetention
+
+            self.periodic = PeriodicRetention(
+                self.sweeper,
+                lambda: tuple(self._scopes),
+                interval_seconds=self.config.retention_interval_seconds,
+            )
+            await self.periodic.start()
+
+        self._started = True
+        return self
+
+    async def _build_durable(self) -> None:
+        """Construct and verify the PostgreSQL-backed graph.
+
+        Raises:
+            DurableStartupError: If asyncpg, the schema, the migration or
+                the blob backend is unavailable.
+        """
+        from .models import TaskMemoryUnavailable
+
+        if self._file_manager is None:
+            raise DurableStartupError(
+                "durable task memory requires a file_manager for blob storage; "
+                "pass one explicitly (a shared persistent mount — a pod-local directory "
+                "or TempFileManager is not durable)"
+            )
+
+        try:
+            from .store.postgres import PostgresArtifactStore, PostgresTaskMemoryStore
+        except ImportError as exc:  # pragma: no cover - import guard
+            raise DurableStartupError(f"durable task memory could not import its PostgreSQL store: {exc}") from exc
+
+        store = PostgresTaskMemoryStore(
+            self.config.dsn,
+            pool=self._pool,
+            min_size=self.config.pool_min_size,
+            max_size=self.config.pool_max_size,
+            config=self.config,
+        )
+        try:
+            # Names the missing table or migration; this is the check that
+            # turns "you did not run the migration" into a startup error
+            # instead of a confusing failure inside the first append.
+            await store.verify_schema()
+        except TaskMemoryUnavailable as exc:
+            await self._safe_close(store)
+            raise DurableStartupError(f"durable task memory prerequisites are not met: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - connection failures are startup failures
+            await self._safe_close(store)
+            raise DurableStartupError(f"durable task memory could not reach its database: {exc}") from exc
+
+        from .blob import ArtifactBlobStore
+
+        self.store = store
+        self.blobs = ArtifactBlobStore(self._file_manager, prefix=self.config.blob_prefix)
+        # ONE artifact store, over the SAME task store — which is what
+        # makes them share a pool and a transaction coordinator.
+        self.artifacts = PostgresArtifactStore(store, blobs=self.blobs, config=self.config)
+        self.sweeper = self._build_sweeper(durable=True)
+
+    def _build_in_memory(self) -> None:
+        """Construct the non-durable graph (Delivery A)."""
+        from .artifacts import InMemoryArtifactStore
+        from .store.memory import InMemoryTaskMemoryStore
+
+        self.store = InMemoryTaskMemoryStore(config=self.config)
+        self.artifacts = InMemoryArtifactStore()
+        self.sweeper = self._build_sweeper(durable=False)
+
+    def _build_sweeper(self, *, durable: bool) -> Any:
+        """Build the retention sweeper for the constructed backends.
+
+        Args:
+            durable: Whether the durable capabilities should be attached.
+
+        Returns:
+            The sweeper.
+        """
+        from .retention import JsonlArchiveWriter, RetentionSweeper
+
+        archive = None
+        if durable and self.config.archive_uri and self._file_manager is not None:
+            archive = JsonlArchiveWriter(self._file_manager, self.config.archive_uri)
+
+        return RetentionSweeper(
+            self.store,
+            artifacts=self.artifacts,
+            config=self.config,
+            archive=archive,
+            purge=self.store if durable and hasattr(self.store, "purge_task") else None,
+        )
+
+    def track_scope(self, scope: Any) -> None:
+        """Register a scope for periodic sweeping.
+
+        Args:
+            scope: The scope to sweep on each cycle.
+        """
+        if scope not in self._scopes:
+            self._scopes.append(scope)
+
+    async def run_once(self, scopes: Optional[Sequence[Any]] = None) -> Any:
+        """Run one retention sweep. The host-scheduler entry point.
+
+        Exposed so a deployment with its own scheduler (a qworker, a
+        cron) can drive retention without this package taking a queue
+        dependency.
+
+        Args:
+            scopes: Scopes to sweep; the tracked scopes when omitted.
+
+        Returns:
+            The sweep report, or ``None`` when nothing is configured.
+        """
+        if self.sweeper is None:
+            return None
+        return await self.sweeper.run_once(tuple(scopes) if scopes is not None else tuple(self._scopes))
+
+    def task_memory(self, scope: Any, **kwargs: Any) -> Any:
+        """Build a composition root over the SHARED stores.
+
+        Args:
+            scope: The trusted runtime scope.
+            **kwargs: Forwarded to :class:`TaskMemory`.
+
+        Returns:
+            The composition root.
+
+        Raises:
+            DurableStartupError: If the runtime has not been started.
+        """
+        if self.store is None or self.artifacts is None:
+            raise DurableStartupError("task memory runtime has not been started; call await runtime.start() first")
+        from .tools import TaskMemory
+
+        kwargs.setdefault("association", self.association)
+        return TaskMemory(self.store, self.artifacts, scope, self.config, **kwargs)
+
+    async def stop(self) -> None:
+        """Stop scheduling and close only what this runtime owns.
+
+        Safe to call from a cancelled shutdown: each step is independent
+        and reports rather than raises, so one failing close cannot skip
+        the rest and leak the others.
+        """
+        if self.periodic is not None:
+            try:
+                await self.periodic.stop()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                self.logger.warning("task-memory retention loop did not stop cleanly", exc_info=True)
+            self.periodic = None
+
+        await self._release_leases()
+
+        # The store is ALWAYS closed; it tracks pool ownership itself and
+        # leaves a borrowed pool open. Gating this on the runtime's own
+        # flag instead would skip the store's cleanup entirely whenever a
+        # pool was borrowed, which is a different leak rather than a fix.
+        await self._safe_close(self.store)
+        if not self._owns_pool:
+            self.logger.debug("task-memory pool was borrowed; the store leaves it open for its owner")
+        if self._owns_file_manager:
+            await self._safe_close(self._file_manager)
+
+        self.store = None
+        self.artifacts = None
+        self.blobs = None
+        self.sweeper = None
+        self._started = False
+
+    async def _release_leases(self) -> None:
+        """Release leases this runtime owns, best effort."""
+        association = self.association
+        if association is None or not hasattr(association, "release_call"):
+            return
+        try:
+            releaser = getattr(association, "release_owned", None)
+            if releaser is not None:
+                await releaser()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            self.logger.warning("task-memory lease release failed during shutdown", exc_info=True)
+
+    async def _safe_close(self, resource: Optional[Any]) -> None:
+        """Close a resource without letting shutdown fail.
+
+        Args:
+            resource: The resource, which may be ``None`` or may not have
+                a ``close``.
+        """
+        closer = getattr(resource, "close", None)
+        if closer is None:
+            return
+        try:
+            result = closer()
+            if inspect.isawaitable(result):
+                await result
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            self.logger.warning("task-memory resource did not close cleanly", exc_info=True)

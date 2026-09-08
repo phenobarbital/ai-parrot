@@ -188,6 +188,29 @@ class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             if getattr(tool, "_method_name", "") == "get_result":
                 tool.args_schema = EnabledGetResultInput
 
+    @classmethod
+    def from_runtime(cls, runtime: Any, scope: Any, **kwargs: Any) -> "WorkingMemoryToolkit":
+        """Build a toolkit over a runtime's ALREADY-CONNECTED stores.
+
+        The point of routing through the runtime is that the toolkit,
+        the observer and the plan factory then hold the *same* task store
+        and the *same* artifact store. Constructing a toolkit's backend
+        separately is how a deployment ends up with a sibling artifact
+        store: writes land in one, evidence is validated against the
+        other, and every completion is refused for reasons that make no
+        sense from the outside.
+
+        Args:
+            runtime: A started
+                :class:`~parrot.tools.working_memory.task_memory.config.TaskMemoryRuntime`.
+            scope: The trusted runtime scope for this toolkit.
+            **kwargs: Forwarded to the constructor.
+
+        Returns:
+            The toolkit, wired to the shared backends.
+        """
+        return cls(task_memory=runtime.task_memory(scope), **kwargs)
+
     @property
     def task_memory_enabled(self) -> bool:
         """Whether task memory is configured for this toolkit."""
