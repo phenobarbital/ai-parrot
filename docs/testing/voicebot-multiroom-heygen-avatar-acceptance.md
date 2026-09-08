@@ -20,8 +20,11 @@ deployment, **no** Nova Sonic SDK, **no** human observer.
 > explicitly cannot complete this feature (AC10: *"Mock-only results cannot
 > complete this feature"*).
 >
-> There is also **one blocking product defect** (see §4) that must be fixed
-> before a live run is even worth scheduling.
+> The blocking product defect found during acceptance (§4) — and every finding
+> from the two adversarial reviews (§4c) — has since been **fixed and covered by
+> tests**. What remains outstanding is solely the **live vendor evidence**: this
+> environment has no LiveAvatar, LiveKit or Nova access, so the criteria that
+> require real media are still unverified. A live run is now worth scheduling.
 
 Prerequisite gate — **AC15 is half-satisfied**: FEAT-536 is *integrated* (PR
 #1333, `dev` `f8a56c48b`) but **not verified** — its own report
@@ -96,7 +99,7 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 | **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **0 of 12** | **NOT RUN** |
 | **AC11** — setup/authentication/environment/limits/failure-injection docs complete with exact tested commands; FULL/custom-LLM and non-broadcast interfaces still compatible | automated + review | `examples/clients/voice/README.md` §Broadcast mode, [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../voice/voicebot-multiroom-heygen-avatar.md); env names grep-verified, links checked, commands executed; suites 2 & 4 prove the legacy avatar/voice paths unchanged | **PASS** |
 | **AC12** — concurrent first joins select exactly one moderator; a raised hand grants no microphone; only the moderator grants/revokes/reclaims; the moderator cannot transmit while another holds the floor | automated | suite 1 (`test_first_admission_elects_single_moderator_under_race`), suite 5, suite 7 scenarios 2 & 3 | **PASS** |
-| **AC13** — two different participants complete sequential voice turns through the same conversation; unauthorized, stale-epoch and duplicate-socket audio rejected, incl. concurrent handoffs and across workers; a failed handoff stays silent with a visible error | automated (rejection) + live (turns) | Rejection: suites 1, 5, 6, 7 (`floor_not_granted`, `stale_floor_epoch`, `speaker_connection_exists`, cross-worker binding, barrier-timeout → floor idle + retryable error). Turns: — | **PARTIAL / BLOCKED** — the rejection half is PASS; **actual sequential voice turns are NOT RUN**, and are additionally **blocked by the defect in §4** |
+| **AC13** — two different participants complete sequential voice turns through the same conversation; unauthorized, stale-epoch and duplicate-socket audio rejected, incl. concurrent handoffs and across workers; a failed handoff stays silent with a visible error | automated (rejection) + live (turns) | Rejection: suites 1, 5, 6, 7 (`floor_not_granted`, `stale_floor_epoch`, `speaker_connection_exists`, cross-worker binding, barrier-timeout → floor idle + retryable error). Turns: — | **PARTIAL** — the rejection half is PASS; **actual sequential voice turns are NOT RUN** (no vendor access). The §4 defect that previously blocked them is fixed, and the handoff is exercised end-to-end against faked vendors |
 | **AC14** — speaker departure returns the floor to the moderator; moderator departure elects the earliest remaining participant; rejoining restores nothing; all browsers show the new roles; the last departure cleans up | automated | suites 1, 5, 7 scenario 3 (both remaining pages converge on the same successor); `test_last_departure_ends_the_broadcast` | **PASS** |
 | **AC15** — FEAT-536 integrated **and verified** before FEAT-537 implementation; extends the existing HTML/server/viewer/SDK route; no second HTML/backend; ordinary Gemini/Nova tests green | review + automated | Integrated: `dev` `f8a56c48b`. Verified: **no** (0/8). No second example: `dual_provider.html`, `server.py` and `avatar-viewer.js` were extended in place; `broadcast-ui.js` is an additional **asset**, not a second page. Ordinary tests: suites 2 & 4 green | **PARTIAL** — "integrated" ✅, "verified" ❌ |
 
@@ -104,89 +107,83 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 
 ---
 
-## 4. 🔴 Blocking defect found during acceptance
+## 4. Blocking defect found during acceptance — ✅ FIXED
 
-**`BroadcastRegistry.confirm_viewer()` has no production caller, so no floor
-grant can succeed.**
+**`BroadcastRegistry.confirm_viewer()` had no production caller, so no floor
+grant could succeed.**
 
 - Found by TASK-2968 scenario 2 against the real service: the moderator's Grant
-  returned `403 floor_not_granted`.
-- `BroadcastService`, the HTTP handlers and the control socket never transition
-  a lease from `pending` to `active`, but `grant_floor` requires the target to
-  be `active`.
-- Consequence: the moderated-handoff feature — AC12/AC13's whole subject — is
-  non-functional in production despite every unit and contract test passing,
-  because each of those tests confirms the lease itself.
-- Spec §2 places confirmation at LiveKit presence confirmation (participant
-  events or periodic reconciliation), so the fix belongs in `BroadcastService`.
-- **Not fixed here**: TASK-2968 and TASK-2969 both scope out code changes. The
-  browser suite documents and works around it in `confirm_all_leases()`.
+  returned `403 floor_not_granted`. Independently reproduced by the
+  post-implementation adversarial review.
+- Root cause: nothing transitioned a lease from `pending` to `active`, but
+  `grant_floor` requires the target to be `active`. Every unit and contract
+  test passed because each one confirmed the lease itself.
+- **Fixed** by wiring confirmation to server-observed LiveKit presence, which
+  is what spec §2 asks for ("participant events or periodic reconciliation")
+  and keeps `confirmed` meaning *the LiveKit server says this browser is in the
+  room* — never a client asserting readiness, since that flag is exactly what
+  gates holding the floor:
+  - `RoomAudioPublisher` observes `participant_connected` / `_disconnected` on
+    the producer's own room connection.
+  - `BroadcastSession` forwards presence to `BroadcastService`, which resolves
+    the identity to its lease and confirms it.
+  - `BroadcastService.confirm_present_participants()` re-checks the room roster
+    on every reconciler pass, as the backstop for missed events.
+- The multi-browser scenarios now reach the floor through this production path
+  instead of poking the registry; only LiveKit's roster is faked.
 
-### 4b. Second-order consequence — moderator succession violates spec §105
+### 4b. Second-order consequence — moderator succession — ✅ FIXED
 
-Confirmed independently during the post-implementation adversarial review, and
-verified in the code:
+`_eligible_moderators()` requires `lease.confirmed`, so with nothing confirming
+leases the candidate list was always empty, `_elect_locked()` always returned
+`None`, and `release_viewer()` ended the broadcast with reason
+`audience_empty` — **for an audience that was still watching**. Spec §105 is
+explicit to the contrary: *"If the moderator leaves, elect the earliest
+remaining admitted participant and publish the role change; do not stop the
+broadcast while others remain."*
 
-- `_eligible_moderators()` (`registry.py:665`) requires `lease.confirmed`.
-  Because nothing confirms a lease in production, the candidate list is always
-  empty, so `_elect_locked()` (`registry.py:677`) always returns `None`.
-- `release_viewer()` (`registry.py:988`) then treats "no eligible successor" as
-  `_end_locked(AUDIENCE_EMPTY)`. So when the founding moderator leaves, the
-  broadcast **ends for everyone still watching**, and reports the sanitized
-  reason `audience_empty` while the audience is demonstrably not empty.
-- Spec §105 is explicit to the contrary: *"If the moderator leaves, elect the
-  earliest remaining admitted participant and publish the role change; do not
-  stop the broadcast while others remain."*
-- This makes the reason code actively misleading during incident triage: a
-  broken-succession failure is reported as a normal wind-down.
+Fixed in both backends: the broadcast ends only when every remaining seat is
+already departing; otherwise the role goes vacant and is filled by the next
+confirmation. This also stops a broken-succession failure being reported as a
+normal wind-down during triage.
 
-**ESCALATED, not fixed.** The correct repair depends on a decision this
-implementation is not entitled to make on its own: either confirmation gets
-wired to real LiveKit presence (making `confirmed` meaningful, which is the
-spec-intended reading), or eligibility is broadened to admitted-but-unconfirmed
-leases (which would weaken the presence guarantee that `confirmed` exists to
-provide). Both change the security model, both are outside every task's stated
-scope, and picking one here would be an architectural decision disguised as a
-bug fix. It should be resolved together with the `confirm_viewer` wiring above.
+### 4c. Adversarial review findings — all fixed
 
-**This must be fixed and re-verified before a live acceptance run is scheduled.**
+Two independent adversarial reviews were run with neutral briefs (no
+conclusions supplied): the external `codex` CLI and the Claude `code-reviewer`
+subagent. Every confirmed finding has been fixed on the branch.
+
+| Finding | Resolution |
+|---|---|
+| Relayed cross-worker turns installed no speaker context, so a remote speaker inherited the previous speaker's `user_id` and tool permissions. | Fixed — the relay installs the frame's own lease context and fails closed if it cannot. |
+| A departing socket's `aclose()` cleared the shared speaker context unconditionally, muting the next speaker after an A→B handoff. | Fixed — release is fenced on the turn generation. |
+| WebSocket error frames forwarded `str(exc)` verbatim, against `BroadcastError`'s own contract. | Fixed — only the sanitized reason code crosses the boundary, matching HTTP. |
+| `WorkerRelayServer` was never mounted and worker addresses never registered, so cross-worker speaking always failed `owner_lost`. | Fixed — both entry points serve the relay on its own internal listener (never the public app) and advertise the address. Opt-in; single-worker deployments grow no extra port. |
+| A cross-worker grant skipped the producer barrier entirely, committing a handoff the producer never fenced. | Fixed — the barrier is relayed over the authenticated transport; an unreachable or stalled producer aborts the grant and leaves the floor idle and retryable. |
+| Reconciliation scanned only process-local `_known`, so a dead owner was invisible to every worker that had not served it. | Fixed — store-wide via the new `BroadcastRegistry.list_broadcasts()`. |
+| A transient LiveKit removal failure stranded a seat forever (eviction was reported once). | Fixed — `leaving` leases are re-reported until actually released, in both backends. |
+| Publisher identities were not visible cross-worker, so other workers projected `selected_identity=None`. | Fixed — new `set_media_state()` persists the producer's media facts; it only ever fills in, never erases. |
+| A viewer token could outlive its identity tombstone. | Fixed — tombstones now cover departure plus a full credential TTL. |
+| `?token=` query-string credentials accepted on the broadcast socket. | Fixed — subprotocol only; the shipped client already used it. |
+| `_RateLimiter._hits` grew one deque per principal forever. | Fixed — quiet principals swept, amortised to once per window. |
+| The demo bound anywhere when authentication was disabled (the weaker of the two configurations was the unguarded one). | Fixed — non-loopback binding refused in both configurations. |
+
+Checked and **rejected with evidence**: *"the same-worker audio path never
+re-validates against the live floor."* `BroadcastVoiceSession.push_audio` calls
+both `_require_speaker()` and `_require_current_floor()`, the latter comparing
+the speaker's floor epoch against the live broadcast's. The review sampled the
+branch before that fix landed.
+
+Not changed: the demo's `#demo_token` URL **fragment**. Fragments are never
+sent in HTTP requests and it is stripped from the address bar immediately; the
+credential-in-logs risk was the `?token=` query form, which is gone.
 
 ---
 
-## 4c. Adversarial review findings carried to the PR
-
-Two independent adversarial reviews were run against this branch with neutral
-briefs (no conclusions supplied): the external `codex` CLI and the Claude
-`code-reviewer` subagent. Confirmed CRITICAL findings were fixed on the branch
-(see commit `fix(voicebot-multiroom-heygen-avatar): adversarial review
-remediation`). The findings below were **verified as real but deliberately not
-fixed**, because the fix falls outside the file scope of every task in this
-feature — recorded here so the PR reviewer decides, rather than being silently
-dropped.
-
-| # | Finding | Why not fixed here |
-|---|---|---|
-| 1 | `WorkerRelayServer` is never mounted and `WorkerAddressRegistry.register()` is never called in production wiring, so `attach_speaker_input` always raises `owner_lost` for a speaker not co-located with the producer — the cross-worker path is dead code in a real multi-worker deployment. | TASK-2961 scopes only `worker_transport.py`/`service.py`/`handler.py`; no task lists `manager.py` or `server.py` for the mount. Mounting an *internal* relay route also requires choosing whether it binds to the public app or a separate internal listener — a security-relevant architectural decision, not a bug fix. **ESCALATE.** |
-| 2 | A cross-worker `grant_floor` does not run the producer handoff barrier. | Same boundary: the barrier lives in `FloorCoordinator`, but making it cross-worker needs a producer-side notification channel that no task specifies. **ESCALATE.** |
-| 3 | The reconciler scans only process-local `_known`, so a worker that never served a broadcast cannot discover its dead owner despite the Redis index. | The Redis index exists (`redis_registry.py`); iterating it is a design change to reconciliation ownership. **ESCALATE.** |
-| 4 | A transient LiveKit removal failure returns without releasing, and the lease is already marked `leaving`, so later passes skip it and the seat is stranded. | Genuine defect; the retry/requeue semantics for eviction work are unspecified. **ESCALATE.** |
-| 5 | A viewer token (TTL 60 s) can outlive its identity tombstone. | Fixing means changing a documented spec timing constant. **ESCALATE.** |
-| 6 | `?token=` query-parameter auth is still accepted by the voice WS handler, exposing credentials to access logs. | Pre-existing behaviour on `handler.py`, not introduced by FEAT-537; the shipped broadcast browser already uses subprotocol auth. **REJECT for this PR** (out of scope), worth a follow-up. |
-| 7 | `_RateLimiter._hits` grows one deque per `tenant:user` forever. | SUGGESTION severity; unbounded only over the lifetime of a process with unbounded distinct principals. Noted for follow-up. |
-
-Findings the reviews raised that were checked and **rejected with evidence**:
-
-- *"The same-worker audio path never re-validates against the live floor, so a
-  revoked speaker's PCM can reach Nova."* — Not true as of the remediation
-  commit: `BroadcastVoiceSession.push_audio` calls both `_require_speaker()`
-  and `_require_current_floor()` (`voice_relay.py`), the latter comparing the
-  speaker's floor epoch against the live broadcast's and raising
-  `stale_floor_epoch`. The review sampled the branch before that fix landed.
-
 ## 5. What is still required to accept this feature
 
-1. Fix the `confirm_viewer` gap above (and, with it, the §4b succession
-   escalation) and re-run suites 1, 5 and 7.
+1. ~~Fix the `confirm_viewer` gap~~ — done (§4/§4b); suites 1, 5 and 7 re-run
+   and passing against the production confirmation path.
 2. A LiveAvatar account (`LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`) and a
    reachable LiveKit deployment.
 3. AWS Bedrock Nova 2 Sonic access with `aws_sdk_bedrock_runtime==0.7.0` on
