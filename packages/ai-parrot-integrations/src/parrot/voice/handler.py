@@ -15,10 +15,12 @@ is encapsulated in VoiceBot/GeminiLiveClient.
 from __future__ import annotations
 import asyncio
 import base64
+import binascii
 import contextlib
 import json
 import re
 import uuid
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import (
@@ -62,6 +64,26 @@ except ImportError:
 # _send_voice_response() and _HandlerVoiceSession.build_frames() so both
 # frame-construction paths filter identically (FEAT-418, TASK-2174).
 _THOUGHT_FILTER_PATTERN = re.compile(r"^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])")
+
+# ── FEAT-537: moderated broadcast control socket ────────────────────────────
+
+#: Participant control/input route.  Credentials never appear in the path —
+#: only the agent and broadcast ids, which are not secrets (a share link
+#: carries the broadcast id and nothing else, spec §2).
+BROADCAST_WS_ROUTE: str = "/ws/voice/broadcast/{agent_id}/{broadcast_id}"
+
+#: Close codes for the broadcast socket.
+WS_CLOSE_UNAUTHENTICATED: int = 4401
+WS_CLOSE_FORBIDDEN: int = 4403
+
+#: How long a socket may stay unattached before it is closed.
+BROADCAST_ATTACH_TIMEOUT_S: float = 10.0
+
+#: Largest accepted base64 audio payload per message.
+BROADCAST_MAX_AUDIO_B64_BYTES: int = 64 * 1024
+
+#: Per-socket message rate ceiling.
+BROADCAST_MAX_MSGS_PER_SECOND: int = 50
 
 
 # =============================================================================
@@ -373,6 +395,70 @@ class _AskStreamVoiceClient:
             stt_only=stt_only,
         ):
             yield response
+
+
+@dataclass
+class _BroadcastSocketState:
+    """Per-socket state for one broadcast participant (FEAT-537).
+
+    Deliberately separate from :class:`WebSocketConnection`: a broadcast socket
+    owns no bot, no conversation and no avatar session — those belong to the
+    broadcast — so reusing the single-user connection's fields would invite
+    exactly the connection-owns-the-producer coupling spec §2 removes.
+
+    Attributes:
+        socket_id: Unique id of this socket; also the microphone-binding key.
+        agent_id: Agent from the route.
+        broadcast_id: Broadcast from the route.
+        ws: The WebSocket response.
+        connection: A minimal ``WebSocketConnection`` kept in
+            ``handler.connections`` so shutdown cleanup still sees this socket.
+        principal: The scoped principal resolved from the authenticated user.
+        lease_id: The admitted lease this socket speaks for, once attached.
+        attached: Whether the mandatory ``attach`` handshake completed.
+        bound: Whether this socket currently holds the microphone binding.
+        rejected_frames: Count of unauthorized/stale input frames dropped.
+    """
+
+    socket_id: str
+    agent_id: str
+    broadcast_id: str
+    ws: Any
+    connection: Any
+    principal: Any = None
+    lease_id: Optional[str] = None
+    attached: bool = False
+    bound: bool = False
+    rejected_frames: int = 0
+    _message_times: List[float] = field(default_factory=list)
+
+    def allow_message(self) -> bool:
+        """Sliding-window rate limit for this socket.
+
+        Returns:
+            ``False`` when the socket exceeded
+            :data:`BROADCAST_MAX_MSGS_PER_SECOND` in the last second.
+        """
+        now = time.monotonic()
+        self._message_times = [t for t in self._message_times if now - t < 1.0]
+        if len(self._message_times) >= BROADCAST_MAX_MSGS_PER_SECOND:
+            return False
+        self._message_times.append(now)
+        return True
+
+    async def push(self, frame: Dict[str, Any]) -> None:
+        """Send one server-initiated frame to this participant.
+
+        Failures are swallowed: a control notification is advisory and the
+        durable state remains authoritative (spec §2).
+
+        Args:
+            frame: The frame to send.
+        """
+        if self.ws.closed:
+            return
+        with contextlib.suppress(Exception):
+            await self.ws.send_json(frame)
 
 
 @dataclass
@@ -768,6 +854,7 @@ class VoiceChatHandler:
         # FEAT-537 — broadcast mode (inactive unless a service is injected).
         self.broadcast_service = broadcast_service
         self.nova_bot_factory = nova_bot_factory
+        self.ws_broadcast_route = BROADCAST_WS_ROUTE
 
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
@@ -824,6 +911,16 @@ class VoiceChatHandler:
         ws_path = f"{prefix}{self.ws_route}"
         app.router.add_get(ws_path, self.handle_websocket)
         self.logger.info("WebSocket route registered: %s", ws_path)
+
+        # FEAT-537: the moderated broadcast control/input socket. Mounted ONLY
+        # when a broadcast service was injected, so an ordinary voice
+        # deployment exposes exactly the routes it did before.
+        if self.broadcast_enabled:
+            broadcast_ws_path = f"{prefix}{self.ws_broadcast_route}"
+            app.router.add_get(broadcast_ws_path, self.handle_broadcast_websocket)
+            self.logger.info(
+                "Broadcast WebSocket route registered: %s", broadcast_ws_path
+            )
 
         # Health check
         if include_health:
@@ -1051,6 +1148,468 @@ class VoiceChatHandler:
             self.logger.info("Connection closed: %s", session_id)
 
         return ws
+
+    # =========================================================================
+    # FEAT-537 — Broadcast control / input socket
+    # =========================================================================
+
+    async def handle_broadcast_websocket(
+        self, request: web.Request
+    ) -> web.WebSocketResponse:
+        """Participant control and microphone socket for one broadcast.
+
+        Route: ``/ws/voice/broadcast/{agent_id}/{broadcast_id}``.
+
+        Every admitted participant opens one of these to *receive* state.  Only
+        the participant currently holding the floor may also *send* microphone
+        audio, and every such message is re-validated against the live floor
+        state before it reaches a provider.  Authentication alone, socket
+        possession, being the moderator, or holding a LiveKit viewer token are
+        each insufficient (spec §2).
+
+        Client → Server:
+            - ``{"type": "attach", "lease_id": "..."}`` — required first message
+            - ``{"type": "ping"}`` — control heartbeat, every 5 s
+            - ``{"type": "start_session"}`` — attach to the *existing* broadcast
+              voice session; never creates a bot
+            - ``{"type": "start_recording", "floor_epoch": N}``
+            - ``{"type": "audio_data"|"audio_chunk", "data": "<b64>", "floor_epoch": N}``
+            - ``{"type": "stop_recording", "floor_epoch": N}``
+            - ``{"type": "finish_speaking"}`` — hand the floor back
+            - ``{"type": "end_session"}`` — release only this speaking binding
+
+        Server → Client:
+            - ``{"type": "attached", "lease_id": ..., "role": ...}``
+            - ``{"type": "broadcast_state", "state": {...}}``
+            - ``{"type": "floor_state", "granted": bool, "floor_epoch": N}``
+            - ``{"type": "floor_revoked", "floor_epoch": N}``
+            - ``{"type": "error", "code": "...", "message": "..."}``
+            - plus the shared voice frames fanned out by the relay
+
+        Args:
+            request: The aiohttp request.
+
+        Returns:
+            The prepared WebSocket response.
+        """
+        service = self.broadcast_service
+        if service is None:  # pragma: no cover — route is not mounted then
+            raise web.HTTPNotFound()
+
+        agent_id = request.match_info.get("agent_id", "")
+        broadcast_id = request.match_info.get("broadcast_id", "")
+
+        # Same authentication as the legacy route. The query-token form is
+        # accepted only for parity with /ws/voice; browsers should prefer the
+        # Sec-WebSocket-Protocol form, which keeps the token out of URLs and
+        # access logs (spec §2: "Keep credentials out of URL query strings").
+        selected_protocol, user = await self._authenticate_from_protocol(request)
+        if not user:
+            user = await self._authenticate_from_query(request)
+
+        ws = web.WebSocketResponse(
+            heartbeat=30.0,
+            max_msg_size=10 * 1024 * 1024,
+            protocols=[selected_protocol] if selected_protocol else None,
+        )
+        await ws.prepare(request)
+
+        if self.require_auth and user is None:
+            await ws.close(
+                code=WS_CLOSE_UNAUTHENTICATED, message=b"authentication required"
+            )
+            return ws
+
+        socket_id = str(uuid.uuid4())
+        connection = WebSocketConnection(
+            ws=ws,
+            session_id=socket_id,
+            authenticated=user is not None,
+            user=user,
+        )
+        self.connections[socket_id] = connection
+
+        state = _BroadcastSocketState(
+            socket_id=socket_id,
+            agent_id=agent_id,
+            broadcast_id=broadcast_id,
+            ws=ws,
+            connection=connection,
+        )
+        try:
+            state.principal = await service.resolve_principal(user, agent_id)
+        except Exception as exc:  # noqa: BLE001 — no scope, no socket
+            self.logger.warning(
+                "broadcast socket %s: principal resolution failed: %s", socket_id, exc
+            )
+            await ws.close(code=WS_CLOSE_FORBIDDEN, message=b"not authorized")
+            self.connections.pop(socket_id, None)
+            return ws
+
+        try:
+            await self._run_broadcast_socket(service, state)
+        except asyncio.CancelledError:
+            self.logger.info("broadcast socket %s cancelled", socket_id)
+        finally:
+            await self._teardown_broadcast_socket(service, state)
+            self.connections.pop(socket_id, None)
+        return ws
+
+    async def _run_broadcast_socket(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> None:
+        """Attach the socket to a lease, then serve its message loop."""
+        if not await self._attach_broadcast_socket(service, state):
+            return
+
+        async for msg in state.ws:
+            if msg.type != WSMsgType.TEXT:
+                if msg.type == WSMsgType.ERROR:
+                    self.logger.error(
+                        "broadcast socket %s error: %s",
+                        state.socket_id,
+                        state.ws.exception(),
+                    )
+                # Raw binary audio is deliberately NOT accepted here: it cannot
+                # carry a floor_epoch, so it could not be fenced.
+                continue
+            try:
+                message = json.loads(msg.data)
+            except json.JSONDecodeError:
+                await self._send_broadcast_error(state.ws, "invalid_json", "Invalid JSON")
+                continue
+            if not state.allow_message():
+                await self._send_broadcast_error(
+                    state.ws, "rate_limited", "too many messages"
+                )
+                continue
+            try:
+                await self._handle_broadcast_message(service, state, message)
+            except Exception as exc:  # noqa: BLE001 — one bad message, not the socket
+                await self._report_broadcast_error(state, exc)
+
+    async def _attach_broadcast_socket(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> bool:
+        """Consume the mandatory ``attach`` message and verify lease ownership.
+
+        Returns:
+            ``True`` when the socket is attached and may proceed.
+        """
+        try:
+            msg = await asyncio.wait_for(
+                state.ws.receive(), timeout=BROADCAST_ATTACH_TIMEOUT_S
+            )
+        except asyncio.TimeoutError:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach timeout")
+            return False
+        if msg.type != WSMsgType.TEXT:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+        if payload.get("type") != "attach" or not payload.get("lease_id"):
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+
+        lease_id = str(payload["lease_id"])
+        tenant_id = state.principal.tenant_id
+        lease = await service.get_lease(tenant_id, state.broadcast_id, lease_id)
+        # A lease id is not a bearer token: it must belong to the authenticated
+        # principal. Otherwise anyone who saw a lease id in a log could attach
+        # as that participant.
+        if lease is None or lease.principal.user_id != state.principal.user_id:
+            self.logger.warning(
+                "broadcast socket %s: lease %s not owned by %s",
+                state.socket_id,
+                lease_id,
+                state.principal.user_id,
+            )
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"lease not owned")
+            return False
+
+        state.lease_id = lease_id
+        state.attached = True
+        await service.attach_control(
+            tenant_id, state.broadcast_id, lease_id, state.push
+        )
+        await service.heartbeat(tenant_id, state.broadcast_id, lease_id)
+
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        await self._send_message(
+            state.ws,
+            {
+                "type": "attached",
+                "lease_id": lease_id,
+                "broadcast_id": state.broadcast_id,
+                "is_moderator": bool(
+                    descriptor and descriptor.moderator_lease_id == lease_id
+                ),
+            },
+        )
+        await self._push_broadcast_state(service, state)
+        return True
+
+    async def _push_broadcast_state(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> None:
+        """Send the public projection plus this socket's own floor permission."""
+        tenant_id = state.principal.tenant_id
+        public = await service.public_state(tenant_id, state.broadcast_id)
+        await self._send_message(
+            state.ws, {"type": "broadcast_state", "state": public}
+        )
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        if descriptor is None:
+            return
+        granted = (
+            descriptor.speaker_lease_id == state.lease_id
+            and descriptor.floor_state.value == "granted"
+        )
+        # Sent explicitly so the browser gates its microphone on the SERVER's
+        # answer, never on a generic ready_to_speak frame (spec §2).
+        await self._send_message(
+            state.ws,
+            {
+                "type": "floor_state",
+                "granted": granted,
+                "floor_epoch": descriptor.floor_epoch,
+            },
+        )
+
+    async def _handle_broadcast_message(
+        self, service: Any, state: "_BroadcastSocketState", message: Dict[str, Any]
+    ) -> None:
+        """Dispatch one message from an attached broadcast socket."""
+        tenant_id = state.principal.tenant_id
+        msg_type = message.get("type", "")
+
+        if msg_type == "ping":
+            await service.heartbeat(tenant_id, state.broadcast_id, state.lease_id)
+            await self._send_message(
+                state.ws,
+                {"type": "pong", "timestamp": datetime.now().isoformat()},
+            )
+            return
+
+        if msg_type == "get_state":
+            await self._push_broadcast_state(service, state)
+            return
+
+        if msg_type == "start_session":
+            # Attaches to the EXISTING broadcast voice session. A participant
+            # socket never creates a bot or a conversation.
+            session = service.voice_session(tenant_id, state.broadcast_id)
+            await self._send_message(
+                state.ws,
+                {
+                    "type": "session_started",
+                    "broadcast_id": state.broadcast_id,
+                    "producer_local": session is not None,
+                },
+            )
+            return
+
+        if msg_type in ("start_recording", "audio_data", "audio_chunk", "stop_recording"):
+            await self._handle_broadcast_audio(service, state, msg_type, message)
+            return
+
+        if msg_type == "finish_speaking":
+            await service.release_floor(
+                tenant_id, state.broadcast_id, state.lease_id
+            )
+            await self._push_broadcast_state(service, state)
+            return
+
+        if msg_type == "end_session":
+            # Releases only THIS participant's speaking binding. Stopping the
+            # broadcast for everyone is the moderator's explicit HTTP stop.
+            await self._release_speaking(service, state)
+            await self._send_message(state.ws, {"type": "session_ended"})
+            return
+
+        self.logger.warning(
+            "broadcast socket %s: unknown message type %r", state.socket_id, msg_type
+        )
+
+    async def _handle_broadcast_audio(
+        self,
+        service: Any,
+        state: "_BroadcastSocketState",
+        msg_type: str,
+        message: Dict[str, Any],
+    ) -> None:
+        """Validate floor authority, then feed the broadcast's voice session.
+
+        Every rejection is counted and dropped locally; a rejected frame is
+        never forwarded to a provider and never fanned out to other browsers.
+        """
+        from parrot.integrations.liveavatar.broadcast.errors import BroadcastError
+        from parrot.integrations.liveavatar.broadcast.floor import (
+            validate_audio_authority,
+        )
+
+        tenant_id = state.principal.tenant_id
+        floor_epoch = message.get("floor_epoch")
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        lease = await service.get_lease(tenant_id, state.broadcast_id, state.lease_id)
+        if descriptor is None:
+            await self._send_broadcast_error(
+                state.ws, "not_found", "broadcast is gone"
+            )
+            return
+
+        try:
+            validate_audio_authority(
+                descriptor,
+                lease,
+                floor_epoch=floor_epoch if isinstance(floor_epoch, int) else None,
+                socket_id=state.socket_id,
+            )
+        except BroadcastError as exc:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(
+                state.ws,
+                exc.reason.value if exc.reason else "forbidden",
+                str(exc),
+            )
+            return
+
+        session = service.voice_session(tenant_id, state.broadcast_id)
+        if session is None:
+            await self._send_broadcast_error(
+                state.ws, "not_found", "producer is not on this worker"
+            )
+            return
+
+        if msg_type == "start_recording":
+            try:
+                await service.bind_speaker_socket(
+                    tenant_id,
+                    state.broadcast_id,
+                    state.lease_id,
+                    state.socket_id,
+                    descriptor.floor_epoch,
+                )
+            except BroadcastError as exc:
+                state.rejected_frames += 1
+                await self._send_broadcast_error(
+                    state.ws,
+                    exc.reason.value if exc.reason else "forbidden",
+                    str(exc),
+                )
+                return
+            state.bound = True
+            session.begin_speaker_turn(
+                state.lease_id, state.principal, descriptor.floor_epoch
+            )
+            await session.start_turn()
+            await self._send_message(
+                state.ws,
+                {"type": "recording_started", "floor_epoch": descriptor.floor_epoch},
+            )
+            return
+
+        if msg_type == "stop_recording":
+            await session.end_turn()
+            await self._send_message(state.ws, {"type": "recording_stopped"})
+            return
+
+        raw = message.get("data", "")
+        if not isinstance(raw, str) or not raw:
+            state.rejected_frames += 1
+            return
+        if len(raw) > BROADCAST_MAX_AUDIO_B64_BYTES:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(
+                state.ws, "payload_too_large", "audio payload exceeds the limit"
+            )
+            return
+        try:
+            pcm = base64.b64decode(raw)
+        except (ValueError, binascii.Error):
+            state.rejected_frames += 1
+            await self._send_broadcast_error(
+                state.ws, "invalid_audio", "audio payload is not valid base64"
+            )
+            return
+        await session.push_audio(pcm)
+
+    async def _release_speaking(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> None:
+        """Unbind this socket and, if it held the floor, hand it back."""
+        if not state.attached or state.lease_id is None:
+            return
+        tenant_id = state.principal.tenant_id
+        with contextlib.suppress(Exception):
+            await service.unbind_speaker_socket(
+                tenant_id, state.broadcast_id, state.lease_id, state.socket_id
+            )
+        state.bound = False
+        descriptor = await self._safe_descriptor(service, state)
+        if descriptor is not None and descriptor.speaker_lease_id == state.lease_id:
+            with contextlib.suppress(Exception):
+                await service.release_floor(
+                    tenant_id, state.broadcast_id, state.lease_id
+                )
+
+    async def _safe_descriptor(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> Any:
+        """Fetch the descriptor without letting a store blip break teardown."""
+        try:
+            return await service.get_descriptor(
+                state.principal.tenant_id, state.broadcast_id
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def _teardown_broadcast_socket(
+        self, service: Any, state: "_BroadcastSocketState"
+    ) -> None:
+        """Release the socket's bindings and deregister it.  Never raises."""
+        if not state.attached or state.lease_id is None:
+            return
+        await self._release_speaking(service, state)
+        with contextlib.suppress(Exception):
+            await service.detach_control(
+                state.principal.tenant_id, state.broadcast_id, state.lease_id
+            )
+        self.logger.info(
+            "broadcast socket %s closed (lease=%s, rejected_frames=%d)",
+            state.socket_id,
+            state.lease_id,
+            state.rejected_frames,
+        )
+
+    async def _send_broadcast_error(
+        self, ws: web.WebSocketResponse, code: str, message: str
+    ) -> None:
+        """Send a coded error frame.
+
+        Broadcast clients branch on ``code`` (``floor_not_granted``,
+        ``stale_floor_epoch``, ``speaker_connection_exists``, …); the legacy
+        ``_send_error`` sends only a human message.
+        """
+        await self._send_message(
+            ws, {"type": "error", "code": code, "message": message}
+        )
+
+    async def _report_broadcast_error(
+        self, state: "_BroadcastSocketState", exc: BaseException
+    ) -> None:
+        """Translate an exception into a coded error frame."""
+        reason = getattr(exc, "reason", None)
+        code = getattr(reason, "value", None) or "internal_error"
+        if code == "internal_error":
+            self.logger.exception(
+                "broadcast socket %s: unhandled error", state.socket_id
+            )
+        await self._send_broadcast_error(state.ws, code, str(exc))
 
     # =========================================================================
     # Message Handlers

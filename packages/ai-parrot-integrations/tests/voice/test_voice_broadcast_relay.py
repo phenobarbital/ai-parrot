@@ -10,6 +10,8 @@ Two halves:
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -426,3 +428,517 @@ def test_build_voice_frames_is_a_pure_module_function() -> None:
     )
     # STT-only gating is preserved: only the user transcription survives.
     assert _types(stt_frames) == ["transcription"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-537 (TASK-2960): /ws/voice/broadcast route
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+from aiohttp import web  # noqa: E402
+
+from parrot.integrations.liveavatar.broadcast import (  # noqa: E402
+    BroadcastDescriptor,
+    FloorState,
+    InMemoryBroadcastRegistry,
+    ViewerLease,
+)
+from parrot.integrations.liveavatar.broadcast.floor import (  # noqa: E402
+    FloorCoordinator,
+)
+from parrot.voice.handler import (  # noqa: E402
+    BROADCAST_MAX_AUDIO_B64_BYTES,
+    WS_CLOSE_FORBIDDEN,
+    VoiceChatHandler,
+)
+
+BROADCAST_ID = "bc-ws-1"
+
+
+class FakeVoiceSessionForRoute:
+    """Captures what the route feeds into the broadcast voice session."""
+
+    def __init__(self) -> None:
+        self.turns: List[tuple] = []
+        self.audio: List[bytes] = []
+        self.started = 0
+        self.ended = 0
+
+    def begin_speaker_turn(self, lease_id: str, principal: Any, floor_epoch: int) -> int:
+        self.turns.append((lease_id, principal.user_id, floor_epoch))
+        return len(self.turns)
+
+    async def start_turn(self) -> None:
+        self.started += 1
+
+    async def end_turn(self) -> None:
+        self.ended += 1
+
+    async def push_audio(self, pcm: bytes) -> None:
+        self.audio.append(pcm)
+
+
+class FakeBroadcastService:
+    """In-memory `BroadcastControlService` over the real registry."""
+
+    def __init__(self) -> None:
+        self.registry = InMemoryBroadcastRegistry()
+        self.session = FakeVoiceSessionForRoute()
+        self.coordinator = FloorCoordinator(notifier=self._notify)
+        self.controls: Dict[str, Any] = {}
+        self.detached: List[str] = []
+
+    async def _notify(self, lease_id: str, frame: Dict[str, Any]) -> None:
+        send = self.controls.get(lease_id)
+        if send is not None:
+            await send(frame)
+
+    async def resolve_principal(self, user: Any, agent_id: str) -> ParticipantPrincipal:
+        if user is None:
+            raise PermissionError("unauthenticated")
+        return ParticipantPrincipal(
+            user_id=user.user_id, tenant_id=TENANT, agent_id=agent_id
+        )
+
+    async def get_descriptor(
+        self, tenant_id: str, broadcast_id: str
+    ) -> Optional[BroadcastDescriptor]:
+        return await self.registry.get(tenant_id, broadcast_id)
+
+    async def get_lease(
+        self, tenant_id: str, broadcast_id: str, lease_id: str
+    ) -> Optional[ViewerLease]:
+        for lease in await self.registry.list_leases(tenant_id, broadcast_id):
+            if lease.lease_id == lease_id:
+                return lease
+        return None
+
+    async def heartbeat(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
+        await self.registry.heartbeat_control(tenant_id, broadcast_id, lease_id)
+
+    async def attach_control(
+        self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any
+    ) -> None:
+        self.controls[lease_id] = send
+
+    async def detach_control(
+        self, tenant_id: str, broadcast_id: str, lease_id: str
+    ) -> None:
+        self.controls.pop(lease_id, None)
+        self.detached.append(lease_id)
+
+    async def public_state(self, tenant_id: str, broadcast_id: str) -> Dict[str, Any]:
+        descriptor = await self.registry.get(tenant_id, broadcast_id)
+        assert descriptor is not None
+        leases = await self.registry.list_leases(tenant_id, broadcast_id)
+        return descriptor.to_public_state(viewer_count=len(leases)).model_dump(
+            mode="json"
+        )
+
+    async def bind_speaker_socket(
+        self,
+        tenant_id: str,
+        broadcast_id: str,
+        lease_id: str,
+        socket_id: str,
+        floor_epoch: int,
+    ) -> bool:
+        return await self.registry.bind_speaker_socket(
+            tenant_id, broadcast_id, lease_id, socket_id, floor_epoch
+        )
+
+    async def unbind_speaker_socket(
+        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
+    ) -> bool:
+        return await self.registry.unbind_speaker_socket(
+            tenant_id, broadcast_id, lease_id, socket_id
+        )
+
+    def voice_session(self, tenant_id: str, broadcast_id: str) -> Any:
+        return self.session
+
+    def media_session(self, tenant_id: str, broadcast_id: str) -> Any:
+        return None
+
+    async def release_floor(
+        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
+    ) -> Any:
+        return await self.coordinator.release(
+            self.registry,
+            None,
+            tenant_id=tenant_id,
+            broadcast_id=broadcast_id,
+            speaker_lease_id=speaker_lease_id,
+        )
+
+    async def seed(self, *names: str) -> Dict[str, Any]:
+        await self.registry.create(
+            BroadcastDescriptor(
+                broadcast_id=BROADCAST_ID,
+                tenant_id=TENANT,
+                agent_id=AGENT,
+                creator_user_id="creator",
+            )
+        )
+        leases: Dict[str, Any] = {}
+        for name in names:
+            admission = await self.registry.reserve_viewer(
+                TENANT,
+                BROADCAST_ID,
+                ParticipantPrincipal(
+                    user_id=name, tenant_id=TENANT, agent_id=AGENT, display_name=name
+                ),
+                f"identity-{name}",
+            )
+            await self.registry.confirm_viewer(
+                TENANT, BROADCAST_ID, admission.lease.lease_id
+            )
+            await self.registry.heartbeat_control(
+                TENANT, BROADCAST_ID, admission.lease.lease_id
+            )
+            leases[name] = admission.lease
+        return leases
+
+
+class _AlwaysUser:
+    """Token validator stub: any token maps to a user named after it."""
+
+    async def validate(self, token: str) -> Any:
+        from parrot.core.ws_auth import AuthenticatedUser
+
+        return AuthenticatedUser(user_id=token, username=token)
+
+
+@pytest.fixture
+async def broadcast_app(aiohttp_client):
+    """A handler with a fake broadcast service, mounted on a test client."""
+    service = FakeBroadcastService()
+    handler = VoiceChatHandler(
+        require_auth=True,
+        token_validator=_AlwaysUser(),
+        broadcast_service=service,
+    )
+    app = web.Application()
+    handler.setup_routes(app, include_static=False)
+    client = await aiohttp_client(app)
+    return client, service, handler
+
+
+async def _connect(client: Any, user: str) -> Any:
+    return await client.ws_connect(
+        f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token={user}"
+    )
+
+
+async def _drain_until(ws: Any, wanted: str, limit: int = 12) -> Dict[str, Any]:
+    """Read frames until one of ``wanted`` type arrives."""
+    for _ in range(limit):
+        frame = json.loads((await ws.receive()).data)
+        if frame.get("type") == wanted:
+            return frame
+    raise AssertionError(f"never saw a {wanted!r} frame")
+
+
+async def test_route_is_not_mounted_without_a_service(aiohttp_client) -> None:
+    """An ordinary voice deployment exposes exactly the routes it did before."""
+    handler = VoiceChatHandler()
+    app = web.Application()
+    handler.setup_routes(app, include_static=False)
+    paths = {getattr(route.resource, "canonical", "") for route in app.router.routes()}
+    assert not any("broadcast" in path for path in paths)
+    assert handler.broadcast_enabled is False
+
+
+async def test_route_is_mounted_with_a_service(broadcast_app) -> None:
+    _client, _service, handler = broadcast_app
+    assert handler.broadcast_enabled is True
+
+
+async def test_ws_attach_wrong_owner_closes_4403(broadcast_app) -> None:
+    """A lease id is not a bearer token."""
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+
+    ws = await _connect(client, "guest")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    msg = await ws.receive()
+    assert msg.type.name == "CLOSE"
+    assert ws.close_code == WS_CLOSE_FORBIDDEN
+
+
+async def test_ws_attach_unknown_lease_closes_4403(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": "lease-ghost"})
+    await ws.receive()
+    assert ws.close_code == WS_CLOSE_FORBIDDEN
+
+
+async def test_ws_attach_pushes_state_and_floor_permission(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    attached = await _drain_until(ws, "attached")
+    assert attached["is_moderator"] is True
+
+    state = await _drain_until(ws, "broadcast_state")
+    assert state["state"]["broadcast_id"] == BROADCAST_ID
+    # The projection is credential-free.
+    assert "token" not in json.dumps(state).lower()
+
+    floor = await _drain_until(ws, "floor_state")
+    assert floor["granted"] is True
+
+    # A non-speaker is told so explicitly, not left to infer it.
+    ws2 = await _connect(client, "guest")
+    await ws2.send_json({"type": "attach", "lease_id": leases["guest"].lease_id})
+    guest_floor = await _drain_until(ws2, "floor_state")
+    assert guest_floor["granted"] is False
+    await ws.close()
+    await ws2.close()
+
+
+async def test_ws_audio_requires_a_current_floor_epoch(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+
+    # Omitted epoch → stale, not waved through.
+    await ws.send_json({"type": "audio_data", "data": "AAAA"})
+    error = await _drain_until(ws, "error")
+    assert error["code"] == "stale_floor_epoch"
+
+    # Superseded epoch → stale.
+    await ws.send_json({"type": "audio_data", "data": "AAAA", "floor_epoch": 99})
+    error = await _drain_until(ws, "error")
+    assert error["code"] == "stale_floor_epoch"
+
+    assert service.session.audio == []
+    await ws.close()
+
+
+async def test_ws_non_speaker_audio_is_rejected(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+    ws = await _connect(client, "guest")
+    await ws.send_json({"type": "attach", "lease_id": leases["guest"].lease_id})
+    await _drain_until(ws, "floor_state")
+
+    await ws.send_json({"type": "audio_data", "data": "AAAA", "floor_epoch": 1})
+    error = await _drain_until(ws, "error")
+    assert error["code"] == "floor_not_granted"
+    assert service.session.audio == []
+    await ws.close()
+
+
+async def test_ws_speaker_audio_reaches_the_broadcast_session(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+
+    await ws.send_json({"type": "start_recording", "floor_epoch": 1})
+    await _drain_until(ws, "recording_started")
+    assert service.session.turns == [(leases["moderator"].lease_id, "moderator", 1)]
+    assert service.session.started == 1
+
+    await ws.send_json(
+        {"type": "audio_data", "data": base64.b64encode(b"\x01\x02").decode(),
+         "floor_epoch": 1}
+    )
+    await ws.send_json({"type": "stop_recording", "floor_epoch": 1})
+    await _drain_until(ws, "recording_stopped")
+    assert service.session.audio == [b"\x01\x02"]
+    assert service.session.ended == 1
+    await ws.close()
+
+
+async def test_ws_duplicate_speaker_socket_409(broadcast_app) -> None:
+    """The first capture socket keeps the floor; the second is refused."""
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    lease_id = leases["moderator"].lease_id
+
+    first = await _connect(client, "moderator")
+    await first.send_json({"type": "attach", "lease_id": lease_id})
+    await _drain_until(first, "floor_state")
+    await first.send_json({"type": "start_recording", "floor_epoch": 1})
+    await _drain_until(first, "recording_started")
+
+    second = await _connect(client, "moderator")
+    await second.send_json({"type": "attach", "lease_id": lease_id})
+    await _drain_until(second, "floor_state")
+    await second.send_json({"type": "start_recording", "floor_epoch": 1})
+    error = await _drain_until(second, "error")
+    assert error["code"] == "speaker_connection_exists"
+
+    # The original binding survived.
+    await first.send_json(
+        {"type": "audio_data", "data": base64.b64encode(b"\x03\x04").decode(),
+         "floor_epoch": 1}
+    )
+    await first.send_json({"type": "stop_recording", "floor_epoch": 1})
+    await _drain_until(first, "recording_stopped")
+    assert b"\x03\x04" in service.session.audio
+    await first.close()
+    await second.close()
+
+
+async def test_ws_revoke_stops_old_speaker_audio(broadcast_app) -> None:
+    """After a handoff the previous speaker's next frame is refused."""
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_json({"type": "start_recording", "floor_epoch": 1})
+    await _drain_until(ws, "recording_started")
+
+    current = await service.registry.get(TENANT, BROADCAST_ID)
+    assert current is not None
+    await service.coordinator.handoff(
+        service.registry,
+        None,
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST_ID,
+        moderator_lease_id=leases["moderator"].lease_id,
+        target_lease_id=leases["guest"].lease_id,
+        expected_version=current.version,
+    )
+
+    # The outgoing speaker is told to stop...
+    revoked = await _drain_until(ws, "floor_revoked")
+    assert revoked["floor_epoch"] == 2
+
+    # ...and its audio is refused even at what WAS a valid epoch.
+    before = len(service.session.audio)
+    await ws.send_json({"type": "audio_data", "data": "AAAA", "floor_epoch": 1})
+    error = await _drain_until(ws, "error")
+    assert error["code"] == "floor_not_granted"
+    assert len(service.session.audio) == before
+    await ws.close()
+
+
+async def test_ws_finish_speaking_returns_the_floor(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+    current = await service.registry.get(TENANT, BROADCAST_ID)
+    assert current is not None
+    await service.coordinator.handoff(
+        service.registry,
+        None,
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST_ID,
+        moderator_lease_id=leases["moderator"].lease_id,
+        target_lease_id=leases["guest"].lease_id,
+        expected_version=current.version,
+    )
+
+    ws = await _connect(client, "guest")
+    await ws.send_json({"type": "attach", "lease_id": leases["guest"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_json({"type": "finish_speaking"})
+    await _drain_until(ws, "broadcast_state")
+
+    descriptor = await service.registry.get(TENANT, BROADCAST_ID)
+    assert descriptor is not None
+    assert descriptor.speaker_lease_id == leases["moderator"].lease_id
+    await ws.close()
+
+
+async def test_ws_speaker_disconnect_returns_the_floor(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator", "guest")
+    current = await service.registry.get(TENANT, BROADCAST_ID)
+    assert current is not None
+    await service.coordinator.handoff(
+        service.registry,
+        None,
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST_ID,
+        moderator_lease_id=leases["moderator"].lease_id,
+        target_lease_id=leases["guest"].lease_id,
+        expected_version=current.version,
+    )
+
+    ws = await _connect(client, "guest")
+    await ws.send_json({"type": "attach", "lease_id": leases["guest"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.close()
+
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        descriptor = await service.registry.get(TENANT, BROADCAST_ID)
+        if descriptor and descriptor.speaker_lease_id == leases["moderator"].lease_id:
+            break
+    assert descriptor is not None
+    assert descriptor.speaker_lease_id == leases["moderator"].lease_id
+    assert leases["guest"].lease_id in service.detached
+
+
+async def test_ws_ping_records_a_heartbeat(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_json({"type": "ping"})
+    pong = await _drain_until(ws, "pong")
+    assert pong["type"] == "pong"
+    lease = await service.get_lease(TENANT, BROADCAST_ID, leases["moderator"].lease_id)
+    assert lease is not None
+    assert lease.last_control_heartbeat is not None
+    await ws.close()
+
+
+async def test_ws_oversized_audio_is_refused(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_json(
+        {
+            "type": "audio_data",
+            "data": "A" * (BROADCAST_MAX_AUDIO_B64_BYTES + 4),
+            "floor_epoch": 1,
+        }
+    )
+    error = await _drain_until(ws, "error")
+    assert error["code"] == "payload_too_large"
+    assert service.session.audio == []
+    await ws.close()
+
+
+async def test_ws_start_session_never_creates_a_bot(broadcast_app) -> None:
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_json({"type": "start_session"})
+    started = await _drain_until(ws, "session_started")
+    assert started["broadcast_id"] == BROADCAST_ID
+    assert started["producer_local"] is True
+    await ws.close()
+
+
+async def test_ws_binary_audio_is_ignored(broadcast_app) -> None:
+    """Raw binary cannot carry a floor_epoch, so it cannot be fenced."""
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+    await ws.send_bytes(b"\x00\x01\x02\x03")
+    await ws.send_json({"type": "ping"})
+    await _drain_until(ws, "pong")
+    assert service.session.audio == []
+    await ws.close()
