@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2981, TASK-2984, TASK-2985
@@ -157,4 +157,64 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker via delegated agent (Claude Opus 5) — 2026-09-08
+**Commit**: `8ae42e613`
+
+### What was built
+
+Attribution threaded through both post-dispatch write paths. Each
+retry-loop iteration in `PlanToolNode` opens one attempt receipt carrying
+`plan_run_id` / `plan_node_id` / `plan_item_index` / `plan_attempt` /
+`mapped_step_id` and publishes its call id as `CURRENT_CALL`, so the
+manager's dispatch becomes a *child* of it — which is what stops
+`_is_aggregate` counting the attempt twice. `_store` writes through
+`aput_generic(producer_call_id=, attribution=)` inside
+`retained_producer(...)` and adds the resulting `artifact_id@version`
+back as a receipt. The tee does the same and, on failure, returns `None`,
+attaches no receipt, and marks the producing attempt `degraded`.
+
+### Verification evidence (independently re-run, not taken on trust)
+
+- `test_plan_task_receipts.py`: 8 passed, including the three required
+  cases. Log: `artifacts/logs/task-2991-tm-plan-tee-receipts.log`.
+- `tests/tools/working_memory`: **809 passed, 62 skipped, 0 failed**.
+- `tests/{tools/compression,tools/execution_plan,bots}`: FAILED-set
+  **identical** to a `dev`-source baseline over the same tests (86
+  pre-existing failures, unchanged) — verified by set diff, not by count.
+- The load-bearing assertion is falsifiable rather than ceremonial: a
+  probe records `CURRENT_CALL` at write time and finds it `None` for
+  every enabled plan/tee write — the reset really has happened — yet the
+  store's descriptor still names the producing attempt.
+
+### Design decision recorded
+
+The producer is the **plan node's attempt receipt**, not the manager's
+child receipt. The child carries no plan correlation (`observer.begin`
+passes none), so attributing to it would drop plan provenance and the
+mapped step; the chain stays complete via `parent_call_id`. Reversing
+this is a one-line change in `_call_with_retry` if a reviewer disagrees.
+
+`plan_step_mapping` is inert until something populates it; nothing
+auto-creates a task or step, per OQ2.
+
+### Two reported failures, triaged
+
+1. **CONFIRMED and fixed** (commit `bd9e405c1`, outside this task's
+   ownership but caused by TASK-2985): `bench_snapshot_costs.py::
+   test_contract_inventory` asserted five direct `self._catalog.put*(`
+   sites in `tool.py`; TASK-2985 collapsed the nine sites into
+   `_put`/`_put_generic`, so the count fell to 2. The guard now counts
+   the nine routed sites, preserving its intent.
+2. **REJECTED**: `test_missing_source_stores_error` — no test of that
+   name exists anywhere in the tree. Treated as no finding.
+
+Separately surfaced and **left alone deliberately**: the same test's
+later file-manager assertion cannot pass under pytest, because
+`tests/conftest.py` installs a stub `parrot.interfaces.file` whose
+`FileManagerInterface` has none of the five probed ops. Pre-existing
+(merely masked by the assertion that fired first), not in this task's
+ownership, and the file is not collected by a default pytest run.
+
+### Approved deviations
+
+None.
