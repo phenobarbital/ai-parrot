@@ -567,7 +567,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:52:27+00:00",
       "file": "sdd/tasks/completed/TASK-2985-tm-wm-enabled-paths.md",
-      "verification": "22 focused tests; AC13 verified \u2014 disabled schema byte-identical and tools/plan failure SET identical to dev baseline (1947 passed/53 pre-existing)",
+      "verification": "22 focused tests; AC13 verified — disabled schema byte-identical and tools/plan failure SET identical to dev baseline (1947 passed/53 pre-existing)",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
@@ -687,7 +687,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -709,8 +709,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2989-tm-task-tools.md",
+      "completed_at": "2026-09-08T17:14:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2989-tm-task-tools.md",
       "verification": null,
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/tools.py",

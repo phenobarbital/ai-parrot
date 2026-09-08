@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2980, TASK-2985, TASK-2988
@@ -141,4 +141,77 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-08
+**Commit**: `736191198`
+
+### What was built
+
+The ten `wm_*` tools of spec §2, with explicit Pydantic input schemas
+bound via `@tool_schema`, wrapping `TaskMemoryService` through a private
+`TaskMemory` composition root (config, scope, stores, service,
+`RecallReader`, selected-task association). `TaskMemoryToolsMixin` is
+mixed into `WorkingMemoryToolkit`; when `task_memory is None` the
+constructor adds `TASK_TOOL_METHODS` to the **instance** `exclude_tools`,
+which `_generate_tools` already honours.
+
+### Verification evidence
+
+- `test_task_tools.py`: 6 passed (`test_schemas`, `test_commands`,
+  `test_readonly`, plus scope-binding, implicit-selection and
+  budget-refusal cases). Log: `artifacts/logs/task-2989-tm-task-tools.log`.
+- `tests/tools/working_memory`: **801 passed, 62 skipped, 0 failed**.
+- **AC13 checked structurally, not asserted**: the disabled toolkit's
+  tool names *and* every input schema's field set were dumped from
+  `dev`'s source tree and from `HEAD` and diffed — identical.
+- `tests/tools` (excl. working_memory): FAILED-set is a strict subset of
+  the `dev` baseline. All 52 remaining failures are pre-existing and
+  unrelated (`databasequery`, `test_auto_registration_hooks`).
+- `ruff check` clean on all four owned files. The one F401 in `tool.py`
+  (`AnswerMemory` under `TYPE_CHECKING`) was verified to exist on `dev`
+  and was left alone as out of scope.
+
+### Corrections made during implementation
+
+Five API assumptions were caught by reading source before use, each of
+which would have shipped a defect:
+
+1. **`read_recall` does not exist.** Recall's I/O half is
+   `RecallReader.recall(scope, task_id, ...)`, which already resolves an
+   omitted id and produces the bounded `needs_task_selection` page. The
+   hand-rolled resolver drafted first was deleted in favour of it.
+2. **`PlanChange` is a discriminated union on `op`.** The hand-written
+   dict→model translator drafted first was both redundant and *lossy* —
+   it silently dropped `update_constraint`. Replaced with
+   `PlanChanges.model_validate`, so the parse and the "is this a real
+   operation?" check are the same step and cannot drift from the models.
+3. **The association protocol is wider than `resolve`.** An invented
+   `_SelectionAssociation` adapter passed to `RecallReader` blew up on
+   `recall_key`. There is a real `association.py` (`TaskAssociationStore`);
+   `TaskMemory` now accepts one optionally and passes it straight through.
+4. **`ResumeHint.text`, not `.next_action`** — the service *parameter* is
+   `next_action` but the stored field is `text`.
+5. **The recall snapshot is flat** — `snapshot["task_id"]`, not
+   `snapshot["task"]["task_id"]`.
+
+### Notes for the reviewer
+
+- **Delivery A remains non-durable.** `TaskMemory.select()` is in-process
+  only (turn session + local). Persisting to the durable association is a
+  separate awaitable step (`persist_selection` / `release_selection`)
+  that no-ops when no `TaskAssociationStore` is wired, and whose failure
+  is reported as `association_durable: false` rather than raised — a
+  committed task must never be lost because its association could not be
+  written.
+- **`select()` happens only after the append commits**, so a rejected
+  creation never leaves a selection pointing at a task that does not
+  exist. Likewise `session.declare(step_id)` runs only after a *successful*
+  running transition.
+- A prior claim in `tool.py` that the disabled path "never pulls in
+  task_memory at all" became false once the mixin was inherited (it must
+  be, for the methods to be discoverable). The comment was corrected
+  rather than left standing; `task_memory` imports only core dependencies
+  (`orjson`, `pydantic`), so no new dependency reaches a disabled install.
+
+### Approved deviations
+
+None.
