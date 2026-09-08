@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2977, TASK-2984
@@ -155,4 +155,71 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_enabled_working_memory.py` → **22 passed**.
+  Log: `artifacts/logs/task-2985-tm-wm-enabled-paths.log`.
+- **Regression evidence (AC13):** `tests/tools` + `tests/bots/flows/plan`
+  give **1947 passed / 53 failed**, and the sorted `FAILED` list is
+  **byte-identical** to unmodified `dev` — zero additions, zero removals.
+- The one remaining `ruff` finding in `tool.py`
+  (`F401 parrot.memory.AnswerMemory`) is pre-existing on baseline.
+
+### AC13 is the point, and it is enforced structurally
+- `task_memory=None` (the default) leaves every path on the legacy
+  synchronous catalog, with the legacy schemas and the legacy raw-read
+  behaviour.
+- The enabled `wm_get_result` schema is a **separate model**
+  (`EnabledGetResultInput`) chosen at **tool-generation time**, not extra
+  fields bolted onto `GetResultInput`. That is what resolves the spec's
+  own conflict between "cap raw reads" and "disabled behaviour
+  byte-identical". A test asserts the disabled schema still has exactly
+  `{key, max_length, include_raw}` and that the legacy model is untouched.
+- `@tool_schema` stores the model on the **function**, shared by every
+  instance, so the swap had to happen on the *generated tool object* —
+  otherwise enabling one toolkit would silently change the schema of
+  every other one in the process.
+
+### Write routing
+Three helpers (`_put`/`_put_generic`/`_drop`) rather than a branch at each
+of the **twelve** call sites Phase 0 inventoried. With the decision in one
+place, an enabled deployment cannot end up with a route that quietly
+stayed synchronous and therefore unversioned.
+
+That is *verified*, not assumed: the catalog raises
+`SyncCatalogWriteError` on a synchronous write when a backend is
+attached, so a missed route fails loudly instead of silently producing
+unrecoverable evidence.
+
+`test_write_routes` checks that a **version landed in the backend**, not
+that a helper was called — the latter would pass against a route that
+published nothing.
+
+### Raw-read policy (enabled only)
+1. **Two ceilings, both enforced**: the *serialized* size of the response
+   and, for tabular values, the *decoded* page size.
+2. **An over-limit response carries no raw payload** and points at
+   `wm_compute_and_store`. The check happens **before** the payload is
+   attached — truncating an opaque `repr` after loading it has already
+   paid the cost the ceiling exists to avoid.
+3. **The configured ceiling is hard**: a caller may lower it but never
+   raise it, and `0` means never. Tested by requesting 10 MB against a
+   500-byte configuration and getting a refusal.
+4. **Exact-cap boundary tested both ways** — at the cap passes, one byte
+   over refuses.
+5. **Multibyte is measured in bytes.** A 3-byte-per-character payload is
+   refused where a character-based check would have let it through.
+6. **A small page of a 2,000-row value stays readable** while the whole
+   value is refused — which is the entire point of paging.
+
+### Mistakes worth recording
+Two more API guesses of mine were wrong and were corrected against the
+real source rather than worked around: `compute_and_store` takes an
+`OperationSpecInput` `spec` (not `code`/`store_as`/`inputs`), and `store`
+returns `{"status", "summary"}` rather than a flat dict. Together with
+TASK-2984's three, that is five guessed signatures caught by running the
+tests against real objects — a good argument for never asserting against
+a stand-in here.
