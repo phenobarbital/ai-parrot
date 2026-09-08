@@ -1856,6 +1856,7 @@
                 }
                 const bc = await this.loadBroadcastModule();
                 this.broadcastMode = true;
+                this.updateAvatarCardVisibility();
                 this.broadcastClient = new bc.BroadcastClient({
                     config: cfg,
                     getToken: () => this.demoToken,
@@ -2001,6 +2002,7 @@
                 await this.broadcastAction(() => this.broadcastClient.leave());
                 if (this.avatarController) await this.avatarController.teardown();
                 this.broadcastMode = false;
+                this.updateAvatarCardVisibility();
                 this.broadcastClient = null;
                 this.updateTalkAvailability();
                 this.updateStatusBar('Left the broadcast.');
@@ -2393,7 +2395,15 @@
             }
 
             updateAvatarCardVisibility() {
-                if (this.avatarCard) this.avatarCard.hidden = !this.avatarConfig.enabled;
+                // Broadcast mode always shows the card: the avatar belongs to the
+                // broadcast producer, not to this page's single-user "Enable
+                // avatar" checkbox. Keying visibility solely off avatarConfig
+                // .enabled meant a broadcast participant never saw the avatar
+                // video at all — the element stayed inside a hidden container,
+                // so there was nothing to observe and lip-sync could not be
+                // judged, even though the track was being published.
+                const show = this.avatarConfig.enabled || this.broadcastMode;
+                if (this.avatarCard) this.avatarCard.hidden = !show;
             }
 
             onAvatarSettingChanged() {
