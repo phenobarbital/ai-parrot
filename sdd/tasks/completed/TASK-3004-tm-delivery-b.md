@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2997, TASK-2998, TASK-3002, TASK-3003
@@ -156,4 +156,87 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-09
+**Commit**: `5b70347b6`
+
+### What was built
+
+`test_delivery_b.py` (5 tests) and `test_crash_matrix.py` (4 tests) — the
+Delivery B acceptance gate, run against **live PostgreSQL 17.3, live
+Redis and a real filesystem** throughout.
+
+### The property the crash matrix asserts
+
+At every crash point the state left behind is either **committed and
+consistent**, or an **explicit, recoverable orphan / unknown**. Never the
+third thing — a half-commit that reads as complete, which is invisible
+until someone trusts it.
+
+Points exercised: before the blob write; after the bytes but before the
+index row (an orphan blob, sweepable — and still no row claiming bytes,
+an asymmetry that is deliberate because the reverse is unrecoverable);
+inside the index transaction; a tool started with no terminal event; the
+same boundary with a **live** call and with **unknown** liveness; and
+archive-then-delete.
+
+That last pair matters most: a crashed call and a slow one look
+identical in the journal, so reconciling on "no terminal event" alone
+would mark healthy work unknown and invite its external effect to be
+re-run. Liveness is what separates them, and an unestablished liveness
+resolves to "leave it alone".
+
+### Verification evidence
+
+- 7 focused tests pass against real services; they **skip explicitly**
+  without them and a skip is never reported as a pass.
+- `tests/tools/working_memory`: **932 passed / 0 failed** with services;
+  **842 passed / 90 skipped / 0 failed** without.
+- `ruff` clean on both new files.
+- Log: `artifacts/logs/task-3004-tm-delivery-b.log`.
+
+### Mutation testing, including one honest non-catch
+
+| Mutation | Caught by |
+|---|---|
+| claim `PERSISTED` when no bytes were written | `test_crash_boundaries` |
+| treat every call as dead | `test_crash_boundaries_a_slow_call_is_not_a_crashed_one` |
+| resolve evidence to the alias head | `test_restart_primary` (+2) |
+| remove the reducer's terminal-status guard | `test_multi_pod` |
+| **disable the optimistic revision check** | **NOT caught** |
+
+The last one is **defence in depth, not a gap**, and I verified that
+rather than assuming it: double terminalization is prevented by the
+reducer refusing to resurrect a terminal task, which is a stronger guard
+than the revision check. Mutating *that* guard is caught by
+`test_multi_pod`.
+
+### Defect found and fixed outside the ownership table
+
+This gate exposed a real bug in **my own TASK-3003** work:
+`config.py::_build_sweeper` called
+`JsonlArchiveWriter(file_manager, archive_uri)`, but the writer's
+signature is `(blob_store, scope)`. It could never have run — and it
+could not be repaired in place either, because the writer binds a
+**scope** at construction while the runtime is deliberately
+scope-agnostic. Building one there would archive every scope's journal
+under a single scope's prefix *and still pass verification*, which is
+worse than not archiving.
+
+The runtime now accepts an `archive=` collaborator from the host and
+warns when `archive_uri` is configured without one. `config.py` is
+outside this task's ownership table; the fix is recorded here because
+leaving a known-broken durable archive path was the worse option, and it
+was my own defect. Only that one function changed.
+
+### Two API assumptions of mine, corrected against source
+
+`InvocationObserver.begin()` takes no `arguments=` (correlation kwargs
+only), and `EventType.TOOL_STARTED` is the member name, not
+`TOOL_CALL_STARTED`. A third — that `acquire_lease` lets the holder
+re-acquire — was wrong too: it is strictly take-if-free, and renewal is
+a separate owner-checked operation. The test now pins that separation,
+including that a non-holder can neither renew nor release.
+
+### Approved deviations
+
+`config.py` modified outside the ownership table, as described above.
