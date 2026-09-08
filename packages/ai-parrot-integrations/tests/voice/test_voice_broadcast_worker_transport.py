@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 from aiohttp import web
@@ -52,6 +52,14 @@ class FakeOwnerVoiceSession:
         self.started = 0
         self.ended = 0
         self.released = 0
+        #: (lease_id, user_id, floor_epoch) per relayed turn.
+        self.turns: List[Tuple[str, str, int]] = []
+        self.turn_generation = 0
+
+    def begin_speaker_turn(self, lease_id: str, principal: Any, floor_epoch: int) -> int:
+        self.turns.append((lease_id, principal.user_id, floor_epoch))
+        self.turn_generation += 1
+        return self.turn_generation
 
     async def start_turn(self) -> None:
         self.started += 1
@@ -538,16 +546,7 @@ async def test_remote_speaker_input_aclose_is_idempotent(relay_client) -> None:
 
 
 async def test_local_speaker_input_begins_the_turn_once() -> None:
-    class _Session(FakeOwnerVoiceSession):
-        def __init__(self) -> None:
-            super().__init__()
-            self.turns: List[Any] = []
-
-        def begin_speaker_turn(self, lease_id, principal, floor_epoch):
-            self.turns.append((lease_id, principal.user_id, floor_epoch))
-            return len(self.turns)
-
-    session = _Session()
+    session = FakeOwnerVoiceSession()
     principal = ParticipantPrincipal(
         user_id="ada", tenant_id=TENANT, agent_id=AGENT
     )
@@ -562,4 +561,84 @@ async def test_local_speaker_input_begins_the_turn_once() -> None:
     await sink.aclose()
     assert session.audio == [b"\x01\x02"]
     assert session.ended == 1
+    assert session.released == 1
+
+
+# ── Regression: a relayed turn must carry ITS OWN speaker context ──────────
+
+
+async def test_relayed_turn_installs_its_own_speaker_context(relay_client) -> None:
+    """CRITICAL regression (adversarial review finding 2).
+
+    The relay used to call ``start_turn()`` without ``begin_speaker_turn()``,
+    so a relayed turn inherited whatever context the previous speaker left —
+    meaning the remote speaker's turn ran under the *previous* user's identity
+    and tool permissions. Spec §2 forbids reusing another participant's
+    privileges.
+    """
+    client, service, lease_id = relay_client
+    ws = await client.ws_connect(
+        f"{RELAY_ROUTE}?tenant_id={TENANT}&broadcast_id={BROADCAST}",
+        headers={WORKER_TOKEN_HEADER: TOKEN},
+    )
+    await ws.send_str(_frame(lease_id, kind="start_turn"))
+    await ws.send_str(_frame(lease_id, pcm=b"\x01\x02"))
+    await ws.close()
+
+    assert service.session.started == 1
+    # The turn is attributed to the relayed lease's own principal.
+    assert service.session.turns == [(lease_id, "speaker", 1)]
+    assert service.session.audio == [b"\x01\x02"]
+
+
+async def test_relay_refuses_a_producer_that_cannot_establish_context(
+    aiohttp_client,
+) -> None:
+    """Fail closed when the producer cannot attribute the turn."""
+
+    class _ContextlessSession(FakeOwnerVoiceSession):
+        begin_speaker_turn = None  # type: ignore[assignment]
+
+    service = FakeOwnerService()
+    service.session = _ContextlessSession()
+    await service.seed()
+    server = WorkerRelayServer(service, token=TOKEN, require_tls=False)
+    app = web.Application()
+    server.setup_routes(app)
+    client = await aiohttp_client(app)
+
+    ws = await client.ws_connect(
+        f"{RELAY_ROUTE}?tenant_id={TENANT}&broadcast_id={BROADCAST}",
+        headers={WORKER_TOKEN_HEADER: TOKEN},
+    )
+    await ws.send_str(_frame(service.lease_id, kind="start_turn"))
+    error = json.loads((await ws.receive()).data)
+    assert error["code"] == BroadcastReason.FLOOR_NOT_GRANTED.value
+    assert service.session.started == 0
+    await ws.close()
+
+
+async def test_local_input_aclose_does_not_steal_a_newer_speakers_context() -> None:
+    """CRITICAL regression (adversarial review finding 10).
+
+    After an A→B handoff, closing A's socket used to call the shared
+    ``end_speaker_turn()`` unconditionally, leaving B unable to speak.
+    """
+    session = FakeOwnerVoiceSession()
+    alice = ParticipantPrincipal(user_id="alice", tenant_id=TENANT, agent_id=AGENT)
+    bob = ParticipantPrincipal(user_id="bob", tenant_id=TENANT, agent_id=AGENT)
+
+    a_input = LocalSpeakerInput(session, "lease-a", alice, 1)
+    await a_input.start_turn()
+
+    # The floor moves to bob, who starts their own turn.
+    b_input = LocalSpeakerInput(session, "lease-b", bob, 2)
+    await b_input.start_turn()
+
+    # A's socket now closes. It must NOT clear bob's context.
+    await a_input.aclose()
+    assert session.released == 0
+
+    # B closing does release it, because B still owns the context.
+    await b_input.aclose()
     assert session.released == 1

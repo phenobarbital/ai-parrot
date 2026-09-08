@@ -335,14 +335,36 @@ export class BroadcastClient {
     this._ws = socket;
 
     socket.onmessage = (event) => this._handleFrame(event);
-    socket.onerror = () => this._onError(new Error("control socket error"));
-    socket.onclose = () => this._stopTimers();
 
-    await new Promise((resolve) => {
-      if (socket.readyState === 1) return resolve();
-      socket.onopen = () => resolve();
-      return undefined;
+    // The connect promise must settle on EVERY outcome. Resolving only in
+    // `onopen` left `joinBroadcast` awaiting for ever when the socket errored,
+    // so the page hung with no visible failure.
+    let settle = null;
+    const opened = new Promise((resolve, reject) => {
+      settle = { resolve, reject };
+      if (socket.readyState === 1) resolve();
+      else socket.onopen = () => resolve();
     });
+
+    socket.onerror = () => {
+      const error = new Error("control socket error");
+      this._onError(error);
+      if (settle) settle.reject(error);
+    };
+    socket.onclose = () => {
+      this._stopTimers();
+      // Losing the control socket means we can no longer confirm the floor.
+      // Going stale disables Talk; leaving permissions untouched would keep a
+      // microphone live on a browser the server can no longer reach.
+      if (!this.stale) {
+        this.stale = true;
+        this._onStale(true);
+        this._recompute();
+      }
+      if (settle) settle.reject(new Error("control socket closed"));
+    };
+
+    await opened;
 
     this.send({ type: "attach", lease_id: this.leaseId });
     this.send({ type: "start_session" });

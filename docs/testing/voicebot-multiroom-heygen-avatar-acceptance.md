@@ -122,13 +122,41 @@ grant can succeed.**
 - **Not fixed here**: TASK-2968 and TASK-2969 both scope out code changes. The
   browser suite documents and works around it in `confirm_all_leases()`.
 
+### 4b. Second-order consequence — moderator succession violates spec §105
+
+Confirmed independently during the post-implementation adversarial review, and
+verified in the code:
+
+- `_eligible_moderators()` (`registry.py:665`) requires `lease.confirmed`.
+  Because nothing confirms a lease in production, the candidate list is always
+  empty, so `_elect_locked()` (`registry.py:677`) always returns `None`.
+- `release_viewer()` (`registry.py:988`) then treats "no eligible successor" as
+  `_end_locked(AUDIENCE_EMPTY)`. So when the founding moderator leaves, the
+  broadcast **ends for everyone still watching**, and reports the sanitized
+  reason `audience_empty` while the audience is demonstrably not empty.
+- Spec §105 is explicit to the contrary: *"If the moderator leaves, elect the
+  earliest remaining admitted participant and publish the role change; do not
+  stop the broadcast while others remain."*
+- This makes the reason code actively misleading during incident triage: a
+  broken-succession failure is reported as a normal wind-down.
+
+**ESCALATED, not fixed.** The correct repair depends on a decision this
+implementation is not entitled to make on its own: either confirmation gets
+wired to real LiveKit presence (making `confirmed` meaningful, which is the
+spec-intended reading), or eligibility is broadened to admitted-but-unconfirmed
+leases (which would weaken the presence guarantee that `confirmed` exists to
+provide). Both change the security model, both are outside every task's stated
+scope, and picking one here would be an architectural decision disguised as a
+bug fix. It should be resolved together with the `confirm_viewer` wiring above.
+
 **This must be fixed and re-verified before a live acceptance run is scheduled.**
 
 ---
 
 ## 5. What is still required to accept this feature
 
-1. Fix the `confirm_viewer` gap above and re-run suites 1, 5 and 7.
+1. Fix the `confirm_viewer` gap above (and, with it, the §4b succession
+   escalation) and re-run suites 1, 5 and 7.
 2. A LiveAvatar account (`LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`) and a
    reachable LiveKit deployment.
 3. AWS Bedrock Nova 2 Sonic access with `aws_sdk_bedrock_runtime==0.7.0` on

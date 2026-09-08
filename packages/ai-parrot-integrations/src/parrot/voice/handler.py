@@ -70,6 +70,29 @@ _THOUGHT_FILTER_PATTERN = re.compile(r"^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\
 #: Participant control/input route.  Credentials never appear in the path —
 #: only the agent and broadcast ids, which are not secrets (a share link
 #: carries the broadcast id and nothing else, spec §2).
+def _public_broadcast_message(exc: BaseException) -> str:
+    """Return the only failure text that may cross the client boundary.
+
+    ``BroadcastError.message`` is explicitly operator-facing
+    (``broadcast/errors.py``: "Never returned to a client verbatim — the client
+    sees ``reason`` and ``status``"), and it embeds internals such as version
+    numbers and epoch values.  The HTTP surface already emits only
+    ``reason.value``; this keeps the WebSocket surface identical rather than
+    letting the same failure be more revealing over one transport than the
+    other.
+
+    Args:
+        exc: The exception being reported.
+
+    Returns:
+        The sanitized reason code, or a generic string when the exception
+        carries no public reason at all.
+    """
+    reason = getattr(exc, "reason", None)
+    value = getattr(reason, "value", None)
+    return value if isinstance(value, str) and value else "request rejected"
+
+
 BROADCAST_WS_ROUTE: str = "/ws/voice/broadcast/{agent_id}/{broadcast_id}"
 
 #: Close codes for the broadcast socket.
@@ -1477,7 +1500,7 @@ class VoiceChatHandler:
             await self._send_broadcast_error(
                 state.ws,
                 exc.reason.value if exc.reason else "forbidden",
-                str(exc),
+                _public_broadcast_message(exc),
             )
             return
 
@@ -1495,13 +1518,18 @@ class VoiceChatHandler:
                 await self._send_broadcast_error(
                     state.ws,
                     exc.reason.value if exc.reason else "forbidden",
-                    str(exc),
+                    _public_broadcast_message(exc),
                 )
                 return
             state.bound = True
-            # The producer may live on another worker: `attach_speaker_input`
-            # returns a local sink or an authenticated relay, and this handler
-            # never needs to know which (spec §2 cross-worker input routing).
+            # Release any previous input first. Replacing it in place leaked an
+            # aiohttp ClientSession per remote turn and, worse, let two inputs
+            # call start_turn() concurrently — two provider streams for one
+            # speaker.
+            if state.speaker_input is not None:
+                with contextlib.suppress(Exception):
+                    await state.speaker_input.aclose()
+                state.speaker_input = None
             try:
                 state.speaker_input = await service.attach_speaker_input(
                     tenant_id,
@@ -1516,7 +1544,7 @@ class VoiceChatHandler:
                 await self._send_broadcast_error(
                     state.ws,
                     exc.reason.value if exc.reason else "forbidden",
-                    str(exc),
+                    _public_broadcast_message(exc),
                 )
                 return
             await self._send_message(
@@ -1631,10 +1659,15 @@ class VoiceChatHandler:
         reason = getattr(exc, "reason", None)
         code = getattr(reason, "value", None) or "internal_error"
         if code == "internal_error":
+            # The detail stays server-side: an unhandled exception's text can
+            # embed connection strings or internal hosts (aiohttp/redis errors
+            # routinely do), and the peer is only a lease holder.
             self.logger.exception(
                 "broadcast socket %s: unhandled error", state.socket_id
             )
-        await self._send_broadcast_error(state.ws, code, str(exc))
+        await self._send_broadcast_error(
+            state.ws, code, _public_broadcast_message(exc)
+        )
 
     # =========================================================================
     # Message Handlers

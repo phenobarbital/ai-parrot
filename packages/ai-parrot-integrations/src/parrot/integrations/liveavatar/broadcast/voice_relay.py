@@ -187,12 +187,46 @@ class BroadcastVoiceSession(VoiceSession):
     async def start_turn(self) -> None:
         """Begin an input turn, refusing one that has no established speaker."""
         self._require_speaker()
+        self._require_current_floor()
         await super().start_turn()
 
     async def push_audio(self, pcm: bytes) -> None:
-        """Accept microphone PCM, refusing input with no speaker context."""
+        """Accept microphone PCM, re-fenced against the LIVE floor.
+
+        Ingress validated this frame against a descriptor it read earlier; a
+        handoff can land in between (the descriptor read and the lease read are
+        separate awaits).  Checking only that *some* speaker context exists
+        would let the outgoing speaker's in-flight PCM through — spec §2
+        requires validation "at both ingress and the producer just before
+        queueing PCM", and this is the producer half.
+
+        Raises:
+            BroadcastError: ``floor_not_granted`` when no speaker context is
+                established, or ``stale_floor_epoch`` when the floor has moved
+                since this speaker's turn began.
+        """
         self._require_speaker()
+        self._require_current_floor()
         await super().push_audio(pcm)
+
+    def _require_current_floor(self) -> None:
+        """Reject input whose floor epoch has been superseded.
+
+        Raises:
+            BroadcastError: With ``stale_floor_epoch``.
+        """
+        live_epoch = getattr(self._broadcast, "floor_epoch", None)
+        if live_epoch is None:
+            return
+        if self._speaker_floor_epoch != live_epoch:
+            self.suppressed_stale_responses += 1
+            raise BroadcastError(
+                BroadcastReason.STALE_FLOOR_EPOCH,
+                message=(
+                    f"speaker turn is at floor epoch {self._speaker_floor_epoch}, "
+                    f"the broadcast is at {live_epoch}"
+                ),
+            )
 
     # ── Relay ──────────────────────────────────────────────────────────
 

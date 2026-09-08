@@ -145,6 +145,8 @@ class BroadcastSession:
 
         self._queue: Deque[tuple[int, BroadcastAudioFrame]] = deque()
         self._queued_bytes: int = 0
+        #: Frames popped from the queue whose delivery has not returned yet.
+        self._inflight: int = 0
         self._wakeup: asyncio.Event = asyncio.Event()
         self._generation: int = 0
         self._acked_generation: int = 0
@@ -154,6 +156,7 @@ class BroadcastSession:
         self._owner_task: Optional[asyncio.Task[None]] = None
         self._cutover_lock: asyncio.Lock = asyncio.Lock()
         self._closed: bool = False
+        self._teardown_done: bool = False
         self._closing: asyncio.Lock = asyncio.Lock()
 
         self._last_frame_sent_at: Optional[float] = None
@@ -317,18 +320,36 @@ class BroadcastSession:
             )
         except Exception as exc:  # noqa: BLE001 — degrade, never propagate
             reason = _startup_failure_reason(exc)
+            # Log the TYPE and our own reason, never the raw exception: an
+            # aiohttp WS handshake error carries the full authenticated
+            # `ws_url` in its message, which must never reach a log.
             self.logger.warning(
-                "broadcast %s: avatar startup failed (%s) — selecting audio_only: %s",
+                "broadcast %s: avatar startup failed (%s: %s) — selecting "
+                "audio_only",
                 self.descriptor.broadcast_id,
                 reason.value,
-                exc,
+                type(exc).__name__,
             )
             self._avatar = None
+            if self._closed:
+                # A publisher failure closed us while the avatar was starting.
+                # Reporting audio_only here would dress a fatal outage up as a
+                # working fallback (spec AC7).
+                return self.state
             await self._transition(
                 BroadcastState.AUDIO_ONLY,
                 reason=reason,
                 output_epoch=self.output_epoch + 1,
             )
+            return self.state
+
+        if self._closed:
+            # Same race, other branch: the avatar came up after teardown began.
+            # Close it rather than installing an object nothing will ever free.
+            avatar, self._avatar = self._avatar, None
+            if avatar is not None:
+                with contextlib.suppress(Exception):
+                    await avatar.aclose()
             return self.state
 
         self._last_speech_event_at = self._clock()
@@ -446,17 +467,23 @@ class BroadcastSession:
 
                 generation, frame = self._queue.popleft()
                 self._queued_bytes -= len(frame.pcm)
-                if generation != self._generation:
-                    self.dropped_stale_frames += 1
-                    continue
-                if not frame.is_current(
-                    owner_epoch=self.owner_epoch,
-                    floor_epoch=self.floor_epoch,
-                    output_epoch=self.output_epoch,
-                ):
-                    self.dropped_stale_frames += 1
-                    continue
-                await self._deliver(frame)
+                # Counted as in flight until _deliver returns, so _drain (and
+                # therefore finish_turn's agent.speak_end) cannot overtake it.
+                self._inflight += 1
+                try:
+                    if generation != self._generation:
+                        self.dropped_stale_frames += 1
+                        continue
+                    if not frame.is_current(
+                        owner_epoch=self.owner_epoch,
+                        floor_epoch=self.floor_epoch,
+                        output_epoch=self.output_epoch,
+                    ):
+                        self.dropped_stale_frames += 1
+                        continue
+                    await self._deliver(frame)
+                finally:
+                    self._inflight -= 1
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — the pump must outlive one bad frame
@@ -543,9 +570,9 @@ class BroadcastSession:
         # would turn a bounded wait into a spin.
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while self._queue and loop.time() < deadline:
+        while (self._queue or self._inflight) and loop.time() < deadline:
             await asyncio.sleep(0.005)
-        return not self._queue
+        return not self._queue and not self._inflight
 
     # ── Interruption and handoff ───────────────────────────────────────
 
@@ -869,8 +896,12 @@ class BroadcastSession:
             delete_room: Whether to delete the LiveKit room.
         """
         async with self._closing:
-            if self._closed:
+            if self._teardown_done:
                 return
+            # `_closed` stops new audio immediately; `_teardown_done` is only
+            # set once the awaited cleanup below actually finished, so a
+            # cancellation part-way through does not make a retry a no-op and
+            # strand the avatar, publisher and room.
             self._closed = True
             self._wakeup.set()
 
@@ -902,6 +933,7 @@ class BroadcastSession:
         self.state = final_state
         if reason is not None:
             self.failure_reason = reason
+        self._teardown_done = True
         with contextlib.suppress(Exception):
             await self.registry.transition(
                 self.descriptor.tenant_id,

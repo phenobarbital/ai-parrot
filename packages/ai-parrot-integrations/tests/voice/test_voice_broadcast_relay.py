@@ -956,3 +956,41 @@ async def test_ws_binary_audio_is_ignored(broadcast_app) -> None:
     await _drain_until(ws, "pong")
     assert service.session.audio == []
     await ws.close()
+
+
+async def test_ws_errors_never_leak_operator_detail(broadcast_app) -> None:
+    """Adversarial-review regression: WS errors said more than HTTP ones.
+
+    ``BroadcastError.message`` is operator-facing by contract (``errors.py``:
+    "Never returned to a client verbatim") and embeds epochs, version numbers
+    and timings.  The HTTP surface already emitted only ``reason.value``; the
+    WebSocket surface forwarded ``str(exc)``, so the same rejection was more
+    revealing over one transport than the other.
+    """
+    client, service, _handler = broadcast_app
+    leases = await service.seed("moderator")
+    ws = await _connect(client, "moderator")
+    await ws.send_json({"type": "attach", "lease_id": leases["moderator"].lease_id})
+    await _drain_until(ws, "floor_state")
+
+    await ws.send_json({"type": "audio_data", "data": "AAAA", "floor_epoch": 99})
+    error = await _drain_until(ws, "error")
+
+    # The client still gets the branchable code …
+    assert error["code"] == "stale_floor_epoch"
+    # … but the message is the sanitized reason, not the internal detail.
+    assert error["message"] == "stale_floor_epoch"
+    assert "99" not in error["message"]
+    await ws.close()
+
+
+def test_public_broadcast_message_falls_back_for_reasonless_errors() -> None:
+    """Authorization failures carry no public reason — and must stay opaque."""
+    from parrot.integrations.liveavatar.broadcast.errors import NotModerator
+    from parrot.voice.handler import _public_broadcast_message
+
+    exc = NotModerator(message="alice is the moderator, not bob")
+    # NotModerator deliberately has no reason: revealing who holds the role
+    # would defeat the point of the 403.
+    assert _public_broadcast_message(exc) == "request rejected"
+    assert "alice" not in _public_broadcast_message(exc)

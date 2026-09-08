@@ -478,6 +478,23 @@ class WorkerRelayServer:
             return False
 
         if frame.kind == "start_turn":
+            # Install THIS speaker's context before the turn runs. Without it
+            # the session keeps whatever context a previous (possibly local)
+            # speaker left behind, and the relayed turn would execute under
+            # that user's identity and tool permissions — spec §2 forbids
+            # reusing another participant's privileges, and failing closed is
+            # the only safe default.
+            begin = getattr(session, "begin_speaker_turn", None)
+            if begin is None:
+                await ws.send_json(
+                    {
+                        "type": "error",
+                        "code": BroadcastReason.FLOOR_NOT_GRANTED.value,
+                        "message": "producer cannot establish a speaker context",
+                    }
+                )
+                return False
+            begin(frame.lease_id, lease.principal, frame.floor_epoch)
             await session.start_turn()
         elif frame.kind == "end_turn":
             await session.end_turn()
@@ -526,10 +543,11 @@ class LocalSpeakerInput(SpeakerInput):
         self._principal = principal
         self._floor_epoch = floor_epoch
         self._begun = False
+        self._generation: Optional[int] = None
 
     async def start_turn(self) -> None:
         if not self._begun:
-            self._session.begin_speaker_turn(
+            self._generation = self._session.begin_speaker_turn(
                 self._lease_id, self._principal, self._floor_epoch
             )
             self._begun = True
@@ -542,6 +560,18 @@ class LocalSpeakerInput(SpeakerInput):
         await self._session.end_turn()
 
     async def aclose(self) -> None:
+        """Release this input, but only if it still owns the speaker context.
+
+        A departing socket must not clear a context that has since been handed
+        to somebody else: after an A→B handoff, closing A's socket would
+        otherwise leave B unable to speak.  The generation captured at
+        ``start_turn`` identifies the turn this input started.
+        """
+        if not self._begun:
+            return
+        current = getattr(self._session, "turn_generation", None)
+        if current is not None and current != self._generation:
+            return  # The floor moved on; the context belongs to someone else.
         with contextlib.suppress(Exception):
             self._session.end_speaker_turn()
 
