@@ -95,8 +95,17 @@ def make_event(
     event_type: EventType = EventType.TASK_STARTED,
     status: TaskStatus = TaskStatus.ACTIVE,
     reason: Optional[str] = None,
+    goal: Optional[str] = None,
 ) -> JournalEvent:
     """Build a deterministic journal event.
+
+    A ``task_started`` always carries a goal, because the journal is the
+    source of truth: a goal-less start cannot be replayed, so a
+    reducer-version migration or a restart rebuild would fail on it. An
+    earlier version of this helper omitted it, and the omission went
+    unnoticed because the reference double runs no reducer — a
+    conformance fixture that only a placeholder can satisfy is worse
+    than none.
 
     Args:
         task_id: Owning task.
@@ -105,16 +114,19 @@ def make_event(
         status: Status carried in the lifecycle payload.
         reason: Optional reason, used to make two events with the same
             id differ.
+        goal: Goal for a ``task_started``; defaulted from ``task_id``.
 
     Returns:
         The event.
     """
+    if event_type is EventType.TASK_STARTED and goal is None:
+        goal = f"goal for {task_id}"
     return JournalEvent(
         event_id=event_id,
         task_id=task_id,
         event_type=event_type,
         occurred_at=utc_now(),
-        payload=TaskLifecyclePayload(status=status, reason=reason),
+        payload=TaskLifecyclePayload(status=status, reason=reason, goal=goal),
     )
 
 
@@ -541,8 +553,9 @@ class TaskMemoryStoreConformance:
         Returns:
             The append result.
         """
+        goal = f"goal for {task_id}"
         return await store.create_task(
-            scope, goal=f"goal for {task_id}", events=[make_event(task_id, event_id=f"{task_id}-e1")]
+            scope, goal=goal, events=[make_event(task_id, event_id=f"{task_id}-e1", goal=goal)]
         )
 
     @pytest.mark.asyncio
@@ -632,8 +645,20 @@ class TaskMemoryStoreConformance:
         ]
         result = await store.append_events(SCOPE_A, "t-1", events, expected_revision=result.revision)
 
-        # Redeliver the middle event alongside a genuinely new one.
-        mixed = [events[1], make_event("t-1", event_id="t-1-e9", status=TaskStatus.ACTIVE)]
+        # Redeliver the middle event alongside a genuinely new one. The
+        # new event must be a legal transition on a live task — an
+        # earlier version defaulted to a second `task_started`, which any
+        # reducer-backed store rightly refuses. This case is about
+        # sequence contiguity, not lifecycle.
+        mixed = [
+            events[1],
+            make_event(
+                "t-1",
+                event_id="t-1-e9",
+                event_type=EventType.TASK_RESUMED,
+                status=TaskStatus.ACTIVE,
+            ),
+        ]
         result = await store.append_events(SCOPE_A, "t-1", mixed, expected_revision=result.revision)
         assert result.deduplicated_event_ids == ("t-1-e3",)
         assert result.appended_event_ids == ("t-1-e9",)
@@ -696,7 +721,14 @@ class TaskMemoryStoreConformance:
     async def test_conformance_goal_preview_is_bounded(self, store: TaskMemoryStore) -> None:
         """A listing shows a bounded goal preview, never the whole goal."""
         long_goal = "G" * (GOAL_PREVIEW_CHARS * 3)
-        await store.create_task(SCOPE_A, goal=long_goal, events=[make_event("t-long", event_id="t-long-e1")])
+        # The goal must be passed to BOTH the command and the event: the
+        # journal is the source of truth, and a store is entitled to
+        # refuse a `task_started` whose goal disagrees with the command's.
+        await store.create_task(
+            SCOPE_A,
+            goal=long_goal,
+            events=[make_event("t-long", event_id="t-long-e1", goal=long_goal)],
+        )
         page = await store.list_tasks(SCOPE_A)
         summary = next(i for i in page.items if i.task_id == "t-long")
         assert len(summary.goal_preview) <= GOAL_PREVIEW_CHARS
