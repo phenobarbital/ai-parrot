@@ -167,9 +167,7 @@ async def test_legacy_regression() -> None:
 
     # ── the persisted turn keeps its exact shape ─────────────────────
     response = _Response([_ToolCall("wm_get_result")])
-    turn = ConversationTurn.from_ai_message(
-        user_message="q", response=response, user_id="u", chatbot_id="bot-a"
-    )
+    turn = ConversationTurn.from_ai_message(user_message="q", response=response, user_id="u", chatbot_id="bot-a")
     assert set(turn.to_dict()) == LEGACY_TURN_FIELDS
 
     # The legacy derivation from AIMessage.tool_calls still applies when

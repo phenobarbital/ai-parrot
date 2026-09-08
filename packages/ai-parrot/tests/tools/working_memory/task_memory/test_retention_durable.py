@@ -211,9 +211,7 @@ async def _terminal_task(
         [
             JournalEvent(
                 task_id=task_id,
-                event_type=EventType.TASK_COMPLETED
-                if status is TaskStatus.COMPLETED
-                else EventType.TASK_CANCELLED,
+                event_type=EventType.TASK_COMPLETED if status is TaskStatus.COMPLETED else EventType.TASK_CANCELLED,
                 actor=Actor.AGENT,
                 payload=TaskLifecyclePayload(status=status),
             )
@@ -328,9 +326,7 @@ async def test_archive_failure(pg_store: PostgresTaskMemoryStore, blobs: Artifac
 
     # ── the write itself fails ───────────────────────────────────────
     raising = _FlakyArchive(writer, "raise")
-    sweeper = RetentionSweeper(
-        pg_store, config=config, clock=clock, archive=raising, purge=pg_store
-    )
+    sweeper = RetentionSweeper(pg_store, config=config, clock=clock, archive=raising, purge=pg_store)
     report = await sweeper.run_once([SCOPE])
 
     assert report.deleted == []
@@ -344,9 +340,7 @@ async def test_archive_failure(pg_store: PostgresTaskMemoryStore, blobs: Artifac
 
     # ── the write succeeds but does not verify ───────────────────────
     unverified = _FlakyArchive(writer, "unverified")
-    sweeper = RetentionSweeper(
-        pg_store, config=config, clock=clock, archive=unverified, purge=pg_store
-    )
+    sweeper = RetentionSweeper(pg_store, config=config, clock=clock, archive=unverified, purge=pg_store)
     report = await sweeper.run_once([SCOPE])
 
     assert report.deleted == []
@@ -429,15 +423,11 @@ async def test_orphan_race(pg_store: PostgresTaskMemoryStore, blobs: ArtifactBlo
 
     # A genuinely live blob, referenced by an index row.
     live_ref = EvidenceRef(artifact_id=new_id(), version=1)
-    live_blob = await blobs.publish(
-        SCOPE, live_ref, pd.DataFrame({"a": [1, 2, 3]}), kind=ArtifactKind.DATAFRAME
-    )
+    live_blob = await blobs.publish(SCOPE, live_ref, pd.DataFrame({"a": [1, 2, 3]}), kind=ArtifactKind.DATAFRAME)
 
     # A blob mid-publish: its bytes exist, its index row does not yet.
     publishing_ref = EvidenceRef(artifact_id=new_id(), version=1)
-    publishing = await blobs.publish(
-        SCOPE, publishing_ref, pd.DataFrame({"b": [4]}), kind=ArtifactKind.DATAFRAME
-    )
+    publishing = await blobs.publish(SCOPE, publishing_ref, pd.DataFrame({"b": [4]}), kind=ArtifactKind.DATAFRAME)
 
     # An archived copy: a reference with deliberately no index row.
     archive_key = f"{blobs.archive_prefix(SCOPE)}/old-task.jsonl"
@@ -445,9 +435,7 @@ async def test_orphan_race(pg_store: PostgresTaskMemoryStore, blobs: ArtifactBlo
 
     # A true orphan: bytes with nothing at all pointing at them.
     orphan_ref = EvidenceRef(artifact_id=new_id(), version=1)
-    orphan = await blobs.publish(
-        SCOPE, orphan_ref, pd.DataFrame({"c": [9]}), kind=ArtifactKind.DATAFRAME
-    )
+    orphan = await blobs.publish(SCOPE, orphan_ref, pd.DataFrame({"c": [9]}), kind=ArtifactKind.DATAFRAME)
 
     async def live_refs(scope: TaskScope) -> Any:
         """Only the live blob is in the index."""
@@ -635,9 +623,7 @@ async def test_delete_retry(pg_store: PostgresTaskMemoryStore, blobs: ArtifactBl
             """Always fail."""
             raise RuntimeError("crashed before delete committed")
 
-    sweeper = RetentionSweeper(
-        pg_store, config=config, clock=clock, archive=crashed, purge=_CrashingPurge()
-    )
+    sweeper = RetentionSweeper(pg_store, config=config, clock=clock, archive=crashed, purge=_CrashingPurge())
     report = await sweeper.run_once([SCOPE])
     assert report.archived == [expired]
     assert report.deleted == []
@@ -649,9 +635,7 @@ async def test_delete_retry(pg_store: PostgresTaskMemoryStore, blobs: ArtifactBl
 
     # ── retry: same archive key, no duplicate, delete completes ──────
     retried = _FlakyArchive(writer, "ok")
-    sweeper = RetentionSweeper(
-        pg_store, config=config, clock=clock, archive=retried, purge=pg_store
-    )
+    sweeper = RetentionSweeper(pg_store, config=config, clock=clock, archive=retried, purge=pg_store)
     report = await sweeper.run_once([SCOPE])
 
     assert report.deleted == [expired]
@@ -659,9 +643,7 @@ async def test_delete_retry(pg_store: PostgresTaskMemoryStore, blobs: ArtifactBl
     assert await blobs._download(first_archive) == first_bytes
 
     # Exactly one archive object exists for this task.
-    archived = [
-        b for b in await blobs.list_stored(SCOPE) if b.key.startswith(blobs.archive_prefix(SCOPE) + "/")
-    ]
+    archived = [b for b in await blobs.list_stored(SCOPE) if b.key.startswith(blobs.archive_prefix(SCOPE) + "/")]
     assert len(archived) == 1, [b.key for b in archived]
 
     # ── the still-live task's evidence survived the purge ────────────

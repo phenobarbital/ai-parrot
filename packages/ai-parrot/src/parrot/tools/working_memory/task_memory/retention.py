@@ -1183,9 +1183,7 @@ class JsonlArchiveWriter:
 
         lines = [line for line in payload.split(b"\n") if line.strip()]
         if len(lines) != expected_events:
-            self.logger.warning(
-                "Archive %s holds %d events, expected %d", reference, len(lines), expected_events
-            )
+            self.logger.warning("Archive %s holds %d events, expected %d", reference, len(lines), expected_events)
             return False
         for line in lines:
             try:

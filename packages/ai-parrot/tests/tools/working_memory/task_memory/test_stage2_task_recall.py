@@ -229,9 +229,9 @@ async def test_combined_budget() -> None:
     counter = memory.token_counter
     snapshot_cost = counter.count(block.content)
     assert snapshot_cost > 0
-    assert result.history_estimate + snapshot_cost <= budget.available, (
-        f"combined {result.history_estimate + snapshot_cost} exceeds available {budget.available}"
-    )
+    assert (
+        result.history_estimate + snapshot_cost <= budget.available
+    ), f"combined {result.history_estimate + snapshot_cost} exceeds available {budget.available}"
 
     # The snapshot is transient context, never a persisted turn.
     assert block.turn_id is None

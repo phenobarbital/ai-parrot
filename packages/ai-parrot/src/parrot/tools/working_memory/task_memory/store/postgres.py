@@ -1902,7 +1902,6 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
             yield connection
 
 
-
 # ---------------------------------------------------------------------------
 # Durable artifact store
 # ---------------------------------------------------------------------------

@@ -341,9 +341,7 @@ async def test_primary_continuity(
     # And the task can now legitimately complete (AC7).
     final = await task_memory.service.compact_state(scope, task_id)
     assert final["ready_step_ids"] == []
-    completed_task = await toolkit.update_task(
-        task_id=task_id, expected_revision=final["revision"], status="completed"
-    )
+    completed_task = await toolkit.update_task(task_id=task_id, expected_revision=final["revision"], status="completed")
     assert completed_task["task_status"] == "completed", completed_task
 
 
@@ -373,9 +371,7 @@ async def test_primary_continuity_is_in_process_only_not_durable(
     assert (await toolkit.recall_task(task_id=task_id))["status"] == "recalled"
 
 
-async def test_multi_task_selection_never_guesses(
-    toolkit: WorkingMemoryToolkit, task_memory: TaskMemory
-) -> None:
+async def test_multi_task_selection_never_guesses(toolkit: WorkingMemoryToolkit, task_memory: TaskMemory) -> None:
     """With several tasks open and none selected, recall asks (AC11)."""
     alpha = await toolkit.begin_task(goal="alpha reconciliation", steps=[{"label": "x", "title": "X"}])
     beta = await toolkit.begin_task(goal="beta migration", steps=[{"label": "y", "title": "Y"}])
@@ -639,6 +635,6 @@ async def test_reopening_a_step_blocks_its_dependents_until_revalidated(
         note="UP redone",
     )
     still = await task_memory.service.get_task(scope, task_id)
-    assert still.state.steps_by_id[ids["MID"]].status.value == "blocked", (
-        "a dependent must not silently un-block just because its upstream succeeded again"
-    )
+    assert (
+        still.state.steps_by_id[ids["MID"]].status.value == "blocked"
+    ), "a dependent must not silently un-block just because its upstream succeeded again"
