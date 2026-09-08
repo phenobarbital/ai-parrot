@@ -78,6 +78,9 @@ __all__ = (
     "EventPayload",
     "TaskLifecyclePayload",
     "PlanUpdatePayload",
+    "PlanStepSpec",
+    "PlanStepPatch",
+    "PlanConstraintSpec",
     "DecisionPayload",
     "ResumeHintPayload",
     "StepPayload",
@@ -1102,32 +1105,134 @@ class TaskLifecyclePayload(_Payload):
     reason: Optional[str] = Field(default=None, max_length=Limits.MAX_REASON)
 
 
+class PlanStepSpec(_TaskModel):
+    """A step as recorded in a ``plan_updated`` event.
+
+    The journal is the source of truth (D6), so a plan event must carry
+    enough to *reconstruct* the step. An id-only payload would make the
+    projection, not the journal, the real source of truth — replay could
+    not rebuild a step it had never seen defined.
+
+    Attributes:
+        step_id: Runtime identity, already resolved by the service.
+        title: Short human-readable label.
+        description: Longer explanation.
+        required: Whether the task can complete without this step.
+        depends_on: Runtime step ids this one depends on.
+        completion_policy: How the step may be completed.
+    """
+
+    step_id: str = Field(max_length=Limits.MAX_IDENTIFIER)
+    title: str = Field(min_length=1, max_length=Limits.MAX_STEP_TITLE)
+    description: str = Field(default="", max_length=Limits.MAX_STEP_DESCRIPTION)
+    required: bool = True
+    depends_on: Tuple[str, ...] = ()
+    completion_policy: CompletionPolicy = Field(default_factory=CompletionPolicy)
+
+
+class PlanStepPatch(_TaskModel):
+    """The fields a ``plan_updated`` event changes on an existing step.
+
+    ``None`` means "leave unchanged" — the patch records exactly what the
+    revision altered, so replay reproduces the same result without
+    needing the pre-image.
+
+    Attributes:
+        step_id: The step to update. Identities are immutable.
+        title: New title, when it changed.
+        description: New description, when it changed.
+        required: New required flag, when it changed.
+        depends_on: Replacement dependency list, when it changed.
+        completion_policy: Replacement policy, when it changed.
+    """
+
+    step_id: str = Field(max_length=Limits.MAX_IDENTIFIER)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=Limits.MAX_STEP_TITLE)
+    description: Optional[str] = Field(default=None, max_length=Limits.MAX_STEP_DESCRIPTION)
+    required: Optional[bool] = None
+    depends_on: Optional[Tuple[str, ...]] = None
+    completion_policy: Optional[CompletionPolicy] = None
+
+
+class PlanConstraintSpec(_TaskModel):
+    """A constraint as recorded in a ``plan_updated`` event.
+
+    Attributes:
+        constraint_id: Runtime identity, already resolved by the service.
+        text: The constraint.
+    """
+
+    constraint_id: str = Field(max_length=Limits.MAX_IDENTIFIER)
+    text: str = Field(min_length=1, max_length=Limits.MAX_CONSTRAINT_TEXT)
+
+
 class PlanUpdatePayload(_Payload):
     """Payload for ``plan_updated``.
 
     Supersession is recorded here rather than as its own event type, so
     one plan revision is one event.
 
+    The payload carries full step and constraint **definitions**, not
+    just ids, because the journal is the source of truth: a reducer
+    replaying from an empty state must be able to rebuild the plan.
+
     Attributes:
         kind: Discriminator.
-        added_step_ids: Steps introduced by this revision.
-        updated_step_ids: Steps whose fields changed.
+        added_steps: Steps introduced by this revision, in order.
+        updated_steps: Patches applied to existing steps.
         superseded_step_ids: Steps retired by this revision. They keep
-            their evidence and history.
-        added_constraint_ids: Constraints introduced.
-        deactivated_constraint_ids: Constraints retired.
+            their evidence and history and never satisfy a dependent's
+            readiness afterwards.
+        added_constraints: Constraints introduced.
+        updated_constraints: Constraints reworded.
+        deactivated_constraint_ids: Constraints retired. Retained for
+            history rather than deleted.
         plan_complete: New value of the plan-complete flag, when set.
         reason: Why the plan changed.
     """
 
     kind: Literal["plan_update"] = "plan_update"
-    added_step_ids: Tuple[str, ...] = ()
-    updated_step_ids: Tuple[str, ...] = ()
+    added_steps: Tuple[PlanStepSpec, ...] = ()
+    updated_steps: Tuple[PlanStepPatch, ...] = ()
     superseded_step_ids: Tuple[str, ...] = ()
-    added_constraint_ids: Tuple[str, ...] = ()
+    added_constraints: Tuple[PlanConstraintSpec, ...] = ()
+    updated_constraints: Tuple[PlanConstraintSpec, ...] = ()
     deactivated_constraint_ids: Tuple[str, ...] = ()
     plan_complete: Optional[bool] = None
     reason: Optional[str] = Field(default=None, max_length=Limits.MAX_REASON)
+
+    @property
+    def added_step_ids(self) -> Tuple[str, ...]:
+        """Ids of the steps this revision introduced."""
+        return tuple(step.step_id for step in self.added_steps)
+
+    @property
+    def updated_step_ids(self) -> Tuple[str, ...]:
+        """Ids of the steps this revision patched."""
+        return tuple(patch.step_id for patch in self.updated_steps)
+
+    @property
+    def added_constraint_ids(self) -> Tuple[str, ...]:
+        """Ids of the constraints this revision introduced."""
+        return tuple(c.constraint_id for c in self.added_constraints)
+
+    @property
+    def touched_step_ids(self) -> Tuple[str, ...]:
+        """Every step id this revision added, patched or superseded."""
+        return self.added_step_ids + self.updated_step_ids + self.superseded_step_ids
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether this revision changes nothing at all."""
+        return not (
+            self.added_steps
+            or self.updated_steps
+            or self.superseded_step_ids
+            or self.added_constraints
+            or self.updated_constraints
+            or self.deactivated_constraint_ids
+            or self.plan_complete is not None
+        )
 
 
 class DecisionPayload(_Payload):

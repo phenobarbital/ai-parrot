@@ -49,6 +49,9 @@ from parrot.tools.working_memory.task_memory import (
     LimitExceeded,
     Limits,
     PlanChanges,
+    PlanConstraintSpec,
+    PlanStepPatch,
+    PlanStepSpec,
     PlanUpdatePayload,
     PlanValidationError,
     ReducerError,
@@ -414,10 +417,10 @@ def _all_payloads() -> tuple[object, ...]:
     return (
         TaskLifecyclePayload(status=TaskStatus.PAUSED, goal="g", reason="inactivity"),
         PlanUpdatePayload(
-            added_step_ids=("s-new",),
-            updated_step_ids=("s-old",),
+            added_steps=(PlanStepSpec(step_id="s-new", title="Fetch prices"),),
+            updated_steps=(PlanStepPatch(step_id="s-old", title="Clean data v2"),),
             superseded_step_ids=("s-gone",),
-            added_constraint_ids=("c-1",),
+            added_constraints=(PlanConstraintSpec(constraint_id="c-1", text="Budget under 1000 rows"),),
             deactivated_constraint_ids=("c-0",),
             plan_complete=True,
             reason="replan",
@@ -651,6 +654,43 @@ def test_roundtrip_plan_changes_discriminated_union() -> None:
     assert PlanChanges().is_empty is True
 
 
+def test_roundtrip_plan_payload_carries_definitions_not_just_ids() -> None:
+    """A plan event must let a reducer REBUILD the plan, not just name it.
+
+    The journal is the source of truth (D6). An id-only ``plan_updated``
+    would make the projection the real source of truth, because replay
+    from an empty state could not reconstruct a step it never saw
+    defined. The derived ``*_ids`` views exist for callers that only need
+    the identities.
+    """
+    payload = PlanUpdatePayload(
+        added_steps=(
+            PlanStepSpec(step_id="s-a", title="Load", required=True),
+            PlanStepSpec(step_id="s-b", title="Clean", depends_on=("s-a",)),
+        ),
+        updated_steps=(PlanStepPatch(step_id="s-a", description="Load from parquet"),),
+        superseded_step_ids=("s-old",),
+        added_constraints=(PlanConstraintSpec(constraint_id="c-1", text="Read-only source"),),
+        deactivated_constraint_ids=("c-0",),
+    )
+
+    # Definitions survive the round trip, so replay can rebuild them.
+    restored = PlanUpdatePayload.model_validate_json(payload.model_dump_json())
+    assert restored == payload
+    assert restored.added_steps[1].depends_on == ("s-a",)
+    assert restored.updated_steps[0].description == "Load from parquet"
+    assert restored.updated_steps[0].title is None, "None means 'unchanged', not 'cleared'"
+
+    # Derived id views.
+    assert payload.added_step_ids == ("s-a", "s-b")
+    assert payload.updated_step_ids == ("s-a",)
+    assert payload.added_constraint_ids == ("c-1",)
+    assert set(payload.touched_step_ids) == {"s-a", "s-b", "s-old"}
+    assert payload.is_empty is False
+    assert PlanUpdatePayload().is_empty is True
+    assert PlanUpdatePayload(plan_complete=True).is_empty is False
+
+
 def test_roundtrip_artifact_descriptor_carries_no_payload(scope: TaskScope) -> None:
     """A descriptor is metadata only — it has no field that could hold rows."""
     descriptor = ArtifactDescriptor(
@@ -715,6 +755,7 @@ def test_roundtrip() -> None:
     test_roundtrip_completion_guard(state)
     test_roundtrip_attribution_resolution(scope)
     test_roundtrip_plan_changes_discriminated_union()
+    test_roundtrip_plan_payload_carries_definitions_not_just_ids()
 
 
 # ─────────────────────────────────────────────────────────────
