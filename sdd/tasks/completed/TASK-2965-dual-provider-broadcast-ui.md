@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2963, TASK-2964
@@ -93,7 +93,62 @@ async def test_stateful_resampler_48k_to_16k(demo_page): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `static/broadcast-ui.js` (the resampler + `BroadcastClient` + `derivePermissions`)
+  and extended `dual_provider.html` with the broadcast panel, role-scoped controls, the
+  floor gate and the stateful resampler. New browser suite:
+  `test_voice_demo_broadcast_browser.py` → **14 passed** in real headless Chromium.
+  Whole `tests/voice/` → **466 passed**, with the same 11 failures / 27 errors as the
+  pre-FEAT-537 baseline. `ruff check` clean.
+- **The microphone gate is a single function, and that is the point.** Every former
+  `recordBtn.disabled = false` site (`ready_to_speak`, `error`, `handleInterrupt`) now
+  calls `updateTalkAvailability()`, which asks `derivePermissions(state, lease, fresh)` —
+  a pure function of *server* state. `test_ready_to_speak_does_not_enable_talk_without_floor`
+  asserts the exact confusion spec §2 warns about is gone, and then asserts the same frame
+  **does** still enable Talk in single-user mode, so the fix is not a regression there.
+- **`getUserMedia` is spied, not stubbed**, so "an ungranted participant never requests
+  the microphone" is a fact about the page rather than about the test scaffolding
+  (`test_ungranted_participant_never_requests_microphone`). The check sits *before* the
+  call, so no permission prompt is even shown.
+- `sendAudioChunk` refuses to emit when the floor is not held, so a revoke landing
+  mid-buffer stops capture locally instead of relying on server-side rejection; every
+  `start_recording` / `audio_chunk` / `stop_recording` carries `floor_epoch`.
+- **The resampler bug is fixed for single-user mode too.** The old code resampled each
+  4096-frame buffer independently, restarting the read phase at 0 — dropping a fraction
+  of a sample per buffer (an audible click roughly every 85 ms) and drifting against real
+  time. `resampleTo16k` now carries the fractional phase and the previous buffer's last
+  sample. The test deliberately uses **44.1 kHz** (a non-integer ratio to 16 kHz), because
+  that is where per-buffer truncation shows up, and compares against the count a
+  non-stateful implementation would have produced.
+  - *A test-authoring correction worth recording*: my first version fed the same buffer
+    twice and asserted continuity — but that input is itself discontinuous at the join, so
+    it flagged a 0.886 jump that was the signal's, not the resampler's. Fixed by
+    generating two consecutive slices of one continuous sine. The implementation was right
+    all along; the test was measuring the wrong thing.
+- **Credential hygiene is asserted three ways**: the share link is exactly
+  `/?broadcast=<id>`; the demo token appears in neither `localStorage` nor
+  `location.href` (it is read from a URL *fragment*, stripped from the address bar
+  immediately, and held in memory only); and the control-socket URL contains no token —
+  it travels in the `["jwt", token]` subprotocol.
+- Role-scoped controls are rendered from `broadcast_state` with no reload, and API
+  failures map to actionable text for 401/403/404/409/410/429 plus the sanitized
+  `error` codes.
+- The viewer is constructed with `mode: 'broadcast'`, so TASK-2964's policy applies: no
+  local PCM fallback, no session-restart on disconnect.
+- Followed FEAT-536's existing precedent for the Playwright event-loop policy
+  (`uvloop.EventLoopPolicy()`): restoring the *default* policy instead leaves Playwright's
+  connection task raising `NotImplementedError` from `get_child_watcher` on teardown. The
+  neighbouring browser test module documents exactly this, and I had it backwards first.
+
+**Deviations from spec**: one, explicitly sanctioned. The task's Files table lists only
+`dual_provider.html`, but its Implementation Notes allow "a new `static/broadcast-ui.js`
+ES module imported by the page", and I took that option: the resampler and the floor state
+machine are the two pieces that most need testing, and in a 2 200-line HTML file they
+would be reachable only through a browser. They are now importable directly — which is how
+the resampler tests run at all — and are additionally exposed on `window.__voiceDemo` as
+the task requires.
