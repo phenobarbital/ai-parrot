@@ -129,6 +129,11 @@ all = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# The workspace root runs pytest with --strict-markers, so every custom marker
+# must be registered.  FEAT-537 TASK-2950 adds the live-vendor gate marker.
+markers = [
+    "live_vendor: opt-in probe that talks to real LiveAvatar/LiveKit/AWS services; skipped unless PARROT_LIVE_BROADCAST_GATE=1 and vendor credentials are present",
+]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
