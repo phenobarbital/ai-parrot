@@ -84,7 +84,7 @@ inheriting FEAT-536's merge as if it were verification.
 | `LIVEAVATAR_AVATAR_ID` | **Present** | Same — sandbox tier (`LIVEAVATAR_SANDBOX=True`), which is what caps sessions at 60 s |
 | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | **Present** | Live deployment reached; rooms created, joined and torn down |
 | AWS Bedrock Nova 2 Sonic credentials | **Partially present** | `AWS_NOVA_SONIC_KEY_ID` / `AWS_NOVA_SONIC_SECRET_KEY` exist in `env/.env`, but see the next row |
-| `aws_sdk_bedrock_runtime` (Nova voice SDK) | **Not installed** | `import aws_sdk_bedrock_runtime` fails; the Nova route reports itself unavailable at startup |
+| `aws_sdk_bedrock_runtime` (Nova voice SDK) | **Installed** — 0.11.0 | Was present but unusable: the package alone installs without `awscrt`, so the import raised `ModuleNotFoundError` and looked like a missing package. `uv pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'` fixes it; a real `VoiceBot(NOVA, aws_id="nova_sonic")` now constructs |
 | Human observer for lip-sync / playback judgement | **Absent** | This is an autonomous CLI session; lip-sync is a subjective A/V judgement no assertion can substitute for |
 | `livekit` realtime SDK | **Present** — 1.1.14 | `rtc.AudioSource.clear_queue` / `wait_for_playout` confirmed present on this version |
 | `livekit-api` | **Present** — 1.2.0 | Token minting works offline; no room to join |
@@ -100,10 +100,10 @@ Module 1 probe.
 
 | # | Origin | Scenario | Status | Reason |
 |---|---|---|---|---|
-| 1 | FEAT-536 #2 | Nova, voice-only — spoken + text reply, tool call visible | **NOT RUN** | `aws_sdk_bedrock_runtime` not installed; no live Bedrock session possible |
-| 2 | FEAT-536 #4 | Nova + Avatar — lip-synced video, exactly one audio source | **NOT RUN** | No LiveAvatar account and no LiveKit deployment |
-| 3 | FEAT-536 #5 | Second turn — clean new turn, no leftover state | **NOT RUN** | Requires a real provider session to open a first turn |
-| 4 | FEAT-536 #8 | Avatar failure fallback — voice-only keeps working | **NOT RUN** | Requires a real (even misconfigured) LiveAvatar endpoint to observe a genuine failure |
+| 1 | FEAT-536 #2 | Nova, voice-only — spoken + text reply, tool call visible | **NOT RUN** | SDK blocker removed (0.11.0 installed, a real Nova `VoiceBot` constructs). Remaining blocker is different in kind: this is a FEAT-536 *human-observed* browser scenario — "spoken reply audible" is a perceptual judgement, not an assertion this probe can make |
+| 2 | FEAT-536 #4 | Nova + Avatar — lip-synced video, exactly one audio source | **NOT RUN** | Vendors are now reachable and the A/V path is verified (rows 5–11); **lip-sync itself** remains a subjective judgement requiring a human observer |
+| 3 | FEAT-536 #5 | Second turn — clean new turn, no leftover state | **NOT RUN** | A real Bedrock session is now possible; the *analogue* is covered by row 10 (session survives interrupt and re-speaks). A Nova-driven second turn still needs a driven browser session |
+| 4 | FEAT-536 #8 | Avatar failure fallback — voice-only keeps working | ⚠️ **OBSERVED INCIDENTALLY** | Not run as a scripted scenario, but the 600 s rejection (row 12) produced exactly this: a genuine LiveAvatar startup failure that degraded to `audio_only` rather than breaking the broadcast. The degradation path is real, not just unit-tested |
 | 5 | FEAT-537 | LITE session accepts `livekit_config` with `livekit_url` / `livekit_room` / `livekit_client_token` (OpenAPI SHA `8f589bc4…`) | ✅ **RUN — PASS** | Session opened; avatar joined the room as `avatar-agent` |
 | 6 | FEAT-537 | Nova-format 24 kHz mono PCM16 via `agent.speak` reaches **two distinct** LiveKit subscribers as non-zero audio | ✅ **RUN — PASS** | 858 frames / 301 audible / peak 13 417 at **both** subscribers. The spec's documented inference is now a tested fact. (PCM is a synthesized tone, not Nova output — see row 1) |
 | 7 | FEAT-537 | Track manifest: participant identities, track kinds/names/SIDs, codec + sample-rate observations, first-frame latency, decoded video-frame progress per subscriber | ✅ **RUN — PASS** | `avatar-audio` (audio/opus) + `avatar` (video/H264) from `avatar-agent`; 195 video frames; first audible audio 0.686 s |
@@ -113,7 +113,10 @@ Module 1 probe.
 | 11 | FEAT-537 | `livekit.rtc.AudioSource.clear_queue()` on the direct publisher stops queued audio within 1 s | ✅ **RUN — PASS** | **0.103 s**. The symbol's *effect* is now observed, not just its presence |
 | 12 | FEAT-537 | `LiveAvatarConfig.max_session_duration = 600` accepted by the account (spec §7 vendor cleanup bound) | ⚠️ **RUN — REJECTED** | The account caps it at **60 s**: `400 max_session_duration (600s) exceeds the maximum allowed (60s)`. The spec default is not universally valid; now configurable (see defect 1) |
 
-**8 of 12 scenarios executed: 7 PASS, 1 REJECTED-with-finding. 4 of 12 NOT RUN (rows 1–4, all Nova/Bedrock-dependent) with reason.**
+**8 of 12 scenarios executed: 7 PASS, 1 REJECTED-with-finding; 1 further row observed
+incidentally. 3 of 12 NOT RUN (rows 1–3), each now blocked by the need for a *human
+observer* driving a browser — audible speech and lip-sync are perceptual judgements — and
+no longer by a missing SDK, which has since been installed.**
 
 ## What the probe *does* verify today
 
@@ -163,7 +166,7 @@ tests. AC10 explicitly states "Mock-only results cannot complete this feature".
 1. A LiveAvatar account with LITE entitlement: `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`
    (plus `LIVEAVATAR_BASE_URL` / `LIVEAVATAR_SANDBOX` if not the defaults).
 2. A reachable LiveKit deployment: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
-3. AWS Bedrock Nova 2 Sonic model access with `aws_sdk_bedrock_runtime==0.7.0` installed on
+3. ~~AWS Bedrock Nova 2 Sonic SDK~~ — **done**: `aws_sdk_bedrock_runtime[awscrt]==0.11.0` on
    Python ≥ 3.12 (for rows 1–4; rows 5–12 use a deterministic tone and do not need Nova).
 4. A human observer for the lip-sync and synchronized-A/V-capture judgement that rows 2 and
    7 call for — no assertion in the probe substitutes for it.

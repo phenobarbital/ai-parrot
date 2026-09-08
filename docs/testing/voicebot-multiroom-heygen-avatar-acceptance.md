@@ -189,7 +189,7 @@ credential-in-logs risk was the `?token=` query form, which is gone.
    and passing against the production confirmation path.
 2. A LiveAvatar account (`LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`) and a
    reachable LiveKit deployment.
-3. AWS Bedrock Nova 2 Sonic access with `aws_sdk_bedrock_runtime==0.7.0` on
+3. ~~AWS Bedrock Nova 2 Sonic SDK~~ — **installed**: `aws_sdk_bedrock_runtime[awscrt]==0.11.0` on
    Python ≥ 3.12.
 4. `pnpm --dir packages/ai-parrot-server/ui install --frozen-lockfile`, then
    `pnpm --dir packages/ai-parrot-server/ui test` for the vitest suite that
@@ -251,8 +251,25 @@ real infrastructure: LITE accepts our `livekit_config`, 24 kHz PCM16 through `ag
 reaches **two distinct** subscribers as non-zero audio (858 frames, 301 audible, peak
 13 417 each, plus 195 H264 video frames), interrupt stops speech in 0.399 s and
 `clear_queue` in 0.103 s — both inside the 1 s budget. It does **not** establish the Nova
-half: the PCM is a synthesized tone, `aws_sdk_bedrock_runtime` is still not installed, and
-no real Bedrock turn has run. Lip-sync remains unassessed — it is a subjective A/V
-judgement that no assertion substitutes for.
+half: the PCM in these scenarios is a synthesized tone, and no real Bedrock turn has run.
+
+**SDK update.** `aws_sdk_bedrock_runtime` is now installed (0.11.0) and a real
+`VoiceBot(NOVA, aws_id="nova_sonic")` constructs. It had in fact been present all along
+but unusable, because the package installs without `awscrt` and the resulting
+`ModuleNotFoundError` is indistinguishable from the package being absent — the repo's own
+install instruction (`==0.7.0`, no extra) reproduced that trap, and is now corrected to
+`aws_sdk_bedrock_runtime[awscrt]==0.11.0`.
+
+So the remaining gap has changed in kind rather than merely in size: what blocks rows 1–3
+is no longer tooling but a **human observer** — "the reply is audible" and "the video is
+lip-synced" are perceptual judgements no assertion substitutes for. Row 4 (avatar failure
+→ voice-only) was in fact observed incidentally: the 600 s rejection produced a genuine
+LiveAvatar startup failure and the broadcast degraded to `audio_only` as designed.
+
+Note for whoever runs those rows: with the SDK installed, two Nova tests that previously
+skipped now run and **fail** — `test_nova_audio_end_releases_browser_for_two_turns` and
+`test_nova_denial_reaches_browser_and_closes_stream`. Both fail **identically on clean
+`dev`**, so they are not FEAT-537 regressions, but they are live defects in the new AWS
+Nova 2 audio path and should be triaged before a Nova acceptance run.
 
 ---

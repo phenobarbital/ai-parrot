@@ -51,7 +51,10 @@ export GOOGLE_API_KEY="your-key"
 - **Python >= 3.12** with the experimental voice SDK:
 
   ```bash
-  uv pip install 'aws_sdk_bedrock_runtime==0.7.0'
+  # The [awscrt] extra is NOT optional: without it the package installs but
+  # `import aws_sdk_bedrock_runtime` raises ModuleNotFoundError, which reads
+  # exactly like "the SDK is not installed".
+  uv pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'
   ```
 
 If the SDK isn't installed (e.g. running on Python 3.11), the server
