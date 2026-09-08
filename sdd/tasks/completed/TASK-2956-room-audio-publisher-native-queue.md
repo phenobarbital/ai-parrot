@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -98,7 +98,56 @@ async def test_aclose_clears_queue_then_disconnects(fake_rtc, publisher): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- `RoomAudioPublisher` gains: the keyword calling convention
+  (`livekit_url`/`token`/`track_name`/`queue_size_ms`/`on_failure`), a real
+  `flush()`, `wait_for_playout()`, `identity`, `track_sid`, `failed`,
+  `_report_failure`, `_watch_disconnect`, `_clear_native_queue`, `_guarded`, and the
+  module-level `_identity_from_token` / `_invoke` helpers plus the `FAILURE_CAPTURE` /
+  `FAILURE_DISCONNECTED` reason codes.
+- Tests: `pytest .../test_room_audio_publisher.py -q` → **26 passed** (8 pre-existing +
+  18 new). Whole `tests/integrations/liveavatar/` → **199 passed**. `ruff check` clean.
+- **The headline fix**: `flush()` now calls `AudioSource.clear_queue()`. The baseline
+  only toggled a Python flag, so an "interrupt" left everything already handed to the
+  SDK to play out — i.e. the previous turn kept speaking. Spec §6 lists this explicitly
+  under Does-NOT-Exist. `test_flush_clears_native_queue` pins the call count.
+- **`wait_for_playout` is deliberately separate from `flush`.** Spec §2: "never wait for
+  stale audio during cancellation." Waiting is for normal turn completion; cancellation
+  and handoff use `flush`, which *discards* that audio. Conflating them would reintroduce
+  the stale-speech bug from the other direction. The docstring says so at the call site.
+- **Failures are propagated, not swallowed.** A `capture_frame` exception now latches
+  `failed = True`, makes subsequent `capture_pcm` no-ops, and fires
+  `on_failure("capture_failed")` exactly once. The baseline logged and carried on, which
+  is how a dead sink keeps looking alive to the broadcast session. `on_failure` is
+  awaited *outside* the `try` that captures, so an observer's own exception cannot be
+  mistaken for another capture failure. Room disconnect wires
+  `on_failure("room_disconnected")` through `room.on("disconnected")`, guarded because
+  fakes need not implement `on` and only registered when an observer exists.
+- **Verified the installed SDK before using it** rather than trusting the task text:
+  `unpublish_track(track_sid: str)` (so `start` now stores the `sid` from the
+  `LocalTrackPublication` that `publish_track` returns), `AudioSource(sample_rate,
+  num_channels, queue_size_ms=1000)`, `clear_queue() -> None` (sync),
+  `wait_for_playout()` (async), and `AudioSource.aclose` exists while `close` does not.
+- `aclose()` order is purge → unpublish → `source.aclose()` → `room.disconnect()`. The
+  purge happens *before* `_closed` flips, otherwise `_clear_native_queue` would be
+  skipped and queued audio could play out after teardown claimed to be done. Every step
+  goes through `_guarded`, and `test_aclose_continues_past_a_failing_step` proves a
+  failing unpublish does not strand the room connection.
+- `identity` is decoded from the token's `sub` with no signature verification (same
+  approach as `test_room_manager.py`'s `_jwt_payload`) purely for logging/inspection —
+  no security decision reads it — and it is `None` for an undecodable token. The token
+  itself is never logged.
+- Legacy `start(tokens)` is unchanged: same `agent_token`, same `agent-voice` track name.
+  `test_legacy_start_still_uses_agent_token_and_track` and the pre-existing
+  `test_start_connects_with_agent_token_and_publishes_track` both pin it.
+- Extended the shared test fakes as the task directed: `_FakeAudioSource` now takes
+  `queue_size_ms` and exposes `clear_queue_calls`, `aclose_calls`, `capture_error` and a
+  `playout_gate`; `_FakeLocalParticipant.publish_track` returns a `_FakePublication` with
+  a `sid` and gains `unpublish_track`; `_FakeRoom` records `on()` subscriptions.
+
+**Deviations from spec**: none.
