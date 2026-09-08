@@ -97,6 +97,82 @@ override, and start (or restart) a session — the video card in the
 bottom-left corner shows the LiveKit room once `session_started.avatar`
 reports `active: true`.
 
+### Broadcast mode (FEAT-537)
+
+A **moderated multi-browser broadcast**: one Nova VoiceBot conversation, one
+LiveAvatar session and one LiveKit room, fanned out to up to **10** browsers.
+The first participant admitted becomes moderator and can grant a single
+exclusive speaking floor to anyone else. Ordinary single-user Gemini/Nova
+testing is untouched — broadcast mode is a third handler on the same page.
+
+> **Live-vendor status.** The real-vendor gate for this feature has **NOT** been
+> run: see `docs/testing/voicebot-multiroom-live-gate.md` (0 of 12 scenarios).
+> Everything below is verified against deterministic tests and local Redis;
+> LiveAvatar/LiveKit/Nova behaviour is documented intent, not measured fact.
+
+**Prerequisites** (any missing one disables broadcast mode with a reason shown
+on the page; the two single-user routes keep working):
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VOICEBOT_BROADCAST_REDIS_URL` | yes | Cross-worker state, admission and moderation. Broadcast mode is off without it. |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | yes | The output room and its role-specific tokens. |
+| `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID` | for avatar mode | Without them the broadcast still runs, in audio-only mode. |
+| AWS Nova credentials + `aws_sdk_bedrock_runtime` | yes | A broadcast is Nova-only for its lifetime. |
+| `VOICEBOT_DEMO_PARTICIPANTS` | demo only | `alice:tokA,bob:tokB` — maps shared tokens to fixed principals. **Localhost only**: the server refuses a non-loopback `--host` while this is set. |
+| `VOICEBOT_BROADCAST_WORKER_ID` | no | Defaults to `demo-<pid>`. |
+| `PARROT_BROADCAST_WORKER_TOKEN` | multi-worker only | Shared service token for the internal speaker relay. Required before the relay will mount. |
+| `VOICEBOT_BROADCAST_FAILURE_HOOK` | no | `1` mounts the demo failure-injection route. Off by default; never mounted in production. |
+
+**Install and run:**
+
+```bash
+source .venv/bin/activate
+uv pip install -e "packages/ai-parrot-integrations[broadcast]"
+pnpm --dir packages/ai-parrot-server/ui install --frozen-lockfile   # LiveKit UMD asset
+
+docker run --rm -p 6379:6379 redis:7        # or: redis-server
+
+export VOICEBOT_BROADCAST_REDIS_URL=redis://localhost:6379/3
+export VOICEBOT_DEMO_PARTICIPANTS="alice:tok-alice,bob:tok-bob,carol:tok-carol"
+python examples/clients/voice/server.py --host localhost
+```
+
+**Ten-browser walkthrough:**
+
+1. Open <http://localhost:8080>, pick a demo token in the Broadcast panel and
+   click **Create**. You are admitted first, so **you are the moderator** — not
+   because you created it, but because admission is what decides the role.
+2. Copy the share link (`http://localhost:8080/?broadcast=<id>`). It carries the
+   broadcast id and **nothing else** — no role, no credential.
+3. Open the link in nine more browser profiles/windows, each with a different
+   demo token. Every one of them sees the same avatar video and hears the same
+   audio. An **eleventh** join is refused with `viewer_limit_reached`.
+4. In a viewer tab click **Raise hand**. The moderator sees the queue in server
+   order and clicks **Grant**.
+5. The granted tab's **Talk** button becomes enabled. Click it — only now is the
+   microphone requested. Speak; every tab hears the reply.
+6. Click **Finish speaking** (or the moderator's **Revoke**): the floor returns
+   to the moderator and the old speaker's Talk button disables immediately.
+7. Close the moderator's tab: the earliest remaining participant is elected and
+   every tab shows the new role without a reload. Closing the **last** tab ends
+   the broadcast.
+
+**Failure injection** (`VOICEBOT_BROADCAST_FAILURE_HOOK=1`):
+
+```bash
+curl -X POST localhost:8080/__demo__/broadcasts/<bid>/inject \
+     -H 'Content-Type: application/json' -d '{"kind":"avatar_control_close"}'
+```
+
+| `kind` | Expected in every browser |
+|---|---|
+| `avatar_control_close` | Avatar video disappears, audio continues from the room's direct publisher, badge shows `audio_only`. One-way: the avatar does not come back. |
+| `avatar_track_lost` | Same, with reason `avatar_track_lost`. |
+| `owner_death` | Media stops; another worker fences the dead owner and cleans the room within ~30 s (`ended`/`failed` with `owner_lost`). The terminal state stays readable for 5 minutes. |
+
+**Full operations guide:** [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../../../docs/voice/voicebot-multiroom-heygen-avatar.md).
+
 ## Run it
 
 ```bash
@@ -177,7 +253,8 @@ once filed) — link results there rather than duplicating them here.
 |---|---|
 | `server.py` | aiohttp app: two `VoiceChatHandler`s, two `VoiceBot` factories, the `VoiceDemoWeatherTool` dual-output demo tool, the `__CONFIG__`-templated index route, the capability-descriptor JSON builder, and the scoped `/voice-assets/livekit-client.umd.js` route |
 | `static/dual_provider.html` | The provider-switch UI (adapted from `chat.html`), including the Avatar viewer card, tool/data events panel and Interrupt control |
-| `static/avatar-viewer.js` | The subscribe-only LiveKit Room lifecycle controller the avatar viewer above uses (`AvatarViewerController`) |
+| `static/avatar-viewer.js` | The subscribe-only LiveKit Room lifecycle controller the avatar viewer above uses (`AvatarViewerController`), plus FEAT-537's broadcast policy (`mode: "broadcast"`) |
+| `static/broadcast-ui.js` | FEAT-537 broadcast client: the stateful 16 kHz resampler, the REST/control-socket client and the pure `derivePermissions()` floor gate |
 | `static/index.html`, `static/app.js` | **Not used by this example** — the raw-client asset from TASK-2177, served by `examples/clients/nova/audio.py` instead |
 
 ## Related
@@ -186,3 +263,9 @@ once filed) — link results there rather than duplicating them here.
 - `examples/clients/nova/audio.py` — the raw-client, single-provider Nova example
 - `packages/ai-parrot/tests/voice/test_provider_conformance.py` — the
   automated drop-in parity suite this example demonstrates by hand
+- `docs/voice/voicebot-multiroom-heygen-avatar.md` — FEAT-537 broadcast
+  architecture and operations guide
+- `docs/testing/voicebot-multiroom-live-gate.md` — FEAT-537 real-vendor gate
+  (currently **NOT RUN**)
+- `docs/testing/voicebot-liveavatar-acceptance.md` — FEAT-536's acceptance
+  matrix (also NOT RUN)
