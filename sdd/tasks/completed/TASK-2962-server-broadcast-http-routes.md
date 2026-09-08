@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2961
@@ -110,7 +110,62 @@ def test_legacy_viewer_helper_rejects_broadcast_room(): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `packages/ai-parrot-server/src/parrot/handlers/voice_broadcast.py` with all
+  11 endpoints, `navigator_principal_resolver`, the rate limiter, the origin check and
+  the body cap; wired `_build_broadcast_service` + `_register_voice_broadcast_routes`
+  into `manager.py`; added the endpoint suite and two guard tests on
+  `test_avatar_viewers.py`.
+- Tests: `test_voice_broadcast.py` → **27 passed**; `test_avatar_viewers.py` → **10
+  passed** (8 pre-existing + 2 new). Whole `packages/ai-parrot-server/tests/handlers/`
+  → **521 passed, 4 failed**, against a `dev` baseline of **492 passed, 4 failed** —
+  the same four pre-existing failures (`parrot.clients.google.live` is not installed in
+  this venv). `ruff check` clean.
+- **The tests run the real `BroadcastService`** over the in-memory registry with fake
+  LiveKit/media factories, not a mocked service, so they exercise the actual authority
+  rules. That is what makes `test_stop_requires_moderator_not_creator` meaningful: the
+  creator joins, gets 403, and only the first-admitted participant gets 202.
+- Status codes asserted per spec §2: 201 create, 201 join / 409 `viewer_limit_reached`
+  (with current state) / 410 terminal / 404 unknown, 200 connection / 409 + `Retry-After:
+  1` while starting, 204 idempotent leave, 200 hands, 200 floor / 409 `stale_version`
+  with state / 400 missing `expected_version`, 403 non-moderator, 202 stop.
+- **Secret hygiene is swept, not spot-checked.** `_assert_no_secrets` serialises each
+  response and rejects `agent_token|secret|ws_url|api_key|session_token`, and asserts
+  `client_token` appears **only** in the connection response. A final test runs that
+  sweep across five endpoints in one go.
+- **Two guard tests on the legacy avatar bypass** (spec §2 "Viewer admission
+  compatibility"): the first proves `_mint_viewer_tokens` refuses a broadcast room name;
+  the second is structural — it greps the whole `broadcast/` package for
+  `AVATAR_SESSIONS_KEY`/`avatar_sessions` and fails if any file references it. The real
+  guarantee is that `BroadcastService` never registers a broadcast in that store, so the
+  structural test is the one that would catch a future regression. **No functional
+  change to `avatar.py` was needed** — the task said to change it only if the test
+  failed, and it did not.
+- **Principal resolution has two deliberate paths.** With no injected resolver, the
+  session is reduced to a user mapping and handed to `service.resolve_principal`, so
+  tenant scoping *and* the service's `authorize_agent` hook run through the same code
+  the WebSocket route uses — HTTP and WS cannot diverge on who may use an agent. An
+  injected resolver (what the example in TASK-2963 needs) is authoritative. The first
+  draft wrapped the resolved principal and fed it back through the service; that
+  silently flattened the session's tenant to `"default"`, so it was replaced.
+- The manager change is guarded exactly like the neighbouring optional integrations:
+  no `PARROT_BROADCAST_REDIS_URL`, no extras, or missing LiveKit env → an INFO/WARNING
+  and `(None, None)`, leaving `/ws/voice` byte-identical to its pre-FEAT-537 behaviour.
+  The reconciler starts on `app.on_startup` and the service + Redis client close on
+  `app.on_cleanup`.
+- One test-fake correction worth noting: `FakeMediaSession.aclose` now performs the
+  registry transition the real `BroadcastSession.aclose` does. Without it the fake left
+  a stopped broadcast joinable — a property of the fake, not of the code, which would
+  have made `test_join_terminal_broadcast_410` a false failure.
+
+**Deviations from spec**: none. Two implementation notes:
+1. `DELETE /{bid}/hands/me` takes the lease via `?lease_id=` because a DELETE body is not
+   reliably transmitted by browsers; the moderator variant keeps the lease in the path as
+   specified.
+2. `POST /` is registered both with and without a trailing slash, since aiohttp treats
+   them as distinct routes and the spec writes the endpoint as `POST /`.

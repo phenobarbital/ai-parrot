@@ -337,7 +337,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -348,8 +348,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T11:03:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2962-server-broadcast-http-routes.md",
+      "completed_at": "2026-09-08T13:35:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2962-server-broadcast-http-routes.md",
       "acceptance_criteria": [
         "AC2",
         "AC3",
