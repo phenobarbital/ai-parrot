@@ -232,3 +232,22 @@ resolves `parrot` from the *main* checkout. The compiled Cython/Rust
 extensions (`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`,
 `yaml_rs*.so`) were copied from the main checkout into the worktree; they
 are gitignored build artifacts and are not part of this commit.
+
+### Post-completion correction (made by TASK-2973)
+
+`PlanUpdatePayload` as delivered here carried **only ids**
+(`added_step_ids`, `updated_step_ids`, `added_constraint_ids`, ...). That
+is incompatible with D6: a reducer replaying from an empty projection
+cannot rebuild a step it has never seen *defined*, so the projection —
+not the journal — would have been the real source of truth, and exact
+replay after a restart would have been impossible.
+
+TASK-2973 corrected it in place by adding `PlanStepSpec`, `PlanStepPatch`
+and `PlanConstraintSpec`, and having `PlanUpdatePayload` carry
+definitions with derived `*_ids` views for callers that only need
+identities. `test_models.py` gained
+`test_roundtrip_plan_payload_carries_definitions_not_just_ids`, and the
+model count went 55 → 56.
+
+This is recorded here so the defect and its fix are visible from the task
+that introduced it, not only from the one that found it.
