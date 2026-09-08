@@ -38,7 +38,7 @@ from typing import Any, AsyncIterator, List, Optional
 
 import pytest
 from parrot.interfaces.task_memory import TaskMemoryStore, Transaction, TransactionCoordinator
-from parrot.tools.working_memory.task_memory.models import TaskMemoryUnavailable, TaskScope
+from parrot.tools.working_memory.task_memory.models import ReducerError, TaskMemoryUnavailable, TaskScope
 from parrot.tools.working_memory.task_memory.store import BaseTaskMemoryStore
 from parrot.tools.working_memory.task_memory.store.postgres import (
     MIGRATION_NAME,
@@ -731,21 +731,51 @@ async def test_optional_import_unreachable_server_is_explicit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_crud_paths_name_their_owning_task() -> None:
-    """The unimplemented command paths say who owns them.
+async def test_crud_paths_refuse_loudly_when_the_database_is_unreachable() -> None:
+    """A command path never silently accepts work it cannot persist.
 
-    They raise rather than returning a plausible empty result: a store
-    that silently accepted an append and persisted nothing would be worse
-    than one that refuses.
+    This case originally asserted that every CRUD method raised
+    ``NotImplementedError`` naming TASK-2995 — true only while that task
+    was outstanding, and implementing them was its entire job. Rewritten
+    to assert the *guarantee* the placeholder stood for rather than the
+    placeholder itself: a store that accepted an append and persisted
+    nothing would be worse than one that refuses.
+
+    The refusals are now typed for their actual cause —
+    :class:`TaskMemoryUnavailable` when the database cannot be reached,
+    and a validation error when the command is malformed before any I/O
+    is attempted.
     """
-    store = PostgresTaskMemoryStore("postgresql://unused/db")
+    store = PostgresTaskMemoryStore("postgresql://user@127.0.0.1:1/nonexistent_db")
+
+    # Validation precedes I/O: an empty batch cannot begin a task, and
+    # that is decided without ever reaching the database.
+    with pytest.raises((ReducerError, ValueError, IndexError)):
+        await store.create_task(SCOPE, goal="g", events=[])
+
+    # Everything else fails on the connection, loudly and typed.
     for coro in (
-        store.create_task(SCOPE, goal="g", events=[]),
         store.append_events(SCOPE, "t-1", []),
         store.load_snapshot(SCOPE, "t-1"),
         store.list_tasks(SCOPE),
         store.list_events(SCOPE, "t-1"),
         store.count_events(SCOPE, "t-1"),
     ):
-        with pytest.raises(NotImplementedError, match="TASK-2995"):
+        with pytest.raises(TaskMemoryUnavailable):
             await coro
+
+
+@pytest.mark.asyncio
+async def test_crud_paths_name_their_owning_task() -> None:
+    """No command path still cites an unimplemented owner.
+
+    The counterpart to the case above: once a placeholder's owning task
+    lands, the citation must disappear with it. A method still claiming
+    to be owned by a completed task is a stale promise.
+    """
+    import inspect
+
+    source = inspect.getsource(PostgresTaskMemoryStore)
+    assert "TASK-2995" not in source, (
+        "PostgresTaskMemoryStore still cites TASK-2995 as an unimplemented owner, " "but that task has landed"
+    )
