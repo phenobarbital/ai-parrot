@@ -725,7 +725,7 @@ def _novel_assistant_text(candidate: str, already_sent: str, is_final: bool) -> 
     if not is_final or not already_sent:
         return candidate
     if candidate.startswith(already_sent):
-        return candidate[len(already_sent):]
+        return candidate[len(already_sent) :]
     stripped = candidate.strip()
     if stripped and stripped in already_sent:
         return ""
