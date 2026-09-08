@@ -693,9 +693,7 @@ async def test_relayed_barrier_fences_the_remote_producer(aiohttp_client) -> Non
         headers={WORKER_TOKEN_HEADER: TOKEN},
     )
     await ws.send_str(
-        RelayFrame(
-            kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5
-        ).to_wire()
+        RelayFrame(kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5).to_wire()
     )
     ack = json.loads((await ws.receive()).data)
     assert ack["type"] == "ack" and ack["floor_epoch"] == 5
@@ -715,9 +713,7 @@ async def test_relayed_barrier_reports_a_producer_that_will_not_fence(
         headers={WORKER_TOKEN_HEADER: TOKEN},
     )
     await ws.send_str(
-        RelayFrame(
-            kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5
-        ).to_wire()
+        RelayFrame(kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5).to_wire()
     )
     error = json.loads((await ws.receive()).data)
     assert error["code"] == BroadcastReason.STALE_FLOOR_EPOCH.value
@@ -735,9 +731,7 @@ async def test_relayed_barrier_refuses_a_stale_owner_epoch(aiohttp_client) -> No
         headers={WORKER_TOKEN_HEADER: TOKEN},
     )
     await ws.send_str(
-        RelayFrame(
-            kind="switch_speaker", owner_epoch=1, lease_id="lease-target", floor_epoch=5
-        ).to_wire()
+        RelayFrame(kind="switch_speaker", owner_epoch=1, lease_id="lease-target", floor_epoch=5).to_wire()
     )
     msg = await ws.receive()
     assert msg.type is aiohttp.WSMsgType.CLOSE

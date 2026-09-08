@@ -456,9 +456,7 @@ class BroadcastService:
                 liveavatar_session_id=state.get("liveavatar_session_id"),
             )
         except Exception:  # noqa: BLE001 — the local projection still works
-            self.logger.warning(
-                "broadcast %s: could not persist media state", broadcast_id, exc_info=True
-            )
+            self.logger.warning("broadcast %s: could not persist media state", broadcast_id, exc_info=True)
 
     def _build_voice_session(self, descriptor: BroadcastDescriptor, session: Any, bot: Any) -> Any:
         """Construct the broadcast-owned voice session.
@@ -838,14 +836,10 @@ class BroadcastService:
 
             descriptor = await self.registry.get(tenant_id, broadcast_id)
             if descriptor is None or not descriptor.owner_worker_id:
-                raise BroadcastError(
-                    BroadcastReason.OWNER_LOST, message="no producer owns this broadcast"
-                )
+                raise BroadcastError(BroadcastReason.OWNER_LOST, message="no producer owns this broadcast")
             url = await self.worker_registry.resolve(descriptor.owner_worker_id)
             if url is None:
-                raise BroadcastError(
-                    BroadcastReason.OWNER_LOST, message="producer worker is not reachable"
-                )
+                raise BroadcastError(BroadcastReason.OWNER_LOST, message="producer worker is not reachable")
             await relay_switch_speaker(
                 url,
                 tenant_id=tenant_id,
@@ -989,9 +983,7 @@ class BroadcastService:
 
         return _observe
 
-    async def _on_room_presence(
-        self, tenant_id: str, broadcast_id: str, identity: str, present: bool
-    ) -> None:
+    async def _on_room_presence(self, tenant_id: str, broadcast_id: str, identity: str, present: bool) -> None:
         """Confirm (or drop) the lease behind a LiveKit presence transition.
 
         This is the **only** thing that confirms a lease.  It is driven by the
@@ -1028,9 +1020,7 @@ class BroadcastService:
         )
         await self._publish_state(tenant_id, broadcast_id)
 
-    async def _lease_for_identity(
-        self, tenant_id: str, broadcast_id: str, identity: str
-    ) -> Optional[ViewerLease]:
+    async def _lease_for_identity(self, tenant_id: str, broadcast_id: str, identity: str) -> Optional[ViewerLease]:
         """Find the lease holding a LiveKit identity, if any.
 
         Args:
@@ -1045,9 +1035,7 @@ class BroadcastService:
         try:
             leases = await self.registry.list_leases(tenant_id, broadcast_id)
         except Exception:  # noqa: BLE001 — presence is best-effort
-            self.logger.warning(
-                "broadcast %s: could not list leases for presence", broadcast_id, exc_info=True
-            )
+            self.logger.warning("broadcast %s: could not list leases for presence", broadcast_id, exc_info=True)
             return None
         for lease in leases:
             if lease.livekit_identity == identity:
@@ -1127,9 +1115,7 @@ class BroadcastService:
             try:
                 await self.confirm_present_participants(tenant_id, broadcast_id)
             except Exception:  # noqa: BLE001 — confirmation is best-effort
-                self.logger.warning(
-                    "broadcast %s: presence reconciliation failed", broadcast_id, exc_info=True
-                )
+                self.logger.warning("broadcast %s: presence reconciliation failed", broadcast_id, exc_info=True)
             try:
                 events = await self.registry.expire(tenant_id, broadcast_id)
             except Exception:  # noqa: BLE001 — store unreachable: fail closed
@@ -1170,8 +1156,7 @@ class BroadcastService:
             scope = await self.registry.list_broadcasts()
         except Exception:  # noqa: BLE001 — degrade, never skip the pass
             self.logger.warning(
-                "broadcast reconciler: store enumeration failed — "
-                "falling back to process-local scope",
+                "broadcast reconciler: store enumeration failed — " "falling back to process-local scope",
                 exc_info=True,
             )
             return list(self._known)

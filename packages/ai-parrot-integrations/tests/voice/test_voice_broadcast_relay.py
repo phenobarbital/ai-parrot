@@ -976,9 +976,7 @@ async def test_ws_refuses_query_string_credentials(broadcast_app) -> None:
     client, service, _handler = broadcast_app
     await service.seed("moderator")
 
-    ws = await client.ws_connect(
-        f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token=moderator"
-    )
+    ws = await client.ws_connect(f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token=moderator")
     msg = await ws.receive()
     assert msg.type is aiohttp.WSMsgType.CLOSE
     assert msg.data == WS_CLOSE_UNAUTHENTICATED

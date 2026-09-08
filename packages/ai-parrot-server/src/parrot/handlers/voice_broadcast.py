@@ -189,11 +189,7 @@ class _RateLimiter:
         if now - self._last_sweep < self._window_s:
             return
         self._last_sweep = now
-        stale = [
-            key
-            for key, hits in self._hits.items()
-            if not hits or (now - hits[-1]) > self._window_s
-        ]
+        stale = [key for key, hits in self._hits.items() if not hits or (now - hits[-1]) > self._window_s]
         for key in stale:
             del self._hits[key]
 

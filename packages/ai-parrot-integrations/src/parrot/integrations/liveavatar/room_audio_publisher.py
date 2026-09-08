@@ -349,9 +349,7 @@ class RoomAudioPublisher:
         try:
             await self._on_presence(identity, present)
         except Exception:  # noqa: BLE001 — an observer must not kill the room
-            self.logger.exception(
-                "RoomAudioPublisher: presence observer raised for %s", identity
-            )
+            self.logger.exception("RoomAudioPublisher: presence observer raised for %s", identity)
 
     async def _report_failure(self, reason: str) -> None:
         """Latch the failed state and notify the observer exactly once.

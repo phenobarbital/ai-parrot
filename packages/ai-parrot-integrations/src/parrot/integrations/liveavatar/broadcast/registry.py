@@ -704,9 +704,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         Returns:
             ``True`` when at least one non-departing lease remains.
         """
-        return any(
-            lease.state is not LeaseState.LEAVING for lease in record.leases.values()
-        )
+        return any(lease.state is not LeaseState.LEAVING for lease in record.leases.values())
 
     def _elect_locked(self, record: _Record, now: float) -> Optional[str]:
         """Elect the earliest eligible participant and hand it the floor."""
@@ -1001,9 +999,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 if lease.credential_expires_at is not None
                 else stamp + VIEWER_CREDENTIAL_TTL_S
             )
-            record.tombstones[lease.livekit_identity] = max(
-                expiry, stamp + VIEWER_CREDENTIAL_TTL_S
-            )
+            record.tombstones[lease.livekit_identity] = max(expiry, stamp + VIEWER_CREDENTIAL_TTL_S)
 
             self._drop_hand(record, lease_id)
             was_speaker = descriptor.speaker_lease_id == lease_id

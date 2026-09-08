@@ -541,9 +541,7 @@ async def test_failure_hook_present_only_with_the_flag(server_module, monkeypatc
     assert "/__demo__/broadcasts/{broadcast_id}/inject" in paths
 
 
-def test_refuses_non_loopback_broadcast_without_authentication(
-    server_module, monkeypatch
-) -> None:
+def test_refuses_non_loopback_broadcast_without_authentication(server_module, monkeypatch) -> None:
     """The open-by-default case was the one previously left unguarded.
 
     With VOICEBOT_DEMO_PARTICIPANTS unset, `require_auth` is False, so the

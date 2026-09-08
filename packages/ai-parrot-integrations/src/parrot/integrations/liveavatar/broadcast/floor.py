@@ -230,6 +230,7 @@ class FloorCoordinator:
             when there is no producer to fence at all.
         """
         if session is not None:
+
             async def _local(target_lease_id: str, floor_epoch: int) -> None:
                 await session.switch_speaker(target_lease_id, floor_epoch)
 

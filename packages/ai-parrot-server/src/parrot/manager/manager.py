@@ -2026,9 +2026,7 @@ class BotManager:
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001 — a refresh loop must not die
-                    self.logger.warning(
-                        "Voice broadcast relay re-registration failed", exc_info=True
-                    )
+                    self.logger.warning("Voice broadcast relay re-registration failed", exc_info=True)
 
         async def _stop_relay(_app: web.Application) -> None:
             task = state.pop("task", None)

@@ -435,9 +435,7 @@ async def confirm_all_leases(demo_server: Any) -> None:
     for tenant_id, broadcast_id in await service.registry.list_broadcasts():
         await service.confirm_present_participants(tenant_id, broadcast_id)
         for lease in await service.registry.list_leases(tenant_id, broadcast_id):
-            await service.registry.heartbeat_control(
-                tenant_id, broadcast_id, lease.lease_id
-            )
+            await service.registry.heartbeat_control(tenant_id, broadcast_id, lease.lease_id)
 
 
 # ── Scenario 1: combined path across three browsers ────────────────────────

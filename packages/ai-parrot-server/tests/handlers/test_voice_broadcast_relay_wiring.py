@@ -6,6 +6,7 @@ with `owner_lost` for a speaker admitted on a worker that did not own the
 producer. Every unit test passed regardless, because they all constructed the
 relay by hand. These tests exercise the wiring itself.
 """
+
 from __future__ import annotations
 
 from typing import Any, List
@@ -13,14 +14,13 @@ from typing import Any, List
 import pytest
 from aiohttp import web
 
+
 def _ensure_server_handler(monkeypatch: Any) -> None:
     """Make `parrot.manager` importable in the namespace-package layout."""
     import parrot
 
     for entry in list(getattr(parrot, "__path__", [])):
-        candidate = entry.replace(
-            "ai-parrot/src/parrot", "ai-parrot-server/src/parrot"
-        )
+        candidate = entry.replace("ai-parrot/src/parrot", "ai-parrot-server/src/parrot")
         if candidate not in parrot.__path__:
             parrot.__path__.append(candidate)
 
@@ -92,9 +92,7 @@ def test_bind_target_defaults_to_the_advertised_address(manager, monkeypatch) ->
     assert manager._relay_bind_target("wss://worker-a.internal") == ("0.0.0.0", 9999)
 
 
-async def test_relay_starts_listens_and_registers_then_cleans_up(
-    manager, monkeypatch, unused_tcp_port
-) -> None:
+async def test_relay_starts_listens_and_registers_then_cleans_up(manager, monkeypatch, unused_tcp_port) -> None:
     """The end-to-end wiring: a port is served and the address advertised."""
     url = f"ws://127.0.0.1:{unused_tcp_port}"
     monkeypatch.setenv("PARROT_BROADCAST_WORKER_URL", url)

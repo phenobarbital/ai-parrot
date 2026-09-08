@@ -493,7 +493,6 @@ class WorkerRelayServer:
             await session.push_audio(frame.pcm)
         return True
 
-
     async def _apply_barrier(
         self, ws: web.WebSocketResponse, tenant_id: str, broadcast_id: str, frame: "RelayFrame"
     ) -> bool:
@@ -586,10 +585,7 @@ async def relay_switch_speaker(
         lease_id=target_lease_id,
         floor_epoch=floor_epoch,
     )
-    target = (
-        f"{url.rstrip('/')}{RELAY_ROUTE}"
-        f"?tenant_id={tenant_id}&broadcast_id={broadcast_id}"
-    )
+    target = f"{url.rstrip('/')}{RELAY_ROUTE}" f"?tenant_id={tenant_id}&broadcast_id={broadcast_id}"
     headers = {WORKER_TOKEN_HEADER: resolved} if resolved else {}
     try:
         async with factory() as session:
@@ -598,9 +594,7 @@ async def relay_switch_speaker(
                 msg = await asyncio.wait_for(ws.receive(), timeout=timeout_s)
                 payload = json.loads(msg.data) if isinstance(msg.data, str) else {}
                 if payload.get("type") != "ack":
-                    raise WorkerTransportError(
-                        message=f"producer refused the handoff: {payload.get('code')}"
-                    )
+                    raise WorkerTransportError(message=f"producer refused the handoff: {payload.get('code')}")
     except WorkerTransportError:
         raise
     except Exception as exc:  # noqa: BLE001 — any failure aborts the handoff
