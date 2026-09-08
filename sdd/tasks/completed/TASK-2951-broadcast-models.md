@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -110,7 +110,59 @@ def test_state_enum_values():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/__init__.py` (re-exports) and `broadcast/models.py` with every
+  contract and constant the task listed: `BroadcastState`, `FloorState`, `LeaseState`,
+  `BroadcastReason` (all 14 codes), `HandRequest`, `ParticipantPrincipal`,
+  `BroadcastDescriptor`, `BroadcastPublicState`, `ViewerLease`, `ViewerJoinResponse`,
+  `BroadcastAudioFrame`, plus the 13 module-level constants.
+- **AC3 invariant is enforced structurally, not by convention.**
+  `BroadcastPublicState` carries `extra="forbid"` (stops a *caller* smuggling a token
+  in) **and** a `model_validator(mode="after")` that scans its own declared field names
+  for `token|secret|ws_url|api_key|worker|credential|password` and raises. That means a
+  future maintainer who adds a leaky field breaks every test that constructs a public
+  state, rather than leaking silently. Tested by
+  `test_public_state_has_no_secret_like_keys` (recursive walk over `model_dump()`) and
+  `test_public_state_omits_internal_descriptor_fields`.
+- `to_public_state(*, viewer_count=0, media_ready=None)`: seat occupancy lives in the
+  lease records (registry, TASK-2952/2953), not on the descriptor — the spec §2
+  descriptor table lists no viewer-count field — so the registry supplies it and a bare
+  descriptor projects `0`. The task's own test scaffold calls `to_public_state()` with
+  no arguments, which still works. `media_ready` is derived (`state ∈ {avatar,
+  audio_only}` **and** `room_name` set) with a caller override.
+- Added `BroadcastDescriptor.selected_identity` as a derived property rather than a
+  stored field: in `avatar` the avatar publisher is authoritative, in `audio_only` the
+  direct publisher is, and in every other state there is no authoritative source (so
+  browsers stay muted). Storing it would let the two drift apart.
+- Two helper classmethods justify the task's two "Verified Imports" and enforce
+  invariants at the only place they can be enforced:
+  `ParticipantPrincipal.from_authenticated_user(user, *, tenant_id, agent_id)` —
+  tenant/agent scope is taken from the *caller's* trusted resolution, deliberately not
+  read off the token payload — and `ViewerJoinResponse.from_tokens(...)`, the sole
+  sanctioned path from `LiveKitRoomTokens` to a client response, which structurally
+  drops `agent_token`. `test_viewer_join_response_drops_the_publisher_token` asserts the
+  publisher JWT is nowhere in the dump.
+- `BroadcastAudioFrame` validates: non-empty, 16-bit aligned (`"pcm must be 16-bit
+  aligned"`), ≤ `MAX_QUEUED_PCM_BYTES` (96 000), and `sample_count == len(pcm)//2`.
+  Added `is_current(owner_epoch, floor_epoch, output_epoch, turn_id=None)` so the
+  fencing tuple is checked in one place by every downstream consumer instead of being
+  re-implemented per call site.
+- Display names sanitised via a shared `_safe_display_name()` (`strip()[:64]`, fallback
+  `"participant"`) applied by `field_validator` on both `ParticipantPrincipal` and
+  `HandRequest`.
+- Tests: `pytest packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_models.py -q`
+  → **28 passed**. `ruff check` clean on the new package and the test module.
+- The `AVATAR_STARTUP_DEADLINE_S` / `HANDOFF_BARRIER_TIMEOUT_S` / `MAX_QUEUED_PCM_BYTES`
+  constants are the *unverified defaults* TASK-2950 flagged (the live gate did not run).
+  They are module constants precisely so downstream tasks can make them configurable
+  knobs without touching call sites.
+
+**Deviations from spec**: none. Two additions beyond the literal field lists, both
+inside scope and both invariant-enforcing rather than architectural: the derived
+`selected_identity` property and `BroadcastAudioFrame.is_current()`. No registry, Redis,
+HTTP or JS logic was added.
