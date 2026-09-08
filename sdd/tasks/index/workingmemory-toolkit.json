@@ -920,7 +920,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -941,9 +941,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2995-tm-postgres-journal.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:06:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2995-tm-postgres-journal.md",
+      "verification": "60 tests pass LIVE against real PostgreSQL 17 (reproduced independently during review); 0 wm_test_* schemas left; skips are explicit when no DSN",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_task_store.py"
@@ -957,7 +957,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -976,9 +976,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2996-tm-blob-adapter.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:06:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2996-tm-blob-adapter.md",
+      "verification": "38 focused tests with a real LocalFileManager; ruff/black/isort clean; artifacts/logs/task-2996-tm-blob-adapter.log",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_artifact_blob.py"

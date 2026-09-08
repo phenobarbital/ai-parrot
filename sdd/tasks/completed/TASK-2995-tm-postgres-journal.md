@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2978, TASK-2994
@@ -129,4 +129,78 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done (Delivery B)
+
+### Evidence — LIVE, and independently reproduced
+- **60 passed against a real PostgreSQL 17** (`postgres:17-alpine3.21`,
+  the local `docker_postgres_1` container), covering both
+  `test_postgres_task_store.py` and `test_postgres_schema.py`, including
+  all 8 inherited `TaskMemoryStoreConformance` cases and the three
+  required cases.
+- The implementing agent's live run was **reproduced during review**, not
+  taken on trust: the reviewer independently located the container's own
+  credentials, re-ran the suite, and confirmed **60 passed**.
+- Cleanup verified afterwards: **0** `wm_test_*` schemas remain and the
+  real `working_memory` schema was never created.
+- Without a DSN the same cases skip with *"This is an ENVIRONMENTAL SKIP,
+  not a pass — no durable behaviour was exercised here."*
+- The project's **configured** PostgreSQL is a shared dev server
+  (`nav-api.dev.local`); it was deliberately **not** contacted. No
+  credentials appear in any committed file or log.
+- `ruff`/`black`/`isort` clean.
+
+### Design decisions
+1. **`SELECT ... FOR UPDATE` is the entire serialization mechanism** —
+   PostgreSQL supplies what the in-memory store gets from a per-task
+   `asyncio.Lock`. The concurrency tests use **separate stores with
+   separate pools**, so they are genuinely independent connections;
+   coroutines sharing one connection would not exercise the row lock at
+   all.
+2. **Parity was followed, not re-derived.** Stage-then-publish,
+   batch-reserved capacity semantics, replay-based lazy migration and
+   goal-agreement validation are copied from the in-memory store
+   deliberately. Running the shared conformance suite against **both** is
+   the actual AC2 mechanism.
+3. **Racing creation resolves through the append path.** The loser of
+   `INSERT ... ON CONFLICT DO NOTHING` re-locks and falls through, where
+   the identical batch is recognised as a redelivery — five concurrent
+   creates give one append and four no-ops.
+4. **The migrated projection is written back** under the lock the caller
+   already holds, so a stale projection is replayed once rather than on
+   every read. The test corrupts the projection's `goal` *as well as* its
+   version, so a store that merely bumped the number still fails.
+5. **`_unit_of_work` joins a caller's transaction without committing it** —
+   the owner commits, which is what lets an artifact publish and its
+   journal event land together. Tested: an append inside an aborted caller
+   transaction leaves nothing behind.
+6. **Keyset paging uses a row-value comparison** `(updated_at, task_id) <
+   ($n, $m)` — one indexable predicate meaning "strictly after this row".
+   `test_paging_is_total_and_stable` forces every task to share one
+   `updated_at`, the exact case a naive `ORDER BY updated_at` gets wrong.
+7. **The injected-failure test asserts the failure was reached**
+   (`calls["n"] == 1`); otherwise a no-op patch would make it pass
+   vacuously.
+
+### Handoff resolved (TASK-2994 → TASK-2995)
+`test_postgres_schema.py::test_crud_paths_name_their_owning_task`
+asserted every CRUD method raised `NotImplementedError` matching
+`"TASK-2995"` — a placeholder whose premise **this task's entire job was
+to remove**. It was replaced (by the committer of TASK-2994, who owns
+that file) with two tests asserting the *guarantee* the placeholder stood
+for:
+
+- refusals remain loud and are now typed for their real cause —
+  `TaskMemoryUnavailable` when the database is unreachable, a validation
+  error for a malformed command decided before any I/O;
+- **no method still cites a completed task as its unimplemented owner.**
+
+The second test earned its keep immediately: it caught two stale
+docstrings in `postgres.py` still promising `NotImplementedError` for
+work this task had just landed. Corrected.
+
+This is the **fourth** instance of one recurring pattern in this feature:
+a task asserts against a placeholder, and the task that replaces the
+placeholder makes the assertion false. Each time the right fix has been
+to assert the guarantee rather than the transient gap.

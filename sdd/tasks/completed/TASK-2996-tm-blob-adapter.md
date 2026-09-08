@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2975, TASK-2994
@@ -152,4 +152,90 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done (Delivery B)
+
+### Evidence
+- `test_artifact_blob.py` → **38 passed**, all three required cases
+  present (`test_roundtrip`, `test_bounded_page`, `test_failed_publish`).
+- `ruff`, `black --line-length 120 --target-version py312` and
+  `isort --check-only` clean. Log:
+  `artifacts/logs/task-2996-tm-blob-adapter.log`.
+- Happy paths use a **real** `LocalFileManager` over a `tmp_path`, not a
+  mock.
+
+### Publish order IS the guarantee
+encode → write → stat → read back → verify checksum → **only then**
+return a `BlobRef`. Every failure path raises and returns nothing, and
+best-effort-deletes the partial object; a cleanup failure never masks the
+publish failure. An orphan blob is sweepable; a phantom reference is not.
+
+### Phase 0 map: accurate, but silent on four behaviours
+Every signature in `docs/memory/task-memory-integration-map.md` §3
+verified exactly as written. Four behaviours it does **not** record, each
+confirmed empirically and each materially affecting this adapter:
+
+1. **`create_from_bytes` silently OVERWRITES an existing path.** Blob
+   immutability therefore cannot be assumed of storage — it is enforced
+   in the adapter (identical bytes → idempotent retry; different bytes →
+   `BlobImmutabilityError`).
+2. `create_from_bytes` creates nested parents, so hierarchical keys need
+   no `mkdir` step.
+3. `get_file_metadata`/`download_file` raise `FileNotFoundError` on a
+   missing object; `delete_file` returns `False` instead.
+4. `LocalFileManager(sandboxed=True)` rejects traversal with
+   `ValueError` — defence in depth, not a substitute for encoding keys
+   correctly.
+
+### A real path-traversal hole the agent's own test caught
+`quote(value, safe="")` does **not** encode `.` (verified during review:
+`quote("..") == ".."`), so a scope component of exactly `".."` survived
+as a genuine parent-directory segment. The sandbox would have caught it,
+but the key builder should never emit it. `_segment()` now encodes
+dot-only segments. The *test* was corrected too: it first asserted "no
+segment **contains** `..`", which falsely flags the harmless
+`..%2F..%2Fetc`; it now asserts the right property — no segment **is**
+`.` or `..`.
+
+### TEST-INFRASTRUCTURE FINDING — affects more than this task
+`packages/ai-parrot/tests/conftest.py:191` installs an AsyncMock-backed
+stub for `parrot.interfaces.file` via `sys.modules.setdefault` (verified
+during review). Under pytest, `LocalFileManager` imported from there is
+the stub, whose `exists()` returns a **truthy AsyncMock**. That failed 20
+tests initially — but the failure mode runs the other way too: **a truthy
+`exists()` would just as easily make I/O assertions pass vacuously.**
+
+The real classes survive at `navigator.utils.file` (the conftest guards
+those attributes with `hasattr`), so the tests import from there and
+carry a `pytestmark` skip that refuses to run against a stub. Production
+code is unaffected: `blob.py` takes the manager by injection and imports
+no file module. **Any other task asserting file-manager behaviour should
+check which class it actually got.**
+
+### Other decisions
+1. **`test_bounded_page` uses an armed trap, not an observation.**
+   `ParquetFile.read` is monkeypatched to raise, and the test also
+   asserts the trap fires on a full read. Counting rows alone would pass
+   against an implementation that decoded the whole table then sliced it.
+2. **Two distinct ceilings, deliberately.** `max_bytes` bounds the
+   *decoded* payload; `max_encoded_bytes` bounds the *transfer*. A single
+   ceiling would make paging pointless, since a small page of a large
+   table must stay readable. The encoded check runs on
+   `get_file_metadata().size` **before** any download — asserted by a test
+   counting zero download calls.
+3. **KNOWN LIMITATION, documented in the module rather than papered
+   over**: the pinned interface has no byte-range read, so a page read
+   still transfers the whole encoded blob. The decoded table is bounded;
+   the transfer is not. Fixing it would require reading a
+   `LocalFileManager`'s resolved path directly — internals outside the
+   pinned interface.
+4. **Nested-mutable frames are refused before Arrow**, so the error names
+   the offending columns, reusing `snapshots.unsafe_object_columns`
+   rather than re-deriving the rule. The absence of a pickle path is
+   asserted **structurally by AST**, because a runtime test only proves
+   pickle was not reached on the paths exercised.
+5. A checksum mismatch yields `BLOB_CORRUPTED`, a module constant:
+   `PayloadRefusal` has no such member and belongs to another task, and
+   `PayloadResult.refusal` is `Optional[str]`, so this is
+   contract-compliant. Promoting it is a reasonable follow-up.
