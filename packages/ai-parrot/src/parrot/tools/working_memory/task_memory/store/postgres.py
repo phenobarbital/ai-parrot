@@ -21,10 +21,12 @@ This module owns three things, and deliberately not a fourth:
    than inventing its own, and the shared conformance suite is run
    against both.
 
-What it does **not** own: durable aliases, versions and evidence pins,
-which belong to the artifact store. Those methods raise
-:class:`NotImplementedError` naming their owner rather than shipping a
-plausible-looking implementation that silently does the wrong thing.
+5. **The durable artifact store** — :class:`PostgresArtifactStore`,
+   which owns aliases, versions and evidence pins. It lives here rather
+   than in its own module precisely because it must share this module's
+   pool and transaction coordinator: an artifact's index rows, its
+   evidence rows and its ``artifact_registered`` journal event have to
+   commit on ONE connection or not at all.
 
 **The append protocol** (spec §2 Persistence and Recovery) is one
 transaction, in this order:
@@ -59,10 +61,12 @@ transaction rolling back.
 from __future__ import annotations
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional, Sequence, Tuple
 
+from parrot.interfaces.artifact_store import ArtifactPage, PayloadRefusal, PayloadResult
 from parrot.interfaces.task_memory import (
     GOAL_PREVIEW_CHARS,
     AppendResult,
@@ -74,9 +78,18 @@ from parrot.interfaces.task_memory import (
 
 from ..config import TaskMemoryConfig
 from ..models import (
+    Actor,
+    ArtifactAvailability,
+    ArtifactDescriptor,
+    ArtifactKind,
+    ArtifactPayload,
+    Attribution,
+    CursorError,
     EventType,
+    EvidenceRef,
     JournalEvent,
     LimitExceeded,
+    Limits,
     ReducerError,
     RevisionConflict,
     ScopeViolation,
@@ -85,9 +98,11 @@ from ..models import (
     TaskScope,
     TaskState,
     TaskStatus,
+    utc_now,
 )
 from ..reducer import REDUCER_VERSION, reduce, replay
-from ._base import BaseTaskMemoryStore, goal_preview
+from ..snapshots import capture_snapshot_async
+from ._base import BaseTaskMemoryStore, bounded_limit, decode_cursor, encode_cursor, goal_preview
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     import asyncpg
@@ -105,6 +120,7 @@ __all__ = (
     "PostgresTransaction",
     "PostgresTransactionCoordinator",
     "PostgresTaskMemoryStore",
+    "PostgresArtifactStore",
 )
 
 #: The one schema this feature owns. Everything is qualified by it, so a
@@ -326,11 +342,9 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
     The schema lifecycle, the pool, the transaction coordinator and the
     journal/projection command and read paths are implemented here.
 
-    What this class does **not** own: durable aliases, versions and
-    evidence pins, which belong to the artifact store. Those methods
-    raise :class:`NotImplementedError` naming their owner rather than
-    shipping a plausible-looking implementation that silently does the
-    wrong thing.
+    Durable aliases, versions and evidence pins belong to
+    :class:`PostgresArtifactStore`, which shares this store's pool and
+    transaction coordinator.
 
     Args:
         dsn: PostgreSQL connection string. ``None`` defers to ``pool``.
@@ -1349,6 +1363,1134 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
                     task_id,
                 )
             )
+
+
+# ---------------------------------------------------------------------------
+# Durable artifact store
+# ---------------------------------------------------------------------------
+
+
+class _BorrowedTransaction:
+    """A transaction view over a connection this handle does not own.
+
+    Used when the artifact store has opened its own unit of work and must
+    hand that same connection to the task store's append path. It never
+    commits or rolls back — the real owner does — which is what lets an
+    artifact's index rows and its journal event land in one transaction
+    without either store thinking it is in charge of the other's.
+    """
+
+    __slots__ = ("_connection",)
+
+    def __init__(self, connection: Any) -> None:
+        """Wrap a connection.
+
+        Args:
+            connection: A connection inside an already-open transaction.
+        """
+        self._connection = connection
+
+    @property
+    def connection(self) -> Any:
+        """The connection every enlisted store must write through."""
+        return self._connection
+
+    @property
+    def is_active(self) -> bool:
+        """Always ``True``: the owner controls the real lifetime."""
+        return True
+
+    async def rollback(self) -> None:
+        """No-op: this handle does not own the transaction."""
+        return None
+
+
+class PostgresArtifactStore:
+    """Durable aliases, versions and evidence pins on PostgreSQL (Delivery B).
+
+    The catalog backend of decision D1, made durable. It satisfies
+    :class:`~parrot.interfaces.artifact_store.ArtifactStore` and must be
+    *behaviourally identical* to
+    :class:`~..artifacts.InMemoryArtifactStore` (AC2) — where the two
+    could differ, this class follows the in-memory store's decisions
+    rather than inventing its own, and the shared conformance suite runs
+    against both.
+
+    **The publish order is the guarantee** (spec §2 Persistence and
+    Recovery)::
+
+        write the immutable blob
+          -> verify readability and checksum
+            -> ATOMICALLY commit the alias/version index, the evidence
+               rows and the `artifact_registered` journal event, on ONE
+               connection
+
+    A crash between the blob write and the commit leaves an **orphan
+    blob**, which is expected and sweepable. The order exists to make the
+    opposite impossible: an index row pointing at bytes that were never
+    written is a phantom reference, and nothing downstream can recover
+    from one.
+
+    **Version allocation serializes on the alias row.** A writer takes
+    ``SELECT ... FOR UPDATE`` on ``artifact_aliases`` before computing
+    ``latest_version + 1``, so two concurrent overwrites of the same
+    alias cannot both allocate the same number. PostgreSQL does here what
+    the in-memory store gets from its ``asyncio.Lock``.
+
+    **Pinning is derived, never stored.** A version is pinned while any
+    *nonterminal* task references it in ``artifact_evidence`` — including
+    a task other than the one that produced it. A single mutable flag
+    could not express "two tasks reference this, one has finished", and
+    consulting only the producing task would let a cross-task reference
+    be swept out from under its holder.
+
+    Args:
+        tasks: The task store whose pool, schema and transaction
+            coordinator this store shares.
+        blobs: Durable byte storage
+            (:class:`~..blob.ArtifactBlobStore`). Without it, versions
+            are registered as metadata only and reported honestly as
+            ``missing`` — durable metadata with no durable bytes is not
+            evidence, and is never presented as such.
+        config: Capacity configuration. Defaults to the task store's.
+    """
+
+    #: Columns every descriptor is rebuilt from. Kept as a tuple so a
+    #: joined query can prefix them without string surgery.
+    _COLUMN_NAMES: Tuple[str, ...] = (
+        "artifact_id",
+        "version",
+        "chatbot_id",
+        "user_id",
+        "session_id",
+        "task_id",
+        "producer_call_id",
+        "attribution",
+        "alias",
+        "kind",
+        "availability",
+        "fingerprint_algorithm",
+        "fingerprint",
+        "evidence_verifiable",
+        "storage_ref",
+        "byte_size",
+        "shape",
+        "schema_summary",
+        "created_at",
+        "invalidated",
+        "invalidated_at",
+    )
+
+    #: The same columns as a bare select list.
+    _COLUMNS: str = ", ".join(_COLUMN_NAMES)
+
+    #: The same columns qualified for a join against ``artifacts a``.
+    _COLUMNS_A: str = ", ".join(f"a.{_n}" for _n in _COLUMN_NAMES)
+
+    def __init__(
+        self,
+        tasks: "PostgresTaskMemoryStore",
+        *,
+        blobs: Optional[Any] = None,
+        config: Optional[TaskMemoryConfig] = None,
+    ) -> None:
+        """Initialize the store without connecting."""
+        self._tasks = tasks
+        self._blobs = blobs
+        self._config = config or tasks._config
+        self.logger = logging.getLogger(f"{__name__}.PostgresArtifactStore")
+
+    # -- plumbing ----------------------------------------------------------
+
+    def _t(self, name: str) -> str:
+        """Return a schema-qualified table name.
+
+        Args:
+            name: Unqualified table name.
+
+        Returns:
+            ``"<schema>.<name>"``.
+        """
+        return self._tasks._t(name)
+
+    @staticmethod
+    def _ns(task_id: Optional[str]) -> str:
+        """Return the alias namespace for a task.
+
+        ``''`` means "not associated with a task". The sentinel is what
+        makes the alias unique constraint actually constrain: in SQL
+        ``NULL <> NULL``, so a nullable column would permit unlimited
+        duplicate rows in the unassociated namespace and two concurrent
+        writers would each allocate version 1 for the same key.
+
+        Args:
+            task_id: Owning task, or ``None``.
+
+        Returns:
+            The namespace value.
+        """
+        return task_id or ""
+
+    def transaction(self) -> Any:
+        """Open a transaction this store and the task store can share.
+
+        Returns:
+            An async context manager yielding a
+            :class:`PostgresTransaction`.
+        """
+        return self._tasks.transaction()
+
+    async def close(self) -> None:
+        """Release resources. The pool belongs to the task store."""
+        return None
+
+    @asynccontextmanager
+    async def _unit_of_work(self, transaction: Optional[Any]) -> AsyncIterator[Any]:
+        """Yield a connection, joining a caller's transaction when given.
+
+        Args:
+            transaction: A transaction to enlist in, or ``None`` to open
+                a private one.
+
+        Yields:
+            The connection to use.
+        """
+        if transaction is not None:
+            yield transaction.connection
+            return
+        async with self.transaction() as owned:
+            yield owned.connection
+
+    @asynccontextmanager
+    async def _reader(self) -> AsyncIterator[Any]:
+        """Yield a pooled connection for a read-only query.
+
+        Yields:
+            The connection.
+        """
+        pool = await self._tasks._acquire_pool()
+        async with pool.acquire() as connection:
+            yield connection
+
+    # -- row mapping -------------------------------------------------------
+
+    @staticmethod
+    def _loads(value: Any) -> Any:
+        """Decode a JSONB column that may arrive as text.
+
+        Args:
+            value: The raw column value.
+
+        Returns:
+            The decoded value.
+        """
+        import json
+
+        if isinstance(value, (str, bytes)):
+            return json.loads(value)
+        return value
+
+    @classmethod
+    def _stored_blob(cls, row: Any) -> Optional[Any]:
+        """Rebuild the :class:`~..blob.BlobRef` recorded for a version.
+
+        The whole reference — key, format, **checksum**, sizes — is
+        persisted, not just the key. Without the checksum a later read
+        could not tell correct bytes from corrupted ones, and silently
+        returning corrupted evidence is precisely the failure the blob
+        layer's read-back verification exists to prevent.
+
+        Args:
+            row: An ``artifacts`` record.
+
+        Returns:
+            The reference, or ``None`` when no bytes were retained.
+        """
+        raw = row["storage_ref"]
+        if not raw:
+            return None
+        from ..blob import BlobRef
+
+        try:
+            return BlobRef.model_validate_json(raw)
+        except Exception:  # noqa: BLE001 — a legacy plain key is not a usable reference
+            return None
+
+    @classmethod
+    def _row_to_descriptor(cls, row: Any) -> ArtifactDescriptor:
+        """Rebuild an :class:`ArtifactDescriptor` from an ``artifacts`` row.
+
+        ``storage_ref`` is exposed as the plain storage **key**, not the
+        serialized reference the column holds, so a descriptor stays
+        readable and matches what the in-memory store reports.
+
+        Args:
+            row: An ``asyncpg`` record.
+
+        Returns:
+            The descriptor.
+        """
+        blob = cls._stored_blob(row)
+        shape = cls._loads(row["shape"])
+        return ArtifactDescriptor(
+            ref=EvidenceRef(artifact_id=row["artifact_id"], version=row["version"]),
+            alias=row["alias"],
+            scope=TaskScope(chatbot_id=row["chatbot_id"], user_id=row["user_id"], session_id=row["session_id"]),
+            task_id=row["task_id"],
+            producer_call_id=row["producer_call_id"],
+            attribution=Attribution(row["attribution"]),
+            kind=ArtifactKind(row["kind"]),
+            availability=ArtifactAvailability(row["availability"]),
+            fingerprint=row["fingerprint"],
+            fingerprint_algorithm=row["fingerprint_algorithm"],
+            evidence_verifiable=row["evidence_verifiable"],
+            invalidated=row["invalidated"],
+            byte_size=row["byte_size"],
+            shape=tuple(shape) if shape else None,
+            schema_summary=cls._loads(row["schema_summary"]),
+            storage_ref=blob.key if blob is not None else None,
+            created_at=row["created_at"],
+            invalidated_at=row["invalidated_at"],
+        )
+
+    async def _generation(self, connection: Any, scope: TaskScope) -> int:
+        """Return the scope's availability generation.
+
+        Derived from stored state rather than held in memory, so every
+        pod agrees and a restart does not reset it. It must change
+        whenever availability changes **without** a task event — a
+        registration, an eviction or an invalidation — which is exactly
+        what these three counts capture between them.
+
+        Args:
+            connection: The connection to query on.
+            scope: Trusted runtime scope.
+
+        Returns:
+            A marker for this scope.
+        """
+        row = await connection.fetchrow(
+            f"""
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE invalidated) AS invalid,
+                   count(*) FILTER (WHERE availability IN ('missing', 'expired')) AS gone
+              FROM {self._t('artifacts')}
+             WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+            """,
+            scope.chatbot_id,
+            scope.user_id,
+            scope.session_id,
+        )
+        return int(row["total"]) + int(row["invalid"]) + int(row["gone"])
+
+    # -- registration ------------------------------------------------------
+
+    async def put(
+        self,
+        scope: TaskScope,
+        key: str,
+        value: Any,
+        *,
+        task_id: Optional[str] = None,
+        kind: Optional[ArtifactKind] = None,
+        description: str = "",
+        producer_call_id: Optional[str] = None,
+        attribution: Attribution = Attribution.NONE,
+        turn_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+        transaction: Optional[Any] = None,
+        pin_for: Optional[str] = None,
+    ) -> ArtifactDescriptor:
+        """Register a value durably, allocating or incrementing its version.
+
+        Snapshotting and fingerprinting run on a worker thread **before**
+        the transaction opens, so no database lock is held across CPU
+        work. Only allocation, the blob write and publication happen
+        inside it.
+
+        ``pin_for`` registers and pins in one act. As in the in-memory
+        store this matters for more than convenience: an unpinned version
+        is an ordinary retention candidate, so a value pinned only
+        afterwards can be swept before its pin ever applies.
+
+        Args:
+            scope: Trusted runtime scope.
+            key: Working-memory alias to publish under.
+            value: The value to register.
+            task_id: Owning task, when one is selected.
+            kind: Explicit evidence type; inferred when ``None``.
+            description: Human-readable description, retained by the
+                caller's catalog rather than stored here.
+            producer_call_id: The physical attempt that produced it.
+            attribution: How that attempt was attributed.
+            turn_id: Conversation turn, stamped on the journal event.
+            metadata: Caller metadata. Unused here; the catalog owns it.
+            transaction: Shared transaction to enlist in, so the index
+                rows and the journal event commit together.
+            pin_for: Task id to pin this version for, atomically with
+                registration.
+
+        Returns:
+            The read projection of the newly registered version.
+
+        Raises:
+            LimitExceeded: If the alias exceeds
+                :data:`Limits.MAX_IDENTIFIER`.
+            TaskMemoryUnavailable: If the database cannot be reached.
+        """
+        if len(key) > Limits.MAX_IDENTIFIER:
+            raise LimitExceeded("artifact alias", Limits.MAX_IDENTIFIER, len(key))
+
+        # Heavy work first: off the loop, outside the transaction.
+        snapshot = await capture_snapshot_async(value, max_bytes=self._config.snapshot_max_bytes, kind=kind)
+
+        async with self._unit_of_work(transaction) as connection:
+            ref = await self._allocate(connection, scope, task_id, key)
+
+            # Bytes are written and verified BEFORE any index row exists.
+            # A crash here leaves an orphan blob, which retention sweeps;
+            # the reverse would be a reference to bytes that never were.
+            blob = None
+            if self._blobs is not None:
+                try:
+                    blob = await self._blobs.publish(scope, ref, value, kind=snapshot.kind)
+                except Exception as exc:  # noqa: BLE001 — recorded honestly below
+                    self.logger.warning("[TaskMemory] durable publish failed for %s: %s", ref, exc)
+
+            descriptor = self._descriptor_for(
+                scope=scope,
+                ref=ref,
+                key=key,
+                task_id=task_id,
+                producer_call_id=producer_call_id,
+                attribution=attribution,
+                snapshot=snapshot,
+                blob=blob,
+            )
+
+            await self._insert_version(connection, descriptor, blob)
+            await self._move_alias(connection, scope, task_id, key, ref)
+            if pin_for is not None:
+                await self._pin(connection, pin_for, "__registration__", ref)
+            if task_id is not None:
+                await self._journal_registration(
+                    connection, scope, task_id, descriptor, turn_id=turn_id, transaction=transaction
+                )
+            return descriptor
+
+    def _descriptor_for(
+        self,
+        *,
+        scope: TaskScope,
+        ref: EvidenceRef,
+        key: str,
+        task_id: Optional[str],
+        producer_call_id: Optional[str],
+        attribution: Attribution,
+        snapshot: Any,
+        blob: Any,
+    ) -> ArtifactDescriptor:
+        """Turn a snapshot outcome and a blob result into a descriptor.
+
+        The in-memory store's three outcomes are treated the same way,
+        adjusted for the fact that durable storage — not a RAM copy — is
+        what retains bytes here. ``CAPTURED`` and ``SPILL_REQUIRED`` both
+        write through: the cap governs the optional RAM snapshot, not
+        whether evidence survives a restart, so a small artifact is
+        persisted too.
+
+        A failed or absent blob write yields ``missing`` and
+        ``evidence_verifiable=False``. Metadata without bytes is recorded
+        honestly rather than presented as durable evidence.
+
+        Args:
+            scope: Owning scope.
+            ref: The allocated version.
+            key: The alias.
+            task_id: Owning task.
+            producer_call_id: Producing attempt.
+            attribution: How that attempt was attributed.
+            snapshot: The snapshot outcome.
+            blob: The verified blob reference, or ``None``.
+
+        Returns:
+            The descriptor to store.
+        """
+        availability = ArtifactAvailability.MISSING
+        storage_key: Optional[str] = None
+        fingerprint = snapshot.fingerprint
+        algorithm = snapshot.fingerprint_algorithm
+        verifiable = snapshot.evidence_verifiable
+        byte_size = snapshot.account.snapshot_bytes or snapshot.account.live_bytes
+
+        if blob is not None:
+            availability = ArtifactAvailability.PERSISTED
+            storage_key = blob.key
+            byte_size = blob.byte_size
+            if blob.content_fingerprint:
+                fingerprint = blob.content_fingerprint
+                algorithm = blob.fingerprint_algorithm
+        else:
+            verifiable = False
+
+        if not snapshot.kind.is_supported_evidence or not fingerprint:
+            verifiable = False
+
+        return ArtifactDescriptor(
+            ref=ref,
+            alias=key,
+            scope=scope,
+            task_id=task_id,
+            producer_call_id=producer_call_id,
+            attribution=attribution,
+            kind=snapshot.kind,
+            availability=availability,
+            fingerprint=fingerprint,
+            fingerprint_algorithm=algorithm,
+            evidence_verifiable=verifiable,
+            byte_size=byte_size,
+            shape=snapshot.shape,
+            schema_summary=snapshot.schema_summary,
+            storage_ref=storage_key,
+            created_at=utc_now(),
+        )
+
+    async def _allocate(self, connection: Any, scope: TaskScope, task_id: Optional[str], key: str) -> EvidenceRef:
+        """Allocate the next version for an alias under a row lock.
+
+        The alias row is the lock point. Taking ``FOR UPDATE`` on it
+        before computing ``latest_version + 1`` is what stops two
+        concurrent overwrites allocating the same number — and it is why
+        a drop/recreate cycle CONTINUES the counter rather than
+        restarting at 1, which would let a fresh unrelated version shadow
+        still-pinned evidence at the same coordinates.
+
+        Args:
+            connection: The connection inside the open transaction.
+            scope: Owning scope.
+            task_id: Owning task namespace.
+            key: The alias.
+
+        Returns:
+            The freshly allocated reference.
+        """
+        ns = self._ns(task_id)
+        params = (scope.chatbot_id, scope.user_id, scope.session_id, ns, key)
+        select_locked = f"""
+            SELECT artifact_id, latest_version
+              FROM {self._t('artifact_aliases')}
+             WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+               AND task_ns = $4 AND alias_key = $5
+             FOR UPDATE
+        """
+
+        row = await connection.fetchrow(select_locked, *params)
+        if row is None:
+            # Two writers can both see no row. ON CONFLICT DO NOTHING
+            # makes the loser fall through to a locked re-read, so they
+            # serialize instead of both inserting.
+            row = await connection.fetchrow(
+                f"""
+                INSERT INTO {self._t('artifact_aliases')}
+                    (chatbot_id, user_id, session_id, task_ns, alias_key,
+                     artifact_id, current_version, latest_version)
+                VALUES ($1, $2, $3, $4, $5, $6, NULL, 0)
+                ON CONFLICT (chatbot_id, user_id, session_id, task_ns, alias_key) DO NOTHING
+                RETURNING artifact_id, latest_version
+                """,
+                *params,
+                f"art_{uuid.uuid4().hex}",
+            )
+            if row is None:
+                row = await connection.fetchrow(select_locked, *params)
+
+        return EvidenceRef(artifact_id=row["artifact_id"], version=int(row["latest_version"]) + 1)
+
+    async def _insert_version(self, connection: Any, descriptor: ArtifactDescriptor, blob: Any) -> None:
+        """Insert the immutable ``artifacts`` row for a version.
+
+        Args:
+            connection: The connection inside the open transaction.
+            descriptor: The version to record.
+            blob: Its verified blob reference, persisted whole so a later
+                read can verify the bytes it transferred.
+        """
+        await connection.execute(
+            f"""
+            INSERT INTO {self._t('artifacts')}
+                (artifact_id, version, chatbot_id, user_id, session_id, task_id,
+                 producer_call_id, attribution, alias, kind, availability,
+                 fingerprint_algorithm, fingerprint, evidence_verifiable,
+                 storage_ref, byte_size, shape, schema_summary, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                    $15, $16, $17::jsonb, $18::jsonb, $19)
+            """,
+            descriptor.ref.artifact_id,
+            descriptor.ref.version,
+            descriptor.scope.chatbot_id,
+            descriptor.scope.user_id,
+            descriptor.scope.session_id,
+            descriptor.task_id,
+            descriptor.producer_call_id,
+            descriptor.attribution.value,
+            descriptor.alias,
+            descriptor.kind.value,
+            descriptor.availability.value,
+            descriptor.fingerprint_algorithm,
+            descriptor.fingerprint,
+            descriptor.evidence_verifiable,
+            blob.model_dump_json() if blob is not None else None,
+            descriptor.byte_size,
+            self._tasks._dump(list(descriptor.shape)) if descriptor.shape else None,
+            self._tasks._dump(descriptor.schema_summary) if descriptor.schema_summary else None,
+            descriptor.created_at,
+        )
+
+    async def _move_alias(
+        self, connection: Any, scope: TaskScope, task_id: Optional[str], key: str, ref: EvidenceRef
+    ) -> None:
+        """Point the alias at a newly allocated version.
+
+        Clears any tombstone, so re-publishing under a dropped key
+        revives the alias while keeping the version counter it
+        accumulated.
+
+        Args:
+            connection: The connection inside the open transaction.
+            scope: Owning scope.
+            task_id: Owning task namespace.
+            key: The alias.
+            ref: The version it now names.
+        """
+        await connection.execute(
+            f"""
+            UPDATE {self._t('artifact_aliases')}
+               SET current_version = $6,
+                   latest_version = GREATEST(latest_version, $6),
+                   tombstoned = FALSE,
+                   tombstoned_at = NULL,
+                   updated_at = now()
+             WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+               AND task_ns = $4 AND alias_key = $5
+            """,
+            scope.chatbot_id,
+            scope.user_id,
+            scope.session_id,
+            self._ns(task_id),
+            key,
+            ref.version,
+        )
+
+    async def _pin(self, connection: Any, task_id: str, step_id: str, ref: EvidenceRef) -> None:
+        """Record an evidence reference, which is what pins a version.
+
+        Args:
+            connection: The connection inside the open transaction.
+            task_id: The referencing task.
+            step_id: The referencing step.
+            ref: The version referenced.
+        """
+        await connection.execute(
+            f"""
+            INSERT INTO {self._t('artifact_evidence')} (task_id, step_id, artifact_id, version)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT DO NOTHING
+            """,
+            task_id,
+            step_id,
+            ref.artifact_id,
+            ref.version,
+        )
+
+    async def _journal_registration(
+        self,
+        connection: Any,
+        scope: TaskScope,
+        task_id: str,
+        descriptor: ArtifactDescriptor,
+        *,
+        turn_id: Optional[str],
+        transaction: Optional[Any],
+    ) -> None:
+        """Append ``artifact_registered`` on the SAME connection.
+
+        Routed through the task store rather than writing a journal row
+        directly, so sequence allocation, the task row lock and the
+        reducer behave exactly as they do for every other event.
+
+        A task id naming no task is not an error: an artifact may be
+        registered against a task that has not been created yet, and
+        refusing the registration for that reason would lose the artifact
+        over a bookkeeping detail.
+
+        Args:
+            connection: The connection inside the open transaction.
+            scope: Trusted runtime scope.
+            task_id: The owning task.
+            descriptor: The registered version.
+            turn_id: The conversation turn.
+            transaction: The caller's transaction, when it supplied one.
+        """
+        exists = await connection.fetchval(f"SELECT 1 FROM {self._t('tasks')} WHERE task_id = $1", task_id)
+        if not exists:
+            return
+
+        event = JournalEvent(
+            task_id=task_id,
+            occurred_at=utc_now(),
+            event_type=EventType.ARTIFACT_REGISTERED,
+            actor=Actor.RUNTIME,
+            turn_id=turn_id,
+            payload=ArtifactPayload(
+                ref=descriptor.ref,
+                alias=descriptor.alias,
+                artifact_kind=descriptor.kind,
+                availability=descriptor.availability,
+                fingerprint=descriptor.fingerprint,
+                fingerprint_algorithm=descriptor.fingerprint_algorithm,
+                evidence_verifiable=descriptor.evidence_verifiable,
+                byte_size=descriptor.byte_size,
+            ),
+        )
+        handle = transaction if transaction is not None else _BorrowedTransaction(connection)
+        await self._tasks.append_events(scope, task_id, [event], expected_revision=None, transaction=handle)
+
+    # -- pins --------------------------------------------------------------
+
+    async def pin_evidence(
+        self, scope: TaskScope, ref: EvidenceRef, task_id: str, *, step_id: str = "__task__"
+    ) -> bool:
+        """Pin a version for a task by recording an evidence reference.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The version to pin.
+            task_id: The referencing task.
+            step_id: The referencing step.
+
+        Returns:
+            ``True`` when the version exists in this scope and was pinned.
+        """
+        async with self._unit_of_work(None) as connection:
+            if await self._version_row(connection, scope, ref) is None:
+                return False
+            await self._pin(connection, task_id, step_id, ref)
+            return True
+
+    async def unpin_evidence(self, scope: TaskScope, ref: EvidenceRef, task_id: str) -> bool:
+        """Drop every reference a task holds on a version.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The version.
+            task_id: The task releasing it.
+
+        Returns:
+            ``True`` when a reference was removed.
+        """
+        async with self._unit_of_work(None) as connection:
+            if await self._version_row(connection, scope, ref) is None:
+                return False
+            result = await connection.execute(
+                f"""
+                DELETE FROM {self._t('artifact_evidence')}
+                 WHERE task_id = $1 AND artifact_id = $2 AND version = $3
+                """,
+                task_id,
+                ref.artifact_id,
+                ref.version,
+            )
+            return not str(result).endswith(" 0")
+
+    async def pins_for(self, scope: TaskScope, ref: EvidenceRef) -> Tuple[str, ...]:
+        """Return the NONTERMINAL tasks still referencing a version.
+
+        This is the pin query, and its shape is the point: a version is
+        pinned while *any* nonterminal task references it, including one
+        other than its producer. A terminal task's reference stops
+        pinning, which is what lets retention proceed once every holder
+        has finished — and what stops a cross-task reference being swept
+        out from under a task that is still working.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The version.
+
+        Returns:
+            The pinning task ids, sorted.
+        """
+        async with self._reader() as connection:
+            rows = await connection.fetch(
+                f"""
+                SELECT DISTINCT e.task_id
+                  FROM {self._t('artifact_evidence')} e
+                  JOIN {self._t('tasks')} t ON t.task_id = e.task_id
+                  JOIN {self._t('artifacts')} a
+                    ON a.artifact_id = e.artifact_id AND a.version = e.version
+                 WHERE e.artifact_id = $1 AND e.version = $2
+                   AND a.chatbot_id = $3 AND a.user_id = $4 AND a.session_id = $5
+                   AND t.status NOT IN ('completed', 'failed', 'cancelled')
+                 ORDER BY e.task_id
+                """,
+                ref.artifact_id,
+                ref.version,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+            )
+            return tuple(r["task_id"] for r in rows)
+
+    # -- reads -------------------------------------------------------------
+
+    async def _version_row(self, connection: Any, scope: TaskScope, ref: EvidenceRef) -> Optional[Any]:
+        """Fetch one version row, enforcing scope.
+
+        Args:
+            connection: The connection to query on.
+            scope: Trusted runtime scope.
+            ref: The exact version.
+
+        Returns:
+            The row, or ``None`` when it does not exist in this scope.
+        """
+        return await connection.fetchrow(
+            f"""
+            SELECT {self._COLUMNS}
+              FROM {self._t('artifacts')}
+             WHERE artifact_id = $1 AND version = $2
+               AND chatbot_id = $3 AND user_id = $4 AND session_id = $5
+            """,
+            ref.artifact_id,
+            ref.version,
+            scope.chatbot_id,
+            scope.user_id,
+            scope.session_id,
+        )
+
+    async def get_current(
+        self, scope: TaskScope, key: str, *, task_id: Optional[str] = None
+    ) -> Optional[ArtifactDescriptor]:
+        """Resolve an alias to the version it currently points at.
+
+        A plain key never searches another task's namespace, and a
+        tombstoned alias resolves to nothing.
+
+        Args:
+            scope: Trusted runtime scope.
+            key: The alias.
+            task_id: Owning task namespace.
+
+        Returns:
+            The current descriptor, or ``None``.
+        """
+        async with self._reader() as connection:
+            row = await connection.fetchrow(
+                f"""
+                SELECT {self._COLUMNS_A}
+                  FROM {self._t('artifact_aliases')} al
+                  JOIN {self._t('artifacts')} a
+                    ON a.artifact_id = al.artifact_id AND a.version = al.current_version
+                 WHERE al.chatbot_id = $1 AND al.user_id = $2 AND al.session_id = $3
+                   AND al.task_ns = $4 AND al.alias_key = $5
+                   AND NOT al.tombstoned
+                """,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+                self._ns(task_id),
+                key,
+            )
+            return self._row_to_descriptor(row) if row is not None else None
+
+    async def get_version(
+        self, scope: TaskScope, ref: EvidenceRef, *, task_id: Optional[str] = None
+    ) -> Optional[ArtifactDescriptor]:
+        """Resolve one exact version, checking scope.
+
+        A globally unique artifact id is an identifier, not a capability:
+        the scope check is not optional. A same-scope cross-task
+        reference must be explicit, so a ``task_id`` mismatch reports the
+        version as absent rather than resolving it implicitly.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The exact version.
+            task_id: Owning task, when validating a cross-task reference.
+
+        Returns:
+            The descriptor, or ``None``.
+        """
+        async with self._reader() as connection:
+            row = await self._version_row(connection, scope, ref)
+            if row is None:
+                return None
+            if task_id is not None and row["task_id"] not in (None, task_id):
+                return None
+            return self._row_to_descriptor(row)
+
+    async def load_payload(
+        self,
+        scope: TaskScope,
+        ref: EvidenceRef,
+        *,
+        max_bytes: int,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> PayloadResult:
+        """Materialize a version's payload under a hard byte ceiling.
+
+        The bounds are delegated to the blob store, which checks the
+        stored object's size *before* downloading it and verifies the
+        checksum of what it transferred. A refusal never carries a
+        payload.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The exact version.
+            max_bytes: Ceiling on the decoded payload. ``0`` never
+                materializes.
+            offset: First row, for a tabular page.
+            limit: Row count, for a tabular page.
+
+        Returns:
+            A result carrying either the payload or a refusal.
+        """
+        async with self._reader() as connection:
+            row = await self._version_row(connection, scope, ref)
+
+        if row is None:
+            return PayloadResult(
+                ref=ref,
+                kind=ArtifactKind.OBJECT,
+                refusal=PayloadRefusal.MISSING,
+                guidance="no such artifact version in this scope",
+            )
+
+        descriptor = self._row_to_descriptor(row)
+        if descriptor.invalidated:
+            return PayloadResult(
+                ref=ref,
+                kind=descriptor.kind,
+                refusal=PayloadRefusal.INVALIDATED,
+                byte_size=descriptor.byte_size,
+                guidance="this version's content was invalidated; re-run the step that produced it",
+            )
+
+        blob = self._stored_blob(row)
+        if self._blobs is None or blob is None:
+            return PayloadResult(
+                ref=ref,
+                kind=descriptor.kind,
+                refusal=PayloadRefusal.MISSING,
+                byte_size=descriptor.byte_size,
+                guidance="no durable bytes were retained for this version",
+            )
+        return await self._blobs.load(scope, ref, blob, max_bytes=max_bytes, offset=offset, limit=limit)
+
+    async def list(
+        self,
+        scope: TaskScope,
+        *,
+        task_id: Optional[str] = None,
+        kinds: Optional[Sequence[ArtifactKind]] = None,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+        as_of_seq: Optional[int] = None,
+    ) -> ArtifactPage:
+        """Page artifact descriptors in a scope.
+
+        Descriptors are metadata only: building a page reads no blob,
+        calls no ``repr()`` and computes no summary.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: Restrict to one task's namespace.
+            kinds: Restrict to these evidence types.
+            limit: Bounded page size.
+            cursor: Opaque cursor from a previous page.
+            as_of_seq: Recorded in the cursor query, for symmetry with
+                the in-memory store.
+
+        Returns:
+            A bounded page of descriptors.
+
+        Raises:
+            CursorError: If the cursor is malformed, out of bounds, or
+                issued for a different scope or query.
+        """
+        size = bounded_limit(limit, default=50)
+        wanted = tuple(k.value for k in kinds) if kinds else None
+        query = {"task_id": task_id, "kinds": wanted, "as_of_seq": as_of_seq}
+
+        offset = 0
+        if cursor is not None:
+            offset = int(decode_cursor(cursor, scope, query)["offset"])
+
+        filters = (scope.chatbot_id, scope.user_id, scope.session_id, task_id, list(wanted) if wanted else None)
+        predicate = """
+             WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+               AND ($4::text IS NULL OR task_id = $4)
+               AND ($5::text[] IS NULL OR kind = ANY($5))
+        """
+
+        async with self._reader() as connection:
+            total = int(await connection.fetchval(f"SELECT count(*) FROM {self._t('artifacts')} {predicate}", *filters))
+            if offset > total:
+                raise CursorError("cursor is out of bounds")
+
+            rows = await connection.fetch(
+                f"""
+                SELECT {self._COLUMNS} FROM {self._t('artifacts')} {predicate}
+                 ORDER BY artifact_id, version
+                 LIMIT $6 OFFSET $7
+                """,
+                *filters,
+                size,
+                offset,
+            )
+            generation = await self._generation(connection, scope)
+
+        next_cursor = encode_cursor(scope, query, {"offset": offset + size}) if offset + size < total else None
+        return ArtifactPage(
+            items=tuple(self._row_to_descriptor(r) for r in rows),
+            next_cursor=next_cursor,
+            availability_generation=generation,
+        )
+
+    # -- mutation ----------------------------------------------------------
+
+    async def invalidate(
+        self,
+        scope: TaskScope,
+        ref: EvidenceRef,
+        *,
+        reason: str,
+        transaction: Optional[Any] = None,
+    ) -> ArtifactDescriptor:
+        """Mark one version's content as no longer valid evidence.
+
+        Bytes are left alone: invalidation is a statement about
+        *evidence*, not about storage, and a persisted payload remains on
+        disk. ``evidence_verifiable`` is cleared, because a fingerprint
+        that no longer describes the content proves nothing.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The exact version.
+            reason: Why.
+            transaction: Shared transaction to enlist in.
+
+        Returns:
+            The updated descriptor.
+
+        Raises:
+            ScopeViolation: If the version does not exist in this scope.
+        """
+        async with self._unit_of_work(transaction) as connection:
+            row = await connection.fetchrow(
+                f"""
+                UPDATE {self._t('artifacts')}
+                   SET invalidated = TRUE,
+                       invalidated_at = now(),
+                       invalidated_reason = $6,
+                       evidence_verifiable = FALSE
+                 WHERE artifact_id = $1 AND version = $2
+                   AND chatbot_id = $3 AND user_id = $4 AND session_id = $5
+             RETURNING {self._COLUMNS}
+                """,
+                ref.artifact_id,
+                ref.version,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+                reason,
+            )
+            if row is None:
+                raise ScopeViolation("artifact version does not exist in this scope")
+            self.logger.info("[TaskMemory] invalidated %s: %s", ref, reason)
+            return self._row_to_descriptor(row)
+
+    async def evict(self, scope: TaskScope, ref: EvidenceRef) -> bool:
+        """Release a version's stored bytes, keeping its metadata.
+
+        Explicit eviction does **not** invalidate: the caller asked for
+        the bytes back, and the fingerprint still describes what the
+        version contained. A metadata tombstone always remains, so no
+        step is left labelled valid against evidence that silently
+        vanished.
+
+        The index row is updated first and the object deleted afterwards.
+        A crash between them leaves an orphan blob, which retention
+        sweeps — the opposite order would leave the index pointing at
+        bytes that are already gone.
+
+        Args:
+            scope: Trusted runtime scope.
+            ref: The exact version.
+
+        Returns:
+            ``True`` when bytes were released.
+        """
+        async with self._unit_of_work(None) as connection:
+            row = await self._version_row(connection, scope, ref)
+            if row is None:
+                return False
+            blob = self._stored_blob(row)
+            if blob is None:
+                return False
+            await connection.execute(
+                f"""
+                UPDATE {self._t('artifacts')}
+                   SET availability = 'missing', storage_ref = NULL
+                 WHERE artifact_id = $1 AND version = $2
+                   AND chatbot_id = $3 AND user_id = $4 AND session_id = $5
+                """,
+                ref.artifact_id,
+                ref.version,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+            )
+
+        if self._blobs is not None:
+            await self._blobs.delete(scope, blob)
+        return True
+
+    async def drop_alias(self, scope: TaskScope, key: str, *, task_id: Optional[str] = None) -> bool:
+        """Remove a live alias without deleting the versions behind it.
+
+        The identity and its version counter survive as a **tombstone**,
+        so a later re-``put`` under the same key continues at
+        ``latest + 1``. Restarting at 1 would let a fresh, unrelated
+        version shadow still-pinned evidence at the same coordinates.
+
+        Args:
+            scope: Trusted runtime scope.
+            key: The alias to remove.
+            task_id: Owning task namespace.
+
+        Returns:
+            ``True`` when the alias existed and was live.
+        """
+        async with self._unit_of_work(None) as connection:
+            result = await connection.execute(
+                f"""
+                UPDATE {self._t('artifact_aliases')}
+                   SET current_version = NULL,
+                       tombstoned = TRUE,
+                       tombstoned_at = now(),
+                       updated_at = now()
+                 WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+                   AND task_ns = $4 AND alias_key = $5
+                   AND NOT tombstoned
+                """,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+                self._ns(task_id),
+                key,
+            )
+            return not str(result).endswith(" 0")
 
 
 async def _main(argv: Optional[Sequence[str]] = None) -> int:
