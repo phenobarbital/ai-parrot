@@ -39,6 +39,7 @@ Placeholder conventions (two, deliberately distinct)
 Keeping the two syntaxes separate makes the expensive reference visible in
 the plan text itself.
 """
+
 from __future__ import annotations
 
 import re
@@ -158,10 +159,7 @@ class ForEach(BaseModel):
     @model_validator(mode="after")
     def _check_source(self) -> "ForEach":
         if not ARTIFACT_REF_RE.fullmatch(self.source.strip()):
-            raise ValueError(
-                f"ForEach.source must be exactly '{{artifacts.<node_id>}}', "
-                f"got {self.source!r}"
-            )
+            raise ValueError(f"ForEach.source must be exactly '{{artifacts.<node_id>}}', " f"got {self.source!r}")
         return self
 
     @property
@@ -219,9 +217,7 @@ class PlanNode(BaseModel):
     @model_validator(mode="after")
     def _check_node(self) -> "PlanNode":
         if not _IDENT_RE.match(self.id):
-            raise ValueError(
-                f"PlanNode.id {self.id!r} must match {_IDENT_RE.pattern}"
-            )
+            raise ValueError(f"PlanNode.id {self.id!r} must match {_IDENT_RE.pattern}")
         if not self.store_as.strip():
             raise ValueError(f"Node {self.id!r}: store_as must be non-empty")
 
@@ -317,14 +313,11 @@ class ExecutionPlan(BaseModel):
         for node in self.nodes:
             for dep in node.depends_on:
                 if dep not in known:
-                    raise ValueError(
-                        f"Node {node.id!r} depends on unknown node {dep!r}"
-                    )
+                    raise ValueError(f"Node {node.id!r} depends on unknown node {dep!r}")
             undeclared = node.referenced_nodes() - set(node.depends_on)
             if undeclared:
                 raise ValueError(
-                    f"Node {node.id!r} references {sorted(undeclared)} but does "
-                    "not list them in depends_on"
+                    f"Node {node.id!r} references {sorted(undeclared)} but does " "not list them in depends_on"
                 )
 
         # Static artifact keys must be unique. Templated keys (for_each) are
@@ -356,7 +349,7 @@ class ExecutionPlan(BaseModel):
             if mark == 1:
                 return
             if mark == 0:
-                cycle = stack[stack.index(node_id):] + [node_id]
+                cycle = stack[stack.index(node_id) :] + [node_id]
                 raise ValueError(f"Dependency cycle: {' -> '.join(cycle)}")
             state[node_id] = 0
             stack.append(node_id)
@@ -427,6 +420,17 @@ class ArtifactRef(BaseModel):
             executor.
         bytes_stored: Total payload bytes written to working memory — the
             number that makes rehydration cost visible before it is paid.
+        versions: Immutable ``artifact_id@version`` evidence references,
+            one per stored key, in ``keys`` order. Populated **only** when
+            task memory is enabled (FEAT-538): an alias is mutable and is
+            therefore not evidence, so a later overwrite of ``keys`` cannot
+            retroactively change what this run proved. Empty in the legacy
+            configuration, which keeps the alias-only manifest byte-shape
+            it has always had.
+        tracking_degraded: Whether provenance for this node could not be
+            fully recorded — an unresolved dispatch outcome, or a store
+            that landed without an attributable producer. Never used to
+            claim durability: it is the honest opposite.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -439,6 +443,8 @@ class ArtifactRef(BaseModel):
     item_count: Optional[int] = None
     errors: List[str] = Field(default_factory=list)
     bytes_stored: int = 0
+    versions: List[str] = Field(default_factory=list)
+    tracking_degraded: bool = False
 
 
 class ExecutionManifest(BaseModel):
@@ -472,6 +478,34 @@ class ExecutionManifest(BaseModel):
     def facet_map(self) -> Dict[str, Dict[str, Any]]:
         """Return ``{node_id: facets}`` — the activation for ``when`` guards."""
         return {ref.node_id: dict(ref.facets) for ref in self.artifacts}
+
+    def evidence_refs(self) -> List[str]:
+        """Return every immutable ``artifact_id@version`` this run produced.
+
+        Only an exact version is evidence: the ``keys`` an artifact was
+        published under are mutable aliases, and a later write moves them.
+        The list is empty in the legacy (task-memory disabled)
+        configuration, where no versions exist to cite.
+
+        Returns:
+            Evidence references in artifact order, deduplicated while
+            preserving first-seen order.
+        """
+        seen: Dict[str, None] = {}
+        for ref in self.artifacts:
+            for version in ref.versions:
+                seen.setdefault(version, None)
+        return list(seen)
+
+    def is_tracking_degraded(self) -> bool:
+        """Whether any artifact in this run reported degraded provenance.
+
+        Returns:
+            ``True`` when at least one node could not fully record where
+            its payload came from. A degraded run is still a run — it just
+            must never be read as tracked.
+        """
+        return any(ref.tracking_degraded for ref in self.artifacts)
 
 
 def _iter_strings(value: Any):
