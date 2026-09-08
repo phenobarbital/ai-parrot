@@ -59,11 +59,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Load env/.env so AWS_NOVA_SONIC_* vars are available as os.environ defaults
@@ -507,6 +509,9 @@ def build_broadcast_service(app: web.Application):
             RedisBroadcastRegistry,
         )
         from parrot.integrations.liveavatar.broadcast.service import BroadcastService
+        from parrot.integrations.liveavatar.broadcast.worker_transport import (
+            WorkerAddressRegistry,
+        )
         from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
     except ImportError as exc:
         return None, (f"Broadcast dependencies missing ({exc}); install " "'ai-parrot-integrations[broadcast]'.")
@@ -517,11 +522,16 @@ def build_broadcast_service(app: web.Application):
         return None, f"Missing LiveKit environment variable: {exc}"
 
     registry = RedisBroadcastRegistry.from_url(redis_url)
+    # Share the registry's Redis so a second demo worker can resolve this one's
+    # relay address; without it, a speaker admitted on the other worker fails
+    # closed with `owner_lost` instead of being heard.
+    worker_registry = WorkerAddressRegistry(getattr(registry, "_redis", None))
     service = BroadcastService(
         registry,
         room_manager,
         nova_bot_factory=make_nova_bot,
         worker_id=os.environ.get("VOICEBOT_BROADCAST_WORKER_ID", f"demo-{os.getpid()}"),
+        worker_registry=worker_registry,
         principal_resolver=lambda user, agent_id: _principal_for(
             getattr(user, "user_id", None) or user["user_id"], agent_id
         ),
@@ -539,7 +549,72 @@ def build_broadcast_service(app: web.Application):
 
     app.on_startup.append(_start)
     app.on_cleanup.append(_stop)
+    _register_demo_worker_relay(app, service, worker_registry)
     return service, None
+
+
+def _register_demo_worker_relay(app: web.Application, service, worker_registry) -> bool:
+    """Serve the cross-worker speaker relay for a two-worker demo.
+
+    Opt-in, exactly like the production wiring: set
+    ``VOICEBOT_BROADCAST_WORKER_URL`` to the address the *other* demo worker
+    should dial, plus ``PARROT_BROADCAST_WORKER_TOKEN``. A single-worker demo
+    needs neither — the speaker and the producer share a process.
+
+    Args:
+        app: The demo application.
+        service: The broadcast service.
+        worker_registry: Registry this worker advertises itself in.
+
+    Returns:
+        ``True`` when the relay will be started.
+    """
+    from parrot.integrations.liveavatar.broadcast.worker_transport import (
+        WorkerAddressRegistry,
+        WorkerRelayServer,
+        resolve_worker_token,
+    )
+
+    advertised = os.environ.get("VOICEBOT_BROADCAST_WORKER_URL")
+    if not advertised:
+        return False
+    if not resolve_worker_token(None):
+        logger.warning(
+            "VOICEBOT_BROADCAST_WORKER_URL is set but "
+            "PARROT_BROADCAST_WORKER_TOKEN is not — refusing to serve an "
+            "unauthenticated relay."
+        )
+        return False
+    try:
+        url = WorkerAddressRegistry.validate_url(advertised)
+    except Exception as exc:  # noqa: BLE001 — bad config, not a crash
+        logger.warning("Demo worker relay disabled: %s", exc)
+        return False
+
+    parsed = urlparse(url)
+    state: dict = {}
+
+    async def _start_relay(_app: web.Application) -> None:
+        relay_app = web.Application()
+        WorkerRelayServer(service, require_tls=False).setup_routes(relay_app)
+        runner = web.AppRunner(relay_app)
+        await runner.setup()
+        site = web.TCPSite(runner, parsed.hostname or "127.0.0.1", parsed.port or 9401)
+        await site.start()
+        state["runner"] = runner
+        await worker_registry.register(service.worker_id, url)
+        logger.info("Demo worker relay listening, advertised as %s", url)
+
+    async def _stop_relay(_app: web.Application) -> None:
+        with contextlib.suppress(Exception):
+            await worker_registry.unregister(service.worker_id)
+        runner = state.pop("runner", None)
+        if runner is not None:
+            await runner.cleanup()
+
+    app.on_startup.append(_start_relay)
+    app.on_cleanup.append(_stop_relay)
+    return True
 
 
 def register_failure_injection(app: web.Application, service) -> bool:

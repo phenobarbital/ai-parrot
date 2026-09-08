@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import base64
 import json
+
+import aiohttp
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
@@ -36,6 +38,7 @@ from parrot.integrations.liveavatar.broadcast.worker_transport import (
     WorkerAddressRegistry,
     WorkerRelayServer,
     WorkerTransportError,
+    relay_switch_speaker,
     resolve_worker_token,
 )
 
@@ -637,3 +640,136 @@ async def test_local_input_aclose_does_not_steal_a_newer_speakers_context() -> N
     # B closing does release it, because B still owns the context.
     await b_input.aclose()
     assert session.released == 1
+
+
+# ── Cross-worker handoff barrier ───────────────────────────────────────────
+
+
+class _BarrierSession:
+    """Media-session stand-in recording the producer half of a handoff."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.switches: List[Tuple[str, int]] = []
+        self.fail = fail
+
+    async def switch_speaker(self, target_lease_id: str, floor_epoch: int) -> None:
+        if self.fail:
+            raise RuntimeError("producer stalled")
+        self.switches.append((target_lease_id, floor_epoch))
+
+
+class _BarrierService(FakeOwnerService):
+    """Owner service exposing a media session for the relayed barrier."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        super().__init__()
+        self.media = _BarrierSession(fail=fail)
+
+    def media_session(self, tenant_id: str, broadcast_id: str) -> Any:
+        return self.media
+
+
+async def _barrier_client(aiohttp_client, service: "_BarrierService"):
+    await service.seed()
+    server = WorkerRelayServer(service, token=TOKEN, require_tls=False)
+    app = web.Application()
+    server.setup_routes(app)
+    return await aiohttp_client(app)
+
+
+async def test_relayed_barrier_fences_the_remote_producer(aiohttp_client) -> None:
+    """A grant issued off-owner must still fence the producer.
+
+    Previously the coordinator skipped the barrier whenever the producer was
+    not local, so a cross-worker handoff was committed without the producer
+    ever fencing its output — the outgoing speaker's in-flight audio could
+    surface under the incoming speaker.
+    """
+    service = _BarrierService()
+    client = await _barrier_client(aiohttp_client, service)
+
+    ws = await client.ws_connect(
+        f"{RELAY_ROUTE}?tenant_id={TENANT}&broadcast_id={BROADCAST}",
+        headers={WORKER_TOKEN_HEADER: TOKEN},
+    )
+    await ws.send_str(
+        RelayFrame(
+            kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5
+        ).to_wire()
+    )
+    ack = json.loads((await ws.receive()).data)
+    assert ack["type"] == "ack" and ack["floor_epoch"] == 5
+    assert service.media.switches == [("lease-target", 5)]
+    await ws.close()
+
+
+async def test_relayed_barrier_reports_a_producer_that_will_not_fence(
+    aiohttp_client,
+) -> None:
+    """A stalled producer must fail the handoff, not be forced through."""
+    service = _BarrierService(fail=True)
+    client = await _barrier_client(aiohttp_client, service)
+
+    ws = await client.ws_connect(
+        f"{RELAY_ROUTE}?tenant_id={TENANT}&broadcast_id={BROADCAST}",
+        headers={WORKER_TOKEN_HEADER: TOKEN},
+    )
+    await ws.send_str(
+        RelayFrame(
+            kind="switch_speaker", owner_epoch=7, lease_id="lease-target", floor_epoch=5
+        ).to_wire()
+    )
+    error = json.loads((await ws.receive()).data)
+    assert error["code"] == BroadcastReason.STALE_FLOOR_EPOCH.value
+    assert service.media.switches == []
+    await ws.close()
+
+
+async def test_relayed_barrier_refuses_a_stale_owner_epoch(aiohttp_client) -> None:
+    """A fenced owner must not apply a handoff meant for its successor."""
+    service = _BarrierService()
+    client = await _barrier_client(aiohttp_client, service)
+
+    ws = await client.ws_connect(
+        f"{RELAY_ROUTE}?tenant_id={TENANT}&broadcast_id={BROADCAST}",
+        headers={WORKER_TOKEN_HEADER: TOKEN},
+    )
+    await ws.send_str(
+        RelayFrame(
+            kind="switch_speaker", owner_epoch=1, lease_id="lease-target", floor_epoch=5
+        ).to_wire()
+    )
+    msg = await ws.receive()
+    assert msg.type is aiohttp.WSMsgType.CLOSE
+    assert service.media.switches == []
+
+
+async def test_relay_switch_speaker_client_round_trip(aiohttp_client) -> None:
+    """The client helper acks on success and raises when refused."""
+    service = _BarrierService()
+    client = await _barrier_client(aiohttp_client, service)
+    url = f"ws://127.0.0.1:{client.server.port}"
+
+    await relay_switch_speaker(
+        url,
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST,
+        owner_epoch=7,
+        target_lease_id="lease-target",
+        floor_epoch=9,
+        token=TOKEN,
+    )
+    assert service.media.switches == [("lease-target", 9)]
+
+    # A refused barrier must raise, so the caller aborts the floor.
+    service.media.fail = True
+    with pytest.raises(WorkerTransportError):
+        await relay_switch_speaker(
+            url,
+            tenant_id=TENANT,
+            broadcast_id=BROADCAST,
+            owner_epoch=7,
+            target_lease_id="lease-target",
+            floor_epoch=10,
+            token=TOKEN,
+        )

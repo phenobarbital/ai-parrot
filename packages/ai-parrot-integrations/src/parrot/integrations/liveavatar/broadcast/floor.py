@@ -205,9 +205,38 @@ class FloorCoordinator:
             recovers on its next poll (spec §2).
     """
 
-    def __init__(self, notifier: Optional[Notifier] = None) -> None:
+    def __init__(
+        self,
+        notifier: Optional[Notifier] = None,
+        remote_barrier: Optional[Callable[[str, str], Any]] = None,
+    ) -> None:
         self._notifier = notifier
+        self._remote_barrier = remote_barrier
         self.logger = logging.getLogger(__name__)
+
+    def _barrier_for(
+        self, session: Any, tenant_id: str, broadcast_id: str
+    ) -> Optional[Callable[[str, int], Awaitable[None]]]:
+        """Pick the producer barrier for a local or a remote producer.
+
+        Args:
+            session: The local :class:`BroadcastSession`, or ``None`` when the
+                producer lives on another worker.
+            tenant_id: Tenant scope, for binding a remote barrier.
+            broadcast_id: Broadcast concerned.
+
+        Returns:
+            A coroutine ``(target_lease_id, floor_epoch) -> None``, or ``None``
+            when there is no producer to fence at all.
+        """
+        if session is not None:
+            async def _local(target_lease_id: str, floor_epoch: int) -> None:
+                await session.switch_speaker(target_lease_id, floor_epoch)
+
+            return _local
+        if self._remote_barrier is None:
+            return None
+        return self._remote_barrier(tenant_id, broadcast_id)
 
     async def _notify(self, lease_id: Optional[str], frame: Dict[str, Any]) -> None:
         """Best-effort push to one participant's control socket."""
@@ -394,10 +423,14 @@ class FloorCoordinator:
                 },
             )
 
-        # 3. Producer barrier.
-        if session is not None and target_lease_id is not None:
+        # 3. Producer barrier.  When the producer lives on another worker the
+        #    barrier is relayed to it: skipping it there would commit a handoff
+        #    the producer never fenced, so the outgoing speaker's in-flight
+        #    audio could still surface under the incoming one.
+        barrier = self._barrier_for(session, tenant_id, broadcast_id)
+        if barrier is not None and target_lease_id is not None:
             try:
-                await session.switch_speaker(target_lease_id, floor_epoch)
+                await barrier(target_lease_id, floor_epoch)
             except Exception as exc:  # noqa: BLE001 — abort, never force through
                 await self._abort(registry, tenant_id, broadcast_id, floor_epoch)
                 self.logger.warning(

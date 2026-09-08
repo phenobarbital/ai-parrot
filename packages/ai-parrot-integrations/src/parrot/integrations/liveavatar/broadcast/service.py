@@ -223,7 +223,10 @@ class BroadcastService:
         self._reconciler: Optional[asyncio.Task[None]] = None
         self._closed = False
 
-        self.coordinator = FloorCoordinator(notifier=self._notify_lease)
+        self.coordinator = FloorCoordinator(
+            notifier=self._notify_lease,
+            remote_barrier=self._remote_barrier,
+        )
         self.logger = logging.getLogger(__name__)
 
     # ── Scope and authority ────────────────────────────────────────────
@@ -781,6 +784,47 @@ class BroadcastService:
         """Ownership generation of the local producer, or ``None``."""
         producer = self._producers.get((tenant_id, broadcast_id))
         return producer.owner_epoch if producer else None
+
+    def _remote_barrier(self, tenant_id: str, broadcast_id: str) -> Any:
+        """Bind a cross-worker handoff barrier to one broadcast.
+
+        Returns a coroutine the :class:`FloorCoordinator` calls when the
+        producer is not on this worker, so a remote handoff fences the producer
+        exactly like a local one instead of committing unfenced.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+
+        Returns:
+            A coroutine ``(target_lease_id, floor_epoch) -> None``.
+        """
+
+        async def _relay(target_lease_id: str, floor_epoch: int) -> None:
+            from parrot.integrations.liveavatar.broadcast.worker_transport import (
+                relay_switch_speaker,
+            )
+
+            descriptor = await self.registry.get(tenant_id, broadcast_id)
+            if descriptor is None or not descriptor.owner_worker_id:
+                raise BroadcastError(
+                    BroadcastReason.OWNER_LOST, message="no producer owns this broadcast"
+                )
+            url = await self.worker_registry.resolve(descriptor.owner_worker_id)
+            if url is None:
+                raise BroadcastError(
+                    BroadcastReason.OWNER_LOST, message="producer worker is not reachable"
+                )
+            await relay_switch_speaker(
+                url,
+                tenant_id=tenant_id,
+                broadcast_id=broadcast_id,
+                owner_epoch=descriptor.owner_epoch,
+                target_lease_id=target_lease_id,
+                floor_epoch=floor_epoch,
+            )
+
+        return _relay
 
     async def attach_speaker_input(
         self,

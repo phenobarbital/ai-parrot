@@ -441,6 +441,9 @@ class WorkerRelayServer:
             await ws.close(code=WS_CLOSE_POLICY_VIOLATION, message=b"stale_owner_epoch")
             return None
 
+        if frame.kind == "switch_speaker":
+            return await self._apply_barrier(ws, tenant_id, broadcast_id, frame)
+
         descriptor = await self._service.get_descriptor(tenant_id, broadcast_id)
         lease = await self._service.get_lease(tenant_id, broadcast_id, frame.lease_id)
         try:
@@ -489,6 +492,121 @@ class WorkerRelayServer:
         else:
             await session.push_audio(frame.pcm)
         return True
+
+
+    async def _apply_barrier(
+        self, ws: web.WebSocketResponse, tenant_id: str, broadcast_id: str, frame: "RelayFrame"
+    ) -> bool:
+        """Run the producer half of a handoff requested by another worker.
+
+        A grant issued on a worker that does not own the producer used to skip
+        the barrier entirely: the registry went ``switching`` and was committed
+        without the producer ever fencing its output, so the outgoing speaker's
+        in-flight audio could still surface under the incoming one. Relaying
+        the barrier makes a cross-worker handoff obey the same ordering as a
+        local one.
+
+        Args:
+            ws: The peer worker's socket.
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+            frame: The ``switch_speaker`` frame; ``lease_id`` is the target.
+
+        Returns:
+            ``True`` when the producer acknowledged.
+        """
+        session = self._service.media_session(tenant_id, broadcast_id)
+        if session is None:
+            await ws.send_json(
+                {
+                    "type": "error",
+                    "code": BroadcastReason.OWNER_LOST.value,
+                    "message": "no local producer to fence",
+                }
+            )
+            return False
+        try:
+            await session.switch_speaker(frame.lease_id, frame.floor_epoch)
+        except Exception as exc:  # noqa: BLE001 — report, never force through
+            self.logger.warning(
+                "broadcast %s: relayed handoff barrier failed at epoch %d: %s",
+                broadcast_id,
+                frame.floor_epoch,
+                type(exc).__name__,
+            )
+            await ws.send_json(
+                {
+                    "type": "error",
+                    "code": BroadcastReason.STALE_FLOOR_EPOCH.value,
+                    "message": "producer did not acknowledge the handoff",
+                }
+            )
+            return False
+        await ws.send_json({"type": "ack", "floor_epoch": frame.floor_epoch})
+        return True
+
+
+async def relay_switch_speaker(
+    url: str,
+    *,
+    tenant_id: str,
+    broadcast_id: str,
+    owner_epoch: int,
+    target_lease_id: str,
+    floor_epoch: int,
+    token: Optional[str] = None,
+    session_factory: Optional[Any] = None,
+    timeout_s: float = 3.0,
+) -> None:
+    """Ask a remote producer to fence its output for a handoff.
+
+    Args:
+        url: The owner's relay URL, resolved from
+            :class:`WorkerAddressRegistry` — never from a client.
+        tenant_id: Tenant scope.
+        broadcast_id: Broadcast concerned.
+        owner_epoch: Ownership generation, restated so a fenced owner refuses.
+        target_lease_id: The incoming speaker.
+        floor_epoch: The epoch being switched to.
+        token: Shared service token.
+        session_factory: Override for ``aiohttp.ClientSession`` (tests).
+        timeout_s: Deadline for the whole exchange.
+
+    Raises:
+        WorkerTransportError: If the producer does not acknowledge in time.
+            The caller aborts the floor, leaving it idle and retryable, rather
+            than committing a handoff the producer never applied.
+    """
+    WorkerAddressRegistry.validate_url(url)
+    resolved = resolve_worker_token(token)
+    factory = session_factory or aiohttp.ClientSession
+    frame = RelayFrame(
+        kind="switch_speaker",
+        owner_epoch=owner_epoch,
+        lease_id=target_lease_id,
+        floor_epoch=floor_epoch,
+    )
+    target = (
+        f"{url.rstrip('/')}{RELAY_ROUTE}"
+        f"?tenant_id={tenant_id}&broadcast_id={broadcast_id}"
+    )
+    headers = {WORKER_TOKEN_HEADER: resolved} if resolved else {}
+    try:
+        async with factory() as session:
+            async with session.ws_connect(target, headers=headers, timeout=timeout_s) as ws:
+                await ws.send_str(frame.to_wire())
+                msg = await asyncio.wait_for(ws.receive(), timeout=timeout_s)
+                payload = json.loads(msg.data) if isinstance(msg.data, str) else {}
+                if payload.get("type") != "ack":
+                    raise WorkerTransportError(
+                        message=f"producer refused the handoff: {payload.get('code')}"
+                    )
+    except WorkerTransportError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — any failure aborts the handoff
+        raise WorkerTransportError(
+            message=f"could not reach the producer to fence the handoff: {type(exc).__name__}"
+        ) from exc
 
 
 class SpeakerInput:
