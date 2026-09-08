@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -99,7 +99,42 @@ async def test_create_room_uses_api_and_closes(mgr, mocker): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Extended `LiveKitRoomManager` with `mint_viewer_token`, `mint_publisher_token`,
+  `http_url`, `_api()`, `create_room`, `remove_participant`,
+  `list_participant_identities` and `delete_room`. `mint_room_tokens` is untouched;
+  `test_mint_room_tokens_is_unchanged` pins its FEAT-245/536 behaviour (agent token
+  still `avatar-agent`, client token still the caller's identity).
+- Tests: `pytest .../test_room_manager.py -q` → **20 passed** (5 pre-existing + 15 new).
+  `ruff check` clean.
+- Verified the `livekit-api` 1.2.0 surface before using it rather than trusting the task
+  text: `CreateRoomRequest(name, max_participants, empty_timeout)`,
+  `RoomParticipantIdentity(room, identity)`, `ListParticipantsRequest(room)`,
+  `DeleteRoomRequest(room)`, and `LiveKitAPI(url, api_key, api_secret).room` are all
+  present with those exact field names. `api.RoomService` is indeed not a top-level
+  attribute, as the task's Does-NOT-Exist list said.
+- **`mint_publisher_token` raises `ValueError` when handed `avatar-agent`.** Spec §6
+  says the fixed identity "must not be reused for the direct publisher"; making that a
+  hard failure rather than a docstring means a caller cannot reintroduce the
+  publisher-eviction bug by passing the wrong constant.
+- `create_room(max_participants=12)` — deliberately not 10. The ten-seat rule is a
+  *viewer* limit enforced by application reservations; the room must additionally hold
+  the avatar and direct publishers (spec §7: "Room participant counts include
+  publishers; the ten-viewer rule is enforced by application reservations, not
+  `max_participants=10`"). Set to 10 it would lock out two real viewers. Both the
+  constant and the reason are asserted in `test_create_room_uses_api_and_closes`.
+- Every room-admin method closes its `LiveKitAPI` in a `finally`, and
+  `test_room_admin_closes_the_client_even_on_failure` proves the aiohttp client is not
+  leaked when the room service raises.
+- Viewer tokens assert the *absence* of administrative grants
+  (`roomAdmin`/`roomCreate`/`roomList`/`roomRecord`), not just `canPublish is False` —
+  possession of a viewer token must never be mistakable for authority.
+- Token TTLs are exposed as `DEFAULT_VIEWER_TOKEN_TTL_S = 60` /
+  `DEFAULT_PUBLISHER_TOKEN_TTL_S = 3600` module constants and as keyword arguments.
+
+**Deviations from spec**: none.
