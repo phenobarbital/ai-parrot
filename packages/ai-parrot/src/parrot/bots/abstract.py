@@ -1796,7 +1796,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             self.logger.warning("[%s] omission flush failed (%s); rendering plain history this round", self.name, exc)
             return _plain(), None
 
-        return render_history(result.views, current_chatbot_id=self.memory_key_id), result
+        rendered = render_history(result.views, current_chatbot_id=self.memory_key_id)
+        # FEAT-538: the deterministic Stage 2 candidate. Returns the inputs
+        # unchanged unless a task is selected, the overflow signal is set,
+        # and the snapshot genuinely fits.
+        return await self._maybe_inject_task_recall(history, budget, result, rendered, memory)
 
     def estimate_prompt_tokens(
         self, rendered: Sequence[HistoryMessage], system_prompt: Optional[str], prompt: str
@@ -1893,6 +1897,221 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if getattr(self, "_chatbot_id_explicit", False) and self.chatbot_id:
             return str(self.chatbot_id)
         return str(self.name)
+
+    #: Framing wrapped around an injected recall snapshot.
+    #:
+    #: It deliberately does NOT tell the model to call ``wm_recall_task``.
+    #: The spec forbids injecting a snapshot *and* instructing recall in
+    #: the same turn, and the reason is practical: the model would spend a
+    #: round trip re-fetching what is already in front of it.
+    #:
+    #: It also states plainly that this is a deterministic projection, not
+    #: an LLM summary — the persisted history is untouched, and nothing
+    #: here is a conversation turn that ever happened.
+    TASK_RECALL_FRAMING: str = (
+        "[task memory] Deterministic snapshot of the task currently in progress, "
+        "provided automatically because earlier turns were compacted out of context. "
+        "It is a projection of recorded task state, not a summary of the conversation "
+        "and not something the user said. Treat it as current fact and continue from "
+        "the next ready step:\n"
+    )
+
+    #: How many recent turn ids to remember for the no-double-inject rule.
+    _TASK_RECALL_MEMO_LIMIT: int = 32
+
+    @staticmethod
+    def _verbatim_turn_count(views: Sequence[Any]) -> int:
+        """Count views still rendered verbatim.
+
+        Args:
+            views: The compacted views.
+
+        Returns:
+            How many are in the RAW tier.
+        """
+        from ..memory.compaction.models import TurnState
+
+        return sum(1 for v in views if v.state is TurnState.RAW)
+
+    async def _maybe_inject_task_recall(
+        self,
+        history: Optional[ConversationHistory],
+        budget: Any,
+        result: CompactionResult,
+        rendered: List[HistoryMessage],
+        memory: Any,
+    ) -> Tuple[List[HistoryMessage], Optional[CompactionResult]]:
+        """Inject one bounded task-recall snapshot when Stage 2 is signalled.
+
+        Declines rather than overruns. The snapshot competes with history
+        for the same ``ContextBudget.available``, so when both cannot fit
+        while preserving the verbatim minimum, the injection is dropped
+        and the reason is logged — an over-budget prompt is a provider
+        error, whereas a missing snapshot is a recoverable inconvenience.
+
+        Args:
+            history: The history being rendered.
+            budget: The active context budget.
+            result: The compaction result for this round.
+            rendered: The already-rendered messages.
+            memory: The conversation memory (supplies the token counter).
+
+        Returns:
+            ``(messages, compaction_result)`` — unchanged when no
+            injection happened.
+        """
+        # Every guard below is a "leave rendering exactly as it was" case,
+        # including the compaction kill switch (budget is None upstream).
+        if not result.stage2_needed or self.task_memory is None:
+            return rendered, result
+
+        task_id = self.task_memory.task_id
+        if task_id is None:
+            # No selected task: nothing to recall, and recall never picks
+            # one by similarity.
+            return rendered, result
+
+        turn_key = getattr(history, "session_id", None)
+        memo = getattr(self, "_task_recall_injected", None)
+        if memo is None:
+            memo = self._task_recall_injected = []
+        marker = (turn_key, task_id, result.boundary_turn_id)
+        if marker in memo:
+            # At most one snapshot per turn: the ordinary and streaming
+            # paths must not each contribute one.
+            return rendered, result
+
+        try:
+            recall = await self.task_memory.reader.recall(self.task_memory.scope, task_id)
+        except Exception:  # noqa: BLE001 - recall must never fail a round
+            self.logger.warning("[%s] task recall failed; rendering without a snapshot", self.name, exc_info=True)
+            return rendered, result
+
+        if getattr(recall, "status", None) is None or recall.status.value != "ok":
+            self.logger.debug(
+                "[%s] task recall declined: status=%s", self.name, getattr(recall.status, "value", recall.status)
+            )
+            return rendered, result
+
+        import orjson
+
+        payload = orjson.dumps(recall.snapshot, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+        block = f"{self.TASK_RECALL_FRAMING}{payload}"
+
+        counter = memory.token_counter
+        state = (history.metadata.get("compaction") or {}) if history is not None else {}
+        calibration = float(state.get("calibration", 1.0))
+        # Framing and calibration are both inside the measurement, per
+        # spec: measuring the raw payload alone understates the real cost.
+        cost = int(round(counter.count(block) * calibration))
+
+        available = budget.available
+        if result.history_estimate + cost <= available:
+            self._remember_recall_injection(memo, marker)
+            return [self._task_recall_message(block), *rendered], result
+
+        # It does not fit alongside the history as compacted. Recompute the
+        # retained-history allowance by charging the snapshot to the
+        # budget's fixed reserve, which reduces `available` by exactly the
+        # snapshot's cost, and re-compact against that.
+        if history is None:
+            return rendered, result
+
+        if cost >= available:
+            # The snapshot alone would consume the entire history
+            # allowance. There is no re-budget to attempt — charging it to
+            # the reserve would leave a budget with no room at all, which
+            # `ContextBudget` rightly refuses to construct. Decline here so
+            # the reason is reported as a decision rather than surfacing
+            # later as a swallowed construction error.
+            self.logger.info(
+                "[%s] task recall injection declined: snapshot needs %d tokens but only %d are "
+                "available for history in total, so no verbatim history could survive alongside it",
+                self.name,
+                cost,
+                available,
+            )
+            return rendered, result
+        try:
+            import dataclasses
+
+            reduced = dataclasses.replace(budget, reserve_fixed=budget.reserve_fixed + cost)
+            retried = compact_history(
+                history,
+                reduced,
+                boundary_turn_id=state.get("boundary_turn_id"),
+                calibration=calibration,
+                counter=counter,
+                current_chatbot_id=self.memory_key_id,
+            )
+        except Exception:  # noqa: BLE001 - never fail a round over telemetry
+            self.logger.warning("[%s] recall re-budget failed; skipping injection", self.name, exc_info=True)
+            return rendered, result
+
+        # The decline condition is whether the re-budgeted history plus the
+        # snapshot ACTUALLY fits — not whether the verbatim count dropped.
+        # `compact_history` guarantees `min_verbatim_turns` unconditionally,
+        # so a verbatim-count test can never fail and would be dead code
+        # dressed up as a safety check. What really happens when the floor
+        # binds is that history simply cannot shrink any further, and the
+        # combined total stays over budget. That is the case to catch.
+        if retried.history_estimate + cost > available:
+            self.logger.info(
+                "[%s] task recall injection declined: snapshot needs %d tokens but history cannot "
+                "shrink below %d (its %d verbatim turns are the floor), and available is %d",
+                self.name,
+                cost,
+                retried.history_estimate,
+                self._verbatim_turn_count(retried.views),
+                available,
+            )
+            return rendered, result
+
+        try:
+            await memory.omission_store.put_many(
+                memory.omission_key(history.user_id, history.session_id, self.memory_key_id), retried.omissions
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade, never fail the round
+            # The extra pruning is only safe once its omissions are
+            # recoverable, so a failed flush means keeping the original
+            # rendering rather than silently losing content.
+            self.logger.warning("[%s] omission flush failed during recall injection (%s)", self.name, exc)
+            return rendered, result
+
+        self._remember_recall_injection(memo, marker)
+        retried_messages = render_history(retried.views, current_chatbot_id=self.memory_key_id)
+        return [self._task_recall_message(block), *retried_messages], retried
+
+    def _remember_recall_injection(self, memo: List[Any], marker: Any) -> None:
+        """Record that this turn already received a snapshot.
+
+        Called on EVERY injecting path. Recording it on only one of them
+        is how the ordinary and streaming renders of a single turn each
+        end up contributing a snapshot.
+
+        Args:
+            memo: The bounded record of recent injections.
+            marker: Identity of the turn that was injected into.
+        """
+        if len(memo) >= self._TASK_RECALL_MEMO_LIMIT:
+            del memo[0]
+        memo.append(marker)
+
+    def _task_recall_message(self, block: str) -> HistoryMessage:
+        """Wrap a recall block as a transient message.
+
+        Deliberately carries no ``turn_id``: this is transient context for
+        one provider call, never a persisted turn. Nothing writes it back
+        — ``save_conversation_turn`` builds its own turn from the round's
+        real user message and response.
+
+        Args:
+            block: The framed snapshot text.
+
+        Returns:
+            The message to prepend.
+        """
+        return HistoryMessage(role="user", content=block, chatbot_id=self.memory_key_id, turn_id=None)
 
     # ── FEAT-538: per-turn task-memory context ───────────────────────
     #
