@@ -617,7 +617,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -635,9 +635,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2987-tm-recall-selector.md",
-      "verification": null,
+      "completed_at": "2026-09-08T15:33:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2987-tm-recall-selector.md",
+      "verification": "25 focused tests pass first run; ruff/black/isort clean; artifacts/logs/task-2987-tm-recall-selector.log",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/recall.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_recall_selector.py"
