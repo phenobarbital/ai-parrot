@@ -172,8 +172,14 @@ async def test_relay_strips_pcm_from_wire_and_pushes_once(
     for frame in frames:
         assert "audio_base64" not in frame
         assert "audio_format" not in frame
+    # `response_chunk` is audio-only on the wire: the assistant `transcription`
+    # frame is the sole source of bubble text. Echoing the text in both
+    # duplicated every delta in the browser, so the broadcast fan-out must
+    # carry it exactly once, the same way the single-user path does.
     chunk = next(f for f in frames if f["type"] == "response_chunk")
-    assert chunk["text"] == "hello there"
+    assert chunk["text"] == ""
+    bubble = next(f for f in frames if f["type"] == "transcription" and not f["is_user"])
+    assert bubble["text"] == "hello there"
 
     assert len(broadcast.pushed) == 1
     pushed = broadcast.pushed[0]

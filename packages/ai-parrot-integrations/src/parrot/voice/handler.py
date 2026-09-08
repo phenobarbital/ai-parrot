@@ -311,6 +311,9 @@ class WebSocketConnection:
     # connection.
     _tool_dedup_turn_id: Optional[str] = None
     _sent_tool_call_ids: set = field(default_factory=set)
+    # Assistant transcript already relayed for the current turn_id — see
+    # _novel_assistant_text(); reset at the same turn boundary.
+    _assistant_text_sent: str = ""
 
 
 # =============================================================================
@@ -505,13 +508,17 @@ class ToolCallDedupState:
     Attributes:
         turn_no: The turn the current ``sent_ids`` belong to.
         sent_ids: Tool-call ids already emitted this turn.
+        assistant_text_sent: Assistant transcript already relayed this turn,
+            so a closing frame's full-turn recap is not appended on top of the
+            deltas already streamed (see :func:`_novel_assistant_text`).
     """
 
     turn_no: Optional[int] = None
     sent_ids: set = field(default_factory=set)
+    assistant_text_sent: str = ""
 
     def reset_if_new_turn(self, turn_no: int) -> None:
-        """Clear the id set when the turn number changes.
+        """Clear the per-turn bookkeeping when the turn number changes.
 
         Args:
             turn_no: The turn being relayed.
@@ -519,6 +526,7 @@ class ToolCallDedupState:
         if turn_no != self.turn_no:
             self.turn_no = turn_no
             self.sent_ids = set()
+            self.assistant_text_sent = ""
 
 
 def build_voice_frames(
@@ -557,16 +565,24 @@ def build_voice_frames(
 
     frames: list = []
 
+    if "error" in resp.metadata:
+        return [{"type": "error", "message": resp.metadata["error"] or "Unknown voice provider error"}]
+
     if not stt_only:
-        is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
-        text_to_send = "" if is_thought else resp.text
-        if (resp.audio_data or text_to_send) and not resp.is_complete:
+        # `response_chunk` is audio-only on the wire (see the assistant
+        # `transcription` frame below, the sole source of bubble text —
+        # a7f0c5fa5's contract). Echoing resp.text here duplicated every
+        # assistant delta (once via response_chunk, once via transcription)
+        # and, for a role="user" input-transcription frame, leaked the
+        # caller's own speech into the assistant bubble — this branch never
+        # checked resp.role.
+        if resp.audio_data and not resp.is_complete:
             frames.append(
                 {
                     "type": "response_chunk",
-                    "text": text_to_send or "",
-                    "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
-                    "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                    "text": "",
+                    "audio_base64": base64.b64encode(resp.audio_data).decode(),
+                    "audio_format": "audio/pcm;rate=24000",
                     "is_interrupted": resp.is_interrupted,
                 }
             )
@@ -594,6 +610,15 @@ def build_voice_frames(
         if not assistant_text and resp.turn_metadata:
             assistant_text = resp.turn_metadata.output_transcription
         if assistant_text:
+            # A closing frame's full-turn recap must not be appended on top of
+            # the deltas already streamed to the bubble.
+            assistant_text = _novel_assistant_text(
+                assistant_text,
+                dedup_state.assistant_text_sent,
+                resp.is_complete or resp.is_interrupted,
+            )
+        if assistant_text:
+            dedup_state.assistant_text_sent += assistant_text
             frames.append(
                 {
                     "type": "transcription",
@@ -678,6 +703,35 @@ def build_voice_frames(
     return frames
 
 
+def _novel_assistant_text(candidate: str, already_sent: str, is_final: bool) -> str:
+    """Return the part of ``candidate`` not yet shown in the assistant bubble.
+
+    Streaming deltas are relayed verbatim (the frontend appends them). A
+    final frame — turn complete or interrupted — may carry the WHOLE
+    turn's transcript again: Gemini Live's ``turn_metadata.output_transcription``
+    fallback and its interrupt-frame ``accumulated_text`` are exactly the
+    concatenation of the deltas already relayed, so appending them once
+    more rendered "Hello! How can I help you today?Hello! How can I help
+    you today?". Only the unseen suffix (usually nothing) is returned.
+
+    Args:
+        candidate: Assistant text the current frame would emit.
+        already_sent: Assistant text already emitted this turn.
+        is_final: Whether the frame closes the turn (complete/interrupted).
+
+    Returns:
+        The text to emit, possibly empty.
+    """
+    if not is_final or not already_sent:
+        return candidate
+    if candidate.startswith(already_sent):
+        return candidate[len(already_sent):]
+    stripped = candidate.strip()
+    if stripped and stripped in already_sent:
+        return ""
+    return candidate
+
+
 class _HandlerVoiceSession(VoiceSession):
     """VoiceSession that relays through VoiceChatHandler's existing,
     richer WebSocket frame protocol instead of VoiceSession's own."""
@@ -701,6 +755,9 @@ class _HandlerVoiceSession(VoiceSession):
         self._dedup_state = ToolCallDedupState()
         self._tool_dedup_turn_no: Optional[int] = None
         self._sent_tool_call_ids: set = set()
+        # Assistant transcript already relayed this turn — see
+        # _novel_assistant_text(); reset at the same turn boundary.
+        self._assistant_text_sent: str = ""
 
     async def _send(self, payload: dict) -> None:
         # Code-review fix: route through the handler's own _send_message()
@@ -2411,30 +2468,31 @@ class VoiceChatHandler:
         ``turn_no``-keyed bookkeeping for the streaming relay path.
         """
         turn_id = getattr(response, "turn_id", None)
+        if "error" in response.metadata:
+            await self._send_error(connection.ws, response.metadata["error"] or "Unknown voice provider error")
+            return
         if turn_id != connection._tool_dedup_turn_id:
             connection._tool_dedup_turn_id = turn_id
             connection._sent_tool_call_ids = set()
+            connection._assistant_text_sent = ""
 
         # STT-only: skip all model response frames — only transcription is allowed.
         if not connection.stt_only:
-            # Send response_chunk for audio OR text (not just audio)
-            # FILTER: Skip internal thought processes that leak into output
-            # (see _THOUGHT_FILTER_PATTERN's docstring for the two patterns).
-            is_thought = bool(response.text and _THOUGHT_FILTER_PATTERN.match(response.text))
-
-            # Determine strict text to send (suppress if thought)
-            text_to_send = response.text
-            if is_thought:
-                text_to_send = ""
-
-            if (response.audio_data or text_to_send) and not response.is_complete:
+            # `response_chunk` is audio-only on the wire (see the assistant
+            # `transcription` frame below, the sole source of bubble text —
+            # a7f0c5fa5's contract). Echoing response.text here duplicated
+            # every assistant delta (once via response_chunk, once via
+            # transcription) and, for a role="user" input-transcription
+            # frame, leaked the caller's own speech into the assistant
+            # bubble — this branch never checked response.role.
+            if response.audio_data and not response.is_complete:
                 await self._send_message(
                     connection.ws,
                     {
                         "type": "response_chunk",
-                        "text": text_to_send or "",
-                        "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
-                        "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
+                        "text": "",
+                        "audio_base64": base64.b64encode(response.audio_data).decode(),
+                        "audio_format": "audio/pcm;rate=24000",
                         "is_interrupted": response.is_interrupted,
                     },
                 )
@@ -2470,6 +2528,15 @@ class VoiceChatHandler:
         if not assistant_text and response.turn_metadata:
             assistant_text = response.turn_metadata.output_transcription
         if assistant_text:
+            # A closing frame's full-turn recap must not be appended on top
+            # of the deltas already streamed to the bubble.
+            assistant_text = _novel_assistant_text(
+                assistant_text,
+                connection._assistant_text_sent,
+                response.is_complete or response.is_interrupted,
+            )
+        if assistant_text:
+            connection._assistant_text_sent += assistant_text
             await self._send_message(
                 connection.ws,
                 {

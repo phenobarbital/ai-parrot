@@ -44,6 +44,7 @@ from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from .base import BaseBot
 from .prompts.builder import PromptBuilder
+from .prompts.layers import LayerPriority, PromptLayer, RenderPhase
 
 BASIC_VOICE_PROMPT_TEMPLATE = """Your name is $name Agent.
 <system_instructions>
@@ -140,10 +141,21 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         # _llm is inherited from AbstractBot.
         # prompt_builder is created per-instance to avoid the mutable
         # class-attribute pitfall (see note above).
-        if "prompt_builder" not in kwargs:
+        default_prompt_builder = "prompt_builder" not in kwargs
+        if default_prompt_builder:
             kwargs["prompt_builder"] = PromptBuilder.voice()
         super().__init__(name=name, llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
-        self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
+        voice_prompt = system_prompt or self._default_voice_prompt()
+        self.system_prompt_template = voice_prompt or self.system_prompt_template
+        if default_prompt_builder and voice_prompt:
+            self._prompt_builder.add(
+                PromptLayer(
+                    name="voice_instructions",
+                    priority=LayerPriority.CUSTOM,
+                    phase=RenderPhase.CONFIGURE,
+                    template=voice_prompt,
+                )
+            )
         # Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
         # never initializes the ``system_prompt`` property's backing
         # ``_system_prompt_template`` attribute (it only ever gets set via
@@ -178,6 +190,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # different identity than the one the caller intended).
             "aws_access_key": kwargs.get("aws_access_key"),
             "aws_secret_key": kwargs.get("aws_secret_key"),
+            "aws_session_token": kwargs.get("aws_session_token"),
             "aws_id": kwargs.get("aws_id"),
             "region": kwargs.get("region"),
             "region_prefix": kwargs.get("region_prefix"),
@@ -186,6 +199,31 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
     def _default_voice_prompt(self) -> str:
         """Use for custom default voice prompt if needed."""
         return None
+
+    async def create_system_prompt(
+        self,
+        user_context: str = "",
+        vector_context: str = "",
+        kb_context: str = "",
+        pageindex_context: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        memory_context: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Union[str, List]:
+        """Render voice instructions even when async configure() was skipped."""
+        if self._prompt_builder and not self._prompt_builder.is_configured:
+            await self._configure_prompt_builder()
+        # Voice history lives in the provider session, not in this template.
+        kwargs.setdefault("chat_history", "")
+        return await super().create_system_prompt(
+            user_context=user_context,
+            vector_context=vector_context,
+            kb_context=kb_context,
+            pageindex_context=pageindex_context,
+            metadata=metadata,
+            memory_context=memory_context,
+            **kwargs,
+        )
 
     def _resolve_llm_config(self, llm=None, model=None, preset=None, model_config=None, **kwargs):
         """
@@ -228,13 +266,15 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # VoiceBot-created NovaClients never see those vars and fall
             # through to the SDK default chain (which may resolve to an
             # identity without Bedrock access → AccessDeniedException).
-            nova_config = dict(self._client_config)
-            if not nova_config.get("aws_access_key"):
+            nova_config = {k: v for k, v in self._client_config.items() if v is not None}
+            nova_config.update({k: v for k, v in kwargs.items() if v is not None})
+            if not any(nova_config.get(k) for k in ("aws_access_key", "aws_secret_key", "aws_id")):
                 from navconfig import config as _navconfig
 
                 nova_config["aws_access_key"] = _navconfig.get("AWS_NOVA_SONIC_KEY_ID")
-                if not nova_config.get("aws_secret_key"):
-                    nova_config["aws_secret_key"] = _navconfig.get("AWS_NOVA_SONIC_SECRET_KEY")
+                nova_config["aws_secret_key"] = _navconfig.get("AWS_NOVA_SONIC_SECRET_KEY")
+                if not nova_config.get("aws_session_token"):
+                    nova_config["aws_session_token"] = _navconfig.get("AWS_NOVA_SONIC_SESSION_TOKEN")
                 if not nova_config.get("region"):
                     nova_config["region"] = _navconfig.get("AWS_NOVA_SONIC_REGION")
 
@@ -254,7 +294,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 # which NovaAudio validates on every call (TASK-2169/2170).
                 # An explicit voice_id kwarg to _resolve_llm_config() still
                 # flows through via **kwargs below.
-                extra={**{k: v for k, v in nova_config.items() if v is not None}, **kwargs},
+                extra={k: v for k, v in nova_config.items() if v is not None},
             )
 
         # Default (existing behavior, unchanged): GeminiLiveClient.

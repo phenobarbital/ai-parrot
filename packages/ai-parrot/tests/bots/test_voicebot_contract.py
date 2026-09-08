@@ -61,7 +61,7 @@ class _FakeConversationMemory:
     def __init__(self):
         self.turns = []
 
-    async def add_turn(self, user_id, session_id, turn, chatbot_id=None):
+    async def add_turn(self, user_id, session_id, turn, chatbot_id=None, **kwargs):
         self.turns.append(turn)
 
     async def get_history(self, user_id, session_id, chatbot_id=None):
