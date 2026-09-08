@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: L (4-8h of live time; requires credentials and a human observer)
 **Depends-on**: TASK-2950, TASK-2966, TASK-2967, TASK-2968
@@ -79,7 +79,71 @@ PARROT_LIVE_BROADCAST_GATE=1 pytest packages/ai-parrot-integrations/tests/voice/
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: `done-with-issues` — **FEAT-537 is NOT ACCEPTED**
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `docs/testing/voicebot-multiroom-heygen-avatar-acceptance.md` (AC1–AC15
+  matrix, prerequisite check, executed-suite table, blocking-defect section, what is
+  still required) and linked it from the operations guide's evidence table.
+- **Tally: 8 PASS · 5 PARTIAL · 2 NOT RUN · 0 FAIL.** The task's own criterion is
+  explicit — "`done` only if every AC row is PASS; otherwise `done-with-issues` with the
+  open rows named" — so this is `done-with-issues`.
+
+**Suites actually executed** (raw output in
+`artifacts/logs/feat-537-acceptance-2026-09-08.log`):
+
+| Suite | Result |
+|---|---|
+| `tests/voice -k "broadcast or demo"` | 329 passed, 6 skipped (+27 pre-existing errors) |
+| `tests/integrations/liveavatar` | 199 passed |
+| server `test_voice_broadcast.py` + `test_avatar_viewers.py` | 37 passed |
+| FEAT-536 regression (handler refactor, handler avatar, voicechat avatar) | 52 passed |
+| `tests/e2e/test_voicebot_multiroom_heygen_avatar.py` (Redis) | 14 passed |
+| `test_voice_broadcast_redis_registry.py` (Redis) | 58 passed |
+| `test_voice_demo_multibrowser.py` (Chromium) | 9 passed |
+| live gate + live multibrowser | 2 passed, **6 skipped — NOT VERIFIED** |
+| `avatar-viewer.js` Node harness (vitest stand-in) | 24 checks passed |
+
+**Open rows, named as the task requires:**
+
+1. **AC1 — NOT RUN.** No LiveAvatar/LiveKit credentials, no Nova SDK.
+2. **AC10 — NOT RUN.** The real-vendor gate is 0 of 12; mock-only results cannot
+   complete this feature, by AC10's own wording.
+3. **AC5 — PARTIAL.** The fallback mechanism passes and the browser harness measures a
+   sub-3 s per-page switch, but against a **faked** sink; the perceived target is
+   unverified.
+4. **AC6 — PARTIAL.** Queue clearing (software + vendor + native `clear_queue`) passes;
+   the **1 s** stale-audio target has never been measured against real media.
+5. **AC13 — PARTIAL and BLOCKED.** Every rejection path passes (unauthorized, stale
+   epoch, duplicate socket, concurrent handoff, cross-worker, failed-barrier silence),
+   but *actual sequential voice turns by two participants* were not run — and are
+   additionally blocked by the defect below.
+6. **AC15 — PARTIAL.** FEAT-536 is *integrated* but **not verified** (its own report is
+   0 of 8). "Integrated and verified" is therefore half-satisfied. The rest of AC15
+   passes: the example was extended in place, with no second HTML page or backend.
+7. **AC8 — PASS with one gap**: autoplay-blocked recovery is not verified, because the
+   browser harness launches Chromium with `--autoplay-policy=no-user-gesture-required`.
+8. **AC9 — PASS with two environment caveats**: `pnpm --dir …/ui test` has no runner
+   installed, and the Nova client suite has 35 collection errors — **both reproduce
+   identically on clean `dev`**, so neither is a FEAT-537 regression.
+
+**🔴 Blocking defect (also recorded in TASK-2968 and §4 of the report):**
+`BroadcastRegistry.confirm_viewer()` has **no production caller**, so a lease never
+becomes `active` and `grant_floor` always returns `403 floor_not_granted`. The moderated
+handoff — the subject of AC12/AC13 — is non-functional in production even though every
+unit and contract test passes, because those tests confirm the lease themselves. Spec §2
+places confirmation at LiveKit presence confirmation, so the fix belongs in
+`BroadcastService`. **Must be fixed and re-verified before a live acceptance run is worth
+scheduling.**
+
+**Explicit non-claims**: no criterion is reported as passing on the strength of a mocked
+vendor; where a criterion has an automated and a live half, both are stated separately;
+no lip-sync, cutover-perception or interruption-latency measurement against real media
+exists; no credential appears in any document or committed artifact.
+
+**Deviations from spec**: none — the task is a reporting task and it reports what
+happened. The live half of the evidence collection could not be run for the reasons in
+§1 of the report, and is recorded as NOT RUN rather than approximated.
