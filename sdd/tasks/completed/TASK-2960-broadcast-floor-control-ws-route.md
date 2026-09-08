@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2959
@@ -102,7 +102,66 @@ async def test_ws_revoke_stops_old_speaker_audio(aiohttp_client): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/floor.py` (`validate_audio_authority`, `FloorCoordinator`,
+  `HandoffResult`, `BroadcastControlService` protocol, `FLOOR_REVOKED`/`FLOOR_STATE`),
+  added `handle_broadcast_websocket` + `_BroadcastSocketState` + the route mount and
+  constants to `handler.py`, and created/extended the two test modules.
+- Tests: `test_voice_broadcast_floor.py` → **18 passed**;
+  `test_voice_broadcast_relay.py` → **33 passed** (17 from TASK-2959 + 16 route tests).
+  Whole `tests/voice/` → **369 passed** (was 335; same 11 pre-existing environment
+  failures / 27 errors). `ruff check` clean.
+- **The barrier ordering is asserted, not just implemented.**
+  `test_handoff_orders_switching_barrier_commit` checks that the producer was asked to
+  fence at the *new* epoch and that the outgoing socket got `floor_revoked` — both
+  before `commit_floor` installed anyone. `test_handoff_barrier_timeout_leaves_floor_idle`
+  then proves the failure mode: floor `idle`, a retryable error, and **neither**
+  participant able to speak. That is the AC13 "failed handoff stays silent with a visible
+  error" requirement.
+- **`validate_audio_authority` in `floor.py` delegates the core fencing-tuple check to
+  the registry's implementation** rather than re-deriving it. Both TASK-2952 and
+  TASK-2960 specified a function of that name; two independent copies of "is this frame
+  allowed" is precisely the kind of duplication that drifts. `floor.py`'s version adds
+  the two things a lease *id* cannot express: the socket binding stored on the lease, and
+  control-heartbeat freshness.
+- **A missing `floor_epoch` is treated as stale, not as unfenced.** An older client could
+  otherwise bypass every handoff simply by omitting the field. Tested directly.
+- **Raw binary WebSocket frames are ignored on this route.** The legacy `/ws/voice` route
+  accepts binary audio, but binary cannot carry a `floor_epoch`, so accepting it here
+  would create an unfenceable input path. `test_ws_binary_audio_is_ignored` pins it.
+- **A lease id is not a bearer token**: `attach` verifies
+  `lease.principal.user_id == principal.user_id` and closes with 4403 otherwise
+  (`test_ws_attach_wrong_owner_closes_4403`). Anyone who saw a lease id in a log would
+  otherwise be able to attach as that participant.
+- Every rejection path is counted (`rejected_frames`), replies with a **coded** error
+  (`floor_not_granted` / `stale_floor_epoch` / `speaker_connection_exists` /
+  `payload_too_large` / `rate_limited`), and never forwards the frame to a provider or to
+  other browsers. Added `_send_broadcast_error` because the legacy `_send_error` sends
+  only a human message and clients need to branch on the code.
+- `floor_state` is pushed explicitly on attach and after each transition, so the browser
+  gates its microphone on the **server's** answer rather than on a generic
+  `ready_to_speak` — spec §2 warns specifically about that confusion.
+- Socket close runs `unbind_speaker_socket` and, if it held the floor, the same release
+  barrier; `test_ws_speaker_disconnect_returns_the_floor` waits for the floor to land
+  back on the moderator.
+- **`BroadcastControlService` is a `typing.Protocol`**, not prose. TASK-2960 had to be
+  written before TASK-2961's concrete `BroadcastService` exists, so the required surface
+  (11 methods) is declared as a checkable contract that the test double implements and
+  TASK-2961 must satisfy. The handler never imports the concrete class — that would drag
+  the optional LiveKit/Redis stack into every voice deployment.
+- The route is mounted **only** when `broadcast_service` is injected;
+  `test_route_is_not_mounted_without_a_service` asserts an ordinary deployment exposes no
+  broadcast path. FEAT-536 regression suites are unmodified and green.
+- Rate limiting (50 msg/s sliding window) and the 64 KiB base64 payload cap are enforced
+  per socket, as the Implementation Notes required.
+
+**Deviations from spec**: none. One design note: `succeed_moderator()` exists in addition
+to the task's listed methods because `release_viewer`/`elect_moderator` open the
+succession barrier *inside the registry* (atomically, so no second moderator can appear),
+leaving only the producer acknowledgement to the owning worker. Without a method for that
+half, an election would leave the floor stuck in `switching`.

@@ -282,7 +282,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -293,8 +293,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T11:03:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2960-broadcast-floor-control-ws-route.md",
+      "completed_at": "2026-09-08T12:15:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2960-broadcast-floor-control-ws-route.md",
       "acceptance_criteria": [
         "AC12",
         "AC13",
