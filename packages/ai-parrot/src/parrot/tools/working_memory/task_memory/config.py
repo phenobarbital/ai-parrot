@@ -424,6 +424,9 @@ class TaskMemoryRuntime:
         file_manager: Blob backend. Required when ``durable`` is true.
         association: Optional association store, for durable selection.
         pool: An existing asyncpg pool to borrow rather than create.
+        archive: Optional :class:`ArchiveWriter`. Supplied by the host
+            because the packaged writer is scope-bound while this runtime
+            is not; see :meth:`_build_sweeper`.
     """
 
     def __init__(
@@ -433,11 +436,13 @@ class TaskMemoryRuntime:
         file_manager: Optional[Any] = None,
         association: Optional[Any] = None,
         pool: Optional[Any] = None,
+        archive: Optional[Any] = None,
     ) -> None:
         """Initialize the runtime without connecting to anything."""
         self.config = config
         self.association = association
         self._file_manager = file_manager
+        self._archive = archive
         self._pool = pool
         #: A borrowed pool is not ours to close.
         self._owns_pool = pool is None
@@ -570,11 +575,21 @@ class TaskMemoryRuntime:
         Returns:
             The sweeper.
         """
-        from .retention import JsonlArchiveWriter, RetentionSweeper
+        from .retention import RetentionSweeper
 
-        archive = None
-        if durable and self.config.archive_uri and self._file_manager is not None:
-            archive = JsonlArchiveWriter(self._file_manager, self.config.archive_uri)
+        # The archive writer is supplied by the host, not built here.
+        # `JsonlArchiveWriter` binds a SCOPE at construction, while this
+        # runtime is deliberately scope-agnostic (it sweeps whatever
+        # scopes are tracked). Constructing one here could only bind a
+        # single scope and would then archive every other scope's journal
+        # under it — worse than not archiving at all, because the
+        # verification step would still pass.
+        archive = self._archive
+        if durable and self.config.archive_uri and archive is None:
+            self.logger.warning(
+                "archive_uri is configured but no archive writer was supplied; terminal journals "
+                "will NOT be archived. Pass archive= to TaskMemoryRuntime to enable it."
+            )
 
         return RetentionSweeper(
             self.store,
